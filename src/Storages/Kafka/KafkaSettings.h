@@ -19,6 +19,7 @@ struct KafkaSettings : public SettingsCollection<KafkaSettings>
     M(SettingString, kafka_broker_list, "", "A comma-separated list of brokers for Kafka engine.", 0) \
     M(SettingString, kafka_topic_list, "", "A list of Kafka topics.", 0) \
     M(SettingString, kafka_group_name, "", "A group of Kafka consumers.", 0) \
+    M(SettingString, kafka_client_id, "", "A client id of Kafka consumer.", 0) \
     M(SettingString, kafka_format, "", "The message format for Kafka engine.", 0) \
     M(SettingChar, kafka_row_delimiter, '\0', "The character to be considered as a delimiter in Kafka message.", 0) \
     M(SettingString, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine", 0) \

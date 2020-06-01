@@ -12,8 +12,11 @@ from helpers.network import PartitionManager
 import json
 import subprocess
 import kafka.errors
-from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer
+from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnection
 from kafka.admin import NewTopic
+from kafka.protocol.admin import DescribeGroupsResponse_v1, DescribeGroupsRequest_v1
+from kafka.protocol.group import MemberAssignment
+import socket
 from google.protobuf.internal.encoder import _VarintBytes
 
 """
@@ -110,6 +113,32 @@ def  kafka_check_result(result, check=False, ref_file='test_kafka_json.reference
         else:
             return TSV(result) == TSV(reference)
 
+# https://stackoverflow.com/a/57692111/1555175
+def describe_consumer_group(name):
+    client = BrokerConnection('localhost', 9092, socket.AF_INET)
+    client.connect_blocking()
+
+    list_members_in_groups = DescribeGroupsRequest_v1(groups=[name])
+    future = client.send(list_members_in_groups)
+    while not future.is_done:
+        for resp, f in client.recv():
+            f.success(resp)
+
+    (error_code, group_id, state, protocol_type, protocol, members) = future.value.groups[0]
+
+    res = []
+    for member in members:
+        (member_id, client_id, client_host, member_metadata, member_assignment) = member
+        member_info = {}
+        member_info['member_id'] = member_id
+        member_info['client_id'] = client_id
+        member_info['client_host'] = client_host
+        member_topics_assignment = []
+        for (topic, partitions) in MemberAssignment.decode(member_assignment).assignment:
+            member_topics_assignment.append({'topic':topic, 'partitions':partitions})
+        member_info['assignment'] = member_topics_assignment
+        res.append(member_info)
+    return res
 
 # Fixtures
 
@@ -161,6 +190,9 @@ def test_kafka_settings_old_syntax(kafka_cluster):
 
     kafka_check_result(result, True)
 
+    members = describe_consumer_group('old')
+    assert members[0]['client_id'] == u'ClickHouse-instance-test-kafka'
+    # text_desc = kafka_cluster.exec_in_container(kafka_cluster.get_container_id('kafka1'),"kafka-consumer-groups --bootstrap-server localhost:9092 --describe --members --group old --verbose"))
 
 @pytest.mark.timeout(180)
 def test_kafka_settings_new_syntax(kafka_cluster):
@@ -172,6 +204,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
                      kafka_group_name = 'new',
                      kafka_format = 'JSONEachRow',
                      kafka_row_delimiter = '\\n',
+                     kafka_client_id = '{instance} test 1234',
                      kafka_skip_broken_messages = 1;
         ''')
 
@@ -197,6 +230,8 @@ def test_kafka_settings_new_syntax(kafka_cluster):
 
     kafka_check_result(result, True)
 
+    members = describe_consumer_group('new')
+    assert members[0]['client_id'] == u'instance test 1234'
 
 @pytest.mark.timeout(180)
 def test_kafka_consumer_hang(kafka_cluster):
@@ -837,6 +872,7 @@ def test_kafka_virtual_columns2(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'virt2_0,virt2_1',
                      kafka_group_name = 'virt2',
+                     kafka_num_consumers = 2,
                      kafka_format = 'JSONEachRow';
 
         CREATE MATERIALIZED VIEW test.view Engine=Log AS
@@ -865,6 +901,11 @@ def test_kafka_virtual_columns2(kafka_cluster):
     producer.flush()
 
     time.sleep(10)
+
+    members = describe_consumer_group('virt2')
+    #pprint.pprint(members)
+    members[0]['client_id'] = u'ClickHouse-instance-test-kafka-0'
+    members[1]['client_id'] = u'ClickHouse-instance-test-kafka-1'
 
     result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
 
@@ -1475,6 +1516,7 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
 
     # as it's a bit tricky to hit the proper moment - let's check in logs if we did it correctly
     assert instance.contains_in_log("Local: Waiting for coordinator")
+    assert instance.contains_in_log("All commit attempts failed")
 
     result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.view')
     print(result)
@@ -1484,7 +1526,10 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
         DROP TABLE test.view;
     ''')
 
-    assert TSV(result) == TSV('22\t22\t22')
+    # After https://github.com/edenhill/librdkafka/issues/2631
+    # timeout triggers rebalance, making further commits to the topic after getting back online
+    # impossible. So we have a duplicate in that scenario, but we report that situation properly.
+    assert TSV(result) == TSV('42\t22\t22')
 
 
 

@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 
 HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(const std::string & name_)
-    : log(&Logger::get(name_)), name(name_)
+    : log(&Poco::Logger::get(name_)), name(name_)
 {
 }
 

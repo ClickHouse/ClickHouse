@@ -65,42 +65,24 @@ Pipes StorageView::read(
         current_inner_query = getRuntimeViewQuery(*query_info.query->as<const ASTSelectQuery>(), context);
 
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
-    /// FIXME res may implicitly use some objects owned be pipeline, but them will be destructed after return
-    if (query_info.force_tree_shaped_pipeline)
+
+    auto pipeline = interpreter.execute().pipeline;
+
+    /// It's expected that the columns read from storage are not constant.
+    /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
+    pipeline.addSimpleTransform([](const Block & header)
     {
-        QueryPipeline pipeline;
-        BlockInputStreams streams = interpreter.executeWithMultipleStreams(pipeline);
+        return std::make_shared<MaterializingTransform>(header);
+    });
 
-        for (auto & stream : streams)
-        {
-            stream = std::make_shared<MaterializingBlockInputStream>(stream);
-            stream = std::make_shared<ConvertingBlockInputStream>(stream, getSampleBlockForColumns(column_names),
-                                                                  ConvertingBlockInputStream::MatchColumnsMode::Name);
-        }
-
-        for (auto & stream : streams)
-            pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
-    }
-    else
+    /// And also convert to expected structure.
+    pipeline.addSimpleTransform([&](const Block & header)
     {
-        auto pipeline = interpreter.executeWithProcessors();
+        return std::make_shared<ConvertingTransform>(header, getSampleBlockForColumns(column_names),
+                                                     ConvertingTransform::MatchColumnsMode::Name);
+    });
 
-        /// It's expected that the columns read from storage are not constant.
-        /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-        pipeline.addSimpleTransform([](const Block & header)
-        {
-            return std::make_shared<MaterializingTransform>(header);
-        });
-
-        /// And also convert to expected structure.
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<ConvertingTransform>(header, getSampleBlockForColumns(column_names),
-                                                         ConvertingTransform::MatchColumnsMode::Name);
-        });
-
-        pipes = std::move(pipeline).getPipes();
-    }
+    pipes = std::move(pipeline).getPipes();
 
     return pipes;
 }
