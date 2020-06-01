@@ -17,8 +17,8 @@
 
 namespace
 {
-static bool initialized = false;
-static bool anonymize = false;
+bool initialized = false;
+bool anonymize = false;
 
 void setExtras()
 {
@@ -44,7 +44,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 #if USE_SENTRY
     bool enabled = false;
     bool debug = config.getBool("send_crash_reports.debug", false);
-    auto logger = &Poco::Logger::get("SentryWriter");
+    auto * logger = &Poco::Logger::get("SentryWriter");
     if (config.getBool("send_crash_reports.enabled", false))
     {
         if (debug || (strlen(VERSION_OFFICIAL) > 0))
@@ -121,7 +121,7 @@ void SentryWriter::shutdown()
 void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace)
 {
 #if USE_SENTRY
-    auto logger = &Poco::Logger::get("SentryWriter");
+    auto * logger = &Poco::Logger::get("SentryWriter");
     if (initialized)
     {
         const std::string & error_message = signalToErrorMessage(sig, info, context);
