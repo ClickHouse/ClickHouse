@@ -39,11 +39,6 @@ public:
         return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
     }
 
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override
-    {
-        return part->storage.getColumnDependencies(updated_columns);
-    }
-
     StorageInMemoryMetadata getInMemoryMetadata() const override
     {
         return part->storage.getInMemoryMetadata();
@@ -61,6 +56,7 @@ protected:
     {
         setColumns(part_->storage.getColumns());
         setIndices(part_->storage.getIndices());
+        setPrimaryKey(part_->storage.getPrimaryKey());
         setSortingKey(part_->storage.getSortingKey());
         setColumnTTLs(part->storage.getColumnTTLs());
         setTableTTLs(part->storage.getTableTTLs());

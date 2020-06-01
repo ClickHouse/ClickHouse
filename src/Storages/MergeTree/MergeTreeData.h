@@ -336,8 +336,6 @@ public:
     /// See comments about methods below in IStorage interface
     StorageInMemoryMetadata getInMemoryMetadata() const override;
 
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override;
-
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool supportsPrewhere() const override { return true; }
