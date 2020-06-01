@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
+#include <Columns/ColumnArray.h>
 #include <Poco/File.h>
 
 namespace DB
@@ -24,10 +25,20 @@ MergeTreeReaderInMemory::MergeTreeReaderInMemory(
         std::move(settings_), {})
     , part_in_memory(std::move(data_part_))
 {
+    for (const auto & name_and_type : columns)
+    {
+        auto [name, type] = getColumnFromPart(name_and_type);
+        if (!part_in_memory->block.has(name) && typeid_cast<const DataTypeArray *>(type.get()))
+            if (auto offset_position = findColumnForOffsets(name))
+                positions_for_offsets[name] = *offset_position;
+    }
 }
 
-size_t MergeTreeReaderInMemory::readRows(size_t from_mark, bool /* continue_reading */, size_t max_rows_to_read, Columns & res_columns)
+size_t MergeTreeReaderInMemory::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
 {
+    if (!continue_reading)
+        total_rows_read = 0;
+
     size_t total_marks = data_part->index_granularity.getMarksCount();
     if (from_mark >= total_marks)
         throw Exception("Mark " + toString(from_mark) + " is out of bound. Max mark: "
@@ -41,34 +52,49 @@ size_t MergeTreeReaderInMemory::readRows(size_t from_mark, bool /* continue_read
         throw Exception("Cannot read data in MergeTreeReaderInMemory. Rows already read: "
             + toString(total_rows_read) + ". Rows in part: " + toString(part_rows), ErrorCodes::CANNOT_READ_ALL_DATA);
 
+    size_t rows_to_read = std::min(max_rows_to_read, part_rows - total_rows_read);
     auto column_it = columns.begin();
-    size_t rows_read = 0;
     for (size_t i = 0; i < num_columns; ++i, ++column_it)
     {
         auto [name, type] = getColumnFromPart(*column_it);
-        if (!part_in_memory->block.has(name))
-            continue;
 
-        const auto & block_column = part_in_memory->block.getByName(name).column;
-        if (total_rows_read == 0 && part_rows <= max_rows_to_read)
+        auto offsets_it = positions_for_offsets.find(name);
+        if (offsets_it != positions_for_offsets.end())
         {
-            res_columns[i] = block_column;
-            rows_read = part_rows;
-        }
-        else
-        {
+            const auto & source_offsets = assert_cast<const ColumnArray &>(
+                *part_in_memory->block.getByPosition(offsets_it->second).column).getOffsets();
+
             if (res_columns[i] == nullptr)
                 res_columns[i] = type->createColumn();
 
             auto mutable_column = res_columns[i]->assumeMutable();
-            rows_read = std::min(max_rows_to_read, part_rows - total_rows_read);
-            mutable_column->insertRangeFrom(*block_column, total_rows_read, rows_read);
+            auto & res_offstes = assert_cast<ColumnArray &>(*mutable_column).getOffsets();
+            for (size_t row = 0; row < rows_to_read; ++row)
+                res_offstes.push_back(source_offsets[total_rows_read + row]);
+
             res_columns[i] = std::move(mutable_column);
+        }
+        else if (part_in_memory->block.has(name))
+        {
+            const auto & block_column = part_in_memory->block.getByName(name).column;
+            if (rows_to_read == part_rows)
+            {
+                res_columns[i] = block_column;
+            }
+            else
+            {
+                if (res_columns[i] == nullptr)
+                    res_columns[i] = type->createColumn();
+
+                auto mutable_column = res_columns[i]->assumeMutable();
+                mutable_column->insertRangeFrom(*block_column, total_rows_read, rows_to_read);
+                res_columns[i] = std::move(mutable_column);
+            }
         }
     }
 
-    total_rows_read += rows_read;
-    return rows_read;
+    total_rows_read += rows_to_read;
+    return rows_to_read;
 }
 
 }
