@@ -44,7 +44,7 @@ public:
 private:
     const MergeTreeData & data;
 
-    Logger * log;
+    Poco::Logger * log;
 
     Pipes spreadMarkRangesAmongStreams(
         RangesInDataParts && parts,

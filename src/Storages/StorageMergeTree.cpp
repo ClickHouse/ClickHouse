@@ -990,7 +990,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                     case PartitionCommand::MoveDestinationType::TABLE:
                         checkPartitionCanBeDropped(command.partition);
                         String dest_database = context.resolveDatabase(command.to_database);
-                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table});
+                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, context);
                         movePartitionToTable(dest_storage, command.partition, context);
                         break;
                 }
@@ -1002,7 +1002,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             {
                 checkPartitionCanBeDropped(command.partition);
                 String from_database = context.resolveDatabase(command.from_database);
-                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table});
+                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, context);
                 replacePartitionFrom(from_storage, command.partition, command.replace, context);
             }
             break;
