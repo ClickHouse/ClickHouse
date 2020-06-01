@@ -306,16 +306,6 @@ public:
         throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** The same as read, but returns BlockInputStreams.
-     */
-    BlockInputStreams readStreams(
-            const Names & /*column_names*/,
-            const SelectQueryInfo & /*query_info*/,
-            const Context & /*context*/,
-            QueryProcessingStage::Enum /*processed_stage*/,
-            size_t /*max_block_size*/,
-            unsigned /*num_streams*/);
-
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
       * Returns an object by which you can write data sequentially.
