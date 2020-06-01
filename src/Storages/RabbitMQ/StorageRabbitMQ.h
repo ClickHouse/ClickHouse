@@ -25,6 +25,7 @@ public:
     std::string getName() const override { return "RabbitMQ"; }
 
     bool supportsSettings() const override { return true; }
+    bool noPushingToViews() const override { return true; }
 
     void startup() override;
     void shutdown() override;
@@ -37,9 +38,15 @@ public:
             size_t max_block_size,
             unsigned num_streams) override;
 
+    BlockOutputStreamPtr write(
+             const ASTPtr & query,
+             const Context & context) override;
+
     void pushReadBuffer(ConsumerBufferPtr buf);
     ConsumerBufferPtr popReadBuffer();
     ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);
+
+    ProducerBufferPtr createWriteBuffer();
 
     const String & getExchangeName() const { return exchange_name; }
     const String & getRoutingKey() const { return routing_key; }

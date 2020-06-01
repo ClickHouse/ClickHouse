@@ -15,6 +15,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
+#include <Storages/RabbitMQ/RabbitMQBlockOutputStream.h>
+#include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
@@ -124,6 +126,12 @@ Pipes StorageRabbitMQ::read(
 }
 
 
+BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const Context & context)
+{
+    return std::make_shared<RabbitMQBlockOutputStream>(*this, context);
+}
+
+
 void StorageRabbitMQ::startup()
 {
     for (size_t i = 0; i < num_consumers; ++i)
@@ -202,6 +210,14 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer_channel, eventHandler, exchange_name,
             routing_key, next_channel_id, log, row_delimiter, bind_by_id, hash_exchange, num_queues, stream_cancelled);
+}
+
+
+ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
+{
+    return std::make_shared<WriteBufferToRabbitMQProducer>(parsed_address, routing_key, exchange_name,
+            log, num_consumers, bind_by_id, hash_exchange,
+            row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
 
