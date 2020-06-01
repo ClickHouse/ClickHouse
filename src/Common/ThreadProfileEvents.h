@@ -135,7 +135,9 @@ struct RUsageCounters
     }
 };
 
-#if defined(__linux__)
+// thread_local is disabled in Arcadia, so we have to use a dummy implementation
+// there.
+#if defined(__linux__) && !defined(ARCADIA_BUILD)
 
 struct PerfEventInfo
 {
@@ -177,32 +179,36 @@ struct PerfEventsCounters
     PerfEventValue previous_values[NUMBER_OF_RAW_EVENTS]{};
 
 
-
     static constexpr Float64 FILE_DESCRIPTORS_THRESHOLD = 0.7;
     static constexpr char ALL_EVENTS_NAME[] = "all";
+
 
     void initializeProfileEvents(const std::string & events_list);
     void finalizeProfileEvents(ProfileEvents::Counters & profile_events);
     void closeEventDescriptors();
+    bool processThreadLocalChanges(const std::string & needed_events_list);
+
 
     static Logger * getLogger();
-    bool processThreadLocalChanges(const std::string & needed_events_list);
-    std::vector<size_t> eventIndicesFromString(const std::string & events_list);
+    static std::vector<size_t> eventIndicesFromString(const std::string & events_list);
 };
 
 // Perf event creation is moderately heavy, so we create them once per thread and
 // then reuse.
 extern thread_local PerfEventsCounters current_thread_counters;
 
-
 #else
 
+// Not on Linux, or in Arcadia: the functionality is disabled.
 struct PerfEventsCounters
 {
-    static void initializeProfileEvents(PerfEventsCounters & counters, const std::string & events_list);
-    static void finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events);
-    static void closeEventDescriptors();
+    void initializeProfileEvents(const std::string & /* events_list */) {}
+    void finalizeProfileEvents(ProfileEvents::Counters & /* profile_events */) {}
+    void closeEventDescriptors() {}
 };
+
+// thread_local is disabled in Arcadia, so we are going to use a static dummy.
+extern PerfEventCounters current_thread_counters;
 
 #endif
 
