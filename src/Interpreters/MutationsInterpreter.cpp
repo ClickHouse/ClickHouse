@@ -294,7 +294,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
 
     const ColumnsDescription & columns_desc = storage->getColumns();
-    const IndicesDescription & indices_desc = storage->getIndices();
+    const IndicesDescription & indices_desc = storage->getSecondaryIndices();
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     NameSet updated_columns;

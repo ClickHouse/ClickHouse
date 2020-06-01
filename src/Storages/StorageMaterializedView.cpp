@@ -158,7 +158,7 @@ StorageMaterializedView::StorageMaterializedView(
 
 StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
 {
-    StorageInMemoryMetadata result(getColumns(), getIndices(), getConstraints());
+    StorageInMemoryMetadata result(getColumns(), getSecondaryIndices(), getConstraints());
     result.select = getSelectQuery();
     return result;
 }

@@ -37,13 +37,13 @@ const ColumnsDescription & IStorage::getColumns() const
     return columns;
 }
 
-const IndicesDescription & IStorage::getIndices() const
+const IndicesDescription & IStorage::getSecondaryIndices() const
 {
     return indices;
 }
 
 
-bool IStorage::hasIndices() const
+bool IStorage::hasSecondaryIndices() const
 {
     return !indices.empty();
 }
@@ -295,7 +295,7 @@ void IStorage::setColumns(ColumnsDescription columns_)
     columns = std::move(columns_);
 }
 
-void IStorage::setIndices(IndicesDescription indices_)
+void IStorage::setSecondaryIndices(IndicesDescription indices_)
 {
     indices = std::move(indices_);
 }
@@ -375,7 +375,7 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id,
 
 StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
 {
-    return StorageInMemoryMetadata(getColumns(), getIndices(), getConstraints());
+    return StorageInMemoryMetadata(getColumns(), getSecondaryIndices(), getConstraints());
 }
 
 void IStorage::alter(
@@ -621,7 +621,7 @@ ColumnDependencies IStorage::getColumnDependencies(const NameSet & updated_colum
         return false;
     };
 
-    for (const auto & index : getIndices())
+    for (const auto & index : getSecondaryIndices())
         add_dependent_columns(index.expression, indices_columns);
 
     if (hasRowsTTL())

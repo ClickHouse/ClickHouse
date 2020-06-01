@@ -418,7 +418,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         /// Secondary indices make sense only for MergeTree family of storage engines.
         /// We should not copy them for other storages.
         if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
-            properties.indices = as_storage->getIndices();
+            properties.indices = as_storage->getSecondaryIndices();
 
         properties.constraints = as_storage->getConstraints();
     }

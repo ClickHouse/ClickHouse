@@ -248,7 +248,7 @@ MergeTreeData::MergeTreeData(
 
 StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
 {
-    StorageInMemoryMetadata metadata(getColumns(), getIndices(), getConstraints());
+    StorageInMemoryMetadata metadata(getColumns(), getSecondaryIndices(), getConstraints());
 
     if (isPartitionKeyDefined())
         metadata.partition_by_ast = getPartitionKeyAST()->clone();
@@ -480,7 +480,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         new_primary_key.data_types = std::move(new_primary_key_data_types);
         setPrimaryKey(new_primary_key);
 
-        setIndices(metadata.indices);
+        setSecondaryIndices(metadata.indices);
 
         setConstraints(metadata.constraints);
 
@@ -1357,7 +1357,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     commands.apply(metadata, global_context);
-    if (getIndices().empty() && !metadata.indices.empty() &&
+    if (getSecondaryIndices().empty() && !metadata.indices.empty() &&
             !settings.allow_experimental_data_skipping_indices)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
@@ -1378,7 +1378,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             columns_alter_type_forbidden.insert(col);
     }
 
-    for (const auto & index : getIndices())
+    for (const auto & index : getSecondaryIndices())
     {
         for (const String & col : index.expression->getRequiredColumns())
             columns_alter_type_forbidden.insert(col);
@@ -3062,7 +3062,7 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
         {
             if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(item))
                 return true;
-            for (const auto & index : getIndices())
+            for (const auto & index : getSecondaryIndices())
                 if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(item))
                     return true;
         }
@@ -3071,7 +3071,7 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
     }
     else
     {
-        for (const auto & index : getIndices())
+        for (const auto & index : getSecondaryIndices())
             if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(left_in_operand))
                 return true;
 
