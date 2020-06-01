@@ -248,6 +248,11 @@ int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null
     return getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
 }
 
+std::vector<UInt8> ColumnNullable::compareAt(const IColumn & rhs, size_t rhs_row_num, const std::vector<UInt8> & mask, int nan_direction_hint) const
+{
+    return compareImpl<ColumnNullable>(assert_cast<const ColumnNullable &>(rhs), rhs_row_num, mask, nan_direction_hint);
+}
+
 void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const
 {
     /// Cannot pass limit because of unknown amount of NULLs.

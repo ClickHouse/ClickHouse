@@ -276,6 +276,11 @@ public:
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
 
+    std::vector<UInt8> compareAt(const IColumn & rhs, size_t rhs_row_num, const std::vector<UInt8> & mask, int nan_direction_hint) const override
+    {
+        return this->template compareImpl<Self>(static_cast<const Self &>(rhs), rhs_row_num, mask, nan_direction_hint);
+    }
+
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()
     {

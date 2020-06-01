@@ -220,6 +220,11 @@ public:
         return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n) - 1, rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m) - 1);
     }
 
+    std::vector<UInt8> compareAt(const IColumn & rhs, size_t rhs_row_num, const std::vector<UInt8> & mask, int nan_direction_hint) const override
+    {
+        return compareImpl<ColumnString>(assert_cast<const ColumnString &>(rhs), rhs_row_num, mask, nan_direction_hint);
+    }
+
     /// Variant of compareAt for string comparison with respect of collation.
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const;
 

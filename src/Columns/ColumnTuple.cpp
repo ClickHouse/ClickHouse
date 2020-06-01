@@ -1,4 +1,5 @@
 #include <Columns/ColumnTuple.h>
+#include <Columns/IColumnImpl.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -276,6 +277,11 @@ int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_dire
             return res;
 
     return 0;
+}
+
+std::vector<UInt8> ColumnTuple::compareAt(const IColumn & rhs, size_t rhs_row_num, const std::vector<UInt8> & mask, int nan_direction_hint) const
+{
+    return compareImpl<ColumnTuple>(assert_cast<const ColumnTuple &>(rhs), rhs_row_num, mask, nan_direction_hint);
 }
 
 template <bool positive>

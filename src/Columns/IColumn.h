@@ -244,6 +244,10 @@ public:
       */
     virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 
+
+    virtual std::vector<UInt8> compareAt(const IColumn & rhs, size_t rhs_row_num, const std::vector<UInt8> & mask, int nan_direction_hint) const = 0;
+
+
     /** Returns a permutation that sorts elements of this column,
       *  i.e. perm[i]-th element of source column should be i-th element of sorted column.
       * reverse - reverse ordering (acsending).
@@ -399,7 +403,6 @@ public:
 
     virtual bool lowCardinality() const { return false; }
 
-
     virtual ~IColumn() = default;
     IColumn() = default;
     IColumn(const IColumn &) = default;
@@ -414,6 +417,9 @@ protected:
     /// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
     template <typename Derived>
     std::vector<MutablePtr> scatterImpl(ColumnIndex num_columns, const Selector & selector) const;
+
+    template <typename Derived>
+    std::vector<UInt8> compareImpl(const Derived & rhs, size_t rhs_row_num, const std::vector<UInt8> & mask, int nan_direction_hint) const;
 };
 
 using ColumnPtr = IColumn::Ptr;
