@@ -15,7 +15,8 @@ RabbitMQHandler::RabbitMQHandler(event_base * evbase_, Poco::Logger * log_) :
 void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * message) 
 {
     LOG_ERROR(log, "Library error report: {}", message);
-    if (!connection->ready())
+
+    if (!connection->usable() || !connection->ready())
     {
         std::cerr << "Connection lost, no recovery is possible";
         throw;
