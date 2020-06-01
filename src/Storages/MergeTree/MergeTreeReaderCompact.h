@@ -40,7 +40,6 @@ private:
 
     MergeTreeMarksLoader marks_loader;
 
-    using ColumnPosition = std::optional<size_t>;
     /// Positions of columns in part structure.
     std::vector<ColumnPosition> column_positions;
     /// Should we read full column or only it's offsets
@@ -53,8 +52,6 @@ private:
 
     void readData(const String & name, IColumn & column, const IDataType & type,
         size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets = false);
-
-    ColumnPosition findColumnForOffsets(const String & column_name);
 };
 
 }

@@ -84,11 +84,10 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         if (!position && typeid_cast<const DataTypeArray *>(type.get()))
         {
             /// If array of Nested column is missing in part,
-            ///  we have to read it's offsets if they exists.
+            ///  we have to read its offsets if they exist.
             position = findColumnForOffsets(name);
             read_only_offsets[i] = (position != std::nullopt);
         }
-
 
         column_positions[i] = std::move(position);
     }
@@ -167,23 +166,6 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 
     return read_rows;
 }
-
-MergeTreeReaderCompact::ColumnPosition MergeTreeReaderCompact::findColumnForOffsets(const String & column_name)
-{
-    String table_name = Nested::extractTableName(column_name);
-    for (const auto & part_column : data_part->getColumns())
-    {
-        if (typeid_cast<const DataTypeArray *>(part_column.type.get()))
-        {
-            auto position = data_part->getColumnPosition(part_column.name);
-            if (position && Nested::extractTableName(part_column.name) == table_name)
-                return position;
-        }
-    }
-
-    return {};
-}
-
 
 void MergeTreeReaderCompact::readData(
     const String & name, IColumn & column, const IDataType & type,

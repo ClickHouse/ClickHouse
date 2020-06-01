@@ -29,6 +29,8 @@ public:
 private:
     size_t total_rows_read = 0;
     DataPartInMemoryPtr part_in_memory;
+
+    std::unordered_map<String, size_t> positions_for_offsets;
 };
 
 }

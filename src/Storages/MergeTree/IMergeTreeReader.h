@@ -61,7 +61,7 @@ protected:
     /// Returns actual column type in part, which can differ from table metadata.
     NameAndTypePair getColumnFromPart(const NameAndTypePair & required_column) const;
 
-    void checkNumberOfColumns(size_t columns_num_to_read);
+    void checkNumberOfColumns(size_t columns_num_to_read) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
@@ -78,6 +78,9 @@ protected:
 
     const MergeTreeData & storage;
     MarkRanges all_mark_ranges;
+
+    using ColumnPosition = std::optional<size_t>;
+    ColumnPosition findColumnForOffsets(const String & column_name) const;
 
     friend class MergeTreeRangeReader::DelayedStream;
 
