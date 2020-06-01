@@ -143,7 +143,7 @@ This table contains a single String column called ‘name’ – the name of a d
 Each database that the server knows about has a corresponding entry in the table.
 This system table is used for implementing the `SHOW DATABASES` query.
 
-## system.data_type-families {#system_tables-data_type_families}
+## system.data_type_families {#system_tables-data_type_families}
 
 Contains information about supported [data types](../sql-reference/data-types/).
 
