@@ -124,7 +124,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(signal_context);
 
-    StringRef query_id = CurrentThread::getQueryId();   /// This is signal safe.
+    StringRef query_id = DB::CurrentThread::getQueryId();   /// This is signal safe.
     query_id.size = std::min(query_id.size, max_query_id_size);
 
     DB::writeBinary(sig, out);
@@ -162,7 +162,7 @@ public:
     };
 
     explicit SignalListener(BaseDaemon & daemon_)
-        : log(&Logger::get("BaseDaemon"))
+        : log(&Poco::Logger::get("BaseDaemon"))
         , daemon(daemon_)
     {
     }
@@ -231,7 +231,7 @@ public:
     }
 
 private:
-    Logger * log;
+    Poco::Logger * log;
     BaseDaemon & daemon;
 
     void onTerminate(const std::string & message, UInt32 thread_num) const
@@ -288,9 +288,9 @@ extern "C" void __sanitizer_set_death_callback(void (*)());
 
 static void sanitizerDeathCallback()
 {
-    Logger * log = &Logger::get("BaseDaemon");
+    Poco::Logger * log = &Poco::Logger::get("BaseDaemon");
 
-    StringRef query_id = CurrentThread::getQueryId();   /// This is signal safe.
+    StringRef query_id = DB::CurrentThread::getQueryId();   /// This is signal safe.
 
     {
         std::stringstream message;
@@ -498,10 +498,10 @@ void debugIncreaseOOMScore()
     }
     catch (const Poco::Exception & e)
     {
-        LOG_WARNING(&Logger::root(), "Failed to adjust OOM score: '{}'.", e.displayText());
+        LOG_WARNING(&Poco::Logger::root(), "Failed to adjust OOM score: '{}'.", e.displayText());
         return;
     }
-    LOG_INFO(&Logger::root(), "Set OOM score adjustment to {}", new_score);
+    LOG_INFO(&Poco::Logger::root(), "Set OOM score adjustment to {}", new_score);
 }
 #else
 void debugIncreaseOOMScore() {}
@@ -715,7 +715,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    Logger::root().information("Starting " + std::string{VERSION_FULL}
+    Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
         + " with revision " + std::to_string(ClickHouseRevision::get())
         + ", PID " + std::to_string(getpid()));
 }
@@ -732,7 +732,7 @@ void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
 {
     task_failed = true;
     Poco::AutoPtr<Poco::TaskFailedNotification> fn(_tfn);
-    Logger *lg = &(logger());
+    Poco::Logger * lg = &(logger());
     LOG_ERROR(lg, "Task '{}' failed. Daemon is shutting down. Reason - {}", fn->task()->name(), fn->reason().displayText());
     ServerApplication::terminate();
 }

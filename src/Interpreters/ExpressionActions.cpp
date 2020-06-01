@@ -342,11 +342,7 @@ void ExpressionAction::execute(Block & block, bool dry_run, ExtraBlockPtr & not_
         {
             ColumnNumbers arguments(argument_names.size());
             for (size_t i = 0; i < argument_names.size(); ++i)
-            {
-                if (!block.has(argument_names[i]))
-                    throw Exception("Not found column: '" + argument_names[i] + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
                 arguments[i] = block.getPositionByName(argument_names[i]);
-            }
 
             size_t num_columns_without_result = block.columns();
             block.insert({ nullptr, result_type, result_name});

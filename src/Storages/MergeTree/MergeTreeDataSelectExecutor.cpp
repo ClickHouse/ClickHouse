@@ -84,7 +84,7 @@ namespace ErrorCodes
 
 
 MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_)
-    : data(data_), log(&Logger::get(data.getLogName() + " (SelectExecutor)"))
+    : data(data_), log(&Poco::Logger::get(data.getLogName() + " (SelectExecutor)"))
 {
 }
 

@@ -136,7 +136,7 @@ MergeTreeData::MergeTreeData(
     , relative_data_path(relative_data_path_)
     , broken_part_callback(broken_part_callback_)
     , log_name(table_id_.getNameForLogs())
-    , log(&Logger::get(log_name))
+    , log(&Poco::Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
@@ -423,6 +423,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     }
 
     ASTPtr skip_indices_with_primary_key_expr_list = new_primary_key_expr_list->clone();
+    ASTPtr skip_indices_expr_list = new_primary_key_expr_list->clone();
     ASTPtr skip_indices_with_sorting_key_expr_list = new_sorting_key_expr_list->clone();
 
     MergeTreeIndices new_indices;
@@ -452,6 +453,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
             {
                 skip_indices_with_primary_key_expr_list->children.push_back(expr->clone());
                 skip_indices_with_sorting_key_expr_list->children.push_back(expr->clone());
+                skip_indices_expr_list->children.push_back(expr->clone());
             }
 
             indices_names.insert(new_indices.back()->name);
@@ -461,6 +463,11 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
             skip_indices_with_primary_key_expr_list, all_columns);
     auto new_indices_with_primary_key_expr = ExpressionAnalyzer(
             skip_indices_with_primary_key_expr_list, syntax_primary, global_context).getActions(false);
+
+    auto syntax_indices = SyntaxAnalyzer(global_context).analyze(
+            skip_indices_with_primary_key_expr_list, all_columns);
+    auto new_indices_expr = ExpressionAnalyzer(
+            skip_indices_expr_list, syntax_indices, global_context).getActions(false);
 
     auto syntax_sorting = SyntaxAnalyzer(global_context).analyze(
             skip_indices_with_sorting_key_expr_list, all_columns);
@@ -494,6 +501,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
 
         setConstraints(metadata.constraints);
 
+        skip_indices_expr = new_indices_expr;
         primary_key_and_skip_indices_expr = new_indices_with_primary_key_expr;
         sorting_key_and_skip_indices_expr = new_indices_with_sorting_key_expr;
     }
@@ -2820,8 +2828,7 @@ inline ReservationPtr checkAndReturnReservation(UInt64 expected_size, Reservatio
     if (reservation)
         return reservation;
 
-    throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enough space",
-                    ErrorCodes::NOT_ENOUGH_SPACE);
+    throw Exception(fmt::format("Cannot reserve {}, not enough space", ReadableSize(expected_size)), ErrorCodes::NOT_ENOUGH_SPACE);
 }
 
 }
