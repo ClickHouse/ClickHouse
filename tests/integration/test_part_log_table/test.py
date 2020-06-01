@@ -29,12 +29,11 @@ def test_config_without_part_log(start_cluster):
 def test_config_with_standard_part_log(start_cluster):
     node2.query("CREATE TABLE test_table(word String, value UInt64) ENGINE=MergeTree() Order by value")
     node2.query("INSERT INTO test_table VALUES ('name', 1)")
-    node1.query("SYSTEM FLUSH LOGS")
+    node2.query("SYSTEM FLUSH LOGS")
     assert node2.query("SELECT * FROM system.part_log") != ""
 
 def test_config_with_non_standard_part_log(start_cluster):
     node3.query("CREATE TABLE test_table(word String, value UInt64) ENGINE=MergeTree() Order by value")
     node3.query("INSERT INTO test_table VALUES ('name', 1)")
-    node1.query("SYSTEM FLUSH LOGS")
-    assert node3.query("SELECT * FROM system.table_name") != ""
-
+    node3.query("SYSTEM FLUSH LOGS")
+    assert node3.query("SELECT * FROM system.own_part_log") != ""
