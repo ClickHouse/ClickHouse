@@ -78,8 +78,8 @@ private:
     DataTypePtr & argument_type;
 
 public:
-    AggregateFunctionQuantile(const DataTypePtr & argument_type_, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>({argument_type_}, params)
+    AggregateFunctionQuantile(const DataTypes & argument_types, const Array & params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(argument_types, params)
         , levels(params, returns_many), level(levels.levels[0]), argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
