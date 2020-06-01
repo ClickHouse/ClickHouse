@@ -39,7 +39,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/config_version.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
@@ -76,6 +75,10 @@
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
@@ -1172,7 +1175,7 @@ private:
                 /// Poll for changes after a cancellation check, otherwise it never reached
                 /// because of progress updates from server.
                 if (connection->poll(poll_interval))
-                  break;
+                    break;
             }
 
             if (!receiveAndProcessPacket())
@@ -1579,6 +1582,11 @@ private:
         auto embedded_stack_trace_pos = text.find("Stack trace");
         if (std::string::npos != embedded_stack_trace_pos && !config().getBool("stacktrace", false))
             text.resize(embedded_stack_trace_pos);
+
+        /// If we probably have progress bar, we should add additional newline,
+        /// otherwise exception may display concatenated with the progress bar.
+        if (need_render_progress)
+            std::cerr << '\n';
 
         std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
             << "Code: " << e.code() << ". " << text << std::endl;

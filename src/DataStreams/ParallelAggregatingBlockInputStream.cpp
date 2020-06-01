@@ -82,7 +82,7 @@ Block ParallelAggregatingBlockInputStream::readImpl()
                 input_streams.emplace_back(temporary_inputs.back()->block_in);
             }
 
-            LOG_TRACE(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), formatReadableSizeWithBinarySuffix(files.sum_size_compressed), formatReadableSizeWithBinarySuffix(files.sum_size_uncompressed));
+            LOG_TRACE(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), ReadableSize(files.sum_size_compressed), ReadableSize(files.sum_size_uncompressed));
 
             impl = std::make_unique<MergingAggregatedMemoryEfficientBlockInputStream>(
                 input_streams, params, final, temporary_data_merge_threads, temporary_data_merge_threads);
@@ -178,16 +178,16 @@ void ParallelAggregatingBlockInputStream::execute()
     {
         size_t rows = many_data[i]->size();
         LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
-            threads_data[i].src_rows, rows, formatReadableSizeWithBinarySuffix(threads_data[i].src_bytes),
+            threads_data[i].src_rows, rows, ReadableSize(threads_data[i].src_bytes),
             elapsed_seconds, threads_data[i].src_rows / elapsed_seconds,
-            formatReadableSizeWithBinarySuffix(threads_data[i].src_bytes / elapsed_seconds));
+            ReadableSize(threads_data[i].src_bytes / elapsed_seconds));
 
         total_src_rows += threads_data[i].src_rows;
         total_src_bytes += threads_data[i].src_bytes;
     }
     LOG_TRACE(log, "Total aggregated. {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
-        total_src_rows, formatReadableSizeWithBinarySuffix(total_src_bytes), elapsed_seconds,
-        total_src_rows / elapsed_seconds, formatReadableSizeWithBinarySuffix(total_src_bytes / elapsed_seconds));
+        total_src_rows, ReadableSize(total_src_bytes), elapsed_seconds,
+        total_src_rows / elapsed_seconds, ReadableSize(total_src_bytes / elapsed_seconds));
 
     /// If there was no data, and we aggregate without keys, we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
