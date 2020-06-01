@@ -208,6 +208,45 @@ void PushingToViewsBlockOutputStream::writeSuffix()
 
     std::exception_ptr first_exception;
 
+    const Settings & settings = context.getSettingsRef();
+    bool parallel_processing = false;
+
+    /// Run writeSuffix() for views in separate thread pool.
+    /// In could have been done in PushingToViewsBlockOutputStream::process, however
+    /// it is not good if insert into main table fail but into view succeed.
+    if (settings.parallel_view_processing && views.size() > 1)
+    {
+        parallel_processing = true;
+
+        // Push to views concurrently if enabled, and more than one view is attached
+        ThreadPool pool(std::min(size_t(settings.max_threads), views.size()));
+        auto thread_group = CurrentThread::getGroup();
+
+        for (auto & view : views)
+        {
+            if (view.exception)
+                continue;
+
+            pool.scheduleOrThrowOnError([thread_group, &view]
+            {
+                setThreadName("PushingToViews");
+                if (thread_group)
+                    CurrentThread::attachToIfDetached(thread_group);
+
+                try
+                {
+                    view.out->writeSuffix();
+                }
+                catch (...)
+                {
+                    view.exception = std::current_exception();
+                }
+            });
+        }
+        // Wait for concurrent view processing
+        pool.wait();
+    }
+
     for (auto & view : views)
     {
         if (view.exception)
@@ -217,6 +256,9 @@ void PushingToViewsBlockOutputStream::writeSuffix()
 
             continue;
         }
+
+        if (parallel_processing)
+            continue;
 
         try
         {
