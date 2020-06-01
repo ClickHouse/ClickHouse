@@ -176,6 +176,7 @@ SRCS(
     StorageXDBC.cpp
     transformQueryForExternalDatabase.cpp
     VirtualColumnUtils.cpp
+    TTLDescription.cpp
 )
 
 END()

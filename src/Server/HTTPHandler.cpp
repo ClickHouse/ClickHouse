@@ -225,7 +225,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
 HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
     : server(server_)
-    , log(&Logger::get(name))
+    , log(&Poco::Logger::get(name))
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -403,8 +403,6 @@ void HTTPHandler::processQuery(
     {
         used_output.out_maybe_delayed_and_compressed = used_output.out_maybe_compressed;
     }
-
-    std::unique_ptr<ReadBuffer> in_post_raw = std::make_unique<ReadBufferFromIStream>(istr);
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");

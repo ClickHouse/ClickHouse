@@ -128,7 +128,7 @@ public:
     ASTPtr remote_table_function_ptr;
 
     std::unique_ptr<Context> global_context;
-    Logger * log;
+    Poco::Logger * log;
 
     /// Used to implement TableFunctionRemote.
     std::shared_ptr<Cluster> owned_cluster;

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Storages/MergeTree/PartDestinationType.h>
-#include <Storages/MergeTree/TTLMode.h>
+#include <Storages/DataDestinationType.h>
+#include <Storages/TTLMode.h>
 
 
 namespace DB
@@ -14,13 +14,13 @@ class ASTTTLElement : public IAST
 {
 public:
     TTLMode mode;
-    PartDestinationType destination_type;
+    DataDestinationType destination_type;
     String destination_name;
 
     ASTs group_by_key;
     std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
 
-    ASTTTLElement(TTLMode mode_, PartDestinationType destination_type_, const String & destination_name_)
+    ASTTTLElement(TTLMode mode_, DataDestinationType destination_type_, const String & destination_name_)
         : mode(mode_)
         , destination_type(destination_type_)
         , destination_name(destination_name_)

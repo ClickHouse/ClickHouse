@@ -128,11 +128,11 @@ Block Aggregator::getHeader(bool final) const
 
         if (final)
         {
-            for (size_t i = 0; i < params.aggregates_size; ++i)
+            for (const auto & aggregate : params.aggregates)
             {
-                auto & elem = res.getByPosition(params.keys_size + i);
+                auto & elem = res.getByName(aggregate.column_name);
 
-                elem.type = params.aggregates[i].function->getReturnType();
+                elem.type = aggregate.function->getReturnType();
                 elem.column = elem.type->createColumn();
             }
         }
@@ -768,14 +768,14 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
         " ({} rows/sec., {}/sec. uncompressed, {}/sec. compressed)",
         elapsed_seconds,
         rows,
-        formatReadableSizeWithBinarySuffix(uncompressed_bytes),
-        formatReadableSizeWithBinarySuffix(compressed_bytes),
+        ReadableSize(uncompressed_bytes),
+        ReadableSize(compressed_bytes),
         uncompressed_bytes / rows,
         compressed_bytes / rows,
         uncompressed_bytes / compressed_bytes,
         rows / elapsed_seconds,
-        formatReadableSizeWithBinarySuffix(uncompressed_bytes / elapsed_seconds),
-        formatReadableSizeWithBinarySuffix(compressed_bytes / elapsed_seconds));
+        ReadableSize(uncompressed_bytes / elapsed_seconds),
+        ReadableSize(compressed_bytes / elapsed_seconds));
 }
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 {
@@ -871,7 +871,7 @@ void Aggregator::writeToTemporaryFileImpl(
     /// `data_variants` will not destroy them in the destructor, they are now owned by ColumnAggregateFunction objects.
     data_variants.aggregator = nullptr;
 
-    LOG_TRACE(log, "Max size of temporary block: {} rows, {}.", max_temporary_block_size_rows, formatReadableSizeWithBinarySuffix(max_temporary_block_size_bytes));
+    LOG_TRACE(log, "Max size of temporary block: {} rows, {}.", max_temporary_block_size_rows, ReadableSize(max_temporary_block_size_bytes));
 }
 
 
@@ -943,9 +943,9 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
     size_t rows = result.sizeWithoutOverflowRow();
 
     LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
-        src_rows, rows, formatReadableSizeWithBinarySuffix(src_bytes),
+        src_rows, rows, ReadableSize(src_bytes),
         elapsed_seconds, src_rows / elapsed_seconds,
-        formatReadableSizeWithBinarySuffix(src_bytes / elapsed_seconds));
+        ReadableSize(src_bytes / elapsed_seconds));
 }
 
 
@@ -1060,7 +1060,8 @@ Block Aggregator::prepareBlockAndFill(
     {
         if (!final)
         {
-            aggregate_columns[i] = header.safeGetByPosition(i + params.keys_size).type->createColumn();
+            const auto & aggregate_column_name = params.aggregates[i].column_name;
+            aggregate_columns[i] = header.getByName(aggregate_column_name).type->createColumn();
 
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
             ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
@@ -1096,10 +1097,11 @@ Block Aggregator::prepareBlockAndFill(
 
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
+        const auto & aggregate_column_name = params.aggregates[i].column_name;
         if (final)
-            res.getByPosition(i + params.keys_size).column = std::move(final_aggregate_columns[i]);
+            res.getByName(aggregate_column_name).column = std::move(final_aggregate_columns[i]);
         else
-            res.getByPosition(i + params.keys_size).column = std::move(aggregate_columns[i]);
+            res.getByName(aggregate_column_name).column = std::move(aggregate_columns[i]);
     }
 
     /// Change the size of the columns-constants in the block.
@@ -1313,9 +1315,9 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     double elapsed_seconds = watch.elapsedSeconds();
     LOG_TRACE(log,
         "Converted aggregated data to blocks. {} rows, {} in {} sec. ({} rows/sec., {}/sec.)",
-        rows, formatReadableSizeWithBinarySuffix(bytes),
+        rows, ReadableSize(bytes),
         elapsed_seconds, rows / elapsed_seconds,
-        formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds));
+        ReadableSize(bytes / elapsed_seconds));
 
     return blocks;
 }
@@ -1565,7 +1567,7 @@ public:
 
     ~MergingAndConvertingBlockInputStream() override
     {
-        LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
+        LOG_TRACE(&Poco::Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
 
         /// We need to wait for threads to finish before destructor of 'parallel_merge_data',
         ///  because the threads access 'parallel_merge_data'.
@@ -1824,7 +1826,10 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
         key_columns[i] = block.safeGetByPosition(i).column.get();
 
     for (size_t i = 0; i < params.aggregates_size; ++i)
-        aggregate_columns[i] = &typeid_cast<const ColumnAggregateFunction &>(*block.safeGetByPosition(params.keys_size + i).column).getData();
+    {
+        const auto & aggregate_column_name = params.aggregates[i].column_name;
+        aggregate_columns[i] = &typeid_cast<const ColumnAggregateFunction &>(*block.getByName(aggregate_column_name).column).getData();
+    }
 
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
 
@@ -1900,7 +1905,10 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.aggregates_size; ++i)
-        aggregate_columns[i] = &typeid_cast<const ColumnAggregateFunction &>(*block.safeGetByPosition(params.keys_size + i).column).getData();
+    {
+        const auto & aggregate_column_name = params.aggregates[i].column_name;
+        aggregate_columns[i] = &typeid_cast<const ColumnAggregateFunction &>(*block.getByName(aggregate_column_name).column).getData();
+    }
 
     AggregatedDataWithoutKey & res = result.without_key;
     if (!res)
@@ -2178,9 +2186,9 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     size_t bytes = block.bytes();
     double elapsed_seconds = watch.elapsedSeconds();
     LOG_TRACE(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({} rows/sec., {}/sec.)",
-        rows, formatReadableSizeWithBinarySuffix(bytes),
+        rows, ReadableSize(bytes),
         elapsed_seconds, rows / elapsed_seconds,
-        formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds));
+        ReadableSize(bytes / elapsed_seconds));
 
     if (isCancelled())
         return {};

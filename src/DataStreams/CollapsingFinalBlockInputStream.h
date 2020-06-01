@@ -168,7 +168,7 @@ private:
     const SortDescription description;
     String sign_column_name;
 
-    Logger * log = &Logger::get("CollapsingFinalBlockInputStream");
+    Poco::Logger * log = &Poco::Logger::get("CollapsingFinalBlockInputStream");
 
     bool first = true;
 
