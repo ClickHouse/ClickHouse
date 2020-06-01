@@ -261,7 +261,7 @@ public:
             if (parent.right_table_keys.has(name))
             {
                 key_pos = i;
-                auto & column = parent.right_table_keys.getByName(name);
+                const auto & column = parent.right_table_keys.getByName(name);
                 restored_block.insert(column);
             }
             else
@@ -269,7 +269,7 @@ public:
                 size_t pos = saved_block.getPositionByName(name);
                 column_indices[i] = pos;
 
-                auto & column = saved_block.getByPosition(pos);
+                const auto & column = saved_block.getByPosition(pos);
                 restored_block.insert(column);
             }
         }
