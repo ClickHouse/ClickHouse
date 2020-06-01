@@ -1,7 +1,5 @@
 #include "ThreadProfileEvents.h"
 
-#if defined(__linux__)
-
 #include "TaskStatsInfoGetter.h"
 #include "ProcfsMetricsProvider.h"
 #include "hasLinuxCapability.h"
@@ -21,6 +19,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 
+#if defined(__linux__)
 
 namespace DB
 {
@@ -118,6 +117,10 @@ void TasksStatsCounters::incrementProfileEvents(const ::taskstats & prev, const 
     profile_events.increment(ProfileEvents::OSReadBytes, safeDiff(prev.read_bytes, curr.read_bytes));
     profile_events.increment(ProfileEvents::OSWriteBytes, safeDiff(prev.write_bytes, curr.write_bytes));
 }
+
+#endif
+
+#if defined(__linux__) && !defined(ARCADIA_BUILD)
 
 thread_local PerfEventsCounters current_thread_counters;
 
@@ -279,7 +282,11 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     }
 
     if (events_to_open.empty())
+    {
+        // FIXME remove this
+        LOG_TRACE("No perf events to open, list='{}'", needed_events_list);
         return true;
+    }
 
     // check permissions
     // cat /proc/sys/kernel/perf_event_paranoid
@@ -383,6 +390,9 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
 
 void PerfEventsCounters::initializeProfileEvents(const std::string & events_list)
 {
+    // FIXME remove this
+    LOG_TRACE("Initialize perf events\n");
+
     if (!processThreadLocalChanges(events_list))
         return;
 
@@ -400,9 +410,8 @@ void PerfEventsCounters::initializeProfileEvents(const std::string & events_list
 void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile_events)
 {
     // Disable all perf events.
-    for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
+    for (auto fd : thread_events_descriptors_holder.descriptors)
     {
-        int fd = thread_events_descriptors_holder.descriptors[i];
         if (fd == -1)
             continue;
         disablePerfEvent(fd);
@@ -485,11 +494,7 @@ void PerfDescriptorsHolder::releaseResources()
 
 #else
 
-namespace DB
-{
-    void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters &, const std::string &) {}
-    void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters &, ProfileEvents::Counters &) {}
-    void PerfEventsCounters::closeEventDescriptors() {}
-}
+// Not on Linux or in Arcadia: the functionality is disabled.
+PerfEventCounters current_thread_counters;
 
 #endif
