@@ -501,7 +501,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         }
 
         if (metadata_diff.skip_indices_changed)
-            metadata.indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, global_context);
+            metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, global_context);
 
         if (metadata_diff.constraints_changed)
             metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
@@ -3319,8 +3319,8 @@ void StorageReplicatedMergeTree::alter(
         if (ast_to_str(future_metadata.ttl_for_table_ast) != ast_to_str(current_metadata.ttl_for_table_ast))
             future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.ttl_for_table_ast);
 
-        String new_indices_str = future_metadata.indices.toString();
-        if (new_indices_str != current_metadata.indices.toString())
+        String new_indices_str = future_metadata.secondary_indices.toString();
+        if (new_indices_str != current_metadata.secondary_indices.toString())
             future_metadata_in_zk.skip_indices = new_indices_str;
 
         String new_constraints_str = future_metadata.constraints.toString();

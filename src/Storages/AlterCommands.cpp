@@ -332,8 +332,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
     else if (type == ADD_INDEX)
     {
         if (std::any_of(
-                metadata.indices.cbegin(),
-                metadata.indices.cend(),
+                metadata.secondary_indices.cbegin(),
+                metadata.secondary_indices.cend(),
                 [this](const auto & index)
                 {
                     return index.name == index_name;
@@ -346,47 +346,47 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
                                 ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        auto insert_it = metadata.indices.end();
+        auto insert_it = metadata.secondary_indices.end();
 
         if (!after_index_name.empty())
         {
             insert_it = std::find_if(
-                    metadata.indices.begin(),
-                    metadata.indices.end(),
+                    metadata.secondary_indices.begin(),
+                    metadata.secondary_indices.end(),
                     [this](const auto & index)
                     {
                         return index.name == after_index_name;
                     });
 
-            if (insert_it == metadata.indices.end())
+            if (insert_it == metadata.secondary_indices.end())
                 throw Exception("Wrong index name. Cannot find index " + backQuote(after_index_name) + " to insert after.",
                         ErrorCodes::BAD_ARGUMENTS);
 
             ++insert_it;
         }
 
-        metadata.indices.emplace(insert_it, IndexDescription::getIndexFromAST(index_decl, metadata.columns, context));
+        metadata.secondary_indices.emplace(insert_it, IndexDescription::getIndexFromAST(index_decl, metadata.columns, context));
     }
     else if (type == DROP_INDEX)
     {
         if (!partition && !clear)
         {
             auto erase_it = std::find_if(
-                    metadata.indices.begin(),
-                    metadata.indices.end(),
+                    metadata.secondary_indices.begin(),
+                    metadata.secondary_indices.end(),
                     [this](const auto & index)
                     {
                         return index.name == index_name;
                     });
 
-            if (erase_it == metadata.indices.end())
+            if (erase_it == metadata.secondary_indices.end())
             {
                 if (if_exists)
                     return;
                 throw Exception("Wrong index name. Cannot find index " + backQuote(index_name) + " to drop.", ErrorCodes::BAD_ARGUMENTS);
             }
 
-            metadata.indices.erase(erase_it);
+            metadata.secondary_indices.erase(erase_it);
         }
     }
     else if (type == ADD_CONSTRAINT)

@@ -144,7 +144,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
     const ColumnsDescription & getColumns() const; /// returns combined set of columns
     void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
 
-    void setSecondaryIndices(IndicesDescription indices_);
+    void setSecondaryIndices(IndicesDescription secondary_indices_);
     const IndicesDescription & getSecondaryIndices() const;
     /// Has at least one non primary index
     bool hasSecondaryIndices() const;
@@ -200,7 +200,7 @@ private:
     mutable std::mutex id_mutex;
 
     ColumnsDescription columns;
-    IndicesDescription indices;
+    IndicesDescription secondary_indices;
     ConstraintsDescription constraints;
 
     StorageMetadataKeyField partition_key;
