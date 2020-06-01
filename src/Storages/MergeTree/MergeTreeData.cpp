@@ -425,11 +425,11 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     ASTPtr skip_indices_with_primary_key_expr_list = new_primary_key_expr_list->clone();
     ASTPtr skip_indices_with_sorting_key_expr_list = new_sorting_key_expr_list->clone();
 
-    if (!metadata.indices.empty())
+    if (!metadata.secondary_indices.empty())
     {
         std::set<String> indices_names;
 
-        for (const auto & index : metadata.indices)
+        for (const auto & index : metadata.secondary_indices)
         {
 
             MergeTreeIndexFactory::instance().validate(index, attach);
@@ -480,7 +480,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         new_primary_key.data_types = std::move(new_primary_key_data_types);
         setPrimaryKey(new_primary_key);
 
-        setSecondaryIndices(metadata.indices);
+        setSecondaryIndices(metadata.secondary_indices);
 
         setConstraints(metadata.constraints);
 
@@ -1357,7 +1357,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     commands.apply(metadata, global_context);
-    if (getSecondaryIndices().empty() && !metadata.indices.empty() &&
+    if (getSecondaryIndices().empty() && !metadata.secondary_indices.empty() &&
             !settings.allow_experimental_data_skipping_indices)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);

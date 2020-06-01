@@ -39,13 +39,13 @@ const ColumnsDescription & IStorage::getColumns() const
 
 const IndicesDescription & IStorage::getSecondaryIndices() const
 {
-    return indices;
+    return secondary_indices;
 }
 
 
 bool IStorage::hasSecondaryIndices() const
 {
-    return !indices.empty();
+    return !secondary_indices.empty();
 }
 
 const ConstraintsDescription & IStorage::getConstraints() const
@@ -295,9 +295,9 @@ void IStorage::setColumns(ColumnsDescription columns_)
     columns = std::move(columns_);
 }
 
-void IStorage::setSecondaryIndices(IndicesDescription indices_)
+void IStorage::setSecondaryIndices(IndicesDescription secondary_indices_)
 {
-    indices = std::move(indices_);
+    secondary_indices = std::move(secondary_indices_);
 }
 
 void IStorage::setConstraints(ConstraintsDescription constraints_)
