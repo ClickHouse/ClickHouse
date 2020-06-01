@@ -20,7 +20,7 @@ namespace ErrorCodes
 };
 
 
-IndexDescription IndexDescription::getSkipIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context)
+IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context)
 {
     const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
@@ -103,7 +103,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
     ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     for (const auto & index : list->children)
-        result.emplace_back(IndexDescription::getSkipIndexFromAST(index, columns, context));
+        result.emplace_back(IndexDescription::getIndexFromAST(index, columns, context));
 
     return result;
 }

@@ -401,7 +401,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
                 properties.indices.push_back(
-                    IndexDescription::getSkipIndexFromAST(index->clone(), properties.columns, context));
+                    IndexDescription::getIndexFromAST(index->clone(), properties.columns, context));
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints);
     }

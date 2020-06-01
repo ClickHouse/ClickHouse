@@ -365,7 +365,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
             ++insert_it;
         }
 
-        metadata.indices.emplace(insert_it, IndexDescription::getSkipIndexFromAST(index_decl, metadata.columns, context));
+        metadata.indices.emplace(insert_it, IndexDescription::getIndexFromAST(index_decl, metadata.columns, context));
     }
     else if (type == DROP_INDEX)
     {
