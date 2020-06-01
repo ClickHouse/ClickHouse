@@ -27,8 +27,6 @@ String volumeTypeToString(VolumeType t)
             return "SINGLE_DISK";
         case VolumeType::UNKNOWN:
             return "UNKNOWN";
-        default:
-            throw Exception("Unknown volume type, please add it to DB::volumeTypeToString", ErrorCodes::UNKNOWN_VOLUME_TYPE);
     }
 }
 
