@@ -339,6 +339,17 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
     max = NearestFieldType<T>(cur_max, scale);
 }
 
+TypeIndex columnDecimalDataType(const IColumn * column)
+{
+    if (checkColumn<ColumnDecimal<Decimal32>>(column))
+        return TypeIndex::Decimal32;
+    else if (checkColumn<ColumnDecimal<Decimal64>>(column))
+        return TypeIndex::Decimal64;
+    else if (checkColumn<ColumnDecimal<Decimal128>>(column))
+        return TypeIndex::Decimal128;
+    return TypeIndex::Nothing;
+}
+
 template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;

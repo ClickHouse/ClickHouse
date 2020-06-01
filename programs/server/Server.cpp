@@ -89,7 +89,7 @@ namespace CurrentMetrics
 namespace
 {
 
-void setupTmpPath(Logger * log, const std::string & path)
+void setupTmpPath(Poco::Logger * log, const std::string & path)
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
@@ -212,7 +212,7 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
 
 int Server::main(const std::vector<std::string> & /*args*/)
 {
-    Logger * log = &logger();
+    Poco::Logger * log = &logger();
     UseSSL use_ssl;
 
     ThreadStatus thread_status;
@@ -235,6 +235,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (ThreadFuzzer::instance().isEffective())
         LOG_WARNING(log, "ThreadFuzzer is enabled. Application will run slowly and unstable.");
+
+#if !defined(NDEBUG) || !defined(__OPTIMIZE__)
+    LOG_WARNING(log, "Server was built in debug mode. It will work slowly.");
+#endif
+
+#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
+    LOG_WARNING(log, "Server was built with sanitizer. It will work slowly.");
+#endif
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
