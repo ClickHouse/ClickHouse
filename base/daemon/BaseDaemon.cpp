@@ -317,7 +317,7 @@ static void sanitizerDeathCallback()
         std::stringstream bare_stacktrace;
         bare_stacktrace << "Stack trace:";
         for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-            bare_stacktrace << ' ' << stack_trace.getFrames()[i];
+            bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
 
         LOG_FATAL(log, bare_stacktrace.str());
     }
