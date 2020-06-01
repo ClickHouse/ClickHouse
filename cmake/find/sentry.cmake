@@ -6,7 +6,9 @@ if (NOT EXISTS "${SENTRY_INCLUDE_DIR}/sentry.h")
 endif ()
 
 if (NOT OS_FREEBSD AND NOT UNBUNDLED)
-    cmake_policy (SET CMP0077 NEW)
+    if (POLICY CMP0077)
+        cmake_policy (SET CMP0077 NEW)
+    endif ()
     option (USE_SENTRY "Use Sentry" ON)
 
     set (BUILD_SHARED_LIBS OFF)
