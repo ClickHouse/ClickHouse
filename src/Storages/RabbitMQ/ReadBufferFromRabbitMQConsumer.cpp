@@ -207,9 +207,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
             if (row_delimiter != '\0')
                 message_received += row_delimiter;
 
-            /* Needed because this vector can be used at the same time by another thread in nextImpl() (below).
-             * So we lock mutex here and there so that they do not use it asynchronosly.
-             */
+            /// Needed to avoid data race because this vector can be used at the same time by another thread in nextImpl() (below).
             std::lock_guard lock(mutex);
             received.push_back(message_received);
         }
@@ -255,9 +253,7 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
 
         messages.clear();
 
-        /* Needed because this vector can be used at the same time by another thread in onReceived callback (above).
-         * So we lock mutex here and there so that they do not use it asynchronosly.
-         */
+        /// Needed to avoid data race because this vector can be used at the same time by another thread in onReceived callback (above).
         std::lock_guard lock(mutex);
 
         messages.swap(received);

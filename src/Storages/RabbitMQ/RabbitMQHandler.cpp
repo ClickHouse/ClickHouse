@@ -44,7 +44,6 @@ void RabbitMQHandler::start(std::atomic<bool> & check_param)
 
 void RabbitMQHandler::stop()
 {
-    std::lock_guard lock(mutex);
     event_base_loopbreak(evbase);
 }
 
