@@ -40,7 +40,6 @@ namespace std
 #endif
 
 #include <DataStreams/CreatingSetsBlockInputStream.h>
-#include <DataStreams/ReverseBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
