@@ -7,10 +7,14 @@
 #include <Core/SortDescription.h>
 
 #include <DataStreams/MergeSortingBlockInputStream.h>
-#include <DataStreams/PartialSortingBlockInputStream.h>
-#include <DataStreams/FinishSortingBlockInputStream.h>
 
 #include <Interpreters/sortBlock.h>
+#include <Processors/Transforms/FinishSortingTransform.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/QueryPipeline.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <Processors/Transforms/MergeSortingTransform.h>
 
 
 using namespace DB;
@@ -33,7 +37,11 @@ int main(int argc, char ** argv)
         size_t m = argc >= 2 ? std::stol(argv[1]) : 2;
         size_t n = argc >= 3 ? std::stol(argv[2]) : 10;
 
-        Blocks blocks;
+        SortDescription sort_descr;
+        sort_descr.emplace_back("col1", 1, 1);
+        Block block_header;
+
+        Pipes sources;
         for (size_t t = 0; t < m; ++t)
         {
             Block block;
@@ -53,28 +61,35 @@ int main(int argc, char ** argv)
                 column.column = std::move(col);
                 block.insert(column);
             }
-            blocks.push_back(block);
+
+            if (!block_header)
+                block_header = block.cloneEmpty();
+
+            sortBlock(block, sort_descr);
+            sources.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<OneBlockInputStream>(block)));
         }
 
-        SortDescription sort_descr;
-        sort_descr.emplace_back("col1", 1, 1);
+        QueryPipeline pipeline;
+        pipeline.init(std::move(sources));
 
-        for (auto & block : blocks)
-            sortBlock(block, sort_descr);
-
-        BlockInputStreamPtr stream = std::make_shared<MergeSortingBlocksBlockInputStream>(blocks, sort_descr, n);
+        pipeline.addPipe({std::make_shared<MergeSortingTransform>(pipeline.getHeader(), sort_descr, n, 0, 0, 0, nullptr, 0)});
 
         SortDescription sort_descr_final;
         sort_descr_final.emplace_back("col1", 1, 1);
         sort_descr_final.emplace_back("col2", 1, 1);
 
-        stream = std::make_shared<FinishSortingBlockInputStream>(stream, sort_descr, sort_descr_final, n, 0);
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<FinishSortingTransform>(header, sort_descr, sort_descr_final, n, 0);
+        });
+
+        auto stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
         {
             Stopwatch stopwatch;
             stopwatch.start();
 
-            Block res_block = blocks[0].cloneEmpty();
+            Block res_block = block_header;
 
             while (Block block = stream->read())
             {

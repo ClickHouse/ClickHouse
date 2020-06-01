@@ -3,7 +3,6 @@
 #include <DataStreams/MergingAggregatedBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/copyData.h>
-#include <DataStreams/ConvertColumnLowCardinalityToFullBlockInputStream.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
