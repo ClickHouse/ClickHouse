@@ -201,7 +201,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , storage(storage_)
     , input(input_)
     , input_pipe(std::move(input_pipe_))
-    , log(&Logger::get("InterpreterSelectQuery"))
+    , log(&Poco::Logger::get("InterpreterSelectQuery"))
 {
     checkStackSize();
 
@@ -1334,15 +1334,18 @@ void InterpreterSelectQuery::executeFetchColumns(
               * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
               *  additionally on each remote server, because these limits are checked per block of data processed,
               *  and remote servers may process way more blocks of data than are received by initiator.
+              *
+              * The limits to throttle maximum execution speed is also checked on all servers.
               */
             if (options.to_stage == QueryProcessingStage::Complete)
             {
                 limits.speed_limits.min_execution_rps = settings.min_execution_speed;
-                limits.speed_limits.max_execution_rps = settings.max_execution_speed;
                 limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
-                limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
-                limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
             }
+
+            limits.speed_limits.max_execution_rps = settings.max_execution_speed;
+            limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
+            limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
 
             auto quota = context->getQuota();
 

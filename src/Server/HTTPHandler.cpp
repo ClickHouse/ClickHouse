@@ -225,7 +225,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
 HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
     : server(server_)
-    , log(&Logger::get(name))
+    , log(&Poco::Logger::get(name))
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }

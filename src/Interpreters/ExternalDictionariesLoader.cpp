@@ -15,7 +15,7 @@ namespace DB
 
 /// Must not acquire Context lock in constructor to avoid possibility of deadlocks.
 ExternalDictionariesLoader::ExternalDictionariesLoader(Context & context_)
-    : ExternalLoader("external dictionary", &Logger::get("ExternalDictionariesLoader"))
+    : ExternalLoader("external dictionary", &Poco::Logger::get("ExternalDictionariesLoader"))
     , context(context_)
 {
     setConfigSettings({"dictionary", "name", "database"});

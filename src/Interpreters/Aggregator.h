@@ -1048,7 +1048,7 @@ protected:
 
     std::mutex mutex;
 
-    Logger * log = &Logger::get("Aggregator");
+    Poco::Logger * log = &Poco::Logger::get("Aggregator");
 
     /// Returns true if you can abort the current task.
     CancellationHook isCancelled;

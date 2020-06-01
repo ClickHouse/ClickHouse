@@ -269,7 +269,7 @@ private:
 
     std::mutex mutex;
 
-    Logger * log = nullptr;
+    Poco::Logger * log = nullptr;
 };
 
 

@@ -60,7 +60,7 @@ private:
     std::atomic<bool> executed {false};
     std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
 
-    Logger * log = &Logger::get("ParallelAggregatingBlockInputStream");
+    Poco::Logger * log = &Poco::Logger::get("ParallelAggregatingBlockInputStream");
 
 
     ManyAggregatedDataVariants many_data;
