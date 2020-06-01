@@ -44,6 +44,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 #if USE_SENTRY
     bool enabled = false;
     bool debug = config.getBool("send_crash_reports.debug", false);
+    auto logger = &Poco::Logger::get("SentryWriter");
     if (config.getBool("send_crash_reports.enabled", false))
     {
         if (debug || (strlen(VERSION_OFFICIAL) > 0))
@@ -89,7 +90,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
             anonymize = config.getBool("send_crash_reports.anonymize", false);
             const std::string& anonymize_status = anonymize ? " (anonymized)" : "";
             LOG_INFO(
-                &Logger::get("SentryWriter"),
+                logger,
                 "Sending crash reports is initialized with {} endpoint and {} temp folder{}",
                 endpoint,
                 temp_folder_path,
@@ -97,12 +98,12 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
         }
         else
         {
-            LOG_WARNING(&Logger::get("SentryWriter"), "Sending crash reports failed to initialized with {} status", init_status);
+            LOG_WARNING(logger, "Sending crash reports failed to initialized with {} status", init_status);
         }
     }
     else
     {
-        LOG_INFO(&Logger::get("SentryWriter"), "Sending crash reports is disabled");
+        LOG_INFO(logger, "Sending crash reports is disabled");
     }
 #endif
 }
@@ -120,6 +121,7 @@ void SentryWriter::shutdown()
 void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace)
 {
 #if USE_SENTRY
+    auto logger = &Poco::Logger::get("SentryWriter");
     if (initialized)
     {
         const std::string & error_message = signalToErrorMessage(sig, info, context);
@@ -181,13 +183,13 @@ void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & c
 
         sentry_value_set_by_key(event, "threads", threads);
 
-        LOG_INFO(&Logger::get("SentryWriter"), "Sending crash report");
+        LOG_INFO(logger, "Sending crash report");
         sentry_capture_event(event);
         shutdown();
     }
     else
     {
-        LOG_INFO(&Logger::get("SentryWriter"), "Not sending crash report");
+        LOG_INFO(logger, "Not sending crash report");
     }
 #endif
 }
