@@ -101,7 +101,7 @@ private:
 
 private:
     Context & context;
-    Logger * log;
+    Poco::Logger * log;
     std::unique_ptr<Context> current_context;
 
     std::string host_fqdn;      /// current host domain name

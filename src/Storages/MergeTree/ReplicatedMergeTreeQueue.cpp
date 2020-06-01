@@ -116,7 +116,7 @@ void ReplicatedMergeTreeQueue::initialize(
     zookeeper_path = zookeeper_path_;
     replica_path = replica_path_;
     logger_name = logger_name_;
-    log = &Logger::get(logger_name);
+    log = &Poco::Logger::get(logger_name);
 
     addVirtualParts(parts);
 }
@@ -1030,11 +1030,18 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
         if (!ignore_max_size && sum_parts_size_in_bytes > max_source_parts_size)
         {
-            String reason = "Not executing log entry " + entry.typeToString() + " for part " + entry.new_part_name
-                + " because source parts size (" + formatReadableSizeWithBinarySuffix(sum_parts_size_in_bytes)
-                + ") is greater than the current maximum (" + formatReadableSizeWithBinarySuffix(max_source_parts_size) + ").";
-            LOG_DEBUG(log, reason);
-            out_postpone_reason = reason;
+            const char * format_str = "Not executing log entry {} for part {}"
+                " because source parts size ({}) is greater than the current maximum ({}).";
+
+            LOG_DEBUG(log, format_str,
+                entry.typeToString(), entry.new_part_name,
+                ReadableSize(sum_parts_size_in_bytes), ReadableSize(max_source_parts_size));
+
+            /// Copy-paste of above because we need structured logging (instead of already formatted message).
+            out_postpone_reason = fmt::format(format_str,
+                entry.typeToString(), entry.new_part_name,
+                ReadableSize(sum_parts_size_in_bytes), ReadableSize(max_source_parts_size));
+
             return false;
         }
     }

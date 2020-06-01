@@ -5,10 +5,10 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/queryToString.h>
 
 namespace DB
 {
+
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(
     const ColumnsDescription & columns_,
@@ -137,5 +137,6 @@ StorageMetadataKeyField StorageMetadataKeyField::getKeyFromAST(const ASTPtr & de
 
     return result;
 }
+
 
 }

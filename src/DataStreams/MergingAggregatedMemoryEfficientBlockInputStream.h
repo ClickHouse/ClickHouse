@@ -96,7 +96,7 @@ private:
     std::atomic<bool> has_overflows {false};
     int current_bucket_num = -1;
 
-    Logger * log = &Logger::get("MergingAggregatedMemoryEfficientBlockInputStream");
+    Poco::Logger * log = &Poco::Logger::get("MergingAggregatedMemoryEfficientBlockInputStream");
 
 
     struct Input
