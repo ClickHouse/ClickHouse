@@ -792,13 +792,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (need_remove_expired_values)
         merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, new_data_part, time_of_merge, force_ttl);
 
-    const auto & index_factory = MergeTreeIndexFactory::instance();
+
     if (data.hasSecondaryIndices())
     {
-        merged_stream = std::make_shared<ExpressionBlockInputStream>(merged_stream, data.getPrimaryKeyAndSkipIndicesExpression());
+        const auto & indices = data.getSecondaryIndices();
+        merged_stream = std::make_shared<ExpressionBlockInputStream>(merged_stream, indices.getSingleExpressionForIndices(data.getColumns(), data.global_context));
         merged_stream = std::make_shared<MaterializingBlockInputStream>(merged_stream);
     }
 
+    const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream to{
         new_data_part,
         merging_columns,

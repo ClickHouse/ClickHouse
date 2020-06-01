@@ -108,4 +108,15 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
     return result;
 }
 
+ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const ColumnsDescription & columns, const Context & context) const
+{
+    ASTPtr combined_expr_list = std::make_shared<ASTExpressionList>();
+    for (const auto & index : *this)
+        for (const auto & index_expr : index.expression_list_ast->children)
+            combined_expr_list->children.push_back(index_expr->clone());
+
+    auto syntax_result = SyntaxAnalyzer(context).analyze(combined_expr_list, columns.getAllPhysical());
+    return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+}
+
 }
