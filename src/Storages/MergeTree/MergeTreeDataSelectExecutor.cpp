@@ -39,7 +39,6 @@ namespace std
 }
 #endif
 
-#include <DataStreams/CollapsingFinalBlockInputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/ReverseBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
