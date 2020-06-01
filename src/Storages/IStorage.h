@@ -141,8 +141,8 @@ public:
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
 public: /// thread-unsafe part. lockStructure must be acquired
-    virtual const ColumnsDescription & getColumns() const; /// returns combined set of columns
-    virtual void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
+    const ColumnsDescription & getColumns() const; /// returns combined set of columns
+    void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
 
     void setIndices(IndicesDescription indices_);
     const IndicesDescription & getIndices() const;
@@ -509,10 +509,9 @@ public:
     /// Returns column names that need to be read for FINAL to work.
     Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }
 
-
     /// Returns columns, which will be needed to calculate dependencies (skip
     /// indices, TTL expressions) if we update @updated_columns set of columns.
-    virtual ColumnDependencies getColumnDependencies(const NameSet & /* updated_columns */) const { return {}; }
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
 
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
