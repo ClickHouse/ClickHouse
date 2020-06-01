@@ -493,16 +493,16 @@ struct PrivateMaxAbs
         std::vector<size_t> bins(BinsHelper<Value>::bins());
         while (itb != ite)
         {
-            ++bins[BinsHelper<Value>::get_bin(*itb)];
+            ++bins[BinsHelper<Value>::getBin(*itb)];
             ++itb;
         }
         size_t threshold = -log(1 - std::pow(failure_probability, 1.0 / (BinsHelper<Value>::bins() - 1))) / eps;
         for (int i = BinsHelper<Value>::bins() - 1; i > 0; --i)
         {
             if (bins[i] + sampleLaplace() / eps >= threshold)
-                return BinsHelper<Value>::get_high_border(i);
+                return BinsHelper<Value>::getHighBorder(i);
         }
-        return BinsHelper<Value>::get_high_border(0);
+        return BinsHelper<Value>::getHighBorder(0);
     }
 };
 
@@ -513,7 +513,7 @@ struct BinsHelper<Value, true> {
         return sizeof(Value) * 8;
     }
 
-    static int get_bin(const Value & val)
+    static int getBin(const Value & val)
     {
         if (unlikely(val == 0)) // Now never occurs
             return 0;
@@ -523,7 +523,7 @@ struct BinsHelper<Value, true> {
         return std::log2(abs(val));
     }
 
-    static Value get_high_border(int bin)
+    static Value getHighBorder(int bin)
     {
         if (bin == bins() - 1)
             return std::numeric_limits<Value>::max();
@@ -533,27 +533,27 @@ struct BinsHelper<Value, true> {
 
 template <typename Value>
 struct BinsHelper<Value, false> {
-    static int get_bin(const Value & val)
+    static int getBin(const Value & val)
     {
         if (unlikely(val == 0)) // Now never occurs
             return 0;
-        return round(std::log2(abs(val))) - min_log();
+        return round(std::log2(abs(val))) - minLog();
     }
 
     static int bins()
     {
-       return get_bin(std::numeric_limits<Value>::max()) + 1;
+       return getBin(std::numeric_limits<Value>::max()) + 1;
     }
 
-    static Value get_high_border(int bin)
+    static Value getHighBorder(int bin)
     {
         if (bin == bins() - 1)
             return std::numeric_limits<Value>::max();
-        return pow(2, bin + min_log() + 0.5);
+        return pow(2, bin + minLog() + 0.5);
     }
 
 private:
-    static int min_log()
+    static int minLog()
     {
         return round(std::log2(abs(std::numeric_limits<Value>::min())));
     }
@@ -566,7 +566,7 @@ struct BinsHelper<Decimal<Native>, false> {
         return sizeof(Native) * 8;
     }
 
-    static int get_bin(const Decimal<Native> & val)
+    static int getBin(const Decimal<Native> & val)
     {
         if (unlikely(val == 0)) // Now never occurs
             return 0;
@@ -576,7 +576,7 @@ struct BinsHelper<Decimal<Native>, false> {
         return round(std::log2(abs(val.value)));
     }
 
-    static Decimal<Native> get_high_border(int bin)
+    static Decimal<Native> getHighBorder(int bin)
     {
         if (bin == bins() - 1)
             return std::numeric_limits<Native>::max();
