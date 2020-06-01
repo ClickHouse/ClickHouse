@@ -838,6 +838,240 @@ def test_rabbitmq_read_only_combo(rabbitmq_cluster):
     assert int(result) == messages_num * threads_num * NUM_MV, 'ClickHouse lost some messages: {}'.format(result)
 
 
+@pytest.mark.timeout(180)
+def test_rabbitmq_insert(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_routing_key = 'insert1',
+                     rabbitmq_format = 'TSV',
+                     rabbitmq_row_delimiter = '\\n';
+    ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    consumer_connection = pika.BlockingConnection(parameters)
+
+    consumer = consumer_connection.channel()
+    consumer.exchange_declare(exchange='clickhouse-exchange', exchange_type='fanout')
+    result = consumer.queue_declare(queue='')
+    queue_name = result.method.queue
+    consumer.queue_bind(exchange='clickhouse-exchange', queue=queue_name, routing_key='insert1')
+
+    values = []
+    for i in range(50):
+        values.append("({i}, {i})".format(i=i))
+    values = ','.join(values)
+
+    while True:
+        try:
+            instance.query("INSERT INTO test.rabbitmq VALUES {}".format(values))
+            break
+        except QueryRuntimeException as e:
+            if 'Local: Timed out.' in str(e):
+                continue
+            else:
+                raise
+
+    insert_messages = []
+    def onReceived(channel, method, properties, body):
+        i = 0
+        insert_messages.append(body.decode())
+        if (len(insert_messages) == 50):
+            channel.stop_consuming()
+
+    consumer.basic_qos(prefetch_count=50)
+    consumer.basic_consume(onReceived, queue_name)
+    consumer.start_consuming()
+    consumer_connection.close()
+
+    result = '\n'.join(insert_messages)
+    rabbitmq_check_result(result, True)
+
+
+@pytest.mark.timeout(240)
+def test_rabbitmq_many_inserts(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.rabbitmq_many;
+        DROP TABLE IF EXISTS test.view_many;
+        DROP TABLE IF EXISTS test.consumer_many;
+        CREATE TABLE test.rabbitmq_many (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_routing_key = 'insert2',
+                     rabbitmq_format = 'TSV',
+                     rabbitmq_row_delimiter = '\\n';
+        CREATE TABLE test.view_many (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer_many TO test.view_many AS
+            SELECT * FROM test.rabbitmq_many;
+    ''')
+
+    messages_num = 1000
+    def insert():
+        values = []
+        for i in range(messages_num):
+            values.append("({i}, {i})".format(i=i))
+        values = ','.join(values)
+
+        while True:
+            try:
+                instance.query("INSERT INTO test.rabbitmq_many VALUES {}".format(values))
+                break
+            except QueryRuntimeException as e:
+                if 'Local: Timed out.' in str(e):
+                    continue
+                else:
+                    raise
+
+    threads = []
+    threads_num = 20
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=insert))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    while True:
+        result = instance.query('SELECT count() FROM test.view_many')
+        time.sleep(1)
+        if int(result) == messages_num * threads_num:
+            break
+
+    instance.query('''
+        DROP TABLE test.consumer_many;
+        DROP TABLE test.view_many;
+    ''')
+
+    for thread in threads:
+        thread.join()
+
+    assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
+
+
+@pytest.mark.timeout(240)
+def test_rabbitmq_sharding_between_channels_insert(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view_sharding;
+        DROP TABLE IF EXISTS test.consumer_sharding;
+        CREATE TABLE test.rabbitmq_sharding (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_num_consumers = 5,
+                     rabbitmq_format = 'TSV',
+                     rabbitmq_row_delimiter = '\\n';
+        CREATE TABLE test.view_sharding (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer_sharding TO test.view_sharding AS
+            SELECT * FROM test.rabbitmq_sharding;
+    ''')
+
+    messages_num = 10000
+    def insert():
+        values = []
+        for i in range(messages_num):
+            values.append("({i}, {i})".format(i=i))
+        values = ','.join(values)
+
+        while True:
+            try:
+                instance.query("INSERT INTO test.rabbitmq_sharding VALUES {}".format(values))
+                break
+            except QueryRuntimeException as e:
+                if 'Local: Timed out.' in str(e):
+                    continue
+                else:
+                    raise
+
+    threads = []
+    threads_num = 20
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=insert))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    while True:
+        result = instance.query('SELECT count() FROM test.view_sharding')
+        time.sleep(1)
+        print result
+        if int(result) == messages_num * threads_num:
+            break
+
+    instance.query('''
+        DROP TABLE test.consumer_sharding;
+        DROP TABLE test.view_sharding;
+    ''')
+
+    for thread in threads:
+        thread.join()
+
+    assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
+
+
+@pytest.mark.timeout(420)
+def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view_overload;
+        DROP TABLE IF EXISTS test.consumer_overload;
+        CREATE TABLE test.rabbitmq_overload (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_num_consumers = 10,
+                     rabbitmq_format = 'TSV',
+                     rabbitmq_row_delimiter = '\\n';
+        CREATE TABLE test.view_overload (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer_overload TO test.view_overload AS
+            SELECT * FROM test.rabbitmq_overload;
+    ''')
+
+    messages_num = 100000
+    def insert():
+        values = []
+        for i in range(messages_num):
+            values.append("({i}, {i})".format(i=i))
+        values = ','.join(values)
+
+        while True:
+            try:
+                instance.query("INSERT INTO test.rabbitmq_overload VALUES {}".format(values))
+                break
+            except QueryRuntimeException as e:
+                if 'Local: Timed out.' in str(e):
+                    continue
+                else:
+                    raise
+
+    threads = []
+    threads_num = 5
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=insert))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    while True:
+        result = instance.query('SELECT count() FROM test.view_overload')
+        time.sleep(1)
+        if int(result) == messages_num * threads_num:
+            break
+
+    instance.query('''
+        DROP TABLE test.consumer_overload;
+        DROP TABLE test.view_overload;
+    ''')
+
+    for thread in threads:
+        thread.join()
+
+    assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
+
+
 if __name__ == '__main__':
     cluster.start()
     raw_input("Cluster created, press any key to destroy...")
