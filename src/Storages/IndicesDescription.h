@@ -59,6 +59,9 @@ struct IndicesDescription : public std::vector<IndexDescription>
     String toString() const;
     /// Parse description from string
     static IndicesDescription parse(const String & str, const ColumnsDescription & columns, const Context & context);
+
+    /// Return common expression for all stored indices
+    ExpressionActionsPtr getSingleExpressionForIndices(const ColumnsDescription & columns, const Context & context) const;
 };
 
 }
