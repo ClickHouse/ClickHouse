@@ -795,7 +795,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     const auto & index_factory = MergeTreeIndexFactory::instance();
     if (data.hasSecondaryIndices())
     {
-        merged_stream = std::make_shared<ExpressionBlockInputStream>(merged_stream, data.primary_key_and_skip_indices_expr);
+        merged_stream = std::make_shared<ExpressionBlockInputStream>(merged_stream, data.getPrimaryKeyAndSkipIndicesExpression());
         merged_stream = std::make_shared<MaterializingBlockInputStream>(merged_stream);
     }
 
@@ -1586,7 +1586,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
 
     if (data.hasPrimaryKey() || data.hasSecondaryIndices())
         mutating_stream = std::make_shared<MaterializingBlockInputStream>(
-            std::make_shared<ExpressionBlockInputStream>(mutating_stream, data.primary_key_and_skip_indices_expr));
+            std::make_shared<ExpressionBlockInputStream>(mutating_stream, data.getPrimaryKeyAndSkipIndicesExpression()));
 
     if (need_remove_expired_values)
         mutating_stream = std::make_shared<TTLBlockInputStream>(mutating_stream, data, new_data_part, time_of_mutation, true);

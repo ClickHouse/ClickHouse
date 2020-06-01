@@ -641,9 +641,8 @@ public:
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
-    /// TODO (alesap) generate this expressions on fly
-    ExpressionActionsPtr primary_key_and_skip_indices_expr;
-    ExpressionActionsPtr sorting_key_and_skip_indices_expr;
+    ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression() const;
+    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression() const;
 
     std::optional<TTLDescription> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 

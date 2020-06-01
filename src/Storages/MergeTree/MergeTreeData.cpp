@@ -422,9 +422,6 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         new_sorting_key_data_types.push_back(new_sorting_key_sample.getByPosition(i).type);
     }
 
-    ASTPtr skip_indices_with_primary_key_expr_list = new_primary_key_expr_list->clone();
-    ASTPtr skip_indices_with_sorting_key_expr_list = new_sorting_key_expr_list->clone();
-
     if (!metadata.secondary_indices.empty())
     {
         std::set<String> indices_names;
@@ -439,24 +436,9 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
                         "Index with name " + backQuote(index.name) + " already exsists",
                         ErrorCodes::LOGICAL_ERROR);
 
-            for (const auto & expr : index.expression_list_ast->children)
-            {
-                skip_indices_with_primary_key_expr_list->children.push_back(expr->clone());
-                skip_indices_with_sorting_key_expr_list->children.push_back(expr->clone());
-            }
-
             indices_names.insert(index.name);
         }
     }
-    auto syntax_primary = SyntaxAnalyzer(global_context).analyze(
-            skip_indices_with_primary_key_expr_list, all_columns);
-    auto new_indices_with_primary_key_expr = ExpressionAnalyzer(
-            skip_indices_with_primary_key_expr_list, syntax_primary, global_context).getActions(false);
-
-    auto syntax_sorting = SyntaxAnalyzer(global_context).analyze(
-            skip_indices_with_sorting_key_expr_list, all_columns);
-    auto new_indices_with_sorting_key_expr = ExpressionAnalyzer(
-            skip_indices_with_sorting_key_expr_list, syntax_sorting, global_context).getActions(false);
 
     if (!only_check)
     {
@@ -483,12 +465,39 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         setSecondaryIndices(metadata.secondary_indices);
 
         setConstraints(metadata.constraints);
-
-        primary_key_and_skip_indices_expr = new_indices_with_primary_key_expr;
-        sorting_key_and_skip_indices_expr = new_indices_with_sorting_key_expr;
     }
 }
 
+namespace
+{
+
+ExpressionActionsPtr getCombinedIndicesExpression(
+    const StorageMetadataKeyField & key,
+    const IndicesDescription & indices,
+    const ColumnsDescription & columns,
+    const Context & context)
+{
+    ASTPtr combined_expr_list = key.expression_list_ast->clone();
+
+    for (const auto & index : indices)
+        for (const auto & index_expr : index.expression_list_ast->children)
+            combined_expr_list->children.push_back(index_expr->clone());
+
+    auto syntax_result = SyntaxAnalyzer(context).analyze(combined_expr_list, columns.getAllPhysical());
+    return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+}
+
+}
+
+ExpressionActionsPtr MergeTreeData::getPrimaryKeyAndSkipIndicesExpression() const
+{
+    return getCombinedIndicesExpression(getPrimaryKey(), getSecondaryIndices(), getColumns(), global_context);
+}
+
+ExpressionActionsPtr MergeTreeData::getSortingKeyAndSkipIndicesExpression() const
+{
+    return getCombinedIndicesExpression(getSortingKey(), getSecondaryIndices(), getColumns(), global_context);
+}
 
 ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
 {
