@@ -643,6 +643,7 @@ public:
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
+    /// TODO (alesap) generate this expressions on fly
     ExpressionActionsPtr primary_key_and_skip_indices_expr;
     ExpressionActionsPtr sorting_key_and_skip_indices_expr;
 
@@ -693,7 +694,7 @@ protected:
     BrokenPartCallback broken_part_callback;
 
     String log_name;
-    Logger * log;
+    Poco::Logger * log;
 
     /// Storage settings.
     /// Use get and set to receive readonly versions.

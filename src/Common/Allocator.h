@@ -129,7 +129,7 @@ public:
 
             void * new_buf = ::realloc(buf, new_size);
             if (nullptr == new_buf)
-                DB::throwFromErrno("Allocator: Cannot realloc from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                DB::throwFromErrno(fmt::format("Allocator: Cannot realloc from {} to {}.", ReadableSize(old_size), ReadableSize(new_size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
             buf = new_buf;
             if constexpr (clear_memory)
@@ -145,7 +145,8 @@ public:
             buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE,
                                     PROT_READ | PROT_WRITE, mmap_flags, -1, 0);
             if (MAP_FAILED == buf)
-                DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_MREMAP);
+                DB::throwFromErrno(fmt::format("Allocator: Cannot mremap memory chunk from {} to {}.",
+                    ReadableSize(old_size), ReadableSize(new_size)), DB::ErrorCodes::CANNOT_MREMAP);
 
             /// No need for zero-fill, because mmap guarantees it.
         }
@@ -201,13 +202,13 @@ private:
         if (size >= MMAP_THRESHOLD)
         {
             if (alignment > MMAP_MIN_ALIGNMENT)
-                throw DB::Exception("Too large alignment " + formatReadableSizeWithBinarySuffix(alignment) + ": more than page size when allocating "
-                    + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::BAD_ARGUMENTS);
+                throw DB::Exception(fmt::format("Too large alignment {}: more than page size when allocating {}.",
+                    ReadableSize(alignment), ReadableSize(size)), DB::ErrorCodes::BAD_ARGUMENTS);
 
             buf = mmap(getMmapHint(), size, PROT_READ | PROT_WRITE,
                        mmap_flags, -1, 0);
             if (MAP_FAILED == buf)
-                DB::throwFromErrno("Allocator: Cannot mmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                DB::throwFromErrno(fmt::format("Allocator: Cannot mmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
             /// No need for zero-fill, because mmap guarantees it.
         }
@@ -221,7 +222,7 @@ private:
                     buf = ::malloc(size);
 
                 if (nullptr == buf)
-                    DB::throwFromErrno("Allocator: Cannot malloc " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                    DB::throwFromErrno(fmt::format("Allocator: Cannot malloc {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
             }
             else
             {
@@ -229,7 +230,8 @@ private:
                 int res = posix_memalign(&buf, alignment, size);
 
                 if (0 != res)
-                    DB::throwFromErrno("Cannot allocate memory (posix_memalign) " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
+                    DB::throwFromErrno(fmt::format("Cannot allocate memory (posix_memalign) {}.", ReadableSize(size)),
+                        DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
 
                 if constexpr (clear_memory)
                     memset(buf, 0, size);
@@ -243,7 +245,7 @@ private:
         if (size >= MMAP_THRESHOLD)
         {
             if (0 != munmap(buf, size))
-                DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
+                DB::throwFromErrno(fmt::format("Allocator: Cannot munmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_MUNMAP);
         }
         else
         {

@@ -84,7 +84,7 @@ namespace ErrorCodes
 
 
 MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_)
-    : data(data_), log(&Logger::get(data.getLogName() + " (SelectExecutor)"))
+    : data(data_), log(&Poco::Logger::get(data.getLogName() + " (SelectExecutor)"))
 {
 }
 
@@ -1153,7 +1153,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     if (num_streams > settings.max_final_threads)
         num_streams = settings.max_final_threads;
 
-    if (num_streams <= 1 || sort_description.empty() || query_info.force_tree_shaped_pipeline)
+    if (num_streams <= 1 || sort_description.empty())
     {
 
         Pipe pipe(std::move(pipes), get_merging_processor());

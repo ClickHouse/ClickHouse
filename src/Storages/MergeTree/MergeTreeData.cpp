@@ -136,7 +136,7 @@ MergeTreeData::MergeTreeData(
     , relative_data_path(relative_data_path_)
     , broken_part_callback(broken_part_callback_)
     , log_name(table_id_.getNameForLogs())
-    , log(&Logger::get(log_name))
+    , log(&Poco::Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
@@ -2810,8 +2810,7 @@ inline ReservationPtr checkAndReturnReservation(UInt64 expected_size, Reservatio
     if (reservation)
         return reservation;
 
-    throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enough space",
-                    ErrorCodes::NOT_ENOUGH_SPACE);
+    throw Exception(fmt::format("Cannot reserve {}, not enough space", ReadableSize(expected_size)), ErrorCodes::NOT_ENOUGH_SPACE);
 }
 
 }
