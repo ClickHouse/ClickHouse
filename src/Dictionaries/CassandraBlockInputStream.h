@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cassandra.h>
+#include <Dictionaries/CassandraHelpers.h>
 #include <Core/Block.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Core/ExternalResultDescription.h>
@@ -9,8 +9,6 @@
 namespace DB
 {
 
-void cassandraCheck(CassError code);
-void cassandraWaitAndCheck(CassFuture * future);
 
 
 /// Allows processing results of a Cassandra query as a sequence of Blocks, simplifies chaining
@@ -18,11 +16,10 @@ void cassandraWaitAndCheck(CassFuture * future);
     {
     public:
         CassandraBlockInputStream(
-                CassSession * session,
-                const std::string & query_str,
+                const CassClusterPtr & cluster,
+                const String & query_str,
                 const Block & sample_block,
                 const size_t max_block_size);
-        ~CassandraBlockInputStream() override;
 
         String getName() const override { return "Cassandra"; }
 
@@ -31,14 +28,11 @@ void cassandraWaitAndCheck(CassFuture * future);
     private:
         Block readImpl() override;
 
-        CassSession * session;
-        CassStatement * statement;
-        String query_str;
+        CassSessionPtr session;
+        CassStatementPtr statement;
         const size_t max_block_size;
         ExternalResultDescription description;
-        const CassResult * result = nullptr;
         cass_bool_t has_more_pages;
-        CassIterator * iterator = nullptr;
     };
 
 }
