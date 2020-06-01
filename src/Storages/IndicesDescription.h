@@ -50,7 +50,7 @@ struct IndexDescription
     static IndexDescription getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
 };
 
-/// All non-primary indicies for storage
+/// All secondary indices in storage
 struct IndicesDescription : public std::vector<IndexDescription>
 {
     /// Index with name exists
