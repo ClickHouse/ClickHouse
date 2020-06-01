@@ -501,6 +501,7 @@ namespace ErrorCodes
     extern const int INCONSISTENT_RESERVATIONS = 527;
     extern const int NO_RESERVATIONS_PROVIDED = 528;
     extern const int UNKNOWN_RAID_TYPE = 529;
+    extern const int INVALID_VOLUME_TYPE = 530;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

@@ -8,11 +8,19 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_VOLUME_TYPE;
 }
 
 MergeTreeDataPartIndexWriterSingleDisk::MergeTreeDataPartIndexWriterSingleDisk(IMergeTreeDataPartWriter & part_writer_)
     : IMergeTreeDataPartIndexWriter(part_writer_)
 {
+    if (std::dynamic_pointer_cast<SingleDiskVolume>(part_writer_.data_part->volume) == nullptr &&
+        std::dynamic_pointer_cast<VolumeJBOD>(part_writer_.data_part->volume) == nullptr)
+    {
+        throw Exception("Invalid volume type for single disk index writer: " +
+                            volumeTypeToString(part_writer_.data_part->volume->getType()),
+                        ErrorCodes::INVALID_VOLUME_TYPE);
+    }
 }
 
 void MergeTreeDataPartIndexWriterSingleDisk::initPrimaryIndex()
