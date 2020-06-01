@@ -40,7 +40,7 @@ BlockIO InterpreterWatchQuery::execute()
     auto table_id = context.resolveStorageID(query, Context::ResolveOrdinary);
 
     /// Get storage
-    storage = DatabaseCatalog::instance().tryGetTable(table_id);
+    storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
 
     if (!storage)
         throw Exception("Table " + table_id.getNameForLogs() + " doesn't exist.",

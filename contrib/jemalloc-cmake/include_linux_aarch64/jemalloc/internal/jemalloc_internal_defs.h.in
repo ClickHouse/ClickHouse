@@ -1,12 +1,6 @@
 /* include/jemalloc/internal/jemalloc_internal_defs.h.  Generated from jemalloc_internal_defs.h.in by configure.  */
 #ifndef JEMALLOC_INTERNAL_DEFS_H_
 #define JEMALLOC_INTERNAL_DEFS_H_
-
-
-#ifndef _GNU_SOURCE
-    #define _GNU_SOURCE
-#endif
-
 /*
  * If JEMALLOC_PREFIX is defined via --with-jemalloc-prefix, it will cause all
  * public APIs to be prefixed.  This makes it possible, with some care, to use
@@ -25,7 +19,7 @@
 #define JEMALLOC_OVERRIDE___LIBC_MEMALIGN
 #define JEMALLOC_OVERRIDE___LIBC_REALLOC
 #define JEMALLOC_OVERRIDE___LIBC_VALLOC
-#define JEMALLOC_OVERRIDE___POSIX_MEMALIGN
+/* #undef JEMALLOC_OVERRIDE___POSIX_MEMALIGN */
 
 /*
  * JEMALLOC_PRIVATE_NAMESPACE is used as a prefix for all library-private APIs.
@@ -41,7 +35,7 @@
  */
 #define CPU_SPINWAIT
 /* 1 if CPU_SPINWAIT is defined, 0 otherwise. */
-#define HAVE_CPU_SPINWAIT 0
+#define HAVE_CPU_SPINWAIT 9
 
 /*
  * Number of significant bits in virtual addresses.  This may be less than the
@@ -55,25 +49,13 @@
 
 /* Defined if GCC __atomic atomics are available. */
 #define JEMALLOC_GCC_ATOMIC_ATOMICS 1
+/* and the 8-bit variant support. */
+#define JEMALLOC_GCC_U8_ATOMIC_ATOMICS 1
 
 /* Defined if GCC __sync atomics are available. */
 #define JEMALLOC_GCC_SYNC_ATOMICS 1
-
-/*
- * Defined if __sync_add_and_fetch(uint32_t *, uint32_t) and
- * __sync_sub_and_fetch(uint32_t *, uint32_t) are available, despite
- * __GCC_HAVE_SYNC_COMPARE_AND_SWAP_4 not being defined (which means the
- * functions are defined in libgcc instead of being inlines).
- */
-/* #undef JE_FORCE_SYNC_COMPARE_AND_SWAP_4 */
-
-/*
- * Defined if __sync_add_and_fetch(uint64_t *, uint64_t) and
- * __sync_sub_and_fetch(uint64_t *, uint64_t) are available, despite
- * __GCC_HAVE_SYNC_COMPARE_AND_SWAP_8 not being defined (which means the
- * functions are defined in libgcc instead of being inlines).
- */
-/* #undef JE_FORCE_SYNC_COMPARE_AND_SWAP_8 */
+/* and the 8-bit variant support. */
+#define JEMALLOC_GCC_U8_SYNC_ATOMICS 1
 
 /*
  * Defined if __builtin_clz() and __builtin_clzl() are available.
@@ -85,19 +67,13 @@
  */
 /* #undef JEMALLOC_OS_UNFAIR_LOCK */
 
-/*
- * Defined if OSSpin*() functions are available, as provided by Darwin, and
- * documented in the spinlock(3) manual page.
- */
-/* #undef JEMALLOC_OSSPIN */
-
 /* Defined if syscall(2) is usable. */
 #define JEMALLOC_USE_SYSCALL
 
 /*
  * Defined if secure_getenv(3) is available.
  */
-#define JEMALLOC_HAVE_SECURE_GETENV
+// #define JEMALLOC_HAVE_SECURE_GETENV
 
 /*
  * Defined if issetugid(2) is available.
@@ -244,6 +220,12 @@
 #define JEMALLOC_INTERNAL_FFS __builtin_ffs
 
 /*
+ * popcount*() functions to use for bitmapping.
+ */
+#define JEMALLOC_INTERNAL_POPCOUNTL __builtin_popcountl
+#define JEMALLOC_INTERNAL_POPCOUNT __builtin_popcount
+
+/*
  * If defined, explicitly attempt to more uniformly distribute large allocation
  * pointer alignments across all cache indices.
  */
@@ -297,7 +279,7 @@
  *                                 MADV_FREE, though typically with higher
  *                                 system overhead.
  */
-// #define JEMALLOC_PURGE_MADVISE_FREE
+#define JEMALLOC_PURGE_MADVISE_FREE
 #define JEMALLOC_PURGE_MADVISE_DONTNEED
 #define JEMALLOC_PURGE_MADVISE_DONTNEED_ZEROS
 
@@ -378,5 +360,8 @@
  * Defined if strerror_r returns char * if _GNU_SOURCE is defined.
  */
 #define JEMALLOC_STRERROR_R_RETURNS_CHAR_WITH_GNU_SOURCE
+
+/* Performs additional safety checks when defined. */
+/* #undef JEMALLOC_OPT_SAFETY_CHECKS */
 
 #endif /* JEMALLOC_INTERNAL_DEFS_H_ */
