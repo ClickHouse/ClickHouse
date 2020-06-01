@@ -1,15 +1,19 @@
 <test>
+    <settings>
+        <parallel_view_processing>1</parallel_view_processing>
+    </settings>
+
     <create_query>create table main_table (number UInt64) engine = MergeTree order by tuple();</create_query>
     <create_query>create materialized view mv_1 engine = MergeTree order by tuple() as
-        select number % 100000 as key, sum(number) from main_table where number % 13 != 0 group by key;</create_query>
+        select number, toString(number) from main_table where number % 13 != 0;</create_query>
     <create_query>create materialized view mv_2 engine = MergeTree order by tuple() as
-        select number % 100000 as key, sum(number) from main_table where number % 13 != 1 group by key;</create_query>
+        select number, toString(number) from main_table where number % 13 != 1;</create_query>
     <create_query>create materialized view mv_3 engine = MergeTree order by tuple() as
-        select number % 100000 as key, sum(number) from main_table where number % 13 != 3 group by key;</create_query>
+        select number, toString(number) from main_table where number % 13 != 3;</create_query>
     <create_query>create materialized view mv_4 engine = MergeTree order by tuple() as
-        select number % 100000 as key, sum(number) from main_table where number % 13 != 4 group by key;</create_query>
+        select number, toString(number) from main_table where number % 13 != 4;</create_query>
 
-    <query>insert into main_table select number from numbers(100000)</query>
+    <!--<query>insert into main_table select number from numbers(100000)</query>-->
     <query>insert into main_table select number from numbers(1000000)</query>
 
     <drop_query>drop table if exists main_table;</drop_query>
