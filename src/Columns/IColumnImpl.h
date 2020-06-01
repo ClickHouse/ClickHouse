@@ -46,4 +46,18 @@ std::vector<IColumn::MutablePtr> IColumn::scatterImpl(ColumnIndex num_columns,
     return columns;
 }
 
+template <typename Derived>
+std::vector<UInt8> IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num, const std::vector<UInt8> & mask, int nan_direction_hint) const
+{
+    size_t rows_num = size();
+    std::vector<UInt8> results(rows_num, 0);
+
+    for (size_t i = 0; i < rows_num; ++i)
+    {
+        if (mask[i])
+            results[i] = compareAt(i, rhs_row_num, rhs, nan_direction_hint);
+    }
+    return results;
+}
+
 }

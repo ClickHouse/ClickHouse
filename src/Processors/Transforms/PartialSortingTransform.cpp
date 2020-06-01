@@ -44,6 +44,34 @@ bool less(const ColumnRawPtrs & lhs, UInt64 lhs_row_num,
     return false;
 }
 
+IColumn::Filter getFilterMask(const ColumnRawPtrs & lhs, const ColumnRawPtrs & rhs, size_t rhs_row_num, const SortDescription & description, size_t rows_num)
+{
+    IColumn::Filter filter(rows_num, 1);
+    std::vector<UInt8> mask(rows_num, 1);
+
+    size_t size = description.size();
+    for (size_t i = 0; i < size; ++i)
+    {
+        std::vector<UInt8> compare_result = lhs[i]->compareAt(*rhs[i], rhs_row_num, mask, 1);
+        int direction = description[i].direction;
+
+        for (size_t j = 0; j < rows_num; ++j)
+        {
+            if (mask[j])
+            {
+                int res = direction * compare_result[j];
+                if (res)
+                {
+                    filter[j] = (res >= 0);
+                    mask[j] = 0;
+                }
+            }
+        }
+    }
+
+    return filter;
+}
+
 void PartialSortingTransform::transform(Chunk & chunk)
 {
     if (read_rows)
@@ -60,18 +88,13 @@ void PartialSortingTransform::transform(Chunk & chunk)
       */
     if (!threshold_block_columns.empty())
     {
-        IColumn::Filter filter(rows_num, 1);
         block_columns = extractColumns(block, description);
         size_t filtered_count = 0;
 
-        for (UInt64 i = 0; i < rows_num; ++i)
-        {
-            if (less(threshold_block_columns, limit - 1, block_columns, i, description))
-            {
-                ++filtered_count;
-                filter[i] = 0;
-            }
-        }
+        IColumn::Filter filter = getFilterMask(block_columns, threshold_block_columns, limit - 1, description, rows_num);
+
+        for (const auto & item : filter)
+            filtered_count += !item;
 
         if (filtered_count)
         {

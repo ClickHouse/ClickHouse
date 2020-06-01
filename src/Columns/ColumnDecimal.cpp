@@ -40,6 +40,12 @@ int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) c
 }
 
 template <typename T>
+std::vector<UInt8> ColumnDecimal<T>::compareAt(const IColumn & rhs, size_t rhs_row_num, const std::vector<UInt8> & mask, int nan_direction_hint) const
+{
+    return compareImpl<ColumnDecimal>(static_cast<const Self &>(rhs), rhs_row_num, mask, nan_direction_hint);
+}
+
+template <typename T>
 StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     auto * pos = arena.allocContinue(sizeof(T), begin);

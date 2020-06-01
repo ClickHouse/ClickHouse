@@ -309,6 +309,10 @@ int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_dir
             : 1);
 }
 
+std::vector<UInt8> ColumnArray::compareAt(const IColumn & rhs, size_t rhs_row_num, const std::vector<UInt8> & mask, int nan_direction_hint) const
+{
+    return compareImpl<ColumnArray>(assert_cast<const ColumnArray &>(rhs), rhs_row_num, mask, nan_direction_hint);
+}
 
 namespace
 {
