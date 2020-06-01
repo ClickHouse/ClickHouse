@@ -192,7 +192,7 @@ static void * getCallerAddress(const ucontext_t & context)
 
 static void symbolize(const void * const * frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames)
 {
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(__FreeBSD__) && !defined(ARCADIA_BUILD)
 
     const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
