@@ -47,7 +47,7 @@ struct IndexDescription
     size_t granularity;
 
     /// Parse index from definition AST
-    static IndexDescription getSkipIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
+    static IndexDescription getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
 };
 
 /// All non-primary indicies for storage
