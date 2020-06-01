@@ -3,8 +3,8 @@
 #include <Core/Defines.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
+#include <Common/MemorySanitizer.h>
 #include <common/SimpleCache.h>
 #include <common/demangle.h>
 
