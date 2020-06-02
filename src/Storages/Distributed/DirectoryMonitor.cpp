@@ -108,11 +108,19 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
 
 void StorageDistributedDirectoryMonitor::flushAllData()
 {
-    if (!quit)
+    if (quit)
+        return;
+
+    CurrentMetrics::Increment metric_pending_files{CurrentMetrics::DistributedFilesToInsert, 0};
+    std::unique_lock lock{mutex};
+
+    const auto & files = getFiles(metric_pending_files);
+    if (!files.empty())
     {
-        CurrentMetrics::Increment metric_pending_files{CurrentMetrics::DistributedFilesToInsert, 0};
-        std::unique_lock lock{mutex};
-        processFiles(metric_pending_files);
+        processFiles(files, metric_pending_files);
+
+        /// Update counters
+        getFiles(metric_pending_files);
     }
 }
 
@@ -139,11 +147,16 @@ void StorageDistributedDirectoryMonitor::run()
     while (!quit)
     {
         do_sleep = true;
+
+        const auto & files = getFiles(metric_pending_files);
+        if (files.empty())
+            break;
+
         if (!monitor_blocker.isCancelled())
         {
             try
             {
-                do_sleep = !processFiles(metric_pending_files);
+                do_sleep = !processFiles(files, metric_pending_files);
             }
             catch (...)
             {
@@ -170,6 +183,9 @@ void StorageDistributedDirectoryMonitor::run()
         if (do_sleep)
             break;
     }
+
+    /// Update counters
+    getFiles(metric_pending_files);
 
     if (!quit && do_sleep)
         task_handle->scheduleAfter(sleep_time.count());
@@ -226,9 +242,10 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 }
 
 
-bool StorageDistributedDirectoryMonitor::processFiles(CurrentMetrics::Increment & metric_pending_files)
+std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles(CurrentMetrics::Increment & metric_pending_files)
 {
     std::map<UInt64, std::string> files;
+    size_t new_bytes_count = 0;
 
     Poco::DirectoryIterator end;
     for (Poco::DirectoryIterator it{path}; it != end; ++it)
@@ -237,16 +254,23 @@ bool StorageDistributedDirectoryMonitor::processFiles(CurrentMetrics::Increment 
         Poco::Path file_path{file_path_str};
 
         if (!it->isDirectory() && startsWith(file_path.getExtension(), "bin"))
+        {
             files[parse<UInt64>(file_path.getBaseName())] = file_path_str;
+            new_bytes_count += Poco::File(file_path).getSize();
+        }
     }
+
+    files_count = files.size();
+    bytes_count = new_bytes_count;
 
     /// Note: the value of this metric will be kept if this function will throw an exception.
     /// This is needed, because in case of exception, files still pending.
     metric_pending_files.changeTo(files.size());
 
-    if (files.empty())
-        return false;
-
+    return files;
+}
+bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std::string> & files, CurrentMetrics::Increment & metric_pending_files)
+{
     if (should_batch_inserts)
     {
         processFilesWithBatching(files, metric_pending_files);

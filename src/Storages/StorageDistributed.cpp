@@ -656,6 +656,17 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
     return *node_data.directory_monitor;
 }
 
+std::vector<StorageDistributedDirectoryMonitor *> StorageDistributed::getAllDirectoryMonitors()
+{
+    std::vector<StorageDistributedDirectoryMonitor *> monitors;
+    {
+        std::lock_guard lock(cluster_nodes_mutex);
+        for (auto & node : cluster_nodes_data)
+            monitors.push_back(node.second.directory_monitor.get());
+    }
+    return monitors;
+}
+
 size_t StorageDistributed::getShardCount() const
 {
     return getCluster()->getShardCount();

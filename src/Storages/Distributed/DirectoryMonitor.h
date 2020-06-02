@@ -37,9 +37,20 @@ public:
 
     /// For scheduling via DistributedBlockOutputStream
     bool scheduleAfter(size_t ms);
+
+    /// system.distribution_queue interface
+    std::string getPath() const { return path; }
+    /// Racy but ok
+    size_t getErrorCount() const { return error_count; }
+    size_t getFilesCount() const { return files_count; }
+    size_t getBytesCount() const { return bytes_count; }
+    size_t isBlocked()     const { return monitor_blocker.isCancelled(); }
+
 private:
     void run();
-    bool processFiles(CurrentMetrics::Increment & metric_pending_files);
+
+    std::map<UInt64, std::string> getFiles(CurrentMetrics::Increment & metric_pending_files);
+    bool processFiles(const std::map<UInt64, std::string> & files, CurrentMetrics::Increment & metric_pending_files);
     void processFile(const std::string & file_path, CurrentMetrics::Increment & metric_pending_files);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files, CurrentMetrics::Increment & metric_pending_files);
 
@@ -61,7 +72,10 @@ private:
     struct BatchHeader;
     struct Batch;
 
-    size_t error_count{};
+    size_t error_count = 0;
+    size_t files_count = 0;
+    size_t bytes_count = 0;
+
     const std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;
     const std::chrono::milliseconds max_sleep_time;
