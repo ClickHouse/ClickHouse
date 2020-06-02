@@ -192,9 +192,8 @@ public:
         return 0;
     }
 
-    std::vector<UInt8> compareAt(const IColumn &, size_t, const std::vector<UInt8> &, int) const override
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> &, PaddedPODArray<Int8> &, int, int) const override
     {
-        return std::vector<UInt8>(getData().size(), 0);
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;

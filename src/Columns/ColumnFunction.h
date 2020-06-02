@@ -116,9 +116,9 @@ public:
         throw Exception("compareAt is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    std::vector<UInt8> compareAt(const IColumn &, size_t, const std::vector<UInt8> &, int) const override
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> &, PaddedPODArray<Int8> &, int, int) const override
     {
-        throw Exception("compareAt(const IColumn &, size_t, const std::vector<UInt8> &, int) is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("compareColumn is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void getPermutation(bool, size_t, int, Permutation &) const override

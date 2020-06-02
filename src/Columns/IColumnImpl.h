@@ -47,17 +47,35 @@ std::vector<IColumn::MutablePtr> IColumn::scatterImpl(ColumnIndex num_columns,
 }
 
 template <typename Derived>
-std::vector<UInt8> IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num, const std::vector<UInt8> & mask, int nan_direction_hint) const
+void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
+                          PaddedPODArray<UInt64> & row_indexes, PaddedPODArray<Int8> & compare_results,
+                          int direction, int nan_direction_hint) const
 {
     size_t rows_num = size();
-    std::vector<UInt8> results(rows_num, 0);
+    size_t row_indexes_size = row_indexes.size();
 
-    for (size_t i = 0; i < rows_num; ++i)
+    if (compare_results.empty())
+        compare_results.resize(rows_num, 0);
+    else if (compare_results.size() != rows_num)
+        throw Exception(
+                "Size of compare_results: " + std::to_string(compare_results.size()) + " doesn't match rows_num: " + std::to_string(rows_num),
+                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    for (size_t i = 0; i < row_indexes_size;)
     {
-        if (mask[i])
-            results[i] = compareAt(i, rhs_row_num, rhs, nan_direction_hint);
+        UInt64 index = row_indexes[i];
+        if (compare_results[index] = direction * compareAt(index, rhs_row_num, rhs, nan_direction_hint); compare_results[index] != 0)
+        {
+            std::swap(row_indexes[i], row_indexes[row_indexes_size - 1]);
+            --row_indexes_size;
+        }
+        else
+        {
+            ++i;
+        }
     }
-    return results;
+
+    row_indexes.resize(row_indexes_size);
 }
 
 }

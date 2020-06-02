@@ -220,9 +220,12 @@ public:
         return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n) - 1, rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m) - 1);
     }
 
-    std::vector<UInt8> compareAt(const IColumn & rhs, size_t rhs_row_num, const std::vector<UInt8> & mask, int nan_direction_hint) const override
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> & row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override
     {
-        return compareImpl<ColumnString>(assert_cast<const ColumnString &>(rhs), rhs_row_num, mask, nan_direction_hint);
+        return compareImpl<ColumnString>(assert_cast<const ColumnString &>(rhs), rhs_row_num, row_indexes,
+                                         compare_results, direction, nan_direction_hint);
     }
 
     /// Variant of compareAt for string comparison with respect of collation.
