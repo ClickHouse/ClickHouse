@@ -14,6 +14,7 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <DataStreams/BlocksListBlockInputStream.h>
 
 namespace DB
 {
@@ -345,15 +346,6 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns, M
         column->insertManyDefaults(rows_to_add);
 }
 
-Blocks blocksListToBlocks(const BlocksList & in_blocks)
-{
-    Blocks out_blocks;
-    out_blocks.reserve(in_blocks.size());
-    for (const auto & block : in_blocks)
-        out_blocks.push_back(block);
-    return out_blocks;
-}
-
 }
 
 
@@ -443,17 +435,12 @@ void MergeJoin::mergeInMemoryRightBlocks()
     if (right_blocks.empty())
         return;
 
-    Blocks blocks_to_merge = blocksListToBlocks(right_blocks.blocks);
+    auto stream = std::make_shared<BlocksListBlockInputStream>(std::move(right_blocks.blocks));
+    Pipe source(std::make_shared<SourceFromInputStream>(std::move(stream)));
     right_blocks.clear();
 
-    Pipes sources;
-    for (auto & block : blocks_to_merge)
-    {
-        sources.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<OneBlockInputStream>(std::move(block))));
-    }
-
     QueryPipeline pipeline;
-    pipeline.init(std::move(sources));
+    pipeline.init(std::move(source));
 
     /// TODO: there should be no splitted keys by blocks for RIGHT|FULL JOIN
     pipeline.addPipe({std::make_shared<MergeSortingTransform>(pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, nullptr, 0)});
