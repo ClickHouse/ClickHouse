@@ -207,7 +207,7 @@ struct PerfEventsCounters
 };
 
 // thread_local is disabled in Arcadia, so we are going to use a static dummy.
-extern PerfEventCounters current_thread_counters;
+extern PerfEventsCounters current_thread_counters;
 
 #endif
 
