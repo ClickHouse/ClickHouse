@@ -8,6 +8,8 @@ endif ()
 if (NOT OS_FREEBSD AND NOT SPLIT_SHARED_LIBRARIES)
     option (USE_SENTRY "Use Sentry" ON)
 
+    set (SENTRY_TRANSPORT "url")
+    set (SENTRY_BACKEND "none")
     set (CURL_LIBRARY ${ClickHouse_SOURCE_DIR}/contrib/curl/lib)
     set (CURL_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/curl/include)
 
