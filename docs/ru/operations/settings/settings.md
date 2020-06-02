@@ -1191,4 +1191,34 @@ Default value: 0.
 
 Значение по умолчанию: 16.
 
+## background_move_pool_size {#background_move_pool_size}
+
+Задает количество потоков для фоновых перемещений кусков между дисками. Работает для таблиц с движком [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 8.
+
+## background_schedule_pool_size {#background_schedule_pool_size}
+
+Задает количество потоков для выполнения фоновых задач. Работает для [реплицируемых](../../engines/table-engines/mergetree-family/replication.md) таблиц, стримов в [Kafka](../../engines/table-engines/integrations/kafka.md) и обновления IP адресов у записей во внутреннем [DNS кеше](../server-configuration-parameters/settings.md#server-settings-dns-cache-update-period). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 16.
+
+## background_distributed_schedule_pool_size {#background_distributed_schedule_pool_size}
+
+Задает количество потоков для выполнения фоновых задач. Работает для таблиц с движком [Distributed](../../engines/table-engines/special/distributed.md). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 16.
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
