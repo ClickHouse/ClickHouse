@@ -45,8 +45,8 @@ BackgroundProcessingPool::BackgroundProcessingPool(int size_,
     , thread_name(thread_name_)
     , settings(pool_settings)
 {
-    logger = &Logger::get(log_name);
-    LOG_INFO(logger, "Create " << log_name << " with " << size << " threads");
+    logger = &Poco::Logger::get(log_name);
+    LOG_INFO(logger, "Create {} with {} threads", log_name, size);
 
     threads.resize(size);
     for (auto & thread : threads)
