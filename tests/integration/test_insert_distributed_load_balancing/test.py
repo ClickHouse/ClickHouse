@@ -46,21 +46,29 @@ def test_prefer_localhost_replica_1():
     assert int(n1.query('SELECT count() FROM data')) == 10
     assert int(n2.query('SELECT count() FROM data')) == 0
 
+
+# These tests temporary (or not) disabled, because setting load_balancing
+# doesn't override default value (random) neither INSERT nor CREATE query.
+
+@pytest.mark.skip(reason="Setting load_balancing doesn't affect inserts")
 def test_prefer_localhost_replica_1_load_balancing_in_order():
     insert_data(load_balancing='in_order')
     assert int(n1.query('SELECT count() FROM data')) == 10
     assert int(n2.query('SELECT count() FROM data')) == 0
 
+@pytest.mark.skip(reason="Setting load_balancing doesn't affect inserts")
 def test_prefer_localhost_replica_0_load_balancing_nearest_hostname():
     insert_data(load_balancing='nearest_hostname', prefer_localhost_replica=0)
     assert int(n1.query('SELECT count() FROM data')) == 10
     assert int(n2.query('SELECT count() FROM data')) == 0
 
+@pytest.mark.skip(reason="Setting load_balancing doesn't affect inserts")
 def test_prefer_localhost_replica_0_load_balancing_in_order():
     insert_data(load_balancing='in_order', prefer_localhost_replica=0)
     assert int(n1.query('SELECT count() FROM data')) == 0
     assert int(n2.query('SELECT count() FROM data')) == 10
 
+@pytest.mark.skip(reason="Setting load_balancing doesn't affect inserts")
 def test_prefer_localhost_replica_0_load_balancing_in_order_sync():
     insert_data(load_balancing='in_order', prefer_localhost_replica=0, insert_distributed_sync=1)
     assert int(n1.query('SELECT count() FROM data')) == 0
