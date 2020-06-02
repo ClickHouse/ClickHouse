@@ -35,7 +35,7 @@ private:
     CurrentMetrics::Metric metric = CurrentMetrics::end();
 
     /// This description will be used as prefix into log messages (if isn't nullptr)
-    const char * description = nullptr;
+    std::atomic<const char *> description_ptr = nullptr;
 
     void updatePeak(Int64 will_be);
     void logMemoryUsage(Int64 current) const;
@@ -114,9 +114,9 @@ public:
         metric = metric_;
     }
 
-    void setDescription(const char * description_)
+    void setDescription(const char * description)
     {
-        description = description_;
+        description_ptr.store(description, std::memory_order_relaxed);
     }
 
     /// Reset the accumulated data

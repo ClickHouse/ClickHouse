@@ -111,11 +111,11 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         }
         else
         {
-            BlockIO res = interpreter.execute();
+            auto stream = interpreter.execute().getInputStream();
 
             try
             {
-                block = res.in->read();
+                block = stream->read();
 
                 if (!block)
                 {
@@ -126,7 +126,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                     return;
                 }
 
-                if (block.rows() != 1 || res.in->read())
+                if (block.rows() != 1 || stream->read())
                     throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
             }
             catch (const Exception & e)

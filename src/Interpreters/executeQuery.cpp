@@ -105,7 +105,7 @@ static void logQuery(const String & query, const Context & context, bool interna
 {
     if (internal)
     {
-        LOG_DEBUG(&Logger::get("executeQuery"), "(internal) {}", joinLines(query));
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {}", joinLines(query));
     }
     else
     {
@@ -113,7 +113,7 @@ static void logQuery(const String & query, const Context & context, bool interna
         const auto & initial_query_id = context.getClientInfo().initial_query_id;
         const auto & current_user = context.getClientInfo().current_user;
 
-        LOG_DEBUG(&Logger::get("executeQuery"), "(from {}{}{}) {}",
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}) {}",
             context.getClientInfo().current_address.toString(),
             (current_user != "default" ? ", user: " + context.getClientInfo().current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
@@ -145,10 +145,10 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 static void logException(Context & context, QueryLogElement & elem)
 {
     if (elem.stack_trace.empty())
-        LOG_ERROR(&Logger::get("executeQuery"), "{} (from {}) (in query: {})",
+        LOG_ERROR(&Poco::Logger::get("executeQuery"), "{} (from {}) (in query: {})",
             elem.exception, context.getClientInfo().current_address.toString(), joinLines(elem.query));
     else
-        LOG_ERROR(&Logger::get("executeQuery"), "{} (from {}) (in query: {})"
+        LOG_ERROR(&Poco::Logger::get("executeQuery"), "{} (from {}) (in query: {})"
             ", Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception, context.getClientInfo().current_address.toString(), joinLines(elem.query), elem.stack_trace);
 }
@@ -280,7 +280,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
     String query(begin, query_end);
     BlockIO res;
-    QueryPipeline & pipeline = res.pipeline;
 
     String query_for_logging;
 
@@ -338,7 +337,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             context.resetInputCallbacks();
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
-        bool use_processors = interpreter->canExecuteWithProcessors();
 
         std::shared_ptr<const EnabledQuota> quota;
         if (!interpreter->ignoreQuota())
@@ -358,10 +356,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
         }
 
-        if (use_processors)
-            pipeline = interpreter->executeWithProcessors();
-        else
-            res = interpreter->execute();
+        res = interpreter->execute();
+        QueryPipeline & pipeline = res.pipeline;
+        bool use_processors = pipeline.initialized();
+
+        if (res.pipeline.initialized())
+            use_processors = true;
 
         if (const auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
         {
@@ -390,7 +390,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Limits apply only to the final result.
             pipeline.setProgressCallback(context.getProgressCallback());
             pipeline.setProcessListElement(context.getProcessListElement());
-            if (stage == QueryProcessingStage::Complete)
+            if (stage == QueryProcessingStage::Complete && !pipeline.isCompleted())
             {
                 pipeline.resize(1);
                 pipeline.addSimpleTransform([&](const Block & header)
@@ -505,10 +505,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 if (elem.read_rows != 0)
                 {
-                    LOG_INFO(&Logger::get("executeQuery"), "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
-                        elem.read_rows, formatReadableSizeWithBinarySuffix(elem.read_bytes), elapsed_seconds,
+                    LOG_INFO(&Poco::Logger::get("executeQuery"), "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+                        elem.read_rows, ReadableSize(elem.read_bytes), elapsed_seconds,
                         static_cast<size_t>(elem.read_rows / elapsed_seconds),
-                        formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds));
+                        ReadableSize(elem.read_bytes / elapsed_seconds));
                 }
 
                 elem.thread_ids = std::move(info.thread_ids);
@@ -585,7 +585,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 std::stringstream log_str;
                 log_str << "Query pipeline:\n";
                 res.in->dumpTree(log_str);
-                LOG_DEBUG(&Logger::get("executeQuery"), log_str.str());
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"), log_str.str());
             }
         }
     }
@@ -771,29 +771,36 @@ void executeQuery(
             if (ast_query_with_output && ast_query_with_output->settings_ast)
                 InterpreterSetQuery(ast_query_with_output->settings_ast, context).executeForCurrentContext();
 
-            pipeline.addSimpleTransform([](const Block & header)
+            if (!pipeline.isCompleted())
             {
-                return std::make_shared<MaterializingTransform>(header);
-            });
+                pipeline.addSimpleTransform([](const Block & header)
+                {
+                    return std::make_shared<MaterializingTransform>(header);
+                });
 
-            auto out = context.getOutputFormatProcessor(format_name, *out_buf, pipeline.getHeader());
-            out->setAutoFlush();
+                auto out = context.getOutputFormatProcessor(format_name, *out_buf, pipeline.getHeader());
+                out->setAutoFlush();
 
-            /// Save previous progress callback if any. TODO Do it more conveniently.
-            auto previous_progress_callback = context.getProgressCallback();
+                /// Save previous progress callback if any. TODO Do it more conveniently.
+                auto previous_progress_callback = context.getProgressCallback();
 
-            /// NOTE Progress callback takes shared ownership of 'out'.
-            pipeline.setProgressCallback([out, previous_progress_callback] (const Progress & progress)
+                /// NOTE Progress callback takes shared ownership of 'out'.
+                pipeline.setProgressCallback([out, previous_progress_callback] (const Progress & progress)
+                {
+                    if (previous_progress_callback)
+                        previous_progress_callback(progress);
+                    out->onProgress(progress);
+                });
+
+                if (set_result_details)
+                    set_result_details(context.getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
+
+                pipeline.setOutputFormat(std::move(out));
+            }
+            else
             {
-                if (previous_progress_callback)
-                    previous_progress_callback(progress);
-                out->onProgress(progress);
-            });
-
-            if (set_result_details)
-                set_result_details(context.getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
-
-            pipeline.setOutput(std::move(out));
+                pipeline.setProgressCallback(context.getProgressCallback());
+            }
 
             {
                 auto executor = pipeline.execute();

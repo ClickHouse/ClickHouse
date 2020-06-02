@@ -35,7 +35,7 @@ public:
         size_t max_block_size,
         WriteBuffer * out_row_sources_buf_,
         bool use_average_block_sizes,
-        Logger * log_);
+        Poco::Logger * log_);
 
     Status merge() override;
 
@@ -62,7 +62,7 @@ private:
     PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
     size_t count_incorrect_data = 0;    /// To prevent too many error messages from writing to the log.
-    Logger * log;
+    Poco::Logger * log;
 
     void reportIncorrectData();
     void insertRow(RowRef & row);

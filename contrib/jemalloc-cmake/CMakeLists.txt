@@ -17,7 +17,13 @@ if (ENABLE_JEMALLOC)
         #
         # By enabling percpu_arena number of arenas limited to number of CPUs and hence
         # this problem should go away.
-        set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu" CACHE STRING "Change default configuration string of JEMalloc" )
+        set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0")
+        # CACHE variable is empty, to allow changing defaults without necessity
+        # to purge cache
+        set (JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE "" CACHE STRING "Change default configuration string of JEMalloc" )
+        if (JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE)
+            set (JEMALLOC_CONFIG_MALLOC_CONF "${JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE}")
+        endif()
         message (STATUS "jemalloc malloc_conf: ${JEMALLOC_CONFIG_MALLOC_CONF}")
 
         set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc")
@@ -55,6 +61,7 @@ if (ENABLE_JEMALLOC)
             ${LIBRARY_DIR}/src/ticker.c
             ${LIBRARY_DIR}/src/tsd.c
             ${LIBRARY_DIR}/src/witness.c
+            ${LIBRARY_DIR}/src/safety_check.c
         )
         if (OS_DARWIN)
             list(APPEND SRCS ${LIBRARY_DIR}/src/zone.c)
@@ -89,6 +96,8 @@ if (ENABLE_JEMALLOC)
         endif ()
 
         target_compile_options(jemalloc PRIVATE -Wno-redundant-decls)
+        # for RTLD_NEXT
+        target_compile_options(jemalloc PRIVATE -D_GNU_SOURCE)
     else ()
         find_library(LIBRARY_JEMALLOC jemalloc)
         find_path(INCLUDE_JEMALLOC jemalloc/jemalloc.h)

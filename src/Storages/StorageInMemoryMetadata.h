@@ -72,5 +72,4 @@ struct StorageMetadataKeyField
     static StorageMetadataKeyField getKeyFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
 };
 
-
 }

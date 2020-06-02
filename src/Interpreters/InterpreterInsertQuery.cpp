@@ -28,6 +28,11 @@
 #include <Storages/StorageDistributed.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/NullSink.h>
+#include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/Sources/SinkToOutputStream.h>
+#include <Processors/ConcatProcessor.h>
 
 
 namespace DB
@@ -65,7 +70,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     }
 
     query.table_id = context.resolveStorageID(query.table_id);
-    return DatabaseCatalog::instance().getTable(query.table_id);
+    return DatabaseCatalog::instance().getTable(query.table_id, context);
 }
 
 Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table) const
@@ -117,8 +122,6 @@ BlockIO InterpreterInsertQuery::execute()
     if (!query.table_function)
         context.checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
-    BlockInputStreams in_streams;
-    BlockOutputStreams out_streams;
     bool is_distributed_insert_select = false;
 
     if (query.select && table->isRemote() && settings.parallel_distributed_insert_select)
@@ -159,6 +162,8 @@ BlockIO InterpreterInsertQuery::execute()
             const auto & cluster = storage_src->getCluster();
             const auto & shards_info = cluster->getShardsInfo();
 
+            std::vector<QueryPipeline> pipelines;
+
             String new_query_str = queryToString(new_query);
             for (size_t shard_index : ext::range(0, shards_info.size()))
             {
@@ -166,8 +171,7 @@ BlockIO InterpreterInsertQuery::execute()
                 if (shard_info.isLocal())
                 {
                     InterpreterInsertQuery interpreter(new_query, context);
-                    auto block_io = interpreter.execute();
-                    in_streams.push_back(block_io.in);
+                    pipelines.emplace_back(interpreter.execute().pipeline);
                 }
                 else
                 {
@@ -179,13 +183,20 @@ BlockIO InterpreterInsertQuery::execute()
 
                     ///  INSERT SELECT query returns empty block
                     auto in_stream = std::make_shared<RemoteBlockInputStream>(std::move(connections), new_query_str, Block{}, context);
-                    in_streams.push_back(in_stream);
+                    pipelines.emplace_back();
+                    pipelines.back().init(Pipe(std::make_shared<SourceFromInputStream>(std::move(in_stream))));
+                    pipelines.back().setSinks([](const Block & header, QueryPipeline::StreamType) -> ProcessorPtr
+                    {
+                        return std::make_shared<EmptySink>(header);
+                    });
                 }
-                out_streams.push_back(std::make_shared<NullBlockOutputStream>(Block()));
             }
+
+            res.pipeline.unitePipelines(std::move(pipelines), {});
         }
     }
 
+    BlockOutputStreams out_streams;
     if (!is_distributed_insert_select || query.watch)
     {
         size_t out_streams_size = 1;
@@ -193,27 +204,21 @@ BlockIO InterpreterInsertQuery::execute()
         {
             /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
             InterpreterSelectWithUnionQuery interpreter_select{ query.select, context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
+            res = interpreter_select.execute();
 
             if (table->supportsParallelInsert() && settings.max_insert_threads > 1)
-            {
-                in_streams = interpreter_select.executeWithMultipleStreams(res.pipeline);
-                out_streams_size = std::min(size_t(settings.max_insert_threads), in_streams.size());
-            }
+                out_streams_size = std::min(size_t(settings.max_insert_threads), res.pipeline.getNumStreams());
+
+            if (out_streams_size == 1)
+                res.pipeline.addPipe({std::make_shared<ConcatProcessor>(res.pipeline.getHeader(), res.pipeline.getNumStreams())});
             else
-            {
-                res = interpreter_select.execute();
-                in_streams.emplace_back(res.in);
-                res.in = nullptr;
-                res.out = nullptr;
-            }
+                res.pipeline.resize(out_streams_size);
         }
         else if (query.watch)
         {
             InterpreterWatchQuery interpreter_watch{ query.watch, context };
             res = interpreter_watch.execute();
-            in_streams.emplace_back(res.in);
-            res.in = nullptr;
-            res.out = nullptr;
+            res.pipeline.init(Pipe(std::make_shared<SourceFromInputStream>(std::move(res.in))));
         }
 
         for (size_t i = 0; i < out_streams_size; i++)
@@ -228,6 +233,21 @@ BlockIO InterpreterInsertQuery::execute()
             else
                 out = std::make_shared<PushingToViewsBlockOutputStream>(table, context, query_ptr, no_destination);
 
+            /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
+
+            /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
+            if (const auto & constraints = table->getConstraints(); !constraints.empty())
+                out = std::make_shared<CheckConstraintsBlockOutputStream>(
+                    query.table_id, out, out->getHeader(), table->getConstraints(), context);
+
+            /// Actually we don't know structure of input blocks from query/table,
+            /// because some clients break insertion protocol (columns != header)
+            out = std::make_shared<AddingDefaultBlockOutputStream>(
+                out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
+
+            /// It's important to squash blocks as early as possible (before other transforms),
+            ///  because other transforms may work inefficient if block size is small.
+
             /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
             /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
             if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash && !query.watch)
@@ -239,15 +259,6 @@ BlockIO InterpreterInsertQuery::execute()
                     context.getSettingsRef().min_insert_block_size_bytes);
             }
 
-            /// Actually we don't know structure of input blocks from query/table,
-            /// because some clients break insertion protocol (columns != header)
-            out = std::make_shared<AddingDefaultBlockOutputStream>(
-                out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
-
-            if (const auto & constraints = table->getConstraints(); !constraints.empty())
-                out = std::make_shared<CheckConstraintsBlockOutputStream>(
-                    query.table_id, out, query_sample_block, table->getConstraints(), context);
-
             auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
             out_wrapper->setProcessListElement(context.getProcessListElement());
             out = std::move(out_wrapper);
@@ -256,27 +267,35 @@ BlockIO InterpreterInsertQuery::execute()
     }
 
     /// What type of query: INSERT or INSERT SELECT or INSERT WATCH?
-    if (query.select || query.watch)
+    if (is_distributed_insert_select)
     {
-        for (auto & in_stream : in_streams)
-        {
-            in_stream = std::make_shared<ConvertingBlockInputStream>(
-                in_stream, out_streams.at(0)->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
-        }
+        /// Pipeline was already built.
+    }
+    else if (query.select || query.watch)
+    {
+        const auto & header = out_streams.at(0)->getHeader();
 
-        Block in_header = in_streams.at(0)->getHeader();
-        if (in_streams.size() > 1)
+        res.pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
-            for (size_t i = 1; i < in_streams.size(); ++i)
-                assertBlocksHaveEqualStructure(in_streams[i]->getHeader(), in_header, query.select ? "INSERT SELECT" : "INSERT WATCH");
-        }
+            return std::make_shared<ConvertingTransform>(in_header, header,
+                    ConvertingTransform::MatchColumnsMode::Position);
+        });
 
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(in_streams, out_streams);
+        res.pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
+        {
+            if (type != QueryPipeline::StreamType::Main)
+                return nullptr;
+
+            auto stream = std::move(out_streams.back());
+            out_streams.pop_back();
+
+            return std::make_shared<SinkToOutputStream>(std::move(stream));
+        });
 
         if (!allow_materialized)
         {
             for (const auto & column : table->getColumns())
-                if (column.default_desc.kind == ColumnDefaultKind::Materialized && in_header.has(column.name))
+                if (column.default_desc.kind == ColumnDefaultKind::Materialized && header.has(column.name))
                     throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
     }
@@ -288,6 +307,7 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else
         res.out = std::move(out_streams.at(0));
+
     res.pipeline.addStorageHolder(table);
 
     return res;
