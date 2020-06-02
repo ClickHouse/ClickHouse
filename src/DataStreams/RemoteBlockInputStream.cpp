@@ -4,12 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_PACKET_FROM_SERVER;
-}
-
-
 RemoteBlockInputStream::RemoteBlockInputStream(
         Connection & connection,
         const String & query_, const Block & header_, const Context & context_, const Settings * settings,
