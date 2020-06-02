@@ -5,7 +5,7 @@ if (NOT EXISTS "${SENTRY_INCLUDE_DIR}/sentry.h")
     return()
 endif ()
 
-if (NOT OS_FREEBSD)
+if (NOT OS_FREEBSD AND NOT SPLIT_SHARED_LIBRARIES)
     option (USE_SENTRY "Use Sentry" ON)
 
     set (CURL_LIBRARY ${ClickHouse_SOURCE_DIR}/contrib/curl/lib)
