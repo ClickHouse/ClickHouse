@@ -8,7 +8,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/PartDestinationType.h>
+#include <Storages/DataDestinationType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -21,7 +21,6 @@
 #include <Interpreters/PartLog.h>
 #include <Disks/StoragePolicy.h>
 #include <Interpreters/Aggregator.h>
-#include <Storages/MergeTree/TTLMode.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -521,11 +520,6 @@ public:
 
     bool hasSkipIndices() const { return !skip_indices.empty(); }
 
-    bool hasAnyColumnTTL() const { return !column_ttl_entries_by_name.empty(); }
-    bool hasAnyMoveTTL() const { return !move_ttl_entries.empty(); }
-    bool hasRowsTTL() const override { return !rows_ttl_entry.isEmpty(); }
-    bool hasAnyTTL() const override { return hasRowsTTL() || hasAnyMoveTTL() || hasAnyColumnTTL(); }
-
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const;
 
@@ -627,6 +621,13 @@ public:
 
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
+    /// Returns destination disk or volume for the TTL rule according to current
+    /// storage policy
+    SpacePtr getDestinationForTTL(const TTLDescription & ttl) const;
+
+    /// Checks if given part already belongs destination disk or volume for the
+    /// TTL rule.
+    bool isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -646,50 +647,16 @@ public:
     /// Secondary (data skipping) indices for MergeTree
     MergeTreeIndices skip_indices;
 
+    ExpressionActionsPtr skip_indices_expr;
     ExpressionActionsPtr primary_key_and_skip_indices_expr;
     ExpressionActionsPtr sorting_key_and_skip_indices_expr;
 
-    struct TTLEntry
-    {
-        TTLMode mode;
+    std::optional<TTLDescription> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
-        ExpressionActionsPtr expression;
-        String result_column;
-
-        ExpressionActionsPtr where_expression;
-        String where_result_column;
-
-        Names group_by_keys;
-        std::vector<std::tuple<String, String, ExpressionActionsPtr>> group_by_aggregations;
-        AggregateDescriptions aggregate_descriptions;
-
-        /// Name and type of a destination are only valid in table-level context.
-        PartDestinationType destination_type;
-        String destination_name;
-
-        ASTPtr entry_ast;
-
-        /// Returns destination disk or volume for this rule.
-        SpacePtr getDestination(StoragePolicyPtr policy) const;
-
-        /// Checks if given part already belongs destination disk or volume for this rule.
-        bool isPartInDestination(StoragePolicyPtr policy, const IMergeTreeDataPart & part) const;
-
-        bool isEmpty() const { return expression == nullptr; }
-    };
-
-    std::optional<TTLEntry> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
-
-    using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
-    TTLEntriesByName column_ttl_entries_by_name;
-
-    TTLEntry rows_ttl_entry;
-
-    /// This mutex is required for background move operations which do not obtain global locks.
+    /// This mutex is required for background move operations which do not
+    /// obtain global locks.
+    /// TODO (alesap) It will be removed after metadata became atomic
     mutable std::mutex move_ttl_entries_mutex;
-
-    /// Vector rw operations have to be done under "move_ttl_entries_mutex".
-    std::vector<TTLEntry> move_ttl_entries;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
@@ -717,7 +684,6 @@ protected:
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
 
-    ASTPtr ttl_table_ast;
     ASTPtr settings_ast;
 
     bool require_part_metadata;
@@ -732,7 +698,7 @@ protected:
     BrokenPartCallback broken_part_callback;
 
     String log_name;
-    Logger * log;
+    Poco::Logger * log;
 
     /// Storage settings.
     /// Use get and set to receive readonly versions.

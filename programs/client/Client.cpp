@@ -39,7 +39,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/config_version.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
@@ -76,6 +75,10 @@
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
@@ -1172,10 +1175,10 @@ private:
                 /// Poll for changes after a cancellation check, otherwise it never reached
                 /// because of progress updates from server.
                 if (connection->poll(poll_interval))
-                  break;
+                    break;
             }
 
-            if (!receiveAndProcessPacket())
+            if (!receiveAndProcessPacket(cancelled))
                 break;
         }
 
@@ -1186,14 +1189,16 @@ private:
 
     /// Receive a part of the result, or progress info or an exception and process it.
     /// Returns true if one should continue receiving packets.
-    bool receiveAndProcessPacket()
+    /// Output of result is suppressed if query was cancelled.
+    bool receiveAndProcessPacket(bool cancelled)
     {
         Packet packet = connection->receivePacket();
 
         switch (packet.type)
         {
             case Protocol::Server::Data:
-                onData(packet.block);
+                if (!cancelled)
+                    onData(packet.block);
                 return true;
 
             case Protocol::Server::Progress:
@@ -1205,11 +1210,13 @@ private:
                 return true;
 
             case Protocol::Server::Totals:
-                onTotals(packet.block);
+                if (!cancelled)
+                    onTotals(packet.block);
                 return true;
 
             case Protocol::Server::Extremes:
-                onExtremes(packet.block);
+                if (!cancelled)
+                    onExtremes(packet.block);
                 return true;
 
             case Protocol::Server::Exception:
@@ -1301,7 +1308,7 @@ private:
 
         while (packet_type && *packet_type == Protocol::Server::Log)
         {
-            receiveAndProcessPacket();
+            receiveAndProcessPacket(false);
             packet_type = connection->checkPacket();
         }
     }
@@ -1579,6 +1586,11 @@ private:
         auto embedded_stack_trace_pos = text.find("Stack trace");
         if (std::string::npos != embedded_stack_trace_pos && !config().getBool("stacktrace", false))
             text.resize(embedded_stack_trace_pos);
+
+        /// If we probably have progress bar, we should add additional newline,
+        /// otherwise exception may display concatenated with the progress bar.
+        if (need_render_progress)
+            std::cerr << '\n';
 
         std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
             << "Code: " << e.code() << ". " << text << std::endl;

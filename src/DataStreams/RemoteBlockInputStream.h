@@ -151,7 +151,7 @@ private:
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
-    Logger * log = &Logger::get("RemoteBlockInputStream");
+    Poco::Logger * log = &Poco::Logger::get("RemoteBlockInputStream");
 };
 
 }

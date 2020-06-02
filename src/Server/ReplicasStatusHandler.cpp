@@ -44,7 +44,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
             if (db.second->getEngineName() == "Lazy")
                 continue;
 
-            for (auto iterator = db.second->getTablesIterator(); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 const auto & table = iterator->table();
                 StorageReplicatedMergeTree * table_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
@@ -96,7 +96,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         }
         catch (...)
         {
-            LOG_ERROR((&Logger::get("ReplicasStatusHandler")), "Cannot send exception to client");
+            LOG_ERROR((&Poco::Logger::get("ReplicasStatusHandler")), "Cannot send exception to client");
         }
     }
 }

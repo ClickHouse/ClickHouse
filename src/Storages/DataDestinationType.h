@@ -4,7 +4,7 @@
 namespace DB
 {
 
-enum class PartDestinationType
+enum class DataDestinationType
 {
     DISK,
     VOLUME,

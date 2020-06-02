@@ -751,7 +751,11 @@ private:
 
 auto RandomishGenerator = [](auto i)
 {
-    return static_cast<decltype(i)>(sin(static_cast<double>(i * i)) * i);
+    using T = decltype(i);
+    double sin_value = sin(static_cast<double>(i * i)) * i;
+    if (sin_value < std::numeric_limits<T>::lowest() || sin_value > std::numeric_limits<T>::max())
+        return T{};
+    return T(sin_value);
 };
 
 auto MinMaxGenerator = []()
