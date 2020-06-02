@@ -88,7 +88,6 @@ private:
     Block totals;
     Block extremes;
 
-    ThrottlerPtr throttler;
     std::function<std::unique_ptr<MultiplexedConnections>()> create_multiplexed_connections;
     std::unique_ptr<MultiplexedConnections> multiplexed_connections;
 
