@@ -172,6 +172,7 @@ SRCS(
     FunctionsStringArray.cpp
     FunctionsStringSimilarity.cpp
     FunctionUnixTimestamp64.h
+    fuzzBits.cpp
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
