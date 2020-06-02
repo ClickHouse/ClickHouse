@@ -313,7 +313,7 @@ const StackTrace::Frames & StackTrace::getFrames() const
 {
     if (!frames.has_value())
     {
-        frames = std::array<Frame, 32>();
+        frames.emplace({});
         symbolize(frame_pointers.data(), offset, size, frames);
     }
     return frames;
