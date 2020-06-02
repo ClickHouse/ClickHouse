@@ -82,14 +82,16 @@ public:
         return size;
     }
 
-    /// Create task and start it.
+    /// Create task and start it. It is used internally.
     TaskHandle addTask(const Task & task);
 
+    /// The following two methods are invoked by Storage*MergeTree at startup
     /// Create task but not start it.
     TaskHandle createTask(const Task & task);
     /// Start the task that was created but not started. Precondition: task was not started.
-    void startTask(const TaskHandle & task);
+    void startTask(const TaskHandle & task, bool allow_execute_in_parallel = true);
 
+    /// Invoked by Storage*MergeTree at shutdown
     void removeTask(const TaskHandle & task);
 
     ~BackgroundProcessingPool();
@@ -109,13 +111,20 @@ protected:
 
     Threads threads;
 
-    std::atomic<bool> shutdown {false};
+    bool shutdown{false};
     std::condition_variable wake_event;
 
     /// Thread group used for profiling purposes
     ThreadGroupStatusPtr thread_group;
 
-    void threadFunction();
+    void workLoopFunc();
+
+    void rescheduleTask(Tasks::iterator & task_it, const Poco::Timestamp & new_scheduled_ts)
+    {
+        auto node_handle = tasks.extract(task_it);
+        node_handle.key() = new_scheduled_ts;
+        task_it = tasks.insert(std::move(node_handle));
+    }
 
 private:
     PoolSettings settings;
@@ -125,23 +134,30 @@ private:
 class BackgroundProcessingPoolTaskInfo
 {
 public:
-    /// Wake up any thread.
+    /// Signals random idle thread from the pool that this task is ready to be executed.
     void wake();
+    void signalReadyToRun(); /// TODO: Rename this properly
 
     BackgroundProcessingPoolTaskInfo(BackgroundProcessingPool & pool_, const BackgroundProcessingPool::Task & function_)
-        : pool(pool_), function(function_) {}
+        : pool(pool_), task_function(function_) {}
 
 protected:
     friend class BackgroundProcessingPool;
 
     BackgroundProcessingPool & pool;
-    BackgroundProcessingPool::Task function;
+    BackgroundProcessingPool::Task task_function;
 
-    /// Read lock is hold when task is executed.
+    /// Read lock is held while task is being executed.
+    /// Write lock is used for stopping BGProcPool
     std::shared_mutex rwlock;
+
+    bool allow_execute_in_parallel = false;
+    size_t concurrent_executors = 0;
+
+    /// Signals that this task must no longer be planned for execution and is about to be removed
     std::atomic<bool> removed {false};
 
-    std::multimap<Poco::Timestamp, std::shared_ptr<BackgroundProcessingPoolTaskInfo>>::iterator iterator;
+    BackgroundProcessingPool::Tasks::iterator iterator;
 
     /// For exponential backoff.
     size_t count_no_work_done = 0;
