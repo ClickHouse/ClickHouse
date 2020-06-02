@@ -216,7 +216,7 @@ void minOptimize(ASTFunction * f_n)
     ASTFunction * inter_node = getInternalFunction(f_n);
     if (inter_node && inter_node->name == mul)
     {
-        int sing = 1;
+        int sign = 1;
         std::pair<ASTs, ASTs> nodes = findAllConsts(f_n, mul);
 
         if (nodes.first.empty())
@@ -230,10 +230,10 @@ void minOptimize(ASTFunction * f_n)
 
             if ((arg->as<ASTLiteral>()->value.getType() == Field::Types::Int64 ||
                  arg->as<ASTLiteral>()->value.getType() == Field::Types::Int128) && num < static_cast<Int128>(0))
-                sing *= -1;
+                sign *= -1;
         }
 
-        if (sing == -1)
+        if (sign == -1)
             buildTree(f_n, max, mul, nodes);
         else
             buildTree(f_n, min, mul, nodes);
@@ -250,7 +250,7 @@ void maxOptimize(ASTFunction * f_n)
     ASTFunction * inter_node = getInternalFunction(f_n);
     if (inter_node && inter_node->name == mul)
     {
-        int sing = 1;
+        int sign = 1;
         std::pair<ASTs, ASTs> nodes = findAllConsts(f_n, mul);
 
         if (nodes.first.empty())
@@ -263,10 +263,10 @@ void maxOptimize(ASTFunction * f_n)
             /// if multiplication is negative, max function becomes min
             if ((arg->as<ASTLiteral>()->value.getType() == Field::Types::Int64 ||
                     arg->as<ASTLiteral>()->value.getType() == Field::Types::Int128) && num < static_cast<Int128>(0))
-                sing *= -1;
+                sign *= -1;
         }
 
-        if (sing == -1)
+        if (sign == -1)
             buildTree(f_n, min, mul, nodes);
         else
             buildTree(f_n, max, mul, nodes);
