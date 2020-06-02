@@ -185,6 +185,9 @@ void AsynchronousMetrics::update()
             {
                 ++total_number_of_tables;
                 const auto & table = iterator->table();
+                if (!table)
+                    continue;
+
                 StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
                 StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
 
