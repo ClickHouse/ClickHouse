@@ -1570,7 +1570,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
     auto clone_data_parts_from_source_table = [&] () -> size_t
     {
-        source_table = DatabaseCatalog::instance().tryGetTable(source_table_id);
+        source_table = DatabaseCatalog::instance().tryGetTable(source_table_id, global_context);
         if (!source_table)
         {
             LOG_DEBUG(log, "Can't use {} as source table for REPLACE PARTITION command. It does not exist.", source_table_id.getNameForLogs());
@@ -3243,7 +3243,8 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     zookeeper->multi(requests);
 
     {
-        /// TODO (relax this lock)
+        /// TODO (relax this lock and remove this action lock)
+        auto merges_block = getActionLock(ActionLocks::PartsMerge);
         auto table_lock = lockExclusively(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
@@ -3485,7 +3486,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                     case PartitionCommand::MoveDestinationType::TABLE:
                         checkPartitionCanBeDropped(command.partition);
                         String dest_database = query_context.resolveDatabase(command.to_database);
-                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table});
+                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
                         movePartitionToTable(dest_storage, command.partition, query_context);
                         break;
                 }
@@ -3496,7 +3497,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             {
                 checkPartitionCanBeDropped(command.partition);
                 String from_database = query_context.resolveDatabase(command.from_database);
-                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table});
+                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
             }
             break;

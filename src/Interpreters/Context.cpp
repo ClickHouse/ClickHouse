@@ -287,7 +287,7 @@ void NamedSession::release()
   */
 struct ContextShared
 {
-    Logger * log = &Logger::get("Context");
+    Poco::Logger * log = &Poco::Logger::get("Context");
 
     /// For access of most of shared objects. Recursive mutex.
     mutable std::recursive_mutex mutex;
@@ -2017,7 +2017,7 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
     auto lock = getLock();
 
     if (!shared->action_locks_manager)
-        shared->action_locks_manager = std::make_shared<ActionLocksManager>();
+        shared->action_locks_manager = std::make_shared<ActionLocksManager>(*this);
 
     return shared->action_locks_manager;
 }

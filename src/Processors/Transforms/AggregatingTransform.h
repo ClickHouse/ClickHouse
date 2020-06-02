@@ -88,7 +88,7 @@ private:
     Processors processors;
 
     AggregatingTransformParamsPtr params;
-    Logger * log = &Logger::get("AggregatingTransform");
+    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;

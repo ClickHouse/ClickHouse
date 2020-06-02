@@ -1,6 +1,6 @@
 #pragma once
 
-#cmakedefine HAVE_READPASSPHRASE
+/* #undef HAVE_READPASSPHRASE */
 
 #if !defined(HAVE_READPASSPHRASE)
 #    ifndef _PATH_TTY

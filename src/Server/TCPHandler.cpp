@@ -262,8 +262,8 @@ void TCPHandler::runImpl()
             else if (state.need_receive_data_for_input)
             {
                 /// It is special case for input(), all works for reading data from client will be done in callbacks.
-                /// state.io.in is NullAndDoCopyBlockInputStream so read it once.
-                state.io.in->read();
+                auto executor = state.io.pipeline.execute();
+                executor->execute(state.io.pipeline.getNumThreads());
                 state.io.onFinish();
             }
             else if (state.io.pipeline.initialized())
@@ -474,7 +474,7 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
         if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
         {
             if (!table_id.empty())
-                sendTableColumns(DatabaseCatalog::instance().getTable(table_id)->getColumns());
+                sendTableColumns(DatabaseCatalog::instance().getTable(table_id, *query_context)->getColumns());
         }
     }
 
@@ -627,7 +627,7 @@ void TCPHandler::processTablesStatusRequest()
     for (const QualifiedTableName & table_name: request.tables)
     {
         auto resolved_id = connection_context.tryResolveStorageID({table_name.database, table_name.table});
-        StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id);
+        StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, connection_context);
         if (!table)
             continue;
 
@@ -944,11 +944,11 @@ bool TCPHandler::receiveData(bool scalar)
                 StoragePtr storage;
                 /// If such a table does not exist, create it.
                 if (resolved)
-                    storage = DatabaseCatalog::instance().getTable(resolved);
+                    storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
                 else
                 {
                     NamesAndTypesList columns = block.getNamesAndTypesList();
-                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns});
+                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
                     storage = temporary_table.getTable();
                     query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
                 }

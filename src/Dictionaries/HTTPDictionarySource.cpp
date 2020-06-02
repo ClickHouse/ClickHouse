@@ -31,7 +31,7 @@ HTTPDictionarySource::HTTPDictionarySource(
     Block & sample_block_,
     const Context & context_,
     bool check_config)
-    : log(&Logger::get("HTTPDictionarySource"))
+    : log(&Poco::Logger::get("HTTPDictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , url{config.getString(config_prefix + ".url", "")}
@@ -71,7 +71,7 @@ HTTPDictionarySource::HTTPDictionarySource(
 }
 
 HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
-    : log(&Logger::get("HTTPDictionarySource"))
+    : log(&Poco::Logger::get("HTTPDictionarySource"))
     , update_time{other.update_time}
     , dict_struct{other.dict_struct}
     , url{other.url}
