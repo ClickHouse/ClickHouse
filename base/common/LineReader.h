@@ -23,7 +23,6 @@ public:
 
     using Patterns = std::vector<const char *>;
 
-    /// if delimiter is set, then it's multiline mode
     LineReader(const String & history_file_path, bool multiline, Patterns extenders, Patterns delimiters);
     virtual ~LineReader() {}
 
