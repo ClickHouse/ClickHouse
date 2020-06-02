@@ -3,6 +3,8 @@
 #include <IO/WriteBuffer.h>
 #include <Columns/IColumn.h>
 #include <list>
+#include <mutex>
+#include <atomic>
 #include <amqpcpp.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 
@@ -30,7 +32,7 @@ public:
 
     ~WriteBufferToRabbitMQProducer() override;
 
-    void count_row();
+    void countRow();
     void flush();
 
 private:
@@ -52,8 +54,11 @@ private:
     size_t next_queue = 0;
     UInt64 message_counter = 0;
     String channel_id;
+    std::atomic<bool> flush_returned = false;
+    std::mutex mutex;
 
     Messages messages;
+    Messages returned;
 
     Poco::Logger * log;
     const std::optional<char> delim;

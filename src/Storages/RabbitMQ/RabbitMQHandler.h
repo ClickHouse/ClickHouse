@@ -1,6 +1,8 @@
 #pragma once
 
+#include <thread>
 #include <memory>
+#include <mutex>
 #include <amqpcpp.h>
 #include <amqpcpp/libevent.h>
 #include <amqpcpp/linux_tcp.h>

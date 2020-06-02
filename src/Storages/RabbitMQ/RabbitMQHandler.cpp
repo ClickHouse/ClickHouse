@@ -16,7 +16,7 @@ void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * mes
 {
     LOG_ERROR(log, "Library error report: {}", message);
 
-    if (!connection->usable() || !connection->ready())
+    if (connection->closed())
     {
         std::cerr << "Connection lost, no recovery is possible";
         throw;

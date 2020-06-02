@@ -216,7 +216,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
     return std::make_shared<WriteBufferToRabbitMQProducer>(parsed_address, routing_key, exchange_name,
-            log, num_consumers, bind_by_id, hash_exchange,
+            log, num_consumers * num_queues, bind_by_id, hash_exchange,
             row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
