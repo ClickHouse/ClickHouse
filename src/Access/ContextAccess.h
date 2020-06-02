@@ -26,7 +26,6 @@ struct QuotaUsage;
 struct Settings;
 class SettingsConstraints;
 class AccessControlManager;
-class ExternalAuthenticators;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
@@ -63,7 +62,6 @@ public:
     UserPtr getUser() const;
     String getUserName() const;
 
-    /// External authenticators may be used by only some of the authentication mechanisms.
     bool isCorrectPassword(const String & password) const;
     bool isClientHostAllowed() const;
 
