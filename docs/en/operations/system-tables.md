@@ -20,7 +20,7 @@ System tables:
 
 Most of system tables store their data in RAM. ClickHouse server creates such system tables at the start.
 
-The [metric_log](#system_tables-metric_log), [query_log](#system_tables-query_log), [query_thread_log](#system_tables-query_thread_log), [trace_log](#system_tables-trace_log) system tables store data in a storage filesystem. You can alter them or remove from a disk manually. If you remove one of that tables from a disk, the ClickHouse server creates the table again at the time of the next recording. A storage period for these tables is not limited, and ClickHouse server doesn't delete their data automatically. You need to organize removing of outdated logs by yourself. For example, you can use [TTL](../sql-reference/statements/alter.md#manipulations-with-table-ttl) settings for removing outdated log records. 
+The system tables [metric_log](#system_tables-metric_log), [query_log](#system_tables-query_log), [query_thread_log](#system_tables-query_thread_log), [trace_log](#system_tables-trace_log) are served by [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) table engine that store data in a storage filesystem. You can alter some properties of these tables or remove them from a filesystem manually. If you remove a table from a filesystem, the ClickHouse server creates the empty one again at the time of the next data writing. A storage period for these tables is not limited, and ClickHouse server doesn't delete their data automatically. You need to organize removing of outdated logs by yourself. For example, you can use [TTL](../sql-reference/statements/alter.md#manipulations-with-table-ttl) settings for removing outdated log records. Also you can use the partitioning feature of `MergeTree`-engine tables.
 
 
 ### Sources of System Metrics {#system-tables-sources-of-system-metrics}
@@ -731,25 +731,21 @@ Settings.Values:      ['0','random','1','10000000000']
 
 ## system.query_thread_log {#system_tables-query_thread_log}
 
-The table contains information about each query execution thread.
+Contains information about threads which execute queries, for example, thread name, thread start time, duration of query processing.
 
-ClickHouse creates this table only if the [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in. 
+To start logging:
 
-!!! note "Note"
-    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
+1. Configure parameters in the [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
+2. Set [log_query_threads](settings/settings.md#settings-log-query-threads) to 1.
 
-To enable query logging, set the [log\_query\_threads](settings/settings.md#settings-log-query-threads) parameter to 1. For details, see the [Settings](settings/settings.md) section. 
-
-The flushing period of logs is set in `flush_interval_milliseconds` parameter of the [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing logs, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
-
-An arbitrary partitioning key parameter is set in the `system.query_thread_log` table of the [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) server setting. Use the `partition_by` parameter for setting it.
+The flushing period of logs is set in `flush_interval_milliseconds` parameter of the [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force logs flushing, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
 ClickHouse doesn't delete logs from the table automatically. See [Introduction](#system-tables-introduction) for more details.
 
 Columns:
 
--   `event_date` ([Date](../sql-reference/data-types/date.md)) — the date when the thread has finished execution of the query.
--   `event_time` ([DateTime](../sql-reference/data-types/datetime.md)) — the date and time when the thread has finished execution of the query.
+-   `event_date` ([Date](../sql-reference/data-types/date.md)) — The date when the thread has finished execution of the query.
+-   `event_time` ([DateTime](../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query.
 -   `query_start_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Start time of query execution.
 -   `query_duration_ms` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution.
 -   `read_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read rows.
@@ -845,7 +841,7 @@ ProfileEvents.Values: [1,97,81,5,81]
 
 **See Also**
 
--   [system.query\_log](#system_tables-query_log) — Contains information about an execution of the queries.
+- [system.query_log](#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
 
 ## system.trace\_log {#system_tables-trace_log}
 
