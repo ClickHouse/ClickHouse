@@ -115,6 +115,11 @@ void parseAndAddLDAPServers(ExternalAuthenticators & external_authenticators, co
 
 }
 
+ExternalAuthenticators::ExternalAuthenticators(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+{
+    parseAndAddLDAPServers(*this, config, log);
+}
+
 void ExternalAuthenticators::setLDAPServerParams(const String & server, const LDAPServerParams & params)
 {
     std::scoped_lock lock(mutex);
@@ -129,13 +134,6 @@ LDAPServerParams ExternalAuthenticators::getLDAPServerParams(const String & serv
     if (it == ldap_server_params.end())
         throw Exception("LDAP server '" + server + "' is not configured", ErrorCodes::BAD_ARGUMENTS);
     return it->second;
-}
-
-std::unique_ptr<ExternalAuthenticators> parseExternalAuthenticators(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
-{
-    auto external_authenticators = std::make_unique<ExternalAuthenticators>();
-    parseAndAddLDAPServers(*external_authenticators, config, log);
-    return external_authenticators;
 }
 
 }
