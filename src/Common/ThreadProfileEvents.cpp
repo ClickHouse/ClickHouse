@@ -1,5 +1,7 @@
 #include "ThreadProfileEvents.h"
 
+#if defined(__linux__)
+
 #include "TaskStatsInfoGetter.h"
 #include "ProcfsMetricsProvider.h"
 #include "hasLinuxCapability.h"
@@ -18,8 +20,6 @@
 #include <cerrno>
 #include <sys/types.h>
 #include <dirent.h>
-
-#if defined(__linux__)
 
 namespace DB
 {
