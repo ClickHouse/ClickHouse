@@ -23,10 +23,20 @@ namespace
 {
     StoragePtr createStorageDictionary(const String & database_name, const ExternalLoader::LoadResult & load_result)
     {
-        if (!load_result.config)
-            return nullptr;
-        DictionaryStructure dictionary_structure = ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
-        return StorageDictionary::create(StorageID(database_name, load_result.name), load_result.name, dictionary_structure);
+        try
+        {
+            if (!load_result.config)
+                return nullptr;
+            DictionaryStructure dictionary_structure = ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
+            return StorageDictionary::create(StorageID(database_name, load_result.name), load_result.name, dictionary_structure);
+        }
+        catch (Exception & e)
+        {
+            throw Exception(
+                fmt::format("Error while loading dictionary '{}.{}': {}",
+                    database_name, load_result.name, e.displayText()),
+                e.code());
+        }
     }
 }
 

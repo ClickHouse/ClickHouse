@@ -320,4 +320,6 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
     return res;
 }
 
+TypeIndex columnVectorDataType(const IColumn * column);
+
 }
