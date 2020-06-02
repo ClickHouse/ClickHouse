@@ -21,7 +21,7 @@ namespace zkutil
             zookeeper_holder(zookeeper_holder_),
             lock_path(lock_prefix_ + "/" + lock_name_),
             lock_message(lock_message_),
-            log(&Logger::get("zkutil::Lock"))
+            log(&Poco::Logger::get("zkutil::Lock"))
         {
             auto zookeeper = zookeeper_holder->getZooKeeper();
             if (create_parent_path_)
@@ -72,7 +72,7 @@ namespace zkutil
 
         std::string lock_path;
         std::string lock_message;
-        Logger * log;
+        Poco::Logger * log;
 
     };
 }

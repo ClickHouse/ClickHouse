@@ -203,7 +203,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , any_take_last_row(any_take_last_row_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
-    , log(&Logger::get("HashJoin"))
+    , log(&Poco::Logger::get("HashJoin"))
 {
     setSampleBlock(right_sample_block);
 }

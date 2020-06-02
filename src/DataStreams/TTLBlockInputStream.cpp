@@ -28,7 +28,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     , current_time(current_time_)
     , force(force_)
     , old_ttl_infos(data_part->ttl_infos)
-    , log(&Logger::get(storage.getLogName() + " (TTLBlockInputStream)"))
+    , log(&Poco::Logger::get(storage.getLogName() + " (TTLBlockInputStream)"))
     , date_lut(DateLUT::instance())
 {
     children.push_back(input_);

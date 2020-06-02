@@ -135,7 +135,7 @@ static void attachSystemTables(const Context & context)
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
-    Logger * log = &logger();
+    Poco::Logger * log = &logger();
     ThreadStatus thread_status;
     UseSSL use_ssl;
 

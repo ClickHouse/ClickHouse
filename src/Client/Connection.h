@@ -249,16 +249,16 @@ private:
         {
         }
 
-        Logger * get()
+        Poco::Logger * get()
         {
             if (!log)
-                log = &Logger::get("Connection (" + parent.getDescription() + ")");
+                log = &Poco::Logger::get("Connection (" + parent.getDescription() + ")");
 
             return log;
         }
 
     private:
-        std::atomic<Logger *> log;
+        std::atomic<Poco::Logger *> log;
         Connection & parent;
     };
 

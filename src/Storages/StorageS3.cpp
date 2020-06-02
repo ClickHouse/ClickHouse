@@ -119,7 +119,6 @@ namespace
                 return Chunk(std::move(columns), num_rows);
             }
 
-            reader->readSuffix();
             reader.reset();
 
             return {};

@@ -287,7 +287,7 @@ void NamedSession::release()
   */
 struct ContextShared
 {
-    Logger * log = &Logger::get("Context");
+    Poco::Logger * log = &Poco::Logger::get("Context");
 
     /// For access of most of shared objects. Recursive mutex.
     mutable std::recursive_mutex mutex;
