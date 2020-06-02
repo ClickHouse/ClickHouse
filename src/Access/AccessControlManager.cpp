@@ -101,7 +101,7 @@ void AccessControlManager::setLocalDirectory(const String & directory_path)
 
 void AccessControlManager::setUsersConfig(const Poco::Util::AbstractConfiguration & users_config)
 {
-    external_authenticators = parseExternalAuthenticators(users_config, getLogger());
+    external_authenticators = std::make_unique<ExternalAuthenticators>(users_config, getLogger());
     auto & users_config_access_storage = dynamic_cast<UsersConfigAccessStorage &>(getStorageByIndex(USERS_CONFIG_ACCESS_STORAGE_INDEX));
     users_config_access_storage.setConfiguration(users_config);
 }
