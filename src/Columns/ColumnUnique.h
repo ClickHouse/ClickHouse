@@ -78,9 +78,6 @@ public:
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                       PaddedPODArray<UInt64> & row_indexes, PaddedPODArray<Int8> & compare_results,
-                       int direction, int nan_direction_hint) const override;
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const override;
 
     void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
@@ -377,15 +374,6 @@ int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs,
 
     auto & column_unique = static_cast<const IColumnUnique &>(rhs);
     return getNestedColumn()->compareAt(n, m, *column_unique.getNestedColumn(), nan_direction_hint);
-}
-
-template <typename ColumnType>
-void ColumnUnique<ColumnType>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                             PaddedPODArray<UInt64> & row_indexes, PaddedPODArray<Int8> & compare_results,
-                                             int direction, int nan_direction_hint) const
-{
-    return compareImpl<ColumnUnique<ColumnType>>(static_cast<const ColumnUnique<ColumnType> &>(rhs), rhs_row_num, row_indexes,
-                                                 compare_results, direction, nan_direction_hint);
 }
 
 template <typename ColumnType>
