@@ -65,6 +65,8 @@ public:
     String getName() const override { return "Remote"; }
 
     Block getHeader() const override { return query_executor.getHeader(); }
+    Block getTotals() override { return query_executor.getTotals(); }
+    Block getExtremes() override { return query_executor.getExtremes(); }
 
 protected:
     Block readImpl() override;
