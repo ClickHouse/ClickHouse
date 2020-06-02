@@ -6,9 +6,11 @@
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -34,6 +36,7 @@
 #include <Common/quoteString.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <librdkafka/rdkafka.h>
+#include <common/getFQDNOrHostName.h>
 
 
 namespace DB
@@ -118,6 +121,7 @@ StorageKafka::StorageKafka(
     const ColumnsDescription & columns_,
     const String & brokers_,
     const String & group_,
+    const String & client_id_,
     const Names & topics_,
     const String & format_name_,
     char row_delimiter_,
@@ -132,12 +136,13 @@ StorageKafka::StorageKafka(
     , topics(global_context.getMacros()->expand(topics_))
     , brokers(global_context.getMacros()->expand(brokers_))
     , group(global_context.getMacros()->expand(group_))
+    , client_id(client_id_.empty() ? getDefaultClientId(table_id_) : global_context.getMacros()->expand(client_id_))
     , format_name(global_context.getMacros()->expand(format_name_))
     , row_delimiter(row_delimiter_)
     , schema_name(global_context.getMacros()->expand(schema_name_))
     , num_consumers(num_consumers_)
     , max_block_size(max_block_size_)
-    , log(&Logger::get("StorageKafka (" + table_id_.table_name + ")"))
+    , log(&Poco::Logger::get("StorageKafka (" + table_id_.table_name + ")"))
     , semaphore(0, num_consumers_)
     , skip_broken(skip_broken_)
     , intermediate_commit(intermediate_commit_)
@@ -147,6 +152,13 @@ StorageKafka::StorageKafka(
     setColumns(columns_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
+}
+
+String StorageKafka::getDefaultClientId(const StorageID & table_id_)
+{
+    std::stringstream ss;
+    ss << VERSION_NAME << "-" << getFQDNOrHostName() << "-" << table_id_.database_name << "-" << table_id_.table_name;
+    return ss.str();
 }
 
 
@@ -194,7 +206,7 @@ void StorageKafka::startup()
     {
         try
         {
-            pushReadBuffer(createReadBuffer());
+            pushReadBuffer(createReadBuffer(i));
             ++num_created_consumers;
         }
         catch (const cppkafka::Exception &)
@@ -262,7 +274,7 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
     cppkafka::Configuration conf;
     conf.set("metadata.broker.list", brokers);
     conf.set("group.id", group);
-    conf.set("client.id", VERSION_FULL);
+    conf.set("client.id", client_id);
     // TODO: fill required settings
     updateConfiguration(conf);
 
@@ -275,13 +287,22 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 }
 
 
-ConsumerBufferPtr StorageKafka::createReadBuffer()
+ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
 {
     cppkafka::Configuration conf;
 
     conf.set("metadata.broker.list", brokers);
     conf.set("group.id", group);
-    conf.set("client.id", VERSION_FULL);
+    if (num_consumers > 1)
+    {
+        std::stringstream ss;
+        ss << client_id << "-" << consumer_number;
+        conf.set("client.id", ss.str());
+    }
+    else
+    {
+        conf.set("client.id", client_id);
+    }
 
     conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
 
@@ -503,6 +524,7 @@ void registerStorageKafka(StorageFactory & factory)
           * - Kafka broker list
           * - List of topics
           * - Group ID (may be a constaint expression with a string result)
+          * - Client ID
           * - Message format (string)
           * - Row delimiter
           * - Schema (optional, if the format supports it)
@@ -709,9 +731,12 @@ void registerStorageKafka(StorageFactory & factory)
             }
         }
 
+        // Get and check client id
+        String client_id = kafka_settings.kafka_client_id.value;
+
         return StorageKafka::create(
             args.table_id, args.context, args.columns,
-            brokers, group, topics, format, row_delimiter, schema, num_consumers, max_block_size, skip_broken, intermediate_commit);
+            brokers, group, client_id, topics, format, row_delimiter, schema, num_consumers, max_block_size, skip_broken, intermediate_commit);
     };
 
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
@@ -724,7 +749,10 @@ NamesAndTypesList StorageKafka::getVirtuals() const
         {"_key", std::make_shared<DataTypeString>()},
         {"_offset", std::make_shared<DataTypeUInt64>()},
         {"_partition", std::make_shared<DataTypeUInt64>()},
-        {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}
+        {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
+        {"_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3))},
+        {"_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
     };
 }
 

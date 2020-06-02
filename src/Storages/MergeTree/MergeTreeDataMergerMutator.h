@@ -230,7 +230,7 @@ private:
     MergeTreeData & data;
     const size_t background_pool_size;
 
-    Logger * log;
+    Poco::Logger * log;
 
     /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;
