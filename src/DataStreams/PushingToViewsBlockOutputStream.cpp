@@ -153,7 +153,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     const Settings & settings = context.getSettingsRef();
     if (settings.parallel_view_processing && views.size() > 1)
     {
-        // Push to views concurrently if enabled, and more than one view is attached
+        // Push to views concurrently if enabled and more than one view is attached
         ThreadPool pool(std::min(size_t(settings.max_threads), views.size()));
         for (size_t view_num = 0; view_num < views.size(); ++view_num)
         {
