@@ -11,8 +11,3 @@ add_subdirectory (widechar_width)
 if (USE_MYSQL)
     add_subdirectory (mysqlxx)
 endif ()
-
-if (USE_SENTRY)
-    target_link_libraries (daemon PRIVATE curl)
-    target_link_libraries (daemon PRIVATE ${SENTRY_LIBRARY})
-endif ()
