@@ -143,6 +143,8 @@ static size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, s
             ++i;
         }
 
+        /// Now i points to position in bytes after regular ASCII sequence
+        /// and if width > limit, then (width - limit) is the number of extra ASCII characters after width limit.
         if (mode == BytesBeforLimit && width > limit)
             return i - (width - limit);
 
