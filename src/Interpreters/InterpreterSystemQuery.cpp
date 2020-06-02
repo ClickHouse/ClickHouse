@@ -146,12 +146,17 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
         {
             for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
+                StoragePtr table = iterator->table();
+                if (!table)
+                    continue;
+
                 if (!access->isGranted(log, getRequiredAccessType(action_type), elem.first, iterator->name()))
                     continue;
+
                 if (start)
-                    manager->remove(iterator->table(), action_type);
+                    manager->remove(table, action_type);
                 else
-                    manager->add(iterator->table(), action_type);
+                    manager->add(table, action_type);
             }
         }
     }
