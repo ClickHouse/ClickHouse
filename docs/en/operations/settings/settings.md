@@ -1348,6 +1348,12 @@ Possible values:
 
 Default value: 16.
 
+## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
+
+Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at ClickHouse server start and can't be changed in a user session.
+
+Default value: 16.
+
 ## low_cardinality_max_dictionary_size {#low_cardinality_max_dictionary_size}
 
 Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can't be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
@@ -1405,6 +1411,5 @@ Possible values:
 - 0 — Usage of `LowCardinality` is restricted.
 
 Default value: 0.
-
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
