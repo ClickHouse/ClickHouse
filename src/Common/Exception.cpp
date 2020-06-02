@@ -122,7 +122,7 @@ void throwFromErrnoWithPath(const std::string & s, const std::string & path, int
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
 {
-    tryLogCurrentException(&Logger::get(log_name), start_of_message);
+    tryLogCurrentException(&Poco::Logger::get(log_name), start_of_message);
 }
 
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
@@ -148,13 +148,16 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & 
         path = path.parent_path();
 
     auto fs = getStatVFS(path);
-    msg += "\nTotal space: "      + formatReadableSizeWithBinarySuffix(fs.f_blocks * fs.f_bsize)
-         + "\nAvailable space: "  + formatReadableSizeWithBinarySuffix(fs.f_bavail * fs.f_bsize)
-         + "\nTotal inodes: "     + formatReadableQuantity(fs.f_files)
-         + "\nAvailable inodes: " + formatReadableQuantity(fs.f_favail);
-
     auto mount_point = getMountPoint(path).string();
-    msg += "\nMount point: " + mount_point;
+
+    fmt::format_to(std::back_inserter(msg),
+        "\nTotal space: {}\nAvailable space: {}\nTotal inodes: {}\nAvailable inodes: {}\nMount point: {}",
+        ReadableSize(fs.f_blocks * fs.f_bsize),
+        ReadableSize(fs.f_bavail * fs.f_bsize),
+        formatReadableQuantity(fs.f_files),
+        formatReadableQuantity(fs.f_favail),
+        mount_point);
+
 #if defined(__linux__)
     msg += "\nFilesystem: " + getFilesystemName(mount_point);
 #endif

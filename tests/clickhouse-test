@@ -502,7 +502,14 @@ def main(args):
             total_tests_run += tests_n
 
     if args.hung_check:
-        processlist = get_processlist(args.client)
+
+        # Some queries may execute in background for some time after test was finished. This is normal.
+        for n in range(1, 60):
+            processlist = get_processlist(args.client)
+            if not processlist:
+                break
+            sleep(1)
+
         if processlist:
             print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
             print(processlist)

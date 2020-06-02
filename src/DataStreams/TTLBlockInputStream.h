@@ -52,7 +52,7 @@ private:
     NameSet empty_columns;
 
     size_t rows_removed = 0;
-    Logger * log;
+    Poco::Logger * log;
     const DateLUTImpl & date_lut;
 
     /// TODO rewrite defaults logic to evaluteMissingDefaults

@@ -152,7 +152,7 @@ public:
     ASTPtr getCreateTableQuery() override;
 
 protected:
-    Logger * log;
+    Poco::Logger * log;
 
 private:
     /* Saving thread data */
@@ -207,7 +207,7 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
-    log = &Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
+    log = &Poco::Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
 }
 
 
