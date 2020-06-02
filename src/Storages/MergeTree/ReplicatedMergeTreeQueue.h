@@ -56,7 +56,7 @@ private:
     String zookeeper_path;
     String replica_path;
     String logger_name;
-    Logger * log = nullptr;
+    Poco::Logger * log = nullptr;
 
     /// Protects the queue, future_parts and other queue state variables.
     mutable std::mutex state_mutex;

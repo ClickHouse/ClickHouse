@@ -20,7 +20,7 @@ namespace ErrorCodes
 }
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, const Context & context)
-        : IDatabase(name_), log(&Logger::get(logger)), global_context(context.getGlobalContext())
+        : IDatabase(name_), log(&Poco::Logger::get(logger)), global_context(context.getGlobalContext())
 {
 }
 

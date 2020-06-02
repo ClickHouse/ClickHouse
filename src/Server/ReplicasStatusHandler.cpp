@@ -96,7 +96,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         }
         catch (...)
         {
-            LOG_ERROR((&Logger::get("ReplicasStatusHandler")), "Cannot send exception to client");
+            LOG_ERROR((&Poco::Logger::get("ReplicasStatusHandler")), "Cannot send exception to client");
         }
     }
 }

@@ -834,6 +834,7 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
+@pytest.mark.skip(reason="Flacky test")
 @pytest.mark.parametrize("name,positive", [
     ("test_double_move_while_select_negative", 0),
     ("test_double_move_while_select_positive", 1),
