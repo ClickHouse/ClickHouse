@@ -65,7 +65,7 @@ size_t getFilterMask(const ColumnRawPtrs & lhs, const ColumnRawPtrs & rhs, size_
     }
 
     for (size_t i = 0; i != rows_num; ++i)
-        filtered_count -= filter[i] = (compare_results[i] >= 0);
+        filtered_count -= filter[i] = (compare_results[i] <= 0);
 
     return filtered_count;
 }
