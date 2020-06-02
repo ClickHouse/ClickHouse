@@ -6,7 +6,6 @@
 #include <thread>
 #include <chrono>
 #include <string>
-#include <common/logger_useful.h>
 
 #include <Poco/Timespan.h>
 #include <Common/ZooKeeper/IKeeper.h>
