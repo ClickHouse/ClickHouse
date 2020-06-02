@@ -12,6 +12,9 @@ if (NOT OS_FREEBSD AND NOT SPLIT_SHARED_LIBRARIES AND NOT (OS_DARWIN AND COMPILE
     set (SENTRY_BACKEND "none")
     set (CURL_LIBRARY ${ClickHouse_SOURCE_DIR}/contrib/curl/lib)
     set (CURL_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/curl/include)
+    if (NOT_UNBUNDLED)
+        set (BUILD_SHARED_LIBS OFF)
+    endif()
 
     message (STATUS "Using sentry=${USE_SENTRY}: ${SENTRY_LIBRARY}")
 
