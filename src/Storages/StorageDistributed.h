@@ -94,6 +94,7 @@ public:
     void shutdown() override;
 
     Strings getDataPaths() const override;
+    size_t getInsertQueueSize() const { return 0; }
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
@@ -107,6 +108,8 @@ public:
     void createDirectoryMonitors(const std::string & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
     StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & disk, const std::string & name);
+    /// Return list of all monitors lazy (because there are no monitors until at least one INSERT executed)
+    std::vector<StorageDistributedDirectoryMonitor *> getAllDirectoryMonitors();
 
     void flushClusterNodesAllData();
 
