@@ -493,6 +493,41 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
+void ColumnString::compareColumn(
+    const IColumn & rhs_, size_t rhs_row_num,
+    PaddedPODArray<UInt64> & row_indexes, PaddedPODArray<Int8> & compare_results,
+    int direction, int) const
+{
+    size_t rows_num = size();
+    size_t row_indexes_size = row_indexes.size();
+
+    if (compare_results.empty())
+        compare_results.resize(rows_num, 0);
+
+    else if (compare_results.size() != rows_num)
+        throw Exception(
+                "Size of compare_results: " + std::to_string(compare_results.size()) + " doesn't match rows_num: " + std::to_string(rows_num),
+                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
+    const auto * rhs_data = rhs.chars.data() + rhs.offsetAt(rhs_row_num);
+    auto rhs_size = rhs.sizeAt(rhs_row_num) - 1;
+
+    size_t cur_row = 0;
+    for (size_t i = 0; i < row_indexes_size; ++i)
+    {
+        UInt64 index = row_indexes[i];
+        compare_results[index] = direction * memcmpSmallAllowOverflow15(chars.data() + offsetAt(index), sizeAt(index) - 1, rhs_data, rhs_size);
+        if (compare_results[index] == 0)
+        {
+            row_indexes[cur_row] = index;
+            ++cur_row;
+        }
+    }
+
+    row_indexes.resize(row_indexes_size);
+}
+
 
 int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const
 {
