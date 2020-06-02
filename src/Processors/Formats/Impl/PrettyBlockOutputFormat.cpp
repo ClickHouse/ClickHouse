@@ -69,8 +69,8 @@ void PrettyBlockOutputFormat::calculateWidths(
             }
 
             widths[i][j] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), prefix);
-            max_padded_widths[i] = std::max(max_padded_widths[i],
-                std::min(format_settings.pretty.max_column_pad_width,
+            max_padded_widths[i] = std::max<UInt64>(max_padded_widths[i],
+                std::min<UInt64>(format_settings.pretty.max_column_pad_width,
                     std::min<UInt64>(format_settings.pretty.max_value_width, widths[i][j])));
         }
 
@@ -79,7 +79,7 @@ void PrettyBlockOutputFormat::calculateWidths(
             // name string doesn't contain Tab, no need to pass `prefix`
             name_widths[i] = std::min<UInt64>(format_settings.pretty.max_column_pad_width,
                 UTF8::computeWidth(reinterpret_cast<const UInt8 *>(elem.name.data()), elem.name.size()));
-            max_padded_widths[i] = std::max(max_padded_widths[i], name_widths[i]);
+            max_padded_widths[i] = std::max<UInt64>(max_padded_widths[i], name_widths[i]);
         }
         prefix += max_padded_widths[i] + 3;
     }
