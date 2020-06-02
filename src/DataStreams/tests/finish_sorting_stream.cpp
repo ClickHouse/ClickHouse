@@ -11,8 +11,8 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
+#include <DataStreams/BlocksListBlockInputStream.h>
 
 
 using namespace DB;
@@ -38,8 +38,8 @@ int main(int argc, char ** argv)
         SortDescription sort_descr;
         sort_descr.emplace_back("col1", 1, 1);
         Block block_header;
+        BlocksList blocks;
 
-        Pipes sources;
         for (size_t t = 0; t < m; ++t)
         {
             Block block;
@@ -64,11 +64,13 @@ int main(int argc, char ** argv)
                 block_header = block.cloneEmpty();
 
             sortBlock(block, sort_descr);
-            sources.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<OneBlockInputStream>(block)));
+            blocks.emplace_back(std::move(block));
         }
 
+        auto blocks_stream = std::make_shared<BlocksListBlockInputStream>(std::move(blocks));
+        Pipe source(std::make_shared<SourceFromInputStream>(std::move(blocks_stream)));
         QueryPipeline pipeline;
-        pipeline.init(std::move(sources));
+        pipeline.init(std::move(source));
 
         pipeline.addPipe({std::make_shared<MergeSortingTransform>(pipeline.getHeader(), sort_descr, n, 0, 0, 0, nullptr, 0)});
 
