@@ -829,7 +829,7 @@ using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants>;
 
 /** How are "total" values calculated with WITH TOTALS?
-  * (For more details, see TotalsHavingBlockInputStream.)
+  * (For more details, see TotalsHavingTransform.)
   *
   * In the absence of group_by_overflow_mode = 'any', the data is aggregated as usual, but the states of the aggregate functions are not finalized.
   * Later, the aggregate function states for all rows (passed through HAVING) are merged into one - this will be TOTALS.
@@ -1048,7 +1048,7 @@ protected:
 
     std::mutex mutex;
 
-    Logger * log = &Logger::get("Aggregator");
+    Poco::Logger * log = &Poco::Logger::get("Aggregator");
 
     /// Returns true if you can abort the current task.
     CancellationHook isCancelled;

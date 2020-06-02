@@ -231,6 +231,8 @@ void StorageMergeTree::alter(
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     auto maybe_mutation_commands = commands.getMutationCommands(metadata, context.getSettingsRef().materialize_ttl_after_modify);
+    String mutation_file_name;
+    Int64 mutation_version = -1;
     commands.apply(metadata);
 
     /// This alter can be performed at metadata level only
@@ -244,24 +246,25 @@ void StorageMergeTree::alter(
     }
     else
     {
-        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+        {
+            /// TODO (relax this lock and remove this action lock)
+            auto merges_block = getActionLock(ActionLocks::PartsMerge);
+            lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-        changeSettings(metadata.settings_ast, table_lock_holder);
-        /// Reinitialize primary key because primary key column types might have changed.
-        setProperties(metadata);
+            changeSettings(metadata.settings_ast, table_lock_holder);
+            /// Reinitialize primary key because primary key column types might have changed.
+            setProperties(metadata);
 
-        setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast);
+            setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
 
-        String mutation_file_name;
-        Int64 mutation_version = -1;
-        if (!maybe_mutation_commands.empty())
-            mutation_version = startMutation(maybe_mutation_commands, mutation_file_name);
-
-        /// We release all locks except alter_intention_lock which allows
-        /// to execute alter queries sequentially
-        table_lock_holder.releaseAllExceptAlterIntention();
+            if (!maybe_mutation_commands.empty())
+                mutation_version = startMutation(maybe_mutation_commands, mutation_file_name);
+            /// We release all locks except alter_intention_lock which allows
+            /// to execute alter queries sequentially
+            table_lock_holder.releaseAllExceptAlterIntention();
+        }
 
         /// Always execute required mutations synchronously, because alters
         /// should be executed in sequential order.
@@ -990,7 +993,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                     case PartitionCommand::MoveDestinationType::TABLE:
                         checkPartitionCanBeDropped(command.partition);
                         String dest_database = context.resolveDatabase(command.to_database);
-                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table});
+                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, context);
                         movePartitionToTable(dest_storage, command.partition, context);
                         break;
                 }
@@ -1002,7 +1005,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             {
                 checkPartitionCanBeDropped(command.partition);
                 String from_database = context.resolveDatabase(command.from_database);
-                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table});
+                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, context);
                 replacePartitionFrom(from_storage, command.partition, command.replace, context);
             }
             break;

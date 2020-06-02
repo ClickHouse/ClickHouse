@@ -55,6 +55,7 @@ function(protobuf_generate_cpp_impl SRCS HDRS MODES OUTPUT_FILE_EXTS PLUGIN)
     endif()
 
     set (intermediate_dir ${CMAKE_CURRENT_BINARY_DIR}/intermediate)
+    file (MAKE_DIRECTORY ${intermediate_dir})
 
     set (protoc_args)
     foreach (mode ${MODES})
@@ -112,7 +113,7 @@ if (PROTOBUF_GENERATE_CPP_SCRIPT_MODE)
     set (intermediate_dir ${DIR}/intermediate)
     set (intermediate_output "${intermediate_dir}/${FILENAME}")
 
-    if (COMPILER_ID STREQUAL "Clang")
+    if (COMPILER_ID MATCHES "Clang")
         set (pragma_push "#pragma clang diagnostic push\n")
         set (pragma_pop "#pragma clang diagnostic pop\n")
         set (pragma_disable_warnings "#pragma clang diagnostic ignored \"-Weverything\"\n")

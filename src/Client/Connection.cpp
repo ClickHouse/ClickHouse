@@ -508,18 +508,18 @@ void Connection::sendScalarsData(Scalars & data)
             "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
             static_cast<size_t>(rows / watch.elapsedSeconds()),
-            formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes),
-            formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes / watch.elapsedSeconds()),
+            ReadableSize(maybe_compressed_out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
             static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
-            formatReadableSizeWithBinarySuffix(out_bytes),
-            formatReadableSizeWithBinarySuffix(out_bytes / watch.elapsedSeconds()));
+            ReadableSize(out_bytes),
+            ReadableSize(out_bytes / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
             static_cast<size_t>(rows / watch.elapsedSeconds()),
-            formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes),
-            formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes / watch.elapsedSeconds()));
+            ReadableSize(maybe_compressed_out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
 }
 
 namespace
@@ -612,18 +612,18 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
             static_cast<size_t>(rows / watch.elapsedSeconds()),
-            formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes),
-            formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes / watch.elapsedSeconds()),
+            ReadableSize(maybe_compressed_out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
             static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
-            formatReadableSizeWithBinarySuffix(out_bytes),
-            formatReadableSizeWithBinarySuffix(out_bytes / watch.elapsedSeconds()));
+            ReadableSize(out_bytes),
+            ReadableSize(out_bytes / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
             static_cast<size_t>(rows / watch.elapsedSeconds()),
-            formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes),
-            formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes / watch.elapsedSeconds()));
+            ReadableSize(maybe_compressed_out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
 }
 
 std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const

@@ -152,7 +152,7 @@ public:
     ASTPtr getCreateTableQuery() override;
 
 protected:
-    Logger * log;
+    Poco::Logger * log;
 
 private:
     /* Saving thread data */
@@ -207,7 +207,7 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
-    log = &Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
+    log = &Poco::Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
 }
 
 
@@ -431,7 +431,7 @@ void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
-    table = DatabaseCatalog::instance().tryGetTable(table_id);
+    table = DatabaseCatalog::instance().tryGetTable(table_id, context);
 
     if (table)
     {
@@ -442,7 +442,7 @@ void SystemLog<LogElement>::prepareTable()
         {
             /// Rename the existing table.
             int suffix = 0;
-            while (DatabaseCatalog::instance().isTableExist({table_id.database_name, table_id.table_name + "_" + toString(suffix)}))
+            while (DatabaseCatalog::instance().isTableExist({table_id.database_name, table_id.table_name + "_" + toString(suffix)}, context))
                 ++suffix;
 
             auto rename = std::make_shared<ASTRenameQuery>();
@@ -483,7 +483,7 @@ void SystemLog<LogElement>::prepareTable()
         interpreter.setInternal(true);
         interpreter.execute();
 
-        table = DatabaseCatalog::instance().getTable(table_id);
+        table = DatabaseCatalog::instance().getTable(table_id, context);
     }
 
     is_prepared = true;
