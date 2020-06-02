@@ -388,7 +388,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
     current_mutations_by_version.emplace(version, insertion.first->second);
 
     LOG_INFO(log, "Added mutation: {}", mutation_file_name);
-    merging_mutating_task_handle->wake();
+    merging_mutating_task_handle->signalReadyToRun();
     return version;
 }
 
@@ -521,7 +521,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     }
 
     /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
-    merging_mutating_task_handle->wake();
+    merging_mutating_task_handle->signalReadyToRun();
 
     return CancellationCode::CancelSent;
 }
