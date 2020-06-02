@@ -116,9 +116,12 @@ public:
         return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
     }
 
-    std::vector<UInt8> compareAt(const IColumn & rhs, size_t rhs_row_num, const std::vector<UInt8> & mask, int nan_direction_hint) const override
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> & row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override
     {
-        return compareImpl<ColumnFixedString>(assert_cast<const ColumnFixedString &>(rhs), rhs_row_num, mask, nan_direction_hint);
+        return compareImpl<ColumnFixedString>(assert_cast<const ColumnFixedString &>(rhs), rhs_row_num, row_indexes,
+                                              compare_results, direction, nan_direction_hint);
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;

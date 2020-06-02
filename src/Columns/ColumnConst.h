@@ -187,9 +187,12 @@ public:
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }
 
-    std::vector<UInt8> compareAt(const IColumn & rhs, size_t rhs_row_num, const std::vector<UInt8> & mask, int nan_direction_hint) const override
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> & row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override
     {
-        return data->compareAt(rhs, rhs_row_num, mask, nan_direction_hint);
+        return data->compareColumn(rhs, rhs_row_num, row_indexes,
+                                   compare_results, direction, nan_direction_hint);
     }
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
