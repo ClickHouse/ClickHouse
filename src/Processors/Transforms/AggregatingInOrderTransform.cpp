@@ -61,6 +61,14 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     if (rows == 0)
         return;
 
+    if (!is_consume_started)
+    {
+        LOG_TRACE(log, "Aggregating in order");
+        is_consume_started = true;
+    }
+    src_rows += rows;
+    src_bytes += chunk.bytes();
+
     Columns materialized_columns;
     Columns key_columns(params->params.keys_size);
     for (size_t i = 0; i < params->params.keys_size; ++i)
@@ -193,7 +201,8 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         {
             output.push(std::move(to_push_chunk));
             output.finish();
-            LOG_TRACE(log, "Aggregated");
+            LOG_TRACE(log, "Aggregated. {} to {} rows (from {})", src_rows, res_rows,
+                                        formatReadableSizeWithBinarySuffix(src_bytes));
             return Status::Finished;
         }
         if (input.isFinished())
@@ -227,6 +236,7 @@ void AggregatingInOrderTransform::generate()
         res.getByPosition(i + res_key_columns.size()).column = std::move(res_aggregate_columns[i]);
     }
     to_push_chunk = convertToChunk(res);
+    res_rows += to_push_chunk.getNumRows();
     need_generate = false;
 }
 
