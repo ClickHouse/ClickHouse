@@ -305,7 +305,7 @@ bool ArithmeticOperationsInAgrFuncMatcher::needChildVisit(const ASTPtr & node, c
         throw Exception("AST item should not have nullptr in children", ErrorCodes::LOGICAL_ERROR);
 
     if (node->as<ASTTableExpression>() || node->as<ASTArrayJoin>())
-        return false;
+        return false; // NOLINT
 
     return true;
 }
