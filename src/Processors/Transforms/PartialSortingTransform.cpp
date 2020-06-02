@@ -90,6 +90,9 @@ void PartialSortingTransform::transform(Chunk & chunk)
         IColumn::Filter filter;
         size_t filtered_count = getFilterMask(block_columns, threshold_block_columns, limit - 1, description, rows_num, filter);
 
+        if (filtered_count == rows_num)
+            return;
+
         if (filtered_count)
         {
             for (auto & column : block.getColumns())
