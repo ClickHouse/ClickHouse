@@ -64,7 +64,7 @@ public:
     String getUserName() const;
 
     /// External authenticators may be used by only some of the authentication mechanisms.
-    bool isCorrectPassword(const String & password, const ExternalAuthenticators & external_authenticators) const;
+    bool isCorrectPassword(const String & password) const;
     bool isClientHostAllowed() const;
 
     /// Returns information about current and enabled roles.

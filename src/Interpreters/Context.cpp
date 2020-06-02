@@ -665,7 +665,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
     if (new_user_id)
     {
         new_access = getAccessControlManager().getContextAccess(*new_user_id, {}, true, settings, current_database, client_info);
-        if (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(password, getAccessControlManager().getExternalAuthenticators()))
+        if (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(password))
         {
             new_user_id = {};
             new_access = nullptr;
