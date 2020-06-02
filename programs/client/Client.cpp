@@ -502,14 +502,16 @@ private:
             if (!history_file.empty() && !Poco::File(history_file).exists())
                 Poco::File(history_file).createFile();
 
-#if USE_REPLXX
-            ReplxxLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
-#elif USE_READLINE
-            ReadlineLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
-#else
-            LineReader lr(history_file, '\\', config().has("multiline") ? ';' : 0);
-#endif
+            LineReader::Patterns query_extenders = {"\\"};
+            LineReader::Patterns query_delimiters = {";", "\\G"};
 
+#if USE_REPLXX
+            ReplxxLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
+#elif defined(USE_READLINE) && USE_READLINE
+            ReadlineLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
+#else
+            LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
+#endif
             /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
             ///  disabled, so that we are able to paste and execute multiline queries in a whole
             ///  instead of erroring out, while be less intrusive.

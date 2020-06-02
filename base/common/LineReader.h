@@ -23,7 +23,9 @@ public:
         bool case_insensitive = false;
     };
 
-    LineReader(const String & history_file_path, char extender, char delimiter = 0);  /// if delimiter != 0, then it's multiline mode
+    using Patterns = std::vector<const char *>;
+
+    LineReader(const String & history_file_path, bool multiline, Patterns extenders, Patterns delimiters);
     virtual ~LineReader() {}
 
     /// Reads the whole line until delimiter (in multiline mode) or until the last line without extender.
@@ -53,8 +55,10 @@ protected:
     String input;
 
 private:
-    const char extender;
-    const char delimiter;
+    bool multiline;
+
+    Patterns extenders;
+    Patterns delimiters;
 
     String prev_line;
 
