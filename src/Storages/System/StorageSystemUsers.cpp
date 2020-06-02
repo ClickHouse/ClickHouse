@@ -90,10 +90,11 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
         column_storage.insertData(storage_name.data(), storage_name.length());
         column_auth_type.push_back(static_cast<Int8>(authentication.getType()));
 
-        if (authentication.getType() == Authentication::Type::LDAP_SERVER)
         {
             Poco::JSON::Object auth_params_json;
-            auth_params_json.set("server", authentication.getServerName());
+
+            if (authentication.getType() == Authentication::Type::LDAP_SERVER)
+                auth_params_json.set("server", authentication.getServerName());
 
             std::ostringstream oss;
             Poco::JSON::Stringifier::stringify(auth_params_json, oss);
