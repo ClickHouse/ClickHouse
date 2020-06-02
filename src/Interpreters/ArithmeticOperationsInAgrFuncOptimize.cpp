@@ -16,11 +16,11 @@ namespace ErrorCodes
 }
 namespace
 {
-    static constexpr const char * min = "min";
-    static constexpr const char * max = "max";
-    static constexpr const char * mul = "multiply";
-    static constexpr const char * plus = "plus";
-    static constexpr const char * sum = "sum";
+    constexpr const char * min = "min";
+    constexpr const char * max = "max";
+    constexpr const char * mul = "multiply";
+    constexpr const char * plus = "plus";
+    constexpr const char * sum = "sum";
 }
 
 bool isConstantField(const Field & field)
