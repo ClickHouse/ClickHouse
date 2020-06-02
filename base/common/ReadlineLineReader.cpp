@@ -56,8 +56,9 @@ static char * generate(const char * text, int state)
     return nextMatch();
 };
 
-ReadlineLineReader::ReadlineLineReader(const Suggest & suggest_, const String & history_file_path_, char extender_, char delimiter_)
-    : LineReader(history_file_path_, extender_, delimiter_)
+ReadlineLineReader::ReadlineLineReader(
+    const Suggest & suggest_, const String & history_file_path_, bool multiline_, Patterns extender_, Patterns delimiter_)
+    : LineReader(history_file_path_, multiline_, std::move(extender_), std::move(delimiter_))
 {
     suggest = &suggest_;
 
