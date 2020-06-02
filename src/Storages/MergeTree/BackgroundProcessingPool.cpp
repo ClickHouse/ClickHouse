@@ -16,7 +16,7 @@
 namespace DB
 {
 
-void BackgroundProcessingPoolTaskInfo::wake()
+void BackgroundProcessingPoolTaskInfo::signalReadyToRun()
 {
     Poco::Timestamp current_time;
     {

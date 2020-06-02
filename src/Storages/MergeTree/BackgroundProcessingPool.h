@@ -135,8 +135,7 @@ class BackgroundProcessingPoolTaskInfo
 {
 public:
     /// Signals random idle thread from the pool that this task is ready to be executed.
-    void wake();
-    void signalReadyToRun(); /// TODO: Rename this properly
+    void signalReadyToRun();
 
     BackgroundProcessingPoolTaskInfo(BackgroundProcessingPool & pool_, const BackgroundProcessingPool::Task & function_)
         : pool(pool_), task_function(function_) {}
