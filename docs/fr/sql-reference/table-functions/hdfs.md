@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 45
 toc_title: hdfs
 ---
@@ -13,7 +13,7 @@ Crée une table à partir de fichiers dans HDFS. Cette fonction de table est sim
 hdfs(URI, format, structure)
 ```
 
-**Les paramètres d’entrée**
+**Les paramètres d'entrée**
 
 -   `URI` — The relative URI to the file in HDFS. Path to file support following globs in readonly mode: `*`, `?`, `{abc,def}` et `{N..M}` où `N`, `M` — numbers, \``'abc', 'def'` — strings.
 -   `format` — The [format](../../interfaces/formats.md#formats) de le fichier.
@@ -42,14 +42,14 @@ LIMIT 2
 
 **Globs dans le chemin**
 
-Plusieurs composants de chemin peuvent avoir des globs. Pour être traité, le fichier doit exister et correspondre à l’ensemble du modèle de chemin (pas seulement le suffixe ou le préfixe).
+Plusieurs composants de chemin peuvent avoir des globs. Pour être traité, le fichier doit exister et correspondre à l'ensemble du modèle de chemin (pas seulement le suffixe ou le préfixe).
 
 -   `*` — Substitutes any number of any characters except `/` y compris la chaîne vide.
 -   `?` — Substitutes any single character.
 -   `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 -   `{N..M}` — Substitutes any number in range from N to M including both borders.
 
-Les Constructions avec `{}` sont similaires à l’ [fonction de table à distance](../../sql-reference/table-functions/remote.md)).
+Les Constructions avec `{}` sont similaires à l' [fonction de table à distance](../../sql-reference/table-functions/remote.md)).
 
 **Exemple**
 

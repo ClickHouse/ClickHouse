@@ -25,6 +25,7 @@ public:
     void readSuffixImpl() override;
 
     void commit();
+    bool isStalled() const { return buffer->isStalled(); }
 
 private:
     StorageKafka & storage;
@@ -33,9 +34,12 @@ private:
     UInt64 max_block_size;
 
     ConsumerBufferPtr buffer;
-    bool broken = true, finished = false, claimed = false, commit_in_suffix;
+    bool broken = true;
+    bool finished = false;
+    bool commit_in_suffix;
 
-    const Block non_virtual_header, virtual_header;
+    const Block non_virtual_header;
+    const Block virtual_header;
 };
 
 }

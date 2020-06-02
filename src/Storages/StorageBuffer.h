@@ -8,6 +8,7 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Poco/Event.h>
+#include <Interpreters/Context.h>
 
 
 namespace Poco { class Logger; }
@@ -15,8 +16,6 @@ namespace Poco { class Logger; }
 
 namespace DB
 {
-
-class Context;
 
 
 /** During insertion, buffers the data in the RAM until certain thresholds are exceeded.
@@ -76,7 +75,7 @@ public:
     {
         if (!destination_id)
             return false;
-        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id);
+        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, global_context);
         if (dest && dest.get() != this)
             return dest->supportsPrewhere();
         return false;
@@ -93,8 +92,6 @@ public:
 
     std::optional<UInt64> totalRows() const override;
     std::optional<UInt64> totalBytes() const override;
-
-    ~StorageBuffer() override;
 
 private:
     Context global_context;

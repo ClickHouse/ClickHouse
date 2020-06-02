@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 27
 toc_title: Entegrasyonlar
 ---
 
-# Üçüncü Taraf geliştiricilerin Entegrasyon kütüphaneleri {#integration-libraries-from-third-party-developers}
+# Üçüncü taraf geliştiricilerin entegrasyon kütüphaneleri {#integration-libraries-from-third-party-developers}
 
 !!! warning "Uyarı"
     Yandex yapar **değil** Aşağıda listelenen araçları ve kütüphaneleri koruyun ve kalitelerini sağlamak için kapsamlı bir test yapmadınız.
@@ -26,7 +26,11 @@ toc_title: Entegrasyonlar
         -   [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
 -   Mesaj kuyrukları
     -   [Kafka](https://kafka.apache.org)
-        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (kullanma [Go client](https://github.com/kshvakov/clickhouse/))
+        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (kullanma [Go client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
+-   Akış işleme
+    -   [Flink](https://flink.apache.org)
+        -   [flink-clickhouse-lavabo](https://github.com/ivi-ru/flink-clickhouse-sink)
 -   Nesne depoları
     -   [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         -   [clickhouse-yedekleme](https://github.com/AlexAkulov/clickhouse-backup)
@@ -75,7 +79,7 @@ toc_title: Entegrasyonlar
     -   [Pandalar](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
 -   PHP
-    -   [Doctrine](https://www.doctrine-project.org/)
+    -   [Doktrin](https://www.doctrine-project.org/)
         -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [dplyr](https://db.rstudio.com/dplyr/)

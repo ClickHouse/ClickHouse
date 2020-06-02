@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 46
 toc_title: UUID
 ---
@@ -21,11 +21,11 @@ Si no especifica el valor de la columna UUID al insertar un nuevo registro, el v
 00000000-0000-0000-0000-000000000000
 ```
 
-## Cómo Generar {#how-to-generate}
+## Cómo generar {#how-to-generate}
 
 Para generar el valor UUID, ClickHouse proporciona el [GenerateUUIDv4](../../sql-reference/functions/uuid-functions.md) función.
 
-## Ejemplo De Uso {#usage-example}
+## Ejemplo de uso {#usage-example}
 
 **Ejemplo 1**
 

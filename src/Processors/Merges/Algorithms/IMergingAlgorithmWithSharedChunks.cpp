@@ -39,7 +39,7 @@ void IMergingAlgorithmWithSharedChunks::initialize(Chunks chunks)
 
         auto & source_chunk = source_chunks[source_num];
 
-        source_chunk = chunk_allocator.alloc(std::move(chunks[source_num]));
+        source_chunk = chunk_allocator.alloc(chunks[source_num]);
         cursors[source_num] = SortCursorImpl(source_chunk->getColumns(), description, source_num);
 
         source_chunk->all_columns = cursors[source_num].all_columns;
@@ -49,12 +49,12 @@ void IMergingAlgorithmWithSharedChunks::initialize(Chunks chunks)
     queue = SortingHeap<SortCursor>(cursors);
 }
 
-void IMergingAlgorithmWithSharedChunks::consume(Chunk chunk, size_t source_num)
+void IMergingAlgorithmWithSharedChunks::consume(Chunk & chunk, size_t source_num)
 {
     prepareChunk(chunk);
 
     auto & source_chunk = source_chunks[source_num];
-    source_chunk = chunk_allocator.alloc(std::move(chunk));
+    source_chunk = chunk_allocator.alloc(chunk);
     cursors[source_num].reset(source_chunk->getColumns(), {});
 
     source_chunk->all_columns = cursors[source_num].all_columns;

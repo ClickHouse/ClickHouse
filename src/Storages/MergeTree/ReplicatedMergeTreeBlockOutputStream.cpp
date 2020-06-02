@@ -33,7 +33,7 @@ namespace ErrorCodes
 ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     StorageReplicatedMergeTree & storage_, size_t quorum_, size_t quorum_timeout_ms_, size_t max_parts_per_block_, bool deduplicate_)
     : storage(storage_), quorum(quorum_), quorum_timeout_ms(quorum_timeout_ms_), max_parts_per_block(max_parts_per_block_), deduplicate(deduplicate_),
-    log(&Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
+    log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (quorum == 1)
@@ -147,11 +147,11 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
             /// That is, do not insert the same data to the same partition twice.
             block_id = part->info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 
-            LOG_DEBUG(log, "Wrote block with ID '" << block_id << "', " << current_block.block.rows() << " rows");
+            LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
         }
         else
         {
-            LOG_DEBUG(log, "Wrote block with " << current_block.block.rows() << " rows");
+            LOG_DEBUG(log, "Wrote block with {} rows", current_block.block.rows());
         }
 
         try
@@ -214,7 +214,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
     if (!block_number_lock)
     {
-        LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it.");
+        LOG_INFO(log, "Block with ID {} already exists; ignoring it.", block_id);
         part->is_duplicate = true;
         last_block_is_duplicate = true;
         ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
@@ -329,7 +329,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         if (multi_code == Coordination::ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
         {
             /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
-            LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
+            LOG_INFO(log, "Block with ID {} already exists; ignoring it (removing part {})", block_id, part->name);
 
             part->is_duplicate = true;
             transaction.rollback();

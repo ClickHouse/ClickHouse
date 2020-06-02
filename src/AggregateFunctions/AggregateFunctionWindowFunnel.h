@@ -151,14 +151,14 @@ private:
     // The level path must be 1---2---3---...---check_events_size, find the max event level that statisfied the path in the sliding window.
     // If found, returns the max event level, else return 0.
     // The Algorithm complexity is O(n).
-    UInt8 getEventLevel(const Data & data) const
+    UInt8 getEventLevel(Data & data) const
     {
         if (data.size() == 0)
             return 0;
         if (!strict_order && events_size == 1)
             return 1;
 
-        const_cast<Data &>(data).sort();
+        data.sort();
 
         /// events_timestamp stores the timestamp that latest i-th level event happen withing time window after previous level event.
         /// timestamp defaults to -1, which unsigned timestamp value never meet
@@ -279,7 +279,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt8 &>(to).getData().push_back(getEventLevel(this->data(place)));
     }

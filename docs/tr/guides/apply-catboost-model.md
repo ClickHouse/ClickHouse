@@ -1,22 +1,22 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: CatBoost Modellerini Uygulamak
 ---
 
-# Clickhouse’da Bir Catboost Modeli Uygulamak {#applying-catboost-model-in-clickhouse}
+# Clickhouse'da bir Catboost modeli uygulamak {#applying-catboost-model-in-clickhouse}
 
 [CatBoost](https://catboost.ai) geliştirilen ücretsiz ve açık kaynak kodlu bir GRA anddi libraryent kütüphan aesidir. [Yandex](https://yandex.com/company/) makine öğrenimi için.
 
-Bu Talimatla, Sql’den model çıkarımı çalıştırarak Clickhouse’da önceden eğitilmiş modelleri uygulamayı öğreneceksiniz.
+Bu Talimatla, Sql'den model çıkarımı çalıştırarak Clickhouse'da önceden eğitilmiş modelleri uygulamayı öğreneceksiniz.
 
-Clickhouse’da bir CatBoost modeli uygulamak için:
+Clickhouse'da bir CatBoost modeli uygulamak için:
 
 1.  [Tablo oluşturma](#create-table).
 2.  [Verileri tabloya ekleme](#insert-data-to-table).
-3.  [Catboost’u Clickhouse’a entegre edin](#integrate-catboost-into-clickhouse) (İsteğe bağlı adım).
-4.  [SQL’DEN Model Çıkarımını çalıştırın](#run-model-inference).
+3.  [Catboost'u Clickhouse'a entegre edin](#integrate-catboost-into-clickhouse) (İsteğe bağlı adım).
+4.  [SQL'DEN Model Çıkarımını çalıştırın](#run-model-inference).
 
 Eğitim CatBoost modelleri hakkında daha fazla bilgi için bkz [Eğitim ve uygulama modelleri](https://catboost.ai/docs/features/training.html#training).
 
@@ -119,12 +119,12 @@ FROM amazon_train
 +-------+
 ```
 
-## 3. Catboost’u Clickhouse’a entegre edin {#integrate-catboost-into-clickhouse}
+## 3. Catboost'u Clickhouse'a entegre edin {#integrate-catboost-into-clickhouse}
 
 !!! note "Not"
     **İsteğe bağlı adım.** Docker görüntü catboost ve ClickHouse çalıştırmak için gereken her şeyi içerir.
 
-Catboost’u Clickhouse’a entegre etmek için:
+Catboost'u Clickhouse'a entegre etmek için:
 
 **1.** Değerlendirme kitaplığı oluşturun.
 
@@ -161,7 +161,7 @@ Bir CatBoost modelini değerlendirmenin en hızlı yolu derlemedir `libcatboostm
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 
-## 4. SQL’DEN Model Çıkarımını çalıştırın {#run-model-inference}
+## 4. SQL'DEN Model Çıkarımını çalıştırın {#run-model-inference}
 
 Test modeli için ClickHouse istemcisini çalıştırın `$ clickhouse client`.
 
@@ -208,7 +208,7 @@ LIMIT 10
 ```
 
 !!! note "Not"
-    Hakkında daha fazla bilgi [exp()](../sql-reference/functions/math-functions.md) işlev.
+    Hakkında daha fazla bilgi [exp()](../sql-reference/functions/math-functions.md) İşlev.
 
 Örnek üzerinde LogLoss hesaplayalım:
 

@@ -1,7 +1,15 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/SyntaxAnalyzer.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+
 namespace DB
 {
+
+
 StorageInMemoryMetadata::StorageInMemoryMetadata(
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
@@ -79,4 +87,56 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
 
     return *this;
 }
+
+namespace
+{
+    ASTPtr extractKeyExpressionList(const ASTPtr & node)
+    {
+        if (!node)
+            return std::make_shared<ASTExpressionList>();
+
+        const auto * expr_func = node->as<ASTFunction>();
+
+        if (expr_func && expr_func->name == "tuple")
+        {
+            /// Primary key is specified in tuple, extract its arguments.
+            return expr_func->arguments->clone();
+        }
+        else
+        {
+            /// Primary key consists of one column.
+            auto res = std::make_shared<ASTExpressionList>();
+            res->children.push_back(node);
+            return res;
+        }
+    }
+}
+
+StorageMetadataKeyField StorageMetadataKeyField::getKeyFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context)
+{
+    StorageMetadataKeyField result;
+    result.definition_ast = definition_ast;
+    result.expression_list_ast = extractKeyExpressionList(definition_ast);
+
+    if (result.expression_list_ast->children.empty())
+        return result;
+
+    const auto & children = result.expression_list_ast->children;
+    for (const auto & child : children)
+        result.column_names.emplace_back(child->getColumnName());
+
+    {
+        auto expr = result.expression_list_ast->clone();
+        auto syntax_result = SyntaxAnalyzer(context).analyze(expr, columns.getAllPhysical());
+        result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(true);
+        result.sample_block = result.expression->getSampleBlock();
+    }
+
+    for (size_t i = 0; i < result.sample_block.columns(); ++i)
+        result.data_types.emplace_back(result.sample_block.getByPosition(i).type);
+
+    return result;
+}
+
+
 }

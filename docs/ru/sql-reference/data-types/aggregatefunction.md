@@ -1,8 +1,8 @@
-# AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
+# AggregateFunction {#data-type-aggregatefunction}
 
 Промежуточное состояние агрегатной функции. Чтобы его получить, используются агрегатные функции с суффиксом `-State`. Чтобы в дальнейшем получить агрегированные данные необходимо использовать те же агрегатные функции с суффиксом `-Merge`.
 
-`AggregateFunction` — параметрический тип данных.
+`AggregateFunction(name, types\_of\_arguments…)` — параметрический тип данных.
 
 **Параметры**
 

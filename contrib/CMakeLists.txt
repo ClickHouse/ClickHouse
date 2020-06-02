@@ -1,9 +1,37 @@
 # Third-party libraries may have substandard code.
 
+# Put all targets defined here and in added subfolders under "contrib/" folder in GUI-based IDEs by default.
+# Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they will
+# appear not in "contrib/" as originally planned here.
+get_filename_component (_current_dir_name "${CMAKE_CURRENT_LIST_DIR}" NAME)
+if (CMAKE_FOLDER)
+    set (CMAKE_FOLDER "${CMAKE_FOLDER}/${_current_dir_name}")
+else ()
+    set (CMAKE_FOLDER "${_current_dir_name}")
+endif ()
+unset (_current_dir_name)
+
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
+
+add_subdirectory (cctz-cmake)
+add_subdirectory (consistent-hashing-sumbur)
+add_subdirectory (consistent-hashing)
+add_subdirectory (croaring)
+add_subdirectory (FastMemcpy)
+add_subdirectory (jemalloc-cmake)
+add_subdirectory (libcpuid-cmake)
+add_subdirectory (murmurhash)
+add_subdirectory (replxx-cmake)
+add_subdirectory (ryu-cmake)
+add_subdirectory (unixodbc-cmake)
+
+add_subdirectory (poco-cmake)
+
+
+# TODO: refactor the contrib libraries below this comment.
 
 if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (boost-cmake)
@@ -27,8 +55,6 @@ if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
     add_subdirectory (double-conversion-cmake)
 endif ()
 
-add_subdirectory (ryu-cmake)
-
 if (USE_INTERNAL_CITYHASH_LIBRARY)
     add_subdirectory (cityhash102)
 endif ()
@@ -40,9 +66,6 @@ endif ()
 if (USE_INTERNAL_METROHASH_LIBRARY)
     add_subdirectory (libmetrohash)
 endif ()
-
-add_subdirectory (murmurhash)
-add_subdirectory (croaring)
 
 if (USE_INTERNAL_BTRIE_LIBRARY)
     add_subdirectory (libbtrie)
@@ -75,14 +98,6 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
     endif ()
 endif ()
 
-add_subdirectory (cctz-cmake)
-
-add_subdirectory (jemalloc-cmake)
-
-if (USE_INTERNAL_CPUID_LIBRARY)
-    add_subdirectory (libcpuid)
-endif ()
-
 if (USE_INTERNAL_H3_LIBRARY)
     add_subdirectory(h3-cmake)
 endif ()
@@ -90,10 +105,12 @@ endif ()
 if (USE_INTERNAL_SSL_LIBRARY)
     add_subdirectory (openssl-cmake)
 
-    # This is for Poco library
-    set (POCO_SKIP_OPENSSL_FIND 1)
     add_library(OpenSSL::Crypto ALIAS ${OPENSSL_CRYPTO_LIBRARY})
     add_library(OpenSSL::SSL ALIAS ${OPENSSL_SSL_LIBRARY})
+endif ()
+
+if (ENABLE_LDAP AND USE_INTERNAL_LDAP_LIBRARY)
+    add_subdirectory (openldap-cmake)
 endif ()
 
 function(mysql_support)
@@ -130,11 +147,6 @@ endif ()
 if (USE_RDKAFKA)
     add_subdirectory (cppkafka-cmake)
 endif()
-
-if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
-    add_subdirectory (unixodbc-cmake)
-    add_library(ODBC::ODBC ALIAS ${ODBC_LIBRARIES})
-endif ()
 
 if (ENABLE_ICU AND USE_INTERNAL_ICU_LIBRARY)
     add_subdirectory (icu-cmake)
@@ -174,24 +186,27 @@ if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
         set (PARQUET_ARROW_LINKAGE "static" CACHE INTERNAL "")
         set (ARROW_TEST_LINKAGE "static" CACHE INTERNAL "")
         set (ARROW_BUILD_STATIC ${MAKE_STATIC_LIBRARIES} CACHE INTERNAL "")
-    else()
+    else ()
         set (PARQUET_ARROW_LINKAGE "shared" CACHE INTERNAL "")
         set (ARROW_TEST_LINKAGE "shared" CACHE INTERNAL "")
-    endif()
+    endif ()
 
-    if(CMAKE_BUILD_TYPE STREQUAL "RELWITHDEBINFO")
-        set(_save_build_type ${CMAKE_BUILD_TYPE})
-        set(CMAKE_BUILD_TYPE RELEASE)
-    endif()
+    if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
+        set (_save_build_type ${CMAKE_BUILD_TYPE})
+        set (CMAKE_BUILD_TYPE Release)
+        string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
+    endif ()
 
     # Because Arrow uses CMAKE_SOURCE_DIR as a project path
     # Hopefully will be fixed in https://github.com/apache/arrow/pull/2676
     set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/cmake_modules")
     add_subdirectory (arrow/cpp)
 
-    if(_save_build_type)
-        set(CMAKE_BUILD_TYPE ${_save_build_type})
-    endif()
+    if (_save_build_type)
+        set (CMAKE_BUILD_TYPE ${_save_build_type})
+        unset (_save_build_type)
+        string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
+    endif ()
 
 else()
     add_subdirectory(arrow-cmake)
@@ -206,29 +221,6 @@ endif()
 if (USE_INTERNAL_AVRO_LIBRARY)
     add_subdirectory(avro-cmake)
 endif()
-
-if (USE_INTERNAL_POCO_LIBRARY)
-    set (POCO_VERBOSE_MESSAGES 0 CACHE INTERNAL "")
-    set (save_CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
-    set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
-    set (_save ${ENABLE_TESTS})
-    set (ENABLE_TESTS 0)
-    set (POCO_ENABLE_TESTS 0)
-    set (CMAKE_DISABLE_FIND_PACKAGE_ZLIB 1)
-    if (MSVC OR NOT USE_POCO_DATAODBC)
-        set (ENABLE_DATA_ODBC 0 CACHE INTERNAL "") # TODO (build fail)
-    endif ()
-    add_subdirectory (poco)
-    unset (CMAKE_DISABLE_FIND_PACKAGE_ZLIB)
-    set (ENABLE_TESTS ${_save})
-    set (CMAKE_CXX_FLAGS ${save_CMAKE_CXX_FLAGS})
-    set (CMAKE_C_FLAGS ${save_CMAKE_C_FLAGS})
-
-    if (OPENSSL_FOUND AND TARGET Crypto AND (NOT DEFINED ENABLE_POCO_NETSSL OR ENABLE_POCO_NETSSL))
-        # Bug in poco https://github.com/pocoproject/poco/pull/2100 found on macos
-        target_include_directories(Crypto SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
-    endif ()
-endif ()
 
 if(USE_INTERNAL_GTEST_LIBRARY)
     # Google Test from sources
@@ -267,18 +259,15 @@ if (USE_INTERNAL_BROTLI_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
-    if (MAKE_STATIC_LIBRARIES)
-        set(protobuf_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" FORCE)
-    else ()
-        set(protobuf_BUILD_SHARED_LIBS ON CACHE INTERNAL "" FORCE)
-    endif ()
-    set(protobuf_WITH_ZLIB 0 CACHE INTERNAL "" FORCE) # actually will use zlib, but skip find
-    set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "" FORCE)
-    add_subdirectory(protobuf/cmake)
+    add_subdirectory(protobuf-cmake)
 endif ()
 
 if (USE_INTERNAL_HDFS3_LIBRARY)
     add_subdirectory(libhdfs3-cmake)
+endif ()
+
+if (USE_INTERNAL_GRPC_LIBRARY)
+    add_subdirectory(grpc-cmake)
 endif ()
 
 if (USE_INTERNAL_AWS_S3_LIBRARY)
@@ -321,17 +310,8 @@ if (USE_SIMDJSON)
     add_subdirectory (simdjson-cmake)
 endif()
 
-if (USE_MIMALLOC)
-    add_subdirectory (mimalloc)
-endif()
-
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
 
-add_subdirectory(grpc-cmake)
-
-add_subdirectory(replxx-cmake)
-add_subdirectory(FastMemcpy)
-add_subdirectory(consistent-hashing)
-add_subdirectory(consistent-hashing-sumbur)
+add_subdirectory (fmtlib-cmake)

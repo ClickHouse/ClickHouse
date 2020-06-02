@@ -5,11 +5,12 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <IO/copyData.h>
 
-int main(int argc, char **argv)
+int main(int, char **)
 {
-    DB::ReadBufferFromFileDescriptor rb(STDIN_FILENO);
-    DB::WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
-    DB::WriteBufferValidUTF8 utf8_b(wb);
-    DB::copyData(rb, utf8_b);
+    using namespace DB;
+    ReadBufferFromFileDescriptor rb(STDIN_FILENO);
+    WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
+    WriteBufferValidUTF8 utf8_b(wb);
+    copyData(rb, utf8_b);
     return 0;
 }
