@@ -3,6 +3,7 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 
+#include <common/defines.h>
 #include <common/getFQDNOrHostName.h>
 #include <common/logger_useful.h>
 #if !defined(ARCADIA_BUILD)
@@ -105,6 +106,8 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
     {
         LOG_INFO(logger, "Sending crash reports is disabled");
     }
+#else
+    UNUSED(config);
 #endif
 }
 
@@ -191,5 +194,10 @@ void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & c
     {
         LOG_INFO(logger, "Not sending crash report");
     }
+#else
+    UNUSED(sig);
+    UNUSED(info);
+    UNUSED(context);
+    UNUSED(stack_trace);
 #endif
 }
