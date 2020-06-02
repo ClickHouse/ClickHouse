@@ -16,14 +16,16 @@
 #endif
 
 
+#if USE_SENTRY
 namespace
 {
+
 bool initialized = false;
 bool anonymize = false;
 
 void setExtras()
 {
-#if USE_SENTRY
+
     if (!anonymize)
     {
         sentry_set_extra("server_name", sentry_value_new_string(getFQDNOrHostName().c_str()));
@@ -36,9 +38,9 @@ void setExtras()
     sentry_set_extra("version_major", sentry_value_new_int32(VERSION_MAJOR));
     sentry_set_extra("version_minor", sentry_value_new_int32(VERSION_MINOR));
     sentry_set_extra("version_patch", sentry_value_new_int32(VERSION_PATCH));
+}
+}
 #endif
-}
-}
 
 void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 {
