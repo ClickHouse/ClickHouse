@@ -30,6 +30,7 @@ if (USE_DEBUG_HELPERS)
 endif ()
 
 add_library (common ${SRCS})
+#add_library(common clickhouse_parsers)
 
 if (WITH_COVERAGE)
     target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
@@ -42,6 +43,7 @@ if (USE_INTERNAL_CCTZ)
 endif()
 
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
+target_include_directories(common PUBLIC ../../src/Parsers/..)
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (common SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})

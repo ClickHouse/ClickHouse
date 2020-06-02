@@ -21,17 +21,37 @@ ReplxxLineReader::ReplxxLineReader(const Suggest & suggest, const String & histo
 {
     using namespace std::placeholders;
     using Replxx = replxx::Replxx;
+    using namespace DB;
 
     if (!history_file_path.empty())
         rx.history_load(history_file_path);
 
-    auto callback = [&suggest] (const String & context, size_t context_size)
+    auto suggesting_callback = [&suggest] (const String & context, size_t context_size)
     {
         auto range = suggest.getCompletions(context, context_size);
         return Replxx::completions_t(range.first, range.second);
     };
 
-    rx.set_completion_callback(callback);
+
+    auto highlighter_callback = [this] (const String & query, std::vector<Replxx::Color> & colors ) {
+        Lexer lexer(query.data(), query.data() + query.size());
+        size_t pos = 0;
+
+        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+        {
+            for (size_t byte = 0; byte < token.size(); ++byte)
+            {
+                if (this->token_to_color.find(token.type) != this->token_to_color.end())
+                    colors[pos + byte] = this->token_to_color.at(token.type);
+                else
+                    colors[pos + byte] = this->unknown_token_color;
+            }
+            pos += token.size();
+        }
+    };
+
+    rx.set_highlighter_callback(highlighter_callback);
+    rx.set_completion_callback(suggesting_callback);
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
 
