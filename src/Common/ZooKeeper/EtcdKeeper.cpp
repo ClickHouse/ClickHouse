@@ -100,6 +100,10 @@ namespace Coordination
         {
             compare_result = Compare::CompareResult::Compare_CompareResult_NOT_EQUAL;
         }
+        else
+        {
+            throw Exception("Unknown txn result.", ZRUNTIMEINCONSISTENCY);
+        }
         compare.set_result(compare_result);
         Compare::CompareTarget compare_target;
         if (target == "version")
@@ -107,20 +111,24 @@ namespace Coordination
             compare_target = Compare::CompareTarget::Compare_CompareTarget_VERSION;
             compare.set_version(value);
         }
-        if (target == "create")
+        else if (target == "create")
         {
             compare_target = Compare::CompareTarget::Compare_CompareTarget_CREATE;
             compare.set_create_revision(value);
         }
-        if (target == "mod")
+        else if (target == "mod")
         {
             compare_target = Compare::CompareTarget::Compare_CompareTarget_MOD;
             compare.set_mod_revision(value);
         }
-        if (target == "value")
+        else if (target == "value")
         {
             compare_target = Compare::CompareTarget::Compare_CompareTarget_VALUE;
             compare.set_value(std::to_string(value));
+        }
+        else
+        {
+            throw Exception("Unknown txn target.", ZRUNTIMEINCONSISTENCY);
         }
         compare.set_target(compare_target);
         return compare;
@@ -163,7 +171,7 @@ namespace Coordination
         void take_last_create_request_with_prefix(const String & prefix)
         {
             std::unordered_map<String, String> create_requests;
-            for (const auto success_put : success_puts)
+            for (auto success_put : success_puts)
             {
                 if (startsWith(success_put.key(), prefix))
                 {
@@ -436,7 +444,6 @@ namespace Coordination
     struct EtcdKeeperResponse : virtual Response
     {
         bool finished = true;
-        virtual ~EtcdKeeperResponse() {}
     };
 
     struct EtcdKeeperCreateResponse final : CreateResponse, EtcdKeeperResponse {};
@@ -1771,9 +1778,6 @@ namespace Coordination
                     case BiDiTag::FINISH:
                         watch_stream = watch_stub->AsyncWatch(&watch_context, &watch_cq, reinterpret_cast<void*> (BiDiTag::CONNECT));
                         break;
-                    default:
-                        // LOG_ERROR(log, "Unknown BiDiTag.");
-                        break;
                     }
                 }
             }
@@ -1811,9 +1815,6 @@ namespace Coordination
                         break;
                     case BiDiTag::FINISH:
                         keep_alive_stream = lease_stub->AsyncLeaseKeepAlive(&keep_alive_context, &lease_cq, reinterpret_cast<void*> (BiDiTag::CONNECT));
-                        break;
-                    default:
-                        // LOG_ERROR(log, "Unknown BiDiTag.");
                         break;
                     }
                 }
