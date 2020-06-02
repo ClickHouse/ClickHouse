@@ -4,7 +4,6 @@
 #include <Common/setThreadName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Types.h>
-#include <common/logger_useful.h>
 
 #include <sstream>
 #include <iomanip>
@@ -17,7 +16,6 @@
 
 namespace Coordination
 {
-    Logger * log = nullptr;
     int64_t lease_id = -1;
 
     enum class BiDiTag
@@ -408,10 +406,6 @@ namespace Coordination
                 }
             }
         }
-        else
-        {
-            LOG_ERROR(log, "Returned etcd watch without created flag and without event.");
-        }
     }
 
     void EtcdKeeper::readLeaseKeepAliveResponse()
@@ -525,15 +519,6 @@ namespace Coordination
                 return response;
             }
             EtcdKeeper::AsyncTxnCall* call = static_cast<EtcdKeeper::AsyncTxnCall*>(got_tag);
-            if (!call->response.succeeded())
-            {
-                LOG_DEBUG(log, "ERROR");
-            }
-            else
-            {
-                LOG_DEBUG(log, "SUCCESS");
-            }
-            std::cout << call->response.DebugString() << std::endl;
             return makeResponseFromRepeatedPtrField(call->response.succeeded(), call->response.responses());
         }
         virtual void parsePreResponses() {}
@@ -1209,10 +1194,6 @@ namespace Coordination
             }
             // create_response.path_created = process_path;
             create_response.path_created = "error";
-            // if (!create_response.finished)
-            // {
-            //     LOG_DEBUG(log, "Create request for path: " << process_path << " does not finished.");
-            // }
         }
         else
         {
@@ -1558,8 +1539,6 @@ namespace Coordination
     EtcdKeeper::EtcdKeeper(const String & root_path_, const String & host_, Poco::Timespan operation_timeout_)
             : root_path(root_path_), host(host_), operation_timeout(operation_timeout_)
     {
-        log = &Logger::get("EtcdKeeper");
-
         std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel(host, grpc::InsecureChannelCredentials());
         kv_stub = KV::NewStub(channel);
 
@@ -1591,8 +1570,6 @@ namespace Coordination
 
     EtcdKeeper::~EtcdKeeper()
     {
-
-        LOG_DEBUG(log, "EtcdKeeper destructor");
         try
         {
             finalize();
@@ -1795,7 +1772,8 @@ namespace Coordination
                         watch_stream = watch_stub->AsyncWatch(&watch_context, &watch_cq, reinterpret_cast<void*> (BiDiTag::CONNECT));
                         break;
                     default:
-                        LOG_ERROR(log, "Unknown BiDiTag.");
+                        // LOG_ERROR(log, "Unknown BiDiTag.");
+                        break;
                     }
                 }
             }
@@ -1835,7 +1813,8 @@ namespace Coordination
                         keep_alive_stream = lease_stub->AsyncLeaseKeepAlive(&keep_alive_context, &lease_cq, reinterpret_cast<void*> (BiDiTag::CONNECT));
                         break;
                     default:
-                        LOG_ERROR(log, "Unknown BiDiTag.");
+                        // LOG_ERROR(log, "Unknown BiDiTag.");
+                        break;
                     }
                 }
             }
@@ -1849,8 +1828,6 @@ namespace Coordination
 
     void EtcdKeeper::finalize()
     {
-        LOG_DEBUG(log, "Finalize EtcdKeeper");
-
         {
             std::lock_guard lock(push_request_mutex);
 
