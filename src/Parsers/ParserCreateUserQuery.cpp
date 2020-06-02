@@ -51,7 +51,7 @@ namespace
             std::optional<Authentication::Type> type;
             bool expect_password = false;
             bool expect_hash = false;
-            bool expect_server = false;
+            bool expect_server_name = false;
 
             if (ParserKeyword{"WITH"}.ignore(pos, expected))
             {
@@ -60,8 +60,12 @@ namespace
                     if (ParserKeyword{Authentication::TypeInfo::get(check_type).raw_name}.ignore(pos, expected))
                     {
                         type = check_type;
-                        expect_password = (check_type != Authentication::NO_PASSWORD && check_type != Authentication::LDAP_SERVER);
-                        expect_server = (check_type == Authentication::LDAP_SERVER);
+
+                        if (check_type == Authentication::LDAP_SERVER)
+                            expect_server_name = true;
+                        else if (check_type != Authentication::NO_PASSWORD)
+                            expect_password = true;
+
                         break;
                     }
                 }
@@ -90,7 +94,7 @@ namespace
             }
 
             String value;
-            if (expect_password || expect_hash || expect_server)
+            if (expect_password || expect_hash || expect_server_name)
             {
                 ASTPtr ast;
                 if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
@@ -104,7 +108,7 @@ namespace
                 authentication->setPassword(value);
             else if (expect_hash)
                 authentication->setPasswordHashHex(value);
-            else if (expect_server)
+            else if (expect_server_name)
                 authentication->setServerName(value);
 
             return true;
