@@ -166,11 +166,6 @@ static const PerfEventInfo raw_events_info[] = {
 #undef HARDWARE_EVENT
 #undef SOFTWARE_EVENT
 
-Logger * PerfEventsCounters::getLogger()
-{
-    return &Logger::get("PerfEventsCounters");
-}
-
 static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, UInt64 flags)
 {
     return static_cast<int>(syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags));
@@ -190,8 +185,6 @@ static int openPerfEventDisabled(Int32 perf_event_paranoid, bool has_cap_sys_adm
 
     return openPerfEvent(&pe, /* measure the calling thread */ 0, /* on any cpu */ -1, -1, 0);
 }
-
-using getLoggerFunc = Logger * ();
 
 static void enablePerfEvent(int event_fd)
 {
@@ -284,7 +277,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     if (events_to_open.empty())
     {
         // FIXME remove this
-        LOG_TRACE("No perf events to open, list='{}'", needed_events_list);
+        LOG_TRACE(&Poco::Logger::get("PerfEventsCounters"), "No perf events to open, list='{}'", needed_events_list);
         return true;
     }
 
@@ -302,7 +295,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     bool has_cap_sys_admin = hasLinuxCapability(CAP_SYS_ADMIN);
     if (perf_event_paranoid >= 3 && !has_cap_sys_admin)
     {
-        LOG_WARNING(getLogger(), "Not enough permissions to record perf events: "
+        LOG_WARNING(&Poco::Logger::get("PerfEventsCounters"), "Not enough permissions to record perf events: "
             "perf_event_paranoid = {} and CAP_SYS_ADMIN = 0",
             perf_event_paranoid);
         return false;
@@ -312,7 +305,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     rlimit64 limits{};
     if (getrlimit64(RLIMIT_NOFILE, &limits))
     {
-        LOG_WARNING(getLogger(), "Unable to get rlimit: {} ({})", strerror(errno),
+        LOG_WARNING(&Poco::Logger::get("PerfEventsCounters"), "Unable to get rlimit: {} ({})", strerror(errno),
                     errno);
         return false;
     }
@@ -326,7 +319,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     UInt64 threshold = static_cast<UInt64>(maximum_open_descriptors * FILE_DESCRIPTORS_THRESHOLD);
     if (fd_count_afterwards > threshold)
     {
-        LOG_WARNING(getLogger(), "Can't measure perf events as the result number of file descriptors ({}) is more than the current threshold ({} = {} * {})",
+        LOG_WARNING(&Poco::Logger::get("PerfEventsCounters"), "Can't measure perf events as the result number of file descriptors ({}) is more than the current threshold ({} = {} * {})",
             fd_count_afterwards, threshold, maximum_open_descriptors,
             FILE_DESCRIPTORS_THRESHOLD);
         return false;
@@ -342,7 +335,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
 
         if (fd == -1)
         {
-            LOG_WARNING(getLogger(), "Perf event is unsupported: {}"
+            LOG_WARNING(&Poco::Logger::get("PerfEventsCounters"), "Perf event is unsupported: {}"
                 " (event_type={}, event_config={})",
                 event_info.settings_name, event_info.event_type,
                 event_info.event_config);
@@ -391,7 +384,7 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
 void PerfEventsCounters::initializeProfileEvents(const std::string & events_list)
 {
     // FIXME remove this
-    LOG_TRACE("Initialize perf events\n");
+    LOG_TRACE(&Poco::Logger::get("PerfEventsCounters"), "Initialize perf events\n");
 
     if (!processThreadLocalChanges(events_list))
         return;
@@ -430,7 +423,7 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
 
         if (bytes_read != bytes_to_read)
         {
-            LOG_WARNING(getLogger(), "Can't read event value from file descriptor: {}", fd);
+            LOG_WARNING(&Poco::Logger::get("PerfEventsCounters"), "Can't read event value from file descriptor: {}", fd);
             current_values[i] = {};
         }
     }

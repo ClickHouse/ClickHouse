@@ -189,7 +189,6 @@ struct PerfEventsCounters
     bool processThreadLocalChanges(const std::string & needed_events_list);
 
 
-    static Logger * getLogger();
     static std::vector<size_t> eventIndicesFromString(const std::string & events_list);
 };
 
