@@ -232,6 +232,7 @@ public:
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const;
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutationHint(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const IColumn::Filter & hint) const override;
 
     void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
 

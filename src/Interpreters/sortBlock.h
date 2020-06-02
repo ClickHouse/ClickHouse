@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// Sort one block by `description`. If limit != 0, then the partial sort of the first `limit` rows is produced.
-void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0);
+void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0, IColumn::Filter * hint = nullptr);
 
 
 /** Used only in StorageMergeTree to sort the data with INSERT.

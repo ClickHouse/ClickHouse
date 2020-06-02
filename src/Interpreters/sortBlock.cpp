@@ -102,7 +102,7 @@ struct PartialSortingLessWithCollation
 };
 
 
-void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
+void sortBlock(Block & block, const SortDescription & description, UInt64 limit, IColumn::Filter * hint)
 {
     if (!block)
         return;
@@ -138,12 +138,23 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 
             if (special_sort == SpecialSort::OPENCL_BITONIC)
                 column->getSpecialPermutation(reverse, limit, nan_direction_hint, perm, IColumn::SpecialSort::OPENCL_BITONIC);
+            else if (hint)
+                column->getPermutationHint(reverse, limit, nan_direction_hint, perm, *hint);
             else
                 column->getPermutation(reverse, limit, nan_direction_hint, perm);
         }
         else
             /// we don't need to do anything with const column
             is_column_const = true;
+
+        if (perm.empty())
+        {
+            block = block.cloneEmpty();
+            return;
+        }
+
+        if (perm.size() < limit)
+            limit = perm.size();
 
         size_t columns = block.columns();
         for (size_t i = 0; i < columns; ++i)

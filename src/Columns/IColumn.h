@@ -256,6 +256,12 @@ public:
       */
     virtual void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const = 0;
 
+    /// The same as getPermutation, but may ignore rows for which filter is 0.
+    virtual void getPermutationHint(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const IColumn::Filter &) const
+    {
+        getPermutation(reverse, limit, nan_direction_hint, res);
+    }
+
     enum class SpecialSort
     {
         NONE = 0,

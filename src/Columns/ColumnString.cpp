@@ -302,6 +302,43 @@ void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_directio
     }
 }
 
+void ColumnString::getPermutationHint(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res, const IColumn::Filter & hint) const
+{
+    size_t s = offsets.size();
+
+    if (limit == 0 || limit > s)
+        limit = s;
+
+    res.clear();
+    res.reserve(s);
+    for (size_t i = 0; i < s; ++i)
+        if (hint[i])
+            res.emplace_back(i);
+
+    /// It means that out hit contains less rows that limit.
+    /// Probably, exception may be thrown for this case. (Also, permutation size will be less, than limit).
+    if (limit > res.size())
+        limit = res.size();
+
+    if (limit < res.size())
+    {
+        if (reverse)
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
+        else
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
+    }
+    else
+    {
+        if (reverse)
+            std::sort(res.begin(), res.end(), less<false>(*this));
+        else
+            std::sort(res.begin(), res.end(), less<true>(*this));
+    }
+
+    /// Note, that premutation may contain less rows than column has.
+    /// It is possible to add ignored rows at the end, but I assume it is useless.
+}
+
 void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_range) const
 {
     if (limit >= size() || limit > equal_range.back().second)

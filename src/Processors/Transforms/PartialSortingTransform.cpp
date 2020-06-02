@@ -81,6 +81,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
     ColumnRawPtrs block_columns;
     UInt64 rows_num = block.rows();
     auto block_limit = limit;
+    IColumn::Filter filter;
 
     /** If we've saved columns from previously blocks we could filter all rows from current block
       * which are unnecessary for sortBlock(...) because they obviously won't be in the top LIMIT rows.
@@ -88,7 +89,6 @@ void PartialSortingTransform::transform(Chunk & chunk)
     if (!threshold_block_columns.empty())
     {
         block_columns = extractColumns(block, description);
-        IColumn::Filter filter;
         size_t filtered_count = getFilterMask(block_columns, threshold_block_columns, limit - 1, description, rows_num, filter);
 
         if (filtered_count == rows_num)
@@ -106,7 +106,10 @@ void PartialSortingTransform::transform(Chunk & chunk)
         }
     }
 
-    sortBlock(block, description, block_limit);
+    if (filter.empty())
+        sortBlock(block, description, block_limit);
+    else
+        sortBlock(block, description, block_limit, &filter);
 
     if (!threshold_block_columns.empty())
     {
