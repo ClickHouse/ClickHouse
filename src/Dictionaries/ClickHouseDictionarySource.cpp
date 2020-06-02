@@ -39,6 +39,7 @@ static ConnectionPoolWithFailoverPtr createPool(
         port,
         db,
         user,
+        true /* user_specified */,
         password,
         "ClickHouseDictionarySource",
         Protocol::Compression::Enable,

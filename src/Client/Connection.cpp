@@ -53,6 +53,34 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+Connection::Connection(const String & host_, UInt16 port_,
+    const String & default_database_,
+    const String & user_,
+    bool user_specified_,
+    const String & password_,
+    const String & client_name_,
+    Protocol::Compression compression_,
+    Protocol::Secure secure_,
+    Poco::Timespan sync_request_timeout_)
+    :
+    host(host_), port(port_), default_database(default_database_),
+    user(user_), user_specified(user_specified_),
+    password(password_),
+    current_password(password_),
+    client_name(client_name_),
+    compression(compression_),
+    secure(secure_),
+    sync_request_timeout(sync_request_timeout_),
+    log_wrapper(*this)
+{
+    /// Don't connect immediately, only on first need.
+
+    if (user.empty())
+        user = "default";
+    current_user = user;
+
+    setDescription();
+}
 
 void Connection::connect(const ConnectionTimeouts & timeouts)
 {
@@ -63,7 +91,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
             default_database.empty() ? "(not specified)" : default_database,
-            user,
+            current_user,
             static_cast<bool>(secure) ? ". Secure" : "",
             static_cast<bool>(compression) ? "" : ". Uncompressed");
 
@@ -159,8 +187,8 @@ void Connection::sendHello()
     };
 
     if (has_control_character(default_database)
-        || has_control_character(user)
-        || has_control_character(password))
+        || has_control_character(current_user)
+        || has_control_character(current_password))
         throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
 
     auto client_revision = ClickHouseRevision::get();
@@ -172,8 +200,8 @@ void Connection::sendHello()
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     writeVarUInt(client_revision, *out);
     writeStringBinary(default_database, *out);
-    writeStringBinary(user, *out);
-    writeStringBinary(password, *out);
+    writeStringBinary(current_user, *out);
+    writeStringBinary(current_password, *out);
 
     out->next();
 }
@@ -363,6 +391,29 @@ void Connection::sendQuery(
     const ClientInfo * client_info,
     bool with_pending_data)
 {
+    String new_current_user;
+    /// Preserve initial_user if it was not specified via remote_servers configuration.
+    if (!user_specified && client_info && !client_info->empty() && !client_info->current_user.empty())
+    {
+        new_current_user = client_info->current_user;
+        current_password = client_info->current_password;
+    }
+    else
+    {
+        new_current_user = user;
+        current_password = password;
+    }
+
+    /// When user differs we need to reconnect
+    ///
+    /// Q: Does it worth keeping separate pool for each user instead?
+    /// A: Don't think so, since the user should be same for subsequent queries.
+    if (current_user != new_current_user)
+    {
+        current_user = new_current_user;
+        connect(timeouts);
+    }
+
     if (!connected)
         connect(timeouts);
 

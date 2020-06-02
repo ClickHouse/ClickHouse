@@ -4087,7 +4087,8 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        user, password, "Follower replica");
+        user, true /* user specified */, password,
+        "Follower replica");
 
     std::stringstream new_query_ss;
     formatAST(*new_query, new_query_ss, false, true);

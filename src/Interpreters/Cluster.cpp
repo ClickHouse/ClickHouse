@@ -297,7 +297,9 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
             ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
                 settings.distributed_connections_pool_size,
                 address.host_name, address.port,
-                address.default_database, address.user, address.password,
+                address.default_database,
+                address.user, address.user_specified,
+                address.password,
                 "server", address.compression, address.secure);
 
             info.pool = std::make_shared<ConnectionPoolWithFailover>(
@@ -370,7 +372,9 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
                 auto replica_pool = std::make_shared<ConnectionPool>(
                     settings.distributed_connections_pool_size,
                     replica.host_name, replica.port,
-                    replica.default_database, replica.user, replica.password,
+                    replica.default_database,
+                    replica.user, replica.user_specified,
+                    replica.password,
                     "server", replica.compression, replica.secure);
 
                 all_replicas_pools.emplace_back(replica_pool);
@@ -431,7 +435,9 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
             auto replica_pool = std::make_shared<ConnectionPool>(
                         settings.distributed_connections_pool_size,
                         replica.host_name, replica.port,
-                        replica.default_database, replica.user, replica.password,
+                        replica.default_database,
+                        replica.user, replica.user_specified,
+                        replica.password,
                         "server", replica.compression, replica.secure);
             all_replicas.emplace_back(replica_pool);
             if (replica.is_local && !treat_local_as_remote)
@@ -535,6 +541,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                 address.port,
                 address.default_database,
                 address.user,
+                address.user_specified,
                 address.password,
                 "server",
                 address.compression,

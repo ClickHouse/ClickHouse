@@ -82,29 +82,14 @@ class Connection : private boost::noncopyable
 public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
-        const String & user_, const String & password_,
+        const String & user_,
+        bool user_specified_,
+        const String & password_,
         const String & client_name_ = "client",
         Protocol::Compression compression_ = Protocol::Compression::Enable,
         Protocol::Secure secure_ = Protocol::Secure::Disable,
-        Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
-        :
-        host(host_), port(port_), default_database(default_database_),
-        user(user_), password(password_),
-        client_name(client_name_),
-        compression(compression_),
-        secure(secure_),
-        sync_request_timeout(sync_request_timeout_),
-        log_wrapper(*this)
-    {
-        /// Don't connect immediately, only on first need.
-
-        if (user.empty())
-            user = "default";
-
-        setDescription();
-    }
-
-    virtual ~Connection() {}
+        Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0));
+    virtual ~Connection() = default;
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_)
@@ -186,8 +171,16 @@ private:
     String host;
     UInt16 port;
     String default_database;
+    /// Passed user (i.e. from remote_servers)
     String user;
+    /// Outgoing user
+    String current_user;
+    /// Was user specified via remote_servers configuration.
+    /// If it was not specified, then sendQuery() allowed to use user/password from the passed ClientInfo.
+    bool user_specified = false;
     String password;
+    /// Password of the current_user
+    String current_password;
 
     /// Address is resolved during the first connection (or the following reconnects)
     /// Use it only for logging purposes

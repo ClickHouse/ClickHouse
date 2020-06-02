@@ -79,7 +79,10 @@ public:
             UInt16 cur_port = i >= ports_.size() ? 9000 : ports_[i];
             std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
 
-            connections.emplace_back(std::make_unique<ConnectionPool>(concurrency, cur_host, cur_port, default_database_, user_, password_, "benchmark", Protocol::Compression::Enable, secure));
+            connections.emplace_back(std::make_unique<ConnectionPool>(concurrency,
+                    cur_host, cur_port, default_database_,
+                    user_, true /* user_specified */, password_,
+                    "benchmark", Protocol::Compression::Enable, secure));
             comparison_info_per_interval.emplace_back(std::make_shared<Stats>());
             comparison_info_total.emplace_back(std::make_shared<Stats>());
         }
