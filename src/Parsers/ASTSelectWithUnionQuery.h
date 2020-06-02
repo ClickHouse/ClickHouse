@@ -18,6 +18,7 @@ public:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     ASTPtr list_of_selects;
+    // TODO: where are OUTFILE and FORMAT?
 };
 
 }
