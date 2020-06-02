@@ -891,4 +891,8 @@ The update is performed asynchronously, in a separate system thread.
 
 **Default value**: 15.
 
+**See also**
+
+-   [background_schedule_pool_size](../settings/settings.md#background_schedule_pool_size)
+
 [Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

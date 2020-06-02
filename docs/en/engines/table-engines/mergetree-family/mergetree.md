@@ -623,6 +623,8 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 The `default` storage policy implies using only one volume, which consists of only one disk given in `<path>`. Once a table is created, its storage policy cannot be changed.
 
+The number of threads performing background moves of data parts can be changed by [background_move_pool_size](../../../operations/settings/settings.md#background_move_pool_size) setting.
+
 ### Details {#details}
 
 In the case of `MergeTree` tables, data is getting to disk in different ways:
@@ -650,3 +652,4 @@ After the completion of background merges and mutations, old parts are removed o
 During this time, they are not moved to other volumes or disks. Therefore, until the parts are finally removed, they are still taken into account for evaluation of the occupied disk space.
 
 [Original article](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->
+

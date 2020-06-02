@@ -832,4 +832,8 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 **Значение по умолчанию**: 15.
 
+**Смотрите также**
+
+-   [background_schedule_pool_size](../settings/settings.md#background_schedule_pool_size)
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_configuration_parameters/settings/) <!--hide-->

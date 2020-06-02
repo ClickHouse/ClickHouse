@@ -1262,4 +1262,34 @@ Possible values:
 
 Default value: 16.
 
+## background_move_pool_size {#background_move_pool_size}
+
+Sets the number of threads performing background moves of data parts for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)-engine tables. This setting is applied at ClickHouse server start and can’t be changed in a user session.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
+## background_schedule_pool_size {#background_schedule_pool_size}
+
+Sets the number of threads performing background tasks for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables, [Kafka](../../engines/table-engines/integrations/kafka.md) streaming, [DNS cache updates](../server-configuration-parameters/settings.md#server-settings-dns-cache-update-period). This setting is applied at ClickHouse server start and can’t be changed in a user session.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
+## background_distributed_schedule_pool_size {#background_distributed_schedule_pool_size}
+
+Sets the number of threads performing background tasks for [distributed](../../engines/table-engines/special/distributed.md) sends. This setting is applied at ClickHouse server start and can’t be changed in a user session.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
