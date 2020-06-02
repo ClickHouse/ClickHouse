@@ -82,7 +82,7 @@ public:
         return size;
     }
 
-    /// Create task and start it. It is used internally.
+    /// Create task and start it.
     TaskHandle addTask(const Task & task);
 
     /// The following two methods are invoked by Storage*MergeTree at startup
