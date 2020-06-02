@@ -218,7 +218,7 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     {
         parallel_processing = true;
 
-        // Push to views concurrently if enabled, and more than one view is attached
+        // Push to views concurrently if enabled and more than one view is attached
         ThreadPool pool(std::min(size_t(settings.max_threads), views.size()));
         auto thread_group = CurrentThread::getGroup();
 
