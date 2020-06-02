@@ -42,7 +42,8 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client3.expect(r'0.*1' + end_of_block)
 
     client1.send('INSERT INTO test.sums WATCH test.lv')
-    client1.expect(end_of_block)
+    client1.expect(r'INSERT INTO')
+    client1.expect(r'Progress')
     
     client3.expect('0,1.*\r\n')
 

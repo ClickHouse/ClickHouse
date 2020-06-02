@@ -42,10 +42,10 @@ SRCS(
     ASTSelectWithUnionQuery.cpp
     ASTSetRoleQuery.cpp
     ASTSettingsProfileElement.cpp
+    ASTShowAccessEntitiesQuery.cpp
     ASTShowCreateAccessEntityQuery.cpp
     ASTShowGrantsQuery.cpp
-    ASTShowQuotasQuery.cpp
-    ASTShowRowPoliciesQuery.cpp
+    ASTShowPrivilegesQuery.cpp
     ASTShowTablesQuery.cpp
     ASTSubquery.cpp
     ASTSystemQuery.cpp
@@ -94,10 +94,10 @@ SRCS(
     ParserSetQuery.cpp
     ParserSetRoleQuery.cpp
     ParserSettingsProfileElement.cpp
+    ParserShowAccessEntitiesQuery.cpp
     ParserShowCreateAccessEntityQuery.cpp
     ParserShowGrantsQuery.cpp
-    ParserShowQuotasQuery.cpp
-    ParserShowRowPoliciesQuery.cpp
+    ParserShowPrivilegesQuery.cpp
     ParserShowTablesQuery.cpp
     ParserSystemQuery.cpp
     ParserTablePropertiesQuery.cpp

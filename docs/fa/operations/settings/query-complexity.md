@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 59
 toc_title: "\u0645\u062D\u062F\u0648\u062F\u06CC\u062A \u062F\u0631 \u067E\u06CC\u0686\
   \u06CC\u062F\u06AF\u06CC \u067E\u0631\u0633 \u0648 \u062C\u0648"
@@ -22,7 +22,7 @@ toc_title: "\u0645\u062D\u062F\u0648\u062F\u06CC\u062A \u062F\u0631 \u067E\u06CC
 
 `break` – Stop executing the query and return the partial result, as if the source data ran out.
 
-`any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don’t add new keys to the set.
+`any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don't add new keys to the set.
 
 ## \_کاساژ بیشینه {#settings_max_memory_usage}
 
@@ -45,7 +45,7 @@ toc_title: "\u0645\u062D\u062F\u0648\u062F\u06CC\u062A \u062F\u0631 \u067E\u06CC
 
 حداکثر مقدار رم برای استفاده برای اجرای نمایش داده شد کاربر بر روی یک سرور واحد.
 
-مقادیر پیش فرض در تعریف [تنظیمات.ه](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L288). به طور پیش فرض مقدار محدود نمی شود (`max_memory_usage_for_user = 0`).
+مقادیر پیش فرض در تعریف [تنظیمات.ه](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L288). به طور پیش فرض مقدار محدود نمی شود (`max_memory_usage_for_user = 0`).
 
 همچنین نگاه کنید به شرح [\_کاساژ بیشینه](#settings_max_memory_usage).
 
@@ -53,7 +53,7 @@ toc_title: "\u0645\u062D\u062F\u0648\u062F\u06CC\u062A \u062F\u0631 \u067E\u06CC
 
 حداکثر مقدار رم برای استفاده برای اجرای تمام نمایش داده شد بر روی یک سرور واحد.
 
-مقادیر پیش فرض در تعریف [تنظیمات.ه](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L289). به طور پیش فرض مقدار محدود نمی شود (`max_memory_usage_for_all_queries = 0`).
+مقادیر پیش فرض در تعریف [تنظیمات.ه](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L289). به طور پیش فرض مقدار محدود نمی شود (`max_memory_usage_for_all_queries = 0`).
 
 همچنین نگاه کنید به شرح [\_کاساژ بیشینه](#settings_max_memory_usage).
 
@@ -83,11 +83,11 @@ toc_title: "\u0645\u062D\u062F\u0648\u062F\u06CC\u062A \u062F\u0631 \u067E\u06CC
 
 ## ا\_فزون\_بر\_گونهی\_گونهی زیر\_گروهها {#settings-max_bytes_before_external_group_by}
 
-فعالسازی یا غیرفعالسازی اعدام `GROUP BY` بند در حافظه خارجی. ببینید [گروه در حافظه خارجی](../../sql-reference/statements/select.md#select-group-by-in-external-memory).
+فعالسازی یا غیرفعالسازی اعدام `GROUP BY` بند در حافظه خارجی. ببینید [گروه در حافظه خارجی](../../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory).
 
 مقادیر ممکن:
 
--   حداکثر حجم رم (به بایت) است که می تواند توسط تک استفاده می شود [GROUP BY](../../sql-reference/statements/select.md#select-group-by-clause) عمل
+-   حداکثر حجم رم (به بایت) است که می تواند توسط تک استفاده می شود [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause) عمل
 -   0 — `GROUP BY` در حافظه خارجی غیر فعال.
 
 مقدار پیش فرض: 0.
@@ -235,7 +235,7 @@ FORMAT Null;
 
 محدودیت تعداد ردیف در جدول هش استفاده شده است که در هنگام پیوستن به جداول.
 
-این تنظیمات در مورد [SELECT … JOIN](../../sql-reference/statements/select.md#select-join) عملیات و [پیوستن](../../engines/table-engines/special/join.md) موتور جدول.
+این تنظیمات در مورد [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) عملیات و [پیوستن](../../engines/table-engines/special/join.md) موتور جدول.
 
 اگر یک پرس و جو شامل چند می پیوندد, خانه چک این تنظیم برای هر نتیجه متوسط.
 
@@ -252,7 +252,7 @@ FORMAT Null;
 
 محدودیت اندازه در بایت از جدول هش استفاده می شود در هنگام پیوستن به جداول.
 
-این تنظیمات در مورد [SELECT … JOIN](../../sql-reference/statements/select.md#select-join) عملیات و [پیوستن به موتور جدول](../../engines/table-engines/special/join.md).
+این تنظیمات در مورد [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) عملیات و [پیوستن به موتور جدول](../../engines/table-engines/special/join.md).
 
 اگر پرس و جو شامل می پیوندد, کلیک چک این تنظیمات برای هر نتیجه متوسط.
 
@@ -275,13 +275,13 @@ FORMAT Null;
 مقادیر ممکن:
 
 -   `THROW` — ClickHouse throws an exception and breaks operation.
--   `BREAK` — ClickHouse breaks operation and doesn’t throw an exception.
+-   `BREAK` — ClickHouse breaks operation and doesn't throw an exception.
 
 مقدار پیشفرض: `THROW`.
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
--   [پیوستن بند](../../sql-reference/statements/select.md#select-join)
+-   [پیوستن بند](../../sql-reference/statements/select/join.md#select-join)
 -   [پیوستن به موتور جدول](../../engines/table-engines/special/join.md)
 
 ## \_مسدود کردن بیشینه {#max-partitions-per-insert-block}

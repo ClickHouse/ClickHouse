@@ -379,7 +379,7 @@ As you can see from the example, if `<http_handlers>` is configured in the confi
 > \>
 > \> `<query>` - use with predefined\_query\_handler type, executes query when the handler is called.
 > \>
-> \> `<query_param_name>` - use with dynamic\_query\_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params.
+> \> `<query_param_name>` - use with dynamic\_query\_handler type, extracts and executes the value corresponding to the `<query_param_name>` value in HTTP request params.
 > \>
 > \> `<status>` - use with static type, response status code.
 > \>

@@ -1,33 +1,27 @@
 #include "ColumnInfoHandler.h"
-#include "getIdentifierQuote.h"
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 
-#if USE_POCO_SQLODBC
-#include <Poco/SQL/ODBC/ODBCException.h>
-#include <Poco/SQL/ODBC/SessionImpl.h>
-#include <Poco/SQL/ODBC/Utility.h>
-#define POCO_SQL_ODBC_CLASS Poco::SQL::ODBC
-#endif
-#if USE_POCO_DATAODBC
-#include <Poco/Data/ODBC/ODBCException.h>
-#include <Poco/Data/ODBC/SessionImpl.h>
-#include <Poco/Data/ODBC/Utility.h>
-#define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
-#endif
+#if USE_ODBC
 
-#include <Poco/Net/HTTPServerRequest.h>
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/HTMLForm.h>
-#include <Poco/NumberParser.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
-#include <IO/WriteHelpers.h>
-#include <Parsers/ParserQueryWithOutput.h>
-#include <Parsers/parseQuery.h>
-#include <common/logger_useful.h>
-#include <ext/scope_guard.h>
-#include "validateODBCConnectionString.h"
+#    include <DataTypes/DataTypeFactory.h>
+#    include <DataTypes/DataTypeNullable.h>
+#    include <IO/WriteBufferFromHTTPServerResponse.h>
+#    include <IO/WriteHelpers.h>
+#    include <Parsers/ParserQueryWithOutput.h>
+#    include <Parsers/parseQuery.h>
+#    include <Poco/Data/ODBC/ODBCException.h>
+#    include <Poco/Data/ODBC/SessionImpl.h>
+#    include <Poco/Data/ODBC/Utility.h>
+#    include <Poco/Net/HTMLForm.h>
+#    include <Poco/Net/HTTPServerRequest.h>
+#    include <Poco/Net/HTTPServerResponse.h>
+#    include <Poco/NumberParser.h>
+#    include <common/logger_useful.h>
+#    include <Common/quoteString.h>
+#    include <ext/scope_guard.h>
+#    include "getIdentifierQuote.h"
+#    include "validateODBCConnectionString.h"
+
+#    define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
 
 namespace DB
 {
@@ -65,15 +59,10 @@ namespace
     }
 }
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
 void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     Poco::Net::HTMLForm params(request, request.stream());
-    LOG_TRACE(log, "Request URI: " + request.getURI());
+    LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)
     {
@@ -100,11 +89,11 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
     if (params.has("schema"))
     {
         schema_name = params.get("schema");
-        LOG_TRACE(log, "Will fetch info for table '" << schema_name + "." + table_name << "'");
+        LOG_TRACE(log, "Will fetch info for table '{}'", schema_name + "." + table_name);
     }
     else
-        LOG_TRACE(log, "Will fetch info for table '" << table_name << "'");
-    LOG_TRACE(log, "Got connection str '" << connection_string << "'");
+        LOG_TRACE(log, "Will fetch info for table '{}'", table_name);
+    LOG_TRACE(log, "Got connection str '{}'", connection_string);
 
     try
     {
@@ -123,7 +112,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         const auto & context_settings = context.getSettingsRef();
 
         /// TODO Why not do SQLColumns instead?
-        std::string name = schema_name.empty() ? table_name : schema_name + "." + table_name;
+        std::string name = schema_name.empty() ? backQuoteIfNeed(table_name) : backQuoteIfNeed(schema_name) + "." + backQuoteIfNeed(table_name);
         std::stringstream ss;
         std::string input = "SELECT * FROM " + name + " WHERE 1 = 0";
         ParserQueryWithOutput parser;
@@ -131,21 +120,11 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
 
         IAST::FormatSettings settings(ss, true);
         settings.always_quote_identifiers = true;
-
-        auto identifier_quote = getIdentifierQuote(hdbc);
-        if (identifier_quote.length() == 0)
-            settings.identifier_quoting_style = IdentifierQuotingStyle::None;
-        else if (identifier_quote[0] == '`')
-            settings.identifier_quoting_style = IdentifierQuotingStyle::Backticks;
-        else if (identifier_quote[0] == '"')
-            settings.identifier_quoting_style = IdentifierQuotingStyle::DoubleQuotes;
-        else
-            throw Exception("Can not map quote identifier '" + identifier_quote + "' to IdentifierQuotingStyle value", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
+        settings.identifier_quoting_style = getQuotingStyle(hdbc);
         select->format(settings);
         std::string query = ss.str();
 
-        LOG_TRACE(log, "Inferring structure with query '" << query << "'");
+        LOG_TRACE(log, "Inferring structure with query '{}'", query);
 
         if (POCO_SQL_ODBC_CLASS::Utility::isError(POCO_SQL_ODBC_CLASS::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(query.data()), query.size())))
             throw POCO_SQL_ODBC_CLASS::DescriptorException(session.dbc());
@@ -189,5 +168,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         tryLogCurrentException(log);
     }
 }
+
 }
+
 #endif

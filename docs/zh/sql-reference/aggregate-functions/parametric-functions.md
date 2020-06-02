@@ -1,8 +1,8 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
-toc_title: "\u53C2\u6570\u805A\u5408\u51FD\u6570"
+toc_title: "\u53C2\u6570"
 ---
 
 # 参数聚合函数 {#aggregate_functions_parametric}
@@ -111,7 +111,7 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 -   `(?N)` — Matches the condition argument at position `N`. 条件在编号 `[1, 32]` 范围。 例如, `(?1)` 匹配传递给 `cond1` 参数。
 
--   `.*` — Matches any number of events. You don’t need conditional arguments to match this element of the pattern.
+-   `.*` — Matches any number of events. You don't need conditional arguments to match this element of the pattern.
 
 -   `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` 匹配彼此发生超过1800秒的事件。 这些事件之间可以存在任意数量的任何事件。 您可以使用 `>=`, `>`, `<`, `<=` 运营商。
 
@@ -316,7 +316,7 @@ ORDER BY level ASC
 ## 保留 {#retention}
 
 该函数将一组条件作为参数，类型为1到32个参数 `UInt8` 表示事件是否满足特定条件。
-任何条件都可以指定为参数（如 [WHERE](../../sql-reference/statements/select.md#select-where)).
+任何条件都可以指定为参数（如 [WHERE](../../sql-reference/statements/select/where.md#select-where)).
 
 除了第一个以外，条件成对适用：如果第一个和第二个是真的，第二个结果将是真的，如果第一个和fird是真的，第三个结果将是真的，等等。
 
@@ -335,7 +335,7 @@ retention(cond1, cond2, ..., cond32);
 数组为1或0。
 
 -   1 — condition was met for the event.
--   0 — condition wasn’t met for the event.
+-   0 — condition wasn't met for the event.
 
 类型: `UInt8`.
 

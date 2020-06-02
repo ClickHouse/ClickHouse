@@ -57,7 +57,7 @@ public:
             NestedPools nested_pools_,
             time_t decrease_error_period_,
             size_t max_error_cap_,
-            Logger * log_)
+            Poco::Logger * log_)
         : nested_pools(std::move(nested_pools_))
         , decrease_error_period(decrease_error_period_)
         , max_error_cap(max_error_cap_)
@@ -134,7 +134,7 @@ protected:
     /// The time when error counts were last decreased.
     time_t last_error_decrease_time = 0;
 
-    Logger * log;
+    Poco::Logger * log;
 };
 
 template <typename TNestedPool>
@@ -239,8 +239,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             }
             else
             {
-                LOG_WARNING(log, "Connection failed at try №"
-                            << (shuffled_pool.error_count + 1) << ", reason: " << fail_message);
+                LOG_WARNING(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
                 ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
                 shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);

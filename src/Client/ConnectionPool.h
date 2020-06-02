@@ -15,8 +15,8 @@ namespace DB
   *
   *    void thread()
   *    {
-  *          auto connection = pool.get();
-  *        connection->sendQuery("SELECT 'Hello, world!' AS world");
+  *        auto connection = pool.get();
+  *        connection->sendQuery(...);
   *    }
   */
 
@@ -56,7 +56,7 @@ public:
             Protocol::Compression compression_ = Protocol::Compression::Enable,
             Protocol::Secure secure_ = Protocol::Secure::Disable)
        : Base(max_connections_,
-        &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
+        &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_),
         port(port_),
         default_database(default_database_),

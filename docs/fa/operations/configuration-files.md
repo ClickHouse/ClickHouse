@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 50
 toc_title: "\u067E\u0631\u0648\u0646\u062F\u0647\u0647\u0627\u06CC \u067E\u06CC\u06A9\
   \u0631\u0628\u0646\u062F\u06CC"
@@ -21,7 +21,7 @@ toc_title: "\u067E\u0631\u0648\u0646\u062F\u0647\u0647\u0627\u06CC \u067E\u06CC\
 
 اگر `remove` مشخص شده است, حذف عنصر.
 
-پیکربندی همچنین می توانید تعریف “substitutions”. اگر یک عنصر است `incl` ویژگی, جایگزینی مربوطه را از فایل خواهد شد به عنوان ارزش استفاده. به طور پیش فرض, مسیر به فایل با تعویض است `/etc/metrika.xml`. این را می توان در تغییر [include\_from](server-configuration-parameters/settings.md#server_configuration_parameters-include_from) عنصر در پیکربندی سرور. مقادیر جایگزینی در مشخص `/yandex/substitution_name` عناصر در این فایل. اگر جایگزینی مشخص شده در `incl` وجود ندارد, این است که در ورود به سیستم ثبت. برای جلوگیری از جایگزینی ورود به سیستم کلیک کنید `optional="true"` ویژگی (مثلا, تنظیمات برای [& کلاندارها](server-configuration-parameters/settings.md)).
+پیکربندی همچنین می توانید تعریف “substitutions”. اگر یک عنصر است `incl` ویژگی, جایگزینی مربوطه را از فایل خواهد شد به عنوان ارزش استفاده. به طور پیش فرض, مسیر به فایل با تعویض است `/etc/metrika.xml`. این را می توان در تغییر [شامل \_فروم](server-configuration-parameters/settings.md#server_configuration_parameters-include_from) عنصر در پیکربندی سرور. مقادیر جایگزینی در مشخص `/yandex/substitution_name` عناصر در این فایل. اگر جایگزینی مشخص شده در `incl` وجود ندارد, این است که در ورود به سیستم ثبت. برای جلوگیری از جایگزینی ورود به سیستم کلیک کنید `optional="true"` ویژگی (مثلا, تنظیمات برای [& کلاندارها](server-configuration-parameters/settings.md)).
 
 تعویض همچنین می توانید از باغ وحش انجام شود. برای انجام این کار ویژگی را مشخص کنید `from_zk = "/path/to/node"`. مقدار عنصر با محتویات گره در جایگزین `/path/to/node` در باغ وحش. شما همچنین می توانید یک زیر درخت کل در گره باغ وحش قرار داده و به طور کامل به عنصر منبع وارد می شود.
 

@@ -97,6 +97,6 @@ FROM dt
 -   [Functions for working with arrays](../../sql-reference/functions/array-functions.md)
 -   [The `date_time_input_format` setting](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [Operators for working with dates and times](../../sql-reference/operators.md#operators-datetime)
+-   [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
 -   [`Date` data type](date.md)
 -   [`DateTime` data type](datetime.md)

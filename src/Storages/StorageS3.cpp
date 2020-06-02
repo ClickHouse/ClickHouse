@@ -24,7 +24,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsRequest.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
 
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
@@ -119,7 +119,6 @@ namespace
                 return Chunk(std::move(columns), num_rows);
             }
 
-            reader->readSuffix();
             reader.reset();
 
             return {};
@@ -201,7 +200,7 @@ StorageS3::StorageS3(
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
-    , client(S3::ClientFactory::instance().create(uri_.endpoint, access_key_id_, secret_access_key_))
+    , client(S3::ClientFactory::instance().create(uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_))
 {
     context_global.getRemoteHostFilter().checkURL(uri_.uri);
     setColumns(columns_);
@@ -228,23 +227,25 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
         return {globbed_uri.key};
     }
 
-    Aws::S3::Model::ListObjectsRequest request;
+    Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(globbed_uri.bucket);
     request.SetPrefix(key_prefix);
 
     re2::RE2 matcher(makeRegexpPatternFromGlobs(globbed_uri.key));
     Strings result;
-    Aws::S3::Model::ListObjectsOutcome outcome;
+    Aws::S3::Model::ListObjectsV2Outcome outcome;
     int page = 0;
     do
     {
         ++page;
-        outcome = client.ListObjects(request);
+        outcome = client.ListObjectsV2(request);
         if (!outcome.IsSuccess())
         {
             throw Exception("Could not list objects in bucket " + quoteString(request.GetBucket())
                     + " with prefix " + quoteString(request.GetPrefix())
-                    + ", page " + std::to_string(page), ErrorCodes::S3_ERROR);
+                    + ", page " + std::to_string(page)
+                    + ", S3 exception " + outcome.GetError().GetExceptionName() + " " + outcome.GetError().GetMessage()
+                , ErrorCodes::S3_ERROR);
         }
 
         for (const auto & row : outcome.GetResult().GetContents())
@@ -254,7 +255,7 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
                 result.emplace_back(std::move(key));
         }
 
-        request.SetMarker(outcome.GetResult().GetNextMarker());
+        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
     }
     while (outcome.GetResult().GetIsTruncated());
 
