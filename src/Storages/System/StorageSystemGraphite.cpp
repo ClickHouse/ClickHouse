@@ -39,6 +39,8 @@ static StorageSystemGraphite::Configs getConfigs()
         for (auto iterator = db.second->getTablesIterator(); iterator->isValid(); iterator->next())
         {
             const auto & table = iterator->table();
+            if (!table)
+                continue;
 
             const MergeTreeData * table_data = dynamic_cast<const MergeTreeData *>(table.get());
             if (!table_data)

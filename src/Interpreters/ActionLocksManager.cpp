@@ -24,7 +24,8 @@ inline void forEachTable(F && f)
 {
     for (auto & elem : DatabaseCatalog::instance().getDatabases())
         for (auto iterator = elem.second->getTablesIterator(); iterator->isValid(); iterator->next())
-            f(iterator->table());
+            if (auto table = iterator->table())
+                f(table);
 
 }
 
