@@ -493,12 +493,12 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-void ColumnString::compareColumn(
-    const IColumn & rhs_, size_t rhs_row_num,
-    PaddedPODArray<UInt64> & row_indexes, PaddedPODArray<Int8> & compare_results,
-    int direction, int) const
+template<bool reversed>
+void columnCompareImpl(
+    const ColumnString & lhs, const ColumnString & rhs, size_t rhs_row_num,
+    PaddedPODArray<UInt64> & row_indexes, PaddedPODArray<Int8> & compare_results)
 {
-    size_t rows_num = size();
+    size_t rows_num = lhs.size();
     size_t row_indexes_size = row_indexes.size();
 
     if (compare_results.empty())
@@ -509,15 +509,16 @@ void ColumnString::compareColumn(
                 "Size of compare_results: " + std::to_string(compare_results.size()) + " doesn't match rows_num: " + std::to_string(rows_num),
                 ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
-    const auto * rhs_data = rhs.chars.data() + rhs.offsetAt(rhs_row_num);
-    auto rhs_size = rhs.sizeAt(rhs_row_num) - 1;
+    auto rhs_data = rhs.getDataAt(rhs_row_num);
 
     size_t cur_row = 0;
     for (size_t i = 0; i < row_indexes_size; ++i)
     {
         UInt64 index = row_indexes[i];
-        compare_results[index] = direction * memcmpSmallAllowOverflow15(chars.data() + offsetAt(index), sizeAt(index) - 1, rhs_data, rhs_size);
+        auto lhs_data = lhs.getDataAt(index);
+
+        int cmp_res = memcmpSmallAllowOverflow15(lhs_data.data, lhs_data.size, rhs_data.data, rhs_data.size);
+        compare_results[index] = reversed ? -cmp_res : cmp_res;
         if (compare_results[index] == 0)
         {
             row_indexes[cur_row] = index;
@@ -525,7 +526,19 @@ void ColumnString::compareColumn(
         }
     }
 
-    row_indexes.resize(row_indexes_size);
+    row_indexes.resize(cur_row);
+}
+
+void ColumnString::compareColumn(
+    const IColumn & rhs_, size_t rhs_row_num,
+    PaddedPODArray<UInt64> & row_indexes, PaddedPODArray<Int8> & compare_results,
+    int direction, int) const
+{
+    const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
+    if (direction < 0)
+        columnCompareImpl<true>(*this, rhs, rhs_row_num, row_indexes, compare_results);
+    else
+        columnCompareImpl<false>(*this, rhs, rhs_row_num, row_indexes, compare_results);
 }
 
 
