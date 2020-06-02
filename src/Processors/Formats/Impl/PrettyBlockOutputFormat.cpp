@@ -61,8 +61,12 @@ void PrettyBlockOutputFormat::calculateWidths(
             /// Note that it is just an estimation. 4 is the maximum size of Unicode code point in bytes in UTF-8.
             /// But it's possible that the string is long in bytes but very short in visible size.
             /// (e.g. non-printable characters, diacritics, combining characters)
-            if (serialized_value.size() > format_settings.pretty.max_value_width * 4)
-                serialized_value.resize(format_settings.pretty.max_value_width * 4);
+            if (format_settings.pretty.max_value_width)
+            {
+                size_t max_byte_size = format_settings.pretty.max_value_width * 4;
+                if (serialized_value.size() > max_byte_size)
+                    serialized_value.resize(max_byte_size);
+            }
 
             widths[i][j] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), prefix);
             max_padded_widths[i] = std::max(max_padded_widths[i],
