@@ -321,6 +321,8 @@ if (USE_FASTOPS)
 endif()
 
 if (USE_SENTRY)
+    set (SENTRY_BACKEND "none")
+    set (SENTRY_TRANSPORT "curl")
     add_subdirectory (sentry-native)
 endif()
 

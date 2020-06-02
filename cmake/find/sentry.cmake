@@ -5,16 +5,9 @@ if (NOT EXISTS "${SENTRY_INCLUDE_DIR}/sentry.h")
     return()
 endif ()
 
-if (NOT OS_FREEBSD AND NOT UNBUNDLED AND NOT SPLITTED AND NOT (COMPILER_CLANG AND OS_DARWIN))
-    if (POLICY CMP0077)
-        cmake_policy (SET CMP0077 NEW)
-    endif ()
+if (NOT OS_FREEBSD)
     option (USE_SENTRY "Use Sentry" ON)
 
-    set (BUILD_SHARED_LIBS OFF)
-    set (SENTRY_PIC OFF)
-    set (SENTRY_BACKEND "none")
-    set (SENTRY_TRANSPORT "curl")
     set (CURL_LIBRARY ${ClickHouse_SOURCE_DIR}/contrib/curl/lib)
     set (CURL_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/curl/include)
 
