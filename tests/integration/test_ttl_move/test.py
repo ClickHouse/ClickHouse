@@ -9,6 +9,7 @@ from multiprocessing.dummy import Pool
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from helpers.test_tools import assert_eq_with_retry
 
 
 cluster = ClickHouseCluster(__file__)
@@ -58,6 +59,13 @@ def get_used_disks_for_table(node, table_name, partition=None):
         ORDER BY modification_time
     """.format(name=table_name, suffix=suffix)).strip().split('\n')
 
+def check_used_disks_with_retry(node, table_name, expected_disks, retries):
+    for _ in range(retries):
+        used_disks = get_used_disks_for_table(node, table_name)
+        if set(used_disks) == expected_disks:
+            return True
+        time.sleep(0.5)
+    return False
 
 @pytest.mark.parametrize("name,engine,alter", [
     ("mt_test_rule_with_invalid_destination","MergeTree()",0),
@@ -651,12 +659,6 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
-def start_thread(*args, **kwargs):
-    thread = threading.Thread(*args, **kwargs)
-    thread.start()
-    return thread
-
-
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_alter_multiple_ttls_positive", "MergeTree()", True),
     ("mt_replicated_test_alter_multiple_ttls_positive", "ReplicatedMergeTree('/clickhouse/replicated_test_alter_multiple_ttls_positive', '1')", True),
@@ -687,8 +689,6 @@ limitations under the License."""
     """
     now = time.time()
     try:
-        sleeps = { delay : start_thread(target=time.sleep, args=(delay,)) for delay in [16, 26] }
-
         node1.query("""
             CREATE TABLE {name} (
                 p1 Int64,
@@ -706,7 +706,7 @@ limitations under the License."""
             ALTER TABLE {name} MODIFY
             TTL d1 + INTERVAL 0 SECOND TO DISK 'jbod2',
                 d1 + INTERVAL 14 SECOND TO VOLUME 'external',
-                d1 + INTERVAL 24 SECOND DELETE
+                d1 + INTERVAL 19 SECOND DELETE
         """.format(name=name))
 
         for p in range(3):
@@ -724,18 +724,33 @@ limitations under the License."""
 
         assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["6"]
 
-        sleeps[16].join()
+        if positive:
+            expected_disks = {"external"}
+        else:
+            expected_disks = {"jbod1", "jbod2"}
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"external"} if positive else {"jbod1", "jbod2"}
+        check_used_disks_with_retry(node1, name, expected_disks, 50)
 
         assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["6"]
 
-        sleeps[26].join()
+        time.sleep(5)
 
-        node1.query("OPTIMIZE TABLE {name} FINAL".format(name=name))
+        for i in range(50):
+            rows_count = int(node1.query("SELECT count() FROM {name}".format(name=name)).strip())
+            if positive:
+                if rows_count == 0:
+                    break
+            else:
+                if rows_count == 3:
+                    break
+            node1.query("OPTIMIZE TABLE {name} FINAL".format(name=name))
+            time.sleep(0.5)
 
-        assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["0"] if positive else ["3"]
+
+        if positive:
+            assert rows_count == 0
+        else:
+            assert rows_count == 3
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
