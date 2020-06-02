@@ -35,7 +35,7 @@ void RabbitMQBlockOutputStream::writePrefix()
     child = FormatFactory::instance().getOutput(
             storage.getFormatName(), *buffer, getHeader(), context, [this](const Columns & /* columns */, size_t /* rows */)
             {
-                buffer->count_row();
+                buffer->countRow();
             });
 }
 
