@@ -785,13 +785,13 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
             throw Exception("`ngrambf` index must have exactly 4 arguments.", ErrorCodes::INCORRECT_QUERY);
 
         size_t n = typeid_cast<const ASTLiteral &>(
-                *node->type->arguments->children[0]).value.get<size_t>();
+                *node->type->arguments->children[0]).value.safeGet<size_t>();
         size_t bloom_filter_size = typeid_cast<const ASTLiteral &>(
-                *node->type->arguments->children[1]).value.get<size_t>();
+                *node->type->arguments->children[1]).value.safeGet<size_t>();
         size_t bloom_filter_hashes = typeid_cast<const ASTLiteral &>(
-                *node->type->arguments->children[2]).value.get<size_t>();
+                *node->type->arguments->children[2]).value.safeGet<size_t>();
         size_t seed = typeid_cast<const ASTLiteral &>(
-                *node->type->arguments->children[3]).value.get<size_t>();
+                *node->type->arguments->children[3]).value.safeGet<size_t>();
 
         auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
 
@@ -805,11 +805,11 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
             throw Exception("`tokenbf` index must have exactly 3 arguments.", ErrorCodes::INCORRECT_QUERY);
 
         size_t bloom_filter_size = typeid_cast<const ASTLiteral &>(
-                *node->type->arguments->children[0]).value.get<size_t>();
+                *node->type->arguments->children[0]).value.safeGet<size_t>();
         size_t bloom_filter_hashes = typeid_cast<const ASTLiteral &>(
-                *node->type->arguments->children[1]).value.get<size_t>();
+                *node->type->arguments->children[1]).value.safeGet<size_t>();
         size_t seed = typeid_cast<const ASTLiteral &>(
-                *node->type->arguments->children[2]).value.get<size_t>();
+                *node->type->arguments->children[2]).value.safeGet<size_t>();
 
         auto tokenizer = std::make_unique<SplitTokenExtractor>();
 

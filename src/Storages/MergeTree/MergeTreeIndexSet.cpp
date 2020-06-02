@@ -468,7 +468,7 @@ std::unique_ptr<IMergeTreeIndex> setIndexCreator(
     if (!node->type->arguments || node->type->arguments->children.size() != 1)
         throw Exception("Set index must have exactly one argument.", ErrorCodes::INCORRECT_QUERY);
     else if (node->type->arguments->children.size() == 1)
-        max_rows = node->type->arguments->children[0]->as<ASTLiteral &>().value.get<size_t>();
+        max_rows = node->type->arguments->children[0]->as<ASTLiteral &>().value.safeGet<size_t>();
 
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
