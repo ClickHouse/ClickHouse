@@ -433,6 +433,18 @@ Possible values:
 
 Default value: 65536.
 
+## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
+
+Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk. 
+
+The bigger the value of the setting, the more RAM used and the less disk I/O needed.
+
+Possible values:
+
+- Any positive integer, starting from 2.
+
+Default value: 64.
+
 ## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys}
 
 Enables legacy ClickHouse server behavior in `ANY INNER|LEFT JOIN` operations.
@@ -461,6 +473,18 @@ Default value: 0.
 See also:
 
 -   [JOIN strictness](../../sql-reference/statements/select/join.md#select-join-strictness)
+
+
+## temporary_files_codec {#temporary_files_codec}
+
+Sets compression codec for temporary files used in sorting and joining operations on disk.
+
+Possible values: 
+
+- LZ4 — [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) compression is applied.
+- NONE — No compression is applied.
+
+Default value: LZ4.
 
 
 ## max\_block\_size {#setting-max_block_size}
@@ -1324,6 +1348,12 @@ Possible values:
 
 Default value: 16.
 
+## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
+
+Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at ClickHouse server start and can't be changed in a user session.
+
+Default value: 16.
+
 ## low_cardinality_max_dictionary_size {#low_cardinality_max_dictionary_size}
 
 Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can't be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
@@ -1381,6 +1411,5 @@ Possible values:
 - 0 — Usage of `LowCardinality` is restricted.
 
 Default value: 0.
-
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
