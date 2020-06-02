@@ -22,12 +22,7 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     , non_virtual_header(storage.getSampleBlockNonMaterialized())
     , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp","_timestamp_ms","_headers.name","_headers.value"}))
 {
-    context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context (JSON or TSKV)
-    context.setSetting("input_format_allow_errors_ratio", 0.);
-    context.setSetting("input_format_allow_errors_num", storage.skipBroken());
-
-    if (!storage.getSchemaName().empty())
-        context.setSetting("format_schema", storage.getSchemaName());
+    storage.adjustContext(context);
 }
 
 KafkaBlockInputStream::~KafkaBlockInputStream()
