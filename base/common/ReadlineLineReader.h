@@ -8,7 +8,7 @@
 class ReadlineLineReader : public LineReader
 {
 public:
-    ReadlineLineReader(const Suggest & suggest, const String & history_file_path, bool multiline, Patterns extender_, Patterns delimiter_);
+    ReadlineLineReader(const Suggest & suggest, const String & history_file_path, bool multiline, Patterns extenders_, Patterns delimiters_);
     ~ReadlineLineReader() override;
 
     void enableBracketedPaste() override;

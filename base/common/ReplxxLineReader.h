@@ -7,7 +7,7 @@
 class ReplxxLineReader : public LineReader
 {
 public:
-    ReplxxLineReader(const Suggest & suggest, const String & history_file_path, bool multiline, Patterns extenders_, Patterns delimiter_);
+    ReplxxLineReader(const Suggest & suggest, const String & history_file_path, bool multiline, Patterns extenders_, Patterns delimiters_);
     ~ReplxxLineReader() override;
 
     void enableBracketedPaste() override;
