@@ -22,14 +22,14 @@ namespace ErrorCodes
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
     const String & query_, const Block & header_, const Context & context_, const Settings * settings,
-    ThrottlerPtr throttler_, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), throttler(std::move(throttler_)), query(query_), context(context_)
+    ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
+    : header(header_), query(query_), context(context_)
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);
 
-    create_multiplexed_connections = [this, &connection]()
+    create_multiplexed_connections = [this, &connection, throttler]()
     {
         return std::make_unique<MultiplexedConnections>(connection, context.getSettingsRef(), throttler);
     };
