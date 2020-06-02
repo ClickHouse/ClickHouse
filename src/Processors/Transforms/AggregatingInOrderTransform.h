@@ -40,7 +40,6 @@ private:
     MutableColumns res_aggregate_columns;
 
     AggregatingTransformParamsPtr params;
-
     SortDescription group_by_description;
 
     Aggregator::AggregateColumns aggregate_columns;
@@ -48,8 +47,13 @@ private:
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;
 
+    UInt64 src_rows = 0;
+    UInt64 src_bytes = 0;
+    UInt64 res_rows = 0;
+
     bool need_generate = false;
     bool block_end_reached = false;
+    bool is_consume_started = false;
     bool is_consume_finished = false;
 
     Block res_header;
