@@ -368,6 +368,8 @@ public:
                 entry.latest_fail_reason = exception_message;
             }
         }
+
+        storage.currently_processing_in_background_condition.notify_all();
     }
 };
 
@@ -569,7 +571,7 @@ bool StorageMergeTree::merge(
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
 
     {
-        std::lock_guard lock(currently_processing_in_background_mutex);
+        std::unique_lock lock(currently_processing_in_background_mutex);
 
         auto can_merge = [this, &lock] (const DataPartPtr & left, const DataPartPtr & right, String *) -> bool
         {
@@ -593,8 +595,33 @@ bool StorageMergeTree::merge(
         }
         else
         {
-            UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
-            selected = merger_mutator.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
+            while (true)
+            {
+                UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
+                selected = merger_mutator.selectAllPartsToMergeWithinPartition(
+                    future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
+
+                /// If final - we will wait for currently processing merges to finish and continue.
+                /// TODO Respect query settings for timeout
+                if (final
+                    && !selected
+                    && !currently_merging_mutating_parts.empty()
+                    && out_disable_reason
+                    && out_disable_reason->empty())
+                {
+                    LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now) to perform OPTIMIZE FINAL",
+                        currently_merging_mutating_parts.size());
+
+                    if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
+                        lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
+                    {
+                        *out_disable_reason = "Timeout while waiting for already running merges before running OPTIMIZE with FINAL";
+                        break;
+                    }
+                }
+                else
+                    break;
+            }
         }
 
         if (!selected)
@@ -850,7 +877,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
 
 Int64 StorageMergeTree::getCurrentMutationVersion(
     const DataPartPtr & part,
-    std::lock_guard<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
+    std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
 {
     auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
     if (it == current_mutations_by_version.begin())
