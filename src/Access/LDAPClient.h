@@ -1,6 +1,6 @@
 #pragma once
 
-#if __has_include("config_core.h")
+#if !defined(ARCADIA_BUILD) && __has_include("config_core.h")
 #include "config_core.h"
 #endif
 
