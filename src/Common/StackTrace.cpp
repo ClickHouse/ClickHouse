@@ -313,7 +313,7 @@ const StackTrace::Frames & StackTrace::getFrames() const
 {
     if (!frames.has_value())
     {
-        frames.emplace({});
+        frames.emplace();
         symbolize(frame_pointers.data(), offset, size, frames);
     }
     return frames;
@@ -357,7 +357,7 @@ static std::string toStringImpl(const void * const * frame_pointers, size_t offs
 {
     std::stringstream out;
     StackTrace::Frames frames{};
-    frames = {{}};
+    frames.emplace();
     symbolize(frame_pointers, offset, size, frames);
     toStringEveryLineImpl(frames, offset, size, [&](const std::string & str) { out << str << '\n'; });
     return out.str();
