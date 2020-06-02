@@ -74,7 +74,7 @@ StoragePtr StorageMerge::getFirstTable(F && predicate) const
 
 bool StorageMerge::isRemote() const
 {
-    auto first_remote_table = getFirstTable([](const StoragePtr & table) { return table->isRemote(); });
+    auto first_remote_table = getFirstTable([](const StoragePtr & table) { return table && table->isRemote(); });
     return first_remote_table != nullptr;
 }
 
@@ -112,7 +112,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
     while (iterator->isValid())
     {
         const auto & table = iterator->table();
-        if (table.get() != this)
+        if (table && table.get() != this)
         {
             ++selected_table_size;
             stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context, to_stage, query_ptr));
@@ -311,7 +311,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
     while (iterator->isValid())
     {
         const auto & table = iterator->table();
-        if (table.get() != this)
+        if (table && table.get() != this)
             selected_tables.emplace_back(
                     table, table->lockStructureForShare(false, query_id, settings.lock_acquire_timeout), iterator->name());
 
@@ -333,6 +333,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
     while (iterator->isValid())
     {
         StoragePtr storage = iterator->table();
+        if (!storage)
+            continue;
 
         if (query && query->as<ASTSelectQuery>()->prewhere() && !storage->supportsPrewhere())
             throw Exception("Storage " + storage->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
@@ -490,7 +492,7 @@ NamesAndTypesList StorageMerge::getVirtuals() const
 {
     NamesAndTypesList virtuals{{"_table", std::make_shared<DataTypeString>()}};
 
-    auto first_table = getFirstTable([](auto &&) { return true; });
+    auto first_table = getFirstTable([](auto && table) { return table; });
     if (first_table)
     {
         auto table_virtuals = first_table->getVirtuals();
