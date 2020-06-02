@@ -829,7 +829,10 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
 
         def optimize_table(num):
             for i in range(num):
-                node1.query("OPTIMIZE TABLE {} FINAL".format(name))
+                try: # optimize may throw after concurrent alter
+                    node1.query("OPTIMIZE TABLE {} FINAL".format(name))
+                except:
+                    pass
 
         p = Pool(15)
         tasks = []
