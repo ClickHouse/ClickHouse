@@ -52,7 +52,7 @@ protected:
 
     void calculateWidths(
         const Block & header, const Chunk & chunk,
-        WidthsPerColumn & widths, Widths & max_widths, Widths & name_widths);
+        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths);
 
     void writeValueWithPadding(
         const IColumn & column, const IDataType & type, size_t row_num, size_t value_width, size_t pad_to_width);
