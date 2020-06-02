@@ -3322,7 +3322,8 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     zookeeper->multi(requests);
 
     {
-        /// TODO (relax this lock)
+        /// TODO (relax this lock and remove this action lock)
+        auto merges_block = getActionLock(ActionLocks::PartsMerge);
         auto table_lock = lockExclusively(RWLockImpl::NO_QUERY);
 
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
