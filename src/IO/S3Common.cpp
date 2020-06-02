@@ -9,6 +9,11 @@
 #    include <aws/core/utils/logging/LogMacros.h>
 #    include <aws/core/utils/logging/LogSystemInterface.h>
 #    include <aws/s3/S3Client.h>
+#    include <aws/core/http/HttpClientFactory.h>
+#    include <IO/S3/PocoHTTPClientFactory.h>
+#    include <IO/S3/PocoHTTPClientFactory.cpp>
+#    include <IO/S3/PocoHTTPClient.h>
+#    include <IO/S3/PocoHTTPClient.cpp>
 #    include <boost/algorithm/string.hpp>
 #    include <Poco/URI.h>
 #    include <re2/re2.h>
@@ -16,16 +21,17 @@
 
 namespace
 {
-const std::pair<LogsLevel, Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
+const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
-    static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<LogsLevel, Message::Priority>> mapping = {
-        {Aws::Utils::Logging::LogLevel::Off, {LogsLevel::none, Message::PRIO_FATAL}},
-        {Aws::Utils::Logging::LogLevel::Fatal, {LogsLevel::error, Message::PRIO_FATAL}},
-        {Aws::Utils::Logging::LogLevel::Error, {LogsLevel::error, Message::PRIO_ERROR}},
-        {Aws::Utils::Logging::LogLevel::Warn, {LogsLevel::warning, Message::PRIO_WARNING}},
-        {Aws::Utils::Logging::LogLevel::Info, {LogsLevel::information, Message::PRIO_INFORMATION}},
-        {Aws::Utils::Logging::LogLevel::Debug, {LogsLevel::debug, Message::PRIO_DEBUG}},
-        {Aws::Utils::Logging::LogLevel::Trace, {LogsLevel::trace, Message::PRIO_TRACE}},
+    static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
+    {
+        {Aws::Utils::Logging::LogLevel::Off, {DB::LogsLevel::none, Poco::Message::PRIO_FATAL}},
+        {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::error, Poco::Message::PRIO_FATAL}},
+        {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::error, Poco::Message::PRIO_ERROR}},
+        {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::warning, Poco::Message::PRIO_WARNING}},
+        {Aws::Utils::Logging::LogLevel::Info, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
+        {Aws::Utils::Logging::LogLevel::Debug, {DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG}},
+        {Aws::Utils::Logging::LogLevel::Trace, {DB::LogsLevel::trace, Poco::Message::PRIO_TRACE}},
     };
     return mapping.at(log_level);
 }
@@ -70,6 +76,7 @@ namespace S3
         aws_options = Aws::SDKOptions{};
         Aws::InitAPI(aws_options);
         Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>());
+        Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
     }
 
     ClientFactory::~ClientFactory()

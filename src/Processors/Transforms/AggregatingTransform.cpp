@@ -2,7 +2,6 @@
 
 #include <Common/ClickHouseRevision.h>
 #include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <Processors/ISource.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 
@@ -542,9 +541,9 @@ void AggregatingTransform::initGenerate()
     size_t rows = variants.sizeWithoutOverflowRow();
 
     LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
-        src_rows, rows, formatReadableSizeWithBinarySuffix(src_bytes),
+        src_rows, rows, ReadableSize(src_bytes),
         elapsed_seconds, src_rows / elapsed_seconds,
-        formatReadableSizeWithBinarySuffix(src_bytes / elapsed_seconds));
+        ReadableSize(src_bytes / elapsed_seconds));
 
     if (params->aggregator.hasTemporaryFiles())
     {
@@ -593,7 +592,7 @@ void AggregatingTransform::initGenerate()
         for (const auto & file : files.files)
             processors.emplace_back(std::make_unique<SourceFromNativeStream>(header, file->path()));
 
-        LOG_TRACE(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), formatReadableSizeWithBinarySuffix(files.sum_size_compressed), formatReadableSizeWithBinarySuffix(files.sum_size_uncompressed));
+        LOG_TRACE(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), ReadableSize(files.sum_size_compressed), ReadableSize(files.sum_size_uncompressed));
 
         auto pipe = createMergingAggregatedMemoryEfficientPipe(
                 header, params, files.files.size(), temporary_data_merge_threads);

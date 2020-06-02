@@ -220,7 +220,7 @@ static bool isSupportedAlterType(int type)
 
 
 DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix)
-    : context(context_), log(&Logger::get("DDLWorker"))
+    : context(context_), log(&Poco::Logger::get("DDLWorker"))
 {
     queue_dir = zk_root_dir;
     if (queue_dir.back() == '/')
@@ -634,7 +634,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
                 {
                     /// It's not CREATE DATABASE
                     auto table_id = context.tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
-                    storage = DatabaseCatalog::instance().tryGetTable(table_id);
+                    storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 }
 
                 /// For some reason we check consistency of cluster definition only
@@ -1073,7 +1073,7 @@ class DDLQueryStatusInputStream : public IBlockInputStream
 public:
 
     DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context_)
-        : node_path(zk_node_path), context(context_), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputStream"))
+        : node_path(zk_node_path), context(context_), watch(CLOCK_MONOTONIC_COARSE), log(&Poco::Logger::get("DDLQueryStatusInputStream"))
     {
         sample = Block{
             {std::make_shared<DataTypeString>(),    "host"},
@@ -1235,7 +1235,7 @@ private:
     String node_path;
     const Context & context;
     Stopwatch watch;
-    Logger * log;
+    Poco::Logger * log;
 
     Block sample;
 

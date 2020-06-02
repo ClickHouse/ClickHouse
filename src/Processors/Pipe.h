@@ -23,7 +23,7 @@ public:
     /// Will connect pipes outputs with transform inputs automatically.
     Pipe(Pipes && pipes, ProcessorPtr transform);
     /// Create pipe from output port. If pipe was created that way, it possibly will not have tree shape.
-    Pipe(OutputPort * port);
+    explicit Pipe(OutputPort * port);
 
     Pipe(const Pipe & other) = delete;
     Pipe(Pipe && other) = default;
