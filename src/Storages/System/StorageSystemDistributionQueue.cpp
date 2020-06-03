@@ -25,6 +25,7 @@ NamesAndTypesList StorageSystemDistributionQueue::getNamesAndTypes()
         { "error_count",           std::make_shared<DataTypeUInt64>() },
         { "data_files",            std::make_shared<DataTypeUInt64>() },
         { "data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
+        { "last_exception",        std::make_shared<DataTypeString>() },
     };
 }
 
@@ -103,6 +104,12 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, cons
             res_columns[col_num++]->insert(monitor->getErrorCount());
             res_columns[col_num++]->insert(monitor->getFilesCount());
             res_columns[col_num++]->insert(monitor->getBytesCount());
+
+            std::exception_ptr last_exception = monitor->getLastException();
+            if (last_exception)
+                res_columns[col_num++]->insert(getExceptionMessage(last_exception, false));
+            else
+                res_columns[col_num++]->insertDefault();
         }
     }
 }
