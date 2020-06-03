@@ -88,7 +88,7 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , default_sleep_time{storage.global_context->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
     , max_sleep_time{storage.global_context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
-    , log{&Logger::get(getLoggerName())}
+    , log{&Poco::Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
     , bg_pool(bg_pool_)
 {
@@ -269,7 +269,6 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 {
     LOG_TRACE(log, "Started processing `{}`", file_path);
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context->getSettingsRef());
-    auto connection = pool->get(timeouts);
 
     try
     {
@@ -280,7 +279,10 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         Settings insert_settings;
         std::string insert_query;
         ClientInfo client_info;
+
         readHeader(in, insert_settings, insert_query, client_info, log);
+
+        auto connection = pool->get(timeouts, &insert_settings);
 
         RemoteBlockOutputStream remote{*connection, timeouts, insert_query, insert_settings, client_info};
 
@@ -301,7 +303,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 }
 
 void StorageDistributedDirectoryMonitor::readHeader(
-    ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Logger * log)
+    ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Poco::Logger * log)
 {
     UInt64 query_size;
     readVarUInt(query_size, in);
@@ -542,7 +544,7 @@ public:
         : in(file_name)
         , decompressing_in(in)
         , block_in(decompressing_in, ClickHouseRevision::get())
-        , log{&Logger::get("DirectoryMonitorBlockInputStream")}
+        , log{&Poco::Logger::get("DirectoryMonitorBlockInputStream")}
     {
         Settings insert_settings;
         String insert_query;
@@ -576,7 +578,7 @@ private:
     Block first_block;
     Block header;
 
-    Logger * log;
+    Poco::Logger * log;
 };
 
 BlockInputStreamPtr StorageDistributedDirectoryMonitor::createStreamFromFile(const String & file_name)

@@ -99,6 +99,19 @@ int queryConvert(const CharT * bytes, int length)
 /// and include `\t` to the nearest longer length with multiple of eight.
 size_t computeWidth(const UInt8 * data, size_t size, size_t prefix = 0) noexcept;
 
+
+/** Calculate the maximum number of bytes, so that substring of this size fits in 'limit' width.
+  *
+  * For example, we have string "x你好", it has 3 code points and visible width of 5 and byte size of 7.
+
+  * Suppose we have limit = 3.
+  * Then we have to return 4 as maximum number of bytes
+  *  and the truncated string will be "x你": two code points, visible width 3, byte size 4.
+  *
+  * The same result will be for limit 4, because the last character would not fit.
+  */
+size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept;
+
 }
 
 

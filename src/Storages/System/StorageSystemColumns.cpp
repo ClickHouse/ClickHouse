@@ -301,14 +301,17 @@ Pipes StorageSystemColumns::read(
             const DatabasePtr database = databases.at(database_name);
             offsets[i] = i ? offsets[i - 1] : 0;
 
-            for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
+            for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
-                const String & table_name = iterator->name();
-                storages.emplace(std::piecewise_construct,
-                    std::forward_as_tuple(database_name, table_name),
-                    std::forward_as_tuple(iterator->table()));
-                table_column_mut->insert(table_name);
-                ++offsets[i];
+                if (const auto & table = iterator->table())
+                {
+                    const String & table_name = iterator->name();
+                    storages.emplace(std::piecewise_construct,
+                        std::forward_as_tuple(database_name, table_name),
+                        std::forward_as_tuple(table));
+                    table_column_mut->insert(table_name);
+                    ++offsets[i];
+                }
             }
         }
 

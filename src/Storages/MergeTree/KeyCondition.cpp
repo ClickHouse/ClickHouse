@@ -181,8 +181,11 @@ const KeyCondition::AtomMap KeyCondition::atom_map
     },
     {
         "empty",
-        [] (RPNElement & out, const Field &)
+        [] (RPNElement & out, const Field & value)
         {
+            if (value.getType() != Field::Types::String)
+                return false;
+
             out.function = RPNElement::FUNCTION_IN_RANGE;
             out.range = Range("");
             return true;
@@ -190,8 +193,11 @@ const KeyCondition::AtomMap KeyCondition::atom_map
     },
     {
         "notEmpty",
-        [] (RPNElement & out, const Field &)
+        [] (RPNElement & out, const Field & value)
         {
+            if (value.getType() != Field::Types::String)
+                return false;
+
             out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
             out.range = Range("");
             return true;
