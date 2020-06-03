@@ -539,8 +539,6 @@ bool StorageKafka::streamToViews()
                                                  ? kafka_settings->kafka_flush_interval_ms
                                                  : global_context.getSettingsRef().stream_flush_interval_ms;
 
-        LOG_ERROR(log, "limits.speed_limits.max_execution_time {}", limits.speed_limits.max_execution_time.totalMilliseconds() );
-
         limits.timeout_overflow_mode = OverflowMode::BREAK;
         stream->setLimits(limits);
     }
