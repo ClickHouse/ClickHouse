@@ -88,6 +88,8 @@ namespace
                 throw Exception("Missing mandatory 'server' in 'ldap', with LDAP server name, for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
             const auto ldap_server_name = config.getString(user_config + ".ldap.server");
+            if (ldap_server_name.empty())
+                throw Exception("LDAP server name cannot be empty for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
             user->authentication = Authentication{Authentication::LDAP_SERVER};
             user->authentication.setServerName(ldap_server_name);
