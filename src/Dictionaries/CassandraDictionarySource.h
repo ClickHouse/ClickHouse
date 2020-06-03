@@ -34,7 +34,8 @@ struct CassandraSettings
     void setConsistency(const String & config_str);
 };
 
-class CassandraDictionarySource final : public IDictionarySource {
+class CassandraDictionarySource final : public IDictionarySource
+{
 public:
     CassandraDictionarySource(
         const DictionaryStructure & dict_struct,
@@ -64,15 +65,13 @@ public:
 
     BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
-    BlockInputStreamPtr loadUpdatedAll() override
-    {
-        throw Exception{"Method loadUpdatedAll is unsupported for CassandraDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
-    }
+    BlockInputStreamPtr loadUpdatedAll() override;
 
     String toString() const override;
 
 private:
-    void maybeAllowFiltering(String & query);
+    void maybeAllowFiltering(String & query) const;
+    CassSessionShared getSession();
 
     Poco::Logger * log;
     const DictionaryStructure dict_struct;
@@ -80,7 +79,9 @@ private:
     Block sample_block;
     ExternalQueryBuilder query_builder;
 
+    std::mutex connect_mutex;
     CassClusterPtr cluster;
+    CassSessionWeak maybe_session;
 };
 }
 

@@ -291,7 +291,7 @@ if (USE_INTERNAL_AWS_S3_LIBRARY)
 endif ()
 
 if (USE_BASE64)
-    add_subdirectory(base64-cmake)
+    add_subdirectory (base64-cmake)
 endif()
 
 if (USE_INTERNAL_HYPERSCAN_LIBRARY)
@@ -315,8 +315,8 @@ if (USE_FASTOPS)
 endif()
 
 if (USE_CASSANDRA)
-    add_subdirectory(libuv-cmake)
-    add_subdirectory(cassandra)
+    add_subdirectory (libuv)
+    add_subdirectory (cassandra)
 endif()
 
 add_subdirectory (fmtlib-cmake)

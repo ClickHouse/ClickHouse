@@ -9,30 +9,35 @@
 namespace DB
 {
 
+class CassandraBlockInputStream final : public IBlockInputStream
+{
+public:
+    CassandraBlockInputStream(
+            const CassSessionShared & session_,
+            const String & query_str,
+            const Block & sample_block,
+            size_t max_block_size);
 
+    String getName() const override { return "Cassandra"; }
 
-/// Allows processing results of a Cassandra query as a sequence of Blocks, simplifies chaining
-    class CassandraBlockInputStream final : public IBlockInputStream
-    {
-    public:
-        CassandraBlockInputStream(
-                const CassClusterPtr & cluster,
-                const String & query_str,
-                const Block & sample_block,
-                const size_t max_block_size);
+    Block getHeader() const override { return description.sample_block.cloneEmpty(); }
 
-        String getName() const override { return "Cassandra"; }
+    void readPrefix() override;
 
-        Block getHeader() const override { return description.sample_block.cloneEmpty(); }
+private:
+    using ValueType = ExternalResultDescription::ValueType;
 
-    private:
-        Block readImpl() override;
+    Block readImpl() override;
+    void insertValue(IColumn & column, ValueType type, const CassValue * cass_value) const;
+    void assertTypes(const CassResultPtr & result);
 
-        CassSessionPtr session;
-        CassStatementPtr statement;
-        const size_t max_block_size;
-        ExternalResultDescription description;
-        cass_bool_t has_more_pages;
-    };
+    CassSessionShared session;
+    CassStatementPtr statement;
+    CassFuturePtr result_future;
+    const size_t max_block_size;
+    ExternalResultDescription description;
+    cass_bool_t has_more_pages;
+    bool assert_types = true;
+};
 
 }

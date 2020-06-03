@@ -437,6 +437,7 @@ class SourceCassandra(ExternalSource):
                 <keyspace>test</keyspace>
                 <column_family>{table}</column_family>
                 <allow_filtering>1</allow_filtering>
+                <where>"Int64_" &lt; 1000000000000000000</where>
             </cassandra>
         '''.format(
             host=self.docker_hostname,

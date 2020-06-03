@@ -7,6 +7,7 @@
 #if USE_CASSANDRA
 #include <cassandra.h>
 #include <utility>
+#include <memory>
 
 namespace DB
 {
@@ -37,6 +38,7 @@ public:
             Dtor(ptr);
         ptr = rhs.ptr;
         rhs.ptr = nullptr;
+        return *this;
     }
 
     ~ObjectHolder()
@@ -54,8 +56,12 @@ public:
 
 /// These object are created on pointer construction
 using CassClusterPtr = Cassandra::ObjectHolder<CassCluster, cass_cluster_free, cass_cluster_new>;
-using CassSessionPtr = Cassandra::ObjectHolder<CassSession, cass_session_free, cass_session_new>;
 using CassStatementPtr = Cassandra::ObjectHolder<CassStatement, cass_statement_free, cass_statement_new>;
+using CassSessionPtr = Cassandra::ObjectHolder<CassSession, cass_session_free, cass_session_new>;
+
+/// Share connections between streams. Executing statements in one session object is thread-safe
+using CassSessionShared = std::shared_ptr<CassSessionPtr>;
+using CassSessionWeak = std::weak_ptr<CassSessionPtr>;
 
 /// The following objects are created inside Cassandra driver library,
 /// but must be freed by user code
@@ -65,7 +71,7 @@ using CassIteratorPtr = Cassandra::ObjectHolder<CassIterator, cass_iterator_free
 
 /// Checks return code, throws exception on error
 void cassandraCheck(CassError code);
-void cassandraWaitAndCheck(CassFuturePtr && future);
+void cassandraWaitAndCheck(CassFuturePtr & future);
 
 /// By default driver library prints logs to stderr.
 /// It should be redirected (or, at least, disabled) before calling other functions from the library.
