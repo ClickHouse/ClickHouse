@@ -250,7 +250,7 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
 
 
 std::string
-ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method)
+ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix)
 {
     if (!dict_struct.key)
         throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
@@ -307,25 +307,30 @@ ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const st
                 writeString(" OR ", out);
 
             first = false;
-            composeKeyCondition(key_columns, row, out);
+
+            writeString("(", out);
+            composeKeyCondition(key_columns, row, out, 0, key_columns.size());
+            writeString(")", out);
         }
     }
-    else /* if (method == IN_WITH_TUPLES) */
+    else if (method == IN_WITH_TUPLES)
     {
-        composeKeyTupleDefinition(out);
-        writeString(" IN (", out);
-
-        first = true;
-        for (const auto row : requested_rows)
-        {
-            if (!first)
-                writeString(", ", out);
-
-            first = false;
-            composeKeyTuple(key_columns, row, out);
-        }
-
-        writeString(")", out);
+        composeInWithTuples(key_columns, requested_rows, out, 0, key_columns.size());
+    }
+    else /* if (method == CASSANDRA_SEPARATE_PARTITION_KEY) */
+    {
+        /// CQL does not allow using OR conditions
+        /// and does not allow using multi-column IN expressions with partition key columns.
+        /// So we have to use multiple queries with conditions like
+        /// (partition_key_1 = val1 AND partition_key_2 = val2 ...) AND (clustering_key_1, ...) IN ((val3, ...), ...)
+        /// for each partition key.
+        /// `partition_key_prefix` is a number of columns from partition key.
+        /// All `requested_rows` must have the same values of partition key.
+        composeKeyCondition(key_columns, requested_rows.at(0), out, 0, partition_key_prefix);
+        if (partition_key_prefix && partition_key_prefix < key_columns.size())
+            writeString(" AND ", out);
+        if (partition_key_prefix < key_columns.size())
+            composeInWithTuples(key_columns, requested_rows, out, partition_key_prefix, key_columns.size());
     }
 
     if (!where.empty())
@@ -339,13 +344,11 @@ ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const st
 }
 
 
-void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, const size_t row, WriteBuffer & out) const
+void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, const size_t row, WriteBuffer & out,
+                                               size_t beg, size_t end) const
 {
-    writeString("(", out);
-
-    const auto keys_size = key_columns.size();
     auto first = true;
-    for (const auto i : ext::range(0, keys_size))
+    for (const auto i : ext::range(beg, end))
     {
         if (!first)
             writeString(" AND ", out);
@@ -359,12 +362,30 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, cons
         writeString("=", out);
         key_description.type->serializeAsTextQuoted(*key_columns[i], row, out, format_settings);
     }
+}
+
+
+void ExternalQueryBuilder::composeInWithTuples(const Columns & key_columns, const std::vector<size_t> & requested_rows,
+                                               WriteBuffer & out, size_t beg, size_t end)
+{
+    composeKeyTupleDefinition(out, beg, end);
+    writeString(" IN (", out);
+
+    bool first = true;
+    for (const auto row : requested_rows)
+    {
+        if (!first)
+            writeString(", ", out);
+
+        first = false;
+        composeKeyTuple(key_columns, row, out, beg, end);
+    }
 
     writeString(")", out);
 }
 
 
-void ExternalQueryBuilder::composeKeyTupleDefinition(WriteBuffer & out) const
+void ExternalQueryBuilder::composeKeyTupleDefinition(WriteBuffer & out, size_t beg, size_t end) const
 {
     if (!dict_struct.key)
         throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
@@ -372,26 +393,25 @@ void ExternalQueryBuilder::composeKeyTupleDefinition(WriteBuffer & out) const
     writeChar('(', out);
 
     auto first = true;
-    for (const auto & key : *dict_struct.key)
+    for (const auto i : ext::range(beg, end))
     {
         if (!first)
             writeString(", ", out);
 
         first = false;
-        writeQuoted(key.name, out);
+        writeQuoted((*dict_struct.key)[i].name, out);
     }
 
     writeChar(')', out);
 }
 
 
-void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, const size_t row, WriteBuffer & out) const
+void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, const size_t row, WriteBuffer & out, size_t beg, size_t end) const
 {
     writeString("(", out);
 
-    const auto keys_size = key_columns.size();
     auto first = true;
-    for (const auto i : ext::range(0, keys_size))
+    for (const auto i : ext::range(beg, end))
     {
         if (!first)
             writeString(", ", out);

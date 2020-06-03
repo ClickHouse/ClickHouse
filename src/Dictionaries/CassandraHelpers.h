@@ -67,6 +67,12 @@ using CassIteratorPtr = Cassandra::ObjectHolder<CassIterator, cass_iterator_free
 void cassandraCheck(CassError code);
 void cassandraWaitAndCheck(CassFuturePtr && future);
 
+/// By default driver library prints logs to stderr.
+/// It should be redirected (or, at least, disabled) before calling other functions from the library.
+void setupCassandraDriverLibraryLogging(CassLogLevel level);
+
+void cassandraLogCallback(const CassLogMessage * message, void * data);
+
 }
 
 #endif
