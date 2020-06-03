@@ -157,6 +157,7 @@ void StorageDistributedDirectoryMonitor::run()
             try
             {
                 do_sleep = !processFiles(files, metric_pending_files);
+                last_exception = std::exception_ptr{};
             }
             catch (...)
             {
@@ -166,6 +167,7 @@ void StorageDistributedDirectoryMonitor::run()
                     std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(error_count))},
                     max_sleep_time);
                 tryLogCurrentException(getLoggerName().data());
+                last_exception = std::current_exception();
             }
         }
         else

@@ -41,6 +41,7 @@ public:
     /// system.distribution_queue interface
     std::string getPath() const { return path; }
     /// Racy but ok
+    std::exception_ptr getLastException() const { return last_exception; }
     size_t getErrorCount() const { return error_count; }
     size_t getFilesCount() const { return files_count; }
     size_t getBytesCount() const { return bytes_count; }
@@ -75,6 +76,7 @@ private:
     size_t error_count = 0;
     size_t files_count = 0;
     size_t bytes_count = 0;
+    std::exception_ptr last_exception;
 
     const std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;
