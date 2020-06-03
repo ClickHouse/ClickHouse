@@ -46,11 +46,15 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, cons
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            if (!dynamic_cast<const StorageDistributed *>(iterator->table().get()))
+            StoragePtr table = iterator->table();
+            if (!table)
+                continue;
+
+            if (!dynamic_cast<const StorageDistributed *>(table.get()))
                 continue;
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
                 continue;
-            tables[db.first][iterator->name()] = iterator->table();
+            tables[db.first][iterator->name()] = table;
         }
     }
 
