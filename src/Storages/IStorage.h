@@ -141,9 +141,13 @@ public:
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
 public: /// thread-unsafe part. lockStructure must be acquired
-    virtual const ColumnsDescription & getColumns() const; /// returns combined set of columns
-    virtual void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
-    const IndicesDescription & getIndices() const;
+    const ColumnsDescription & getColumns() const; /// returns combined set of columns
+    void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
+
+    void setSecondaryIndices(IndicesDescription secondary_indices_);
+    const IndicesDescription & getSecondaryIndices() const;
+    /// Has at least one non primary index
+    bool hasSecondaryIndices() const;
 
     const ConstraintsDescription & getConstraints() const;
     void setConstraints(ConstraintsDescription constraints_);
@@ -184,8 +188,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// By default return empty list of columns.
     virtual NamesAndTypesList getVirtuals() const;
 
-protected: /// still thread-unsafe part.
-    void setIndices(IndicesDescription indices_);
+protected:
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
@@ -197,7 +200,7 @@ private:
     mutable std::mutex id_mutex;
 
     ColumnsDescription columns;
-    IndicesDescription indices;
+    IndicesDescription secondary_indices;
     ConstraintsDescription constraints;
 
     StorageMetadataKeyField partition_key;
@@ -506,10 +509,9 @@ public:
     /// Returns column names that need to be read for FINAL to work.
     Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }
 
-
     /// Returns columns, which will be needed to calculate dependencies (skip
     /// indices, TTL expressions) if we update @updated_columns set of columns.
-    virtual ColumnDependencies getColumnDependencies(const NameSet & /* updated_columns */) const { return {}; }
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
 
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
