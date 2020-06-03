@@ -25,7 +25,6 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
-    extern const int NULL_POINTER_DEREFERENCE;
 }
 
 TemporaryTableHolder::TemporaryTableHolder(const Context & context_,
@@ -389,34 +388,40 @@ DatabaseCatalog::DatabaseCatalog(Context * global_context_)
     : global_context(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
 {
     if (!global_context)
-        throw Exception("DatabaseCatalog is not initialized. It's a bug.", ErrorCodes::NULL_POINTER_DEREFERENCE);
+        throw Exception("DatabaseCatalog is not initialized. It's a bug.", ErrorCodes::LOGICAL_ERROR);
 }
 
 DatabaseCatalog & DatabaseCatalog::init(Context * global_context_)
 {
-    static DatabaseCatalog database_catalog(global_context_);
-    return database_catalog;
+    if (database_catalog)
+    {
+        throw Exception("Database catalog is initialized twice. This is a bug.\n",
+            ErrorCodes::LOGICAL_ERROR);
+    }
+
+    database_catalog.reset(new DatabaseCatalog(global_context_));
+
+    return *database_catalog;
 }
 
 DatabaseCatalog & DatabaseCatalog::instance()
 {
-    return init(nullptr);
+    if (!database_catalog)
+    {
+        throw Exception("Database catalog is not initialized. This is a bug.\n",
+            ErrorCodes::LOGICAL_ERROR);
+    }
+
+    return *database_catalog;
 }
 
 void DatabaseCatalog::shutdown()
 {
-    try
+    // The catalog might not be initialized yet by init(global_context). It can
+    // happen if some exception was thrown on first steps of startup.
+    if (database_catalog)
     {
-        instance().shutdownImpl();
-    }
-    catch (const Exception & e)
-    {
-        /// If catalog was not initialized yet by init(global_context), instance() throws NULL_POINTER_DEREFERENCE.
-        /// It can happen if some exception was thrown on first steps of startup (e.g. command line arguments parsing).
-        /// Ignore it.
-        if (e.code() == ErrorCodes::NULL_POINTER_DEREFERENCE)
-            return;
-        throw;
+        database_catalog->shutdownImpl();
     }
 }
 
