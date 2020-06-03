@@ -332,7 +332,7 @@ protected:
 
     void removeIfNeeded();
 
-    virtual void checkConsistency(bool require_part_metadata) const = 0;
+    virtual void checkConsistency(bool require_part_metadata) const;
     void checkConsistencyBase() const;
 
     /// Fill each_columns_size and total_size with sizes from columns files on

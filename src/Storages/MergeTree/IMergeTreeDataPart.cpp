@@ -889,6 +889,11 @@ void IMergeTreeDataPart::checkConsistencyBase() const
     }
 }
 
+void IMergeTreeDataPart::checkConsistency(bool /* require_part_metadata */) const
+{
+    throw Exception("Method 'checkConsistency' is not implemented for part with type " + getType().toString(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
 
 void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
 {

@@ -108,14 +108,14 @@ void MergeTreeDataPartInMemory::notifyMerged() const
     is_merged.notify_one();
 }
 
+void MergeTreeDataPartInMemory::renameTo(const String & new_relative_path, bool /* remove_new_dir_if_exists */) const
+{
+    relative_path = new_relative_path;
+}
+
 void MergeTreeDataPartInMemory::calculateEachColumnSizesOnDisk(ColumnSizeByName & /*each_columns_size*/, ColumnSize & /*total_size*/) const
 {
     // throw Exception("calculateEachColumnSizesOnDisk of in memory part", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void MergeTreeDataPartInMemory::loadIndexGranularity()
-{
-    throw Exception("loadIndexGranularity of in memory part", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

@@ -40,7 +40,7 @@ public:
     bool isStoredOnDisk() const override { return false; }
     bool hasColumnFiles(const String & column_name, const IDataType & /* type */) const override { return !!getColumnPosition(column_name); }
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
-    void renameTo(const String & /*new_relative_path*/, bool /*remove_new_dir_if_exists*/) const override {}
+    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const override;
     void makeCloneInDetached(const String & prefix) const override;
 
     void flushToDisk(const String & base_path, const String & new_relative_path) const;
@@ -52,11 +52,6 @@ public:
 
 private:
     mutable std::condition_variable is_merged;
-
-    void checkConsistency(bool /* require_part_metadata */) const override {}
-
-    /// Loads marks index granularity into memory
-    void loadIndexGranularity() override;
 
     /// Compact parts doesn't support per column size, only total size
     void calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;

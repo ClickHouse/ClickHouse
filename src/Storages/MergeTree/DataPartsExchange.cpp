@@ -289,7 +289,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         throw Exception("Cannot deserialize checksums", ErrorCodes::CORRUPTED_DATA);
 
     NativeBlockInputStream block_in(in, 0);
-    auto block = block_in.read();    
+    auto block = block_in.read();
 
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, reservation->getDisk());
     MergeTreeData::MutableDataPartPtr new_data_part =
