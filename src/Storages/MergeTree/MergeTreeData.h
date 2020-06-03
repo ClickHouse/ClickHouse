@@ -199,7 +199,8 @@ public:
         MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
         const DiskPtr & disk, const String & relative_path) const;
 
-    /// After this methods 'loadColumnsChecksumsIndexes' must be called
+    /// Create part, that already exists on filesystem.
+    /// After this methods 'loadColumnsChecksumsIndexes' must be called.
     MutableDataPartPtr createPart(const String & name,
         const DiskPtr & disk, const String & relative_path) const;
 

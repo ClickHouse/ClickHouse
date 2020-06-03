@@ -301,6 +301,8 @@ public:
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
     void calculateColumnsSizesOnDisk();
 
+    String getRelativePathForPrefix(const String & prefix) const;
+
 protected:
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
