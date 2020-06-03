@@ -105,8 +105,7 @@ private:
 
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
-    size_t getPollTimeout() const;
-    size_t getFlushTimeout() const;
+    size_t getPollTimeoutMillisecond() const;
 
     static Names parseTopics(String topic_list);
     static String getDefaultClientId(const StorageID & table_id_);
