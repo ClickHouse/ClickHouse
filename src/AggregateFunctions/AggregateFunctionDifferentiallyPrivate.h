@@ -67,7 +67,7 @@ struct AllSavingAggregation : public IAggregateFunctionDataHelper<ToArrayData<Va
     // To override:
     // String getName()
     // DataTypePtr getReturnType()
-    // void insertResultInto(ConstAggregateDataPtr place, IColumn & to)
+    // void insertResultInto(AggregateDataPtr place, IColumn & to)
 
     using ColVecType = std::conditional_t<IsDecimalNumber<Value>, ColumnDecimal<Value>, ColumnVector<Value>>;
 
@@ -150,7 +150,7 @@ struct AggregateFunctionCountDP : public IAggregateFunctionDataHelper<AggregateF
         readVarUInt(data(place).count, buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count
         + static_cast<UInt64>(round(sampleLaplace() / eps)));
@@ -223,7 +223,7 @@ struct AggregateFunctionSumDPBounded :
         readBinary(this->data(place).sum, buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         auto & column = static_cast<ColVecResult &>(to);
         column.getData().push_back(this->data(place).sum
@@ -301,7 +301,7 @@ struct AggregateFunctionAvgDPBounded :
         readVarUInt(this->data(place).count, buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         Float64 noisy_sum = static_cast<Float64>(this->data(place).sum)
                 + sampleLaplace() * (static_cast<Float64>(high) - static_cast<Float64>(low)) / 2 / this->eps;
@@ -338,7 +338,7 @@ struct AggregateFunctionSumDP : public AllSavingAggregation<Value> {
             return std::make_shared<ResultDataType>();
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         ResultType res = 0;
         auto & array = this->data(place).array;
@@ -372,7 +372,7 @@ struct AggregateFunctionAvgDP : public AllSavingAggregation<Value> {
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         SumAccumulatorType<Value> sum = 0;
         auto & array = this->data(place).array;
@@ -425,7 +425,7 @@ struct AggregateFunctionQuantileDP : public AllSavingAggregation<Value> {
             return std::make_shared<ResultDataType>();
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         Value left, right;
         int steps_limit = BinsHelper<Value>::bins();
