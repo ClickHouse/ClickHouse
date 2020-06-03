@@ -166,6 +166,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
     bool require_checksums,
     std::function<bool()> is_cancelled)
 {
+    if (!data_part->isStoredOnDisk())
+        return data_part->checksums;
+
     return checkDataPart(
         data_part->volume->getDisk(),
         data_part->getFullRelativePath(),

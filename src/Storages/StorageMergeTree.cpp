@@ -1315,7 +1315,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         String checksums_path = part_path + "checksums.txt";
         String tmp_checksums_path = part_path + "checksums.txt.tmp";
-        if (!disk->exists(checksums_path))
+        if (part->isStoredOnDisk() && !disk->exists(checksums_path))
         {
             try
             {
