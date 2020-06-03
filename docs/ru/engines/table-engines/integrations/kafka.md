@@ -165,5 +165,6 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 **Смотрите также**
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
+-   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/kafka/) <!--hide-->
