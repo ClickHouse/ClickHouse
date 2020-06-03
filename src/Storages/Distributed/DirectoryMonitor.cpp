@@ -8,8 +8,10 @@
 #include <Common/quoteString.h>
 #include <Common/hex.h>
 #include <common/StringRef.h>
+#include <Common/ActionBlocker.h>
 #include <Interpreters/Context.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/StorageDistributed.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
@@ -628,34 +630,18 @@ bool StorageDistributedDirectoryMonitor::scheduleAfter(size_t ms)
     return task_handle->scheduleAfter(ms, false);
 }
 
-std::string StorageDistributedDirectoryMonitor::getPath() const
+StorageDistributedDirectoryMonitor::Status StorageDistributedDirectoryMonitor::getStatus() const
 {
     std::unique_lock metrics_lock(metrics_mutex);
-    return path;
-}
-std::exception_ptr StorageDistributedDirectoryMonitor::getLastException() const
-{
-    std::unique_lock metrics_lock(metrics_mutex);
-    return last_exception;
-}
-size_t StorageDistributedDirectoryMonitor::getErrorCount() const
-{
-    std::unique_lock metrics_lock(metrics_mutex);
-    return error_count;
-}
-size_t StorageDistributedDirectoryMonitor::getFilesCount() const
-{
-    std::unique_lock metrics_lock(metrics_mutex);
-    return files_count;
-}
-size_t StorageDistributedDirectoryMonitor::getBytesCount() const
-{
-    std::unique_lock metrics_lock(metrics_mutex);
-    return bytes_count;
-}
-bool StorageDistributedDirectoryMonitor::isBlocked() const
-{
-    return monitor_blocker.isCancelled();
+
+    return Status{
+        path,
+        last_exception,
+        error_count,
+        files_count,
+        bytes_count,
+        monitor_blocker.isCancelled(),
+    };
 }
 
 void StorageDistributedDirectoryMonitor::processFilesWithBatching(

@@ -3,6 +3,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -17,7 +18,6 @@ namespace DB
 {
 
 class Context;
-class StorageDistributedDirectoryMonitor;
 
 class VolumeJBOD;
 using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
@@ -94,7 +94,6 @@ public:
     void shutdown() override;
 
     Strings getDataPaths() const override;
-    size_t getInsertQueueSize() const { return 0; }
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
@@ -108,8 +107,9 @@ public:
     void createDirectoryMonitors(const std::string & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
     StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & disk, const std::string & name);
-    /// Return list of all monitors lazy (because there are no monitors until at least one INSERT executed)
-    std::vector<StorageDistributedDirectoryMonitor *> getAllDirectoryMonitors();
+    /// Return list of metrics for all created monitors
+    /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
+    std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
 
     void flushClusterNodesAllData();
 
@@ -190,7 +190,7 @@ protected:
         void shutdownAndDropAllData() const;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
-    std::mutex cluster_nodes_mutex;
+    mutable std::mutex cluster_nodes_mutex;
 
 };
 
