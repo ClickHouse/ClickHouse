@@ -18,6 +18,12 @@ namespace JoinCommon
 
 void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
+    if (column.type->lowCardinality())
+    {
+        column.column = recursiveRemoveLowCardinality(column.column);
+        column.type = recursiveRemoveLowCardinality(column.type);
+    }
+
     if (column.type->isNullable() || !column.type->canBeInsideNullable())
         return;
 
