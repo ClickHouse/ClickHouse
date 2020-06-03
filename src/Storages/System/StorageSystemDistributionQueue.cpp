@@ -98,20 +98,19 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, cons
 
         auto & distributed_table = dynamic_cast<StorageDistributed &>(*tables[database][table]);
 
-        for (auto * monitor : distributed_table.getAllDirectoryMonitors())
+        for (const auto & status : distributed_table.getDirectoryMonitorsStatuses())
         {
             size_t col_num = 0;
             res_columns[col_num++]->insert(database);
             res_columns[col_num++]->insert(table);
-            res_columns[col_num++]->insert(monitor->getPath());
-            res_columns[col_num++]->insert(monitor->isBlocked());
-            res_columns[col_num++]->insert(monitor->getErrorCount());
-            res_columns[col_num++]->insert(monitor->getFilesCount());
-            res_columns[col_num++]->insert(monitor->getBytesCount());
+            res_columns[col_num++]->insert(status.path);
+            res_columns[col_num++]->insert(status.is_blocked);
+            res_columns[col_num++]->insert(status.error_count);
+            res_columns[col_num++]->insert(status.files_count);
+            res_columns[col_num++]->insert(status.bytes_count);
 
-            std::exception_ptr last_exception = monitor->getLastException();
-            if (last_exception)
-                res_columns[col_num++]->insert(getExceptionMessage(last_exception, false));
+            if (status.last_exception)
+                res_columns[col_num++]->insert(getExceptionMessage(status.last_exception, false));
             else
                 res_columns[col_num++]->insertDefault();
         }

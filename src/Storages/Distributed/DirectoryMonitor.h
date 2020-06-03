@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/StorageDistributed.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Client/ConnectionPool.h>
 
 #include <atomic>
 #include <mutex>
@@ -13,6 +13,10 @@ namespace CurrentMetrics { class Increment; }
 
 namespace DB
 {
+
+class StorageDistributed;
+class ActionBlocker;
+class BackgroundSchedulePool;
 
 /** Details of StorageDistributed.
   * This type is not designed for standalone use.
@@ -39,12 +43,16 @@ public:
     bool scheduleAfter(size_t ms);
 
     /// system.distribution_queue interface
-    std::string        getPath()          const;
-    std::exception_ptr getLastException() const;
-    size_t             getErrorCount()    const;
-    size_t             getFilesCount()    const;
-    size_t             getBytesCount()    const;
-    bool               isBlocked()        const;
+    struct Status
+    {
+        std::string path;
+        std::exception_ptr last_exception;
+        size_t error_count;
+        size_t files_count;
+        size_t bytes_count;
+        bool is_blocked;
+    };
+    Status getStatus() const;
 
 private:
     void run();

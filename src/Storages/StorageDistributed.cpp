@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
@@ -656,15 +655,13 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
     return *node_data.directory_monitor;
 }
 
-std::vector<StorageDistributedDirectoryMonitor *> StorageDistributed::getAllDirectoryMonitors()
+std::vector<StorageDistributedDirectoryMonitor::Status> StorageDistributed::getDirectoryMonitorsStatuses() const
 {
-    std::vector<StorageDistributedDirectoryMonitor *> monitors;
-    {
-        std::lock_guard lock(cluster_nodes_mutex);
-        for (auto & node : cluster_nodes_data)
-            monitors.push_back(node.second.directory_monitor.get());
-    }
-    return monitors;
+    std::vector<StorageDistributedDirectoryMonitor::Status> statuses;
+    std::lock_guard lock(cluster_nodes_mutex);
+    for (auto & node : cluster_nodes_data)
+        statuses.push_back(node.second.directory_monitor->getStatus());
+    return statuses;
 }
 
 size_t StorageDistributed::getShardCount() const
