@@ -4,7 +4,10 @@ CREATE TABLE in_memory (a UInt32, b UInt32)
     SETTINGS min_rows_for_compact_part = 1000, min_rows_for_compact_part = 1000;
 
 INSERT INTO in_memory SELECT number, number % 3 FROM numbers(100);
+SELECT 'system.parts';
 SELECT DISTINCT part_type, marks FROM system.parts WHERE database = currentDatabase() AND table = 'in_memory' AND active;
+SELECT DISTINCT data_uncompressed_bytes > 0 FROM system.parts WHERE database = currentDatabase() AND table = 'in_memory' AND active;
+SELECT DISTINCT column_data_uncompressed_bytes > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 'in_memory' AND active;
 
 SELECT 'Simple selects';
 

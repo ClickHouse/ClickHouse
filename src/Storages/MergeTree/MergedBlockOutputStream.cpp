@@ -112,7 +112,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
-    // new_part->calculateColumnsSizesOnDisk(); // TODO: Fix
+    new_part->calculateColumnsSizesOnDisk();
 }
 
 void MergedBlockOutputStream::finalizePartOnDisk(
