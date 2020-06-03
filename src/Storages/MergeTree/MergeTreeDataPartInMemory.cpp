@@ -113,9 +113,15 @@ void MergeTreeDataPartInMemory::renameTo(const String & new_relative_path, bool 
     relative_path = new_relative_path;
 }
 
-void MergeTreeDataPartInMemory::calculateEachColumnSizesOnDisk(ColumnSizeByName & /*each_columns_size*/, ColumnSize & /*total_size*/) const
+/// Calculates uncompressed sizes in memory.
+void MergeTreeDataPartInMemory::calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
 {
-    // throw Exception("calculateEachColumnSizesOnDisk of in memory part", ErrorCodes::NOT_IMPLEMENTED);
+    auto it = checksums.files.find("data.bin");
+    if (it != checksums.files.end())
+        total_size.data_uncompressed += it->second.uncompressed_size;
+
+    for (const auto & column : columns)
+        each_columns_size[column.name].data_uncompressed += block.getByName(column.name).column->byteSize();
 }
 
 }
