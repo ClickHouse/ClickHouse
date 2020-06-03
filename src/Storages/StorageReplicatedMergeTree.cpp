@@ -501,7 +501,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         }
 
         if (metadata_diff.skip_indices_changed)
-            metadata.indices = IndicesDescription::parse(metadata_diff.new_skip_indices);
+            metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, global_context);
 
         if (metadata_diff.constraints_changed)
             metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
@@ -1570,7 +1570,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
     auto clone_data_parts_from_source_table = [&] () -> size_t
     {
-        source_table = DatabaseCatalog::instance().tryGetTable(source_table_id);
+        source_table = DatabaseCatalog::instance().tryGetTable(source_table_id, global_context);
         if (!source_table)
         {
             LOG_DEBUG(log, "Can't use {} as source table for REPLACE PARTITION command. It does not exist.", source_table_id.getNameForLogs());
@@ -3243,7 +3243,8 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     zookeeper->multi(requests);
 
     {
-        /// TODO (relax this lock)
+        /// TODO (relax this lock and remove this action lock)
+        auto merges_block = getActionLock(ActionLocks::PartsMerge);
         auto table_lock = lockExclusively(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
@@ -3276,7 +3277,7 @@ void StorageReplicatedMergeTree::alter(
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         StorageInMemoryMetadata metadata = getInMemoryMetadata();
-        params.apply(metadata);
+        params.apply(metadata, query_context);
 
 
         changeSettings(metadata.settings_ast, table_lock_holder);
@@ -3310,7 +3311,7 @@ void StorageReplicatedMergeTree::alter(
         StorageInMemoryMetadata current_metadata = getInMemoryMetadata();
 
         StorageInMemoryMetadata future_metadata = current_metadata;
-        params.apply(future_metadata);
+        params.apply(future_metadata, query_context);
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this);
         if (ast_to_str(future_metadata.order_by_ast) != ast_to_str(current_metadata.order_by_ast))
@@ -3319,8 +3320,8 @@ void StorageReplicatedMergeTree::alter(
         if (ast_to_str(future_metadata.ttl_for_table_ast) != ast_to_str(current_metadata.ttl_for_table_ast))
             future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.ttl_for_table_ast);
 
-        String new_indices_str = future_metadata.indices.toString();
-        if (new_indices_str != current_metadata.indices.toString())
+        String new_indices_str = future_metadata.secondary_indices.toString();
+        if (new_indices_str != current_metadata.secondary_indices.toString())
             future_metadata_in_zk.skip_indices = new_indices_str;
 
         String new_constraints_str = future_metadata.constraints.toString();
@@ -3357,7 +3358,7 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->alter_version = new_metadata_version;
         alter_entry->create_time = time(nullptr);
 
-        auto maybe_mutation_commands = params.getMutationCommands(current_metadata, query_context.getSettingsRef().materialize_ttl_after_modify);
+        auto maybe_mutation_commands = params.getMutationCommands(current_metadata, query_context.getSettingsRef().materialize_ttl_after_modify, query_context);
         alter_entry->have_mutation = !maybe_mutation_commands.empty();
 
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", alter_entry->toString(), zkutil::CreateMode::PersistentSequential));
@@ -3485,7 +3486,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                     case PartitionCommand::MoveDestinationType::TABLE:
                         checkPartitionCanBeDropped(command.partition);
                         String dest_database = query_context.resolveDatabase(command.to_database);
-                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table});
+                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
                         movePartitionToTable(dest_storage, command.partition, query_context);
                         break;
                 }
@@ -3496,7 +3497,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             {
                 checkPartitionCanBeDropped(command.partition);
                 String from_database = query_context.resolveDatabase(command.from_database);
-                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table});
+                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
             }
             break;

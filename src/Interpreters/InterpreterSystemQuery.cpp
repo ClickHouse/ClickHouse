@@ -144,14 +144,19 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
         auto access = context.getAccess();
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
         {
-            for (auto iterator = elem.second->getTablesIterator(); iterator->isValid(); iterator->next())
+            for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
+                StoragePtr table = iterator->table();
+                if (!table)
+                    continue;
+
                 if (!access->isGranted(log, getRequiredAccessType(action_type), elem.first, iterator->name()))
                     continue;
+
                 if (start)
-                    manager->remove(iterator->table(), action_type);
+                    manager->remove(table, action_type);
                 else
-                    manager->add(iterator->table(), action_type);
+                    manager->add(table, action_type);
             }
         }
     }
@@ -321,7 +326,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     context.checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
 
     auto table_ddl_guard = need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName()) : nullptr;
-    auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica);
+    auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica, context);
     ASTPtr create_ast;
 
     /// Detach actions
@@ -332,7 +337,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        create_ast = database->getCreateTableQuery(replica.table_name);
+        create_ast = database->getCreateTableQuery(replica.table_name, context);
 
         database->detachTable(replica.table_name);
     }
@@ -369,10 +374,13 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
     for (auto & elem : catalog.getDatabases())
     {
         DatabasePtr & database = elem.second;
-        for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
-                replica_names.emplace_back(StorageID{database->getDatabaseName(), iterator->name()});
+            if (auto table = iterator->table())
+            {
+                if (dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+                    replica_names.emplace_back(StorageID{database->getDatabaseName(), iterator->name()});
+            }
         }
     }
 
@@ -394,7 +402,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
 {
     context.checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
 
     if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
@@ -416,7 +424,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
     context.checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
-    if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id).get()))
+    if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, context).get()))
         storage_distributed->flushClusterNodesAllData();
     else
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);

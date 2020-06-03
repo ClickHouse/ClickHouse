@@ -74,7 +74,7 @@ StorageBuffer::StorageBuffer(
     , max_thresholds(max_thresholds_)
     , destination_id(destination_id_)
     , allow_materialized(allow_materialized_)
-    , log(&Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
+    , log(&Poco::Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
     , bg_pool(global_context.getBufferFlushSchedulePool())
 {
     setColumns(columns_);
@@ -129,7 +129,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
 {
     if (destination_id)
     {
-        auto destination = DatabaseCatalog::instance().getTable(destination_id);
+        auto destination = DatabaseCatalog::instance().getTable(destination_id, context);
 
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
@@ -153,7 +153,7 @@ Pipes StorageBuffer::read(
 
     if (destination_id)
     {
-        auto destination = DatabaseCatalog::instance().getTable(destination_id);
+        auto destination = DatabaseCatalog::instance().getTable(destination_id, context);
 
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
@@ -234,7 +234,7 @@ Pipes StorageBuffer::read(
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
         for (auto & pipe : pipes_from_buffers)
-            pipe = InterpreterSelectQuery(query_info.query, context, std::move(pipe), SelectQueryOptions(processed_stage)).executeWithProcessors().getPipe();
+            pipe = InterpreterSelectQuery(query_info.query, context, std::move(pipe), SelectQueryOptions(processed_stage)).execute().pipeline.getPipe();
 
     if (query_info.prewhere_info)
     {
@@ -334,7 +334,7 @@ public:
         StoragePtr destination;
         if (storage.destination_id)
         {
-            destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id);
+            destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.global_context);
             if (destination.get() == &storage)
                 throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
         }
@@ -434,7 +434,7 @@ bool StorageBuffer::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
     if (!destination_id)
         return false;
 
-    auto destination = DatabaseCatalog::instance().getTable(destination_id);
+    auto destination = DatabaseCatalog::instance().getTable(destination_id, query_context);
 
     if (destination.get() == this)
         throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
@@ -602,7 +602,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         */
     try
     {
-        writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id));
+        writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, global_context));
     }
     catch (...)
     {
@@ -739,7 +739,7 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const S
 std::optional<UInt64> StorageBuffer::totalRows() const
 {
     std::optional<UInt64> underlying_rows;
-    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id);
+    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id, global_context);
 
     if (underlying)
         underlying_rows = underlying->totalRows();
@@ -777,7 +777,7 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata);
+    params.apply(metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     setColumns(std::move(metadata.columns));
 }

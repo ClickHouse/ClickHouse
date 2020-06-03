@@ -44,7 +44,7 @@ public:
 private:
     const MergeTreeData & data;
 
-    Logger * log;
+    Poco::Logger * log;
 
     Pipes spreadMarkRangesAmongStreams(
         RangesInDataParts && parts,
@@ -101,7 +101,7 @@ private:
         const Settings & settings) const;
 
     MarkRanges filterMarksUsingIndex(
-        MergeTreeIndexPtr index,
+        MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
