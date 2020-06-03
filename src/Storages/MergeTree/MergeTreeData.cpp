@@ -1700,7 +1700,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     else
     {
         /// Didn't find any mark file, suppose that part is empty.
-        type = choosePartType(0, 0);
+        type = choosePartTypeOnDisk(0, 0);
     }
 
     return createPart(name, type, part_info, disk, relative_path);
@@ -3323,9 +3323,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     /// If source part is in memory, flush it to disk and clone it already in on-disk format
     if (auto * src_part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(src_part.get()))
     {
-        auto flushed_part_path = tmp_part_prefix + src_part_in_memory->name;
-        src_part_in_memory->flushToDisk(relative_data_path, flushed_part_path);
-        src_part_path = src_part_in_memory->storage.relative_data_path + flushed_part_path + "/";
+        const auto & src_relative_data_path = src_part_in_memory->storage.relative_data_path;
+        auto flushed_part_path = src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
+        src_part_in_memory->flushToDisk(src_relative_data_path, flushed_part_path);
+        src_part_path = src_relative_data_path + flushed_part_path + "/";
     }
 
     LOG_DEBUG(log, "Cloning part " << fullPath(disk, src_part_path) << " to " << fullPath(disk, dst_part_path));

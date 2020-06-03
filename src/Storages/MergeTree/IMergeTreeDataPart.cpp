@@ -766,7 +766,7 @@ void IMergeTreeDataPart::remove() const
     }
 }
 
-String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
+String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix) const
 {
     /// Do not allow underscores in the prefix because they are used as separators.
 
@@ -780,7 +780,7 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
         */
     for (int try_no = 0; try_no < 10; try_no++)
     {
-        res = "detached/" + (prefix.empty() ? "" : prefix + "_") + name + (try_no ? "_try" + DB::toString(try_no) : "");
+        res = (prefix.empty() ? "" : prefix + "_") + name + (try_no ? "_try" + DB::toString(try_no) : "");
 
         if (!disk->exists(getFullRelativePath() + res))
             return res;
@@ -790,6 +790,11 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
     }
 
     return res;
+}
+
+String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
+{
+    return "detached/" + getRelativePathForPrefix(prefix);
 }
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix) const

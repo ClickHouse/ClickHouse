@@ -28,6 +28,9 @@ MergeTreeReaderInMemory::MergeTreeReaderInMemory(
     for (const auto & name_and_type : columns)
     {
         auto [name, type] = getColumnFromPart(name_and_type);
+
+        /// If array of Nested column is missing in part,
+        /// we have to read its offsets if they exist.
         if (!part_in_memory->block.has(name) && typeid_cast<const DataTypeArray *>(type.get()))
             if (auto offset_position = findColumnForOffsets(name))
                 positions_for_offsets[name] = *offset_position;
@@ -58,6 +61,7 @@ size_t MergeTreeReaderInMemory::readRows(size_t from_mark, bool continue_reading
     {
         auto [name, type] = getColumnFromPart(*column_it);
 
+        /// Copy offsets, if array of Nested column is missing in part.
         auto offsets_it = positions_for_offsets.find(name);
         if (offsets_it != positions_for_offsets.end())
         {
