@@ -146,12 +146,17 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
         {
             for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
+                StoragePtr table = iterator->table();
+                if (!table)
+                    continue;
+
                 if (!access->isGranted(log, getRequiredAccessType(action_type), elem.first, iterator->name()))
                     continue;
+
                 if (start)
-                    manager->remove(iterator->table(), action_type);
+                    manager->remove(table, action_type);
                 else
-                    manager->add(iterator->table(), action_type);
+                    manager->add(table, action_type);
             }
         }
     }
@@ -371,8 +376,11 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
         DatabasePtr & database = elem.second;
         for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
-                replica_names.emplace_back(StorageID{database->getDatabaseName(), iterator->name()});
+            if (auto table = iterator->table())
+            {
+                if (dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+                    replica_names.emplace_back(StorageID{database->getDatabaseName(), iterator->name()});
+            }
         }
     }
 

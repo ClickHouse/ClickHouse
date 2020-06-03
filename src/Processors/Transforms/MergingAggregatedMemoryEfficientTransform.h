@@ -8,6 +8,50 @@
 namespace DB
 {
 
+/** Pre-aggregates data from ports, holding in RAM only one or more (up to merging_threads) blocks from each source.
+  * This saves RAM in case of using two-level aggregation, where in each source there will be up to 256 blocks with parts of the result.
+  *
+  * Aggregate functions in blocks should not be finalized so that their states can be combined.
+  *
+  * Used to solve two tasks:
+  *
+  * 1. External aggregation with data flush to disk.
+  * Partially aggregated data (previously divided into 256 buckets) is flushed to some number of files on the disk.
+  * We need to read them and merge them by buckets - keeping only a few buckets from each file in RAM simultaneously.
+  *
+  * 2. Merge aggregation results for distributed query processing.
+  * Partially aggregated data arrives from different servers, which can be splitted down or not, into 256 buckets,
+  *  and these buckets are passed to us by the network from each server in sequence, one by one.
+  * You should also read and merge by the buckets.
+  *
+  * The essence of the work:
+  *
+  * There are a number of sources. They give out blocks with partially aggregated data.
+  * Each source can return one of the following block sequences:
+  * 1. "unsplitted" block with bucket_num = -1;
+  * 2. "splitted" (two_level) blocks with bucket_num from 0 to 255;
+  * In both cases, there may also be a block of "overflows" with bucket_num = -1 and is_overflows = true;
+  *
+  * We start from the convention that splitted blocks are always passed in the order of bucket_num.
+  * That is, if a < b, then the bucket_num = a block goes before bucket_num = b.
+  * This is needed for a memory-efficient merge
+  * - so that you do not need to read the blocks up front, but go all the way up by bucket_num.
+  *
+  * In this case, not all bucket_num from the range of 0..255 can be present.
+  * The overflow block can be presented in any order relative to other blocks (but it can be only one).
+  *
+  * It is necessary to combine these sequences of blocks and return the result as a sequence with the same properties.
+  * That is, at the output, if there are "splitted" blocks in the sequence, then they should go in the order of bucket_num.
+  *
+  * The merge can be performed using several (merging_threads) threads.
+  * For this, receiving of a set of blocks for the next bucket_num should be done sequentially,
+  *  and then, when we have several received sets, they can be merged in parallel.
+  *
+  * When you receive next blocks from different sources,
+  *  data from sources can also be read in several threads (reading_threads)
+  *  for optimal performance in the presence of a fast network or disks (from where these blocks are read).
+  */
+
 /// Has several inputs and single output.
 /// Read from inputs chunks with partially aggregated data, group them by bucket number
 ///  and write data from single bucket as single chunk.
