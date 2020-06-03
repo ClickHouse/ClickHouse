@@ -25,6 +25,13 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 
+
+/*
+ * Represents a set of equal ranges in previous column to perform sorting in current column.
+ * Used in sorting by tuples.
+ * */
+using EqualRanges = std::vector<std::pair<size_t, size_t> >;
+
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
 {
@@ -206,6 +213,7 @@ public:
     /// WeakHash32 must have the same size as column.
     virtual void updateWeakHash32(WeakHash32 & hash) const = 0;
 
+    /// Update state of hash with all column.
     virtual void updateHashFast(SipHash & hash) const = 0;
 
     /** Removes elements that don't match the filter.
@@ -246,6 +254,27 @@ public:
       * nan_direction_hint - see above.
       */
     virtual void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const = 0;
+
+    enum class SpecialSort
+    {
+        NONE = 0,
+        OPENCL_BITONIC,
+    };
+
+    virtual void getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, SpecialSort) const
+    {
+        getPermutation(reverse, limit, nan_direction_hint, res);
+    }
+
+    /*in updatePermutation we pass the current permutation and the intervals at which it should be sorted
+     * Then for each interval separately (except for the last one, if there is a limit)
+     * We sort it based on data about the current column, and find all the intervals within this
+     * interval that had the same values in this column. we can't tell about these values in what order they
+     * should have been, we form a new array with intervals that need to be sorted
+     * If there is a limit, then for the last interval we do partial sorting and all that is described above,
+     * but in addition we still find all the elements equal to the largest sorted, they will also need to be sorted.
+     */
+    virtual void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const = 0;
 
     /** Copies each element according offsets parameter.
       * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
@@ -306,10 +335,11 @@ public:
     }
 
 
-    MutablePtr mutate() const &&
+    static MutablePtr mutate(Ptr ptr)
     {
-        MutablePtr res = shallowMutate();
-        res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = std::move(*subcolumn).mutate(); });
+        MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
+        ptr.reset(); /// Reset use_count to 1.
+        res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
         return res;
     }
 

@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Disks/createVolume.h>
+#include <Disks/SingleDiskVolume.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -87,14 +89,11 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     ++data.current_table_sends;
     SCOPE_EXIT({--data.current_table_sends;});
 
-    LOG_TRACE(log, "Sending part " << part_name);
+    LOG_TRACE(log, "Sending part {}", part_name);
 
     try
     {
-        auto storage_lock = data.lockStructureForShare(
-            false, RWLockImpl::NO_QUERY, data.getSettings()->lock_acquire_timeout_for_background_operations);
-
-        auto part = findPart(part_name);
+        MergeTreeData::DataPartPtr part = findPart(part_name);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
@@ -112,9 +111,9 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
             writeStringBinary(part->getType().toString(), out);
 
         if (isInMemoryPart(part))
-            sendPartFromMemory(part, out, storage_lock);
+            sendPartFromMemory(part, out);
         else
-            sendPartFromDisk(part, out, storage_lock);
+            sendPartFromDisk(part, out);
     }
     catch (const NetException &)
     {
@@ -134,7 +133,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     }
 }
 
-void Service::sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, TableStructureReadLockHolder &)
+void Service::sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out)
 {
     auto part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(part.get());
     if (!part_in_memory)
@@ -145,7 +144,7 @@ void Service::sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteB
     block_out.write(part_in_memory->block);
 }
 
-void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, TableStructureReadLockHolder &)
+void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out)
 {
     /// We'll take a list of files from the list of checksums.
     MergeTreeData::DataPart::Checksums checksums = part->checksums;
@@ -160,7 +159,7 @@ void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuf
     {
         String file_name = it.first;
 
-        auto disk = part->disk;
+        auto disk = part->volume->getDisk();
         String path = part->getFullRelativePath() + file_name;
 
         UInt64 size = disk->getFileSize(path);
@@ -290,9 +289,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         throw Exception("Cannot deserialize checksums", ErrorCodes::CORRUPTED_DATA);
 
     NativeBlockInputStream block_in(in, 0);
-    auto block = block_in.read();
+    auto block = block_in.read();    
+
+    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, reservation->getDisk());
     MergeTreeData::MutableDataPartPtr new_data_part =
-        std::make_shared<MergeTreeDataPartInMemory>(data, part_name, reservation->getDisk());
+        std::make_shared<MergeTreeDataPartInMemory>(data, part_name, volume);
 
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());
@@ -377,7 +378,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     assertEOF(in);
 
-    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, reservation->getDisk(), part_relative_path);
+    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
+    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);

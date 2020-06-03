@@ -13,6 +13,7 @@ public:
         const NamesAndTypesList & columns_list_,
         const MergeTreeWriterSettings & settings_);
 
+    /// You can write only one block. In-memory part can be written only at INSERT.
     void write(const Block & block, const IColumn::Permutation * permutation,
         const Block & primary_key_block, const Block & skip_indexes_block) override;
 
@@ -21,8 +22,7 @@ public:
     void calculateAndSerializePrimaryIndex(const Block & primary_index_block) override;
 
 private:
-    DataPartInMemoryPtr part;
-    bool block_written = false;
+    DataPartInMemoryPtr part_in_memory;
 };
 
 }

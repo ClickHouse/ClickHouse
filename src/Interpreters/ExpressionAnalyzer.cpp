@@ -32,6 +32,7 @@
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/DictionaryReader.h>
+#include <Interpreters/Context.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -191,61 +192,65 @@ void ExpressionAnalyzer::analyzeAggregation()
 
     if (has_aggregation)
     {
-        getSelectQuery(); /// assertSelect()
 
         /// Find out aggregation keys.
-        if (select_query->groupBy())
+        if (select_query)
         {
-            NameSet unique_keys;
-            ASTs & group_asts = select_query->groupBy()->children;
-            for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
+            if (select_query->groupBy())
             {
-                ssize_t size = group_asts.size();
-                getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
-
-                const auto & column_name = group_asts[i]->getColumnName();
-                const auto & block = temp_actions->getSampleBlock();
-
-                if (!block.has(column_name))
-                    throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
-
-                const auto & col = block.getByName(column_name);
-
-                /// Constant expressions have non-null column pointer at this stage.
-                if (col.column && isColumnConst(*col.column))
+                NameSet unique_keys;
+                ASTs & group_asts = select_query->groupBy()->children;
+                for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
                 {
-                    /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
-                    if (!aggregate_descriptions.empty() || size > 1)
+                    ssize_t size = group_asts.size();
+                    getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
+
+                    const auto & column_name = group_asts[i]->getColumnName();
+                    const auto & block = temp_actions->getSampleBlock();
+
+                    if (!block.has(column_name))
+                        throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+
+                    const auto & col = block.getByName(column_name);
+
+                    /// Constant expressions have non-null column pointer at this stage.
+                    if (col.column && isColumnConst(*col.column))
                     {
-                        if (i + 1 < static_cast<ssize_t>(size))
-                            group_asts[i] = std::move(group_asts.back());
+                        /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
+                        if (!aggregate_descriptions.empty() || size > 1)
+                        {
+                            if (i + 1 < static_cast<ssize_t>(size))
+                                group_asts[i] = std::move(group_asts.back());
 
-                        group_asts.pop_back();
+                            group_asts.pop_back();
 
-                        --i;
-                        continue;
+                            --i;
+                            continue;
+                        }
+                    }
+
+                    NameAndTypePair key{column_name, col.type};
+
+                    /// Aggregation keys are uniqued.
+                    if (!unique_keys.count(key.name))
+                    {
+                        unique_keys.insert(key.name);
+                        aggregation_keys.push_back(key);
+
+                        /// Key is no longer needed, therefore we can save a little by moving it.
+                        aggregated_columns.push_back(std::move(key));
                     }
                 }
 
-                NameAndTypePair key{column_name, col.type};
-
-                /// Aggregation keys are uniqued.
-                if (!unique_keys.count(key.name))
+                if (group_asts.empty())
                 {
-                    unique_keys.insert(key.name);
-                    aggregation_keys.push_back(key);
-
-                    /// Key is no longer needed, therefore we can save a little by moving it.
-                    aggregated_columns.push_back(std::move(key));
+                    select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+                    has_aggregation = select_query->having() || !aggregate_descriptions.empty();
                 }
             }
-
-            if (group_asts.empty())
-            {
-                select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
-                has_aggregation = select_query->having() || !aggregate_descriptions.empty();
-            }
         }
+        else
+            aggregated_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
 
         for (const auto & desc : aggregate_descriptions)
             aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
@@ -292,13 +297,13 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     }
 
     auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
-    BlockIO res = interpreter_subquery->execute();
+    auto stream = interpreter_subquery->execute().getInputStream();
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, context.getSettingsRef().transform_null_in);
-    set->setHeader(res.in->getHeader());
+    set->setHeader(stream->getHeader());
 
-    res.in->readPrefix();
-    while (Block block = res.in->read())
+    stream->readPrefix();
+    while (Block block = stream->read())
     {
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
         if (!set->insertFromBlock(block))
@@ -306,7 +311,7 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     }
 
     set->finishInsert();
-    res.in->readSuffix();
+    stream->readSuffix();
 
     prepared_sets[set_key] = std::move(set);
 }
@@ -317,7 +322,7 @@ SetPtr SelectQueryExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr &
     if (!table)
         return nullptr;
     auto table_id = context.resolveStorageID(subquery_or_table_name);
-    const auto storage = DatabaseCatalog::instance().getTable(table_id);
+    const auto storage = DatabaseCatalog::instance().getTable(table_id, context);
     if (storage->getName() != "Set")
         return nullptr;
     const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
@@ -925,7 +930,7 @@ void ExpressionAnalyzer::appendExpression(ExpressionActionsChain & chain, const 
 
 ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result)
 {
-    ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(sourceColumns(), context);
+    ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(aggregated_columns, context);
     NamesWithAliases result_columns;
     Names result_names;
 
@@ -1024,6 +1029,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         chain.clear();
     };
+
+    if (storage)
+    {
+        query_analyzer.makeSetsForIndex(query.where());
+        query_analyzer.makeSetsForIndex(query.prewhere());
+    }
 
     {
         ExpressionActionsChain chain(context);

@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 CFLAGS(
@@ -151,6 +152,9 @@ SRCS(
     finalizeAggregation.cpp
     formatDateTime.cpp
     formatString.cpp
+    fromUnixTimestamp64Micro.cpp
+    fromUnixTimestamp64Milli.cpp
+    fromUnixTimestamp64Nano.cpp
     FunctionFactory.cpp
     FunctionFQDN.cpp
     FunctionHelpers.cpp
@@ -168,6 +172,7 @@ SRCS(
     FunctionsRound.cpp
     FunctionsStringArray.cpp
     FunctionsStringSimilarity.cpp
+    fuzzBits.cpp
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
@@ -205,7 +210,6 @@ SRCS(
     ifNull.cpp
     IFunction.cpp
     ignore.cpp
-    ignoreExceptNull.cpp
     in.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -282,8 +286,10 @@ SRCS(
     rand64.cpp
     randConstant.cpp
     rand.cpp
+    randomFixedString.cpp
     randomPrintableASCII.cpp
     randomString.cpp
+    randomStringUTF8.cpp
     regexpQuoteMeta.cpp
     registerFunctionsArithmetic.cpp
     registerFunctionsComparison.cpp
@@ -303,6 +309,7 @@ SRCS(
     registerFunctionsStringRegexp.cpp
     registerFunctionsStringSearch.cpp
     registerFunctionsTuple.cpp
+    registerFunctionsUnixTimestamp64.cpp
     registerFunctionsVisitParam.cpp
     reinterpretAsFixedString.cpp
     reinterpretAsString.cpp
@@ -384,6 +391,9 @@ SRCS(
     toTime.cpp
     toTimeZone.cpp
     toTypeName.cpp
+    toUnixTimestamp64Micro.cpp
+    toUnixTimestamp64Milli.cpp
+    toUnixTimestamp64Nano.cpp
     toValidUTF8.cpp
     toYear.cpp
     toYYYYMM.cpp
@@ -415,6 +425,7 @@ SRCS(
     URL/fragment.cpp
     URL/path.cpp
     URL/pathFull.cpp
+    URL/port.cpp
     URL/protocol.cpp
     URL/queryStringAndFragment.cpp
     URL/queryString.cpp

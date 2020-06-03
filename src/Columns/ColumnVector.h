@@ -191,6 +191,10 @@ public:
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
+                               IColumn::SpecialSort) const override;
+
+    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const override;
 
     void reserve(size_t n) override
     {
@@ -266,7 +270,7 @@ public:
 
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
-    StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), data.size()); }
+    StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), byteSize()); }
 
 
     bool structureEquals(const IColumn & rhs) const override
@@ -317,5 +321,7 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
 
     return res;
 }
+
+TypeIndex columnVectorDataType(const IColumn * column);
 
 }

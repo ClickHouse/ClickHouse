@@ -127,7 +127,7 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
                 "Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.",
                 ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
-    if (isTableExist(dictionary_name))
+    if (isTableExist(dictionary_name, global_context))
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
 

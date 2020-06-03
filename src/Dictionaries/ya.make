@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -24,6 +25,7 @@ SRCS(
     ComplexKeyCacheDictionary_generate3.cpp
     ComplexKeyCacheDictionary_setAttributeValue.cpp
     ComplexKeyCacheDictionary_setDefaultAttributeValue.cpp
+    ComplexKeyDirectDictionary.cpp
     ComplexKeyHashedDictionary.cpp
     DictionaryBlockInputStreamBase.cpp
     DictionaryFactory.cpp

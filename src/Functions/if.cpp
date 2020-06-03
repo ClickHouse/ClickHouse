@@ -816,7 +816,7 @@ private:
                 if (isColumnNullable(*arg_else.column))
                 {
                     auto arg_else_column = arg_else.column;
-                    auto result_column = (*std::move(arg_else_column)).mutate();
+                    auto result_column = IColumn::mutate(std::move(arg_else_column));
                     assert_cast<ColumnNullable &>(*result_column).applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
@@ -858,7 +858,7 @@ private:
                 if (isColumnNullable(*arg_then.column))
                 {
                     auto arg_then_column = arg_then.column;
-                    auto result_column = (*std::move(arg_then_column)).mutate();
+                    auto result_column = IColumn::mutate(std::move(arg_then_column));
                     assert_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }

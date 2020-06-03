@@ -58,6 +58,7 @@ add_subdirectory (TableFunctions)
 add_subdirectory (Processors)
 add_subdirectory (Formats)
 add_subdirectory (Compression)
+add_subdirectory (Server)
 
 
 set(dbms_headers)
@@ -73,6 +74,7 @@ if(USE_RDKAFKA)
 endif()
 
 if (USE_AWS_S3)
+    add_headers_and_sources(dbms Common/S3)
     add_headers_and_sources(dbms Disks/S3)
 endif()
 
@@ -145,6 +147,7 @@ add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_client Client)
+add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
@@ -322,6 +325,11 @@ if (OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries (clickhouse_common_io PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
 endif ()
 
+if (USE_LDAP)
+    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${OPENLDAP_INCLUDE_DIR})
+    dbms_target_link_libraries (PRIVATE ${OPENLDAP_LIBRARIES})
+endif ()
+
 dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 
@@ -365,7 +373,7 @@ if (ENABLE_TESTS AND USE_GTEST)
     endmacro()
 
     # attach all dbms gtest sources
-    grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
+    grep_gtest_sources(${ClickHouse_SOURCE_DIR}/src dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
 
     # gtest framework has substandard code

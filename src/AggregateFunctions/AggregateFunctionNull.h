@@ -4,6 +4,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -53,13 +54,13 @@ protected:
 
     static void initFlag(AggregateDataPtr place) noexcept
     {
-        if (result_is_nullable)
+        if constexpr (result_is_nullable)
             place[0] = 0;
     }
 
     static void setFlag(AggregateDataPtr place) noexcept
     {
-        if (result_is_nullable)
+        if constexpr (result_is_nullable)
             place[0] = 1;
     }
 
@@ -72,7 +73,7 @@ public:
     AggregateFunctionNullBase(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
         : IAggregateFunctionHelper<Derived>(arguments, params), nested_function{nested_function_}
     {
-        if (result_is_nullable)
+        if constexpr (result_is_nullable)
             prefix_size = nested_function->alignOfData();
         else
             prefix_size = 0;
@@ -128,7 +129,7 @@ public:
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         bool flag = getFlag(place);
-        if (result_is_nullable)
+        if constexpr (result_is_nullable)
             writeBinary(flag, buf);
         if (flag)
             nested_function->serialize(nestedPlace(place), buf);
@@ -137,7 +138,7 @@ public:
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
         bool flag = 1;
-        if (result_is_nullable)
+        if constexpr (result_is_nullable)
             readBinary(flag, buf);
         if (flag)
         {
@@ -148,7 +149,7 @@ public:
 
     void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
-        if (result_is_nullable)
+        if constexpr (result_is_nullable)
         {
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
@@ -194,12 +195,25 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const IColumn * nested_column = &column->getNestedColumn();
         if (!column->isNullAt(row_num))
         {
             this->setFlag(place);
-            const IColumn * nested_column = &column->getNestedColumn();
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
         }
+    }
+
+    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
+    {
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const IColumn * nested_column = &column->getNestedColumn();
+        const UInt8 * null_map = column->getNullMapData().data();
+
+        this->nested_function->addBatchSinglePlaceNotNull(batch_size, this->nestedPlace(place), &nested_column, null_map, arena);
+
+        if constexpr (result_is_nullable)
+            if (!memoryIsByte(null_map, batch_size, 1))
+                this->setFlag(place);
     }
 };
 

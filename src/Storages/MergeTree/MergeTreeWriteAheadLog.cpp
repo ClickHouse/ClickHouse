@@ -107,11 +107,14 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore()
             }
             else if (action_type == ActionType::ADD_PART)
             {
+                auto part_disk = storage.reserveSpace(0)->getDisk();
+                auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
+
                 part = storage.createPart(
                     part_name,
                     MergeTreeDataPartType::IN_MEMORY,
                     MergeTreePartInfo::fromPartName(part_name, storage.format_version),
-                    storage.reserveSpace(0)->getDisk(),
+                    single_disk_volume,
                     part_name);
 
                 block = block_in.read();
@@ -128,8 +131,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore()
                 || e.code() == ErrorCodes::BAD_DATA_PART_NAME
                 || e.code() == ErrorCodes::CORRUPTED_DATA)
             {
-                LOG_WARNING(&Logger::get(storage.getLogName() + " (WriteAheadLog)"),
-                    "WAL file '" << path << "' is broken. " << e.displayText());
+                LOG_WARNING(&Poco::Logger::get(storage.getLogName() + " (WriteAheadLog)"),
+                    "WAL file '{}' is broken. {}", path, e.displayText());
 
                 /// If file is broken, do not write new parts to it.
                 /// But if it contains any part rotate and save them.
@@ -148,10 +151,9 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore()
             MergedBlockOutputStream part_out(part, block.getNamesAndTypesList(), {}, nullptr);
 
             part->minmax_idx.update(block, storage.minmax_idx_columns);
-            if (storage.partition_key_expr)
-                part->partition.create(storage, block, 0);
+            part->partition.create(storage, block, 0);
             if (storage.hasSortingKey())
-                storage.sorting_key_expr->execute(block);
+                storage.getSortingKey().expression->execute(block);
 
             part_out.writePrefix();
             part_out.write(block);

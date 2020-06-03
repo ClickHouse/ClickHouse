@@ -2,7 +2,6 @@
 
 #include <Common/ClickHouseRevision.h>
 #include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <Processors/ISource.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 
@@ -540,10 +539,11 @@ void AggregatingTransform::initGenerate()
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = variants.sizeWithoutOverflowRow();
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-                              << "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
-                              << " in " << elapsed_seconds << " sec."
-                              << " (" << src_rows / elapsed_seconds << " rows/sec., " << src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+
+    LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
+        src_rows, rows, ReadableSize(src_bytes),
+        elapsed_seconds, src_rows / elapsed_seconds,
+        ReadableSize(src_bytes / elapsed_seconds));
 
     if (params->aggregator.hasTemporaryFiles())
     {
@@ -592,9 +592,7 @@ void AggregatingTransform::initGenerate()
         for (const auto & file : files.files)
             processors.emplace_back(std::make_unique<SourceFromNativeStream>(header, file->path()));
 
-        LOG_TRACE(log, "Will merge " << files.files.size() << " temporary files of size "
-                                     << (files.sum_size_compressed / 1048576.0) << " MiB compressed, "
-                                     << (files.sum_size_uncompressed / 1048576.0) << " MiB uncompressed.");
+        LOG_TRACE(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), ReadableSize(files.sum_size_compressed), ReadableSize(files.sum_size_uncompressed));
 
         auto pipe = createMergingAggregatedMemoryEfficientPipe(
                 header, params, files.files.size(), temporary_data_merge_threads);

@@ -63,20 +63,17 @@ void MergeTreeDataPartWriterOnDisk::Stream::addToChecksums(MergeTreeData::DataPa
 
 
 MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
-    DiskPtr disk_,
-    const String & part_path_,
-    const MergeTreeData & storage_,
+    const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : IMergeTreeDataPartWriter(storage_,
+    : IMergeTreeDataPartWriter(data_part_,
         columns_list_, indices_to_recalc_,
         index_granularity_, settings_)
-    , disk(std::move(disk_))
-    , part_path(part_path_)
+    , part_path(data_part_->getFullRelativePath())
     , marks_file_extension(marks_file_extension_)
     , default_codec(default_codec_)
     , compute_granularity(index_granularity.empty())
@@ -84,6 +81,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
 
+    auto disk = data_part->volume->getDisk();
     if (!disk->exists(part_path))
         disk->createDirectories(part_path);
 }
@@ -160,7 +158,7 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 {
     if (storage.hasPrimaryKey())
     {
-        index_file_stream = disk->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        index_file_stream = data_part->volume->getDisk()->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
 
@@ -169,18 +167,18 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 
 void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 {
-    for (const auto & index : skip_indices)
+    for (const auto & index_helper : skip_indices)
     {
-        String stream_name = index->getFileName();
+        String stream_name = index_helper->getFileName();
         skip_indices_streams.emplace_back(
                 std::make_unique<MergeTreeDataPartWriterOnDisk::Stream>(
                         stream_name,
-                        disk,
+                        data_part->volume->getDisk(),
                         part_path + stream_name, INDEX_FILE_EXTENSION,
                         part_path + stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size,
                         0, settings.aio_threshold));
-        skip_indices_aggregators.push_back(index->createIndexAggregator());
+        skip_indices_aggregators.push_back(index_helper->createIndexAggregator());
         skip_index_filling.push_back(0);
     }
 
@@ -189,10 +187,10 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Block & primary_index_block)
 {
-    size_t rows = primary_index_block.rows();
     if (!primary_index_initialized)
         throw Exception("Primary index is not initialized", ErrorCodes::LOGICAL_ERROR);
 
+    size_t rows = primary_index_block.rows();
     size_t primary_columns_num = primary_index_block.columns();
     if (index_columns.empty())
     {
@@ -241,16 +239,16 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block)
 {
-    size_t rows = skip_indexes_block.rows();
     if (!skip_indices_initialized)
         throw Exception("Skip indices are not initialized", ErrorCodes::LOGICAL_ERROR);
 
+    size_t rows = skip_indexes_block.rows();
     size_t skip_index_current_data_mark = 0;
 
     /// Filling and writing skip indices like in MergeTreeDataPartWriterWide::writeColumn
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
-        const auto index = skip_indices[i];
+        const auto index_helper = skip_indices[i];
         auto & stream = *skip_indices_streams[i];
         size_t prev_pos = 0;
         skip_index_current_data_mark = skip_index_data_mark;
@@ -267,7 +265,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                 limit = index_granularity.getMarkRows(skip_index_current_data_mark);
                 if (skip_indices_aggregators[i]->empty())
                 {
-                    skip_indices_aggregators[i] = index->createIndexAggregator();
+                    skip_indices_aggregators[i] = index_helper->createIndexAggregator();
                     skip_index_filling[i] = 0;
 
                     if (stream.compressed.offset() >= settings.min_compress_block_size)
@@ -292,7 +290,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                 ++skip_index_filling[i];
 
                 /// write index if it is filled
-                if (skip_index_filling[i] == index->granularity)
+                if (skip_index_filling[i] == index_helper->index.granularity)
                 {
                     skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
                     skip_index_filling[i] = 0;

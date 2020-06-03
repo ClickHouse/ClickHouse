@@ -11,7 +11,7 @@ All the functions accept zero arguments or one argument.
 If an argument is passed, it can be any type, and its value is not used for anything.
 The only purpose of this argument is to prevent common subexpression elimination, so that two different instances of the same function return different columns with different random numbers.
 
-## rand {#rand}
+## rand, rand32 {#rand}
 
 Returns a pseudo-random UInt32 number, evenly distributed among all UInt32-type numbers.
 Uses a linear congruential generator.
@@ -59,5 +59,44 @@ Result:
 │  956619638 │ 4238287282 │   1104342490 │     2740811946 │      4229401477 │           1924032898 │
 └────────────┴────────────┴──────────────┴────────────────┴─────────────────┴──────────────────────┘
 ```
+
+# Random functions for working with strings  {#random-functions-for-working-with-strings}
+
+## randomString {#random-string}
+
+## randomFixedString {#random-fixed-string}
+
+## randomPrintableASCII {#random-printable-ascii}
+
+## randomStringUTF8 {#random-string-utf8}
+
+## fuzzBits {#fuzzbits}
+
+**Syntax**
+
+``` sql
+fuzzBits([s], [prob])
+```
+Inverts bits of `s`, each with probability `prob`.
+
+**Parameters**
+- `s` - `String` or `FixedString`
+- `prob` - constant `Float32/64`
+
+**Returned value**
+Fuzzed string with same as s type.
+
+**Example**
+
+``` sql
+SELECT fuzzBits(materialize('abacaba'), 0.1)
+FROM numbers(3)
+```
+``` text
+┌─fuzzBits(materialize('abacaba'), 0.1)─┐
+│ abaaaja                               │
+│ a*cjab+                               │
+│ aeca2A                                │
+└───────────────────────────────────────┘
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/random_functions/) <!--hide-->

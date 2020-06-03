@@ -126,6 +126,11 @@ public:
         throw Exception("getPermutation is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const override
+    {
+        throw Exception("updatePermutation is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     void gather(ColumnGathererStream &) override
     {
         throw Exception("Method gather is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);

@@ -111,6 +111,8 @@ public:
             res[i] = i;
     }
 
+    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges&) const override {}
+
     ColumnPtr replicate(const Offsets & offsets) const override
     {
         if (s != offsets.size())

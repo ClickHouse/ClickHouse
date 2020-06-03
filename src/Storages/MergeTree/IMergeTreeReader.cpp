@@ -187,16 +187,16 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
 NameAndTypePair IMergeTreeReader::getColumnFromPart(const NameAndTypePair & required_column) const
 {
-    auto it = columns_from_part.find(required_column.name);
-    if (it != columns_from_part.end())
-        return {it->first, it->second};
-
     if (alter_conversions.isColumnRenamed(required_column.name))
     {
         String old_name = alter_conversions.getColumnOldName(required_column.name);
-        it = columns_from_part.find(old_name);
+        auto it = columns_from_part.find(old_name);
         if (it != columns_from_part.end())
             return {it->first, it->second};
+    }
+    else if (auto it = columns_from_part.find(required_column.name); it != columns_from_part.end())
+    {
+        return {it->first, it->second};
     }
 
     return required_column;
