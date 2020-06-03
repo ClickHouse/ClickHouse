@@ -154,3 +154,9 @@
 [submodule "contrib/libcpuid"]
 	path = contrib/libcpuid
 	url = https://github.com/ClickHouse-Extras/libcpuid.git
+[submodule "contrib/openldap"]
+	path = contrib/openldap
+	url = https://github.com/openldap/openldap.git
+[submodule "contrib/fmtlib"]
+	path = contrib/fmtlib
+	url = https://github.com/fmtlib/fmt.git

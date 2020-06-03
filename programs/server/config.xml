@@ -191,7 +191,7 @@
 
     <!-- Path to folder where users and roles created by SQL commands are stored. -->
     <access_control_path>/var/lib/clickhouse/access/</access_control_path>
-    
+
     <!-- Path to configuration file with users, access rights, profiles of settings, quotas. -->
     <users_config>users.xml</users_config>
 
@@ -227,7 +227,7 @@
           and to prevent clickhouse executable from being paged out under high IO load.
          Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
     -->
-    <mlock_executable>false</mlock_executable>
+    <mlock_executable>true</mlock_executable>
 
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.tech/docs/en/operations/table_engines/distributed/

@@ -59,7 +59,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
         * Due to the presence of WITH TOTALS, during aggregation the states of this aggregate function will be stored
         *  in the ColumnAggregateFunction column of type
         *  AggregateFunction(quantileTimingState(0.5), UInt64).
-        * Then, in `TotalsHavingBlockInputStream`, it will be called `convertToValues` method,
+        * Then, in `TotalsHavingTransform`, it will be called `convertToValues` method,
         *  to get the "ready" values.
         * But it just converts a column of type
         *   `AggregateFunction(quantileTimingState(0.5), UInt64)`
@@ -555,6 +555,8 @@ void ColumnAggregateFunction::getPermutation(bool /*reverse*/, size_t /*limit*/,
     for (size_t i = 0; i < s; ++i)
         res[i] = i;
 }
+
+void ColumnAggregateFunction::updatePermutation(bool, size_t, int, Permutation &, EqualRanges&) const {}
 
 void ColumnAggregateFunction::gather(ColumnGathererStream & gatherer)
 {

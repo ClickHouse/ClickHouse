@@ -8,9 +8,7 @@ class MergeTreeDataPartWriterCompact : public MergeTreeDataPartWriterOnDisk
 {
 public:
     MergeTreeDataPartWriterCompact(
-        DiskPtr disk,
-        const String & part_path,
-        const MergeTreeData & storage,
+        const MergeTreeData::DataPartPtr & data_part,
         const NamesAndTypesList & columns_list,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,

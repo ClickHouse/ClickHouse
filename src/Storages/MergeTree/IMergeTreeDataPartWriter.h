@@ -20,11 +20,12 @@ class IMergeTreeDataPartWriter : private boost::noncopyable
 {
 public:
     IMergeTreeDataPartWriter(
-        const MergeTreeData & storage_,
+        const MergeTreeData::DataPartPtr & data_part_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeWriterSettings & settings_);
 
-    IMergeTreeDataPartWriter(const MergeTreeData & storage_,
+    IMergeTreeDataPartWriter(
+        const MergeTreeData::DataPartPtr & data_part_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices_,
         const MergeTreeIndexGranularity & index_granularity_,
@@ -60,6 +61,10 @@ protected:
     size_t getCurrentMark() const { return current_mark; }
     size_t getIndexOffset() const { return index_offset; }
 
+    using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
+    using SerializationStates = std::unordered_map<String, SerializationState>;
+
+    MergeTreeData::DataPartPtr data_part;
     const MergeTreeData & storage;
     NamesAndTypesList columns_list;
     MergeTreeIndices skip_indices;

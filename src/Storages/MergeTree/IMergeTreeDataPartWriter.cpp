@@ -4,21 +4,23 @@ namespace DB
 {
 
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
-    const MergeTreeData & storage_,
+    const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeWriterSettings & settings_)
-    : storage(storage_)
+    : data_part(data_part_)
+    , storage(data_part_->storage)
     , columns_list(columns_list_)
     , settings(settings_)
     , with_final_mark(storage.getSettings()->write_final_mark && settings.can_use_adaptive_granularity){}
 
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
-    const MergeTreeData & storage_,
+    const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices_,
     const MergeTreeIndexGranularity & index_granularity_,
     const MergeTreeWriterSettings & settings_)
-    : storage(storage_)
+    : data_part(data_part_)
+    , storage(data_part_->storage)
     , columns_list(columns_list_)
     , skip_indices(skip_indices_)
     , index_granularity(index_granularity_)

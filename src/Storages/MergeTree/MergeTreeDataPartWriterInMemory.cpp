@@ -14,14 +14,14 @@ MergeTreeDataPartWriterInMemory::MergeTreeDataPartWriterInMemory(
     const DataPartInMemoryPtr & part_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeWriterSettings & settings_)
-    : IMergeTreeDataPartWriter(part_->storage, columns_list_, settings_)
-    , part(part_) {}
+    : IMergeTreeDataPartWriter(part_, columns_list_, settings_)
+    , part_in_memory(part_) {}
 
 void MergeTreeDataPartWriterInMemory::write(
     const Block & block, const IColumn::Permutation * permutation,
     const Block & primary_key_block, const Block & /* skip_indexes_block */)
 {
-    if (block_written)
+    if (part_in_memory->block)
         throw Exception("DataPartWriterInMemory supports only one write", ErrorCodes::LOGICAL_ERROR);
 
     Block result_block;
@@ -48,8 +48,7 @@ void MergeTreeDataPartWriterInMemory::write(
     index_granularity.appendMark(result_block.rows());
     if (with_final_mark)
         index_granularity.appendMark(0);
-    part->block = std::move(result_block);
-    block_written = true;
+    part_in_memory->block = std::move(result_block);
 }
 
 void MergeTreeDataPartWriterInMemory::calculateAndSerializePrimaryIndex(const Block & primary_index_block)
@@ -81,9 +80,9 @@ static MergeTreeDataPartChecksum createUncompressedChecksum(size_t size, SipHash
 void MergeTreeDataPartWriterInMemory::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
 {
     SipHash hash;
-    for (const auto & column : part->block)
+    for (const auto & column : part_in_memory->block)
         column.column->updateHashFast(hash);
-    checksums.files["data.bin"] = createUncompressedChecksum(part->block.bytes(), hash);
+    checksums.files["data.bin"] = createUncompressedChecksum(part_in_memory->block.bytes(), hash);
 }
 
 }

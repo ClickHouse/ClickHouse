@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -45,12 +46,9 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     size_t total_rows = data_part->index_granularity.getRowsCountInRanges(all_mark_ranges);
 
     if (!quiet)
-        LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << data_part->name
-        << ", approx. " << total_rows
-        << (all_mark_ranges.size() > 1
-        ? ", up to " + toString(total_rows)
-        : "")
-        << " rows starting from " << data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
+        LOG_TRACE(log, "Reading {} ranges from part {}, approx. {} rows starting from {}",
+            all_mark_ranges.size(), data_part->name, total_rows,
+            data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 
     addTotalRowsApprox(total_rows);
     ordered_names = header_without_virtual_columns.getNames();

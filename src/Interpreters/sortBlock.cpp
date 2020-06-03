@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_COLLATION;
-    extern const int OPENCL_ERROR;
 }
 
 static bool isCollationRequired(const SortColumnDescription & description)
@@ -102,6 +101,7 @@ struct PartialSortingLessWithCollation
     }
 };
 
+
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 {
     if (!block)
@@ -134,20 +134,12 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         else if (!isColumnConst(*column))
         {
             int nan_direction_hint = description[0].nulls_direction;
+            auto special_sort = description[0].special_sort;
 
-            /// If in Settings `special_sort` option has been set as `bitonic_sort`,
-            /// then via `nan_direction_hint` variable a flag which specifies bitonic sort as preferred
-            /// will be passed to `getPermutation` method with value 42.
-            if (description[0].special_sort == SpecialSort::OPENCL_BITONIC)
-            {
-#ifdef USE_OPENCL
-                nan_direction_hint = 42;
-#else
-                throw DB::Exception("Bitonic sort specified as preferred, but OpenCL not available", DB::ErrorCodes::OPENCL_ERROR);
-#endif
-            }
-
-            column->getPermutation(reverse, limit, nan_direction_hint, perm);
+            if (special_sort == SpecialSort::OPENCL_BITONIC)
+                column->getSpecialPermutation(reverse, limit, nan_direction_hint, perm, IColumn::SpecialSort::OPENCL_BITONIC);
+            else
+                column->getPermutation(reverse, limit, nan_direction_hint, perm);
         }
         else
             /// we don't need to do anything with const column
@@ -187,21 +179,47 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 
         if (need_collation)
         {
-            PartialSortingLessWithCollation less_with_collation(columns_with_sort_desc);
+            EqualRanges ranges;
+            ranges.emplace_back(0, perm.size());
+            for (const auto& column : columns_with_sort_desc)
+            {
+                while (!ranges.empty() && limit && limit <= ranges.back().first)
+                    ranges.pop_back();
 
-            if (limit)
-                std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), less_with_collation);
-            else
-                pdqsort(perm.begin(), perm.end(), less_with_collation);
+
+                if (ranges.empty())
+                    break;
+
+
+                if (isCollationRequired(column.description))
+                {
+                    const ColumnString & column_string = assert_cast<const ColumnString &>(*column.column);
+                    column_string.updatePermutationWithCollation(*column.description.collator, column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
+                }
+                else
+                {
+                    column.column->updatePermutation(
+                        column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
+                }
+            }
         }
         else
         {
-            PartialSortingLess less(columns_with_sort_desc);
-
-            if (limit)
-                std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), less);
-            else
-                pdqsort(perm.begin(), perm.end(), less);
+            EqualRanges ranges;
+            ranges.emplace_back(0, perm.size());
+            for (const auto& column : columns_with_sort_desc)
+            {
+                while (!ranges.empty() && limit && limit <= ranges.back().first)
+                {
+                    ranges.pop_back();
+                }
+                if (ranges.empty())
+                {
+                    break;
+                }
+                column.column->updatePermutation(
+                    column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
+            }
         }
 
         size_t columns = block.columns();

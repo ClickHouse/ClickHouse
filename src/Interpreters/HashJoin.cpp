@@ -35,6 +35,8 @@ namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
     extern const int NOT_IMPLEMENTED;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
@@ -108,7 +110,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
         JoinCommon::convertColumnToNullable(column);
         if (column.type->isNullable() && !negative_null_map.empty())
         {
-            MutableColumnPtr mutable_column = (*std::move(column.column)).mutate();
+            MutableColumnPtr mutable_column = IColumn::mutate(std::move(column.column));
             assert_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);
             column.column = std::move(mutable_column);
         }
@@ -127,7 +129,7 @@ static void changeNullability(MutableColumnPtr & mutable_column)
     else
         column = makeNullable(column);
 
-    mutable_column = (*std::move(column)).mutate();
+    mutable_column = IColumn::mutate(std::move(column));
 }
 
 static ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
@@ -203,7 +205,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , any_take_last_row(any_take_last_row_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
-    , log(&Logger::get("HashJoin"))
+    , log(&Poco::Logger::get("HashJoin"))
 {
     setSampleBlock(right_sample_block);
 }
@@ -422,7 +424,7 @@ void HashJoin::setSampleBlock(const Block & block)
     /// You have to restore this lock if you call the function outside of ctor.
     //std::unique_lock lock(rwlock);
 
-    LOG_DEBUG(log, "setSampleBlock: " << block.dumpStructure());
+    LOG_DEBUG(log, "setSampleBlock: {}", block.dumpStructure());
 
     if (!empty())
         return;
@@ -1230,7 +1232,7 @@ DataTypePtr HashJoin::joinGetReturnType(const String & column_name, bool or_null
     std::shared_lock lock(data->rwlock);
 
     if (!sample_block_with_columns_to_add.has(column_name))
-        throw Exception("StorageJoin doesn't contain column " + column_name, ErrorCodes::LOGICAL_ERROR);
+        throw Exception("StorageJoin doesn't contain column " + column_name, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     auto elem = sample_block_with_columns_to_add.getByName(column_name);
     if (or_null)
         elem.type = makeNullable(elem.type);
@@ -1254,7 +1256,7 @@ void HashJoin::joinGet(Block & block, const String & column_name, bool or_null) 
     std::shared_lock lock(data->rwlock);
 
     if (key_names_right.size() != 1)
-        throw Exception("joinGet only supports StorageJoin containing exactly one key", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("joinGet only supports StorageJoin containing exactly one key", ErrorCodes::UNSUPPORTED_JOIN_KEYS);
 
     checkTypeOfKey(block, right_table_keys);
 
@@ -1269,7 +1271,7 @@ void HashJoin::joinGet(Block & block, const String & column_name, bool or_null) 
         joinGetImpl(block, {elem}, std::get<MapsOne>(data->maps));
     }
     else
-        throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 }
 
 

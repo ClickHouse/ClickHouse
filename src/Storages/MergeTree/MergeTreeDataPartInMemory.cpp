@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterInMemory.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <Poco/Logger.h>
 #include <common/logger_useful.h>
@@ -20,9 +21,9 @@ namespace ErrorCodes
 MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
        MergeTreeData & storage_,
         const String & name_,
-        const DiskPtr & disk_,
+        const VolumePtr & volume_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, disk_, relative_path_, Type::IN_MEMORY)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::IN_MEMORY)
 {
 }
 
@@ -30,9 +31,9 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DiskPtr & disk_,
+        const VolumePtr & volume_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, info_, disk_, relative_path_, Type::IN_MEMORY)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::IN_MEMORY)
 {
 }
 
@@ -63,10 +64,11 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
 
 void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const String & new_relative_path) const
 {
+    const auto & disk = volume->getDisk();
     String destination_path = base_path + new_relative_path;
 
     auto new_type = storage.choosePartTypeOnDisk(block.bytes(), rows_count);
-    auto new_data_part = storage.createPart(name, new_type, info, disk, new_relative_path);
+    auto new_data_part = storage.createPart(name, new_type, info, volume, new_relative_path);
 
     new_data_part->setColumns(columns);
     new_data_part->partition.value.assign(partition.value);
@@ -81,7 +83,8 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
     disk->createDirectories(destination_path);
 
     auto compression_codec = storage.global_context.chooseCompressionCodec(0, 0);
-    MergedBlockOutputStream out(new_data_part, columns, storage.skip_indices, compression_codec);
+    auto indices = MergeTreeIndexFactory::instance().getMany(storage.getSecondaryIndices());
+    MergedBlockOutputStream out(new_data_part, columns, indices, compression_codec);
     out.writePrefix();
     out.write(block);
     out.writeSuffixAndFinalizePart(new_data_part);

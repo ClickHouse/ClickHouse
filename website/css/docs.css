@@ -33,7 +33,6 @@ summary {
 }
 
 .headerlink {
-    display: none;
     text-decoration: none !important;
     margin-left: .5rem;
 }
@@ -70,7 +69,6 @@ summary {
 #content code {
     color: #111;
     background: #eee;
-    padding: 2px;
 }
 
 
@@ -171,9 +169,13 @@ summary {
 }
 
 @media (prefers-color-scheme: dark) {
-    body[data-spy] {
+    body[data-spy], body.amp, #to-full-website {
         background: #1c1c1c;
         color: #efefef;
+    }
+
+    .invert-dark {
+        filter: invert(100%);
     }
 
     #sidebar {
@@ -191,6 +193,7 @@ summary {
     #content td {
         border: 1px solid #444451;
     }
+
     #content code {
         background: #444;
         color: #eee;

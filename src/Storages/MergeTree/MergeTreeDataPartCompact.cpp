@@ -19,9 +19,9 @@ namespace ErrorCodes
 MergeTreeDataPartCompact::MergeTreeDataPartCompact(
        MergeTreeData & storage_,
         const String & name_,
-        const DiskPtr & disk_,
+        const VolumePtr & volume_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, disk_, relative_path_, Type::COMPACT)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::COMPACT)
 {
 }
 
@@ -29,9 +29,9 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DiskPtr & disk_,
+        const VolumePtr & volume_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, info_, disk_, relative_path_, Type::COMPACT)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::COMPACT)
 {
 }
 
@@ -67,7 +67,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
         { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
 
     return std::make_unique<MergeTreeDataPartWriterCompact>(
-        disk, getFullRelativePath(), storage, ordered_columns_list, indices_to_recalc,
+        shared_from_this(), ordered_columns_list, indices_to_recalc,
         index_granularity_info.marks_file_extension,
         default_codec, writer_settings, computed_index_granularity);
 }
@@ -98,12 +98,12 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
         throw Exception("MergeTreeDataPartCompact cannot be created with non-adaptive granulary.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto marks_file_path = index_granularity_info.getMarksFilePath(full_path + "data");
-    if (!disk->exists(marks_file_path))
-        throw Exception("Marks file '" + fullPath(disk, marks_file_path) + "' doesn't exist", ErrorCodes::NO_FILE_IN_DATA_PART);
+    if (!volume->getDisk()->exists(marks_file_path))
+        throw Exception("Marks file '" + fullPath(volume->getDisk(), marks_file_path) + "' doesn't exist", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-    size_t marks_file_size = disk->getFileSize(marks_file_path);
+    size_t marks_file_size = volume->getDisk()->getFileSize(marks_file_path);
 
-    auto buffer = disk->readFile(marks_file_path, marks_file_size);
+    auto buffer = volume->getDisk()->readFile(marks_file_path, marks_file_size);
     while (!buffer->eof())
     {
         /// Skip offsets for columns
@@ -145,9 +145,9 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
         if (require_part_metadata)
         {
             if (!checksums.files.count(mrk_file_name))
-                throw Exception("No marks file checksum for column in part " + fullPath(disk, path), ErrorCodes::NO_FILE_IN_DATA_PART);
+                throw Exception("No marks file checksum for column in part " + fullPath(volume->getDisk(), path), ErrorCodes::NO_FILE_IN_DATA_PART);
             if (!checksums.files.count(DATA_FILE_NAME_WITH_EXTENSION))
-                throw Exception("No data file checksum for in part " + fullPath(disk, path), ErrorCodes::NO_FILE_IN_DATA_PART);
+                throw Exception("No data file checksum for in part " + fullPath(volume->getDisk(), path), ErrorCodes::NO_FILE_IN_DATA_PART);
         }
     }
     else
@@ -155,24 +155,24 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
         {
             /// count.txt should be present even in non custom-partitioned parts
             auto file_path = path + "count.txt";
-            if (!disk->exists(file_path) || disk->getFileSize(file_path) == 0)
-                throw Exception("Part " + path + " is broken: " + fullPath(disk, file_path) + " is empty", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+            if (!volume->getDisk()->exists(file_path) || volume->getDisk()->getFileSize(file_path) == 0)
+                throw Exception("Part " + path + " is broken: " + fullPath(volume->getDisk(), file_path) + " is empty", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
         }
 
         /// Check that marks are nonempty and have the consistent size with columns number.
         auto mrk_file_path = path + mrk_file_name;
 
-        if (disk->exists(mrk_file_name))
+        if (volume->getDisk()->exists(mrk_file_name))
         {
-            UInt64 file_size = disk->getFileSize(mrk_file_name);
+            UInt64 file_size = volume->getDisk()->getFileSize(mrk_file_name);
              if (!file_size)
-                throw Exception("Part " + path + " is broken: " + fullPath(disk, mrk_file_name) + " is empty.",
+                throw Exception("Part " + path + " is broken: " + fullPath(volume->getDisk(), mrk_file_name) + " is empty.",
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
 
             UInt64 expected_file_size = index_granularity_info.getMarkSizeInBytes(columns.size()) * index_granularity.getMarksCount();
             if (expected_file_size != file_size)
                 throw Exception(
-                    "Part " + path + " is broken: bad size of marks file '" + fullPath(disk, mrk_file_name) + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
+                    "Part " + path + " is broken: bad size of marks file '" + fullPath(volume->getDisk(), mrk_file_name) + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
         }
     }

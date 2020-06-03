@@ -743,6 +743,76 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_h
     }
 }
 
+void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
+{
+    if (limit >= size() || limit >= equal_range.back().second)
+        limit = 0;
+
+    size_t n = equal_range.size();
+
+    if (limit)
+        --n;
+
+    EqualRanges new_ranges;
+    for (size_t i = 0; i < n; ++i)
+    {
+        const auto& [first, last] = equal_range[i];
+
+        if (reverse)
+            std::sort(res.begin() + first, res.begin() + last, Less<false>(*this, nan_direction_hint));
+        else
+            std::sort(res.begin() + first, res.begin() + last, Less<true>(*this, nan_direction_hint));
+        auto new_first = first;
+
+        for (auto j = first + 1; j < last; ++j)
+        {
+            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+
+    if (limit)
+    {
+        const auto& [first, last] = equal_range.back();
+        if (reverse)
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, Less<false>(*this, nan_direction_hint));
+        else
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, Less<true>(*this, nan_direction_hint));
+        auto new_first = first;
+        for (auto j = first + 1; j < limit; ++j)
+        {
+            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        auto new_last = limit;
+        for (auto j = limit; j < last; ++j)
+        {
+            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) == 0)
+            {
+                std::swap(res[new_last], res[j]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+        {
+            new_ranges.emplace_back(new_first, new_last);
+        }
+    }
+    equal_range = std::move(new_ranges);
+}
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {

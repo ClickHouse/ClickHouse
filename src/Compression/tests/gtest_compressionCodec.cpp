@@ -220,7 +220,7 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
 
     if (l_size != r_size)
     {
-        result = ::testing::AssertionFailure() << "size mismatch" << " expected: " << l_size << " got:" << r_size;
+        result = ::testing::AssertionFailure() << "size mismatch expected: " << l_size << " got:" << r_size;
     }
     if (l_size == 0 || r_size == 0)
     {
@@ -751,7 +751,11 @@ private:
 
 auto RandomishGenerator = [](auto i)
 {
-    return static_cast<decltype(i)>(sin(static_cast<double>(i * i)) * i);
+    using T = decltype(i);
+    double sin_value = sin(static_cast<double>(i * i)) * i;
+    if (sin_value < std::numeric_limits<T>::lowest() || sin_value > std::numeric_limits<T>::max())
+        return T{};
+    return T(sin_value);
 };
 
 auto MinMaxGenerator = []()

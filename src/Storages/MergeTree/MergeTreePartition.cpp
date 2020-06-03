@@ -26,7 +26,7 @@ static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & di
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
-    return getID(storage.partition_key_sample);
+    return getID(storage.getPartitionKey().sample_block);
 }
 
 /// NOTE: This ID is used to create part names which are then persisted in ZK and as directory names on the file system.
@@ -89,7 +89,8 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
 
 void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const
 {
-    size_t key_size = storage.partition_key_sample.columns();
+    const auto & partition_key_sample = storage.getPartitionKey().sample_block;
+    size_t key_size = partition_key_sample.columns();
 
     if (key_size == 0)
     {
@@ -97,7 +98,7 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
     }
     else if (key_size == 1)
     {
-        const DataTypePtr & type = storage.partition_key_sample.getByPosition(0).type;
+        const DataTypePtr & type = partition_key_sample.getByPosition(0).type;
         auto column = type->createColumn();
         column->insert(value[0]);
         type->serializeAsText(*column, 0, out, format_settings);
@@ -108,7 +109,7 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
         Columns columns;
         for (size_t i = 0; i < key_size; ++i)
         {
-            const auto & type = storage.partition_key_sample.getByPosition(i).type;
+            const auto & type = partition_key_sample.getByPosition(i).type;
             types.push_back(type);
             auto column = type->createColumn();
             column->insert(value[i]);
@@ -123,19 +124,20 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
 
 void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path)
 {
-    if (!storage.partition_key_expr)
+    if (!storage.hasPartitionKey())
         return;
 
+    const auto & partition_key_sample = storage.getPartitionKey().sample_block;
     auto partition_file_path = part_path + "partition.dat";
     auto file = openForReading(disk, partition_file_path);
-    value.resize(storage.partition_key_sample.columns());
-    for (size_t i = 0; i < storage.partition_key_sample.columns(); ++i)
-        storage.partition_key_sample.getByPosition(i).type->deserializeBinary(value[i], *file);
+    value.resize(partition_key_sample.columns());
+    for (size_t i = 0; i < partition_key_sample.columns(); ++i)
+        partition_key_sample.getByPosition(i).type->deserializeBinary(value[i], *file);
 }
 
 void MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
-    store(storage.partition_key_sample, disk, part_path, checksums);
+    store(storage.getPartitionKey().sample_block, disk, part_path, checksums);
 }
 
 void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
@@ -154,13 +156,17 @@ void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr
 
 void MergeTreePartition::create(const MergeTreeData & storage, Block block, size_t row)
 {
-    storage.partition_key_expr->execute(block);
-    size_t partition_columns_num = storage.partition_key_sample.columns();
+    if (!storage.hasPartitionKey())
+        return;
+
+    const auto & partition_key = storage.getPartitionKey();
+    partition_key.expression->execute(block);
+    size_t partition_columns_num = partition_key.sample_block.columns();
     value.resize(partition_columns_num);
 
     for (size_t i = 0; i < partition_columns_num; ++i)
     {
-        const auto & column_name = storage.partition_key_sample.getByPosition(i).name;
+        const auto & column_name = partition_key.sample_block.getByPosition(i).name;
         const auto & partition_column = block.getByName(column_name).column;
         partition_column->get(row, value[i]);
     }

@@ -195,7 +195,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 **Пример**
 
 ``` xml
-<https>0000</https>
+<https_port>9999</https_port>
 ```
 
 ## http\_server\_default\_response {#server_configuration_parameters-http_server_default_response}
@@ -574,11 +574,11 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </query_log>
 ```
 
-## query\_thread\_log {#server_configuration_parameters-query-thread-log}
+## query\_thread\_log {#server_configuration_parameters-query_thread_log}
 
 Настройка логирования потоков выполнения запросов, принятых с настройкой [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads).
 
-Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_thread\_log](../../operations/server-configuration-parameters/settings.md#system_tables-query-thread-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_thread\_log](../../operations/server-configuration-parameters/settings.md#system_tables-query_thread_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 
@@ -686,7 +686,7 @@ TCP порт для защищённого обмена данными с кли
 <mysql_port>9004</mysql_port>
 ```
 
-## tmp\_path {#tmp-path}
+## tmp_path {#tmp-path}
 
 Путь ко временным данным для обработки больших запросов.
 
@@ -698,6 +698,17 @@ TCP порт для защищённого обмена данными с кли
 ``` xml
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
+## tmp_policy {#tmp-policy}
+
+Политика из [storage_configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) для хранения временных файлов.
+
+Если политика не задана, используется [tmp_path](#tmp-path). В противном случае `tmp_path` игнорируется.
+
+!!! note "Примечание"
+    - `move_factor` игнорируется.
+    - `keep_free_space_bytes` игнорируется.
+    - `max_data_part_size_bytes` игнорируется.
+    - В данной политике у вас должен быть ровно один том.
 
 ## uncompressed\_cache\_size {#server-settings-uncompressed_cache_size}
 
@@ -831,5 +842,19 @@ ClickHouse использует ZooKeeper для хранения метадан
 Обновление выполняется асинхронно, отдельным системным потоком.
 
 **Значение по умолчанию**: 15.
+
+**Смотрите также**
+
+-   [background_schedule_pool_size](../settings/settings.md#background_schedule_pool_size)
+
+## access_control_path {#access_control_path}
+
+Путь к каталогу, где сервер ClickHouse хранит конфигурации пользователей и ролей, созданные командами SQL.
+
+Значение по умолчанию: `/var/lib/clickhouse/access/`.
+
+**Смотрите также**
+
+- [Управление доступом](../access-rights.md#access-control)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_configuration_parameters/settings/) <!--hide-->
