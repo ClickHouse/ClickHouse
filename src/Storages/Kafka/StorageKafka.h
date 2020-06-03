@@ -55,10 +55,7 @@ public:
 
     ProducerBufferPtr createWriteBuffer(const Block & header);
 
-    const auto & getTopics() const { return topics; }
     const auto & getFormatName() const { return format_name; }
-    void adjustContext(Context & context);
-
 
     NamesAndTypesList getVirtuals() const override;
 protected:
@@ -70,39 +67,35 @@ protected:
 
 private:
     // Configuration and state
-    Context global_context;
-    Context kafka_context;
+    Context & global_context;
+    std::shared_ptr<Context> kafka_context;
     std::unique_ptr<KafkaSettings> kafka_settings;
-    Names topics;
+    const Names topics;
     const String brokers;
     const String group;
     const String client_id;
     const String format_name;
-    SettingsChanges changes;
-
-    char row_delimiter; /// optional row delimiter for generating char delimited stream in order to make various input stream parsers happy.
+    const char row_delimiter; /// optional row delimiter for generating char delimited stream in order to make various input stream parsers happy.
     const String schema_name;
-    size_t num_consumers; /// total number of consumers
+    const size_t num_consumers; /// total number of consumers
+    Poco::Logger * log;
+    Poco::Semaphore semaphore;
+    const bool intermediate_commit;
+    const SettingsChanges settings_adjustments;
 
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
     size_t num_created_consumers = 0; /// number of actually created consumers.
 
-    Poco::Logger * log;
-
-    // Consumer list
-    Poco::Semaphore semaphore;
-    std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for Kafka consumers
 
-    size_t skip_broken;
-
-    bool intermediate_commit;
+    std::mutex mutex;
 
     // Stream thread
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
 
+    SettingsChanges createSettingsAdjustments();
     ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
 
     // Update Kafka configuration with values from CH user configuration.
@@ -114,7 +107,6 @@ private:
     size_t getMaxBlockSize() const;
     size_t getPollTimeout() const;
     size_t getFlushTimeout() const;
-
 
     static Names parseTopics(String topic_list);
     static String getDefaultClientId(const StorageID & table_id_);

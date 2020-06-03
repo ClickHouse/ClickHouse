@@ -18,8 +18,8 @@ struct KafkaSettings : public SettingsCollection<KafkaSettings>
 #define KAFKA_RELATED_SETTINGS(M)                                      \
     M(SettingString, kafka_broker_list, "", "A comma-separated list of brokers for Kafka engine.", 0) \
     M(SettingString, kafka_topic_list, "", "A list of Kafka topics.", 0) \
-    M(SettingString, kafka_group_name, "", "A group of Kafka consumers.", 0) \
-    M(SettingString, kafka_client_id, "", "A client id of Kafka consumer.", 0) \
+    M(SettingString, kafka_group_name, "", "Client group id string. All Kafka consumers sharing the same group.id belong to the same group.", 0) \
+    M(SettingString, kafka_client_id, "", "Client identifier.", 0) \
     M(SettingUInt64, kafka_num_consumers, 1, "The number of consumers per table for Kafka engine.", 0) \
     M(SettingBool, kafka_commit_every_batch, false, "Commit every consumed and handled batch instead of a single commit after writing a whole block", 0) \
     /* default is stream_poll_timeout_ms */ \
@@ -35,6 +35,10 @@ struct KafkaSettings : public SettingsCollection<KafkaSettings>
     M(SettingChar, kafka_row_delimiter, '\0', "The character to be considered as a delimiter in Kafka message.", 0) \
     M(SettingString, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine", 0) \
     M(SettingUInt64, kafka_skip_broken_messages, 0, "Skip at least this number of broken messages from Kafka topic per block", 0)
+
+    /** TODO: */
+    /* https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md */
+    /* https://github.com/edenhill/librdkafka/blob/v1.4.2/src/rdkafka_conf.c */
 
 #define LIST_OF_KAFKA_SETTINGS(M) \
     KAFKA_RELATED_SETTINGS(M) \
