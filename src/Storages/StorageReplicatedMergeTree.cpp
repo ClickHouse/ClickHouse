@@ -2943,7 +2943,7 @@ void StorageReplicatedMergeTree::startup()
     {
         /// Exception safety: failed "startup" does not require a call to "shutdown" from the caller.
         /// And it should be able to safely destroy table after exception in "startup" method.
-        /// It means that failed "startup" must not create any background threads tasks we will have to wait.
+        /// It means that failed "startup" must not create any background tasks that we will have to wait.
         try
         {
             shutdown();
