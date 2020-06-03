@@ -269,7 +269,6 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 {
     LOG_TRACE(log, "Started processing `{}`", file_path);
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context->getSettingsRef());
-    auto connection = pool->get(timeouts);
 
     try
     {
@@ -280,7 +279,10 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         Settings insert_settings;
         std::string insert_query;
         ClientInfo client_info;
+
         readHeader(in, insert_settings, insert_query, client_info, log);
+
+        auto connection = pool->get(timeouts, &insert_settings);
 
         RemoteBlockOutputStream remote{*connection, timeouts, insert_query, insert_settings, client_info};
 
