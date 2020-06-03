@@ -23,10 +23,6 @@ public:
     virtual void calculateAndSerializePrimaryIndex(const Block & primary_index_block, size_t rows) = 0;
     virtual void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums) = 0;
 
-    virtual void initSkipIndices() = 0;
-    virtual void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, size_t rows) = 0;
-    virtual void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums) = 0;
-
     virtual ~IMergeTreeDataPartIndexWriter() = default;
 
     Columns releaseIndexColumns()

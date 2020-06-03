@@ -81,7 +81,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
 
-    for (auto &disk: data_part->volume->getDisks())
+    for (const auto &disk: data_part->volume->getDisks())
     {
         if (!disk->exists(part_path))
             disk->createDirectories(part_path);
@@ -174,9 +174,25 @@ void IMergeTreeDataPartWriter::initPrimaryIndex()
     index_writer->initPrimaryIndex();
 }
 
+
 void IMergeTreeDataPartWriter::initSkipIndices()
 {
-    index_writer->initSkipIndices();
+    for (const auto & index : skip_indices)
+    {
+        String stream_name = index->getFileName();
+        skip_indices_streams.emplace_back(
+            std::make_unique<IMergeTreeDataPartWriter::Stream>(
+                stream_name,
+                data_part->volume->getDisk(),
+                part_path + stream_name, INDEX_FILE_EXTENSION,
+                part_path + stream_name, marks_file_extension,
+                default_codec, settings.max_compress_block_size,
+                0, settings.aio_threshold));
+        skip_indices_aggregators.push_back(index->createIndexAggregator());
+        skip_index_filling.push_back(0);
+    }
+
+    skip_indices_initialized = true;
 }
 
 void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & primary_index_block, size_t rows)
@@ -184,9 +200,69 @@ void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & p
     index_writer->calculateAndSerializePrimaryIndex(primary_index_block, rows);
 }
 
-void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, size_t rows)
+
+void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
+    const Block & skip_indexes_block, size_t rows)
 {
-    index_writer->calculateAndSerializeSkipIndices(skip_indexes_block, rows);
+    if (!skip_indices_initialized)
+        throw Exception("Skip indices are not initialized", ErrorCodes::LOGICAL_ERROR);
+
+    size_t skip_index_current_data_mark = 0;
+
+    /// Filling and writing skip indices like in MergeTreeDataPartWriterWide::writeColumn
+    for (size_t i = 0; i < skip_indices.size(); ++i)
+    {
+        const auto index = skip_indices[i];
+        auto & stream = *skip_indices_streams[i];
+        size_t prev_pos = 0;
+        skip_index_current_data_mark = skip_index_data_mark;
+        while (prev_pos < rows)
+        {
+            UInt64 limit = 0;
+            if (prev_pos == 0 && index_offset != 0)
+            {
+                limit = index_offset;
+            }
+            else
+            {
+                limit = index_granularity.getMarkRows(skip_index_current_data_mark);
+                if (skip_indices_aggregators[i]->empty())
+                {
+                    skip_indices_aggregators[i] = index->createIndexAggregator();
+                    skip_index_filling[i] = 0;
+
+                    if (stream.compressed.offset() >= settings.min_compress_block_size)
+                        stream.compressed.next();
+
+                    writeIntBinary(stream.plain_hashing.count(), stream.marks);
+                    writeIntBinary(stream.compressed.offset(), stream.marks);
+                    /// Actually this numbers is redundant, but we have to store them
+                    /// to be compatible with normal .mrk2 file format
+                    if (settings.can_use_adaptive_granularity)
+                        writeIntBinary(1UL, stream.marks);
+                }
+                /// this mark is aggregated, go to the next one
+                skip_index_current_data_mark++;
+            }
+
+            size_t pos = prev_pos;
+            skip_indices_aggregators[i]->update(skip_indexes_block, &pos, limit);
+
+            if (pos == prev_pos + limit)
+            {
+                ++skip_index_filling[i];
+
+                /// write index if it is filled
+                if (skip_index_filling[i] == index->granularity)
+                {
+                    skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
+                    skip_index_filling[i] = 0;
+                }
+            }
+            prev_pos = pos;
+        }
+    }
+    skip_index_data_mark = skip_index_current_data_mark;
 }
 
 void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(IMergeTreeDataPart::Checksums & checksums)
@@ -194,9 +270,25 @@ void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(IMergeTreeDataPar
     index_writer->finishPrimaryIndexSerialization(checksums);
 }
 
-void IMergeTreeDataPartWriter::finishSkipIndicesSerialization(IMergeTreeDataPart::Checksums & checksums)
+void IMergeTreeDataPartWriter::finishSkipIndicesSerialization(
+    MergeTreeData::DataPart::Checksums & checksums)
 {
-    index_writer->finishSkipIndicesSerialization(checksums);
+    for (size_t i = 0; i < skip_indices.size(); ++i)
+    {
+        auto & stream = *skip_indices_streams[i];
+        if (!skip_indices_aggregators[i]->empty())
+            skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
+    }
+
+    for (auto & stream : skip_indices_streams)
+    {
+        stream->finalize();
+        stream->addToChecksums(checksums);
+    }
+
+    skip_indices_streams.clear();
+    skip_indices_aggregators.clear();
+    skip_index_filling.clear();
 }
 
 
