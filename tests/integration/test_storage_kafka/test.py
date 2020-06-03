@@ -233,6 +233,81 @@ def test_kafka_settings_new_syntax(kafka_cluster):
     members = describe_consumer_group('new')
     assert members[0]['client_id'] == u'instance test 1234'
 
+
+@pytest.mark.timeout(180)
+def test_kafka_issue11308(kafka_cluster):
+    kafka_produce('issue11308', ['{"t": 123, "e": {"x": "woof"} }', '{"t": 123, "e": {"x": "woof"} }', '{"t": 124, "e": {"x": "test"} }'])
+
+    instance.query('''
+        CREATE TABLE test.persistent_kafka (
+            time UInt64,
+            some_string String
+        )
+        ENGINE = MergeTree()
+        ORDER BY time;
+
+        CREATE TABLE test.kafka (t UInt64, `e.x` String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'issue11308',
+                     kafka_group_name = 'issue11308',
+                     kafka_format = 'JSONEachRow',
+                     kafka_row_delimiter = '\\n',
+                     kafka_flush_interval_ms=1000,
+                     input_format_import_nested_json = 1;
+
+        CREATE MATERIALIZED VIEW test.persistent_kafka_mv TO test.persistent_kafka AS
+        SELECT
+            `t` AS `time`,
+            `e.x` AS `some_string`
+        FROM test.kafka;
+        ''')
+
+    time.sleep(5)
+
+    result = instance.query('SELECT * FROM test.persistent_kafka ORDER BY time;')
+
+    instance.query('''
+        DROP TABLE test.persistent_kafka;
+        DROP TABLE test.persistent_kafka_mv;
+    ''')
+
+    expected = '''\
+123	woof
+123	woof
+124	test
+'''
+    assert TSV(result) == TSV(expected)
+
+
+@pytest.mark.timeout(180)
+def test_kafka_issue4116(kafka_cluster):
+    kafka_produce('issue4116', ['1|foo', '2|bar', '42|answer','100|multi\n101|row\n103|message'])
+
+    instance.query('''
+        CREATE TABLE test.kafka (a UInt64, b String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'issue4116',
+                     kafka_group_name = 'issue4116',
+                     kafka_format = 'CSV',
+                     kafka_row_delimiter = '\\n',
+                     format_csv_delimiter = '|';
+        ''')
+
+    result = instance.query('SELECT * FROM test.kafka ORDER BY a;')
+
+    expected = '''\
+1	foo
+2	bar
+42	answer
+100	multi
+101	row
+103	message
+'''
+    assert TSV(result) == TSV(expected)
+
+
 @pytest.mark.timeout(180)
 def test_kafka_consumer_hang(kafka_cluster):
 
