@@ -773,9 +773,6 @@ void IMergeTreeDataPart::remove() const
 
 String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix) const
 {
-    /// Do not allow underscores in the prefix because they are used as separators.
-
-    assert(prefix.find_first_of('_') == String::npos);
     String res;
 
     /** If you need to detach a part, and directory into which we want to rename it already exists,
@@ -798,12 +795,14 @@ String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix) const
 
 String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
 {
+    /// Do not allow underscores in the prefix because they are used as separators.
+    assert(prefix.find_first_of('_') == String::npos);
     return "detached/" + getRelativePathForPrefix(prefix);
 }
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 {
-    renameTo(getRelativePathForDetachedPart(prefix));
+    renameTo(getRelativePathForDetachedPart(prefix), true);
 }
 
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix) const

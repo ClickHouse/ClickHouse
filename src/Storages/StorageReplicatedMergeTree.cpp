@@ -2896,7 +2896,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name,
         }
         else
         {
-            part->renameTo("detached/" + part_name);
+            part->renameTo("detached/" + part_name, true);
         }
     }
     catch (...)
