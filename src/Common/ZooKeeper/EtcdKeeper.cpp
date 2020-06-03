@@ -154,7 +154,7 @@ namespace Coordination
             this->failure_delete_ranges.insert(this->failure_delete_ranges.end(), rv.failure_delete_ranges.begin(), rv.failure_delete_ranges.end());
             return *this;
         }
-        bool empty()
+        bool empty() const
         {
             return (success_ranges.size() + success_puts.size() + success_delete_ranges.size() + failure_ranges.size() + failure_puts.size() + failure_delete_ranges.size()) == 0;
         }
@@ -168,7 +168,7 @@ namespace Coordination
             failure_puts.clear();
             failure_delete_ranges.clear();
         }
-        void take_last_create_request_with_prefix(const String & prefix)
+        void takeLastCreateRequestWithPrefix(const String & prefix)
         {
             std::unordered_map<String, String> create_requests;
             for (auto success_put : success_puts)
@@ -257,7 +257,7 @@ namespace Coordination
         String zk_path;
         String parent_zk_path;
         int32_t level;
-        EtcdKey() {}
+        EtcdKey() = default;
         EtcdKey(const String & path)
         {
             zk_path = path;
@@ -268,7 +268,7 @@ namespace Coordination
         {
             String prefix = "/zk/value/";
             int32_t prefix_len = prefix.size();
-            int32_t slash = full_path.find("/", prefix_len);
+            int32_t slash = full_path.find('/', prefix_len);
             level = std::stoi(full_path.substr(prefix_len, slash - prefix_len));
             zk_path = full_path.substr(slash);
             parent_zk_path = parentPath(zk_path);
@@ -277,7 +277,7 @@ namespace Coordination
         {
             zk_path = new_zk_path;
         }
-        String generateFullPathFromParts(EtcdKeyPrefix prefix_type, int32_t level_, const String & path) const
+        static String generateFullPathFromParts(EtcdKeyPrefix prefix_type, int32_t level_, const String & path)
         {
             String prefix;
             if (prefix_type == EtcdKeyPrefix::VALUE)
@@ -381,7 +381,7 @@ namespace Coordination
             /// watch created
         } else if (watch_response.events_size())
         {
-            for (auto event : watch_response.events())
+            for (auto & event : watch_response.events())
             {
                 std::lock_guard lock(watches_mutex);
                 String path = event.kv().key();
@@ -506,18 +506,18 @@ namespace Coordination
             callRequest(call, kv_stub, kv_cq, txn_requests);
             pre_call_called = true;
         }
-        EtcdKeeperResponsePtr makeResponseFromExisted()
+        EtcdKeeperResponsePtr makeResponseFromExisted() const
         {
             return response;
         }
         EtcdKeeperResponsePtr makeResponseFromRepeatedPtrField(bool compare_result, google::protobuf::RepeatedPtrField<ResponseOp> fields)
         {
-            std::vector<ResponseOp> responseOps;
-            for (auto field : fields)
+            std::vector<ResponseOp> response_ops;
+            for (auto & field : fields)
             {
-                responseOps.emplace_back(field);
+                response_ops.emplace_back(field);
             }
-            return makeResponseFromResponses(compare_result, responseOps);
+            return makeResponseFromResponses(compare_result, response_ops);
         }
         EtcdKeeperResponsePtr makeResponseFromTag(void* got_tag)
         {
@@ -534,20 +534,13 @@ namespace Coordination
             if (composite && !post_call_called)
             {
                 EtcdKeeper::AsyncTxnCall* call = static_cast<EtcdKeeper::AsyncTxnCall*>(got_tag);
-                for (auto field : call->response.responses())
+                for (auto & field : call->response.responses())
                 {
                     pre_call_responses.emplace_back(field);
                 }
                 post_call_called = true;
                 parsePreResponses();
-                if (response->error == Error::ZOK)
-                {
-                    return true;
-                }
-                else
-                {
-                    return false;
-                }
+                return response->error == Error::ZOK;
             }
             else
             {
@@ -583,8 +576,8 @@ namespace Coordination
         bool seq_path_exists = false;
         int32_t seq_delta = 1;
         std::vector<String> seq_paths;
-        EtcdKeeperCreateRequest() {}
-        EtcdKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
+        EtcdKeeperCreateRequest() = default;
+        explicit EtcdKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
         EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> & responses) override;
         EtcdKeeperResponsePtr makeResponse() const override;
         void setEtcdKey() override
@@ -626,12 +619,12 @@ namespace Coordination
             {
                 response->error = Error::ZNONODE;
             }
-            for (auto resp : pre_call_responses)
+            for (auto & resp : pre_call_responses)
             {
                 if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                 {
                     auto range_resp = resp.response_range();
-                    for (auto kv : range_resp.kvs())
+                    for (auto & kv : range_resp.kvs())
                     {
                         if (is_sequential && kv.key() == etcd_key.getParentSequentialCounterKey())
                         {
@@ -677,7 +670,7 @@ namespace Coordination
                 txn_requests.compares.emplace_back(prepareCompare(etcd_key.getParentSequentialCounterKey(), "value", "equal", seq_num));
                 txn_requests.failure_ranges.emplace_back(prepareRangeRequest(etcd_key.getParentSequentialCounterKey()));
                 txn_requests.success_puts.emplace_back(preparePutRequest(etcd_key.getParentSequentialCounterKey(), std::to_string(seq_num + seq_delta)));
-                for (auto seq_path : seq_paths)
+                for (auto & seq_path : seq_paths)
                 {
                     EtcdKey seq_etcd_key(seq_path);
                     addPutsForEtcdkey(seq_etcd_key);
@@ -712,8 +705,8 @@ namespace Coordination
         int32_t children;
         int child_flag_version = -1;
         int removing_childs_count = 0;
-        EtcdKeeperRemoveRequest() {}
-        EtcdKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
+        EtcdKeeperRemoveRequest() = default;
+        explicit EtcdKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
         EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> & responses) override;
         EtcdKeeperResponsePtr makeResponse() const override;
         bool isMutable() const override { return true; }
@@ -730,12 +723,12 @@ namespace Coordination
         void parsePreResponses() override
         {
             response->error = Error::ZNONODE;
-            for (auto resp : pre_call_responses)
+            for (auto & resp : pre_call_responses)
             {
                 if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                 {
-                    auto range_resp = resp.response_range();
-                    for (auto kv : range_resp.kvs())
+                    const auto & range_resp = resp.response_range();
+                    for (auto & kv : range_resp.kvs())
                     {
                         std::cout << "XID " << xid << "KEY " << kv.key();
                         if (startsWith(kv.key(), etcd_key.getChildsPrefix()))
@@ -771,7 +764,7 @@ namespace Coordination
 
             txn_requests.failure_ranges.emplace_back(prepareRangeRequest(etcd_key.getChildsFlagKey()));
             txn_requests.failure_ranges.emplace_back(prepareRangeRequest(etcd_key.getFullEtcdKey()));
-            for (auto key : etcd_key.getRelatedKeys())
+            for (auto & key : etcd_key.getRelatedKeys())
             {
                 txn_requests.success_delete_ranges.emplace_back(prepareDeleteRangeRequest(key));
             }
@@ -800,7 +793,7 @@ namespace Coordination
 
     struct EtcdKeeperGetRequest final : GetRequest, EtcdKeeperRequest
     {
-        EtcdKeeperGetRequest() {}
+        EtcdKeeperGetRequest() = default;
         EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> & responses) override;
         EtcdKeeperResponsePtr makeResponse() const override;
         void setEtcdKey() override
@@ -817,8 +810,8 @@ namespace Coordination
 
     struct EtcdKeeperSetRequest final : SetRequest, EtcdKeeperRequest
     {
-        EtcdKeeperSetRequest() {}
-        EtcdKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
+        EtcdKeeperSetRequest() = default;
+        explicit EtcdKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
         EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> & responses) override;
         EtcdKeeperResponsePtr makeResponse() const override;
         bool isMutable() const override { return true; }
@@ -856,8 +849,8 @@ namespace Coordination
 
     struct EtcdKeeperCheckRequest final : CheckRequest, EtcdKeeperRequest
     {
-        EtcdKeeperCheckRequest() {}
-        EtcdKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
+        EtcdKeeperCheckRequest() = default;
+        explicit EtcdKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
         EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> & responses) override;
         EtcdKeeperResponsePtr makeResponse() const override;
         void setEtcdKey() override
@@ -882,7 +875,7 @@ namespace Coordination
         std::vector<bool> processed_responses;
         std::vector<bool> faked_responses;
         bool failed_compare_requered = false;
-        EtcdKeeperMultiRequest(const Requests & generic_requests)
+        explicit EtcdKeeperMultiRequest(const Requests & generic_requests)
         {
             etcd_requests.reserve(generic_requests.size());
             faked_responses.assign(generic_requests.size(), false);
@@ -894,7 +887,7 @@ namespace Coordination
             std::unordered_set<String> required_keys;
             for (const auto & generic_request : generic_requests)
             {
-                if (auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
+                if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
                 {
                     created_keys.insert(concrete_request_create->path);
                     create_requests_count[concrete_request_create->path]++;
@@ -903,7 +896,7 @@ namespace Coordination
                         sequential_keys_map[concrete_request_create->path]++;
                     }
                 }
-                else if (auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
+                else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
                 {
                     remove_requests_count[concrete_request_remove->path]++;
                     removing_childs[parentPath(concrete_request_remove->path)]++;
@@ -919,9 +912,9 @@ namespace Coordination
             }
 
             std::unordered_map<String, bool> create_request_to_skip, remove_request_to_skip;
-            for (auto it = create_requests_count.begin(); it != create_requests_count.end(); it++)
+            for (auto && [first,second] : create_requests_count)
             {
-                String cur_path = it->first;
+                String cur_path = first;
                 if (create_requests_count[cur_path] > 0 && remove_requests_count[cur_path] > 0)
                 {
                     required_keys.insert(cur_path);
@@ -934,9 +927,9 @@ namespace Coordination
             for (const auto & generic_request : generic_requests)
             {
                 i++;
-                if (auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
+                if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
                 {
-                    auto current_create_request = std::make_shared<EtcdKeeperCreateRequest>(*concrete_request_create);
+                    const auto & current_create_request = std::make_shared<EtcdKeeperCreateRequest>(*concrete_request_create);
                     EtcdKeeperCreateResponse create_response;
                     create_response.path_created = current_create_request->path;
                     responses.emplace_back(std::make_shared<CreateResponse>(create_response));
@@ -961,7 +954,7 @@ namespace Coordination
                     }
                     etcd_requests.emplace_back(current_create_request);
                 }
-                else if (auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
+                else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
                 {
                     responses.emplace_back(std::make_shared<RemoveResponse>());
                     String cur_path = concrete_request_remove->path;
@@ -970,16 +963,16 @@ namespace Coordination
                         remove_request_to_skip[cur_path] = false;
                         faked_responses[i] = true;
                     }
-                    auto current_remove_request = std::make_shared<EtcdKeeperRemoveRequest>(*concrete_request_remove);
+                    const auto & current_remove_request = std::make_shared<EtcdKeeperRemoveRequest>(*concrete_request_remove);
                     current_remove_request->removing_childs_count = removing_childs[concrete_request_remove->path];
                     etcd_requests.emplace_back(current_remove_request);
                 }
-                else if (auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
+                else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
                 {
                     responses.emplace_back(std::make_shared<SetResponse>());
                     etcd_requests.emplace_back(std::make_shared<EtcdKeeperSetRequest>(*concrete_request_set));
                 }
-                else if (auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
+                else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
                 {
                     responses.emplace_back(std::make_shared<CheckResponse>());
                     etcd_requests.emplace_back(std::make_shared<EtcdKeeperCheckRequest>(*concrete_request_check));
@@ -989,9 +982,9 @@ namespace Coordination
                     throw Exception("Illegal command as part of multi ZooKeeper request", ZBADARGUMENTS);
                 }
             }
-            if (required_keys.size())
+            if (!required_keys.empty())
             {
-                for (auto key : required_keys)
+                for (auto & key : required_keys)
                 {
                     EtcdKey ek = EtcdKey(key);
                     checking_etcd_keys.insert(ek.getFullEtcdKey());
@@ -1016,7 +1009,7 @@ namespace Coordination
         }
         void setEtcdKey() override
         {
-            for (auto request : etcd_requests)
+            for (auto & request : etcd_requests)
             {
                 request->setEtcdKey();
             }
@@ -1037,9 +1030,9 @@ namespace Coordination
                     txn_requests += etcd_requests[i]->txn_requests;
                 }
             }
-            if (checking_etcd_keys.size())
+            if (!checking_etcd_keys.empty())
             {
-                for (auto key : checking_etcd_keys)
+                for (auto & key : checking_etcd_keys)
                 {
                     txn_requests.success_ranges.emplace_back(prepareRangeRequest(key));
                 }
@@ -1048,14 +1041,14 @@ namespace Coordination
         void parsePreResponses() override
         {
             std::unordered_set<String> founded_keys;
-            if (checking_etcd_keys.size())
+            if (!checking_etcd_keys.empty())
             {
-                for (auto resp : pre_call_responses)
+                for (auto & resp : pre_call_responses)
                 {
                     if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                     {
-                        auto range_resp = resp.response_range();
-                        for (auto kv : range_resp.kvs())
+                        const auto & range_resp = resp.response_range();
+                        for (auto & kv : range_resp.kvs())
                         {
                             if (checking_etcd_keys.count(kv.key()))
                             {
@@ -1074,7 +1067,7 @@ namespace Coordination
                     etcd_requests[i]->pre_call_responses = pre_call_responses;
                     etcd_requests[i]->parsePreResponses();
                 }
-                else if (auto * concrete_response = dynamic_cast<const CreateResponse *>(responses[i].get()))
+                else if (const auto * concrete_response = dynamic_cast<const CreateResponse *>(responses[i].get()))
                 {
                     if (founded_keys.count(concrete_response->path_created))
                     {
@@ -1114,7 +1107,7 @@ namespace Coordination
             {
                 txn_requests.compares.emplace_back(prepareCompare("/fake/path", "version", "equal", -1));
             }
-            txn_requests.take_last_create_request_with_prefix("/zk/childs");
+            txn_requests.takeLastCreateRequestWithPrefix("/zk/childs");
         }
         void checkRequestForComposite() override
         {
@@ -1127,7 +1120,7 @@ namespace Coordination
         {
             setResponse();
             response->error = Error::ZOK;
-            for (auto request : etcd_requests)
+            for (auto & request : etcd_requests)
             {
                 request->setResponse();
                 request->response->error = Error::ZOK;
@@ -1149,7 +1142,7 @@ namespace Coordination
         {
             response = makeResponse();
             response->error = Error::ZOK;
-            for (auto request : etcd_requests)
+            for (auto & request : etcd_requests)
             {
                 request->setResponse();
             }
@@ -1172,12 +1165,12 @@ namespace Coordination
             {
                 seq_num_matched = true;
             }
-            for (auto resp: responses)
+            for (auto & resp: responses)
             {
                 if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                 {
-                    auto range_resp = resp.response_range();
-                    for (auto kv : range_resp.kvs())
+                    const auto & range_resp = resp.response_range();
+                    for (auto & kv : range_resp.kvs())
                     {
                         if (kv.key() == etcd_key.getParentKey())
                         {
@@ -1205,11 +1198,11 @@ namespace Coordination
         else
         {
             create_response.path_created = process_path;
-            for (auto resp: responses)
+            for (auto & resp: responses)
             {
                 if (ResponseOp::ResponseCase::kResponsePut == resp.response_case())
                 {
-                    auto put_resp = resp.response_put();
+                    const auto & put_resp = resp.response_put();
                     if (put_resp.prev_kv().key() == etcd_key.getFullEtcdKey())
                     {
                         create_response.error = Error::ZBADARGUMENTS;
@@ -1231,12 +1224,12 @@ namespace Coordination
         if (!compare_result)
         {
             remove_response.error = Error::ZNONODE;
-            for (auto resp: responses)
+            for (auto & resp: responses)
             {
                 if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                 {
-                    auto range_resp = resp.response_range();
-                    for (auto kv : range_resp.kvs())
+                    const auto & range_resp = resp.response_range();
+                    for (auto & kv : range_resp.kvs())
                     {
                         if (kv.key() == etcd_key.getChildsFlagKey())
                         {
@@ -1264,14 +1257,14 @@ namespace Coordination
         }
         else
         {
-            for (auto resp: responses)
+            for (auto & resp: responses)
             {
                 if (ResponseOp::ResponseCase::kResponseDeleteRange == resp.response_case())
                 {
-                    auto delete_range_resp = resp.response_delete_range();
+                    auto & delete_range_resp = resp.response_delete_range();
                     if (delete_range_resp.deleted())
                     {
-                        for (auto kv : delete_range_resp.prev_kvs())
+                        for (auto & kv : delete_range_resp.prev_kvs())
                         {
                             if (kv.key() == etcd_key.getFullEtcdKey())
                             {
@@ -1290,12 +1283,12 @@ namespace Coordination
     {
         EtcdKeeperExistsResponse exists_response;
         exists_response.error = Error::ZNONODE;
-        for (auto resp: responses)
+        for (auto & resp: responses)
         {
             if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
             {
-                auto range_resp = resp.response_range();
-                for (auto kv : range_resp.kvs())
+                const auto & range_resp = resp.response_range();
+                for (auto & kv : range_resp.kvs())
                 {
                     if (kv.key() == etcd_key.getFullEtcdKey())
                     {
@@ -1324,12 +1317,12 @@ namespace Coordination
         get_response.stat = Stat();
         if (compare_result)
         {
-            for (auto resp: responses)
+            for (auto & resp: responses)
             {
                 if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                 {
-                    auto range_resp = resp.response_range();
-                    for (auto kv : range_resp.kvs())
+                    const auto & range_resp = resp.response_range();
+                    for (auto & kv : range_resp.kvs())
                     {
                         if (kv.key() == etcd_key.getFullEtcdKey())
                         {
@@ -1361,11 +1354,11 @@ namespace Coordination
         {
             set_response.error = Error::ZNONODE;
         }
-        for (auto resp: responses)
+        for (auto & resp: responses)
         {
             if (ResponseOp::ResponseCase::kResponsePut == resp.response_case())
             {
-                auto put_resp = resp.response_put();
+                const auto & put_resp = resp.response_put();
                 if (put_resp.prev_kv().key() == etcd_key.getFullEtcdKey())
                 {
                     set_response.error = Error::ZOK;
@@ -1375,8 +1368,8 @@ namespace Coordination
             }
             else if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
             {
-                auto range_resp = resp.response_range();
-                for (auto kv : range_resp.kvs())
+                const auto & range_resp = resp.response_range();
+                for (auto & kv : range_resp.kvs())
                 {
                     if (kv.key() == etcd_key.getFullEtcdKey())
                     {
@@ -1408,12 +1401,12 @@ namespace Coordination
         list_response.stat = Stat();
         list_response.error = Error::ZNONODE;
         std::unordered_set<String> children;
-        for (auto resp : responses)
+        for (auto & resp : responses)
         {
             if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
             {
-                auto range_resp = resp.response_range();
-                for (auto kv : range_resp.kvs())
+                const auto & range_resp = resp.response_range();
+                for (auto & kv : range_resp.kvs())
                 {
                     if (kv.key() == etcd_key.getFullEtcdKey())
                     {
@@ -1428,7 +1421,7 @@ namespace Coordination
                     else if (startsWith(kv.key(), etcd_key.getChildsPrefix()))
                     {
                         list_response.stat.numChildren = range_resp.count();
-                        for (auto kv_ : range_resp.kvs())
+                        for (auto & kv_ : range_resp.kvs())
                         {
                             children.insert(childName(kv_.key(), etcd_key.getChildsPrefix()));
                         }
@@ -1439,7 +1432,7 @@ namespace Coordination
                 }
             }
         }
-        for (auto child : children)
+        for (auto & child : children)
         {
             list_response.names.emplace_back(child);
         }
@@ -1450,12 +1443,12 @@ namespace Coordination
     {
         EtcdKeeperCheckResponse check_response;
         check_response.error = Error::ZNONODE;
-        for (auto resp: responses)
+        for (auto & resp: responses)
         {
             if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
             {
-                auto range_resp = resp.response_range();
-                for (auto kv : range_resp.kvs())
+                const auto & range_resp = resp.response_range();
+                for (auto & kv : range_resp.kvs())
                 {
                     if (kv.key() == etcd_key.getFullEtcdKey())
                     {
@@ -1653,6 +1646,7 @@ namespace Coordination
 
                         info.request->prepareCall();
                         info.request->call(*call, kv_stub, kv_cq);
+                        delete call;
                     }
                 }
                 else
@@ -1763,7 +1757,7 @@ namespace Coordination
             {
                 if (ok)
                 {
-                    switch (static_cast<BiDiTag>(reinterpret_cast<long>(got_tag)))
+                    switch (static_cast<BiDiTag>(reinterpret_cast<Int64>(got_tag)))
                     {
                     case BiDiTag::READ:
                         readWatchResponse();
@@ -1802,7 +1796,7 @@ namespace Coordination
             {
                 if (ok)
                 {
-                    switch (static_cast<BiDiTag>(reinterpret_cast<long>(got_tag)))
+                    switch (static_cast<BiDiTag>(reinterpret_cast<Int64>(got_tag)))
                     {
                     case BiDiTag::READ:
                         readLeaseKeepAliveResponse();

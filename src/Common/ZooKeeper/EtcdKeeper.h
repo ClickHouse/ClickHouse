@@ -200,7 +200,7 @@ private:
         Operations operations;
         std::mutex operations_mutex;
 
-        void pushRequest(RequestInfo && request);
+        void pushRequest(RequestInfo && info);
 
         void finalize();
 
