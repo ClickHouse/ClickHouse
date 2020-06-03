@@ -436,6 +436,7 @@ class SourceCassandra(ExternalSource):
                 <port>{port}</port>
                 <keyspace>test</keyspace>
                 <column_family>{table}</column_family>
+                <allow_filtering>1</allow_filtering>
             </cassandra>
         '''.format(
             host=self.docker_hostname,
@@ -451,9 +452,8 @@ class SourceCassandra(ExternalSource):
         self.structure[table_name] = structure
         columns = ['"' + col.name + '" ' + self.TYPE_MAPPING[col.field_type] for col in structure.get_all_fields()]
         keys = ['"' + col.name + '"' for col in structure.keys]
-        # FIXME use partition key
-        query = 'create table test."{name}" ({columns}, primary key ("{some_col}", {pk}));'.format(
-                name=table_name, columns=', '.join(columns), some_col=structure.ordinary_fields[0].name, pk=', '.join(keys))
+        query = 'create table test."{name}" ({columns}, primary key ({pk}));'.format(
+                name=table_name, columns=', '.join(columns),  pk=', '.join(keys))
         self.session.execute(query)
         self.prepared = True
 

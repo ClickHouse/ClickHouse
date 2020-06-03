@@ -6,31 +6,46 @@
 
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
+#include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
 #include <Poco/Logger.h>
 
 namespace DB
 {
 
+struct CassandraSettings
+{
+    String host;
+    UInt16 port;
+    String user;
+    String password;
+    String db;
+    String table;
+
+    CassConsistency consistency;
+    bool allow_filtering;
+    /// TODO get information about key from the driver
+    size_t partition_key_prefix;
+    size_t max_threads;
+    String where;
+
+    CassandraSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+    void setConsistency(const String & config_str);
+};
+
 class CassandraDictionarySource final : public IDictionarySource {
+public:
     CassandraDictionarySource(
         const DictionaryStructure & dict_struct,
-        const String & host,
-        UInt16 port,
-        const String & user,
-        const String & password,
-        const String & db,
-        const String & table,
+        const CassandraSettings & settings_,
         const Block & sample_block);
 
-public:
     CassandraDictionarySource(
             const DictionaryStructure & dict_struct,
             const Poco::Util::AbstractConfiguration & config,
-            const std::string & config_prefix,
+            const String & config_prefix,
             Block & sample_block);
-
-    CassandraDictionarySource(const CassandraDictionarySource & other);
 
     BlockInputStreamPtr loadAll() override;
 
@@ -40,7 +55,10 @@ public:
 
     bool hasUpdateField() const override { return false; }
 
-    DictionarySourcePtr clone() const override { return std::make_unique<CassandraDictionarySource>(*this); }
+    DictionarySourcePtr clone() const override
+    {
+        return std::make_unique<CassandraDictionarySource>(dict_struct, settings, sample_block);
+    }
 
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
@@ -51,18 +69,16 @@ public:
         throw Exception{"Method loadUpdatedAll is unsupported for CassandraDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
     }
 
-    std::string toString() const override;
+    String toString() const override;
 
 private:
+    void maybeAllowFiltering(String & query);
+
     Poco::Logger * log;
     const DictionaryStructure dict_struct;
-    const String host;
-    const UInt16 port;
-    const String user;
-    const String password;
-    const String db;
-    const String table;
+    const CassandraSettings settings;
     Block sample_block;
+    ExternalQueryBuilder query_builder;
 
     CassClusterPtr cluster;
 };
