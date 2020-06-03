@@ -384,6 +384,8 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
     it->second = std::make_pair(std::move(database), std::move(table));
 }
 
+std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
+
 DatabaseCatalog::DatabaseCatalog(Context * global_context_)
     : global_context(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
 {
