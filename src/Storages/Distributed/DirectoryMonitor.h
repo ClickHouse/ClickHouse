@@ -39,13 +39,12 @@ public:
     bool scheduleAfter(size_t ms);
 
     /// system.distribution_queue interface
-    std::string getPath() const { return path; }
-    /// Racy but ok
-    std::exception_ptr getLastException() const { return last_exception; }
-    size_t getErrorCount() const { return error_count; }
-    size_t getFilesCount() const { return files_count; }
-    size_t getBytesCount() const { return bytes_count; }
-    size_t isBlocked()     const { return monitor_blocker.isCancelled(); }
+    std::string        getPath()          const;
+    std::exception_ptr getLastException() const;
+    size_t             getErrorCount()    const;
+    size_t             getFilesCount()    const;
+    size_t             getBytesCount()    const;
+    bool               isBlocked()        const;
 
 private:
     void run();
@@ -73,6 +72,7 @@ private:
     struct BatchHeader;
     struct Batch;
 
+    mutable std::mutex metrics_mutex;
     size_t error_count = 0;
     size_t files_count = 0;
     size_t bytes_count = 0;
