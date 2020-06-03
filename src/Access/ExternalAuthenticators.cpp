@@ -18,6 +18,9 @@ namespace
 
 auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const String & ldap_server_name)
 {
+    if (ldap_server_name.empty())
+        throw Exception("LDAP server name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
     LDAPServerParams params;
 
     const String ldap_server_config = "ldap_servers." + ldap_server_name;
