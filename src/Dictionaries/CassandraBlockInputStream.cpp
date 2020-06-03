@@ -9,7 +9,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ExternalResultDescription.h>
-#include <Columns/ColumnString.h>
 #include <IO/ReadHelpers.h>
 #include "CassandraBlockInputStream.h"
 
@@ -20,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
-    extern const int CASSANDRA_INTERNAL_ERROR;
 }
 
 CassandraBlockInputStream::CassandraBlockInputStream(

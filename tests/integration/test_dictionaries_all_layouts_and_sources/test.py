@@ -225,8 +225,6 @@ def test_simple_dictionaries(started_cluster, fold):
 
     node.query("system reload dictionaries")
 
-    #time.sleep(3000)
-
     queries_with_answers = []
     for dct in simple_dicts:
         for row in data:

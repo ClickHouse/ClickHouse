@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Dictionaries/CassandraHelpers.h>
+
+#if USE_CASSANDRA
 #include <Core/Block.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Core/ExternalResultDescription.h>
@@ -41,3 +43,5 @@ private:
 };
 
 }
+
+#endif
