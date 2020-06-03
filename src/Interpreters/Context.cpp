@@ -101,7 +101,6 @@ namespace ErrorCodes
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_SCALAR;
     extern const int AUTHENTICATION_FAILED;
     extern const int NOT_IMPLEMENTED;
 }
@@ -821,7 +820,7 @@ const Block & Context::getScalar(const String & name) const
 {
     auto it = scalars.find(name);
     if (scalars.end() == it)
-        throw Exception("Scalar " + backQuoteIfNeed(name) + " doesn't exist (internal bug)", ErrorCodes::UNKNOWN_SCALAR);
+        throw Exception("Scalar " + backQuoteIfNeed(name) + " doesn't exist (internal bug)", ErrorCodes::LOGICAL_ERROR);
     return it->second;
 }
 
