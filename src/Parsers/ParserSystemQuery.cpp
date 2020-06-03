@@ -59,10 +59,25 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
-        case Type::FLUSH_DISTRIBUTED:
             if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
                 return false;
             break;
+
+        case Type::STOP_DISTRIBUTED_SENDS:
+        case Type::START_DISTRIBUTED_SENDS:
+        case Type::FLUSH_DISTRIBUTED:
+        {
+            String cluster_str;
+            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            {
+                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                    return false;
+            }
+            res->cluster = cluster_str;
+            if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
+                return false;
+            break;
+        }
 
         case Type::STOP_MERGES:
         case Type::START_MERGES:
@@ -76,8 +91,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_SENDS:
         case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
-        case Type::STOP_DISTRIBUTED_SENDS:
-        case Type::START_DISTRIBUTED_SENDS:
             parseDatabaseAndTableName(pos, expected, res->database, res->table);
             break;
 
