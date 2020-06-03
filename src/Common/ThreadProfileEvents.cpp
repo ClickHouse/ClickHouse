@@ -488,6 +488,6 @@ void PerfDescriptorsHolder::releaseResources()
 #else
 
 // Not on Linux or in Arcadia: the functionality is disabled.
-PerfEventCounters current_thread_counters;
+PerfEventsCounters current_thread_counters;
 
 #endif
