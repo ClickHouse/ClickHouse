@@ -21,7 +21,7 @@ void cassandraCheck(CassError code)
 }
 
 
-void cassandraWaitAndCheck(CassFuturePtr && future)
+void cassandraWaitAndCheck(CassFuturePtr & future)
 {
     auto code = cass_future_error_code(future);     /// Waits if not ready
     if (code == CASS_OK)

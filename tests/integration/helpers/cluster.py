@@ -270,9 +270,9 @@ class ClickHouseCluster:
 
         if with_cassandra and not self.with_cassandra:
             self.with_cassandra = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_cassandra.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_cassandra.yml')])
             self.base_cassandra_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_cassandra.yml')]
+                                       self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_cassandra.yml')]
 
         return instance
 

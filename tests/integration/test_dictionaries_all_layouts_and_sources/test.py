@@ -3,12 +3,10 @@ import os
 
 from helpers.cluster import ClickHouseCluster
 from dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
-
 from external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed
-from external_sources import SourceMongo, SourceHTTP, SourceHTTPS, SourceRedis, SourceCassandra
 from external_sources import SourceMongo, SourceMongoURI, SourceHTTP, SourceHTTPS, SourceRedis, SourceCassandra
 import math
-import time
+
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 dict_configs_path = os.path.join(SCRIPT_DIR, 'configs/dictionaries')
 
@@ -212,7 +210,6 @@ def get_dictionaries(fold, total_folds, all_dicts):
     return all_dicts[fold * chunk_len : (fold + 1) * chunk_len]
 
 
-#@pytest.mark.timeout(3000)
 @pytest.mark.parametrize("fold", list(range(10)))
 def test_simple_dictionaries(started_cluster, fold):
     fields = FIELDS["simple"]

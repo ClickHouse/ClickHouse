@@ -293,9 +293,13 @@ ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const st
 
     if (!where.empty())
     {
-        writeString("(", out);
+        if (method != CASSANDRA_SEPARATE_PARTITION_KEY)
+            writeString("(", out);
         writeString(where, out);
-        writeString(") AND (", out);
+        if (method != CASSANDRA_SEPARATE_PARTITION_KEY)
+            writeString(") AND (", out);
+        else
+            writeString(" AND ", out);
     }
 
     if (method == AND_OR_CHAIN)
@@ -333,7 +337,7 @@ ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const st
             composeInWithTuples(key_columns, requested_rows, out, partition_key_prefix, key_columns.size());
     }
 
-    if (!where.empty())
+    if (!where.empty() && method != CASSANDRA_SEPARATE_PARTITION_KEY)
     {
         writeString(")", out);
     }
