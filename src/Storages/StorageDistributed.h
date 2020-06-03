@@ -181,7 +181,7 @@ protected:
     struct ClusterNodeData
     {
         std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
-        ConnectionPoolPtr conneciton_pool;
+        ConnectionPoolPtr connection_pool;
 
         void flushAllData() const;
         void shutdownAndDropAllData() const;
