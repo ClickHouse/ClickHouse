@@ -1318,7 +1318,7 @@ void MergeTreeData::clearOldWriteAheadLogs()
 
     auto is_range_on_disk = [&block_numbers_on_disk](Int64 min_block, Int64 max_block)
     {
-        auto lower = std::lower_bound(block_numbers_on_disk.begin(), block_numbers_on_disk.end(), std::make_pair(min_block, -1L));
+        auto lower = std::lower_bound(block_numbers_on_disk.begin(), block_numbers_on_disk.end(), std::make_pair(min_block, Int64(-1L)));
         if (lower != block_numbers_on_disk.end() && min_block >= lower->first && max_block <= lower->second)
             return true;
 
@@ -1919,7 +1919,7 @@ void MergeTreeData::renameTempPartAndReplace(
     part->info = part_info;
     part->is_temp = false;
     part->state = DataPartState::PreCommitted;
-    part->renameTo(part_name);
+    part->renameTo(part_name, true);
 
     auto part_it = data_parts_indexes.insert(part).first;
 
@@ -3271,7 +3271,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
         throw Exception("Part in " + fullPath(disk, dst_part_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     /// If source part is in memory, flush it to disk and clone it already in on-disk format
-    if (auto * src_part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(src_part.get()))
+    if (const auto * src_part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(src_part.get()))
     {
         const auto & src_relative_data_path = src_part_in_memory->storage.relative_data_path;
         auto flushed_part_path = src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
@@ -3367,7 +3367,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
 
         String backup_part_path = backup_path + relative_data_path + part->relative_path;
-        if (auto part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(part.get()))
+        if (const auto * part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(part.get()))
             part_in_memory->flushToDisk(backup_path + relative_data_path, part->relative_path);
         else
             localBackup(part->volume->getDisk(), part->getFullRelativePath(), backup_part_path);

@@ -135,7 +135,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
 void Service::sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out)
 {
-    auto part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(part.get());
+    const auto * part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(part.get());
     if (!part_in_memory)
         throw Exception("Part " + part->name + " is not stored in memory", ErrorCodes::LOGICAL_ERROR);
 

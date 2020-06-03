@@ -297,7 +297,7 @@ public:
     String getFullPath() const;
 
     void renameToDetached(const String & prefix) const;
-    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = false) const;
+    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
     virtual void makeCloneInDetached(const String & prefix) const;
 
     /// Makes full clone of part in detached/ on another disk
