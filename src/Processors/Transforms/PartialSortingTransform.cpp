@@ -65,7 +65,7 @@ size_t getFilterMask(const ColumnRawPtrs & lhs, const ColumnRawPtrs & rhs, size_
     }
 
     for (size_t i = 0; i != rows_num; ++i)
-        filtered_count -= filter[i] = (compare_results[i] <= 0);
+        filtered_count -= (filter[i] = (compare_results[i] >= 0));
 
     return filtered_count;
 }
@@ -80,7 +80,6 @@ void PartialSortingTransform::transform(Chunk & chunk)
 
     ColumnRawPtrs block_columns;
     UInt64 rows_num = block.rows();
-    auto block_limit = limit;
 
     /** If we've saved columns from previously blocks we could filter all rows from current block
       * which are unnecessary for sortBlock(...) because they obviously won't be in the top LIMIT rows.
@@ -91,22 +90,20 @@ void PartialSortingTransform::transform(Chunk & chunk)
         IColumn::Filter filter;
         size_t filtered_count = getFilterMask(block_columns, threshold_block_columns, limit - 1, description, rows_num, filter);
 
-        if (filtered_count == rows_num)
-            return;
-
-        if (rows_num - filtered_count < block_limit)
+        if (filtered_count)
         {
-            block_limit = rows_num - filtered_count;
-/*
+            auto expected_size = rows_num - filtered_count;
+            size_t i = 0;
+            Columns new_columns(block.columns());
             for (auto & column : block.getColumns())
             {
-                column = column->filter(filter, rows_num - filtered_count);
+                new_columns[i++] = column->filter(filter, expected_size);
             }
-*/
+            block.setColumns(new_columns);
         }
     }
 
-    sortBlock(block, description, block_limit);
+    sortBlock(block, description, limit);
 
     if (!threshold_block_columns.empty())
     {
@@ -116,7 +113,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
     /** If this is the first processed block or (limit - 1)'th row of the current block
       * is less than current threshold row then we could update threshold.
       */
-    if (limit && limit <= block.rows() &&
+    if (1500 <= limit && limit <= block.rows() &&
         (threshold_block_columns.empty() || less(block_columns, limit - 1, threshold_block_columns, limit - 1, description)))
     {
         threshold_block = block.cloneWithColumns(block.getColumns());
