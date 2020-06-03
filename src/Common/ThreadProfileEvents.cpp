@@ -118,9 +118,14 @@ void TasksStatsCounters::incrementProfileEvents(const ::taskstats & prev, const 
     profile_events.increment(ProfileEvents::OSWriteBytes, safeDiff(prev.write_bytes, curr.write_bytes));
 }
 
+}
+
 #endif
 
 #if defined(__linux__) && !defined(ARCADIA_BUILD)
+
+namespace DB
+{
 
 thread_local PerfEventsCounters current_thread_counters;
 
@@ -483,11 +488,16 @@ void PerfDescriptorsHolder::releaseResources()
     }
 }
 
+}
+
 #else
+
+namespace DB
+{
 
 // Not on Linux or in Arcadia: the functionality is disabled.
 PerfEventsCounters current_thread_counters;
 
-#endif
-
 }
+
+#endif
