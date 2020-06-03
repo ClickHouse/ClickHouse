@@ -287,10 +287,6 @@ set(ARROW_SRCS ${ARROW_SRCS}
         ${LIBRARY_DIR}/compute/kernels/util_internal.cc
         )
 
-if (LZ4_INCLUDE_DIR AND LZ4_LIBRARY)
-    set(ARROW_WITH_LZ4 1)
-endif ()
-
 if (SNAPPY_INCLUDE_DIR AND SNAPPY_LIBRARY)
     set(ARROW_WITH_SNAPPY 1)
 endif ()
@@ -303,10 +299,8 @@ if (ZSTD_INCLUDE_DIR AND ZSTD_LIBRARY)
     set(ARROW_WITH_ZSTD 1)
 endif ()
 
-if (ARROW_WITH_LZ4)
-    add_definitions(-DARROW_WITH_LZ4)
-    SET(ARROW_SRCS ${LIBRARY_DIR}/util/compression_lz4.cc ${ARROW_SRCS})
-endif ()
+add_definitions(-DARROW_WITH_LZ4)
+SET(ARROW_SRCS ${LIBRARY_DIR}/util/compression_lz4.cc ${ARROW_SRCS})
 
 if (ARROW_WITH_SNAPPY)
     add_definitions(-DARROW_WITH_SNAPPY)
@@ -337,9 +331,7 @@ endif ()
 
 target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
 target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Protobuf_LIBRARY})
-if (ARROW_WITH_LZ4)
-    target_link_libraries(${ARROW_LIBRARY} PRIVATE ${LZ4_LIBRARY})
-endif ()
+target_link_libraries(${ARROW_LIBRARY} PRIVATE lz4)
 if (ARROW_WITH_SNAPPY)
     target_link_libraries(${ARROW_LIBRARY} PRIVATE ${SNAPPY_LIBRARY})
 endif ()

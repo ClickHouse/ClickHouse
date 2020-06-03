@@ -26,6 +26,7 @@ add_subdirectory (hyperscan-cmake)
 add_subdirectory (jemalloc-cmake)
 add_subdirectory (libcpuid-cmake)
 add_subdirectory (libdivide)
+add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (ryu-cmake)
@@ -35,10 +36,6 @@ add_subdirectory (poco-cmake)
 
 
 # TODO: refactor the contrib libraries below this comment.
-
-if (USE_INTERNAL_LZ4_LIBRARY)
-    add_subdirectory (lz4-cmake)
-endif ()
 
 if (USE_INTERNAL_ZSTD_LIBRARY)
     add_subdirectory (zstd-cmake)

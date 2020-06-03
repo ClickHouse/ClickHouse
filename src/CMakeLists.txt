@@ -267,13 +267,13 @@ endif()
 dbms_target_link_libraries (
     PRIVATE
         ${BTRIE_LIBRARIES}
-        ${LZ4_LIBRARY}
         boost::filesystem
         boost::program_options
         clickhouse_common_config
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
         clickhouse_parsers
+        lz4
         Poco::JSON
         string_utils
     PUBLIC
@@ -286,10 +286,6 @@ target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DI
 dbms_target_include_directories(PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/Core/include)
 
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
-
-if (NOT USE_INTERNAL_LZ4_LIBRARY AND LZ4_INCLUDE_DIR)
-    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
-endif ()
 
 if (ZSTD_LIBRARY)
     dbms_target_link_libraries(PRIVATE ${ZSTD_LIBRARY})
