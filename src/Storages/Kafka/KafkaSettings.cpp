@@ -41,5 +41,4 @@ void KafkaSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
-
 }

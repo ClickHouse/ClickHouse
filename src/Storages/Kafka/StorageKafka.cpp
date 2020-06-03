@@ -122,7 +122,7 @@ StorageKafka::StorageKafka(
     std::unique_ptr<KafkaSettings> kafka_settings_)
     : IStorage(table_id_)
     , global_context(context_.getGlobalContext())
-    , kafka_context(Context(global_context))
+    , kafka_context(std::make_shared<Context>(global_context))
     , kafka_settings(std::move(kafka_settings_))
     , topics(parseTopics(global_context.getMacros()->expand(kafka_settings->kafka_topic_list.value)))
     , brokers(global_context.getMacros()->expand(kafka_settings->kafka_broker_list.value))
@@ -135,13 +135,19 @@ StorageKafka::StorageKafka(
     , log(&Poco::Logger::get("StorageKafka (" + table_id_.table_name + ")"))
     , semaphore(0, num_consumers)
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
+    , settings_adjustments(createSettingsAdjustments())
 {
-    kafka_context.makeQueryContext();
-
     setColumns(columns_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
 
+    kafka_context->makeQueryContext();
+    kafka_context->applySettingsChanges(settings_adjustments);
+}
+
+SettingsChanges StorageKafka::createSettingsAdjustments()
+{
+    SettingsChanges result;
     // Needed for backward compatibility
     if (!kafka_settings->input_format_skip_unknown_fields.changed)
     {
@@ -160,15 +166,16 @@ StorageKafka::StorageKafka(
     }
 
     if (!schema_name.empty())
-        changes.emplace_back("format_schema", schema_name);
+        result.emplace_back("format_schema", schema_name);
 
-    for (auto it = kafka_settings->begin(); it != kafka_settings->end();  ++it)
+    for (auto & it : *kafka_settings)
     {
-        if (it->isChanged() && it->getName().toString().rfind("kafka_",0) == std::string::npos)
+        if (it.isChanged() && it.getName().toString().rfind("kafka_",0) == std::string::npos)
         {
-            changes.emplace_back(it->getName().toString(), it->getValueAsString());
+            result.emplace_back(it.getName().toString(), it.getValueAsString());
         }
     }
+    return result;
 }
 
 Names StorageKafka::parseTopics(String topic_list)
@@ -204,6 +211,8 @@ Pipes StorageKafka::read(
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
     Pipes pipes;
     pipes.reserve(num_created_consumers);
+    auto _tmp_context = std::make_shared<Context>(context);
+    _tmp_context->applySettingsChanges(settings_adjustments);
 
     // Claim as many consumers as requested, but don't block
     for (size_t i = 0; i < num_created_consumers; ++i)
@@ -212,7 +221,7 @@ Pipes StorageKafka::read(
         /// TODO: probably that leads to awful performance.
         /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
         /// TODO: rewrite KafkaBlockInputStream to KafkaSource. Now it is used in other place.
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, 1)));
+        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<KafkaBlockInputStream>(*this, _tmp_context, column_names, 1)));
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -222,9 +231,12 @@ Pipes StorageKafka::read(
 
 BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const Context & context)
 {
+    auto _tmp_context = std::make_shared<Context>(context);
+    _tmp_context->applySettingsChanges(settings_adjustments);
+
     if (topics.size() > 1)
         throw Exception("Can't write to Kafka table with multiple topics!", ErrorCodes::NOT_IMPLEMENTED);
-    return std::make_shared<KafkaBlockOutputStream>(*this, context);
+    return std::make_shared<KafkaBlockOutputStream>(*this, _tmp_context);
 }
 
 
@@ -296,18 +308,14 @@ ConsumerBufferPtr StorageKafka::popReadBuffer(std::chrono::milliseconds timeout)
     return buffer;
 }
 
-void StorageKafka::adjustContext(Context & context)
-{
-    context.applySettingsChanges(changes);
-}
-
-
 ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 {
     cppkafka::Configuration conf;
     conf.set("metadata.broker.list", brokers);
     conf.set("group.id", group);
     conf.set("client.id", client_id);
+    conf.set("client.software.name", VERSION_NAME);
+    conf.set("client.software.version", VERSION_DESCRIBE);
     // TODO: fill required settings
     updateConfiguration(conf);
 
@@ -336,7 +344,8 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
     {
         conf.set("client.id", client_id);
     }
-
+    conf.set("client.software.name", VERSION_NAME);
+    conf.set("client.software.version", VERSION_DESCRIBE);
     conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
 
     updateConfiguration(conf);
@@ -351,7 +360,7 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
     consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
-    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, getPollMaxBatchSize(), getPollTimeout(), intermediate_commit, stream_cancelled, getTopics());
+    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, getPollMaxBatchSize(), getPollTimeout(), intermediate_commit, stream_cancelled, topics);
 }
 
 size_t StorageKafka::getMaxBlockSize() const
@@ -534,7 +543,7 @@ bool StorageKafka::streamToViews()
 
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, kafka_context, false, true, true);
+    InterpreterInsertQuery interpreter(insert, *kafka_context, false, true, true);
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
@@ -662,13 +671,13 @@ void registerStorageKafka(StorageFactory & factory)
 
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
-        auto kafka_num_consumers = kafka_settings->kafka_num_consumers.value;
+        auto num_consumers = kafka_settings->kafka_num_consumers.value;
 
-        if (kafka_num_consumers > 16)
+        if (num_consumers > 16)
         {
             throw Exception("Number of consumers can not be bigger than 16", ErrorCodes::BAD_ARGUMENTS);
         }
-        else if (kafka_num_consumers < 1)
+        else if (num_consumers < 1)
         {
             throw Exception("Number of consumers can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
         }
