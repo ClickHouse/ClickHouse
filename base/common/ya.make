@@ -39,7 +39,6 @@ SRCS(
     getMemoryAmount.cpp
     getThreadId.cpp
     JSON.cpp
-    LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
     preciseExp10.cpp

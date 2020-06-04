@@ -1,3 +1,5 @@
+#if defined(USE_READLINE)
+
 #include <Common/ReadlineLineReader.h>
 #include <ext/scope_guard.h>
 
@@ -176,3 +178,5 @@ void ReadlineLineReader::enableBracketedPaste()
     rl_bind_keyseq(BRACK_PASTE_PREF, clickhouse_rl_bracketed_paste_begin);
 #endif
 };
+
+#endif
