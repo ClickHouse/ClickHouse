@@ -54,6 +54,8 @@ public:
     const String & getFormatName() const { return format_name; }
     NamesAndTypesList getVirtuals() const override;
 
+    const void pingConnection() { connection.heartbeat(); }
+
 protected:
     StorageRabbitMQ(
             const StorageID & table_id_,
@@ -88,7 +90,7 @@ private:
 
     event_base * evbase;
     RabbitMQHandler eventHandler;
-    AMQP::TcpConnection connection;
+    AMQP::TcpConnection connection; /// Connection for all consumers
 
     Poco::Semaphore semaphore;
     std::mutex mutex;

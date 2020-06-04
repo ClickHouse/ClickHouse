@@ -54,11 +54,8 @@ private:
     size_t next_queue = 0;
     UInt64 message_counter = 0;
     String channel_id;
-    std::atomic<bool> flush_returned = false;
-    std::mutex mutex;
 
     Messages messages;
-    Messages returned;
 
     Poco::Logger * log;
     const std::optional<char> delim;
