@@ -13,6 +13,11 @@
 namespace DB
 {
 
+enum
+{
+    Received_max_to_stop_loop = 10000 // Explained below
+};
+
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
         RabbitMQHandler & eventHandler_,
@@ -117,7 +122,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
 
     std::atomic<bool> bindings_created = false, bindings_error = false;
 
-    consumer_channel->declareQueue(AMQP::exclusive)
+    consumer_channel->declareQueue(AMQP::durable)
     .onSuccess([&](const std::string &  queue_name_, int /* msgcount */, int /* consumercount */)
     {
         queues.emplace_back(queue_name_);
@@ -145,6 +150,12 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
         .onSuccess([&]
         {
             bindings_created = true;
+
+            /// Unblock current thread so that it does not continue to execute all callbacks on the connection
+            if (++count_bound_queues == num_queues)
+            {
+                stopEventLoop();
+            }
         })
         .onError([&](const char * message)
         {
@@ -196,6 +207,12 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
         consumer_created = true;
 
         LOG_TRACE(log, "Consumer " + std::to_string(channel_id) + " is subscribed to queue " + queue_name);
+
+        /// Unblock current thread so that it does not continue to execute all callbacks on the connection
+        if (++count_subscribed == queues.size())
+        {
+            stopEventLoop();
+        }
     })
     .onReceived([&](const AMQP::Message & message, uint64_t /* deliveryTag */, bool /* redelivered */)
     {
@@ -207,15 +224,34 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
             if (row_delimiter != '\0')
                 message_received += row_delimiter;
 
+            //LOG_TRACE(log, "Consumer {} received a message", channel_id);
+            
+            bool stop_loop = false;
+
             /// Needed to avoid data race because this vector can be used at the same time by another thread in nextImpl() (below).
-            std::lock_guard lock(mutex);
-            received.push_back(message_received);
+            {
+                std::lock_guard lock(mutex);
+                received.push_back(message_received);
+
+                /* As event loop is blocking to the thread that started it and a single thread should not be blocked while
+                 * executing all callbacks on the connection (not only its own), then there should be some point to unblock
+                 */
+                if (received.size() >= Received_max_to_stop_loop)
+                {
+                    stop_loop = true;
+                }
+            }
+
+            if (stop_loop)
+            {
+                stopEventLoop();
+            }
         }
     })
     .onError([&](const char * message)
     {
         consumer_error = true;
-        LOG_ERROR(log, "Consumer failed: {}", message);
+        LOG_ERROR(log, "Consumer {} failed: {}", channel_id, message);
     });
 
     while (!consumer_created && !consumer_error)
@@ -223,6 +259,12 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
         /// No need for timeouts as this event loop is blocking for the current thread and quits in case there are no active events
         startEventLoop(consumer_created);
     }
+}
+
+
+void ReadBufferFromRabbitMQConsumer::stopEventLoop()
+{
+    eventHandler.stop();
 }
 
 
