@@ -121,7 +121,7 @@ SYSTEM SYNC REPLICA [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### START FETCHES {#query_language-system-start-fetches}
-Позволяет заново запустить фоновые процессы синхронизации новыми вставленными кусками данных с другими репликаями в кластере для таблиц семейства ReplicatedMergeTree:
+Позволяет заново запустить фоновые процессы синхронизации новыми вставленными кусками данных с другими репликами в кластере для таблиц семейства ReplicatedMergeTree:
 
 ``` sql
 SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
