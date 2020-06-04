@@ -75,6 +75,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
+#include <Common/UTF8Helpers.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -357,6 +358,78 @@ private:
         return false;
     }
 
+#if USE_REPLXX
+    static void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors)
+    {
+        using namespace replxx;
+
+        static const std::unordered_map<TokenType, Replxx::Color> token_to_color =
+        {
+            { TokenType::Whitespace, Replxx::Color::DEFAULT },
+            { TokenType::Comment, Replxx::Color::GRAY },
+            { TokenType::BareWord, Replxx::Color::WHITE },
+            { TokenType::Number, Replxx::Color::BRIGHTGREEN },
+            { TokenType::StringLiteral, Replxx::Color::BRIGHTCYAN },
+            { TokenType::QuotedIdentifier, Replxx::Color::BRIGHTMAGENTA },
+            { TokenType::OpeningRoundBracket, Replxx::Color::LIGHTGRAY },
+            { TokenType::ClosingRoundBracket, Replxx::Color::LIGHTGRAY },
+            { TokenType::OpeningSquareBracket, Replxx::Color::BROWN },
+            { TokenType::ClosingSquareBracket, Replxx::Color::BROWN },
+            { TokenType::OpeningCurlyBrace, Replxx::Color::WHITE },
+            { TokenType::ClosingCurlyBrace, Replxx::Color::WHITE },
+
+            { TokenType::Comma, Replxx::Color::YELLOW },
+            { TokenType::Semicolon, Replxx::Color::YELLOW },
+            { TokenType::Dot, Replxx::Color::YELLOW },
+            { TokenType::Asterisk, Replxx::Color::YELLOW },
+            { TokenType::Plus, Replxx::Color::YELLOW },
+            { TokenType::Minus, Replxx::Color::YELLOW },
+            { TokenType::Slash, Replxx::Color::YELLOW },
+            { TokenType::Percent, Replxx::Color::YELLOW },
+            { TokenType::Arrow, Replxx::Color::YELLOW },
+            { TokenType::QuestionMark, Replxx::Color::YELLOW },
+            { TokenType::Colon, Replxx::Color::YELLOW },
+            { TokenType::Equals, Replxx::Color::YELLOW },
+            { TokenType::NotEquals, Replxx::Color::YELLOW },
+            { TokenType::Less, Replxx::Color::YELLOW },
+            { TokenType::Greater, Replxx::Color::YELLOW },
+            { TokenType::LessOrEquals, Replxx::Color::YELLOW },
+            { TokenType::GreaterOrEquals, Replxx::Color::YELLOW },
+            { TokenType::Concatenation, Replxx::Color::YELLOW },
+            { TokenType::At, Replxx::Color::YELLOW },
+
+            { TokenType::EndOfStream, Replxx::Color::DEFAULT },
+
+            { TokenType::Error, Replxx::Color::RED },
+            { TokenType::ErrorMultilineCommentIsNotClosed, Replxx::Color::RED },
+            { TokenType::ErrorSingleQuoteIsNotClosed, Replxx::Color::RED },
+            { TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED },
+            { TokenType::ErrorSinglePipeMark, Replxx::Color::RED },
+            { TokenType::ErrorWrongNumber, Replxx::Color::RED },
+            { TokenType::ErrorMaxQuerySizeExceeded, Replxx::Color::RED }
+        };
+
+        const Replxx::Color unknown_token_color = Replxx::Color::RED;
+
+        Lexer lexer(query.data(), query.data() + query.size());
+        size_t pos = 0;
+
+        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+        {
+            size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token.begin), token.size());
+            for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
+            {
+                if (token_to_color.find(token.type) != token_to_color.end())
+                    colors[pos + code_point_index] = token_to_color.at(token.type);
+                else
+                    colors[pos + code_point_index] = unknown_token_color;
+            }
+
+            pos += utf8_len;
+        }
+    }
+#endif
+
     int mainImpl()
     {
         UseSSL use_ssl;
@@ -502,7 +575,7 @@ private:
             LineReader::Patterns query_delimiters = {";", "\\G"};
 
 #if USE_REPLXX
-            ReplxxLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
+            ReplxxLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters, highlight);
 #elif defined(USE_READLINE) && USE_READLINE
             ReadlineLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
