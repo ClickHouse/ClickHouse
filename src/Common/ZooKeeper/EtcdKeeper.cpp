@@ -47,7 +47,7 @@ namespace Coordination
     static String rangeEnd(const String & key)
     {
         std::string range_end = key;
-        int ascii = static_cast<int> (range_end[range_end.length() - 1]);
+        int ascii = static_cast<int> (static_cast<unsigned char> (range_end[range_end.length() - 1]));
         range_end.back() = ascii+1;
         return range_end;
     }
@@ -171,7 +171,7 @@ namespace Coordination
         void takeLastCreateRequestWithPrefix(const String & prefix)
         {
             std::unordered_map<String, String> create_requests;
-            for (auto success_put : success_puts)
+            for (const auto & success_put : success_puts)
             {
                 if (startsWith(success_put.key(), prefix))
                 {
@@ -200,37 +200,37 @@ namespace Coordination
         EtcdKeeper::TxnRequests & requests)
     {
         TxnRequest txn_request;
-        for (auto txn_compare: requests.compares)
+        for (const auto & txn_compare: requests.compares)
         {
             Compare* compare = txn_request.add_compare();
             compare->CopyFrom(txn_compare);
         }
-        for (auto success_range: requests.success_ranges)
+        for (const auto & success_range: requests.success_ranges)
         {
             RequestOp* req_success = txn_request.add_success();
             req_success->set_allocated_request_range(std::make_unique<RangeRequest>(success_range).release());
         }
-        for (auto success_put: requests.success_puts)
+        for (const auto & success_put: requests.success_puts)
         {
             RequestOp* req_success = txn_request.add_success();
             req_success->set_allocated_request_put(std::make_unique<PutRequest>(success_put).release());
         }
-        for (auto success_delete_range: requests.success_delete_ranges)
+        for (const auto & success_delete_range: requests.success_delete_ranges)
         {
             RequestOp* req_success = txn_request.add_success();
             req_success->set_allocated_request_delete_range(std::make_unique<DeleteRangeRequest>(success_delete_range).release());
         }
-        for (auto failure_range: requests.failure_ranges)
+        for (const auto & failure_range: requests.failure_ranges)
         {
             RequestOp* req_failure = txn_request.add_failure();
             req_failure->set_allocated_request_range(std::make_unique<RangeRequest>(failure_range).release());
         }
-        for (auto failure_put: requests.failure_puts)
+        for (const auto & failure_put: requests.failure_puts)
         {
             RequestOp* req_failure = txn_request.add_failure();
             req_failure->set_allocated_request_put(std::make_unique<PutRequest>(failure_put).release());
         }
-        for (auto failure_delete_range: requests.failure_delete_ranges)
+        for (const auto & failure_delete_range: requests.failure_delete_ranges)
         {
             RequestOp* req_failure = txn_request.add_failure();
             req_failure->set_allocated_request_delete_range(std::make_unique<DeleteRangeRequest>(failure_delete_range).release());
@@ -258,7 +258,7 @@ namespace Coordination
         String parent_zk_path;
         int32_t level;
         EtcdKey() = default;
-        EtcdKey(const String & path)
+        explicit EtcdKey(const String & path)
         {
             zk_path = path;
             level = std::count(zk_path.begin(), zk_path.end(), '/');
@@ -381,7 +381,7 @@ namespace Coordination
             /// watch created
         } else if (watch_response.events_size())
         {
-            for (auto & event : watch_response.events())
+            for (const auto & event : watch_response.events())
             {
                 std::lock_guard lock(watches_mutex);
                 String path = event.kv().key();
@@ -534,7 +534,7 @@ namespace Coordination
             if (composite && !post_call_called)
             {
                 EtcdKeeper::AsyncTxnCall* call = static_cast<EtcdKeeper::AsyncTxnCall*>(got_tag);
-                for (auto & field : call->response.responses())
+                for (const auto & field : call->response.responses())
                 {
                     pre_call_responses.emplace_back(field);
                 }
@@ -623,8 +623,8 @@ namespace Coordination
             {
                 if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                 {
-                    auto range_resp = resp.response_range();
-                    for (auto & kv : range_resp.kvs())
+                    const auto & range_resp = resp.response_range();
+                    for (const auto & kv : range_resp.kvs())
                     {
                         if (is_sequential && kv.key() == etcd_key.getParentSequentialCounterKey())
                         {
@@ -728,7 +728,7 @@ namespace Coordination
                 if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                 {
                     const auto & range_resp = resp.response_range();
-                    for (auto & kv : range_resp.kvs())
+                    for (const auto & kv : range_resp.kvs())
                     {
                         std::cout << "XID " << xid << "KEY " << kv.key();
                         if (startsWith(kv.key(), etcd_key.getChildsPrefix()))
@@ -903,11 +903,11 @@ namespace Coordination
                 }
             }
 
-            for (auto it = sequential_keys_map.begin(); it != sequential_keys_map.end(); it++)
+            for (auto && [first,second] : sequential_keys_map)
             {
-                if (it->second > 1)
+                if (second > 1)
                 {
-                    multiple_sequential_keys_map[it->first] = -1;
+                    multiple_sequential_keys_map[first] = -1;
                 }
             }
 
@@ -984,7 +984,7 @@ namespace Coordination
             }
             if (!required_keys.empty())
             {
-                for (auto & key : required_keys)
+                for (const auto & key : required_keys)
                 {
                     EtcdKey ek = EtcdKey(key);
                     checking_etcd_keys.insert(ek.getFullEtcdKey());
@@ -1032,7 +1032,7 @@ namespace Coordination
             }
             if (!checking_etcd_keys.empty())
             {
-                for (auto & key : checking_etcd_keys)
+                for (const auto & key : checking_etcd_keys)
                 {
                     txn_requests.success_ranges.emplace_back(prepareRangeRequest(key));
                 }
@@ -1048,7 +1048,7 @@ namespace Coordination
                     if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                     {
                         const auto & range_resp = resp.response_range();
-                        for (auto & kv : range_resp.kvs())
+                        for (const auto & kv : range_resp.kvs())
                         {
                             if (checking_etcd_keys.count(kv.key()))
                             {
@@ -1155,10 +1155,10 @@ namespace Coordination
         if (!compare_result)
         {
             create_response.error = Error::ZOK;
-            bool parent_exists_ = false;
+            bool parent_exists_in_resp = false;
             if (parentPath(path) == "/")
             {
-                parent_exists_ = true;
+                parent_exists_in_resp = true;
             }
             bool seq_num_matched = false;
             if (!is_sequential)
@@ -1170,11 +1170,11 @@ namespace Coordination
                 if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                 {
                     const auto & range_resp = resp.response_range();
-                    for (auto & kv : range_resp.kvs())
+                    for (const auto & kv : range_resp.kvs())
                     {
                         if (kv.key() == etcd_key.getParentKey())
                         {
-                            parent_exists_ = true;
+                            parent_exists_in_resp = true;
                         }
                         else if (kv.key() == etcd_key.getParentSequentialCounterKey() && kv.value() == std::to_string(seq_num))
                         {
@@ -1183,7 +1183,7 @@ namespace Coordination
                     }
                 }
             }
-            if (!parent_exists_ && !force_parent_exists)
+            if (!parent_exists_in_resp && !force_parent_exists)
             {
                 create_response.error = Error::ZNONODE;
                 return std::make_shared<EtcdKeeperCreateResponse>(create_response);
@@ -1229,7 +1229,7 @@ namespace Coordination
                 if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                 {
                     const auto & range_resp = resp.response_range();
-                    for (auto & kv : range_resp.kvs())
+                    for (const auto & kv : range_resp.kvs())
                     {
                         if (kv.key() == etcd_key.getChildsFlagKey())
                         {
@@ -1261,10 +1261,10 @@ namespace Coordination
             {
                 if (ResponseOp::ResponseCase::kResponseDeleteRange == resp.response_case())
                 {
-                    auto & delete_range_resp = resp.response_delete_range();
+                    const auto & delete_range_resp = resp.response_delete_range();
                     if (delete_range_resp.deleted())
                     {
-                        for (auto & kv : delete_range_resp.prev_kvs())
+                        for (const auto & kv : delete_range_resp.prev_kvs())
                         {
                             if (kv.key() == etcd_key.getFullEtcdKey())
                             {
@@ -1288,7 +1288,7 @@ namespace Coordination
             if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
             {
                 const auto & range_resp = resp.response_range();
-                for (auto & kv : range_resp.kvs())
+                for (const auto & kv : range_resp.kvs())
                 {
                     if (kv.key() == etcd_key.getFullEtcdKey())
                     {
@@ -1322,7 +1322,7 @@ namespace Coordination
                 if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                 {
                     const auto & range_resp = resp.response_range();
-                    for (auto & kv : range_resp.kvs())
+                    for (const auto & kv : range_resp.kvs())
                     {
                         if (kv.key() == etcd_key.getFullEtcdKey())
                         {
@@ -1369,7 +1369,7 @@ namespace Coordination
             else if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
             {
                 const auto & range_resp = resp.response_range();
-                for (auto & kv : range_resp.kvs())
+                for (const auto & kv : range_resp.kvs())
                 {
                     if (kv.key() == etcd_key.getFullEtcdKey())
                     {
@@ -1406,7 +1406,7 @@ namespace Coordination
             if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
             {
                 const auto & range_resp = resp.response_range();
-                for (auto & kv : range_resp.kvs())
+                for (const auto & kv : range_resp.kvs())
                 {
                     if (kv.key() == etcd_key.getFullEtcdKey())
                     {
@@ -1421,9 +1421,9 @@ namespace Coordination
                     else if (startsWith(kv.key(), etcd_key.getChildsPrefix()))
                     {
                         list_response.stat.numChildren = range_resp.count();
-                        for (auto & kv_ : range_resp.kvs())
+                        for (const auto & cur_kv : range_resp.kvs())
                         {
-                            children.insert(childName(kv_.key(), etcd_key.getChildsPrefix()));
+                            children.insert(childName(cur_kv.key(), etcd_key.getChildsPrefix()));
                         }
                         list_response.error = Error::ZOK;
                         break;
@@ -1432,7 +1432,7 @@ namespace Coordination
                 }
             }
         }
-        for (auto & child : children)
+        for (const auto & child : children)
         {
             list_response.names.emplace_back(child);
         }
@@ -1448,7 +1448,7 @@ namespace Coordination
             if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
             {
                 const auto & range_resp = resp.response_range();
-                for (auto & kv : range_resp.kvs())
+                for (const auto & kv : range_resp.kvs())
                 {
                     if (kv.key() == etcd_key.getFullEtcdKey())
                     {
@@ -1682,7 +1682,7 @@ namespace Coordination
                 GPR_ASSERT(ok);
                 if (got_tag)
                 {
-                    auto call = static_cast<AsyncCall*>(got_tag);
+                    auto * call = static_cast<AsyncCall*>(got_tag);
 
                     XID xid = call->xid;
                     {
@@ -1728,10 +1728,10 @@ namespace Coordination
                         {
                             std::lock_guard lock(operations_mutex);
                             operations[request_info.request->xid] = request_info;
-                            EtcdKeeper::AsyncCall* call_ = new EtcdKeeper::AsyncCall;
-                            call_->xid = request_info.request->xid;
+                            EtcdKeeper::AsyncCall * cur_call = new EtcdKeeper::AsyncCall;
+                            cur_call->xid = request_info.request->xid;
                             request_info.request->prepareCall();
-                            request_info.request->call(*call_, kv_stub, kv_cq);
+                            request_info.request->call(*cur_call, kv_stub, kv_cq);
                         }
                     }
                 }
