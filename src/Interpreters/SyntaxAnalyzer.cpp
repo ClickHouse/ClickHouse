@@ -823,7 +823,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
         /// Move arithmetic operations out of aggregation functions
-        optimizeArithmeticOperationsInAgr(query, settings.optimize_ast_arithmetic);
+        optimizeArithmeticOperationsInAgr(query, settings.optimize_arithmetic_operations_in_aggregate_functions);
 
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_column_names, settings).optimize(*select_query);
