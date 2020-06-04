@@ -91,7 +91,7 @@ Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, cons
 
 
 Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port, bool secure_)
-    : user(user_), password(password_)
+    : user(user_), password(password_), user_specified(true)
 {
     auto parsed_host_port = parseAddress(host_port_, clickhouse_port);
     host_name = parsed_host_port.first;
