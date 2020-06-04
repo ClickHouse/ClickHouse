@@ -3,11 +3,11 @@
 #include "Suggest.h"
 
 #if USE_REPLXX
-#   include <common/ReplxxLineReader.h>
+#   include <Common/ReplxxLineReader.h>
 #elif defined(USE_READLINE) && USE_READLINE
-#   include <common/ReadlineLineReader.h>
+#   include <Common/ReadlineLineReader.h>
 #else
-#   include <common/LineReader.h>
+#   include <Common/LineReader.h>
 #endif
 
 #include <stdlib.h>
@@ -27,7 +27,7 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/find_symbols.h>
-#include <common/LineReader.h>
+#include <Common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>

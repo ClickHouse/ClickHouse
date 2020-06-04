@@ -1,10 +1,12 @@
-#include <common/ReadlineLineReader.h>
+#include <Common/ReadlineLineReader.h>
 #include <ext/scope_guard.h>
 
 #include <errno.h>
 #include <signal.h>
 #include <string.h>
 #include <unistd.h>
+#include <iostream>
+#include <ostream>
 
 namespace
 {

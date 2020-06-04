@@ -1,4 +1,4 @@
-#include <common/ReplxxLineReader.h>
+#include <Common/ReplxxLineReader.h>
 
 #include <errno.h>
 #include <string.h>
