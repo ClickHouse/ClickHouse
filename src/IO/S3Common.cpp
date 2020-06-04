@@ -4,6 +4,7 @@
 
 #    include <IO/S3Common.h>
 #    include <IO/WriteBufferFromString.h>
+#    include <Storages/StorageS3Settings.h>
 
 #    include <aws/core/auth/AWSCredentialsProvider.h>
 #    include <aws/core/utils/logging/LogMacros.h>
@@ -59,6 +60,47 @@ public:
 
 private:
     Poco::Logger * log = &Poco::Logger::get("AWSClient");
+};
+
+class S3AuthSigner : public Aws::Client::AWSAuthV4Signer
+{
+public:
+    S3AuthSigner(
+        const Aws::Client::ClientConfiguration & clientConfiguration,
+        const Aws::Auth::AWSCredentials & credentials,
+        const DB::HeaderCollection & headers_)
+        : Aws::Client::AWSAuthV4Signer(
+            std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials),
+            "s3",
+            clientConfiguration.region,
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+            false)
+        , headers(headers_)
+    {
+    }
+
+    bool SignRequest(Aws::Http::HttpRequest & request, const char * region, bool signBody) const override
+    {
+        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, signBody);
+        for (const auto & header : headers)
+            request.SetHeaderValue(header.name, header.value);
+        return result;
+    }
+
+    bool PresignRequest(
+        Aws::Http::HttpRequest & request,
+        const char * region,
+        const char * serviceName,
+        long long expirationTimeInSeconds) const override // NOLINT
+    {
+        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, serviceName, expirationTimeInSeconds);
+        for (const auto & header : headers)
+            request.SetHeaderValue(header.name, header.value);
+        return result;
+    }
+
+private:
+    const DB::HeaderCollection headers;
 };
 }
 
@@ -136,6 +178,25 @@ namespace S3
             std::move(client_configuration), // Client configuration.
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
             is_virtual_hosted_style || cfg.endpointOverride.empty() // Use virtual addressing if endpoint is not specified.
+        );
+    }
+
+    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
+        const String & endpoint,
+        bool is_virtual_hosted_style,
+        const String & access_key_id,
+        const String & secret_access_key,
+        HeaderCollection headers)
+    {
+        Aws::Client::ClientConfiguration cfg;
+        if (!endpoint.empty())
+            cfg.endpointOverride = endpoint;
+
+        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+        return std::make_shared<Aws::S3::S3Client>(
+            std::make_shared<S3AuthSigner>(cfg, std::move(credentials), std::move(headers)),
+            std::move(cfg), // Client configuration.
+            is_virtual_hosted_style || cfg.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
         );
     }
 
