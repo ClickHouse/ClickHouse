@@ -70,6 +70,11 @@ ReplxxLineReader::ReplxxLineReader(
 
 ReplxxLineReader::~ReplxxLineReader()
 {
+    errno = 0;
+    if (close(history_file_fd))
+    {
+        rx.print("Close of history file failed: %s\n", strerror(errno));
+    }
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
