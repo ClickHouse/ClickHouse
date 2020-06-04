@@ -8,7 +8,6 @@ set (SRCS
     getMemoryAmount.cpp
     getThreadId.cpp
     JSON.cpp
-    LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
     preciseExp10.cpp
@@ -18,11 +17,11 @@ set (SRCS
     terminalColors.cpp
 )
 
-if (ENABLE_REPLXX)
-    list (APPEND SRCS ReplxxLineReader.cpp)
-elseif (ENABLE_READLINE)
-    list (APPEND SRCS ReadlineLineReader.cpp)
-endif ()
+#if (ENABLE_REPLXX)
+#    list (APPEND SRCS ReplxxLineReader.cpp)
+#elseif (ENABLE_READLINE)
+#    list (APPEND SRCS ReadlineLineReader.cpp)
+#endif ()
 
 if (USE_DEBUG_HELPERS)
     set (INCLUDE_DEBUG_HELPERS "-include ${ClickHouse_SOURCE_DIR}/base/common/iostream_debug_helpers.h")
@@ -43,7 +42,6 @@ if (USE_INTERNAL_CCTZ)
 endif()
 
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
-target_include_directories(common PUBLIC ../../src/Parsers/..)
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (common SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})

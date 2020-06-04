@@ -22,7 +22,7 @@ private:
     const std::unordered_map<DB::TokenType, replxx::Replxx::Color> token_to_color = {
         { DB::TokenType::Whitespace, replxx::Replxx::Color::NORMAL },
         { DB::TokenType::Comment, replxx::Replxx::Color::GRAY },
-        { DB::TokenType::BareWord, replxx::Replxx::Color::RED },
+        { DB::TokenType::BareWord, replxx::Replxx::Color::YELLOW },
         { DB::TokenType::Number, replxx::Replxx::Color::BLUE },
         { DB::TokenType::StringLiteral, replxx::Replxx::Color::BRIGHTCYAN },
         { DB::TokenType::QuotedIdentifier, replxx::Replxx::Color::BRIGHTMAGENTA },
