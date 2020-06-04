@@ -19,6 +19,8 @@ SRCS(
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
     Aggregator.cpp
+    ArithmeticOperationsInAgrFuncOptimize.cpp
+    ArithmeticOperationsInAgrFuncOptimize.h
     ArrayJoinAction.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp

@@ -22,6 +22,7 @@
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
+#include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -429,6 +430,16 @@ void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_miltiif)
         OptimizeIfChainsVisitor().visit(query);
 }
 
+void optimizeArithmeticOperationsInAgr(ASTPtr & query, bool optimize_arithmetic_operations_in_agr_func)
+{
+    if (optimize_arithmetic_operations_in_agr_func)
+    {
+        /// Removing arithmetic operations from functions
+        ArithmeticOperationsInAgrFuncVisitor::Data data = {};
+        ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
+    }
+}
+
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
@@ -811,6 +822,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     {
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
+        optimizeArithmeticOperationsInAgr(query, settings.optimize_arithmetic_operations_in_agr_func);
+
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_column_names, settings).optimize(*select_query);
 
@@ -839,7 +852,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
-SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage) const
+SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage, bool allow_aggregations) const
 {
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
@@ -855,7 +868,20 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
 
     optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
-    assertNoAggregates(query, "in wrong place");
+    if (allow_aggregations)
+    {
+        GetAggregatesVisitor::Data data;
+        GetAggregatesVisitor(data).visit(query);
+
+        /// There can not be other aggregate functions within the aggregate functions.
+        for (const ASTFunction * node : data.aggregates)
+            for (auto & arg : node->arguments->children)
+                assertNoAggregates(arg, "inside another aggregate function");
+        result.aggregates = data.aggregates;
+    }
+    else
+        assertNoAggregates(query, "in wrong place");
+
     result.collectUsedColumns(query);
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }

@@ -9,6 +9,8 @@
 #include <IO/ReadBufferFromFile.h>
 
 
+namespace CurrentMetrics { class Increment; }
+
 namespace DB
 {
 
@@ -37,9 +39,9 @@ public:
     bool scheduleAfter(size_t ms);
 private:
     void run();
-    bool processFiles();
-    void processFile(const std::string & file_path);
-    void processFilesWithBatching(const std::map<UInt64, std::string> & files);
+    bool processFiles(CurrentMetrics::Increment & metric_pending_files);
+    void processFile(const std::string & file_path, CurrentMetrics::Increment & metric_pending_files);
+    void processFilesWithBatching(const std::map<UInt64, std::string> & files, CurrentMetrics::Increment & metric_pending_files);
 
     static bool isFileBrokenErrorCode(int code);
     void markAsBroken(const std::string & file_path) const;
@@ -66,14 +68,14 @@ private:
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::atomic<bool> quit {false};
     std::mutex mutex;
-    Logger * log;
+    Poco::Logger * log;
     ActionBlocker & monitor_blocker;
 
     BackgroundSchedulePool & bg_pool;
     BackgroundSchedulePoolTaskHolder task_handle;
 
     /// Read insert query and insert settings for backward compatible.
-    static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Logger * log);
+    static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Poco::Logger * log);
 
     friend class DirectoryMonitorBlockInputStream;
 };

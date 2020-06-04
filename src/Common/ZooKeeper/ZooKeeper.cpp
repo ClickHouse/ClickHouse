@@ -48,7 +48,7 @@ static void check(int32_t code, const std::string & path)
 void ZooKeeper::init(const std::string & implementation_, const std::string & hosts_, const std::string & identity_,
                      int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_)
 {
-    log = &Logger::get("ZooKeeper");
+    log = &Poco::Logger::get("ZooKeeper");
     hosts = hosts_;
     identity = identity_;
     session_timeout_ms = session_timeout_ms_;
@@ -79,7 +79,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
             }
             catch (const Poco::Net::DNSException & e)
             {
-                LOG_ERROR(log, "Cannot use ZooKeeper host " << host_string << ", reason: " << e.displayText());
+                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
             }
         }
 
@@ -95,7 +95,10 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
                 Poco::Timespan(0, ZOOKEEPER_CONNECTION_TIMEOUT_MS * 1000),
                 Poco::Timespan(0, operation_timeout_ms_ * 1000));
 
-        LOG_TRACE(log, "initialized, hosts: " << hosts << (chroot.empty() ? "" : ", chroot: " + chroot));
+        if (chroot.empty())
+            LOG_TRACE(log, "Initialized, hosts: {}", hosts);
+        else
+            LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", hosts, chroot);
     }
     else if (implementation == "testkeeper")
     {

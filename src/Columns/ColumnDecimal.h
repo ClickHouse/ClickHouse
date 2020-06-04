@@ -108,6 +108,7 @@ public:
     void updateWeakHash32(WeakHash32 & hash) const override;
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges& equal_range) const override;
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -152,6 +153,8 @@ public:
     const T & getElement(size_t n) const { return data[n]; }
     T & getElement(size_t n) { return data[n]; }
 
+    UInt32 getScale() const {return scale;}
+
 protected:
     Container data;
     UInt32 scale;
@@ -193,5 +196,7 @@ ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size
 
     return res;
 }
+
+TypeIndex columnDecimalDataType(const IColumn * column);
 
 }

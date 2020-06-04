@@ -181,8 +181,11 @@ const KeyCondition::AtomMap KeyCondition::atom_map
     },
     {
         "empty",
-        [] (RPNElement & out, const Field &)
+        [] (RPNElement & out, const Field & value)
         {
+            if (value.getType() != Field::Types::String)
+                return false;
+
             out.function = RPNElement::FUNCTION_IN_RANGE;
             out.range = Range("");
             return true;
@@ -190,8 +193,11 @@ const KeyCondition::AtomMap KeyCondition::atom_map
     },
     {
         "notEmpty",
-        [] (RPNElement & out, const Field &)
+        [] (RPNElement & out, const Field & value)
         {
+            if (value.getType() != Field::Types::String)
+                return false;
+
             out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
             out.range = Range("");
             return true;
@@ -843,7 +849,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
             || const_value.getType() == Field::Types::Float64)
         {
             /// Zero in all types is represented in memory the same way as in UInt64.
-            out.function = const_value.get<UInt64>()
+            out.function = const_value.safeGet<UInt64>()
                 ? RPNElement::ALWAYS_TRUE
                 : RPNElement::ALWAYS_FALSE;
 

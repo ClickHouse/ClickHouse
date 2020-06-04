@@ -136,7 +136,7 @@ public:
 
     bool if_exists = false;     /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
 
-    PartDestinationType move_destination_type; /// option for MOVE PART/PARTITION
+    DataDestinationType move_destination_type; /// option for MOVE PART/PARTITION
 
     String move_destination_name;             /// option for MOVE PART/PARTITION
 
