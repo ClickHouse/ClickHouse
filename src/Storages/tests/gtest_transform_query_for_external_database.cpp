@@ -18,6 +18,8 @@ using namespace DB;
 /// NOTE How to do better?
 struct State
 {
+    State(const State&) = delete;
+
     Context context;
     NamesAndTypesList columns{
         {"column", std::make_shared<DataTypeUInt8>()},
@@ -43,8 +45,6 @@ private:
         DatabaseCatalog::instance().attachDatabase("test", database);
         context.setCurrentDatabase("test");
     }
-
-    State(const State&) = delete;
 };
 
 
