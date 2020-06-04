@@ -35,7 +35,8 @@ ReplxxLineReader::ReplxxLineReader(
     };
 
 
-    auto highlighter_callback = [this] (const String & query, std::vector<Replxx::Color> & colors ) {
+    auto highlighter_callback = [this] (const String & query, std::vector<Replxx::Color> & colors )
+    {
         Lexer lexer(query.data(), query.data() + query.size());
         size_t pos = 0;
 
