@@ -8,7 +8,6 @@ set (SRCS
     getMemoryAmount.cpp
     getThreadId.cpp
     JSON.cpp
-    LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
     preciseExp10.cpp
@@ -18,11 +17,11 @@ set (SRCS
     terminalColors.cpp
 )
 
-if (ENABLE_REPLXX)
-    list (APPEND SRCS ReplxxLineReader.cpp)
-elseif (ENABLE_READLINE)
-    list (APPEND SRCS ReadlineLineReader.cpp)
-endif ()
+#if (ENABLE_REPLXX)
+#    list (APPEND SRCS ReplxxLineReader.cpp)
+#elseif (ENABLE_READLINE)
+#    list (APPEND SRCS ReadlineLineReader.cpp)
+#endif ()
 
 if (USE_DEBUG_HELPERS)
     set (INCLUDE_DEBUG_HELPERS "-include ${ClickHouse_SOURCE_DIR}/base/common/iostream_debug_helpers.h")
@@ -30,6 +29,7 @@ if (USE_DEBUG_HELPERS)
 endif ()
 
 add_library (common ${SRCS})
+#add_library(common clickhouse_parsers)
 
 if (WITH_COVERAGE)
     target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
