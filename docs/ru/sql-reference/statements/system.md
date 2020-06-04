@@ -16,6 +16,8 @@
 -   [STOP FETCHES](#query_language-system-stop-fetches)
 -   [SYNC REPLICA](#query_language-system-sync-replica)
 -   [START FETCHES](#query_language-system-start-fetches)
+-   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
+-   [START REPLICATED SENDS](#query_language-system-start-replicated-sends)
 
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
@@ -114,17 +116,31 @@ SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### SYNC REPLICA {#query_language-system-sync-replica}
-Ждет когда одна или несколько таблиц семейства ReplicatedMergeTree будут синхронизированы с другими репликами в кластере, будет работать до receive_timeout, если синхронизация для таблицы отключена в настоящий момент времени:  
+Ждет когда таблица семейства ReplicatedMergeTree будет синхронизирована с другими репликами в кластере, будет работать до receive_timeout, если синхронизация для таблицы отключена в настоящий момент времени:  
 
 ``` sql
-SYSTEM SYNC REPLICA [[db.]replicated_merge_tree_family_table_name]
+SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
 ### START FETCHES {#query_language-system-start-fetches}
-Позволяет заново запустить фоновые процессы синхронизации новыми вставленными кусками данных с другими репликами в кластере для таблиц семейства ReplicatedMergeTree:
+Позволяет запустить фоновые процессы синхронизации новыми вставленными кусками данных с другими репликами в кластере для таблиц семейства ReplicatedMergeTree:
 
 ``` sql
 SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
+```
+
+### STOP REPLICATED SENDS {#query_language-system-start-replicated-sends}
+Позволяет остановить фоновые процессы отсылки новых вставленных кусков данных другим репликам в кластере для таблиц семейства ReplicatedMergeTree:
+
+``` sql
+SYSTEM STOP REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
+```
+
+### START REPLICATED SENDS {#query_language-system-start-replicated-sends}
+Позволяет запустить фоновые процессы отсылки новых вставленных кусков данных другим репликам в кластере для таблиц семейства ReplicatedMergeTree:
+
+``` sql
+SYSTEM START REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/system/) <!--hide-->

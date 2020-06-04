@@ -21,6 +21,8 @@ toc_title: SYSTEM
 -   [STOP FETCHES](#query_language-system-stop-fetches)
 -   [SYNC REPLICA](#query_language-system-sync-replica)
 -   [START FETCHES](#query_language-system-start-fetches)
+-   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
+-   [START REPLICATED SENDS](#query_language-system-start-replicated-sends)
 
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
@@ -122,7 +124,7 @@ SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 Wait when ReplicatedMergeTree table will synced with other replicas in cluster, will run until receive_timeout if fetches currently disabled for table:  
 
 ``` sql
-SYSTEM SYNC REPLICA [[db.]replicated_merge_tree_family_table_name]
+SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
 ### START FETCHES {#query_language-system-start-fetches}
@@ -130,6 +132,20 @@ Provides possibility to start background fetches for inserted parts for tables i
 
 ``` sql
 SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
+```
+
+### STOP REPLICATED SENDS {#query_language-system-start-replicated-sends}
+Provides possibility to stop background sends to other replicas in cluster for new inserted parts for tables in the ReplicatedMergeTree family:
+
+``` sql
+SYSTEM STOP REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
+```
+
+### START REPLICATED SENDS {#query_language-system-start-replicated-sends}
+Provides possibility to start background sends to other replicas in cluster for new inserted parts for tables in the ReplicatedMergeTree family:
+
+``` sql
+SYSTEM START REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/system/) <!--hide-->
