@@ -67,8 +67,8 @@ LineReader::Suggest::WordsRange LineReader::Suggest::getCompletions(const String
         });
 }
 
-LineReader::LineReader(const String & history_file_path_, char extender_, char delimiter_)
-    : history_file_path(history_file_path_), extender(extender_), delimiter(delimiter_)
+LineReader::LineReader(const String & history_file_path_, bool multiline_, Patterns extenders_, Patterns delimiters_)
+    : history_file_path(history_file_path_), multiline(multiline_), extenders(std::move(extenders_)), delimiters(std::move(delimiters_))
 {
     /// FIXME: check extender != delimiter
 }
@@ -76,38 +76,60 @@ LineReader::LineReader(const String & history_file_path_, char extender_, char d
 String LineReader::readLine(const String & first_prompt, const String & second_prompt)
 {
     String line;
-    bool is_multiline = false;
+    bool need_next_line = false;
 
-    while (auto status = readOneLine(is_multiline ? second_prompt : first_prompt))
+    while (auto status = readOneLine(need_next_line ? second_prompt : first_prompt))
     {
         if (status == RESET_LINE)
         {
             line.clear();
-            is_multiline = false;
+            need_next_line = false;
             continue;
         }
 
         if (input.empty())
         {
-            if (!line.empty() && !delimiter && !hasInputData())
+            if (!line.empty() && !multiline && !hasInputData())
                 break;
             else
                 continue;
         }
 
-        is_multiline = (input.back() == extender) || (delimiter && input.back() != delimiter) || hasInputData();
-
-        if (input.back() == extender)
+#if !defined(ARCADIA_BUILD) /// C++20
+        const char * has_extender = nullptr;
+        for (const auto * extender : extenders)
         {
-            input = input.substr(0, input.size() - 1);
+            if (input.ends_with(extender))
+            {
+                has_extender = extender;
+                break;
+            }
+        }
+
+        const char * has_delimiter = nullptr;
+        for (const auto * delimiter : delimiters)
+        {
+            if (input.ends_with(delimiter))
+            {
+                has_delimiter = delimiter;
+                break;
+            }
+        }
+
+        need_next_line = has_extender || (multiline && !has_delimiter) || hasInputData();
+
+        if (has_extender)
+        {
+            input.resize(input.size() - strlen(has_extender));
             trim(input);
             if (input.empty())
                 continue;
         }
+#endif
 
         line += (line.empty() ? "" : " ") + input;
 
-        if (!is_multiline)
+        if (!need_next_line)
             break;
     }
 

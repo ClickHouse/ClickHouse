@@ -101,7 +101,7 @@ private:
         const Settings & settings) const;
 
     MarkRanges filterMarksUsingIndex(
-        MergeTreeIndexPtr index,
+        MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
