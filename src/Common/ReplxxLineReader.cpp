@@ -1,4 +1,5 @@
-#include <common/ReplxxLineReader.h>
+#include <Common/ReplxxLineReader.h>
+#include <Common/UTF8Helpers.h>
 
 #include <errno.h>
 #include <string.h>
@@ -22,17 +23,39 @@ ReplxxLineReader::ReplxxLineReader(
 {
     using namespace std::placeholders;
     using Replxx = replxx::Replxx;
+    using namespace DB;
 
     if (!history_file_path.empty())
         rx.history_load(history_file_path);
 
-    auto callback = [&suggest] (const String & context, size_t context_size)
+    auto suggesting_callback = [&suggest] (const String & context, size_t context_size)
     {
         auto range = suggest.getCompletions(context, context_size);
         return Replxx::completions_t(range.first, range.second);
     };
 
-    rx.set_completion_callback(callback);
+
+    auto highlighter_callback = [this] (const String & query, std::vector<Replxx::Color> & colors)
+    {
+        Lexer lexer(query.data(), query.data() + query.size());
+        size_t pos = 0;
+
+        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+        {
+            size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token.begin), token.size());
+            for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
+            {
+                if (this->token_to_color.find(token.type) != this->token_to_color.end())
+                    colors[pos + code_point_index] = this->token_to_color.at(token.type);
+                else
+                    colors[pos + code_point_index] = this->unknown_token_color;
+            }
+            pos += utf8_len;
+        }
+    };
+
+    rx.set_highlighter_callback(highlighter_callback);
+    rx.set_completion_callback(suggesting_callback);
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
 
