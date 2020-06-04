@@ -214,7 +214,7 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
 
 /// Check that there is no user-level settings at the top level in config.
 /// This is a common source of mistake (user don't know where to write user-level setting).
-void checkForIncorrectSettings(const Poco::Util::AbstractConfiguration & config, const std::string & path)
+void checkForUserSettingsAtTopLevel(const Poco::Util::AbstractConfiguration & config, const std::string & path)
 {
     if (config.getBool("skip_check_for_incorrect_settings", false))
         return;
@@ -234,6 +234,21 @@ void checkForIncorrectSettings(const Poco::Util::AbstractConfiguration & config,
                 ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         }
     }
+}
+
+void checkForUsersNotInMainConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_path,
+    const std::string & users_config_path,
+    Poco::Logger * log)
+{
+    if (config.getBool("skip_check_for_incorrect_settings", false))
+        return;
+
+    if (config.has("users") || config.has("profiles") || config.has("quotas"))
+        LOG_ERROR(log, "The <users>, <profiles> and <quotas> elements should be located in users config file: {} not in main config {}."
+            " Also note that you should place configuration changes to the appropriate *.d directory like 'users.d'.",
+            users_config_path, config_path);
 }
 
 
@@ -296,7 +311,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    checkForIncorrectSettings(config(), config_path);
+    checkForUserSettingsAtTopLevel(config(), config_path);
 
     const auto memory_amount = getMemoryAmount();
 
@@ -510,7 +525,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
-            checkForIncorrectSettings(*config, config_path);
+            checkForUserSettingsAtTopLevel(*config, config_path);
 
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
@@ -540,6 +555,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         if (Poco::File(config_dir + users_config_path).exists())
             users_config_path = config_dir + users_config_path;
     }
+
+    if (users_config_path != config_path)
+        checkForUsersNotInMainConfig(config(), config_path, users_config_path, log);
+
     auto users_config_reloader = std::make_unique<ConfigReloader>(
         users_config_path,
         include_from_path,
@@ -549,7 +568,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         [&](ConfigurationPtr config)
         {
             global_context->setUsersConfig(config);
-            checkForIncorrectSettings(*config, users_config_path);
+            checkForUserSettingsAtTopLevel(*config, users_config_path);
         },
         /* already_loaded = */ false);
 
