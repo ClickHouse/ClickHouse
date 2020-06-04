@@ -46,6 +46,8 @@ void RabbitMQBlockOutputStream::write(const Block & block)
 
     if (buffer)
         buffer->flush();
+
+    storage.pingConnection();
 }
 
 
