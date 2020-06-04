@@ -387,15 +387,15 @@ namespace Coordination
                 String path = event.kv().key();
                 EtcdKey etcd_key;
                 etcd_key.setFullPath(path);
-                WatchResponse watch_response_;
-                watch_response_.path = path;
+                WatchResponse cur_watch_response;
+                cur_watch_response.path = path;
 
-                auto it = watches.find(watch_response_.path);
+                auto it = watches.find(cur_watch_response.path);
                 if (it != watches.end())
                 {
                     for (auto & callback : it->second)
                         if (callback)
-                            callback(watch_response_);
+                            callback(cur_watch_response);
 
                     watches.erase(it);
                 }
