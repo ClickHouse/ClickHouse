@@ -16,10 +16,7 @@ namespace DB
 class ConcatProcessor : public IProcessor
 {
 public:
-    ConcatProcessor(const Block & header, size_t num_inputs)
-        : IProcessor(InputPorts(num_inputs, header), OutputPorts{header}), current_input(inputs.begin())
-    {
-    }
+    ConcatProcessor(const Block & header, size_t num_inputs);
 
     String getName() const override { return "Concat"; }
 
@@ -29,6 +26,9 @@ public:
 
 private:
     InputPorts::iterator current_input;
+
+    bool is_initialized = false;
+    void prepareInitializeInputs();
 };
 
 }

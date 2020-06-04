@@ -4,6 +4,17 @@
 namespace DB
 {
 
+ConcatProcessor::ConcatProcessor(const Block & header, size_t num_inputs)
+    : IProcessor(InputPorts(num_inputs, header), OutputPorts{header}), current_input(inputs.begin())
+{
+}
+
+void ConcatProcessor::prepareInitializeInputs()
+{
+    for (auto & input : inputs)
+        input.setNeeded();
+}
+
 ConcatProcessor::Status ConcatProcessor::prepare()
 {
     auto & output = outputs.front();
@@ -41,6 +52,12 @@ ConcatProcessor::Status ConcatProcessor::prepare()
     }
 
     auto & input = *current_input;
+
+    if (!is_initialized)
+    {
+        prepareInitializeInputs();
+        is_initialized = true;
+    }
 
     input.setNeeded();
 
