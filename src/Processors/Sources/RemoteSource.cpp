@@ -100,7 +100,6 @@ Chunk RemoteExtremesSource::generate()
     if (auto block = query_executor->getExtremes())
     {
         UInt64 num_rows = block.rows();
-std::cerr << "Got extrees " << num_rows << " rows " << std::endl;
         return Chunk(block.getColumns(), num_rows);
     }
 
