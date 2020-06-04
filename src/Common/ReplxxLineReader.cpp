@@ -1,4 +1,5 @@
 #include <Common/ReplxxLineReader.h>
+#include <Common/UTF8Helpers.h>
 
 #include <errno.h>
 #include <string.h>
@@ -39,14 +40,15 @@ ReplxxLineReader::ReplxxLineReader(const Suggest & suggest, const String & histo
 
         for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
         {
-            for (size_t byte = 0; byte < token.size(); ++byte)
+            size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token.begin), token.size());
+            for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
             {
                 if (this->token_to_color.find(token.type) != this->token_to_color.end())
-                    colors[pos + byte] = this->token_to_color.at(token.type);
+                    colors[pos + code_point_index] = this->token_to_color.at(token.type);
                 else
-                    colors[pos + byte] = this->unknown_token_color;
+                    colors[pos + code_point_index] = this->unknown_token_color;
             }
-            pos += token.size();
+            pos += utf8_len;
         }
     };
 
