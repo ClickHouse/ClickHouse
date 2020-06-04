@@ -179,10 +179,6 @@ struct PerfEventsCounters
     PerfEventValue previous_values[NUMBER_OF_RAW_EVENTS]{};
 
 
-    static constexpr Float64 FILE_DESCRIPTORS_THRESHOLD = 0.7;
-    static constexpr char ALL_EVENTS_NAME[] = "all";
-
-
     void initializeProfileEvents(const std::string & events_list);
     void finalizeProfileEvents(ProfileEvents::Counters & profile_events);
     void closeEventDescriptors();
