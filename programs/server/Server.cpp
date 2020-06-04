@@ -246,9 +246,14 @@ void checkForUsersNotInMainConfig(
         return;
 
     if (config.has("users") || config.has("profiles") || config.has("quotas"))
+    {
+        /// We cannot throw exception here, because we have support for obsolete 'conf.d' directory
+        /// (that does not correspond to config.d or users.d) but substitute configuration to both of them.
+
         LOG_ERROR(log, "The <users>, <profiles> and <quotas> elements should be located in users config file: {} not in main config {}."
             " Also note that you should place configuration changes to the appropriate *.d directory like 'users.d'.",
             users_config_path, config_path);
+    }
 }
 
 
