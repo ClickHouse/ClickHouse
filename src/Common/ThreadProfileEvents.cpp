@@ -171,6 +171,22 @@ static const PerfEventInfo raw_events_info[] = {
 #undef HARDWARE_EVENT
 #undef SOFTWARE_EVENT
 
+// A map of event name -> event index, to parse event list in settings.
+static const std::unordered_map<std::string, size_t> populateEventMap()
+{
+    std::unordered_map<std::string, size_t> name_to_index;
+    name_to_index.reserve(NUMBER_OF_RAW_EVENTS);
+
+    for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
+    {
+        name_to_index.emplace(raw_events_info[i].settings_name, i);
+    }
+
+    return name_to_index;
+}
+
+static const auto event_name_to_index = populateEventMap();
+
 static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, UInt64 flags)
 {
     return static_cast<int>(syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags));
@@ -194,20 +210,30 @@ static int openPerfEventDisabled(Int32 perf_event_paranoid, bool has_cap_sys_adm
 static void enablePerfEvent(int event_fd)
 {
     if (ioctl(event_fd, PERF_EVENT_IOC_ENABLE, 0))
-        LOG_WARNING(&Poco::Logger::get(__PRETTY_FUNCTION__), "Can't enable perf event with file descriptor {}", event_fd);
+    {
+        LOG_WARNING(&Poco::Logger::get("PerfEvents"),
+            "Can't enable perf event with file descriptor {}: '{}' ({})",
+            event_fd, strerror(errno), errno);
+    }
 }
 
 static void disablePerfEvent(int event_fd)
 {
     if (ioctl(event_fd, PERF_EVENT_IOC_DISABLE, 0))
-        LOG_WARNING(&Poco::Logger::get(__PRETTY_FUNCTION__), "Can't disable perf event with file descriptor {}"  , event_fd);
+    {
+        LOG_WARNING(&Poco::Logger::get("PerfEvents"),
+            "Can't disable perf event with file descriptor {}: '{}' ({})",
+            event_fd, strerror(errno), errno);
+    }
 }
 
 static void releasePerfEvent(int event_fd)
 {
     if (close(event_fd))
     {
-        LOG_WARNING(&Poco::Logger::get(__PRETTY_FUNCTION__), "Can't close perf event file descriptor {}: {} ({})", event_fd, errno, strerror(errno));
+        LOG_WARNING(&Poco::Logger::get("PerfEvents"),
+            "Can't close perf event file descriptor {}: {} ({})",
+            event_fd, strerror(errno), errno);
     }
 }
 
@@ -218,11 +244,14 @@ static bool validatePerfEventDescriptor(int & fd)
 
     if (errno == EBADF)
     {
-        LOG_WARNING(&Poco::Logger::get(__PRETTY_FUNCTION__), "Event descriptor {} was closed from the outside; reopening", fd);
+        LOG_WARNING(&Poco::Logger::get("PerfEvents"),
+            "Event descriptor {} was closed from the outside; reopening", fd);
     }
     else
     {
-        LOG_WARNING(&Poco::Logger::get(__PRETTY_FUNCTION__), "Error while checking availability of event descriptor {}: {} ({})", fd, strerror(errno), errno);
+        LOG_WARNING(&Poco::Logger::get("PerfEvents"),
+            "Error while checking availability of event descriptor {}: {} ({})",
+            fd, strerror(errno), errno);
 
         disablePerfEvent(fd);
         releasePerfEvent(fd);
@@ -234,7 +263,7 @@ static bool validatePerfEventDescriptor(int & fd)
 
 bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_events_list)
 {
-    std::vector<size_t> valid_event_indices = eventIndicesFromString(needed_events_list);
+    const auto valid_event_indices = eventIndicesFromString(needed_events_list);
 
     // find state changes (if there are any)
     bool old_state[NUMBER_OF_RAW_EVENTS];
@@ -281,8 +310,6 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
 
     if (events_to_open.empty())
     {
-        // FIXME remove this
-        LOG_TRACE(&Poco::Logger::get("PerfEventsCounters"), "No perf events to open, list='{}'", needed_events_list);
         return true;
     }
 
@@ -300,37 +327,22 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     bool has_cap_sys_admin = hasLinuxCapability(CAP_SYS_ADMIN);
     if (perf_event_paranoid >= 3 && !has_cap_sys_admin)
     {
-        LOG_WARNING(&Poco::Logger::get("PerfEventsCounters"), "Not enough permissions to record perf events: "
+        LOG_WARNING(&Poco::Logger::get("PerfEvents"),
+            "Not enough permissions to record perf events: "
             "perf_event_paranoid = {} and CAP_SYS_ADMIN = 0",
             perf_event_paranoid);
         return false;
     }
 
-    // check file descriptors limit
-    rlimit64 limits{};
-    if (getrlimit64(RLIMIT_NOFILE, &limits))
-    {
-        LOG_WARNING(&Poco::Logger::get("PerfEventsCounters"), "Unable to get rlimit: {} ({})", strerror(errno),
-                    errno);
-        return false;
-    }
-    UInt64 maximum_open_descriptors = limits.rlim_cur;
-
-    const size_t opened_descriptors = std::distance(
-        std::filesystem::directory_iterator("/proc/self/fd"),
-        std::filesystem::directory_iterator());
-
-    UInt64 fd_count_afterwards = opened_descriptors + events_to_open.size();
-    UInt64 threshold = static_cast<UInt64>(maximum_open_descriptors * FILE_DESCRIPTORS_THRESHOLD);
-    if (fd_count_afterwards > threshold)
-    {
-        LOG_WARNING(&Poco::Logger::get("PerfEventsCounters"), "Can't measure perf events as the result number of file descriptors ({}) is more than the current threshold ({} = {} * {})",
-            fd_count_afterwards, threshold, maximum_open_descriptors,
-            FILE_DESCRIPTORS_THRESHOLD);
-        return false;
-    }
-
-    // open descriptors for new events
+    // Open descriptors for new events.
+    // Theoretically, we can run out of file descriptors. Threads go up to 10k,
+    // and there might be a dozen perf events per thread, so we're looking at
+    // 100k open files. In practice, this is not likely -- perf events are
+    // mostly used in performance tests or other kinds of testing, and the
+    // number of threads stays below hundred.
+    // We used to check the number of open files by enumerating /proc/self/fd,
+    // but listing all open files before opening more files is obviously
+    // quadratic, and quadraticity never ends well.
     for (size_t i : events_to_open)
     {
         const PerfEventInfo & event_info = raw_events_info[i];
@@ -338,35 +350,28 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
         // disable by default to add as little extra time as possible
         fd = openPerfEventDisabled(perf_event_paranoid, has_cap_sys_admin, event_info.event_type, event_info.event_config);
 
-        if (fd == -1)
+        if (fd == -1 && errno != ENOENT)
         {
-            LOG_WARNING(&Poco::Logger::get("PerfEventsCounters"), "Perf event is unsupported: {}"
-                " (event_type={}, event_config={})",
-                event_info.settings_name, event_info.event_type,
-                event_info.event_config);
+            // ENOENT means that the event is not supported, so we don't log it
+            // for each thread. Other codes might signify an error.
+            LOG_WARNING(&Poco::Logger::get("PerfEvents"),
+                "Failed to open perf event {} (event_type={}, event_config={}): "
+                "'{}' ({})", event_info.settings_name, event_info.event_type,
+                event_info.event_config, strerror(errno), errno);
         }
     }
 
     return true;
 }
 
-// Parse comma-separated list of event names. Empty or 'all' means all available
+// Parse comma-separated list of event names. Empty means all available
 // events.
-// TODO add validation to setting
 std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string & events_list)
 {
-    std::unordered_set<std::string> requested_events;
-    std::istringstream iss(events_list);
-    std::string event_name;
-    while (std::getline(iss, event_name, ','))
-    {
-        requested_events.insert(event_name);
-    }
-
     std::vector<size_t> result;
     result.reserve(NUMBER_OF_RAW_EVENTS);
-    if (requested_events.empty()
-        || requested_events.count("all") > 0)
+
+    if (events_list.empty())
     {
         for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
         {
@@ -375,11 +380,23 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
         return result;
     }
 
-    for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
+    std::istringstream iss(events_list);
+    std::string event_name;
+    while (std::getline(iss, event_name, ','))
     {
-        if (requested_events.count(raw_events_info[i].settings_name) > 0)
+        // Allow spaces at the beginning of the token, so that you can write
+        // 'a, b'.
+        event_name.erase(0, event_name.find_first_not_of(" "));
+
+        auto entry = event_name_to_index.find(event_name);
+        if (entry != event_name_to_index.end())
         {
-            result.push_back(i);
+            result.push_back(entry->second);
+        }
+        else
+        {
+            LOG_ERROR(&Poco::Logger::get("PerfEvents"),
+                "Unknown perf event name '{}' specified in settings", event_name);
         }
     }
 
@@ -388,9 +405,6 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
 
 void PerfEventsCounters::initializeProfileEvents(const std::string & events_list)
 {
-    // FIXME remove this
-    LOG_TRACE(&Poco::Logger::get("PerfEventsCounters"), "Initialize perf events\n");
-
     if (!processThreadLocalChanges(events_list))
         return;
 
@@ -428,7 +442,9 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
 
         if (bytes_read != bytes_to_read)
         {
-            LOG_WARNING(&Poco::Logger::get("PerfEventsCounters"), "Can't read event value from file descriptor: {}", fd);
+            LOG_WARNING(&Poco::Logger::get("PerfEvents"),
+                "Can't read event value from file descriptor {}: '{}' ({})",
+                fd, strerror(errno), errno);
             current_values[i] = {};
         }
     }
