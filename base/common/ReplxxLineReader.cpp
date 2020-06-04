@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <functional>
+#include <sys/file.h>
 
 namespace
 {
@@ -24,7 +25,10 @@ ReplxxLineReader::ReplxxLineReader(
     using Replxx = replxx::Replxx;
 
     if (!history_file_path.empty())
+    {
         rx.history_load(history_file_path);
+        history_file_fd = open(history_file_path.c_str(), O_RDWR);
+    }
 
     auto callback = [&suggest] (const String & context, size_t context_size)
     {
@@ -68,7 +72,15 @@ LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 
 void ReplxxLineReader::addToHistory(const String & line)
 {
+    // locking history file to prevent from inconsistent concurrent changes
+    flock(history_file_fd, LOCK_EX);
+
     rx.history_add(line);
+
+    // flush changes to the disk
+    rx.history_save(history_file_path);
+
+    flock(history_file_fd, LOCK_UN);
 }
 
 void ReplxxLineReader::enableBracketedPaste()
