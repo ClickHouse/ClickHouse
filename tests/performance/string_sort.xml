@@ -32,6 +32,11 @@
     </substitutions>
 
     <query><![CDATA[SELECT {str1} FROM hits_100m_single ORDER BY {str1} LIMIT 10]]></query>
+    <query><![CDATA[SELECT {str1} FROM hits_100m_single ORDER BY {str1} LIMIT 300]]></query>
+    <query><![CDATA[SELECT {str1} FROM hits_100m_single ORDER BY {str1} LIMIT 1500]]></query>
+    <query><![CDATA[SELECT {str1} FROM hits_100m_single ORDER BY {str1} LIMIT 2000]]></query>
+    <query><![CDATA[SELECT {str1} FROM hits_100m_single ORDER BY {str1} LIMIT 5000]]></query>
+    <query><![CDATA[SELECT {str1} FROM hits_100m_single ORDER BY {str1} LIMIT 10000, 10000]]></query>
     <query><![CDATA[SELECT {str1} FROM hits_10m_single ORDER BY {str1} LIMIT 9000000, 10]]></query>
 
     <query><![CDATA[SELECT {str1}, {str2} FROM hits_100m_single ORDER BY {str1}, {str2} LIMIT 10]]></query>

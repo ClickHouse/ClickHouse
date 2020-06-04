@@ -192,6 +192,10 @@ public:
         return 0;
     }
 
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> &, PaddedPODArray<Int8> &, int, int) const override
+    {
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
 
