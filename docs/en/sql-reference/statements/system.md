@@ -19,12 +19,13 @@ toc_title: SYSTEM
 -   [STOP MERGES](#query_language-system-stop-merges)
 -   [START MERGES](#query_language-system-start-merges)
 -   [STOP FETCHES](#query_language-system-stop-fetches)
--   [SYNC REPLICA](#query_language-system-sync-replica)
 -   [START FETCHES](#query_language-system-start-fetches)
 -   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
 -   [START REPLICATED SENDS](#query_language-system-start-replicated-sends)
 -   [STOP REPLICATION QUEUES](#query_language-system-stop-replication-queues)
 -   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
+-   [SYNC REPLICA](#query_language-system-sync-replica)
+-   [RESTART REPLICA](#query_language-system-restart-replica)
 
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
@@ -122,13 +123,6 @@ Provides possibility to stop background fetches for inserted parts for tables in
 SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
-### SYNC REPLICA {#query_language-system-sync-replica}
-Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster. Will run until `receive_timeout` if fetches currently disabled for the table.
-
-``` sql
-SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
-```
-
 ### START FETCHES {#query_language-system-start-fetches}
 Provides possibility to start background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
 
@@ -162,6 +156,20 @@ Provides possibility to start background fetch tasks from replication queues whi
 
 ``` sql
 SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
+```
+
+### SYNC REPLICA {#query_language-system-sync-replica}
+Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster. Will run until `receive_timeout` if fetches currently disabled for the table.
+
+``` sql
+SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
+```
+
+### RESTART REPLICA {#query_language-system-restart-replica}
+Provides possibility to reinitialize Zookeeper sessions state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed  
+
+``` sql
+SYSTEM RESTART QUEUES [db.]replicated_merge_tree_family_table_name
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/system/) <!--hide-->

@@ -14,12 +14,13 @@
 -   [STOP MERGES](#query_language-system-stop-merges)
 -   [START MERGES](#query_language-system-start-merges)
 -   [STOP FETCHES](#query_language-system-stop-fetches)
--   [SYNC REPLICA](#query_language-system-sync-replica)
 -   [START FETCHES](#query_language-system-start-fetches)
 -   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
 -   [START REPLICATED SENDS](#query_language-system-start-replicated-sends)
 -   [STOP REPLICATION QUEUES](#query_language-system-stop-replication-queues)
 -   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
+-   [SYNC REPLICA](#query_language-system-sync-replica)
+-   [RESTART REPLICA](#query_language-system-restart-replica)
 
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
@@ -117,13 +118,6 @@ SYSTEM START MERGES [[db.]merge_tree_family_table_name]
 SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
-### SYNC REPLICA {#query_language-system-sync-replica}
-Ждет когда таблица семейства `ReplicatedMergeTree` будет синхронизирована с другими репликами в кластере, будет работать до достижения `receive_timeout`, если синхронизация для таблицы отключена в настоящий момент времени:  
-
-``` sql
-SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
-```
-
 ### START FETCHES {#query_language-system-start-fetches}
 Позволяет запустить фоновые процессы синхронизации новыми вставленными кусками данных с другими репликами в кластере для таблиц семейства `ReplicatedMergeTree`:
 
@@ -157,6 +151,20 @@ SYSTEM STOP REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 
 ``` sql
 SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
+```
+
+### SYNC REPLICA {#query_language-system-sync-replica}
+Ждет когда таблица семейства `ReplicatedMergeTree` будет синхронизирована с другими репликами в кластере, будет работать до достижения `receive_timeout`, если синхронизация для таблицы отключена в настоящий момент времени:  
+
+``` sql
+SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
+```
+
+### RESTART REPLICA {#query_language-system-restart-replica}
+Реинициализация состояния Zookeeper сессий для таблицы семейства `ReplicatedMergeTree`, сравнивает текущее состояние с тем что хранится в Zookeeper как источник правды и добавляет задачи Zookeeper очередь если необходимо  
+
+``` sql
+SYSTEM RESTART QUEUES [db.]replicated_merge_tree_family_table_name
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/system/) <!--hide-->
