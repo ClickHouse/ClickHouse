@@ -18,7 +18,7 @@ public:
     /// AggregatedChunkInfo stores the bucket number used for two-level aggregation.
     /// This flag should be typically enabled for queries with GROUP BY which are executed till WithMergeableState.
     RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_);
-    ~RemoteSource();
+    ~RemoteSource() override;
 
     String getName() const override { return "Remote"; }
 
@@ -47,7 +47,7 @@ class RemoteTotalsSource : public ISource
 {
 public:
     explicit RemoteTotalsSource(RemoteQueryExecutorPtr executor);
-    ~RemoteTotalsSource();
+    ~RemoteTotalsSource() override;
 
     String getName() const override { return "RemoteTotals"; }
 
@@ -63,7 +63,7 @@ class RemoteExtremesSource : public ISource
 {
 public:
     explicit RemoteExtremesSource(RemoteQueryExecutorPtr executor);
-    ~RemoteExtremesSource();
+    ~RemoteExtremesSource() override;
 
     String getName() const override { return "RemoteExtremes"; }
 
