@@ -822,7 +822,7 @@ Columns:
 -   `http_user_agent` ([String](../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP request.
 -   `quota_key` ([String](../sql-reference/data-types/string.md)) — The “quota key” specified in the [quotas](quotas.md) setting (see `keyed`).
 -   `revision` ([UInt32](../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
--   `ProfileEvents.Names` ([Array(String)](../sql-reference/data-types/array.md)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events)
+-   `ProfileEvents.Names` ([Array(String)](../sql-reference/data-types/array.md)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events).
 -   `ProfileEvents.Values` ([Array(UInt64)](../sql-reference/data-types/array.md)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
 
 **Example**

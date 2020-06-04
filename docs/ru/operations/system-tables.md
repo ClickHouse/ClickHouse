@@ -784,7 +784,7 @@ ClickHouse не удаляет логи из таблицы автоматиче
 -   `http_user_agent` ([String](../sql-reference/data-types/string.md)) — HTTP заголовок `UserAgent`.
 -   `quota_key` ([String](../sql-reference/data-types/string.md)) — «ключ квоты» из настроек [квот](quotas.md) (см. `keyed`).
 -   `revision` ([UInt32](../sql-reference/data-types/int-uint.md)) — ревизия ClickHouse.
--   `ProfileEvents.Names` ([Array(String)](../sql-reference/data-types/array.md)) — Счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(#system_tables-events
+-   `ProfileEvents.Names` ([Array(String)](../sql-reference/data-types/array.md)) — Счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events).
 -   `ProfileEvents.Values` ([Array(UInt64)](../sql-reference/data-types/array.md)) — метрики для данного потока, перечисленные в столбце `ProfileEvents.Names`.
 
 **Пример**
