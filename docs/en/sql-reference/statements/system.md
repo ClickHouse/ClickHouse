@@ -23,6 +23,8 @@ toc_title: SYSTEM
 -   [START FETCHES](#query_language-system-start-fetches)
 -   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
 -   [START REPLICATED SENDS](#query_language-system-start-replicated-sends)
+-   [STOP REPLICATION QUEUES](#query_language-system-stop-replication-queues)
+-   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
 
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
@@ -114,7 +116,7 @@ SYSTEM START MERGES [[db.]merge_tree_family_table_name]
 ```
 
 ### STOP FETCHES {#query_language-system-stop-fetches}
-Provides possibility to stop background fetches for inserted parts for tables in the ReplicatedMergeTree family:
+Provides possibility to stop background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
 
 ``` sql
 SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
@@ -128,24 +130,38 @@ SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
 ### START FETCHES {#query_language-system-start-fetches}
-Provides possibility to start background fetches for inserted parts for tables in the ReplicatedMergeTree family:
+Provides possibility to start background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
 
 ``` sql
 SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### STOP REPLICATED SENDS {#query_language-system-start-replicated-sends}
-Provides possibility to stop background sends to other replicas in cluster for new inserted parts for tables in the ReplicatedMergeTree family:
+Provides possibility to stop background sends to other replicas in cluster for new inserted parts for tables in the `ReplicatedMergeTree` family:
 
 ``` sql
 SYSTEM STOP REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### START REPLICATED SENDS {#query_language-system-start-replicated-sends}
-Provides possibility to start background sends to other replicas in cluster for new inserted parts for tables in the ReplicatedMergeTree family:
+Provides possibility to start background sends to other replicas in cluster for new inserted parts for tables in the `ReplicatedMergeTree` family:
 
 ``` sql
 SYSTEM START REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
+```
+
+### STOP REPLICATION QUEUES {#query_language-system-stop-replication-queues}
+Provides possibility to stop background fetch tasks from replication queues which stored in Zookeeper for tables in the `ReplicatedMergeTree` family. Possible background tasks types - merges, fetches, mutation, DDL statements with ON CLUSTER clause: 
+
+``` sql
+SYSTEM STOP REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
+```
+
+### START REPLICATION QUEUES {#query_language-system-start-replication-queues}
+Provides possibility to start background fetch tasks from replication queues which stored in Zookeeper for tables in the `ReplicatedMergeTree` family. Possible background tasks types - merges, fetches, mutation, DDL statements with ON CLUSTER clause: 
+
+``` sql
+SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/system/) <!--hide-->

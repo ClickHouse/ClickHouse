@@ -18,6 +18,8 @@
 -   [START FETCHES](#query_language-system-start-fetches)
 -   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
 -   [START REPLICATED SENDS](#query_language-system-start-replicated-sends)
+-   [STOP REPLICATION QUEUES](#query_language-system-stop-replication-queues)
+-   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
 
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
@@ -109,38 +111,52 @@ SYSTEM START MERGES [[db.]merge_tree_family_table_name]
 ```
 
 ### STOP FETCHES {#query_language-system-stop-fetches}
-Позволяет остановить фоновые процессы синхронизации новыми вставленными кусками данных с другими репликами в кластере для таблиц семейства ReplicatedMergeTree:
+Позволяет остановить фоновые процессы синхронизации новыми вставленными кусками данных с другими репликами в кластере для таблиц семейства `ReplicatedMergeTree`:
 
 ``` sql
 SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### SYNC REPLICA {#query_language-system-sync-replica}
-Ждет когда таблица семейства ReplicatedMergeTree будет синхронизирована с другими репликами в кластере, будет работать до достижения `receive_timeout`, если синхронизация для таблицы отключена в настоящий момент времени:  
+Ждет когда таблица семейства `ReplicatedMergeTree` будет синхронизирована с другими репликами в кластере, будет работать до достижения `receive_timeout`, если синхронизация для таблицы отключена в настоящий момент времени:  
 
 ``` sql
 SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
 ### START FETCHES {#query_language-system-start-fetches}
-Позволяет запустить фоновые процессы синхронизации новыми вставленными кусками данных с другими репликами в кластере для таблиц семейства ReplicatedMergeTree:
+Позволяет запустить фоновые процессы синхронизации новыми вставленными кусками данных с другими репликами в кластере для таблиц семейства `ReplicatedMergeTree`:
 
 ``` sql
 SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### STOP REPLICATED SENDS {#query_language-system-start-replicated-sends}
-Позволяет остановить фоновые процессы отсылки новых вставленных кусков данных другим репликам в кластере для таблиц семейства ReplicatedMergeTree:
+Позволяет остановить фоновые процессы отсылки новых вставленных кусков данных другим репликам в кластере для таблиц семейства `ReplicatedMergeTree`:
 
 ``` sql
 SYSTEM STOP REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### START REPLICATED SENDS {#query_language-system-start-replicated-sends}
-Позволяет запустить фоновые процессы отсылки новых вставленных кусков данных другим репликам в кластере для таблиц семейства ReplicatedMergeTree:
+Позволяет запустить фоновые процессы отсылки новых вставленных кусков данных другим репликам в кластере для таблиц семейства `ReplicatedMergeTree`:
 
 ``` sql
 SYSTEM START REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
+```
+
+### STOP REPLICATION QUEUES {#query_language-system-stop-replication-queues}
+Останавливает фоновые процессы разбора заданий из очереди репликации которая хранится в Zookeeper для таблиц семейства `ReplicatedMergeTree`. Возможные типы заданий - merges, fetches, mutation, DDL запросы с ON CLUSTER: 
+
+``` sql
+SYSTEM STOP REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
+```
+
+### START REPLICATION QUEUES {#query_language-system-start-replication-queues}
+Запускает фоновые процессы разбора заданий из очереди репликации которая хранится в Zookeeper для таблиц семейства `ReplicatedMergeTree`. Возможные типы заданий - merges, fetches, mutation, DDL запросы с ON CLUSTER: 
+
+``` sql
+SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/system/) <!--hide-->
