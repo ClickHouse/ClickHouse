@@ -24,6 +24,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
@@ -252,8 +253,8 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
 {
     auto res = std::make_shared<ASTExpressionList>();
 
-    for (const auto & index : indices.indices)
-        res->children.push_back(index->clone());
+    for (const auto & index : indices)
+        res->children.push_back(index.definition_ast->clone());
 
     return res;
 }
@@ -399,8 +400,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
 
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
-                properties.indices.indices.push_back(
-                    std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
+                properties.indices.push_back(
+                    IndexDescription::getIndexFromAST(index->clone(), properties.columns, context));
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints);
     }
@@ -417,7 +418,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         /// Secondary indices make sense only for MergeTree family of storage engines.
         /// We should not copy them for other storages.
         if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
-            properties.indices = as_storage->getIndices();
+            properties.indices = as_storage->getSecondaryIndices();
 
         properties.constraints = as_storage->getConstraints();
     }

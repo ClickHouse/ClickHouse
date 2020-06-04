@@ -230,8 +230,10 @@ void StorageMergeTree::alter(
     auto table_id = getStorageID();
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    auto maybe_mutation_commands = commands.getMutationCommands(metadata, context.getSettingsRef().materialize_ttl_after_modify);
-    commands.apply(metadata);
+    auto maybe_mutation_commands = commands.getMutationCommands(metadata, context.getSettingsRef().materialize_ttl_after_modify, context);
+    String mutation_file_name;
+    Int64 mutation_version = -1;
+    commands.apply(metadata, context);
 
     /// This alter can be performed at metadata level only
     if (commands.isSettingsAlter())
@@ -244,24 +246,25 @@ void StorageMergeTree::alter(
     }
     else
     {
-        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+        {
+            /// TODO (relax this lock and remove this action lock)
+            auto merges_block = getActionLock(ActionLocks::PartsMerge);
+            lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-        changeSettings(metadata.settings_ast, table_lock_holder);
-        /// Reinitialize primary key because primary key column types might have changed.
-        setProperties(metadata);
+            changeSettings(metadata.settings_ast, table_lock_holder);
+            /// Reinitialize primary key because primary key column types might have changed.
+            setProperties(metadata);
 
-        setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast);
+            setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
 
-        String mutation_file_name;
-        Int64 mutation_version = -1;
-        if (!maybe_mutation_commands.empty())
-            mutation_version = startMutation(maybe_mutation_commands, mutation_file_name);
-
-        /// We release all locks except alter_intention_lock which allows
-        /// to execute alter queries sequentially
-        table_lock_holder.releaseAllExceptAlterIntention();
+            if (!maybe_mutation_commands.empty())
+                mutation_version = startMutation(maybe_mutation_commands, mutation_file_name);
+            /// We release all locks except alter_intention_lock which allows
+            /// to execute alter queries sequentially
+            table_lock_holder.releaseAllExceptAlterIntention();
+        }
 
         /// Always execute required mutations synchronously, because alters
         /// should be executed in sequential order.
@@ -365,6 +368,8 @@ public:
                 entry.latest_fail_reason = exception_message;
             }
         }
+
+        storage.currently_processing_in_background_condition.notify_all();
     }
 };
 
@@ -566,7 +571,7 @@ bool StorageMergeTree::merge(
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
 
     {
-        std::lock_guard lock(currently_processing_in_background_mutex);
+        std::unique_lock lock(currently_processing_in_background_mutex);
 
         auto can_merge = [this, &lock] (const DataPartPtr & left, const DataPartPtr & right, String *) -> bool
         {
@@ -590,8 +595,33 @@ bool StorageMergeTree::merge(
         }
         else
         {
-            UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
-            selected = merger_mutator.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
+            while (true)
+            {
+                UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
+                selected = merger_mutator.selectAllPartsToMergeWithinPartition(
+                    future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
+
+                /// If final - we will wait for currently processing merges to finish and continue.
+                /// TODO Respect query settings for timeout
+                if (final
+                    && !selected
+                    && !currently_merging_mutating_parts.empty()
+                    && out_disable_reason
+                    && out_disable_reason->empty())
+                {
+                    LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now) to perform OPTIMIZE FINAL",
+                        currently_merging_mutating_parts.size());
+
+                    if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
+                        lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
+                    {
+                        *out_disable_reason = "Timeout while waiting for already running merges before running OPTIMIZE with FINAL";
+                        break;
+                    }
+                }
+                else
+                    break;
+            }
         }
 
         if (!selected)
@@ -847,7 +877,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
 
 Int64 StorageMergeTree::getCurrentMutationVersion(
     const DataPartPtr & part,
-    std::lock_guard<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
+    std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
 {
     auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
     if (it == current_mutations_by_version.begin())

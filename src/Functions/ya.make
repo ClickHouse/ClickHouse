@@ -172,6 +172,7 @@ SRCS(
     FunctionsRound.cpp
     FunctionsStringArray.cpp
     FunctionsStringSimilarity.cpp
+    fuzzBits.cpp
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
