@@ -59,7 +59,7 @@ IProcessor::Status DelayedSource::prepare()
         if (!input->hasData())
             return Status::PortFull;
 
-        output->pushData(input.pullData(true));
+        output->pushData(input->pullData(true));
         return Status::PortFull;
     }
 
