@@ -5,7 +5,7 @@
 #endif
 
 #if USE_CASSANDRA
-#include <cassandra.h>
+#include <cassandra.h> // Y_IGNORE
 #include <utility>
 #include <memory>
 
