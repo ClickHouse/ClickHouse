@@ -72,6 +72,32 @@ def test_user_pass():
     assert get_query_user_info(n1, 'd1-user-pass') == ['pass', 'pass']
     assert get_query_user_info(n2, 'd1-user-pass') == ['pass', 'pass']
 
+def test_cluster():
+    query_with_id(n1, 'cluster-c1', 'SELECT * FROM cluster(c1, system.one)')
+    assert get_query_user_info(n1, 'cluster-c1') == ['default', 'default']
+    assert get_query_user_info(n2, 'cluster-c1') == ['default', 'default']
+
+    query_with_id(n1, 'cluster-c2', 'SELECT * FROM cluster(c2, system.one)')
+    assert get_query_user_info(n1, 'cluster-c2') == ['default', 'default']
+    assert get_query_user_info(n2, 'cluster-c2') == ['nopass',  'default']
+
+def test_remote():
+    query_with_id(n1, 'remote-c1-no-user', "SELECT * FROM remote('n{1,2}', system.one)")
+    assert get_query_user_info(n1, 'remote-c1-no-user') == ['default', 'default']
+    assert get_query_user_info(n2, 'remote-c1-no-user') == ['default', 'default']
+
+    query_with_id(n1, 'remote-c1-user-default', "SELECT * FROM remote('n{1,2}', system.one, 'default')")
+    assert get_query_user_info(n1, 'remote-c1-user-default') == ['default', 'default']
+    assert get_query_user_info(n2, 'remote-c1-user-default') == ['default', 'default']
+
+    query_with_id(n1, 'remote-c1-user-nopass', "SELECT * FROM remote('n{1,2}', system.one, 'nopass')")
+    assert get_query_user_info(n1, 'remote-c1-user-nopass') == ['default', 'default']
+    assert get_query_user_info(n2, 'remote-c1-user-nopass') == ['nopass',  'default']
+
+    query_with_id(n1, 'remote-c1-user-pass', "SELECT * FROM remote('n{1,2}', system.one, 'pass', 'foo')")
+    assert get_query_user_info(n1, 'remote-c1-user-pass') == ['default', 'default']
+    assert get_query_user_info(n2, 'remote-c1-user-pass') == ['pass',    'default']
+
 def test_user_default_retry():
     n1.query('SELECT * FROM d1')
     # pause n2 instance to trigger connection retry on n1
