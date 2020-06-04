@@ -4,7 +4,7 @@
 
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Common/LineReader.h>
+#include <common/LineReader.h>
 #include <thread>
 
 

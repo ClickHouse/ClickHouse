@@ -52,7 +52,6 @@ SRCS(
     IntervalKind.cpp
     IPv6ToBinary.cpp
     isLocalAddress.cpp
-    LineReader.cpp
     Macros.cpp
     malloc.cpp
     MemoryStatisticsOS.cpp

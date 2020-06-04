@@ -3,7 +3,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/LineReader.h>
+#include <common/LineReader.h>
 #include <common/logger_useful.h>
 
 #include <iostream>
