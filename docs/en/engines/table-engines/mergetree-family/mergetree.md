@@ -62,9 +62,9 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
     A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
 
-    Use the `ORDER BY tuple()` syntax, if you don't need sorting. In this case ClickHouse stores data in the order of inserting. If want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](../../../operations/settings/settings.md#settings-max-insert-threads).
+    Use the `ORDER BY tuple()` syntax, if you don't need sorting. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](../../../operations/settings/settings.md#settings-max-insert-threads).
     
-    To select data in the initial order, use the [single-threaded](../../../operations/settings/settings.md#settings-max_threads) `SELECT` queries.
+    To select data in the initial order, use [single-threaded](../../../operations/settings/settings.md#settings-max_threads) `SELECT` queries.
 
 -   `PARTITION BY` — The [partitioning key](custom-partitioning-key.md). Optional.
 
