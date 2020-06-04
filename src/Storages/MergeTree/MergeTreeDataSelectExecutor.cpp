@@ -546,11 +546,13 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     RangesInDataParts parts_with_ranges;
 
     std::vector<std::pair<MergeTreeIndexPtr, MergeTreeIndexConditionPtr>> useful_indices;
-    for (const auto & index : data.skip_indices)
+
+    for (const auto & index : data.getSecondaryIndices())
     {
-        auto condition = index->createIndexCondition(query_info, context);
+        auto index_helper = MergeTreeIndexFactory::instance().get(index);
+        auto condition = index_helper->createIndexCondition(query_info, context);
         if (!condition->alwaysUnknownOrTrue())
-            useful_indices.emplace_back(index, condition);
+            useful_indices.emplace_back(index_helper, condition);
     }
 
     /// Let's find what range to read from each part.
@@ -1375,17 +1377,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 }
 
 MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
-    MergeTreeIndexPtr index,
+    MergeTreeIndexPtr index_helper,
     MergeTreeIndexConditionPtr condition,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const Settings & settings) const
 {
-    if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index->getFileName() + ".idx"))
+    if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index_helper->getFileName() + ".idx"))
     {
-        LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index->name));
+        LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index_helper->index.name));
         return ranges;
     }
+
+    auto index_granularity = index_helper->index.granularity;
 
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
         settings.merge_tree_min_rows_for_seek,
@@ -1397,10 +1401,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
     size_t marks_count = part->getMarksCount();
     size_t final_mark = part->index_granularity.hasFinalMark();
-    size_t index_marks_count = (marks_count - final_mark + index->granularity - 1) / index->granularity;
+    size_t index_marks_count = (marks_count - final_mark + index_granularity - 1) / index_granularity;
 
     MergeTreeIndexReader reader(
-            index, part,
+            index_helper, part,
             index_marks_count,
             ranges);
 
@@ -1413,8 +1417,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     for (const auto & range : ranges)
     {
         MarkRange index_range(
-                range.begin / index->granularity,
-                (range.end + index->granularity - 1) / index->granularity);
+                range.begin / index_granularity,
+                (range.end + index_granularity - 1) / index_granularity);
 
         if (last_index_mark != index_range.begin || !granule)
             reader.seek(index_range.begin);
@@ -1425,8 +1429,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 granule = reader.read();
 
             MarkRange data_range(
-                    std::max(range.begin, index_mark * index->granularity),
-                    std::min(range.end, (index_mark + 1) * index->granularity));
+                    std::max(range.begin, index_mark * index_granularity),
+                    std::min(range.end, (index_mark + 1) * index_granularity));
 
             if (!condition->mayBeTrueOnGranule(granule))
             {
@@ -1443,7 +1447,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         last_index_mark = index_range.end - 1;
     }
 
-    LOG_DEBUG(log, "Index {} has dropped {} granules.", backQuote(index->name), granules_dropped);
+    LOG_DEBUG(log, "Index {} has dropped {} granules.", backQuote(index_helper->index.name), granules_dropped);
 
     return res;
 }

@@ -3,6 +3,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Core/Field.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -17,7 +18,7 @@ struct StorageInMemoryMetadata
     /// defaults, comments, etc. All table engines have columns.
     ColumnsDescription columns;
     /// Table indices. Currently supported for MergeTree only.
-    IndicesDescription indices;
+    IndicesDescription secondary_indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
     /// PARTITION BY expression. Currently supported for MergeTree only.
@@ -38,7 +39,7 @@ struct StorageInMemoryMetadata
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
     StorageInMemoryMetadata() = default;
-    StorageInMemoryMetadata(const ColumnsDescription & columns_, const IndicesDescription & indices_, const ConstraintsDescription & constraints_);
+    StorageInMemoryMetadata(const ColumnsDescription & columns_, const IndicesDescription & secondary_indices_, const ConstraintsDescription & constraints_);
 
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 };
