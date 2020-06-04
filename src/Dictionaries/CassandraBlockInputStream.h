@@ -30,7 +30,7 @@ private:
     using ValueType = ExternalResultDescription::ValueType;
 
     Block readImpl() override;
-    void insertValue(IColumn & column, ValueType type, const CassValue * cass_value) const;
+    static void insertValue(IColumn & column, ValueType type, const CassValue * cass_value);
     void assertTypes(const CassResultPtr & result);
 
     CassSessionShared session;
