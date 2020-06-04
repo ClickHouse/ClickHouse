@@ -119,7 +119,7 @@ SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### SYNC REPLICA {#query_language-system-sync-replica}
-Wait when ReplicatedMergeTree table will synced with other replicas in cluster, will run until receive_timeout if fetches currently disabled for table:  
+Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster. Will run until `receive_timeout` if fetches currently disabled for the table.
 
 ``` sql
 SYSTEM SYNC REPLICA [[db.]replicated_merge_tree_family_table_name]
