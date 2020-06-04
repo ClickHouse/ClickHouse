@@ -116,7 +116,7 @@ SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### SYNC REPLICA {#query_language-system-sync-replica}
-Ждет когда таблица семейства ReplicatedMergeTree будет синхронизирована с другими репликами в кластере, будет работать до receive_timeout, если синхронизация для таблицы отключена в настоящий момент времени:  
+Ждет когда таблица семейства ReplicatedMergeTree будет синхронизирована с другими репликами в кластере, будет работать до достижения `receive_timeout`, если синхронизация для таблицы отключена в настоящий момент времени:  
 
 ``` sql
 SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
