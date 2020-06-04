@@ -659,7 +659,7 @@ std::vector<StorageDistributedDirectoryMonitor::Status> StorageDistributed::getD
 {
     std::vector<StorageDistributedDirectoryMonitor::Status> statuses;
     std::lock_guard lock(cluster_nodes_mutex);
-    for (auto & node : cluster_nodes_data)
+    for (const auto & node : cluster_nodes_data)
         statuses.push_back(node.second.directory_monitor->getStatus());
     return statuses;
 }
