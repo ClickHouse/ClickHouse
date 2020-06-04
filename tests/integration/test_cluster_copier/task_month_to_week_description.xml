@@ -54,18 +54,21 @@
             <internal_replication>true</internal_replication>
             <replica>
                 <host>s0_0_0</host>
-                <port>9000</port>
+                <port>9440</port>
+                <secure>1</secure>
             </replica>
             <replica>
                 <host>s0_0_1</host>
-                <port>9000</port>
+                <port>9440</port>
+                <secure>1</secure>
             </replica>
         </shard>
         <shard>
             <internal_replication>true</internal_replication>
             <replica>
                 <host>s0_1_0</host>
-                <port>9000</port>
+                <port>9440</port>
+                <secure>1</secure>
             </replica>
         </shard>
     </cluster0>
@@ -75,23 +78,27 @@
             <internal_replication>true</internal_replication>
             <replica>
                 <host>s1_0_0</host>
-                <port>9000</port>
+                <port>9440</port>
+                <secure>1</secure>
             </replica>
             <replica>
                 <host>s1_0_1</host>
-                <port>9000</port>
+                <port>9440</port>
+                <secure>1</secure>
             </replica>
         </shard>
         <shard>
             <internal_replication>true</internal_replication>
             <replica>
                 <host>s1_1_0</host>
-                <port>9000</port>
+                <port>9440</port>
+                <secure>1</secure>
             </replica>
             <replica>
                 <!-- Died replica -->
                 <host>255.255.255.255</host>
-                <port>9000</port>
+                <port>9440</port>
+                <secure>1</secure>
             </replica>
         </shard>
     </cluster1>

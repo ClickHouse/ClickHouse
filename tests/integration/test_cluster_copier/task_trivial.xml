@@ -45,7 +45,8 @@
             <shard>
                 <replica>
                     <host>s0_0_0</host>
-                    <port>9000</port>
+                    <port>9440</port>
+                    <secure>1</secure>
                 </replica>
             </shard>
         </source_trivial_cluster>
@@ -55,7 +56,8 @@
             <shard>
                 <replica>
                     <host>s1_0_0</host>
-                    <port>9000</port>
+                    <port>9440</port>
+                    <secure>1</secure>
                 </replica>
             </shard>
         </destination_trivial_cluster>

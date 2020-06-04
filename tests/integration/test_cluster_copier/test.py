@@ -252,7 +252,9 @@ def execute_task(task, cmd_options):
                 break
             time.sleep(1)
 
-        assert res['ExitCode'] == 0, "Instance: {} ({}). Info: {}".format(instance.name, instance.ip_address, repr(res))
+        print(res)
+
+        #assert res['ExitCode'] == 0, "Instance: {} ({}). Info: {}".format(instance.name, instance.ip_address, repr(res))
 
     try:
         task.check()

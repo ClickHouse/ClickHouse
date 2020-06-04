@@ -6,18 +6,19 @@
             <internal_replication>true</internal_replication>
             <replica>
                 <host>s0_0_0</host>
-                <port>9000</port>
+                <port>9440</port>
+                <secure>1</secure>
             </replica>
             <replica>
                 <host>s0_0_1</host>
-                <port>9000</port>
+                <port>9440</port>
             </replica>
         </shard>
         <shard>
             <internal_replication>true</internal_replication>
             <replica>
                 <host>s0_1_0</host>
-                <port>9000</port>
+                <port>9440</port>
             </replica>
         </shard>
     </cluster0>
@@ -27,18 +28,18 @@
             <internal_replication>true</internal_replication>
             <replica>
                 <host>s1_0_0</host>
-                <port>9000</port>
+                <port>9440</port>
             </replica>
             <replica>
                 <host>s1_0_1</host>
-                <port>9000</port>
+                <port>9440</port>
             </replica>
         </shard>
         <shard>
             <internal_replication>true</internal_replication>
             <replica>
                 <host>s1_1_0</host>
-                <port>9000</port>
+                <port>9440</port>
             </replica>
         </shard>
     </cluster1>
@@ -48,11 +49,11 @@
             <internal_replication>true</internal_replication>
             <replica>
                 <host>s0_0_0</host>
-                <port>9000</port>
+                <port>9440</port>
             </replica>
             <replica>
                 <host>s0_0_1</host>
-                <port>9000</port>
+                <port>9440</port>
             </replica>
         </shard>
     </shard_0_0>
@@ -61,7 +62,7 @@
         <shard>
             <replica>
                 <host>s0_0_0</host>
-                <port>9000</port>
+                <port>9440</port>
             </replica>
         </shard>
     </source_trivial_cluster>
@@ -71,7 +72,7 @@
         <shard>
             <replica>
                 <host>s1_0_0</host>
-                <port>9000</port>
+                <port>9440</port>
             </replica>
         </shard>
     </destination_trivial_cluster>

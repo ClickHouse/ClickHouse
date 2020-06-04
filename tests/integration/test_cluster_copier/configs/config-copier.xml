@@ -8,4 +8,45 @@
         <stderr>/var/log/clickhouse-server/copier/stderr.log</stderr>
         <stdout>/var/log/clickhouse-server/copier/stdout.log</stdout>
     </logger>
+
+
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+
+    <listen_reuse_port>1</listen_reuse_port>
+
+    <https_port>8443</https_port>
+    <tcp_port_secure>9440</tcp_port_secure>
+
+
+
+    <openSSL>
+        <server> <!-- Used for https server AND secure tcp port -->
+            <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
+            <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
+            <!-- openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096 -->
+            <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
+            <verificationMode>none</verificationMode>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </server>
+
+        <client> <!-- Used for connecting to https dictionary source -->
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2, sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <verificationMode>none</verificationMode>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name> -->
+                <!--<name>RejectCertificateHandler</name> -->
+            </invalidCertificateHandler>
+        </client>
+
+    </openSSL>
+
+
 </yandex>

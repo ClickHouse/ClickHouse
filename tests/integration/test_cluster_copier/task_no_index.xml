@@ -5,7 +5,8 @@
                 <internal_replication>false</internal_replication>
                     <replica>
                         <host>s0_0_0</host>
-                        <port>9000</port>
+                        <port>9440</port>
+                        <secure>1<secure>
                     </replica>
             </shard>
         </source_cluster>
@@ -15,7 +16,8 @@
                 <internal_replication>false</internal_replication>
                     <replica>
                         <host>s1_1_0</host>
-                        <port>9000</port>
+                        <port>9440</port>
+                        <secure>1<secure>
                     </replica>
                </shard>
         </destination_cluster>
