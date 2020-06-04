@@ -5,6 +5,7 @@
 #include <IO/S3Common.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
+#include <Storages/StorageS3Settings.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -23,6 +24,7 @@
 
 #include <DataTypes/DataTypeString.h>
 
+#include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 
@@ -200,18 +202,24 @@ StorageS3::StorageS3(
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
-    , client(S3::ClientFactory::instance().create(uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_))
 {
     context_global.getRemoteHostFilter().checkURL(uri_.uri);
     setColumns(columns_);
     setConstraints(constraints_);
+
+    auto settings = context_.getStorageS3Settings().getSettings(uri.endpoint);
+    Aws::Auth::AWSCredentials credentials(access_key_id_, secret_access_key_);
+    if (access_key_id_.empty())
+        credentials = Aws::Auth::AWSCredentials(std::move(settings.access_key_id), std::move(settings.secret_access_key));
+
+    client = S3::ClientFactory::instance().create(
+        uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_, std::move(settings.headers));
 }
 
 
 namespace
 {
-
-/* "Recursive" directory listing with matched paths as a result.
+    /* "Recursive" directory listing with matched paths as a result.
  * Have the same method in StorageFile.
  */
 Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri)
