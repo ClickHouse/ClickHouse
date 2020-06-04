@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
-    auto lock = std::unique_lock(mutex);
+    std::lock_guard lock(mutex);
     settings.clear();
     if (!config.has(config_elem))
         return;
@@ -48,7 +48,7 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
 
 S3AuthSettings StorageS3Settings::getSettings(const String & endpoint) const
 {
-    auto lock = std::unique_lock(mutex);
+    std::lock_guard lock(mutex);
     if (auto setting = settings.find(endpoint); setting != settings.end())
         return setting->second;
     return {};
