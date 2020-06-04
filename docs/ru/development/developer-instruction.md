@@ -135,7 +135,7 @@ ClickHouse использует для сборки некоторое коли�
 
 Для установки GCC под Ubuntu, выполните: `sudo apt install gcc g++`.
 
-Проверьте версию gcc: `gcc --version`. Если версия меньше 9, то следуйте инструкции: https://clickhouse.tech/docs/en/development/build/\#install-gcc-9
+Проверьте версию gcc: `gcc --version`. Если версия меньше 9, то следуйте инструкции: https://clickhouse.tech/docs/ru/development/build/#install-gcc-9.
 
 Сборка под Mac OS X поддерживается только для компилятора Clang. Чтобы установить его выполните `brew install llvm`
 
@@ -244,7 +244,7 @@ Mac OS X:
 
 Разработка тестов: https://clickhouse.tech/docs/ru/development/tests/
 
-Список задач: https://github.com/ClickHouse/ClickHouse/blob/master/tests/instructions/easy\_tasks\_sorted\_ru.md
+Список задач: https://github.com/ClickHouse/ClickHouse/contribute
 
 # Тестовые данные {#testovye-dannye}
 
