@@ -230,7 +230,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     writer.flush();
 
-    return (dest - dest_start) + writer.count() / 8;
+    return (dest - dest_start) + (writer.count() + 7) / 8;
 }
 
 template <typename ValueType>
