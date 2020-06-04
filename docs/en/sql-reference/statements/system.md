@@ -18,6 +18,9 @@ toc_title: SYSTEM
 -   [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
 -   [STOP MERGES](#query_language-system-stop-merges)
 -   [START MERGES](#query_language-system-start-merges)
+-   [STOP FETCHES](#query_language-system-stop-fetches)
+-   [SYNC REPLICA](#query_language-system-sync-replica)
+-   [START FETCHES](#query_language-system-start-fetches)
 
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
@@ -106,6 +109,27 @@ Provides possibility to start background merges for tables in the MergeTree fami
 
 ``` sql
 SYSTEM START MERGES [[db.]merge_tree_family_table_name]
+```
+
+### STOP FETCHES {#query_language-system-stop-fetches}
+Provides possibility to stop background fetches for inserted parts for tables in the ReplicatedMergeTree family:
+
+``` sql
+SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
+```
+
+### SYNC REPLICA {#query_language-system-sync-replica}
+Wait when ReplicatedMergeTree table will synced with other replicas in cluster, will run until receive_timeout if fetches currently disabled for table:  
+
+``` sql
+SYSTEM SYNC REPLICA [[db.]replicated_merge_tree_family_table_name]
+```
+
+### START FETCHES {#query_language-system-start-fetches}
+Provides possibility to start background fetches for inserted parts for tables in the ReplicatedMergeTree family:
+
+``` sql
+SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/system/) <!--hide-->

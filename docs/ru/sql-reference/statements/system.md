@@ -13,6 +13,9 @@
 -   [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
 -   [STOP MERGES](#query_language-system-stop-merges)
 -   [START MERGES](#query_language-system-start-merges)
+-   [STOP FETCHES](#query_language-system-stop-fetches)
+-   [SYNC REPLICA](#query_language-system-sync-replica)
+-   [START FETCHES](#query_language-system-start-fetches)
 
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
@@ -101,6 +104,27 @@ SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 
 ``` sql
 SYSTEM START MERGES [[db.]merge_tree_family_table_name]
+```
+
+### STOP FETCHES {#query_language-system-stop-fetches}
+Позволяет остановить фоновые процессы синхронизации новыми вставленными кусками с другими репликами в кластере для таблиц семейства ReplicatedMergeTree:
+
+``` sql
+SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
+```
+
+### SYNC REPLICA {#query_language-system-sync-replica}
+Ждет когда одна или несколько таблиц семейства ReplicatedMergeTree будут синхронизированы с другими репликами в кластере, будет работать до receive_timeout, если синхронизация для таблицы отключена в настоящий момент времени:  
+
+``` sql
+SYSTEM SYNC REPLICA [[db.]replicated_merge_tree_family_table_name]
+```
+
+### START FETCHES {#query_language-system-start-fetches}
+Provides possibility to start background fetches for inserted parts for tables in the ReplicatedMergeTree family:
+
+``` sql
+SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/system/) <!--hide-->
