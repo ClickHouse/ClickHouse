@@ -2,6 +2,7 @@
 
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/RowsBeforeLimitCounter.h>
+#include <Processors/Pipe.h>
 
 namespace DB
 {
@@ -45,12 +46,10 @@ private:
 class RemoteTotalsSource : public ISource
 {
 public:
-    explicit RemoteTotalsSource(Block header);
+    explicit RemoteTotalsSource(RemoteQueryExecutorPtr executor);
     ~RemoteTotalsSource();
 
     String getName() const override { return "RemoteTotals"; }
-
-    void setQueryExecutor(RemoteQueryExecutorPtr executor) { query_executor.swap(executor); }
 
 protected:
     Chunk generate() override;
@@ -63,12 +62,10 @@ private:
 class RemoteExtremesSource : public ISource
 {
 public:
-    explicit RemoteExtremesSource(Block header);
+    explicit RemoteExtremesSource(RemoteQueryExecutorPtr executor);
     ~RemoteExtremesSource();
 
     String getName() const override { return "RemoteExtremes"; }
-
-    void setQueryExecutor(RemoteQueryExecutorPtr executor) { query_executor.swap(executor); }
 
 protected:
     Chunk generate() override;
@@ -76,5 +73,10 @@ protected:
 private:
     RemoteQueryExecutorPtr query_executor;
 };
+
+/// Create pipe with remote sources.
+Pipe createRemoteSourcePipe(
+    RemoteQueryExecutorPtr query_executor,
+    bool add_aggregation_info, bool add_totals, bool add_extremes);
 
 }
