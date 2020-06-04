@@ -7,15 +7,14 @@ endif ()
 
 if (NOT OS_FREEBSD AND NOT SPLIT_SHARED_LIBRARIES AND NOT (OS_DARWIN AND COMPILER_CLANG))
     option (USE_SENTRY "Use Sentry" ON)
-
-    set (SENTRY_TRANSPORT "url")
-    set (SENTRY_BACKEND "none")
     set (CURL_LIBRARY ${ClickHouse_SOURCE_DIR}/contrib/curl/lib)
     set (CURL_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/curl/include)
-    if (NOT_UNBUNDLED)
+    set (SENTRY_TRANSPORT "curl" CACHE STRING "")
+    set (SENTRY_BACKEND "none" CACHE STRING "")
+    set (SENTRY_LINK_PTHREAD OFF CACHE BOOL "")
+    if (OS_LINUX AND NOT_UNBUNDLED)
         set (BUILD_SHARED_LIBS OFF)
     endif()
-
     message (STATUS "Using sentry=${USE_SENTRY}: ${SENTRY_LIBRARY}")
 
     include_directories("${SENTRY_INCLUDE_DIR}")
