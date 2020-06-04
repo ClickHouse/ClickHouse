@@ -263,7 +263,7 @@ def test_kafka_issue11308(kafka_cluster):
         FROM test.kafka;
         ''')
 
-    time.sleep(5)
+    time.sleep(9)
 
     result = instance.query('SELECT * FROM test.persistent_kafka ORDER BY time;')
 
