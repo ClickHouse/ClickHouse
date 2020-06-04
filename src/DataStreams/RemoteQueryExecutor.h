@@ -61,8 +61,8 @@ public:
     void cancel();
 
     /// Get totals and extremes if any.
-    Block getTotals() const { return std::move(totals); }
-    Block getExtremes() const { return std::move(extremes); }
+    Block getTotals() { return std::move(totals); }
+    Block getExtremes() { return std::move(extremes); }
 
     /// Set callback for progress. It will be called on Progress packet.
     void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
