@@ -150,6 +150,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecT64(*this);
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
+    registerCodecGroupVarint(*this);
 }
 
 CompressionCodecFactory & CompressionCodecFactory::instance()
