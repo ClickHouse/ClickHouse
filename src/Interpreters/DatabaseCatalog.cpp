@@ -410,7 +410,7 @@ DatabaseCatalog & DatabaseCatalog::instance()
 {
     if (!database_catalog)
     {
-        throw Exception("Database catalog is not initialized. This is a bug.\n",
+        throw Exception("Database catalog is not initialized. This is a bug.",
             ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -731,4 +731,3 @@ DDLGuard::~DDLGuard()
 }
 
 }
-
