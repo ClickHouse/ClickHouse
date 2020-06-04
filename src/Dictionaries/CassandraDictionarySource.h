@@ -9,6 +9,7 @@
 #include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
 #include <Poco/Logger.h>
+#include <mutex>
 
 namespace DB
 {

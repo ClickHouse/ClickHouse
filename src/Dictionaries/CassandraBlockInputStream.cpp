@@ -35,7 +35,7 @@ CassandraBlockInputStream::CassandraBlockInputStream(
     cassandraCheck(cass_statement_set_paging_size(statement, max_block_size));
 }
 
-void CassandraBlockInputStream::insertValue(IColumn & column, ValueType type, const CassValue * cass_value) const
+void CassandraBlockInputStream::insertValue(IColumn & column, ValueType type, const CassValue * cass_value)
 {
     switch (type)
     {
@@ -202,7 +202,7 @@ void CassandraBlockInputStream::assertTypes(const CassResultPtr & result)
     size_t column_count = cass_result_column_count(result);
     for (size_t i = 0; i < column_count; ++i)
     {
-        CassValueType expected;
+        CassValueType expected = CASS_VALUE_TYPE_UNKNOWN;
         String expected_text;
 
         /// Cassandra does not support unsigned integers (cass_uint32_t is for Date)
