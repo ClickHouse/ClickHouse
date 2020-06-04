@@ -397,7 +397,7 @@ DatabaseCatalog & DatabaseCatalog::init(Context * global_context_)
 {
     if (database_catalog)
     {
-        throw Exception("Database catalog is initialized twice. This is a bug.\n",
+        throw Exception("Database catalog is initialized twice. This is a bug.",
             ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -731,5 +731,4 @@ DDLGuard::~DDLGuard()
 }
 
 }
-
 
