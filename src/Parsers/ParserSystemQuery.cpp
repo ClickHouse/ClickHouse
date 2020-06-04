@@ -75,7 +75,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             res->cluster = cluster_str;
             if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
-                return false;
+            {
+                /// FLUSH DISTRIBUTED requires table
+                /// START/STOP DISTRIBUTED SENDS does not requires table
+                if (res->type == Type::FLUSH_DISTRIBUTED)
+                    return false;
+            }
             break;
         }
 
