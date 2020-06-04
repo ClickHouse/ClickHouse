@@ -729,71 +729,118 @@ Settings.Values:      ['0','random','1','10000000000']
 
 ## system.query_thread_log {#system_tables-query_thread_log}
 
-Содержит информацию о каждом потоке выполняемых запросов.
+Содержит информацию о цепочках выполняемых запросов, например, имя цепочки, время старта цепочки, продолжительность обработки запроса.
 
-ClickHouse создаёт таблицу только в том случае, когда установлен конфигурационный параметр сервера [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log). Параметр задаёт правила ведения лога, такие как интервал логирования или имя таблицы, в которую будут логгироваться запросы.
+Чтобы начать логирование:
 
-Чтобы включить логирование, задайте значение параметра [log\_query\_threads](settings/settings.md#settings-log-query-threads) равным 1. Подробности смотрите в разделе [Настройки](settings/settings.md#settings).
+1. Настройте параметры в разделе [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
+2. Установите значение [log_query_threads](settings/settings.md#settings-log-query-threads) равным 1.
+
+Интервал сброса логов настраивается в параметре `flush_interval_milliseconds` в разделе настроек сервера [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log). 
+
+Чтобы принудительно записать логи из буфера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs).
+
+ClickHouse не удаляет автоматически логи из таблицы. Почитайте об этом подробнее в разделе [Введение](#system-tables-introduction).
 
 Столбцы:
 
--   `event_date` (Date) — дата завершения выполнения запроса потоком.
--   `event_time` (DateTime) — дата и время завершения выполнения запроса потоком.
--   `query_start_time` (DateTime) — время начала обработки запроса.
--   `query_duration_ms` (UInt64) — длительность обработки запроса в миллисекундах.
--   `read_rows` (UInt64) — количество прочитанных строк.
--   `read_bytes` (UInt64) — количество прочитанных байтов.
--   `written_rows` (UInt64) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
--   `written_bytes` (UInt64) — объём записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
--   `memory_usage` (Int64) — разница между выделенной и освобождённой памятью в контексте потока.
--   `peak_memory_usage` (Int64) — максимальная разница между выделенной и освобождённой памятью в контексте потока.
--   `thread_name` (String) — Имя потока.
--   `thread_id` (UInt64) — tid (ID потока операционной системы).
--   `master_thread_id` (UInt64) — tid (ID потока операционной системы) главного потока.
--   `query` (String) — текст запроса.
--   `is_initial_query` (UInt8) — вид запроса. Возможные значения:
+-   `event_date` ([Date](../sql-reference/data-types/date.md)) — дата завершения выполнения запроса потоком.
+-   `event_time` ([DateTime](../sql-reference/data-types/datetime.md)) — дата и время завершения выполнения запроса потоком.
+-   `query_start_time` ([DateTime](../sql-reference/data-types/datetime.md)) — время начала обработки запроса.
+-   `query_duration_ms` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — длительность обработки запроса в миллисекундах.
+-   `read_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — количество прочитанных строк.
+-   `read_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — количество прочитанных байтов.
+-   `written_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
+-   `written_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — объём записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
+-   `memory_usage` ([Int64](../sql-reference/data-types/int-uint.md)) — разница между выделенной и освобождённой памятью в контексте потока.
+-   `peak_memory_usage` ([Int64](../sql-reference/data-types/int-uint.md)) — максимальная разница между выделенной и освобождённой памятью в контексте потока.
+-   `thread_name` ([String](../sql-reference/data-types/string.md)) — Имя потока.
+-   `thread_id` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — tid (ID потока операционной системы).
+-   `master_thread_id` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — tid (ID потока операционной системы) главного потока.
+-   `query` ([String](../sql-reference/data-types/string.md)) — текст запроса.
+-   `is_initial_query` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — вид запроса. Возможные значения:
     -   1 — запрос был инициирован клиентом.
     -   0 — запрос был инициирован другим запросом при распределенном запросе.
--   `user` (String) — пользователь, запустивший текущий запрос.
--   `query_id` (String) — ID запроса.
--   `address` (IPv6) — IP адрес, с которого пришел запрос.
--   `port` (UInt16) — порт, с которого пришел запрос.
--   `initial_user` (String) — пользователь, запустивший первоначальный запрос (для распределенных запросов).
--   `initial_query_id` (String) — ID родительского запроса.
--   `initial_address` (IPv6) — IP адрес, с которого пришел родительский запрос.
--   `initial_port` (UInt16) — порт, пришел родительский запрос.
--   `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
+-   `user` ([String](../sql-reference/data-types/string.md)) — пользователь, запустивший текущий запрос.
+-   `query_id` ([String](../sql-reference/data-types/string.md)) — ID запроса.
+-   `address` ([IPv6](../sql-reference/data-types/domains/ipv6.md)) — IP адрес, с которого пришел запрос.
+-   `port` ([UInt16](../sql-reference/data-types/int-uint.md#uint-ranges)) — порт, с которого пришел запрос.
+-   `initial_user` ([String](../sql-reference/data-types/string.md)) — пользователь, запустивший первоначальный запрос (для распределенных запросов).
+-   `initial_query_id` ([String](../sql-reference/data-types/string.md)) — ID родительского запроса.
+-   `initial_address` ([IPv6](../sql-reference/data-types/domains/ipv6.md)) — IP адрес, с которого пришел родительский запрос.
+-   `initial_port` ([UInt16](../sql-reference/data-types/int-uint.md#uint-ranges)) — порт, пришел родительский запрос.
+-   `interface` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — интерфейс, с которого ушёл запрос. Возможные значения:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
--   `client_hostname` (String) — hostname клиентской машины, с которой присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
--   `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
--   `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
--   `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
--   `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
--   `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
--   `http_method` (UInt8) — HTTP метод, инициировавший запрос. Возможные значения:
+-   `os_user` ([String](../sql-reference/data-types/string.md)) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
+-   `client_hostname` ([String](../sql-reference/data-types/string.md)) — hostname клиентской машины, с которой присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+-   `client_name` ([String](../sql-reference/data-types/string.md)) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+-   `client_revision` ([UInt32](../sql-reference/data-types/int-uint.md)) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+-   `client_version_major` ([UInt32](../sql-reference/data-types/int-uint.md)) — старшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+-   `client_version_minor` ([UInt32](../sql-reference/data-types/int-uint.md)) — младшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+-   `client_version_patch` ([UInt32](../sql-reference/data-types/int-uint.md)) — патч [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+-   `http_method` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — HTTP метод, инициировавший запрос. Возможные значения:
     -   0 — запрос запущен с интерфейса TCP.
     -   1 — `GET`.
     -   2 — `POST`.
--   `http_user_agent` (String) — HTTP заголовок `UserAgent`.
--   `quota_key` (String) — «ключ квоты» из настроек [квот](quotas.md) (см. `keyed`).
--   `revision` (UInt32) — ревизия ClickHouse.
--   `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(\#system\_tables-events
--   `ProfileEvents.Values` (Array(UInt64)) — метрики для данного потока, перечисленные в столбце `ProfileEvents.Names`.
+-   `http_user_agent` ([String](../sql-reference/data-types/string.md)) — HTTP заголовок `UserAgent`.
+-   `quota_key` ([String](../sql-reference/data-types/string.md)) — «ключ квоты» из настроек [квот](quotas.md) (см. `keyed`).
+-   `revision` ([UInt32](../sql-reference/data-types/int-uint.md)) — ревизия ClickHouse.
+-   `ProfileEvents.Names` ([Array(String)](../sql-reference/data-types/array.md)) — Счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(\#system\_tables-events
+-   `ProfileEvents.Values` ([Array(UInt64)](../sql-reference/data-types/array.md)) — метрики для данного потока, перечисленные в столбце `ProfileEvents.Names`.
 
-По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос `SYSTEM FLUSH LOGS`.
+**Пример**
 
-Если таблицу удалить вручную, она пересоздастся автоматически «на лету». При этом все логи на момент удаления таблицы будут удалены.
+``` sql
+ SELECT * FROM system.query_thread_log LIMIT 1 FORMAT Vertical
+```
 
-!!! note "Примечание"
-    Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
+``` text
+Row 1:
+──────
+event_date:           2020-05-13
+event_time:           2020-05-13 14:02:28
+query_start_time:     2020-05-13 14:02:28
+query_duration_ms:    0
+read_rows:            1
+read_bytes:           1
+written_rows:         0
+written_bytes:        0
+memory_usage:         0
+peak_memory_usage:    0
+thread_name:          QueryPipelineEx
+thread_id:            28952
+master_thread_id:     28924
+query:                SELECT 1
+is_initial_query:     1
+user:                 default
+query_id:             5e834082-6f6d-4e34-b47b-cd1934f4002a
+address:              ::ffff:127.0.0.1
+port:                 57720
+initial_user:         default
+initial_query_id:     5e834082-6f6d-4e34-b47b-cd1934f4002a
+initial_address:      ::ffff:127.0.0.1
+initial_port:         57720
+interface:            1
+os_user:              bayonet
+client_hostname:      clickhouse.ru-central1.internal
+client_name:          ClickHouse client
+client_revision:      54434
+client_version_major: 20
+client_version_minor: 4
+client_version_patch: 1
+http_method:          0
+http_user_agent:
+quota_key:
+revision:             54434
+ProfileEvents.Names:  ['ContextLock','RealTimeMicroseconds','UserTimeMicroseconds','OSCPUWaitMicroseconds','OSCPUVirtualTimeMicroseconds']
+ProfileEvents.Values: [1,97,81,5,81]
+...
+```
 
-Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) (параметр `partition_by`).
+**Смотрите также**
 
-## system.query_thread_log {#system_tables-query_thread_log}
-
-Содержит информацию о каждом потоке исполнения запроса.
+- [system.query_log](#system_tables-query_log) — описание системной таблицы `query_log` с общей информацией о том, как выполняются запросы.
 
 ## system.trace\_log {#system_tables-trace_log}
 
