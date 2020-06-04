@@ -38,25 +38,25 @@ IProcessor::Status DelayedSource::prepare()
 
     /// Process ports in order: main, totals, extremes
     auto output = outputs.begin();
-    for (auto & input : inputs)
+    for (auto input = inputs.begin(); input != inputs.end(); ++input, ++output)
     {
         if (output->isFinished())
         {
-            input.close();
+            input->close();
             continue;
         }
 
         if (!output->isNeeded())
             return Status::PortFull;
 
-        if (input.isFinished())
+        if (input->isFinished())
         {
             output->finish();
             continue;
         }
 
-        input.setNeeded();
-        if (!input.hasData())
+        input->setNeeded();
+        if (!input->hasData())
             return Status::PortFull;
 
         output->pushData(input.pullData(true));
