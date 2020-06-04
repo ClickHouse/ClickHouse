@@ -9,7 +9,6 @@
 #include <shared_mutex>
 #include <atomic>
 #include <functional>
-#include <pthread.h>
 #include <sched.h>
 #include <Poco/Event.h>
 #include <Poco/Timestamp.h>
