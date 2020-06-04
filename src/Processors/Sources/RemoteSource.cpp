@@ -66,42 +66,67 @@ void RemoteSource::onCancel()
 }
 
 
-RemoteTotalsSource::RemoteTotalsSource(Block header) : ISource(std::move(header)) {}
+RemoteTotalsSource::RemoteTotalsSource(RemoteQueryExecutorPtr executor)
+    : ISource(executor->getHeader())
+    , query_executor(std::move(executor))
+{
+}
+
 RemoteTotalsSource::~RemoteTotalsSource() = default;
 
 Chunk RemoteTotalsSource::generate()
 {
-    /// Check use_count instead of comparing with nullptr just in case.
-    /// setQueryExecutor() may be called from other thread, but there shouldn't be any race,
-    /// because totals end extremes are always read after main data.
-    if (query_executor.use_count())
+    if (auto block = query_executor->getTotals())
     {
-        if (auto block = query_executor->getTotals())
-        {
-            UInt64 num_rows = block.rows();
-            return Chunk(block.getColumns(), num_rows);
-        }
+        UInt64 num_rows = block.rows();
+        return Chunk(block.getColumns(), num_rows);
     }
 
     return {};
 }
 
 
-RemoteExtremesSource::RemoteExtremesSource(Block header) : ISource(std::move(header)) {}
+RemoteExtremesSource::RemoteExtremesSource(RemoteQueryExecutorPtr executor)
+    : ISource(executor->getHeader())
+    , query_executor(std::move(executor))
+{
+}
+
 RemoteExtremesSource::~RemoteExtremesSource() = default;
 
 Chunk RemoteExtremesSource::generate()
 {
-    if (query_executor.use_count())
+    if (auto block = query_executor->getExtremes())
     {
-        if (auto block = query_executor->getExtremes())
-        {
-            UInt64 num_rows = block.rows();
-            return Chunk(block.getColumns(), num_rows);
-        }
+        UInt64 num_rows = block.rows();
+        return Chunk(block.getColumns(), num_rows);
     }
 
     return {};
+}
+
+
+Pipe createRemoteSourcePipe(
+    RemoteQueryExecutorPtr query_executor,
+    bool add_aggregation_info, bool add_totals, bool add_extremes)
+{
+    Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info));
+
+    if (add_totals)
+    {
+        auto totals_source = std::make_shared<RemoteTotalsSource>(query_executor);
+        pipe.setTotalsPort(&totals_source->getPort());
+        pipe.addProcessors({std::move(totals_source)});
+    }
+
+    if (add_extremes)
+    {
+        auto extremes_source = std::make_shared<RemoteExtremesSource>(query_executor);
+        pipe.setExtremesPort(&extremes_source->getPort());
+        pipe.addProcessors({std::move(extremes_source)});
+    }
+
+    return pipe;
 }
 
 }
