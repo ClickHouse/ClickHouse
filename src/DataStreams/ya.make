@@ -38,6 +38,7 @@ SRCS(
     PushingToViewsBlockOutputStream.cpp
     RemoteBlockInputStream.cpp
     RemoteBlockOutputStream.cpp
+    RemoteQueryExecutor.cpp
     SizeLimits.cpp
     SquashingBlockInputStream.cpp
     SquashingBlockOutputStream.cpp

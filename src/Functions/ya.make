@@ -6,7 +6,7 @@ CFLAGS(
 )
 
 ADDINCL(
-    library/consistent_hashing
+    library/cpp/consistent_hashing
     contrib/libs/farmhash
     contrib/libs/hyperscan/src
     contrib/libs/icu/common
@@ -26,7 +26,7 @@ PEERDIR(
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash
-    library/consistent_hashing
+    library/cpp/consistent_hashing
 )
 
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
