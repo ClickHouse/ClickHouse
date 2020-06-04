@@ -451,7 +451,6 @@ void StorageBuffer::startup()
             << " Set appropriate system_profile to fix this.");
     }
 
-
     flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ flushBack(); });
     flush_handle->activateAndSchedule();
 }
