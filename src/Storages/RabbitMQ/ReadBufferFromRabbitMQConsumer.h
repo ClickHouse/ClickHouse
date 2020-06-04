@@ -64,6 +64,8 @@ private:
     Queues queues;
     bool subscribed = false;
     String current_exchange_name;
+    size_t count_subscribed = 0;
+    size_t count_bound_queues = 0;
 
     Messages received;
     Messages messages;
@@ -77,6 +79,7 @@ private:
     void initQueueBindings(const size_t queue_id);
     void subscribe(const String & queue_name);
     void startEventLoop(std::atomic<bool> & check_param);
+    void stopEventLoop();
 
 };
 }
