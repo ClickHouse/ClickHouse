@@ -26,8 +26,25 @@ ReplxxLineReader::ReplxxLineReader(
 
     if (!history_file_path.empty())
     {
-        rx.history_load(history_file_path);
+        errno = 0;
         history_file_fd = open(history_file_path.c_str(), O_RDWR);
+        if (history_file_fd < 0)
+        {
+            rx.print("Open of history file failed: %s\n", strerror(errno));
+        }
+
+        errno = 0;
+        if (flock(history_file_fd, LOCK_SH))
+        {
+            rx.print("Shared lock of history file failed: %s\n", strerror(errno));
+        }
+        rx.history_load(history_file_path);
+
+        errno = 0;
+        if (flock(history_file_fd, LOCK_UN))
+        {
+            rx.print("Unlock of history file failed: %s\n", strerror(errno));
+        }
     }
 
     auto callback = [&suggest] (const String & context, size_t context_size)
@@ -53,8 +70,6 @@ ReplxxLineReader::ReplxxLineReader(
 
 ReplxxLineReader::~ReplxxLineReader()
 {
-    if (!history_file_path.empty())
-        rx.history_save(history_file_path);
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
@@ -73,14 +88,22 @@ LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 void ReplxxLineReader::addToHistory(const String & line)
 {
     // locking history file to prevent from inconsistent concurrent changes
-    flock(history_file_fd, LOCK_EX);
+    errno = 0;
+    if (flock(history_file_fd, LOCK_EX))
+    {
+        rx.print("Lock of history file failed: %s\n", strerror(errno));
+    }
 
     rx.history_add(line);
 
     // flush changes to the disk
     rx.history_save(history_file_path);
 
-    flock(history_file_fd, LOCK_UN);
+    errno = 0;
+    if (flock(history_file_fd, LOCK_UN))
+    {
+        rx.print("Unlock of history file failed: %s\n", strerror(errno));
+    }
 }
 
 void ReplxxLineReader::enableBracketedPaste()
