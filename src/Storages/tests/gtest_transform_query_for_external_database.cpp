@@ -27,23 +27,26 @@ struct State
         {"create_time", std::make_shared<DataTypeDateTime>()},
     };
 
+    static const State & instance()
+    {
+        static State state;
+        return state;
+    }
+
+private:
     explicit State()
         : context(getContext().context)
     {
         registerFunctions();
         DatabasePtr database = std::make_shared<DatabaseMemory>("test", context);
         database->attachTable("table", StorageMemory::create(StorageID("test", "table"), ColumnsDescription{columns}, ConstraintsDescription{}));
-        context.makeGlobalContext();
         DatabaseCatalog::instance().attachDatabase("test", database);
         context.setCurrentDatabase("test");
     }
+
+    State(const State&) = delete;
 };
 
-State getState()
-{
-    static State state;
-    return state;
-}
 
 static void check(const std::string & query, const std::string & expected, const Context & context, const NamesAndTypesList & columns)
 {
@@ -60,7 +63,7 @@ static void check(const std::string & query, const std::string & expected, const
 
 TEST(TransformQueryForExternalDatabase, InWithSingleElement)
 {
-    const State & state = getState();
+    const State & state = State::instance();
 
     check("SELECT column FROM test.table WHERE 1 IN (1)",
           R"(SELECT "column" FROM "test"."table" WHERE 1)",
@@ -75,7 +78,7 @@ TEST(TransformQueryForExternalDatabase, InWithSingleElement)
 
 TEST(TransformQueryForExternalDatabase, Like)
 {
-    const State & state = getState();
+    const State & state = State::instance();
 
     check("SELECT column FROM test.table WHERE column LIKE '%hello%'",
           R"(SELECT "column" FROM "test"."table" WHERE "column" LIKE '%hello%')",
@@ -87,7 +90,7 @@ TEST(TransformQueryForExternalDatabase, Like)
 
 TEST(TransformQueryForExternalDatabase, Substring)
 {
-    const State & state = getState();
+    const State & state = State::instance();
 
     check("SELECT column FROM test.table WHERE left(column, 10) = RIGHT(column, 10) AND SUBSTRING(column FROM 1 FOR 2) = 'Hello'",
           R"(SELECT "column" FROM "test"."table")",
@@ -96,7 +99,7 @@ TEST(TransformQueryForExternalDatabase, Substring)
 
 TEST(TransformQueryForExternalDatabase, MultipleAndSubqueries)
 {
-    const State & state = getState();
+    const State & state = State::instance();
 
     check("SELECT column FROM test.table WHERE 1 = 1 AND toString(column) = '42' AND column = 42 AND left(column, 10) = RIGHT(column, 10) AND column IN (1, 42) AND SUBSTRING(column FROM 1 FOR 2) = 'Hello' AND column != 4",
           R"(SELECT "column" FROM "test"."table" WHERE 1 AND ("column" = 42) AND ("column" IN (1, 42)) AND ("column" != 4))",
@@ -108,7 +111,7 @@ TEST(TransformQueryForExternalDatabase, MultipleAndSubqueries)
 
 TEST(TransformQueryForExternalDatabase, Issue7245)
 {
-    const State & state = getState();
+    const State & state = State::instance();
 
     check("select apply_id from test.table where apply_type = 2 and create_time > addDays(toDateTime('2019-01-01 01:02:03'),-7) and apply_status in (3,4)",
           R"(SELECT "apply_id", "apply_type", "apply_status", "create_time" FROM "test"."table" WHERE ("apply_type" = 2) AND ("create_time" > '2018-12-25 01:02:03') AND ("apply_status" IN (3, 4)))",
