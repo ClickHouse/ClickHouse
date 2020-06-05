@@ -100,11 +100,20 @@ for c in connections:
 
 report_stage_end('drop1')
 
-# Apply settings
+# Apply settings.
+# If there are errors, report them and continue -- maybe a new test uses a setting
+# that is not in master, but the queries can still run. If we have multiple
+# settings and one of them throws an exception, all previous settings for this
+# connection will be reset, because the driver reconnects on error (not
+# configurable). So the end result is uncertain, but hopefully we'll be able to
+# run at least some queries.
 settings = root.findall('settings/*')
 for c in connections:
     for s in settings:
-        c.execute("set {} = '{}'".format(s.tag, s.text))
+        try:
+            c.execute("set {} = '{}'".format(s.tag, s.text))
+        except:
+            print(traceback.format_exc(), file=sys.stderr)
 
 report_stage_end('settings')
 

@@ -172,7 +172,7 @@ static const PerfEventInfo raw_events_info[] = {
 #undef SOFTWARE_EVENT
 
 // A map of event name -> event index, to parse event list in settings.
-static const std::unordered_map<std::string, size_t> populateEventMap()
+static std::unordered_map<std::string, size_t> populateEventMap()
 {
     std::unordered_map<std::string, size_t> name_to_index;
     name_to_index.reserve(NUMBER_OF_RAW_EVENTS);
@@ -352,8 +352,9 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
 
         if (fd == -1 && errno != ENOENT)
         {
-            // ENOENT means that the event is not supported, so we don't log it
-            // for each thread. Other codes might signify an error.
+            // ENOENT means that the event is not supported. Don't log it, because
+            // this is called for each thread and would be too verbose. Log other
+            // error codes because they might signify an error.
             LOG_WARNING(&Poco::Logger::get("PerfEvents"),
                 "Failed to open perf event {} (event_type={}, event_config={}): "
                 "'{}' ({})", event_info.settings_name, event_info.event_type,
@@ -386,7 +387,7 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
     {
         // Allow spaces at the beginning of the token, so that you can write
         // 'a, b'.
-        event_name.erase(0, event_name.find_first_not_of(" "));
+        event_name.erase(0, event_name.find_first_not_of(' '));
 
         auto entry = event_name_to_index.find(event_name);
         if (entry != event_name_to_index.end())
