@@ -43,6 +43,7 @@ private:
 public:
     std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }
     const char * getFamilyName() const override { return "FixedString"; }
+    TypeIndex getDataType() const override { return TypeIndex::FixedString; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 

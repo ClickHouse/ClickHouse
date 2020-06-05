@@ -121,6 +121,7 @@ public:
 
     std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
     const char * getFamilyName() const override { return "AggregateFunction"; }
+    TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
     MutableColumnPtr predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const;
 

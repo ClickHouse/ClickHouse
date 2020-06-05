@@ -313,7 +313,7 @@ ORDER BY level ASC
 └───────┴───┘
 ```
 
-## 保留 {#retention}
+## Retention {#retention}
 
 该函数将一组条件作为参数，类型为1到32个参数 `UInt8` 表示事件是否满足特定条件。
 任何条件都可以指定为参数（如 [WHERE](../../sql-reference/statements/select/where.md#select-where)).
