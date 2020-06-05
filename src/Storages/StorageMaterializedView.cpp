@@ -18,6 +18,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ReadInOrderOptimizer.h>
+#include <Storages/SelectQueryDescription.h>
 
 #include <Common/typeid_cast.h>
 #include <Processors/Sources/SourceFromInputStream.h>
@@ -39,58 +40,6 @@ static inline String generateInnerTableName(const StorageID & view_id)
     if (view_id.hasUUID())
         return ".inner_id." + toString(view_id.uuid);
     return ".inner." + view_id.getTableName();
-}
-
-static StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, const Context & context, bool add_default_db = true)
-{
-    if (add_default_db)
-    {
-        AddDefaultDatabaseVisitor visitor(context.getCurrentDatabase(), nullptr);
-        visitor.visit(query);
-    }
-
-    if (auto db_and_table = getDatabaseAndTable(query, 0))
-    {
-        return StorageID(db_and_table->database, db_and_table->table/*, db_and_table->uuid*/);
-    }
-    else if (auto subquery = extractTableExpression(query, 0))
-    {
-        auto * ast_select = subquery->as<ASTSelectWithUnionQuery>();
-        if (!ast_select)
-            throw Exception("Logical error while creating StorageMaterializedView. "
-                            "Could not retrieve table name from select query.",
-                            DB::ErrorCodes::LOGICAL_ERROR);
-        if (ast_select->list_of_selects->children.size() != 1)
-            throw Exception("UNION is not supported for MATERIALIZED VIEW",
-                  ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
-
-        auto & inner_query = ast_select->list_of_selects->children.at(0);
-
-        return extractDependentTableFromSelectQuery(inner_query->as<ASTSelectQuery &>(), context, false);
-    }
-    else
-        return StorageID::createEmpty();
-}
-
-
-static void checkAllowedQueries(const ASTSelectQuery & query)
-{
-    if (query.prewhere() || query.final() || query.sampleSize())
-        throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
-
-    ASTPtr subquery = extractTableExpression(query, 0);
-    if (!subquery)
-        return;
-
-    if (const auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
-    {
-        if (ast_select->list_of_selects->children.size() != 1)
-            throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
-
-        const auto & inner_query = ast_select->list_of_selects->children.at(0);
-
-        checkAllowedQueries(inner_query->as<ASTSelectQuery &>());
-    }
 }
 
 
@@ -117,13 +66,8 @@ StorageMaterializedView::StorageMaterializedView(
     if (query.select->list_of_selects->children.size() != 1)
         throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
-    select = query.select->clone();
-    inner_query = query.select->list_of_selects->children.at(0);
-
-    auto & select_query = inner_query->as<ASTSelectQuery &>();
-    checkAllowedQueries(select_query);
-
-    select_table_id = extractDependentTableFromSelectQuery(select_query, local_context);
+    auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), local_context);
+    setSelectQuery(select);
 
     if (!has_inner_table)
         target_table_id = query.to_table_id;
@@ -152,14 +96,14 @@ StorageMaterializedView::StorageMaterializedView(
         target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table}, global_context)->getStorageID();
     }
 
-    if (!select_table_id.empty())
-        DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
+    if (!select.select_table_id.empty())
+        DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
 }
 
 StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
 {
     StorageInMemoryMetadata result(getColumns(), getSecondaryIndices(), getConstraints());
-    result.select = getSelectQuery();
+    result.select = getSelectQuery().select_query;
     return result;
 }
 
@@ -222,8 +166,9 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
 void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
-    if (!select_table_id.empty())
-        DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
+    const auto & select_query = getSelectQuery();
+    if (!select_query.select_table_id.empty())
+        DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
 
     if (has_inner_table && tryGetTargetTable())
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id);
@@ -262,21 +207,12 @@ void StorageMaterializedView::alter(
     /// start modify query
     if (context.getSettingsRef().allow_experimental_alter_materialized_view_structure)
     {
-        auto & new_select = metadata.select->as<ASTSelectWithUnionQuery &>();
+        auto new_select = SelectQueryDescription::getSelectQueryFromASTForMatView(metadata.select, context);
+        const auto & old_select = getSelectQuery();
 
-        if (new_select.list_of_selects->children.size() != 1)
-            throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+        DatabaseCatalog::instance().updateDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
 
-        auto & new_inner_query = new_select.list_of_selects->children.at(0);
-        auto & select_query = new_inner_query->as<ASTSelectQuery &>();
-        checkAllowedQueries(select_query);
-
-        auto new_select_table_id = extractDependentTableFromSelectQuery(select_query, context);
-        DatabaseCatalog::instance().updateDependency(select_table_id, table_id, new_select_table_id, table_id);
-
-        select_table_id = new_select_table_id;
-        select = metadata.select;
-        inner_query = new_inner_query;
+        setSelectQuery(new_select);
     }
     /// end modify query
 
@@ -349,15 +285,17 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     }
 
     IStorage::renameInMemory(new_table_id);
+    const auto & select_query = getSelectQuery();
     // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
-    DatabaseCatalog::instance().updateDependency(select_table_id, old_table_id, select_table_id, getStorageID());
+    DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::shutdown()
 {
+    const auto & select_query = getSelectQuery();
     /// Make sure the dependency is removed after DETACH TABLE
-    if (!select_table_id.empty())
-        DatabaseCatalog::instance().removeDependency(select_table_id, getStorageID());
+    if (!select_query.select_table_id.empty())
+        DatabaseCatalog::instance().removeDependency(select_query.select_table_id, getStorageID());
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const

@@ -12,6 +12,7 @@
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/SelectQueryDescription.h>
 
 #include <Common/typeid_cast.h>
 
@@ -45,7 +46,10 @@ StorageView::StorageView(
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-    inner_query = query.select->ptr();
+    SelectQueryDescription description;
+
+    description.inner_query = query.select->ptr();
+    setSelectQuery(description);
 }
 
 
@@ -59,7 +63,7 @@ Pipes StorageView::read(
 {
     Pipes pipes;
 
-    ASTPtr current_inner_query = inner_query;
+    ASTPtr current_inner_query = getSelectQuery().inner_query;
 
     if (context.getSettings().enable_optimize_predicate_expression)
         current_inner_query = getRuntimeViewQuery(*query_info.query->as<const ASTSelectQuery>(), context);
@@ -119,7 +123,7 @@ static void replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr &
 
 ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Context & context, bool normalize)
 {
-    auto runtime_view_query = inner_query->clone();
+    auto runtime_view_query = getSelectQuery().inner_query->clone();
 
     /// TODO: remove getTableExpressions and getTablesWithColumns
     {

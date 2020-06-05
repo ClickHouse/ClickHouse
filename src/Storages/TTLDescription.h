@@ -2,6 +2,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -73,7 +74,7 @@ struct TTLDescription
 
     /// Parse TTL structure from definition. Able to parse both column and table
     /// TTLs.
-    static TTLDescription getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context, const StorageMetadataKeyField & primary_key);
+    static TTLDescription getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context, const KeyDescription & primary_key);
 };
 
 /// Mapping from column name to column TTL

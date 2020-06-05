@@ -59,7 +59,7 @@ TTLDescription TTLDescription::getTTLFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
     const Context & context,
-    const StorageMetadataKeyField & primary_key)
+    const KeyDescription & primary_key)
 {
     TTLDescription result;
     const auto * ttl_element = definition_ast->as<ASTTTLElement>();

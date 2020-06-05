@@ -421,12 +421,12 @@ NamesAndTypesList IStorage::getVirtuals() const
     return {};
 }
 
-const StorageMetadataKeyField & IStorage::getPartitionKey() const
+const KeyDescription & IStorage::getPartitionKey() const
 {
     return partition_key;
 }
 
-void IStorage::setPartitionKey(const StorageMetadataKeyField & partition_key_)
+void IStorage::setPartitionKey(const KeyDescription & partition_key_)
 {
     partition_key = partition_key_;
 }
@@ -448,12 +448,12 @@ Names IStorage::getColumnsRequiredForPartitionKey() const
     return {};
 }
 
-const StorageMetadataKeyField & IStorage::getSortingKey() const
+const KeyDescription & IStorage::getSortingKey() const
 {
     return sorting_key;
 }
 
-void IStorage::setSortingKey(const StorageMetadataKeyField & sorting_key_)
+void IStorage::setSortingKey(const KeyDescription & sorting_key_)
 {
     sorting_key = sorting_key_;
 }
@@ -482,12 +482,12 @@ Names IStorage::getSortingKeyColumns() const
     return {};
 }
 
-const StorageMetadataKeyField & IStorage::getPrimaryKey() const
+const KeyDescription & IStorage::getPrimaryKey() const
 {
     return primary_key;
 }
 
-void IStorage::setPrimaryKey(const StorageMetadataKeyField & primary_key_)
+void IStorage::setPrimaryKey(const KeyDescription & primary_key_)
 {
     primary_key = primary_key_;
 }
@@ -516,12 +516,12 @@ Names IStorage::getPrimaryKeyColumns() const
     return {};
 }
 
-const StorageMetadataKeyField & IStorage::getSamplingKey() const
+const KeyDescription & IStorage::getSamplingKey() const
 {
     return sampling_key;
 }
 
-void IStorage::setSamplingKey(const StorageMetadataKeyField & sampling_key_)
+void IStorage::setSamplingKey(const KeyDescription & sampling_key_)
 {
     sampling_key = sampling_key_;
 }
@@ -652,6 +652,31 @@ ColumnDependencies IStorage::getColumnDependencies(const NameSet & updated_colum
 
     return res;
 
+}
+
+ASTPtr IStorage::getSettingsChanges() const
+{
+    return settings_changes->clone();
+}
+
+void IStorage::setSettingsChanges(const ASTPtr & settings_changes_)
+{
+    settings_changes = settings_changes_->clone();
+}
+
+const SelectQueryDescription & IStorage::getSelectQuery() const
+{
+    return select;
+}
+
+void IStorage::setSelectQuery(const SelectQueryDescription & select_)
+{
+    select = select_;
+}
+
+bool IStorage::hasSelectQuery() const
+{
+    return select.select_query != nullptr;
 }
 
 }
