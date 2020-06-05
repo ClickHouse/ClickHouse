@@ -26,7 +26,11 @@ namespace
     {
         DataTypeEnum8::Values enum_values;
         for (auto key_type : ext::range(KeyType::MAX))
-            enum_values.push_back({KeyTypeInfo::get(key_type).name, static_cast<UInt8>(key_type)});
+        {
+            const auto & type_info = KeyTypeInfo::get(key_type);
+            if ((key_type != KeyType::NONE) && type_info.base_types.empty())
+                enum_values.push_back({type_info.name, static_cast<Int8>(key_type)});
+        }
         return enum_values;
     }
 }
@@ -37,8 +41,8 @@ NamesAndTypesList StorageSystemQuotas::getNamesAndTypes()
     NamesAndTypesList names_and_types{
         {"name", std::make_shared<DataTypeString>()},
         {"id", std::make_shared<DataTypeUUID>()},
-        {"source", std::make_shared<DataTypeString>()},
-        {"key_type", std::make_shared<DataTypeEnum8>(getKeyTypeEnumValues())},
+        {"storage", std::make_shared<DataTypeString>()},
+        {"keys", std::make_shared<DataTypeArray>(std::make_shared<DataTypeEnum8>(getKeyTypeEnumValues()))},
         {"durations", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>())},
         {"apply_to_all", std::make_shared<DataTypeUInt8>()},
         {"apply_to_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
@@ -58,7 +62,8 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, const Context &
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_id = assert_cast<ColumnUInt128 &>(*res_columns[column_index++]).getData();
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_key_type = assert_cast<ColumnInt8 &>(*res_columns[column_index++]).getData();
+    auto & column_key_types = assert_cast<ColumnInt8 &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData()).getData();
+    auto & column_key_types_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_durations = assert_cast<ColumnUInt32 &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData()).getData();
     auto & column_durations_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_apply_to_all = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
@@ -77,7 +82,16 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, const Context &
         column_name.insertData(name.data(), name.length());
         column_id.push_back(id);
         column_storage.insertData(storage_name.data(), storage_name.length());
-        column_key_type.push_back(static_cast<Int8>(key_type));
+
+        if (key_type != KeyType::NONE)
+        {
+            const auto & type_info = KeyTypeInfo::get(key_type);
+            for (auto base_type : type_info.base_types)
+                column_key_types.push_back(static_cast<Int8>(base_type));
+            if (type_info.base_types.empty())
+                column_key_types.push_back(static_cast<Int8>(key_type));
+        }
+        column_key_types_offsets.push_back(column_key_types.size());
 
         for (const auto & limits : all_limits)
             column_durations.push_back(std::chrono::duration_cast<std::chrono::seconds>(limits.duration).count());

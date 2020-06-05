@@ -2,6 +2,8 @@
 
 #include <Access/IAccessEntity.h>
 #include <Access/RolesOrUsersSet.h>
+#include <ext/range.h>
+#include <boost/algorithm/string/split.hpp>
 #include <boost/lexical_cast.hpp>
 #include <chrono>
 
@@ -84,7 +86,8 @@ struct Quota : public IAccessEntity
     struct KeyTypeInfo
     {
         const char * const raw_name;
-        const String name; /// Lowercased with spaces, e.g. "client key".
+        const String name;  /// Lowercased with underscores, e.g. "client_key".
+        const std::vector<KeyType> base_types; /// For combined types keeps base types, e.g. for CLIENT_KEY_OR_USER_NAME it keeps [KeyType::CLIENT_KEY, KeyType::USER_NAME].
         static const KeyTypeInfo & get(KeyType type);
     };
 
@@ -195,8 +198,21 @@ inline const Quota::KeyTypeInfo & Quota::KeyTypeInfo::get(KeyType type)
     {
         String init_name = raw_name_;
         boost::to_lower(init_name);
-        boost::replace_all(init_name, "_", " ");
-        return KeyTypeInfo{raw_name_, std::move(init_name)};
+        std::vector<KeyType> init_base_types;
+        String replaced = boost::algorithm::replace_all_copy(init_name, "_or_", "|");
+        Strings tokens;
+        boost::algorithm::split(tokens, replaced, boost::is_any_of("|"));
+        if (tokens.size() > 1)
+        {
+            for (const auto & token : tokens)
+                for (auto kt : ext::range(KeyType::MAX))
+                    if (KeyTypeInfo::get(kt).name == token)
+                    {
+                        init_base_types.push_back(kt);
+                        break;
+                    }
+        }
+        return KeyTypeInfo{raw_name_, std::move(init_name), std::move(init_base_types)};
     };
 
     switch (type)
