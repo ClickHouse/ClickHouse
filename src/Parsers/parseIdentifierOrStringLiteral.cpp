@@ -4,47 +4,52 @@
 #include "ASTLiteral.h"
 #include "ASTIdentifier.h"
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
 {
-
 bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, String & result)
 {
-    ASTPtr res;
-
-    if (!ParserIdentifier().parse(pos, res, expected))
+    return IParserBase::wrapParseImpl(pos, [&]
     {
-        if (!ParserStringLiteral().parse(pos, res, expected))
-            return false;
+        ASTPtr ast;
+        if (ParserIdentifier().parse(pos, ast, expected))
+        {
+            result = getIdentifierName(ast);
+            return true;
+        }
 
-        result = res->as<ASTLiteral &>().value.safeGet<String>();
-    }
-    else
-        result = getIdentifierName(res);
+        if (ParserStringLiteral().parse(pos, ast, expected))
+        {
+            result = ast->as<ASTLiteral &>().value.safeGet<String>();
+            return true;
+        }
 
-    return true;
+        return false;
+    });
 }
 
 
 bool parseIdentifiersOrStringLiterals(IParser::Pos & pos, Expected & expected, Strings & result)
 {
-    return IParserBase::wrapParseImpl(pos, [&]
+    Strings res;
+
+    auto parse_single_id_or_literal = [&]
     {
-        Strings strs;
-        do
-        {
-            String str;
-            if (!parseIdentifierOrStringLiteral(pos, expected, str))
-                return false;
+        String str;
+        if (!parseIdentifierOrStringLiteral(pos, expected, str))
+            return false;
 
-            strs.push_back(std::move(str));
-        }
-        while (ParserToken{TokenType::Comma}.ignore(pos, expected));
-
-        result = std::move(strs);
+        res.emplace_back(std::move(str));
         return true;
-    });
+    };
+
+    if (!ParserList::parseUtil(pos, expected, parse_single_id_or_literal, false))
+        return false;
+
+    result = std::move(res);
+    return true;
 }
 
 }

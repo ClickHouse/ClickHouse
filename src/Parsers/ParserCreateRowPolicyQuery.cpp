@@ -75,6 +75,7 @@ namespace
         });
     }
 
+
     void addAllCommands(boost::container::flat_set<std::string_view> & commands)
     {
         for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
@@ -84,44 +85,47 @@ namespace
         }
     }
 
-    bool parseCommands(IParserBase::Pos & pos, Expected & expected, boost::container::flat_set<std::string_view> & commands)
+
+    bool parseCommands(IParserBase::Pos & pos, Expected & expected,
+                       boost::container::flat_set<std::string_view> & commands)
     {
-        return IParserBase::wrapParseImpl(pos, [&]
+        boost::container::flat_set<std::string_view> res_commands;
+
+        auto parse_command = [&]
         {
             if (ParserKeyword{"ALL"}.ignore(pos, expected))
             {
-                addAllCommands(commands);
+                addAllCommands(res_commands);
                 return true;
             }
 
-            boost::container::flat_set<std::string_view> res_commands;
-            do
+            for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
             {
-                bool found_keyword = false;
-                for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
+                const std::string_view & command = ConditionTypeInfo::get(condition_type).command;
+                if (ParserKeyword{command.data()}.ignore(pos, expected))
                 {
-                    const std::string_view & command = ConditionTypeInfo::get(condition_type).command;
-                    if (ParserKeyword{command.data()}.ignore(pos, expected))
-                    {
-                        res_commands.emplace(command);
-                        found_keyword = true;
-                        break;
-                    }
+                    res_commands.emplace(command);
+                    return true;
                 }
-
-                if (!found_keyword)
-                    return false;
             }
-            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
 
-            commands = std::move(res_commands);
-            return true;
-        });
+            return false;
+        };
+
+        if (!ParserList::parseUtil(pos, expected, parse_command, false))
+            return false;
+
+        commands = std::move(res_commands);
+        return true;
     }
 
-    bool parseForClause(IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<std::pair<ConditionType, ASTPtr>> & conditions)
+
+    bool
+    parseForClauses(IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<std::pair<ConditionType, ASTPtr>> & conditions)
     {
-        return IParserBase::wrapParseImpl(pos, [&]
+        std::vector<std::pair<ConditionType, ASTPtr>> res_conditions;
+
+        auto parse_for_clause = [&]
         {
             boost::container::flat_set<std::string_view> commands;
 
@@ -158,32 +162,20 @@ namespace
                 if (commands.count(type_info.command))
                 {
                     if (type_info.is_check && check)
-                        conditions.emplace_back(condition_type, *check);
+                        res_conditions.emplace_back(condition_type, *check);
                     else if (filter)
-                        conditions.emplace_back(condition_type, *filter);
+                        res_conditions.emplace_back(condition_type, *filter);
                 }
             }
 
             return true;
-        });
-    }
+        };
 
-    bool parseForClauses(
-        IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<std::pair<ConditionType, ASTPtr>> & conditions)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            std::vector<std::pair<ConditionType, ASTPtr>> res_conditions;
-            do
-            {
-                if (!parseForClause(pos, expected, alter, res_conditions))
-                    return false;
-            }
-            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+        if (!ParserList::parseUtil(pos, expected, parse_for_clause, false))
+            return false;
 
-            conditions = std::move(res_conditions);
-            return true;
-        });
+        conditions = std::move(res_conditions);
+        return true;
     }
 
     bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
