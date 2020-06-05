@@ -153,7 +153,7 @@ private:
 
 
 private:
-    Logger * log;
+    Poco::Logger * log;
 
     mutable std::shared_mutex rwlock;
     BasicBloomFilterPtr hash_set;
