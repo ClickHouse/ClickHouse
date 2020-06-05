@@ -46,4 +46,5 @@ then
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tgz" /output
 fi
+
 ccache --show-stats ||:
