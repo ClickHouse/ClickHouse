@@ -31,7 +31,7 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
         {"database", std::make_shared<DataTypeString>()},
         {"table", std::make_shared<DataTypeString>()},
         {"id", std::make_shared<DataTypeUUID>()},
-        {"source", std::make_shared<DataTypeString>()},
+        {"storage", std::make_shared<DataTypeString>()},
     };
 
     for (auto type : ext::range(MAX_CONDITION_TYPE))

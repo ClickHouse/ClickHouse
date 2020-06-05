@@ -14,7 +14,6 @@ namespace
 {
     using ConditionType = RowPolicy::ConditionType;
     using ConditionTypeInfo = RowPolicy::ConditionTypeInfo;
-    constexpr auto MAX_CONDITION_TYPE = RowPolicy::MAX_CONDITION_TYPE;
 
 
     void formatRenameTo(const String & new_short_name, const IAST::FormatSettings & settings)
@@ -26,21 +25,22 @@ namespace
 
     void formatAsRestrictiveOrPermissive(bool is_restrictive, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (is_restrictive ? "RESTRICTIVE" : "PERMISSIVE")
-                      << (settings.hilite ? IAST::hilite_none : "");
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (settings.hilite ? IAST::hilite_none : "")
+                      << (is_restrictive ? "restrictive" : "permissive");
     }
 
 
     void formatConditionalExpression(const ASTPtr & expr, const IAST::FormatSettings & settings)
     {
+        settings.ostr << " ";
         if (expr)
             expr->format(settings);
         else
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NONE" << (settings.hilite ? IAST::hilite_none : "");
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
     }
 
 
-    void formatCondition(const boost::container::flat_set<std::string_view> & commands, const String & filter, const String & check, bool alter, const IAST::FormatSettings & settings)
+    void formatForClause(const boost::container::flat_set<std::string_view> & commands, const String & filter, const String & check, bool alter, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " FOR " << (settings.hilite ? IAST::hilite_none : "");
         bool need_comma = false;
@@ -52,27 +52,23 @@ namespace
         }
 
         if (!filter.empty())
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " USING " << (settings.hilite ? IAST::hilite_none : "") << filter;
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " USING" << (settings.hilite ? IAST::hilite_none : "") << filter;
 
         if (!check.empty() && (alter || (check != filter)))
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WITH CHECK " << (settings.hilite ? IAST::hilite_none : "") << check;
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WITH CHECK" << (settings.hilite ? IAST::hilite_none : "") << check;
     }
 
 
-    void formatMultipleConditions(const std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> & conditions, bool alter, const IAST::FormatSettings & settings)
+    void formatForClauses(const std::vector<std::pair<ConditionType, ASTPtr>> & conditions, bool alter, const IAST::FormatSettings & settings)
     {
-        std::array<String, MAX_CONDITION_TYPE> conditions_as_strings;
+        std::vector<std::pair<ConditionType, String>> conditions_as_strings;
         std::stringstream temp_sstream;
         IAST::FormatSettings temp_settings(temp_sstream, settings);
-        for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
+        for (const auto & [condition_type, condition] : conditions)
         {
-            const auto & condition = conditions[condition_type];
-            if (condition)
-            {
-                formatConditionalExpression(*condition, temp_settings);
-                conditions_as_strings[condition_type] = temp_sstream.str();
-                temp_sstream.str("");
-            }
+            formatConditionalExpression(condition, temp_settings);
+            conditions_as_strings.emplace_back(condition_type, temp_sstream.str());
+            temp_sstream.str("");
         }
 
         boost::container::flat_set<std::string_view> commands;
@@ -85,9 +81,8 @@ namespace
             check.clear();
 
             /// Collect commands using the same filter and check conditions.
-            for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
+            for (auto & [condition_type, condition] : conditions_as_strings)
             {
-                const String & condition = conditions_as_strings[condition_type];
                 if (condition.empty())
                     continue;
                 const auto & type_info = ConditionTypeInfo::get(condition_type);
@@ -106,11 +101,11 @@ namespace
                         continue;
                 }
                 commands.emplace(type_info.command);
-                conditions_as_strings[condition_type].clear(); /// Skip this condition on the next iteration.
+                condition.clear(); /// Skip this condition on the next iteration.
             }
 
             if (!filter.empty() || !check.empty())
-                formatCondition(commands, filter, check, alter, settings);
+                formatForClause(commands, filter, check, alter, settings);
         }
         while (!filter.empty() || !check.empty());
     }
@@ -167,7 +162,7 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
     if (is_restrictive)
         formatAsRestrictiveOrPermissive(*is_restrictive, settings);
 
-    formatMultipleConditions(conditions, alter, settings);
+    formatForClauses(conditions, alter, settings);
 
     if (roles && (!roles->empty() || alter))
         formatToRoles(*roles, settings);
