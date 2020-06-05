@@ -423,6 +423,7 @@ SRCS(
     URL/extractURLParameters.cpp
     URL/firstSignificantSubdomain.cpp
     URL/fragment.cpp
+    URL/netloc.cpp
     URL/path.cpp
     URL/pathFull.cpp
     URL/port.cpp
