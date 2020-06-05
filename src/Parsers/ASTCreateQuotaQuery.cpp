@@ -18,8 +18,28 @@ namespace
 
     void formatKeyType(const KeyType & key_type, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " KEYED BY " << (settings.hilite ? IAST::hilite_none : "") << "'"
-                      << KeyTypeInfo::get(key_type).name << "'";
+        const auto & type_info = KeyTypeInfo::get(key_type);
+        if (key_type == KeyType::NONE)
+        {
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT KEYED" << (settings.hilite ? IAST::hilite_none : "");
+            return;
+        }
+
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " KEYED BY " << (settings.hilite ? IAST::hilite_none : "");
+
+        if (!type_info.base_types.empty())
+        {
+            bool need_comma = false;
+            for (const auto & base_type : type_info.base_types)
+            {
+                if (std::exchange(need_comma, true))
+                    settings.ostr << ", ";
+                settings.ostr << KeyTypeInfo::get(base_type).name;
+            }
+            return;
+        }
+
+        settings.ostr << type_info.name;
     }
 
 
@@ -43,20 +63,14 @@ namespace
     }
 
 
-    void formatLimit(ResourceType resource_type, ResourceAmount max, bool first, const IAST::FormatSettings & settings)
+    void formatLimit(ResourceType resource_type, ResourceAmount max, const IAST::FormatSettings & settings)
     {
-        if (first)
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX" << (settings.hilite ? IAST::hilite_none : "");
-        else
-            settings.ostr << ",";
-
         const auto & type_info = ResourceTypeInfo::get(resource_type);
-        settings.ostr << " " << (settings.hilite ? IAST::hilite_keyword : "") << type_info.keyword
-                      << (settings.hilite ? IAST::hilite_none : "") << " " << type_info.amountToString(max);
+        settings.ostr << " " << type_info.name << " = " << type_info.amountToString(max);
     }
 
 
-    void formatLimits(const ASTCreateQuotaQuery::Limits & limits, const IAST::FormatSettings & settings)
+    void formatIntervalWithLimits(const ASTCreateQuotaQuery::Limits & limits, const IAST::FormatSettings & settings)
     {
         auto interval_kind = IntervalKind::fromAvgSeconds(limits.duration.count());
         Int64 num_intervals = limits.duration.count() / interval_kind.toAvgSeconds();
@@ -64,11 +78,11 @@ namespace
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "")
                       << " FOR"
                       << (limits.randomize_interval ? " RANDOMIZED" : "")
-                      << " INTERVAL "
+                      << " INTERVAL"
                       << (settings.hilite ? IAST::hilite_none : "")
-                      << num_intervals << " "
+                      << " " << num_intervals << " "
                       << (settings.hilite ? IAST::hilite_keyword : "")
-                      << interval_kind.toKeyword()
+                      << interval_kind.toLowercasedKeyword()
                       << (settings.hilite ? IAST::hilite_none : "");
 
         if (limits.drop)
@@ -81,17 +95,28 @@ namespace
             for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
             {
                 if (limits.max[resource_type])
-                {
-                    formatLimit(resource_type, *limits.max[resource_type], !limit_found, settings);
                     limit_found = true;
+            }
+            if (limit_found)
+            {
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX" << (settings.hilite ? IAST::hilite_none : "");
+                bool need_comma = false;
+                for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+                {
+                    if (limits.max[resource_type])
+                    {
+                        if (std::exchange(need_comma, true))
+                            settings.ostr << ",";
+                        formatLimit(resource_type, *limits.max[resource_type], settings);
+                    }
                 }
             }
-            if (!limit_found)
+            else
                 settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TRACKING ONLY" << (settings.hilite ? IAST::hilite_none : "");
         }
     }
 
-    void formatAllLimits(const std::vector<ASTCreateQuotaQuery::Limits> & all_limits, const IAST::FormatSettings & settings)
+    void formatIntervalsWithLimits(const std::vector<ASTCreateQuotaQuery::Limits> & all_limits, const IAST::FormatSettings & settings)
     {
         bool need_comma = false;
         for (const auto & limits : all_limits)
@@ -100,7 +125,7 @@ namespace
                 settings.ostr << ",";
             need_comma = true;
 
-            formatLimits(limits, settings);
+            formatIntervalWithLimits(limits, settings);
         }
     }
 
@@ -152,7 +177,7 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
     if (key_type)
         formatKeyType(*key_type, settings);
 
-    formatAllLimits(all_limits, settings);
+    formatIntervalsWithLimits(all_limits, settings);
 
     if (roles && (!roles->empty() || alter))
         formatToRoles(*roles, settings);

@@ -6,6 +6,7 @@
 #include <Parsers/ParserRolesOrUsersSet.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <ext/range.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -39,84 +40,126 @@ namespace
         });
     }
 
-    bool parseKeyType(IParserBase::Pos & pos, Expected & expected, std::optional<Quota::KeyType> & key_type)
+    bool parseKeyType(IParserBase::Pos & pos, Expected & expected, KeyType & key_type)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"KEYED BY"}.ignore(pos, expected))
+            if (ParserKeyword{"NOT KEYED"}.ignore(pos, expected))
+            {
+                key_type = KeyType::NONE;
+                return true;
+            }
+
+            if (!ParserKeyword{"KEY BY"}.ignore(pos, expected) && !ParserKeyword{"KEYED BY"}.ignore(pos, expected))
                 return false;
 
-            ASTPtr key_type_ast;
-            if (!ParserStringLiteral().parse(pos, key_type_ast, expected))
+            Strings names;
+            if (!parseIdentifiersOrStringLiterals(pos, expected, names))
                 return false;
 
-            const String & key_type_str = key_type_ast->as<ASTLiteral &>().value.safeGet<const String &>();
+            String name = boost::algorithm::join(names, "_or_");
+            boost::to_lower(name);
+            boost::replace_all(name, " ", "_");
+
             for (auto kt : ext::range(Quota::KeyType::MAX))
-                if (boost::iequals(KeyTypeInfo::get(kt).name, key_type_str))
+                if (KeyTypeInfo::get(kt).name == name)
                 {
                     key_type = kt;
                     return true;
                 }
 
-            String all_key_types_str;
+            String all_types_str;
             for (auto kt : ext::range(Quota::KeyType::MAX))
-                all_key_types_str += String(all_key_types_str.empty() ? "" : ", ") + "'" + KeyTypeInfo::get(kt).name + "'";
-            String msg = "Quota cannot be keyed by '" + key_type_str + "'. Expected one of these literals: " + all_key_types_str;
+                all_types_str += String(all_types_str.empty() ? "" : ", ") + "'" + KeyTypeInfo::get(kt).name + "'";
+            String msg = "Quota cannot be keyed by '" + name + "'. Expected one of the following identifiers: " + all_types_str;
             throw Exception(msg, ErrorCodes::SYNTAX_ERROR);
         });
     }
 
-    bool parseLimit(IParserBase::Pos & pos, Expected & expected, bool first, ResourceType & resource_type, ResourceAmount & max)
+
+    bool parseResourceType(IParserBase::Pos & pos, Expected & expected, ResourceType & resource_type)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (first)
-            {
-                if (!ParserKeyword{"MAX"}.ignore(pos, expected))
-                    return false;
-            }
-            else
-            {
-                if (!ParserToken{TokenType::Comma}.ignore(pos, expected))
-                    return false;
-
-                ParserKeyword{"MAX"}.ignore(pos, expected);
-            }
-
-            std::optional<ResourceType> res_resource_type;
             for (auto rt : ext::range(Quota::MAX_RESOURCE_TYPE))
             {
                 if (ParserKeyword{ResourceTypeInfo::get(rt).keyword.c_str()}.ignore(pos, expected))
                 {
-                    res_resource_type = rt;
-                    break;
+                    resource_type = rt;
+                    return true;
                 }
             }
-            if (!res_resource_type)
+
+            ASTPtr ast;
+            if (!ParserIdentifier{}.parse(pos, ast, expected))
                 return false;
 
-            ResourceAmount res_max;
-            ASTPtr max_ast;
-            if (ParserNumber{}.parse(pos, max_ast, expected))
+            String name = getIdentifierName(ast);
+            for (auto rt : ext::range(Quota::MAX_RESOURCE_TYPE))
             {
-                const Field & max_field = max_ast->as<ASTLiteral &>().value;
-                const auto & type_info = ResourceTypeInfo::get(*res_resource_type);
-                if (type_info.output_denominator == 1)
-                    res_max = applyVisitor(FieldVisitorConvertToNumber<ResourceAmount>(), max_field);
-                else
-                    res_max = static_cast<ResourceAmount>(
-                        applyVisitor(FieldVisitorConvertToNumber<double>(), max_field) * type_info.output_denominator);
+                if (ResourceTypeInfo::get(rt).name == name)
+                {
+                    resource_type = rt;
+                    return true;
+                }
+            }
+
+            return false;
+        });
+    }
+
+
+    bool parseMaxAmount(IParserBase::Pos & pos, Expected & expected, ResourceType resource_type, ResourceAmount & max)
+    {
+        ASTPtr ast;
+        if (!ParserNumber{}.parse(pos, ast, expected))
+            return false;
+
+        const Field & max_field = ast->as<ASTLiteral &>().value;
+        const auto & type_info = ResourceTypeInfo::get(resource_type);
+        if (type_info.output_denominator == 1)
+            max = applyVisitor(FieldVisitorConvertToNumber<ResourceAmount>(), max_field);
+        else
+            max = static_cast<ResourceAmount>(
+                applyVisitor(FieldVisitorConvertToNumber<double>(), max_field) * type_info.output_denominator);
+        return true;
+    }
+
+
+    bool parseLimit(IParserBase::Pos & pos, Expected & expected, bool first, bool & max_prefix_encountered, ResourceType & resource_type, ResourceAmount & max)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!first && !ParserToken{TokenType::Comma}.ignore(pos, expected))
+                return false;
+
+            max_prefix_encountered |= ParserKeyword{"MAX"}.ignore(pos, expected);
+
+            ResourceType res_resource_type;
+            if (!parseResourceType(pos, expected, res_resource_type))
+                return false;
+
+            if (max_prefix_encountered)
+            {
+                ParserToken{TokenType::Equals}.ignore(pos, expected);
             }
             else
+            {
+                if (!ParserKeyword{"MAX"}.ignore(pos, expected))
+                    return false;
+            }
+
+            ResourceAmount res_max;
+            if (!parseMaxAmount(pos, expected, res_resource_type, res_max))
                 return false;
 
-            resource_type = *res_resource_type;
+            resource_type = res_resource_type;
             max = res_max;
             return true;
         });
     }
 
-    bool parseLimits(IParserBase::Pos & pos, Expected & expected, ASTCreateQuotaQuery::Limits & limits)
+    bool parseIntervalWithLimits(IParserBase::Pos & pos, Expected & expected, ASTCreateQuotaQuery::Limits & limits)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -126,8 +169,7 @@ namespace
 
             new_limits.randomize_interval = ParserKeyword{"RANDOMIZED"}.ignore(pos, expected);
 
-            if (!ParserKeyword{"INTERVAL"}.ignore(pos, expected))
-                return false;
+            ParserKeyword{"INTERVAL"}.ignore(pos, expected);
 
             ASTPtr num_intervals_ast;
             if (!ParserNumber{}.parse(pos, num_intervals_ast, expected))
@@ -152,11 +194,12 @@ namespace
             {
                 ResourceType resource_type;
                 ResourceAmount max;
-                if (!parseLimit(pos, expected, true, resource_type, max))
+                bool max_prefix_encountered = false;
+                if (!parseLimit(pos, expected, true, max_prefix_encountered, resource_type, max))
                     return false;
 
                 new_limits.max[resource_type] = max;
-                while (parseLimit(pos, expected, false, resource_type, max))
+                while (parseLimit(pos, expected, false, max_prefix_encountered, resource_type, max))
                     new_limits.max[resource_type] = max;
             }
 
@@ -165,7 +208,7 @@ namespace
         });
     }
 
-    bool parseAllLimits(IParserBase::Pos & pos, Expected & expected, std::vector<ASTCreateQuotaQuery::Limits> & all_limits)
+    bool parseIntervalsWithLimits(IParserBase::Pos & pos, Expected & expected, std::vector<ASTCreateQuotaQuery::Limits> & all_limits)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -173,7 +216,7 @@ namespace
             do
             {
                 ASTCreateQuotaQuery::Limits limits;
-                if (!parseLimits(pos, expected, limits))
+                if (!parseIntervalWithLimits(pos, expected, limits))
                 {
                     all_limits.resize(old_size);
                     return false;
@@ -185,6 +228,7 @@ namespace
         });
     }
 
+
     bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -192,7 +236,7 @@ namespace
             ASTPtr node;
             ParserRolesOrUsersSet roles_p;
             roles_p.allowAll().allowRoleNames().allowUserNames().allowCurrentUser().useIDMode(id_mode);
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !roles_p.parse(pos, node, expected))
+            if (!ParserKeyword{"TO"}.ignore(pos, expected) || !roles_p.parse(pos, node, expected))
                 return false;
 
             roles = std::static_pointer_cast<ASTRolesOrUsersSet>(node);
@@ -256,10 +300,17 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (alter && new_name.empty() && (names.size() == 1) && parseRenameTo(pos, expected, new_name))
             continue;
 
-        if (!key_type && parseKeyType(pos, expected, key_type))
-            continue;
+        if (!key_type)
+        {
+            KeyType new_key_type;
+            if (parseKeyType(pos, expected, new_key_type))
+            {
+                key_type = new_key_type;
+                continue;
+            }
+        }
 
-        if (parseAllLimits(pos, expected, all_limits))
+        if (parseIntervalsWithLimits(pos, expected, all_limits))
             continue;
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))

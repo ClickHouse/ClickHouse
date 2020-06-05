@@ -11,17 +11,17 @@ class ASTRolesOrUsersSet;
 
 
 /** CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name
-  *      [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-  *      [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
-  *       {MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number} [,...] |
+  *      [KEYED BY {none | user_name | ip_address | client_key | client_key, user_name | client_key, ip_address} | NOT KEYED]
+  *      [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day}
+  *       {MAX {{queries | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number} [,...] |
   *        NO LIMITS | TRACKING ONLY} [,...]]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   *
   * ALTER QUOTA [IF EXISTS] name
   *      [RENAME TO new_name]
-  *      [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-  *      [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
-  *       {MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number} [,...] |
+  *      [KEYED BY {none | user_name | ip_address | client_key | client_key, user_name | client_key, ip_address} | NOT KEYED]
+  *      [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day}
+  *       {MAX {{queries | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number} [,...] |
   *        NO LIMITS | TRACKING ONLY} [,...]]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   */
