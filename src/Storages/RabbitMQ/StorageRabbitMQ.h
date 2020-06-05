@@ -63,11 +63,11 @@ protected:
             const ColumnsDescription & columns_,
             const String & host_port_,
             const String & routing_key_,
-            const String & exchange_name_, 
+            const String & exchange_name_,
             const String & format_name_,
             char row_delimiter_,
-            size_t num_consumers_, 
-            size_t num_queues_, 
+            size_t num_consumers_,
+            size_t num_queues_,
             bool hash_exchange);
 
 private:
