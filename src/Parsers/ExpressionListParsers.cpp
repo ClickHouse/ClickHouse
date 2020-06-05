@@ -38,20 +38,21 @@ const char * ParserAdditiveExpression::operators[] =
 
 const char * ParserComparisonExpression::operators[] =
 {
-    "==",            "equals",
-    "!=",            "notEquals",
-    "<>",            "notEquals",
-    "<=",            "lessOrEquals",
-    ">=",            "greaterOrEquals",
-    "<",             "less",
-    ">",             "greater",
-    "=",             "equals",
-    "LIKE",          "like",
-    "NOT LIKE",      "notLike",
-    "IN",            "in",
-    "NOT IN",        "notIn",
-    "GLOBAL IN",     "globalIn",
-    "GLOBAL NOT IN", "globalNotIn",
+    "==",             "equals",
+    "!=",             "notEquals",
+    "<>",             "notEquals",
+    "<=",             "lessOrEquals",
+    ">=",             "greaterOrEquals",
+    "<",              "less",
+    ">",              "greater",
+    "=",              "equals",
+    "LIKE",           "like",
+    "NOT LIKE",       "notLike",
+    "IN BLOOMFILTER", "inBloomfilter",
+    "IN",             "in",
+    "NOT IN",         "notIn",
+    "GLOBAL IN",      "globalIn",
+    "GLOBAL NOT IN",  "globalNotIn",
     nullptr
 };
 

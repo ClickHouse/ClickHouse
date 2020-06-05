@@ -22,33 +22,38 @@ namespace ErrorCodes
   * notIn(x, set) - and NOT IN.
   */
 
-template <bool negative, bool global, bool null_is_skipped, bool ignore_set>
+template <bool negative, bool global, bool null_is_skipped, bool ignore_set, bool bloomfilter>
 struct FunctionInName;
 
-template <> struct FunctionInName<false, false, true, false> { static constexpr auto name = "in"; };
-template <> struct FunctionInName<false, true, true, false> { static constexpr auto name = "globalIn"; };
-template <> struct FunctionInName<true, false, true, false> { static constexpr auto name = "notIn"; };
-template <> struct FunctionInName<true, true, true, false> { static constexpr auto name = "globalNotIn"; };
-template <> struct FunctionInName<false, false, false, false> { static constexpr auto name = "nullIn"; };
-template <> struct FunctionInName<false, true, false, false> { static constexpr auto name = "globalNullIn"; };
-template <> struct FunctionInName<true, false, false, false> { static constexpr auto name = "notNullIn"; };
-template <> struct FunctionInName<true, true, false, false> { static constexpr auto name = "globalNotNullIn"; };
-template <> struct FunctionInName<false, false, true, true> { static constexpr auto name = "inIgnoreSet"; };
-template <> struct FunctionInName<false, true, true, true> { static constexpr auto name = "globalInIgnoreSet"; };
-template <> struct FunctionInName<true, false, true, true> { static constexpr auto name = "notInIgnoreSet"; };
-template <> struct FunctionInName<true, true, true, true> { static constexpr auto name = "globalNotInIgnoreSet"; };
-template <> struct FunctionInName<false, false, false, true> { static constexpr auto name = "nullInIgnoreSet"; };
-template <> struct FunctionInName<false, true, false, true> { static constexpr auto name = "globalNullInIgnoreSet"; };
-template <> struct FunctionInName<true, false, false, true> { static constexpr auto name = "notNullInIgnoreSet"; };
-template <> struct FunctionInName<true, true, false, true> { static constexpr auto name = "globalNotNullInIgnoreSet"; };
+template <> struct FunctionInName<false, false, true, false, false> { static constexpr auto name = "in"; };
+template <> struct FunctionInName<false, true, true, false, false> { static constexpr auto name = "globalIn"; };
+template <> struct FunctionInName<true, false, true, false, false> { static constexpr auto name = "notIn"; };
+template <> struct FunctionInName<true, true, true, false, false> { static constexpr auto name = "globalNotIn"; };
+template <> struct FunctionInName<false, false, false, false, false> { static constexpr auto name = "nullIn"; };
+template <> struct FunctionInName<false, true, false, false, false> { static constexpr auto name = "globalNullIn"; };
+template <> struct FunctionInName<true, false, false, false, false> { static constexpr auto name = "notNullIn"; };
+template <> struct FunctionInName<true, true, false, false, false> { static constexpr auto name = "globalNotNullIn"; };
+template <> struct FunctionInName<false, false, true, true, false> { static constexpr auto name = "inIgnoreSet"; };
+template <> struct FunctionInName<false, true, true, true, false> { static constexpr auto name = "globalInIgnoreSet"; };
+template <> struct FunctionInName<true, false, true, true, false> { static constexpr auto name = "notInIgnoreSet"; };
+template <> struct FunctionInName<true, true, true, true, false> { static constexpr auto name = "globalNotInIgnoreSet"; };
+template <> struct FunctionInName<false, false, false, true, false> { static constexpr auto name = "nullInIgnoreSet"; };
+template <> struct FunctionInName<false, true, false, true, false> { static constexpr auto name = "globalNullInIgnoreSet"; };
+template <> struct FunctionInName<true, false, false, true, false> { static constexpr auto name = "notNullInIgnoreSet"; };
+template <> struct FunctionInName<true, true, false, true, false> { static constexpr auto name = "globalNotNullInIgnoreSet"; };
 
-template <bool negative, bool global, bool null_is_skipped, bool ignore_set>
+template <> struct FunctionInName<false, false, false, false, true> { static constexpr auto name = "inBloomfilter"; };
+template <> struct FunctionInName<false, false, false, true, true> { static constexpr auto name = "inBloomfilterIgnoreSet"; };
+template <> struct FunctionInName<false, false, true, false, true> { static constexpr auto name = "inBloomfilterNullIn"; };
+template <> struct FunctionInName<false, false, true, true, true> { static constexpr auto name = "inBloomfilterNullInIgnoreSet"; };
+
+template <bool negative, bool global, bool null_is_skipped, bool ignore_set, bool bloomfilter>
 class FunctionIn : public IFunction
 {
 public:
     /// ignore_set flag means that we don't use set from the second argument, just return zero column.
     /// It is needed to perform type analysis without creation of set.
-    static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set>::name;
+    static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set, bloomfilter>::name;
 
     static FunctionPtr create(const Context &)
     {
@@ -80,8 +85,16 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) override
     {
+        // // // std::cerr << "HERE in executeImpl of in.cpp\n";
+        std::cerr << "name: " << name << std::endl;
+        for (auto i : arguments) {
+            std::cerr << i << " ";
+        }
+        std::cerr << std::endl;
+
         if constexpr (ignore_set)
         {
+            std::cerr << "ignore_set = true\n";
             block.getByPosition(result).column = ColumnUInt8::create(input_rows_count, 0u);
             return;
         }
@@ -92,7 +105,7 @@ public:
         if (!column_set)
             column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr.get());
         if (!column_set) {
-            std::cerr << "HERE before error\n";
+            // // // std::cerr << "HERE before error\n";
             throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
         }
@@ -132,14 +145,23 @@ public:
 template<bool ignore_set>
 static void registerFunctionsInImpl(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionIn<false, false, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<false, true, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, false, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, true, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<false, false, false, ignore_set>>();
-    factory.registerFunction<FunctionIn<false, true, false, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, false, false, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, true, false, ignore_set>>();
+    factory.registerFunction<FunctionIn<false, false, true, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<false, true, true, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<true, false, true, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<true, true, true, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<false, false, false, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<false, true, false, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<true, false, false, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<true, true, false, ignore_set, false>>();
+
+    // factory.registerFunction<FunctionIn<false, false, true, ignore_set, true>>();
+    // factory.registerFunction<FunctionIn<false, true, true, ignore_set, true>>();
+    // factory.registerFunction<FunctionIn<true, false, true, ignore_set, true>>();
+    // factory.registerFunction<FunctionIn<true, true, true, ignore_set, true>>();
+    factory.registerFunction<FunctionIn<false, false, false, ignore_set, true>>();
+    // factory.registerFunction<FunctionIn<false, true, false, ignore_set, true>>();
+    // factory.registerFunction<FunctionIn<true, false, false, ignore_set, true>>();
+    // factory.registerFunction<FunctionIn<true, true, false, ignore_set, true>>();
 }
 
 void registerFunctionsIn(FunctionFactory & factory)

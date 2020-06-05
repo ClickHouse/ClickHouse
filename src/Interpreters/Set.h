@@ -4,11 +4,8 @@
 #include <Core/Block.h>
 #include <DataStreams/SizeLimits.h>
 #include <DataTypes/IDataType.h>
-<<<<<<< 788e32822adc97ebb4538d335049c25174011b2f
-=======
 #include <Interpreters/Context.h>
 #include <Interpreters/ISet.h>
->>>>>>> wip
 #include <Interpreters/SetVariants.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>

@@ -108,7 +108,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 
 void Set::setHeader(const Block & header)
 {
-    std::cerr << "in setHeader\n";
+    // // // std::cerr << "HERE Set.cpp, in setHeader\n";
     std::unique_lock lock(rwlock);
 
     if (!empty())
@@ -160,7 +160,7 @@ void Set::setHeader(const Block & header)
 
 bool Set::insertFromBlock(const Block & block)
 {
-    std::cerr << "in insertFromBlock\n";
+    // // // std::cerr << "HERE Set.cpp, in insertFromBlock\n";
     std::unique_lock lock(rwlock);
 
     if (empty())
@@ -220,7 +220,7 @@ bool Set::insertFromBlock(const Block & block)
 
 ColumnPtr Set::execute(const Block & block, bool negative) const
 {
-    std::cerr << "in execute; columns count: " + std::to_string(block.columns()) + "\n";
+    // // // std::cerr << "HERE Set.cpp, in execute; columns count: " + std::to_string(block.columns()) + "\n";
     size_t num_key_columns = block.columns();
 
     if (0 == num_key_columns)

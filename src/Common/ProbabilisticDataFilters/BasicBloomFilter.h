@@ -16,7 +16,8 @@ class BasicBloomFilter
 {
 
 public:
-    using UnderType = UInt64;
+    // vector<bool> is bitset with given size, vector<bool> works a little bit faster than vector<ui64>.
+    using UnderType = bool;
     using Container = std::vector<UnderType>;
     using HashType = UInt64;
 
@@ -24,7 +25,9 @@ public:
     /// hashes -- number of used hash functions.
     /// seed -- random seed for hash functions generation.
     BasicBloomFilter(size_t size_, size_t hashes_)
-        : filter(size_, 0), size(size_ * 8), hashes(hashes_)
+        : filter(size_ * 8, 0),
+          size(size_ * 8), hashes(hashes_)
+
     {
     }
 
@@ -61,12 +64,12 @@ private:
 public:
     void addBit(size_t pos)
     {
-        filter[pos / (8 * sizeof(UnderType))] |= (1ULL << (pos % (8 * sizeof(UnderType))));
+        filter[pos] = true;
     }
 
     bool getBit(size_t pos) const
     {
-        return filter[pos / (8 * sizeof(UnderType))] & (1ULL << (pos % (8 * sizeof(UnderType))));
+        return filter[pos];
     }
 };
 

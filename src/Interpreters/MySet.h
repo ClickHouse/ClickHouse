@@ -35,29 +35,34 @@ namespace ErrorCodes
 class MySet : public ISet
 {
 public:
-    MySet(const SizeLimits&, bool, bool)
-        : log(&Logger::get("MySet")),
-          hash_set(4096 * 10, 12)
+    MySet(const SizeLimits&, bool, bool, size_t filter_length_, size_t hashes_count_)
+        : log(&Logger::get("MySet")), filter_length(filter_length_), hashes_count(hashes_count_)
     {
     }
 
     bool empty() const override {
-        std::cerr << "HERE in empty\n";
-        // return hash_set.empty();
-        return hash_set.added_counts() == 0;
+        std::unique_lock lock(rwlock);
+        // // // std::cerr << "HERE in empty: " << (!hash_set || hash_set->added_counts() == 0) << "\n";
+        return !hash_set || hash_set->added_counts() == 0;
     }
 
     void setHeader(const Block & header) override {
-        std::cerr << "HERE in setHeader\n";
+        std::unique_lock lock(rwlock);
+
+        // // // std::cerr << "HERE in setHeader, rows: " << header.rows() << std::endl;
 
         columns_count = header.columns();
-        // if (keys_size != 1) {
-        //     throw Exception("keys_size != 1", ErrorCodes::LOGICAL_ERROR);
-        // }
-        // if (!WhichDataType(header.getByPosition(0).type).isUInt8()) {
-        // if (!WhichDataType(header.getByPosition(0).type).isUInt64()) {
-        //     throw Exception("Column should be ui8", ErrorCodes::LOGICAL_ERROR);
-        // }
+
+        if (columns_count == 0) return;
+
+        // hash_set = std::make_shared<BasicBloomFilter>(header.rows(), 3)
+        // hash_set = std::make_shared<BasicBloomFilter>(64 * 110000, 4);
+        // hash_set = std::make_shared<BasicBloomFilter>(64 * 81200, 3);
+        // hash_set = std::make_shared<BasicBloomFilter>(64 * 54500, 2);
+        // for tests with 15M & 25M arrays;
+        // hash_set = std::make_shared<BasicBloomFilter>(2e7, 2);
+        hash_set = std::make_shared<BasicBloomFilter>(filter_length, hashes_count);
+        std::cerr << "filter_length: " << filter_length << " ," << "hashes_count: " << hashes_count << std::endl;
         for (size_t i = 0; i < columns_count; ++i) {
             data_types.emplace_back(header.safeGetByPosition(i).type);
         }
@@ -65,22 +70,23 @@ public:
 
     bool insertFromBlock(const Block & block) override
     {
-        std::cerr << "HERE in insertFromBlock\n";
+        std::unique_lock lock(rwlock);
+        // // // std::cerr << "HERE in insertFromBlock\n";
 
         const auto row_hashes = calculate_hashes(block);
 
         // const auto& col = typeid_cast<const ColumnVector<char8_t>&>(*block.getByPosition(0).column);
 
         for (const auto & elem : row_hashes) {
-            // hash_set.insert(elem);
-            hash_set.add(elem);
+            hash_set->add(elem);
         }
 
         return true;
     }
 
     ColumnPtr execute(const Block & block, bool negative) const override {
-        std::cerr << "HERE in execute\n";
+        std::shared_lock lock(rwlock);
+        // // // std::cerr << "HERE in execute\n";
 
         const auto row_hashes = calculate_hashes(block);
 
@@ -90,8 +96,7 @@ public:
 
         size_t i = 0;
         for (const auto & elem : row_hashes) {
-            // if (hash_set.count(elem)) {
-            if (hash_set.contains(elem)) {
+            if (hash_set->contains(elem)) {
                 vec_res[i] = 1 ^ negative;
             } else {
                 vec_res[i] = negative;
@@ -102,15 +107,15 @@ public:
     }
 
     void finishInsert() override {
-        // std::cerr << "HERE in finishInsert, size of hashset: " + std::to_string(hash_set.size()) + "\n";
-        std::cerr << "HERE in finishInsert, size of hashset: " + std::to_string(hash_set.added_counts()) + "\n";
+        std::shared_lock lock(rwlock);
+        // // // std::cerr << "HERE in finishInsert, size of hashset: " + std::to_string(hash_set->added_counts()) + "\n";
         is_created = true;
     }
     bool isCreated() const override { return is_created; }
     size_t getTotalRowCount() const override
     {
-        // return hash_set.size();
-        return hash_set.added_counts();
+        std::unique_lock lock(rwlock);
+        return hash_set->added_counts();
     }
 
     const DataTypes & getDataTypes() const override { return data_types; }
@@ -119,7 +124,7 @@ private:
     ColumnUInt64::Container calculate_hashes(const Block & block) const {
         ColumnUInt64::Container row_hashes(block.rows(), 0);
 
-        std::cerr << "HERE in calculate_hashes, columns_count : " + std::to_string(columns_count) + "\n";
+        // // // std::cerr << "HERE in calculate_hashes, columns_count : " + std::to_string(columns_count) + "\n";
 
         for (size_t column_index = 0; column_index < columns_count; ++column_index)
         {
@@ -148,11 +153,13 @@ private:
 private:
     Logger * log;
 
-    // std::unordered_set <uint64_t> hash_set;
-    BasicBloomFilter hash_set;
+    mutable std::shared_mutex rwlock;
+    BasicBloomFilterPtr hash_set;
 
-    size_t columns_count;
+    size_t columns_count = 0;
     bool is_created = false;
+    size_t filter_length;
+    size_t hashes_count;
 
     DataTypes data_types;
 };

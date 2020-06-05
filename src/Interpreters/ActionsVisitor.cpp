@@ -120,7 +120,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
 
 SetPtr makeExplicitSet(
     const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
-    const Context & context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
+    const Context & context, const SizeLimits & size_limits, PreparedSets & prepared_sets, bool is_bloomfilter)
 {
     const IAST & args = *node->arguments;
 
@@ -188,9 +188,15 @@ SetPtr makeExplicitSet(
     else
         throw_unsupported_type(right_arg_type);
 
-    // SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set, context.getSettingsRef().transform_null_in);
-    // HERE!!!
-    SetPtr set = std::make_shared<MySet>(size_limits, create_ordered_set, context.getSettingsRef().transform_null_in);
+    SetPtr set;
+    if (is_bloomfilter) {
+        set = std::make_shared<MySet>(
+            size_limits, create_ordered_set, context.getSettingsRef().transform_null_in,
+            context.getSettings().bloomfilter_storage_len, context.getSettings().bloomfilter_hashes_count
+        );
+    } else {
+        set = std::make_shared<Set>(size_limits, create_ordered_set, context.getSettingsRef().transform_null_in);
+    }
 
     set->setHeader(block);
     set->insertFromBlock(block);
@@ -343,7 +349,7 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
-    std::cerr << "HERE in ::visit\n";
+    // // // std::cerr << "HERE in ::visit\n";
     CachedColumnName column_name;
     if (data.hasColumn(column_name.get(ast)))
         return;
@@ -372,21 +378,23 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     }
 
     SetPtr prepared_set;
-    std::cerr << "HERE1\n";
+    // // // std::cerr << "HERE\n";
     // std::stringstream ss;
     // ast->dumpTree(ss);
     // std::cerr << ss.str();
-    std::cerr << "HERE2\n";
+    // std::cerr << "HERE2\n";
+
     if (functionIsInOrGlobalInOperator(node.name))
     {
-        std::cerr << "HERE3\n";
+        bool is_bloomfilter = node.name == "inBloomfilter";
+        // std::cerr << "HERE3\n";
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
 
-        if (!data.no_makeset && (prepared_set = makeSet(node, data, data.no_subqueries)))
+        if (!data.no_makeset && (prepared_set = makeSet(node, data, data.no_subqueries, is_bloomfilter)))
         {
             /// Transform tuple or subquery into a set.
-            std::cerr << "HERE4\n";
+            // std::cerr << "HERE4\n";
         }
         else
         {
@@ -436,7 +444,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     for (size_t arg = 0; arg < node.arguments->children.size(); ++arg)
     {
-        std::cerr << "HERE arg: " << arg << std::endl;
+        // // // std::cerr << "HERE arg: " << arg << std::endl;
         auto & child = node.arguments->children[arg];
 
         const auto * lambda = child->as<ASTFunction>();
@@ -533,7 +541,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (data.only_consts && !arguments_present)
         return;
 
-    std::cerr << "HERE5\n";
+    // std::cerr << "HERE5\n";
 
     if (has_lambda_arguments && !data.only_consts)
     {
@@ -590,11 +598,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
     }
 
-    std::cerr << "HERE6\n";
+    // std::cerr << "HERE6\n";
 
     if (data.only_consts)
     {
-        std::cerr << "HERE7\n";
+        // std::cerr << "HERE7\n";
         for (const auto & argument_name : argument_names)
         {
             if (!data.hasColumn(argument_name))
@@ -605,7 +613,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
     }
 
-    std::cerr << "HERE8\n";
+    // std::cerr << "HERE8\n";
 
     if (arguments_present)
     {
@@ -664,7 +672,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     data.addAction(ExpressionAction::addColumn(column));
 }
 
-SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
+SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries, bool is_bloomfilter)
 {
     /** You need to convert the right argument to a set.
       * This can be a table name, a value, a value enumeration, or a subquery.
@@ -715,9 +723,15 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
             return subquery_for_set.set;
         }
 
-        // SetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.context.getSettingsRef().transform_null_in);
-        // HERE !!! 2
-        SetPtr set = std::make_shared<MySet>(data.set_size_limit, false, data.context.getSettingsRef().transform_null_in);
+        SetPtr set;
+        if (is_bloomfilter) {
+            set = std::make_shared<MySet>(
+                data.set_size_limit, false, data.context.getSettingsRef().transform_null_in,
+                data.context.getSettings().bloomfilter_storage_len, data.context.getSettings().bloomfilter_hashes_count
+            );
+        } else {
+            set = std::make_shared<Set>(data.set_size_limit, false, data.context.getSettingsRef().transform_null_in);
+        }
 
         /** The following happens for GLOBAL INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
@@ -766,7 +780,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
     {
         if (sample_block.has(left_in_operand->getColumnName()))
             /// An explicit enumeration of values in parentheses.
-            return makeExplicitSet(&node, sample_block, false, data.context, data.set_size_limit, data.prepared_sets);
+            return makeExplicitSet(&node, sample_block, false, data.context, data.set_size_limit, data.prepared_sets, is_bloomfilter);
         else
             return {};
     }

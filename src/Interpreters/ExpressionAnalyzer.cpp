@@ -372,7 +372,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
                 Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
                 if (sample_block_with_calculated_columns.has(left_in_operand->getColumnName()))
                     makeExplicitSet(func, sample_block_with_calculated_columns, true, context,
-                        settings.size_limits_for_set, prepared_sets);
+                        settings.size_limits_for_set, prepared_sets, false);
             }
         }
     }

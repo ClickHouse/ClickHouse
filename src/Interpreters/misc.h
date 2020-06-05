@@ -12,7 +12,7 @@ inline bool functionIsInOperator(const std::string & name)
 
 inline bool functionIsInOrGlobalInOperator(const std::string & name)
 {
-    return functionIsInOperator(name) || name == "globalIn" || name == "globalNotIn" || name == "globalNullIn" || name == "globalNotNullIn";
+    return functionIsInOperator(name) || name == "globalIn" || name == "globalNotIn" || name == "globalNullIn" || name == "globalNotNullIn" || name == "inBloomfilter";
 }
 
 inline bool functionIsLikeOperator(const std::string & name)

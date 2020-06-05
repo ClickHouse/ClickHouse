@@ -395,7 +395,9 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, partial_merge_join, false, "Obsolete. Use join_algorithm='prefer_partial_merge' instead.", 0) \
     M(SettingUInt64, max_memory_usage_for_all_queries, 0, "Obsolete. Will be removed after 2020-10-20", 0) \
     \
-    M(SettingBool, experimental_use_processors, true, "Obsolete setting, does nothing. Will be removed after 2020-11-29.", 0)
+    M(SettingBool, experimental_use_processors, true, "Obsolete setting, does nothing. Will be removed after 2020-11-29.", 0) \
+    M(SettingUInt64, bloomfilter_storage_len, 4096, "Bloomfilter options. Storage length in bits", 0) \
+    M(SettingUInt64, bloomfilter_hashes_count, 3, "Bloomfilter options. Hashes count", 0)
 
 #define FORMAT_FACTORY_SETTINGS(M)                                            \
     M(SettingChar, format_csv_delimiter, ',', "The character to be considered as a delimiter in CSV data. If setting with a string, a string has to have a length of 1.", 0) \
@@ -460,6 +462,7 @@ struct Settings : public SettingsCollection<Settings>
     #define LIST_OF_SETTINGS(M)    \
         COMMON_SETTINGS(M)         \
         FORMAT_FACTORY_SETTINGS(M)
+
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS)
 

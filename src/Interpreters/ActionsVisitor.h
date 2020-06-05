@@ -18,7 +18,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
  /// The case of an explicit enumeration of values.
 SetPtr makeExplicitSet(
     const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
-    const Context & context, const SizeLimits & limits, PreparedSets & prepared_sets);
+    const Context & context, const SizeLimits & limits, PreparedSets & prepared_sets, bool is_bloomfilter);
 
 
 /** For ActionsVisitor
@@ -157,7 +157,7 @@ private:
     static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data);
     static void visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data);
 
-    static SetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
+    static SetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries, bool is_bloomfilter);
 };
 
 using ActionsVisitor = ActionsMatcher::Visitor;
