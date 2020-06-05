@@ -966,8 +966,8 @@ void InterpreterSelectQuery::executeFetchColumns(
 
     if (optimize_trivial_count)
     {
-        auto & desc = query_analyzer->aggregates()[0];
-        auto & func = desc.function;
+        const auto & desc = query_analyzer->aggregates()[0];
+        const auto & func = desc.function;
         std::optional<UInt64> num_rows = storage->totalRows();
         if (num_rows)
         {
