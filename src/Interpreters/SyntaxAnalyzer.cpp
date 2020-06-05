@@ -102,7 +102,7 @@ using CustomizeGlobalNotInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeF
 /// Expand asterisks and qualified asterisks with column names.
 /// There would be columns in normal form & column aliases after translation. Column & column alias would be normalized in QueryNormalizer.
 void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query, const NameSet & source_columns_set,
-                             const std::vector<TableWithColumnNames> & tables_with_columns)
+                             const TablesWithColumns & tables_with_columns)
 {
     LogAST log;
     TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns);
@@ -528,7 +528,7 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 
 /// Find the columns that are obtained by JOIN.
 void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & select_query,
-                          const std::vector<TableWithColumnNames> & tables, const Aliases & aliases)
+                          const TablesWithColumns & tables, const Aliases & aliases)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
     if (!node)
@@ -793,12 +793,6 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);
 
-    /// TODO: Remove unneeded conversion
-    std::vector<TableWithColumnNames> tables_with_column_names;
-    tables_with_column_names.reserve(tables_with_columns.size());
-    for (const auto & table : tables_with_columns)
-        tables_with_column_names.emplace_back(table.removeTypes());
-
     if (tables_with_columns.size() > 1)
     {
         result.analyzed_join->columns_from_joined_table = tables_with_columns[1].columns;
@@ -806,7 +800,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
             source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
     }
 
-    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_column_names);
+    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
 
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
@@ -828,7 +822,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeArithmeticOperationsInAgr(query, settings.optimize_arithmetic_operations_in_agr_func);
 
         /// Push the predicate expression down to the subqueries.
-        result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_column_names, settings).optimize(*select_query);
+        result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
 
         /// GROUP BY injective function elimination.
         optimizeGroupBy(select_query, source_columns_set, context);
@@ -847,7 +841,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
                           result.analyzed_join->table_join);
-        collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_column_names, result.aliases);
+        collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
     }
 
     result.aggregates = getAggregates(query, *select_query);
@@ -857,7 +851,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         result.optimize_trivial_count = settings.optimize_trivial_count_query &&
             !select_query->where() && !select_query->prewhere() && !select_query->groupBy() && !select_query->having() &&
             !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final() &&
-            (tables_with_column_names.size() < 2 || isLeft(result.analyzed_join->kind()));
+            (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
 
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }

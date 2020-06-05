@@ -125,12 +125,6 @@ std::optional<size_t> IdentifierSemantic::chooseTable(const ASTIdentifier & iden
     return tryChooseTable<DatabaseAndTableWithAlias>(identifier, tables, ambiguous);
 }
 
-std::optional<size_t> IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNames> & tables,
-                                                      bool ambiguous)
-{
-    return tryChooseTable<TableWithColumnNames>(identifier, tables, ambiguous);
-}
-
 std::optional<size_t> IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNamesAndTypes> & tables,
                                                       bool ambiguous)
 {
@@ -194,13 +188,6 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
     }
 
     return ColumnMatch::NoMatch;
-}
-
-IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const ASTIdentifier & identifier,
-                                                                          const TableWithColumnNames & db_and_table)
-{
-    /// TODO: ColumnName match logic is disabled cause caller's code is not ready for it
-    return canReferColumnToTable(identifier, db_and_table.table);
 }
 
 IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const ASTIdentifier & identifier,

@@ -18,28 +18,15 @@ struct Settings;
 class PredicateExpressionsOptimizer
 {
 public:
-    PredicateExpressionsOptimizer(const Context & context_, const TablesWithColumnNames & tables_with_columns_, const Settings & settings_);
+    PredicateExpressionsOptimizer(const Context & context_, const TablesWithColumns & tables_with_columns_, const Settings & settings_);
 
     bool optimize(ASTSelectQuery & select_query);
 
 private:
-    /// Extracts settings, mostly to show which are used and which are not.
-    struct ExtractedSettings
-    {
-        const bool enable_optimize_predicate_expression;
-        const bool enable_optimize_predicate_expression_to_final_subquery;
-
-        template<typename T>
-        ExtractedSettings(const T & settings_)
-            :   enable_optimize_predicate_expression(settings_.enable_optimize_predicate_expression),
-                enable_optimize_predicate_expression_to_final_subquery(settings_.enable_optimize_predicate_expression_to_final_subquery)
-        {}
-    };
-
+    const bool enable_optimize_predicate_expression;
+    const bool enable_optimize_predicate_expression_to_final_subquery;
     const Context & context;
-    const std::vector<TableWithColumnNames> & tables_with_columns;
-
-    const ExtractedSettings settings;
+    const TablesWithColumns & tables_with_columns;
 
     std::vector<ASTs> extractTablesPredicates(const ASTPtr & where, const ASTPtr & prewhere);
 
