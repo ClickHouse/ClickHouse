@@ -32,7 +32,7 @@ private:
 
     bool tryRewritePredicatesToTables(ASTs & tables_element, const std::vector<ASTs> & tables_predicates);
 
-    bool tryRewritePredicatesToTable(ASTPtr & table_element, const ASTs & table_predicates, const Names & table_column) const;
+    bool tryRewritePredicatesToTable(ASTPtr & table_element, const ASTs & table_predicates, Names && table_columns) const;
 
     bool tryMovePredicatesFromHavingToWhere(ASTSelectQuery & select_query);
 };
