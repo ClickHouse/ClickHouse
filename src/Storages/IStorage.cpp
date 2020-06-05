@@ -654,14 +654,17 @@ ColumnDependencies IStorage::getColumnDependencies(const NameSet & updated_colum
 
 }
 
-ASTPtr IStorage::getSettingsChanges() const
+const ASTPtr & IStorage::getSettingsChanges() const
 {
-    return settings_changes->clone();
+    return settings_changes;
 }
 
 void IStorage::setSettingsChanges(const ASTPtr & settings_changes_)
 {
-    settings_changes = settings_changes_->clone();
+    if (settings_changes_)
+        settings_changes = settings_changes_->clone();
+    else
+        settings_changes = nullptr;
 }
 
 const SelectQueryDescription & IStorage::getSelectQuery() const

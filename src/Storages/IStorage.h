@@ -155,7 +155,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
     void setConstraints(ConstraintsDescription constraints_);
 
     /// Storage settings
-    ASTPtr getSettingsChanges() const;
+    const ASTPtr & getSettingsChanges() const;
     void setSettingsChanges(const ASTPtr & settings_changes_);
     bool hasSettingsChanges() const { return settings_changes != nullptr; }
 
