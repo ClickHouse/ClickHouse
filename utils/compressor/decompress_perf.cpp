@@ -119,8 +119,8 @@ protected:
 
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
-    FasterCompressedReadBufferBase(ReadBuffer * in, ssize_t variant)
-        : compressed_in(in), own_compressed_buffer(COMPRESSED_BLOCK_HEADER_SIZE), variant(variant), perf_stat(variant)
+    FasterCompressedReadBufferBase(ReadBuffer * in, ssize_t variant_)
+        : compressed_in(in), own_compressed_buffer(COMPRESSED_BLOCK_HEADER_SIZE), variant(variant_), perf_stat(variant)
     {
     }
 

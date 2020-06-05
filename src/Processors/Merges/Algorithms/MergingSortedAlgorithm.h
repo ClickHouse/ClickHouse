@@ -23,7 +23,7 @@ public:
     void addInput();
 
     void initialize(Chunks chunks) override;
-    void consume(Chunk chunk, size_t source_num) override;
+    void consume(Chunk & chunk, size_t source_num) override;
     Status merge() override;
 
     const MergedData & getMergedData() const { return merged_data; }

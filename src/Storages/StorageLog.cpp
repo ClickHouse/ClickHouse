@@ -514,7 +514,7 @@ void StorageLog::loadMarks()
 }
 
 
-void StorageLog::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -527,7 +527,7 @@ void StorageLog::rename(const String & new_path_to_table_data, const String & ne
         file.second.data_file_path = table_path + fileName(file.second.data_file_path);
 
     marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
-    renameInMemory(new_database_name, new_table_name);
+    renameInMemory(new_table_id);
 }
 
 void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)

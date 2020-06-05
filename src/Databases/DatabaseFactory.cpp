@@ -1,3 +1,4 @@
+#include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseDictionary.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseLazy.h>
@@ -78,10 +79,12 @@ DatabasePtr DatabaseFactory::getImpl(
 
     if (engine_name == "Ordinary")
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
+    else if (engine_name == "Atomic")
+        return std::make_shared<DatabaseAtomic>(database_name, metadata_path, context);
     else if (engine_name == "Memory")
-        return std::make_shared<DatabaseMemory>(database_name);
+        return std::make_shared<DatabaseMemory>(database_name, context);
     else if (engine_name == "Dictionary")
-        return std::make_shared<DatabaseDictionary>(database_name);
+        return std::make_shared<DatabaseDictionary>(database_name, context);
 
 #if USE_MYSQL
 
@@ -110,7 +113,7 @@ DatabasePtr DatabaseFactory::getImpl(
             auto mysql_database = std::make_shared<DatabaseMySQL>(
                 context, database_name, metadata_path, engine_define, database_name_in_mysql, std::move(mysql_pool));
 
-            mysql_database->empty(context); /// test database is works fine.
+            mysql_database->empty(); /// test database is works fine.
             return mysql_database;
         }
         catch (...)

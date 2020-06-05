@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_folder_title: Arabirimler
 toc_priority: 14
 toc_title: "Giri\u015F"
@@ -22,7 +22,7 @@ ClickHouse iki ağ arabirimi sağlar (Her ikisi de isteğe bağlı olarak ek gü
 
 ClickHouse ile çalışmak için çok çeşitli üçüncü taraf kütüphaneleri de vardır:
 
--   [İstemci kitaplıkları](third-party/client_libraries.md)
+-   [İstemci kitaplıkları](third-party/client-libraries.md)
 -   [Entegrasyonlar](third-party/integrations.md)
 -   [Görsel arayüzler](third-party/gui.md)
 

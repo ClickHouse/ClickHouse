@@ -51,10 +51,6 @@ add_executable (in_join_subqueries_preprocessor in_join_subqueries_preprocessor.
 target_link_libraries (in_join_subqueries_preprocessor PRIVATE dbms clickhouse_parsers)
 add_check(in_join_subqueries_preprocessor)
 
-add_executable (expression_analyzer expression_analyzer.cpp)
-target_link_libraries (expression_analyzer PRIVATE dbms clickhouse_storages_system clickhouse_parsers clickhouse_common_io)
-add_check(expression_analyzer)
-
 add_executable (users users.cpp)
 target_link_libraries (users PRIVATE dbms clickhouse_common_config)
 

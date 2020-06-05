@@ -23,7 +23,19 @@ private:
     {
         /// Allocate more memory. At least same size as used before (this gives 2x growth ratio),
         ///  and at most grab all remaining size in current chunk of arena.
-        size_t continuation_size = std::max(count(), arena.remainingSpaceInCurrentChunk());
+        ///
+        /// FIXME this class just doesn't make sense -- WriteBuffer is not
+        /// a unified interface for everything, it doesn't work well with
+        /// Arena::allocContinue -- we lose the size of data and then use a
+        /// heuristic to guess it back? and make a virtual call while we're at it?
+        /// I don't even..
+        /// Being so ill-defined as it is, no wonder that the following line had
+        /// a bug leading to a very rare infinite loop. Just hack around it in
+        /// the most stupid way possible, because the real fix for this is to
+        /// tear down the entire WriteBuffer thing and implement it again,
+        /// properly.
+        size_t continuation_size = std::max(size_t(1),
+            std::max(count(), arena.remainingSpaceInCurrentChunk()));
 
         /// allocContinue method will possibly move memory region to new place and modify "begin" pointer.
 

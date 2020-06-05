@@ -192,7 +192,7 @@ public:
 
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
-    AsofRowRefs::Type getAsofType() const { return *asof_type; }
+    TypeIndex getAsofType() const { return *asof_type; }
     ASOF::Inequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
 
@@ -344,7 +344,7 @@ private:
     bool nullable_right_side; /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
     bool nullable_left_side; /// In case of RIGHT and FULL joins, if use_nulls, convert left-side columns to Nullable.
     bool any_take_last_row; /// Overwrite existing values when encountering the same key again
-    std::optional<AsofRowRefs::Type> asof_type;
+    std::optional<TypeIndex> asof_type;
     ASOF::Inequality asof_inequality;
 
     /// Right table data. StorageJoin shares it between many Join objects.

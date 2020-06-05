@@ -3,7 +3,7 @@
 #include <functional>
 #include <optional>
 #include <vector>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/ActionBlocker.h>
 
@@ -66,7 +66,7 @@ public:
 private:
 
     MergeTreeData * data;
-    Logger * log;
+    Poco::Logger * log;
 };
 
 

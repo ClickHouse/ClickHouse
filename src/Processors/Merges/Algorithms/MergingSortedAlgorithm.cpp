@@ -74,10 +74,10 @@ void MergingSortedAlgorithm::initialize(Chunks chunks)
         queue_without_collation = SortingHeap<SortCursor>(cursors);
 }
 
-void MergingSortedAlgorithm::consume(Chunk chunk, size_t source_num)
+void MergingSortedAlgorithm::consume(Chunk & chunk, size_t source_num)
 {
     prepareChunk(chunk);
-    source_chunks[source_num] = std::move(chunk);
+    source_chunks[source_num].swap(chunk);
     cursors[source_num].reset(source_chunks[source_num].getColumns(), {});
 
     if (has_collation)
@@ -174,7 +174,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::insertFromChunk(size_t source_
 
     if (limit && total_merged_rows_after_insertion > limit)
     {
-        num_rows = total_merged_rows_after_insertion - limit;
+        num_rows -= total_merged_rows_after_insertion - limit;
         merged_data.insertFromChunk(std::move(source_chunks[source_num]), num_rows);
     }
     else

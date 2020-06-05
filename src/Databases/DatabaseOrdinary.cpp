@@ -29,21 +29,14 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
-#include <ext/scope_guard.h>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-}
-
-
 static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
-
 
 namespace
 {
@@ -62,7 +55,7 @@ namespace
             StoragePtr table;
             std::tie(table_name, table)
                 = createTableFromAST(query, database_name, database.getTableDataPath(query), context, has_force_restore_data_flag);
-            database.attachTable(table_name, table);
+            database.attachTable(table_name, table, database.getTableDataPath(query));
         }
         catch (Exception & e)
         {
@@ -102,7 +95,7 @@ namespace
     {
         if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
-            LOG_INFO(log, std::fixed << std::setprecision(2) << processed * 100.0 / total << "%");
+            LOG_INFO(log, "{}%", processed * 100.0 / total);
             watch.restart();
         }
     }
@@ -110,11 +103,14 @@ namespace
 
 
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context_)
-    : DatabaseWithDictionaries(name_, metadata_path_, "DatabaseOrdinary (" + name_ + ")")
+    : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
 {
-    Poco::File(context_.getPath() + getDataPath()).createDirectories();
 }
 
+DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context_)
+        : DatabaseWithDictionaries(name_, metadata_path_, data_path_, logger, context_)
+{
+}
 
 void DatabaseOrdinary::loadStoredObjects(
     Context & context,
@@ -128,12 +124,13 @@ void DatabaseOrdinary::loadStoredObjects(
     FileNames file_names;
 
     size_t total_dictionaries = 0;
-    iterateMetadataFiles(context, [&context, &file_names, &total_dictionaries, this](const String & file_name)
+
+    auto process_metadata = [&context, &file_names, &total_dictionaries, this](const String & file_name)
     {
         String full_path = getMetadataPath() + file_name;
         try
         {
-            auto ast = parseQueryFromMetadata(context, full_path, /*throw_on_error*/ true, /*remove_empty*/ false);
+            auto ast = parseQueryFromMetadata(log, context, full_path, /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
@@ -147,11 +144,13 @@ void DatabaseOrdinary::loadStoredObjects(
             throw;
         }
 
-    });
+    };
+
+    iterateMetadataFiles(context, process_metadata);
 
     size_t total_tables = file_names.size() - total_dictionaries;
 
-    LOG_INFO(log, "Total " << total_tables << " tables and " << total_dictionaries << " dictionaries.");
+    LOG_INFO(log, "Total {} tables and {} dictionaries.", total_tables, total_dictionaries);
 
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed{0};
@@ -179,7 +178,6 @@ void DatabaseOrdinary::loadStoredObjects(
     startupTables(pool);
 
     /// Attach dictionaries.
-    attachToExternalDictionariesLoader(context);
     for (const auto & [name, query] : file_names)
     {
         auto create_query = query->as<const ASTCreateQuery &>();
@@ -226,9 +224,10 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
 
 void DatabaseOrdinary::alterTable(
     const Context & context,
-    const String & table_name,
+    const StorageID & table_id,
     const StorageInMemoryMetadata & metadata)
 {
+    String table_name = table_id.table_name;
     /// Read the definition of the table and replace the necessary parts with new ones.
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
@@ -247,7 +246,7 @@ void DatabaseOrdinary::alterTable(
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
-    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.indices);
+    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
     ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
@@ -287,6 +286,11 @@ void DatabaseOrdinary::alterTable(
         out.close();
     }
 
+    commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path);
+}
+
+void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path)
+{
     try
     {
         /// rename atomically replaces the old file with the new one.

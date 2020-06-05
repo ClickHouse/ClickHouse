@@ -31,9 +31,8 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
         case cctz::weekday::friday:     return 5;
         case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
-        default:
-            throw Poco::Exception("Logical error: incorrect week day.");
     }
+    __builtin_unreachable();
 }
 
 }
@@ -74,6 +73,11 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         values.day_of_month = date.day();
         values.day_of_week = getDayOfWeek(date);
         values.date = start_of_day;
+
+        assert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR);
+        assert(values.month >= 1 && values.month <= 12);
+        assert(values.day_of_month >= 1 && values.day_of_month <= 31);
+        assert(values.day_of_week >= 1 && values.day_of_week <= 7);
 
         if (values.day_of_month == 1)
         {
@@ -131,7 +135,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     /// Fill excessive part of lookup table. This is needed only to simplify handling of overflow cases.
     while (i < DATE_LUT_SIZE)
     {
-        lut[i] = lut[DATE_LUT_MAX_DAY_NUM];
+        lut[i] = lut[i - 1];
         ++i;
     }
 
@@ -223,14 +227,7 @@ namespace cctz_extension
             if (sym_data && sym_size)
                 return std::make_unique<Source>(static_cast<const char *>(sym_data), unalignedLoad<size_t>(&sym_size));
 
-#if defined(NDEBUG) || !defined(USE_INTERNAL_CCTZ)
             return fallback(name);
-#else
-            /// In debug builds with internal cctz,
-            /// ensure that only embedded timezones can be loaded - this is intended for tests.
-            (void)fallback;
-            return nullptr;
-#endif
         }
     }
 

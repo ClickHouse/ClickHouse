@@ -1,8 +1,5 @@
-<test>
-
+<test max_ignored_relative_change="0.4">
     <create_query>CREATE TABLE IF NOT EXISTS table_{format} (x UInt64) ENGINE = File(`{format}`)</create_query>
-
-
 
     <substitutions>
         <substitution>
@@ -30,7 +27,7 @@
         <table_exists>test.hits</table_exists>
     </preconditions>
 
-    <query>INSERT INTO table_{format} SELECT number FROM numbers(100000000)</query>
+    <query>INSERT INTO table_{format} SELECT number FROM numbers(10000000)</query>
 
     <drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
 

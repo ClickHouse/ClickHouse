@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 68
 toc_title: "C++ kodu nas\u0131l yaz\u0131l\u0131r"
 ---
@@ -88,7 +88,7 @@ Gerekirse, operatör bir sonraki satıra sarılabilir. Bu durumda, önündeki of
 
 **11.** Tekli operatörleri ayırmak için boşluk kullanmayın (`--`, `++`, `*`, `&`, …) from the argument.
 
-**12.** Virgülden sonra bir boşluk koyun, ancak ondan önce değil. Aynı kural, bir içindeki noktalı virgül için de geçerlidir `for` ifade.
+**12.** Virgülden sonra bir boşluk koyun, ancak ondan önce değil. Aynı kural, bir içindeki noktalı virgül için de geçerlidir `for` İfade.
 
 **13.** Ayırmak için boşluk kullanmayın `[]` operatör.
 
@@ -662,7 +662,7 @@ Kullan... `DB/IO` kütüphane yerine.
 
 Görmek `DateLUT` kitaplık.
 
-**22.** içermek.
+**22.** İçermek.
 
 Her zaman kullanın `#pragma once` korumaları dahil etmek yerine.
 

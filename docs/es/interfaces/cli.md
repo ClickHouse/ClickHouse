@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 17
 toc_title: "Cliente de l\xEDnea de comandos"
 ---
@@ -9,7 +9,7 @@ toc_title: "Cliente de l\xEDnea de comandos"
 
 ClickHouse proporciona un cliente de línea de comandos nativo: `clickhouse-client`. El cliente admite opciones de línea de comandos y archivos de configuración. Para obtener más información, consulte [Configuración](#interfaces_cli_configuration).
 
-[Instalar](../getting_started/index.md) desde el `clickhouse-client` paquete y ejecútelo con el comando `clickhouse-client`.
+[Instalar](../getting-started/index.md) desde el `clickhouse-client` paquete y ejecútelo con el comando `clickhouse-client`.
 
 ``` bash
 $ clickhouse-client
@@ -89,7 +89,7 @@ Formatee una consulta como de costumbre, luego coloque los valores que desea pas
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [Tipo de datos](../sql_reference/data_types/index.md) del valor del parámetro de la aplicación. Por ejemplo, una estructura de datos como `(integer, ('string', integer))` puede tener el `Tuple(UInt8, Tuple(String, UInt8))` tipo de datos (también puede usar otro [entero](../sql_reference/data_types/int_uint.md) tipo).
+-   `data type` — [Tipo de datos](../sql-reference/data-types/index.md) del valor del parámetro de la aplicación. Por ejemplo, una estructura de datos como `(integer, ('string', integer))` puede tener el `Tuple(UInt8, Tuple(String, UInt8))` tipo de datos (también puede usar otro [entero](../sql-reference/data-types/int-uint.md) tipo).
 
 #### Ejemplo {#example}
 

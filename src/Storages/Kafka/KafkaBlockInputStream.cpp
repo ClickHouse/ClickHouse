@@ -19,9 +19,8 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     , column_names(columns)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
-    , non_virtual_header(storage.getSampleBlockNonMaterialized()) /// FIXME: add materialized columns support
-    , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}))
-
+    , non_virtual_header(storage.getSampleBlockNonMaterialized())
+    , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp","_timestamp_ms","_headers.name","_headers.value"}))
 {
     context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context (JSON or TSKV)
     context.setSetting("input_format_allow_errors_ratio", 0.);
@@ -33,7 +32,7 @@ KafkaBlockInputStream::KafkaBlockInputStream(
 
 KafkaBlockInputStream::~KafkaBlockInputStream()
 {
-    if (!claimed)
+    if (!buffer)
         return;
 
     if (broken)
@@ -51,7 +50,6 @@ void KafkaBlockInputStream::readPrefixImpl()
 {
     auto timeout = std::chrono::milliseconds(context.getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
     buffer = storage.popReadBuffer(timeout);
-    claimed = !!buffer;
 
     if (!buffer)
         return;
@@ -142,8 +140,22 @@ Block KafkaBlockInputStream::readImpl()
         auto offset        = buffer->currentOffset();
         auto partition     = buffer->currentPartition();
         auto timestamp_raw = buffer->currentTimestamp();
-        auto timestamp     = timestamp_raw ? std::chrono::duration_cast<std::chrono::seconds>(timestamp_raw->get_timestamp()).count()
-                                                : 0;
+        auto header_list   = buffer->currentHeaderList();
+
+        Array headers_names;
+        Array headers_values;
+
+        if (!header_list.empty())
+        {
+            headers_names.reserve(header_list.size());
+            headers_values.reserve(header_list.size());
+            for (const auto & header : header_list)
+            {
+                headers_names.emplace_back(header.get_name());
+                headers_values.emplace_back(static_cast<std::string>(header.get_value()));
+            }
+        }
+
         for (size_t i = 0; i < new_rows; ++i)
         {
             virtual_columns[0]->insert(topic);
@@ -152,12 +164,17 @@ Block KafkaBlockInputStream::readImpl()
             virtual_columns[3]->insert(partition);
             if (timestamp_raw)
             {
-                virtual_columns[4]->insert(timestamp);
+                auto ts = timestamp_raw->get_timestamp();
+                virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(ts).count());
+                virtual_columns[5]->insert(DecimalField<Decimal64>(std::chrono::duration_cast<std::chrono::milliseconds>(ts).count(),3));
             }
             else
             {
                 virtual_columns[4]->insertDefault();
+                virtual_columns[5]->insertDefault();
             }
+            virtual_columns[6]->insert(headers_names);
+            virtual_columns[7]->insert(headers_values);
         }
 
         total_rows = total_rows + new_rows;
@@ -173,7 +190,7 @@ Block KafkaBlockInputStream::readImpl()
         }
     }
 
-    if (buffer->rebalanceHappened() || total_rows == 0)
+    if (buffer->polledDataUnusable() || total_rows == 0)
         return Block();
 
     /// MATERIALIZED columns can be added here, but I think

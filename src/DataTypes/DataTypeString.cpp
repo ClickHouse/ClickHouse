@@ -376,15 +376,21 @@ void registerDataTypeString(DataTypeFactory & factory)
     /// These synonyms are added for compatibility.
 
     factory.registerAlias("CHAR", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("NCHAR", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("CHARACTER", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("VARCHAR", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("NVARCHAR", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("VARCHAR2", "String", DataTypeFactory::CaseInsensitive); /// Oracle
     factory.registerAlias("TEXT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("TINYTEXT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("MEDIUMTEXT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("LONGTEXT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BLOB", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("CLOB", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("TINYBLOB", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("MEDIUMBLOB", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("LONGBLOB", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BYTEA", "String", DataTypeFactory::CaseInsensitive); /// PostgreSQL
 }
 
 }

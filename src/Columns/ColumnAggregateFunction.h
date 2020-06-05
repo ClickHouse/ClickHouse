@@ -114,14 +114,15 @@ public:
     /// Take shared ownership of Arena, that holds memory for states of aggregate functions.
     void addArena(ConstArenaPtr arena_);
 
-    /** Transform column with states of aggregate functions to column with final result values.
-      */
-    MutableColumnPtr convertToValues() const;
+    /// Transform column with states of aggregate functions to column with final result values.
+    /// It expects ColumnAggregateFunction as an argument, this column will be destroyed.
+    /// This method is made static and receive MutableColumnPtr object to explicitly destroy it.
+    static MutableColumnPtr convertToValues(MutableColumnPtr column);
 
     std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
     const char * getFamilyName() const override { return "AggregateFunction"; }
+    TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
-    bool tryFinalizeAggregateFunction(MutableColumnPtr* res_) const;
     MutableColumnPtr predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const;
 
     size_t size() const override
@@ -193,6 +194,7 @@ public:
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
 
     /** More efficient manipulation methods */
     Container & getData()

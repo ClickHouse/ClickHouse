@@ -1,90 +1,90 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 69
-toc_title: "ClickHouse\u30C6\u30B9\u30C8\u3092\u5B9F\u884C\u3059\u308B\u65B9\u6CD5"
+toc_title: "ClickHouse\u30C6\u30B9\u30C8\u306E\u5B9F\u884C\u65B9\u6CD5"
 ---
 
-# ClickHouse試験 {#clickhouse-testing}
+# ClickHouseのテスト {#clickhouse-testing}
 
 ## 機能テスト {#functional-tests}
 
-機能テストは最も簡単で使いやすいものです。 clickhouseの機能のほとんどは、機能テストでテストすることができ、彼らはそのようにテストすることができclickhouseコード内のすべての変更のために使用する
+機能テストは、最も簡単で使いやすいです。 ClickHouseの機能のほとんどは機能テストでテストすることができ、そのようにテストできるClickHouseコードのすべての変更に使用することが必須です。
 
-各機能テストは、実行中のclickhouseサーバーに一つまたは複数のクエリを送信し、参照と結果を比較します。
+各機能テストは、実行中のClickHouseサーバーに一つまたは複数のクエリを送信し、結果を参照と比較します。
 
-テストは `queries` ディレクトリ。 つのサブディレクトリがあります: `stateless` と `stateful`. ステートレステストでは、プリロードされたテストデータを使用せずにクエリを実行します。 ステートフルテストでは、Yandexのテストデータが必要です。メトリカと一般市民には利用できません。 我々は唯一の使用する傾向があります `stateless` テストと新しい追加を避ける `stateful` テスト
+テストは `queries` ディレクトリ。 サブディレクトリは二つあります: `stateless` と `stateful`. ステートレステストは、プリロードされたテストデータなしでクエリを実行します。 状態での検査が必要とな予圧試験データからのYandex.Metricaおよび一般に利用できない。 私たちは使用する傾向があります `stateless` テストと新しい追加を避ける `stateful` テストだ
 
-それぞれの試験できるの種類: `.sql` と `.sh`. `.sql` testは、パイプ処理される単純なSQLスクリプトです `clickhouse-client --multiquery --testmode`. `.sh` テストは、単独で実行されるスクリプトです。
+それぞれの試験できるの種類: `.sql` と `.sh`. `.sql` testは、パイプ処理される単純なSQLスクリプトです `clickhouse-client --multiquery --testmode`. `.sh` testは、それ自体で実行されるスクリプトです。
 
-すべてのテストを実行するには、 `clickhouse-test` ツール。 見て！ `--help` 可能なオプションのリストについて。 できるだけ実行すべての試験または実行のサブセットの試験フィルター部分文字列の試験名: `./clickhouse-test substring`.
+すべてのテストを実行するには、 `clickhouse-test` ツール。 見て！ `--help` 可能なオプションのリスト。 できるだけ実行すべての試験または実行のサブセットの試験フィルター部分文字列の試験名: `./clickhouse-test substring`.
 
-機能テストを呼び出す最も簡単な方法は、コピーすることです `clickhouse-client` に `/usr/bin/`、実行 `clickhouse-server` そして、実行 `./clickhouse-test` 独自のディレクトリから。
+機能テストを呼び出す最も簡単な方法は、コピーすることです `clickhouse-client` に `/usr/bin/`,run `clickhouse-server` そして、実行 `./clickhouse-test` 独自のディレクトリから。
 
-新しいテストを追加するには、 `.sql` または `.sh` ファイル `queries/0_stateless` ディレクトリは、手動でチェックしてから生成 `.reference` 次の方法でファイル: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` または `./00000_test.sh > ./00000_test.reference`.
+新しいテストを追加するには、 `.sql` または `.sh` ファイル `queries/0_stateless` ディレクトリでチェックを手動でその生成 `.reference` 次の方法でファイル: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` または `./00000_test.sh > ./00000_test.reference`.
 
-テストでは、（create、dropなど）テーブルのみを使用する必要があります `test` テストでは一時テーブルを使用することもできます。
+テストでは、テーブルのみを使用（create、dropなど）する必要があります `test` また、テストでは一時テーブルを使用することもできます。
 
-機能テストで分散クエリを使用する場合は、次のようにします `remote` テーブル機能との `127.0.0.{1..2}` または、サーバー構成ファイル内の事前定義されたテストクラスターを次のように使用できます `test_shard_localhost`.
+機能テストで分散クエリを使用する場合は、以下を利用できます `remote` テーブル関数 `127.0.0.{1..2}` または、サーバー設定ファイルで次のように定義済みのテストクラスタを使用できます `test_shard_localhost`.
 
-いくつかのテストは `zookeeper`, `shard` または `long` 彼らの名前で。
-`zookeeper` ZooKeeperを使用しているテストのためのものです。 `shard` そのテストのためです
-サーバーのリッスンが必要 `127.0.0.*`; `distributed` または `global` 同じを持っている
-意味は... `long` 少し長く走るテストのためのものです。 あなたはできる
-次のテストグループを無効にする `--no-zookeeper`, `--no-shard` と
+いくつかのテストには `zookeeper`, `shard` または `long` 彼らの名前で。
+`zookeeper` ZooKeeperを使用しているテスト用です。 `shard` そのテストのためです
+サーバーにリッスンが必要 `127.0.0.*`; `distributed` または `global` 同じを持っている
+意味だ `long` 少し長く実行されるテストのためのものです。 あなたはできる
+disableこれらのグループの試験を使用 `--no-zookeeper`, `--no-shard` と
 `--no-long` オプション、それぞれ。
 
 ## 既知のバグ {#known-bugs}
 
-機能テストで簡単に再現できるいくつかのバグを知っていれば、準備された機能テストを `tests/queries/bugs` ディレクトリ。 これらのテストはに移動されます `tests/queries/0_stateless` バグが修正されたとき。
+機能テストで簡単に再現できるいくつかのバグがわかっている場合は、準備された機能テストを `tests/queries/bugs` ディレクトリ。 これらのテストは `tests/queries/0_stateless` バグが修正されたとき。
 
 ## 統合テスト {#integration-tests}
 
-統合テストでは、クラスター化された設定でclickhouseをテストし、mysql、postgres、mongodbのような他のサーバーとのclickhouseの相互作用を可能にします。 それらはネットワークの割れ目、包みの低下、等を競争して有用である。 これらの試験する方向に作用しdockerを複数の容器を様々なソフトウェアです。
+統合テストでは、クラスター化された構成でClickHouseをテストし、Mysql、Postgres、MongoDBなどの他のサーバーとClickHouseの相互作用をテストできます。 これらをエミュレートするネットワーク分割、パケットの落下など。 これらの試験する方向に作用しDockerを複数の容器を様々なソフトウェアです。
 
 見る `tests/integration/README.md` これらのテストを実行する方法について。
 
-ClickHouseとサードパーティドライバの統合はテストされていません。 また、現在、JDBCおよびODBCドライバとの統合テストはありません。
+この統合ClickHouse第三者によるドライバーではない。 また、現在、JDBCおよびODBCドライバとの統合テストはありません。
 
 ## 単体テスト {#unit-tests}
 
-単体テストは、clickhouse全体ではなく、単一の孤立したライブラリまたはクラスをテストする場合に便利です。 テストのビルドを有効または無効にするには `ENABLE_TESTS` CMakeオプション。 単体テスト（およびその他のテストプログラム）は、 `tests` コード全体のサブディレクトリ。 単体テストを実行するには `ninja test`. いくつかのテストは `gtest` しかし、テストの失敗でゼロ以外の終了コードを返すプログラムだけです。
+単体テストは、ClickHouse全体ではなく、単一の孤立したライブラリまたはクラスをテストする場合に便利です。 テストのビルドを有効または無効にするには `ENABLE_TESTS` CMakeオプション。 単体テスト(およびその他のテストプログラム)は `tests` コード全体のサブディレクトリ。 単体テストを実行するには、 `ninja test`. 一部のテストでは `gtest` しかし、いくつかは、テストの失敗でゼロ以外の終了コードを返すプログラムです。
 
-コードがすでに機能テストでカバーされている場合は、単体テストを行う必要はありません（機能テストは通常ははるかに簡単に使用できます）。
+コードがすでに機能テストでカバーされている場合は、必ずしも単体テストを持つとは限りません（機能テストは通常ははるかに簡単です）。
 
 ## 性能テスト {#performance-tests}
 
-性能試験を測定して比較の一部の縁の一部clickhouse合成ます。 試験は `tests/performance`. 各テストは `.xml` テストケースの説明を含むファイル。 テストは以下で実行されます `clickhouse performance-test` ツール（埋め込まれていること `clickhouse` バイナリ）。 見る `--help` 呼び出しのため。
+パフォーマ テストは `tests/performance`. それぞれの試験に代表される `.xml` テストケースの説明を持つファイル。 テストは以下で実行されます `clickhouse performance-test` ツール(埋め込まれている `clickhouse` バイナリ）。 見る `--help` 呼び出し用。
 
-各試験の実行はmiltiple索の可能性のある組み合わせのパラメータ)のループ条件のための停止など “maximum execution speed is not changing in three seconds” 測定一部の指標につクエリの性能など “maximum execution speed”). いくつかの試験を含むことができ前提条件に予圧試験データを得る。
+それぞれの試験実行または複数のクエリ(このパラメータの組み合わせ）のループ条件のための停止など “maximum execution speed is not changing in three seconds” 測定一部の指標につクエリの性能など “maximum execution speed”). いくつかの試験を含むことができ前提条件に予圧試験データを得る。
 
-いくつかのシナリオでclickhouseのパフォーマンスを向上させたい場合や、単純なクエリで改善が見られる場合は、パフォーマンステストを作成することを強 それは常に使用する意味があります `perf top` またはあなたのテスト中に他のperfツール。
+いくつかのシナリオでClickHouseのパフォーマンスを向上させたい場合や、単純なクエリで改善が見られる場合は、パフォーマンステストを作成することを強 いう意味があるのに使用 `perf top` またはあなたのテストの間の他のperf用具。
 
-## テストツール、スクリプト {#test-tools-and-scripts}
+## テストツールとスクリプ {#test-tools-and-scripts}
 
-の一部のプログラム `tests` directoryは準備されたテストではなく、テストツールです。 たとえば、 `Lexer` ツールがあります `dbms/Parsers/tests/lexer` これはstdinのトークン化を行い、結果をstdoutに色付けします。 これらの種類のツールをコード例として、また調査と手動テストに使用できます。
+一部のプログラム `tests` ディレク 例えば、 `Lexer` ツールがあります `src/Parsers/tests/lexer` それはstdinのトークン化を行い、色付けされた結果をstdoutに書き込みます。 これらの種類のツールは、コード例として、また探索と手動テストに使用できます。
 
-でも一対のファイル `.sh` と `.reference` のツールであるかの定義済みの入力-その後スクリプトの結果と比較することができ `.reference` ファイル。 この種のテストは自動化されていません。
+でも一対のファイル `.sh` と `.reference` いくつかの事前定義された入力でそれを実行するためのツールと一緒に-その後、スクリプトの結果は `.reference` ファイル これらの種類のテストは自動化されていません。
 
-## Miscellanous試験 {#miscellanous-tests}
+## その他のテスト {#miscellaneous-tests}
 
-外部辞書のテストは次の場所にあります `tests/external_dictionaries` そして機械学ばれたモデルのために `tests/external_models`. これらのテストは更新されず、統合テストに転送する必要があります。
+外部辞書のテストは次の場所にあります `tests/external_dictionaries` そして機械学んだモデルのために `tests/external_models`. これらのテストは更新されず、統合テストに転送する必要があります。
 
-定足数の挿入には個別のテストがあります。 ネットワーク分割、パケットドロップ（clickhouseノード間、clickhouseとzookeeper間、clickhouseサーバーとクライアント間など）など、さまざまな障害ケースをエミュレートします。), `kill -9`, `kill -STOP` と `kill -CONT` 、のように [Jepsen](https://aphyr.com/tags/Jepsen). その後、試験チェックすべての認識を挿入したすべて拒否された挿入しました。
+クォーラム挿入には別のテストがあります。 このテストでは、ネットワーク分割、パケットドロップ（ClickHouseノード間、ClickHouseとZooKeeper間、ClickHouseサーバーとクライアント間など）など、さまざまな障害ケースをエミュレートします。), `kill -9`, `kill -STOP` と `kill -CONT` 例えば [ジェプセン](https://aphyr.com/tags/Jepsen). その後、試験チェックすべての認識を挿入したすべて拒否された挿入しました。
 
-定足数を緩和試験の筆に別々のチーム前clickhouseしたオープン達した. このチームは、もはやclickhouseで動作しません。 テストはaccidentially javaで書かれました。 これらのことから、決議の定足数テストを書き換え及び移転統合。
+定足数を緩和試験の筆に別々のチーム前ClickHouseしたオープン達した. このチームはClickHouseでは動作しなくなりました。 テストは誤ってJavaで書かれました。 これらのことから、決議の定足数テストを書き換え及び移転統合。
 
 ## 手動テスト {#manual-testing}
 
-新しい機能を開発するときは、手動でテストすることも合理的です。 次の手順で行うことができます:
+新しい機能を開発するときは、手動でもテストするのが妥当です。 これを行うには、次の手順を実行します:
 
-ClickHouseをビルドします。 ターミナルからClickHouseを実行します。 `programs/clickhouse-server` そして、それを実行します `./clickhouse-server`. それは構成を使用します (`config.xml`, `users.xml` と内のファイル `config.d` と `users.d` ディレクトリ)から、現在のディレクトリがデフォルトです。 ClickHouseサーバーに接続するには、以下を実行します `programs/clickhouse-client/clickhouse-client`.
+ClickHouseを構築します。 ターミナルからClickHouseを実行します。 `programs/clickhouse-server` そして、それを実行します `./clickhouse-server`. それは構成を使用します (`config.xml`, `users.xml` そして内のファイル `config.d` と `users.d` ディレクトリ)から、現在のディレクトリがデフォルトです。 ClickHouseサーバーに接続するには、以下を実行します `programs/clickhouse-client/clickhouse-client`.
 
-これらのclickhouseツール（サーバ、クライアント、などだそうでsymlinks単一のバイナリ名 `clickhouse`. このバイナリは次の場所にあります `programs/clickhouse`. すべてのツ `clickhouse tool` 代わりに `clickhouse-tool`.
+これらのclickhouseツール（サーバ、クライアント、などだそうでsymlinks単一のバイナリ名 `clickhouse`. このバイナリは `programs/clickhouse`. すべてのツ `clickhouse tool` 代わりに `clickhouse-tool`.
 
-または、yandexリポジトリからの安定したリリースか、あなた自身のためのパッケージを構築することができます `./release` ClickHouseのソースのルートで. 次に、 `sudo service clickhouse-server start` （またはサーバーを停止するために停止）。 でログを探します `/etc/clickhouse-server/clickhouse-server.log`.
+またインストールすることができClickHouseパッケージは安定したリリースからのYandexリポジトリあるいはすることで作ることができるパッケージで `./release` ClickHouseソースルートで. 次に、サーバーを起動します `sudo service clickhouse-server start` (または停止してサーバーを停止します)。 ログを探す `/etc/clickhouse-server/clickhouse-server.log`.
 
-ClickHouseが既にシステムにインストールされている場合は、新しい `clickhouse` バイナリと既存のバイナリを交換:
+時ClickHouseでに既にインストールされているシステムを構築できる新しい `clickhouse` 既存のバイナリを置き換えます:
 
 ``` bash
 $ sudo service clickhouse-server stop
@@ -92,7 +92,7 @@ $ sudo cp ./clickhouse /usr/bin/
 $ sudo service clickhouse-server start
 ```
 
-また、システムclickhouse-serverを停止し、同じ設定でターミナルにログインして独自に実行することもできます:
+また、システムclickhouse-serverを停止し、同じ構成ではなく端末にログインして独自のものを実行することもできます:
 
 ``` bash
 $ sudo service clickhouse-server stop
@@ -105,25 +105,25 @@ Gdbの例:
 $ sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
-システムクリックハウスサーバーが既に実行されていて、それを停止したくない場合は、ポート番号を変更することができます `config.xml` （またはファイル内でそれらを上書きする `config.d` ディレクトリ)を指定し、適切なデータパスを指定して実行します。
+システムclickhouse-serverがすでに実行されていて、それを停止したくない場合は、次のポート番号を変更できます `config.xml` （または、ファイル内でそれらを上書きする `config.d` ディレクトリ）、適切なデータパスを提供し、それを実行します。
 
-`clickhouse` バイナリーはほとんどない依存関係の作品を広い範囲のLinuxディストリビューション. サーバー上の変更をすばやく汚れてテストするには、次のようにします `scp` あなたの新鮮な内蔵 `clickhouse` サーバーへのバイナリを作成し、上記の例のように実行します。
+`clickhouse` バイナリーはほとんどない依存関係の作品を広い範囲のLinuxディストリビューション. サーバー上で変更を迅速かつ汚いテストするには、次のことができます `scp` あなたの新鮮な構築 `clickhouse` あなたのサーバーにバイナリし、上記の例のように実行します。
 
 ## テスト環境 {#testing-environment}
 
-安定版としてリリースを公開する前に、テスト環境に展開します。 テスト環境は1/39の部分を処理するクラスタです [Yandexの。Metrica](https://metrica.yandex.com/) データ。 テスト環境をYandexと共有します。メトリカチーム。 ﾂづﾂつｿﾂづｫﾂづｱﾂ鳴ｳﾂ猟ｿﾂづﾂつｷﾂ。 まずデータを処理しなが遅れから、オシロスコープのリアルタイムレプリケーションの継続作業とな問題に見えるYandex.メトリカチーム。 最初のチェックは次の方法で行うことができます:
+リリースを安定版として公開する前に、テスト環境に展開します。 テスト環境は1/39の部分を処理する集りです [Yandex.メトリカ](https://metrica.yandex.com/) データ テスト環境をYandexと共有しています。メトリカ-チーム ClickHouseは既存のデータの上にダウンタイムなしで改善される。 私たちは、データがリアルタイムから遅れることなく正常に処理され、複製が動作し続け、Yandexに見える問題はないことを最初に見ています。メトリカ-チーム 最初のチェックは、次の方法で行うことができます:
 
 ``` sql
 SELECT hostName() AS h, any(version()), any(uptime()), max(UTCEventTime), count() FROM remote('example01-01-{1..3}t', merge, hits) WHERE EventDate >= today() - 2 GROUP BY h ORDER BY h;
 ```
 
-場合によっては、yandex：market、cloudなどの友人チームのテスト環境にも展開します。 また、開発目的で使用されるハードウェアサーバーもあります。
+市場、クラウドなど：いくつかのケースでは、我々はまた、Yandexの中で私たちの友人チームのテスト環境に展開します また、開発目的で使用されるハードウェアサーバーもあります。
 
 ## 負荷テスト {#load-testing}
 
-テスト環境に展開した後、本番クラスターからのクエリで負荷テストを実行します。 これは手動で行われます。
+後の展開を試験環境を実行負荷テストクエリから生産ます。 これは手動で行われます。
 
-有効にしていることを確認します `query_log` あなたの生産の集りで。
+有効にしていることを確認します `query_log` 運用クラスター上。
 
 一日以上のクエリログを収集する:
 
@@ -131,122 +131,131 @@ SELECT hostName() AS h, any(version()), any(uptime()), max(UTCEventTime), count(
 $ clickhouse-client --query="SELECT DISTINCT query FROM system.query_log WHERE event_date = today() AND query LIKE '%ym:%' AND query NOT LIKE '%system.query_log%' AND type = 2 AND is_initial_query" > queries.tsv
 ```
 
-これは複雑な例です。 `type = 2` 正常に実行されたクエリをフィルタ処理します。 `query LIKE '%ym:%'` Yandexのから関連するクエリを選択することです。メトリカ `is_initial_query` ClickHouse自体ではなく、クライアントによって開始されたクエリのみを選択することです（分散クエリ処理の一部として）。
+これは複雑な例です。 `type = 2` 正常に実行されたクエリをフィルタ処理します。 `query LIKE '%ym:%'` Yandexから関連するクエリを選択することです。メトリカ `is_initial_query` ClickHouse自体ではなく、クライアントによって開始されたクエリのみを選択することです（分散クエリ処理の一部として）。
 
-`scp` このログを試験クラスターとして以下の:
+`scp` このログをテストクラスタに記録し、次のように実行します:
 
 ``` bash
 $ clickhouse benchmark --concurrency 16 < queries.tsv
 ```
 
-（おそらく、あなたはまた、指定したいです `--user`)
+（おそらくあなたはまた、 `--user`)
 
-それから夜か週末の間それを残し、取得残りを行きなさい。
+それから夜または週末のためにそれを残し、残りを取る行きなさい。
 
 きることを確認 `clickhouse-server` なクラッシュメモリのフットプリントは有界性なつ品位を傷つける。
 
-正確なクエリ実行タイミングは記録されず、クエリと環境の変動が大きいため比較されません。
+クエリと環境の変動が大きいため、正確なクエリ実行タイミングは記録されず、比較されません。
 
 ## ビルドテスト {#build-tests}
 
-構築を試験できることを確認の構築においても様々な代替構成されており、外国のシステム。 試験は `ci` ディレクトリ。 彼らはDocker、Vagrantの中のソースからビルドを実行し、時には `qemu-user-static` ドッカー内部。 これらのテストは開発中であり、テスト実行は自動化されていません。
+構築を試験できることを確認の構築においても様々な代替構成されており、外国のシステム。 テストは `ci` ディレクトリ。 Docker、Vagrant、時には以下のようなソースからビルドを実行します `qemu-user-static` ドッカー内部。 これらのテストは開発中であり、テストの実行は自動化されません。
 
-動機づけ:
+動機:
 
-通常、clickhouseビルドの単一のバリアントですべてのテストをリリースして実行します。 しかし、徹底的にテストされていない代替ビルドの変種があります。 例:
+通常、ClickHouse buildの単一のバリアントですべてのテストをリリースして実行します。 しかし、徹底的にテストされていない別のビルド変種があります。 例:
 
--   FreeBSD上でのビルド;
--   システムパッケージのライブ;
--   ライブラリの共有リンク付きビルド;
--   AArch64プラットフォーム上に構築;
--   PowerPcプラットフォーム上に構築。
+-   FreeBSD上でビルド;
+-   をDebianを対象として図書館システムのパッケージ;
+-   ライブラリの共有リンクでビルド;
+-   AArch64プラットフォ;
+-   PowerPcプラットフォーム上で構築。
 
-たとえば、構築システムのパッケージが悪い練習ができませんので保証ものに版のパッケージシステムです。 しかし、これは本当にdebianのメンテナに必要です。 このため、少なくともこのビルドの変種をサポートする必要があります。 別の例：共有リンクは一般的なトラブルの原因ですが、一部の愛好家には必要です。
+たとえば、システムパッケージを使用したビルドは悪い習慣です。 しかし、これは本当にDebianメンテナに必要です。 このため、少なくともこのビルドの変種をサポートする必要があります。 別の例：共有リンクは一般的な問題の原因ですが、一部の愛好家にとって必要です。
 
 ができませんので実行した全試験はすべての変異体を構築し、チェックしたい少なくとも上記に記載された各種の構築異な破となりました。 この目的のためにビルドテストを使用します。
 
 ## プロトコル互換性のテスト {#testing-for-protocol-compatibility}
 
-我々はclickhouseのネットワークプロトコルを拡張するとき,我々は、古いclickhouse-クライアントが新しいclickhouse-serverで動作し、新しいclickhouse-clientが古いclickhouse-serverで動作することを手動で
+ClickHouse network protocolを拡張すると、古いclickhouse-clientが新しいclickhouse-serverで動作し、新しいclickhouse-clientが古いclickhouse-serverで動作することを手動でテストします（対応するパッケージからバイナリを
 
-## コンパイラからの助け {#help-from-the-compiler}
+## コンパイラからのヘルプ {#help-from-the-compiler}
 
-メインクリックハウスコード `dbms` ディレクトリ)は `-Wall -Wextra -Werror` そして、いくつかの追加の有効な警告と。 これらのオプションは有効になっていないためにサードパーティーのライブラリ.
+メインクリックハウスコード（にある `dbms` ディレクトリ)は `-Wall -Wextra -Werror` そして、いくつかの追加の有効な警告と。 これらのオプションは有効になっていないためにサードパーティーのライブラリ.
 
 Clangにはさらに便利な警告があります。 `-Weverything` デフォルトのビルドに何かを選ぶ。
 
-プロダクションビルドでは、gccが使用されます（clangよりもやや効率的なコードが生成されます）。 開発のために、clangは通常使用するのがより便利です。 デバッグモードで自分のマシン上に構築することができます（ラップトップのバッテリーを節約するため）が、コンパイラはより多くの警告を生成する `-O3` よりよい制御流れおよび相互プロシージャの分析が原因で。 Clangでビルドするとき, `libc++` の代わりに使用される。 `libstdc++` そして、デバッグモードでビルドするときは、 `libc++` 使用可能にするにはより誤差があります。.
+本番ビルドでは、gccが使用されます（clangよりもやや効率的なコードが生成されます）。 開発のために、clangは通常、使用する方が便利です。 あなたは（あなたのラップトップのバッテリーを節約するために）デバッグモードで自分のマシン上で構築することができますが、コンパイラがでより `-O3` よりよい制御フローおよびinter-procedure分析が原因で。 Clangでビルドする場合, `libc++` の代わりに使用されます。 `libstdc++` そして、デバッグモードでビルドするとき、 `libc++` 使用可能にするにはより誤差があります。.
 
-## 消毒剤 {#sanitizers}
+## サニタイザー {#sanitizers}
 
-**アドレス消毒剤**.
-ASanの下でコミットごとに機能テストと統合テストを実行します。
+**アドレスsanitizer**.
+私たちは、コミットごとにASanの下で機能テストと統合テストを実行します。
 
-**Valgrind(Memcheck)**.
-私たちは一晩valgrindの下で機能テストを実行します。 それは複数の時間がかかります。 現在、既知の偽陽性があります `re2` ライブラリ、参照 [この記事](https://research.swtch.com/sparse).
+**ヴァルグリンド(曖昧さ回避)**.
+私たちは一晩Valgrindの下で機能テストを実行します。 数時間かかります。 現在知られている偽陽性があります `re2` 図書館、参照 [この記事](https://research.swtch.com/sparse).
 
-**未定義の動作消毒剤。**
-ASanの下でコミットごとに機能テストと統合テストを実行します。
+**未定義の動作のサニタイザー。**
+私たちは、コミットごとにASanの下で機能テストと統合テストを実行します。
 
-**スレッド消毒剤**.
-TSanの下でコミットごとに機能テストを実行します。 TSanの下では、コミットごとに統合テストは実行されません。
+**糸のsanitizer**.
+私たちは、コミットごとにTSanの下で機能テストを実行します。 コミットごとにTSanの下で統合テストを実行することはまだありません。
 
-**メモリ消毒剤**.
-現在、我々はまだmsanを使用していません。
+**メモリサニタイザー**.
+現在、我々はまだMSanを使用していません。
 
 **デバッグアロケータ。**
 デバッグバージョン `jemalloc` デバッグビルドに使用されます。
 
-## Fuzzing {#fuzzing}
+## ファジング {#fuzzing}
 
-単純なfuzzテストを使用して、ランダムなsqlクエリを生成し、サーバーが死んでいないことを確認します。 ファジーテストはアドレスサニタイザーで実行されます。 あなたはそれを見つける `00746_sql_fuzzy.pl`. このテストは継続的に実行する必要があります（夜間および長期）。
+ClickHouseファジングは、両方を使用して実装されます [libFuzzer](https://llvm.org/docs/LibFuzzer.html) とランダムSQLクエリ。
+すべてのファズテストは、サニタイザー（アドレスと未定義）で実行する必要があります。
 
-December2018の時点では、ライブラリコードの孤立したファズテストはまだ使用していません。
+LibFuzzerは、ライブラリコードの分離ファズテストに使用されます。 ファザーはテストコードの一部として実装され “\_fuzzer” 名前の接尾辞。
+Fuzzerの例はで見つけることができます `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer固有の設定、辞書、およびコーパスは次の場所に格納されます `tests/fuzz`.
+ご協力をお願いいたし書きファズ試験べての機能を取り扱うユーザー入力します。
+
+ファザーはデフォルトではビルドされません。 両方のファザーを構築するには `-DENABLE_FUZZING=1` と `-DENABLE_TESTS=1` 選択は置かれるべきである。
+ファザーのビルド中にJemallocを無効にすることをお勧めします。 ClickHouseファジングを統合するために使用される設定
+Google OSS-Fuzzは次の場所にあります `docker/fuzz`.
+
+また簡単なファズ試験をランダムなSQLクエリーやことを確認するにはサーバーにな金型を実行します。
+それを見つけることができる `00746_sql_fuzzy.pl`. このテストは、継続的に実行する必要があります（一晩と長い）。
 
 ## セキュリティ監査 {#security-audit}
 
-Yandexのクラウド部門の人々は、セキュリティの観点からClickHouse機能のいくつかの基本的な概要を行います。
+人からのYandexセキュリティチームはいくつかの基本的な概要ClickHouse力からのセキュリティの観点から.
 
-## 静的分析器 {#static-analyzers}
+## 静的アナライザ {#static-analyzers}
 
-私たちは走る `PVS-Studio` コミットごとに。 我々は評価した `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`. あなたは、使用中の使用方法を見つけるでしょう `tests/instructions/` ディレクトリ。 また読むことができます [ロシア語の記事](https://habr.com/company/yandex/blog/342018/).
+私たちは走る `PVS-Studio` コミットごと。 私達は評価しました `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`. 使用のための指示をで見つけます `tests/instructions/` ディレクトリ。 また読むことができます [ロシア語の記事](https://habr.com/company/yandex/blog/342018/).
 
-使用する場合 `CLion` IDEとして、次のいくつかを活用できます `clang-tidy` 箱からの点検。
+を使用する場合 `CLion` IDEとして、いくつかを活用できます `clang-tidy` 箱から出してチェックします。
 
 ## 硬化 {#hardening}
 
-`FORTIFY_SOURCE` デフォルトで使用されます。 それはほとんど役に立たないですが、まれに意味があり、私たちはそれを無効にしません。
+`FORTIFY_SOURCE` デフォルトで使用されます。 それはほとんど役に立たないですが、まれに理にかなっており、それを無効にしません。
 
 ## コードスタイル {#code-style}
 
 コードのスタイルのルールを記述 [ここに](https://clickhouse.tech/docs/en/development/style/).
 
-一般的なスタイル違反を確認するには、次のようにします `utils/check-style` スクリプト
+チェックのための、共通したスタイル違反、利用できる `utils/check-style` スクリプト
 
-コードの適切なスタイルを強制するには、次のようにします `clang-format`. ファイル `.clang-format` ソースのルートにあります。 主に実際のコードスタイルに対応しています。 しかし、適用することはお勧めしません `clang-format` 既存のファイルには、書式設定が悪化するためです。 を使用することができ `clang-format-diff` clangソースリポジトリにあるツールです。
+コードの適切なスタイルを強制するには、次のようにします `clang-format`. ファイル `.clang-format` ソースルートにあります。 実際のコードスタイルにほとんど対応しています。 しかし、適用することはお勧めしません `clang-format` 既存のファイルへの書式設定が悪化するためです。 以下を使用できます `clang-format-diff` clangソースリポジトリで見つけることができるツール。
 
-あるいは、 `uncrustify` コードを再フォーマットするツール。 設定は `uncrustify.cfg` ソースのルートで。 での試験によ `clang-format`.
+あるいは、 `uncrustify` コードを再フォーマットするツール。 設定は次のとおりです `uncrustify.cfg` ソースルートで。 それはより少なくテストさ `clang-format`.
 
 `CLion` 独自のコードをフォーマッタしていると見ることができる調整のためのコードです。
 
-## メトリカb2bテスト {#metrica-b2b-tests}
+## Metrica B2Bテスト {#metrica-b2b-tests}
 
-各clickhouseのリリースは、yandexのメトリカとappmetricaエンジンでテストされています。 クリックハウスのテストおよび安定版は、vm上に配備され、入力データの固定サンプルを処理しているmetricaエンジンの小さなコピーで実行されます。 次に，メトリカエンジンの二つのインスタンスの結果を共に比較した。
+各ClickHouseリリースはYandex MetricaとAppMetricaエンジンでテストされます。 ClickHouseのテスト版と安定版はVmにデプロイされ、入力データの固定サンプルを処理するMetrica engineの小さなコピーで実行されます。 次に，Ｍｅｔｒｉｃａエンジンの二つのインスタンスの結果を比較した。
 
-これらの試験により自動化されており、別のチームです。 可動部品の数が多いため、テストはほとんどの場合完全に無関係な理由で失敗します。 がこれらの試験は負の値です。 しかしこれらの試験することが明らかとなったが有用である一又は二倍の数百名
+これらの試験により自動化されており、別のチームです。 可動部分の高い数が原因で、テストは把握し非常ににくい完全に無関係な理由によって失敗ほとんどの時間です。 がこれらの試験は負の値です。 しかしこれらの試験することが明らかとなったが有用である一又は二倍の数百名
 
 ## テスト範囲 {#test-coverage}
 
-July2018の時点で、テストカバレッジは追跡されません。
+2018年現在、テストカバーは行っていない。
 
-## テストの自動化 {#test-automation}
+## テスト自動化 {#test-automation}
 
-また試験のyandex内ciと雇用自動化システムの名前 “Sandbox”.
+Yandex内部CIとジョブ自動化システムという名前のテストを実行します “Sandbox”.
 
-ビルドジョブとテストは、コミットごとにsandboxで実行されます。 結果のパッケージとテスト結果はgithubに公開され、直接リンクでダウンロードできます。 成果物は永遠に保存されます。 githubでpullリクエストを送信すると、次のようにタグ付けします “can be tested” そして私達のCIシステムはあなたのためのClickHouseのパッケージを造ります（解放、住所のsanitizer、等と、デバッグします）。
+ビルドジョブとテストは、コミットごとにSandboxで実行されます。 結果のパッケージとテスト結果はGitHubに公開され、直接リンクでダウンロードできます。 成果物は永遠に保存されます。 GitHubでプルリクエストを送信すると、次のようにタグ付けします “can be tested” そして私達のCIシステムはあなたのためのClickHouseのパッケージ（住所sanitizerの解放、デバッグ、等）を造ります。
 
-私たちは、時間と計算能力の限界のためにtravis ciを使用しません。
-ジェンキンスは使わない で使用される前に、現しました嬉しい使用していないjenkins.
+時間と計算能力の限界のため、Travis CIは使用しません。
+ジェンキンスは使わない 以前は使用されていましたが、今はJenkinsを使用していません。
 
 [元の記事](https://clickhouse.tech/docs/en/development/tests/) <!--hide-->
-ベロップメント/テスト/) <!--hide-->

@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -13,18 +14,16 @@ namespace
 }
 
 MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
-    DiskPtr disk_,
-    const String & part_path_,
-    const MergeTreeData & storage_,
+    const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : IMergeTreeDataPartWriter(disk_, part_path_,
-        storage_, columns_list_, indices_to_recalc_,
-        marks_file_extension_, default_codec_, settings_, index_granularity_, false)
+    : IMergeTreeDataPartWriter(data_part_, columns_list_,
+           indices_to_recalc_, marks_file_extension_,
+           default_codec_, settings_, index_granularity_)
 {
     const auto & columns = storage.getColumns();
     for (const auto & it : columns_list)
@@ -46,7 +45,7 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
-            disk,
+            data_part->volume->getDisk(),
             part_path + stream_name, DATA_FILE_EXTENSION,
             part_path + stream_name, marks_file_extension,
             effective_codec,
@@ -85,7 +84,10 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)
     if (compute_granularity)
-        fillIndexGranularity(block);
+    {
+        size_t index_granularity_for_block = computeIndexGranularity(block);
+        fillIndexGranularity(index_granularity_for_block, block.rows());
+    }
 
     auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
 
@@ -206,17 +208,18 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     size_t total_rows = column.size();
     size_t current_row = 0;
-    size_t current_column_mark = current_mark;
+    size_t current_column_mark = getCurrentMark();
+    size_t current_index_offset = getIndexOffset();
     while (current_row < total_rows)
     {
         size_t rows_to_write;
         bool write_marks = true;
 
         /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
-        if (current_row == 0 && index_offset != 0)
+        if (current_row == 0 && current_index_offset != 0)
         {
             write_marks = false;
-            rows_to_write = index_offset;
+            rows_to_write = current_index_offset;
         }
         else
         {

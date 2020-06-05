@@ -60,11 +60,11 @@ ClickHouse是一个用于联机分析(OLAP)的列式数据库管理系统(DBMS)�
 
 **行式**
 
-![Row oriented](images/row_oriented.gif#)
+![Row oriented](images/row-oriented.gif#)
 
 **列式**
 
-![Column oriented](images/column_oriented.gif#)
+![Column oriented](images/column-oriented.gif#)
 
 看到差别了么？下面将详细介绍为什么会发生这种情况。
 

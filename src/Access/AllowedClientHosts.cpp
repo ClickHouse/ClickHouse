@@ -93,12 +93,17 @@ namespace
         return false;
     }
 
+    auto & getIsAddressOfHostCache()
+    {
+        static SimpleCache<decltype(isAddressOfHostImpl), isAddressOfHostImpl> cache;
+        return cache;
+    }
+
     /// Whether a specified address is one of the addresses of a specified host.
     bool isAddressOfHost(const IPAddress & address, const String & host)
     {
         /// We need to cache DNS requests.
-        static SimpleCache<decltype(isAddressOfHostImpl), isAddressOfHostImpl> cache;
-        return cache(address, host);
+        return getIsAddressOfHostCache()(address, host);
     }
 
     /// Helper function for isAddressOfLocalhost().
@@ -160,12 +165,17 @@ namespace
         return host;
     }
 
+    auto & getHostByAddressCache()
+    {
+        static SimpleCache<decltype(getHostByAddressImpl), &getHostByAddressImpl> cache;
+        return cache;
+    }
+
     /// Returns the host name by its address.
     String getHostByAddress(const IPAddress & address)
     {
         /// We need to cache DNS requests.
-        static SimpleCache<decltype(getHostByAddressImpl), &getHostByAddressImpl> cache;
-        return cache(address);
+        return getHostByAddressCache()(address);
     }
 
 
@@ -299,9 +309,9 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
                 throw;
             /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
             LOG_WARNING(
-                &Logger::get("AddressPatterns"),
-                "Failed to check if the allowed client hosts contain address " << client_address.toString() << ". " << e.displayText()
-                                                                               << ", code = " << e.code());
+                &Poco::Logger::get("AddressPatterns"),
+                "Failed to check if the allowed client hosts contain address {}. {}, code = {}",
+                client_address.toString(), e.displayText(), e.code());
             return false;
         }
     };
@@ -332,9 +342,9 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
                 throw;
             /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
             LOG_WARNING(
-                &Logger::get("AddressPatterns"),
-                "Failed to check if the allowed client hosts contain address " << client_address.toString() << ". " << e.displayText()
-                                                                             << ", code = " << e.code());
+                &Poco::Logger::get("AddressPatterns"),
+                "Failed to check if the allowed client hosts contain address {}. {}, code = {}",
+                client_address.toString(), e.displayText(), e.code());
             return false;
         }
     };
@@ -364,6 +374,12 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
             return true;
 
     return false;
+}
+
+void AllowedClientHosts::dropDNSCaches()
+{
+    getIsAddressOfHostCache().drop();
+    getHostByAddressCache().drop();
 }
 
 }
