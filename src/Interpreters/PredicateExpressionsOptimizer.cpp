@@ -146,12 +146,12 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
     return is_rewrite_tables;
 }
 
-bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_element, const ASTs & table_predicates, const Names & table_column) const
+bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_element, const ASTs & table_predicates, Names && table_columns) const
 {
     if (!table_predicates.empty())
     {
         auto optimize_final = enable_optimize_predicate_expression_to_final_subquery;
-        PredicateRewriteVisitor::Data data(context, table_predicates, table_column, optimize_final);
+        PredicateRewriteVisitor::Data data(context, table_predicates, std::move(table_columns), optimize_final);
 
         PredicateRewriteVisitor(data).visit(table_element);
         return data.is_rewrite;
