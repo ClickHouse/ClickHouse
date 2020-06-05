@@ -134,6 +134,7 @@ SRCS(
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
+    QueryPlan/IQueryPlanStep.cpp
 )
 
 END()
