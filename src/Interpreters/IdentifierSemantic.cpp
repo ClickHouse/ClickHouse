@@ -194,8 +194,10 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
                                                                           const TableWithColumnNamesAndTypes & db_and_table)
 {
     ColumnMatch match = canReferColumnToTable(identifier, db_and_table.table);
+#if 0
     if (match == ColumnMatch::NoMatch && identifier.isShort() && db_and_table.hasColumn(identifier.shortName()))
         match = ColumnMatch::ColumnName;
+#endif
     return match;
 }
 
