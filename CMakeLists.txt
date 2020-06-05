@@ -364,7 +364,6 @@ include (cmake/find/msgpack.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
-find_contrib_lib(metrohash)
 find_contrib_lib(btrie)
 
 if (ENABLE_TESTS)

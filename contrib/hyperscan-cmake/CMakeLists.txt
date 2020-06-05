@@ -26,8 +26,7 @@ if (ENABLE_HYPERSCAN)
         add_library (hyperscan UNKNOWN IMPORTED)
         set_target_properties (hyperscan PROPERTIES IMPORTED_LOCATION ${LIBRARY_HYPERSCAN})
         set_target_properties (hyperscan PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_HYPERSCAN})
-
-        target_compile_definitions (hyperscan INTERFACE USE_HYPERSCAN=1)
+        set_property(TARGET hyperscan APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS USE_HYPERSCAN=1)
     endif ()
 
     message (STATUS "Using hyperscan")

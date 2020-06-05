@@ -26,6 +26,7 @@ add_subdirectory (hyperscan-cmake)
 add_subdirectory (jemalloc-cmake)
 add_subdirectory (libcpuid-cmake)
 add_subdirectory (libdivide)
+add_subdirectory (libmetrohash)
 add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
@@ -57,10 +58,6 @@ endif ()
 
 if (USE_INTERNAL_FARMHASH_LIBRARY)
     add_subdirectory (libfarmhash)
-endif ()
-
-if (USE_INTERNAL_METROHASH_LIBRARY)
-    add_subdirectory (libmetrohash)
 endif ()
 
 if (USE_INTERNAL_BTRIE_LIBRARY)
