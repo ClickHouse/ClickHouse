@@ -2,8 +2,11 @@
 #include <Parsers/ASTGrantQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserRolesOrUsersSet.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -66,15 +69,13 @@ namespace
             if (!ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
                 return false;
 
+            ASTPtr ast;
+            if (!ParserList{std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
+                return false;
+
             Strings res_columns;
-            do
-            {
-                ASTPtr column_ast;
-                if (!ParserIdentifier().parse(pos, column_ast, expected))
-                    return false;
-                res_columns.emplace_back(getIdentifierName(column_ast));
-            }
-            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+            for (const auto & child : ast->children)
+                res_columns.emplace_back(getIdentifierName(child));
 
             if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
                 return false;
@@ -150,25 +151,42 @@ namespace
     }
 
 
+    bool parseAccessTypesWithColumns(IParser::Pos & pos, Expected & expected,
+                                     std::vector<std::pair<AccessFlags, Strings>> & access_and_columns)
+    {
+        std::vector<std::pair<AccessFlags, Strings>> res;
+
+        auto parse_access_and_columns = [&]
+        {
+            AccessFlags access_flags;
+            if (!parseAccessFlags(pos, expected, access_flags))
+                return false;
+
+            Strings columns;
+            parseColumnNames(pos, expected, columns);
+            res.emplace_back(access_flags, std::move(columns));
+            return true;
+        };
+
+        if (!ParserList::parseUtil(pos, expected, parse_access_and_columns, false))
+            return false;
+
+        access_and_columns = std::move(res);
+        return true;
+    }
+
+
     bool parseAccessRightsElements(IParser::Pos & pos, Expected & expected, AccessRightsElements & elements)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             AccessRightsElements res_elements;
-            do
+
+            auto parse_around_on = [&]
             {
                 std::vector<std::pair<AccessFlags, Strings>> access_and_columns;
-                do
-                {
-                    AccessFlags access_flags;
-                    if (!parseAccessFlags(pos, expected, access_flags))
-                        return false;
-
-                    Strings columns;
-                    parseColumnNames(pos, expected, columns);
-                    access_and_columns.emplace_back(access_flags, std::move(columns));
-                }
-                while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+                if (!parseAccessTypesWithColumns(pos, expected, access_and_columns))
+                    return false;
 
                 if (!ParserKeyword{"ON"}.ignore(pos, expected))
                     return false;
@@ -190,8 +208,12 @@ namespace
                     element.table = table_name;
                     res_elements.emplace_back(std::move(element));
                 }
-            }
-            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+
+                return true;
+            };
+
+            if (!ParserList::parseUtil(pos, expected, parse_around_on, false))
+                return false;
 
             elements = std::move(res_elements);
             return true;

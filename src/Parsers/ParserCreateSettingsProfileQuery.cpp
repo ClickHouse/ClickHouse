@@ -8,6 +8,7 @@
 #include <Parsers/ParserRolesOrUsersSet.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <boost/range/algorithm_ext/push_back.hpp>
 
 
 namespace DB
@@ -25,7 +26,7 @@ namespace
         });
     }
 
-    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTSettingsProfileElements> & settings)
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::vector<std::shared_ptr<ASTSettingsProfileElement>> & settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -38,10 +39,7 @@ namespace
             if (!elements_p.parse(pos, new_settings_ast, expected))
                 return false;
 
-            if (!settings)
-                settings = std::make_shared<ASTSettingsProfileElements>();
-            const auto & new_settings = new_settings_ast->as<const ASTSettingsProfileElements &>();
-            settings->elements.insert(settings->elements.end(), new_settings.elements.begin(), new_settings.elements.end());
+            settings = std::move(new_settings_ast->as<const ASTSettingsProfileElements &>().elements);
             return true;
         });
     }
@@ -51,7 +49,7 @@ namespace
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected))
+            if (!ParserKeyword{"TO"}.ignore(pos, expected))
                 return false;
 
             ParserRolesOrUsersSet roles_p;
@@ -119,8 +117,14 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
         if (alter && new_name.empty() && (names.size() == 1) && parseRenameTo(pos, expected, new_name))
             continue;
 
-        if (parseSettings(pos, expected, attach_mode, settings))
+        std::vector<std::shared_ptr<ASTSettingsProfileElement>> new_settings;
+        if (parseSettings(pos, expected, attach_mode, new_settings))
+        {
+            if (!settings)
+                settings = std::make_shared<ASTSettingsProfileElements>();
+            boost::range::push_back(settings->elements, std::move(new_settings));
             continue;
+        }
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
             continue;

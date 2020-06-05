@@ -8,6 +8,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <ext/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -126,17 +127,17 @@ namespace
     }
 
 
-    bool parseLimit(IParserBase::Pos & pos, Expected & expected, bool first, bool & max_prefix_encountered, ResourceType & resource_type, ResourceAmount & max)
+    bool parseLimits(IParserBase::Pos & pos, Expected & expected, std::vector<std::pair<ResourceType, ResourceAmount>> & limits)
     {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            if (!first && !ParserToken{TokenType::Comma}.ignore(pos, expected))
-                return false;
+        std::vector<std::pair<ResourceType, ResourceAmount>> res_limits;
+        bool max_prefix_encountered = false;
 
+        auto parse_limit = [&]
+        {
             max_prefix_encountered |= ParserKeyword{"MAX"}.ignore(pos, expected);
 
-            ResourceType res_resource_type;
-            if (!parseResourceType(pos, expected, res_resource_type))
+            ResourceType resource_type;
+            if (!parseResourceType(pos, expected, resource_type))
                 return false;
 
             if (max_prefix_encountered)
@@ -149,25 +150,32 @@ namespace
                     return false;
             }
 
-            ResourceAmount res_max;
-            if (!parseMaxAmount(pos, expected, res_resource_type, res_max))
+            ResourceAmount max;
+            if (!parseMaxAmount(pos, expected, resource_type, max))
                 return false;
 
-            resource_type = res_resource_type;
-            max = res_max;
+            res_limits.emplace_back(resource_type, max);
             return true;
-        });
+        };
+
+        if (!ParserList::parseUtil(pos, expected, parse_limit, false))
+            return false;
+
+        limits = std::move(res_limits);
+        return true;
     }
 
-    bool parseIntervalWithLimits(IParserBase::Pos & pos, Expected & expected, ASTCreateQuotaQuery::Limits & limits)
+    bool parseIntervalsWithLimits(IParserBase::Pos & pos, Expected & expected, std::vector<ASTCreateQuotaQuery::Limits> & all_limits)
     {
-        return IParserBase::wrapParseImpl(pos, [&]
+        std::vector<ASTCreateQuotaQuery::Limits> res_all_limits;
+
+        auto parse_interval_with_limits = [&]
         {
-            ASTCreateQuotaQuery::Limits new_limits;
             if (!ParserKeyword{"FOR"}.ignore(pos, expected))
                 return false;
 
-            new_limits.randomize_interval = ParserKeyword{"RANDOMIZED"}.ignore(pos, expected);
+            ASTCreateQuotaQuery::Limits limits;
+            limits.randomize_interval = ParserKeyword{"RANDOMIZED"}.ignore(pos, expected);
 
             ParserKeyword{"INTERVAL"}.ignore(pos, expected);
 
@@ -181,53 +189,34 @@ namespace
             if (!parseIntervalKind(pos, expected, interval_kind))
                 return false;
 
-            new_limits.duration = std::chrono::seconds(static_cast<UInt64>(num_intervals * interval_kind.toAvgSeconds()));
+            limits.duration = std::chrono::seconds(static_cast<UInt64>(num_intervals * interval_kind.toAvgSeconds()));
+            std::vector<std::pair<ResourceType, ResourceAmount>> maxs;
 
             if (ParserKeyword{"NO LIMITS"}.ignore(pos, expected))
             {
-                new_limits.drop = true;
+                limits.drop = true;
             }
             else if (ParserKeyword{"TRACKING ONLY"}.ignore(pos, expected))
             {
             }
+            else if (parseLimits(pos, expected, maxs))
+            {
+                for (const auto & [resource_type, max] : maxs)
+                    limits.max[resource_type] = max;
+            }
             else
-            {
-                ResourceType resource_type;
-                ResourceAmount max;
-                bool max_prefix_encountered = false;
-                if (!parseLimit(pos, expected, true, max_prefix_encountered, resource_type, max))
-                    return false;
+                return false;
 
-                new_limits.max[resource_type] = max;
-                while (parseLimit(pos, expected, false, max_prefix_encountered, resource_type, max))
-                    new_limits.max[resource_type] = max;
-            }
-
-            limits = new_limits;
+            res_all_limits.emplace_back(std::move(limits));
             return true;
-        });
-    }
+        };
 
-    bool parseIntervalsWithLimits(IParserBase::Pos & pos, Expected & expected, std::vector<ASTCreateQuotaQuery::Limits> & all_limits)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            size_t old_size = all_limits.size();
-            do
-            {
-                ASTCreateQuotaQuery::Limits limits;
-                if (!parseIntervalWithLimits(pos, expected, limits))
-                {
-                    all_limits.resize(old_size);
-                    return false;
-                }
-                all_limits.push_back(limits);
-            }
-            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
-            return true;
-        });
-    }
+        if (!ParserList::parseUtil(pos, expected, parse_interval_with_limits, false))
+            return false;
 
+        all_limits = std::move(res_all_limits);
+        return true;
+    }
 
     bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
     {

@@ -4,6 +4,7 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 
@@ -67,21 +68,18 @@ namespace
                 return false;
 
             std::vector<std::pair<String, String>> res;
-            std::optional<IParser::Pos> pos_before_comma;
-            do
+
+            auto parse_db_and_table_name = [&]
             {
                 String database, table_name;
                 if (!parseDBAndTableName(pos, expected, database, table_name))
-                {
-                    if (!pos_before_comma)
-                        return false;
-                    pos = *pos_before_comma;
-                    break;
-                }
+                    return false;
                 res.emplace_back(std::move(database), std::move(table_name));
-                pos_before_comma = pos;
-            }
-            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+                return true;
+            };
+
+            if (!ParserList::parseUtil(pos, expected, parse_db_and_table_name, false))
+                return false;
 
             database_and_table_names = std::move(res);
             return true;
@@ -165,21 +163,28 @@ bool ParserRowPolicyName::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 bool ParserRowPolicyNames::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     std::vector<RowPolicy::NameParts> name_parts;
+    size_t num_added_names_last_time = 0;
     String cluster;
 
-    do
+    auto parse_around_on = [&]
     {
-         std::vector<RowPolicy::NameParts> new_name_parts;
-         if (!parseRowPolicyNamesAroundON(pos, expected, name_parts.empty(), name_parts.empty(), allow_on_cluster, new_name_parts, cluster))
-             return false;
+        if (!name_parts.empty())
+        {
+            if ((num_added_names_last_time != 1) || !cluster.empty())
+                return false;
+        }
 
-         size_t num_new_name_parts = new_name_parts.size();
-         assert(num_new_name_parts >= 1);
-         boost::range::push_back(name_parts, std::move(new_name_parts));
-         if ((num_new_name_parts != 1) || !cluster.empty())
-             break;
-    }
-    while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+        std::vector<RowPolicy::NameParts> new_name_parts;
+        if (!parseRowPolicyNamesAroundON(pos, expected, name_parts.empty(), name_parts.empty(), allow_on_cluster, new_name_parts, cluster))
+            return false;
+
+        num_added_names_last_time = new_name_parts.size();
+        boost::range::push_back(name_parts, std::move(new_name_parts));
+        return true;
+    };
+
+    if (!ParserList::parseUtil(pos, expected, parse_around_on, false))
+        return false;
 
     auto result = std::make_shared<ASTRowPolicyNames>();
     result->name_parts = std::move(name_parts);
