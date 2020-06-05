@@ -236,7 +236,7 @@ void DatabaseOnDisk::renameTable(
     catch (const Poco::Exception & e)
     {
         /// Better diagnostics.
-        throw Exception{Exception::CreateFromPoco, e};
+        throw Exception{Exception::CreateFromPocoTag{}, e};
     }
 
     /// NOTE Non-atomic.
