@@ -450,7 +450,6 @@ void StorageBuffer::startup()
         LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate system_profile to fix this.", getName());
     }
 
-
     flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ flushBack(); });
     flush_handle->activateAndSchedule();
 }
@@ -777,7 +776,7 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata);
+    params.apply(metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     setColumns(std::move(metadata.columns));
 }

@@ -1,9 +1,6 @@
 #include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/AggregatingBlockInputStream.h>
-#include <DataStreams/MergingAggregatedBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/copyData.h>
-#include <DataStreams/ConvertColumnLowCardinalityToFullBlockInputStream.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -961,28 +958,16 @@ void InterpreterSelectQuery::executeFetchColumns(
     const Settings & settings = context->getSettingsRef();
 
     /// Optimization for trivial query like SELECT count() FROM table.
-    auto check_trivial_count_query = [&]() -> std::optional<AggregateDescription>
+    bool optimize_trivial_count =
+        syntax_analyzer_result->optimize_trivial_count && storage &&
+        processing_stage == QueryProcessingStage::FetchColumns &&
+        query_analyzer->hasAggregation() && (query_analyzer->aggregates().size() == 1) &&
+        typeid_cast<AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
+
+    if (optimize_trivial_count)
     {
-        if (!settings.optimize_trivial_count_query || !syntax_analyzer_result->maybe_optimize_trivial_count || !storage
-            || query.sampleSize() || query.sampleOffset() || query.final() || query.prewhere() || query.where() || query.groupBy()
-            || !query_analyzer->hasAggregation() || processing_stage != QueryProcessingStage::FetchColumns)
-            return {};
-
-        const AggregateDescriptions & aggregates = query_analyzer->aggregates();
-
-        if (aggregates.size() != 1)
-            return {};
-
-        const AggregateDescription & desc = aggregates[0];
-        if (typeid_cast<AggregateFunctionCount *>(desc.function.get()))
-            return desc;
-
-        return {};
-    };
-
-    if (auto desc = check_trivial_count_query())
-    {
-        auto func = desc->function;
+        const auto & desc = query_analyzer->aggregates()[0];
+        const auto & func = desc.function;
         std::optional<UInt64> num_rows = storage->totalRows();
         if (num_rows)
         {
@@ -1001,13 +986,13 @@ void InterpreterSelectQuery::executeFetchColumns(
             column->insertFrom(place);
 
             auto header = analysis_result.before_aggregation->getSampleBlock();
-            size_t arguments_size = desc->argument_names.size();
+            size_t arguments_size = desc.argument_names.size();
             DataTypes argument_types(arguments_size);
             for (size_t j = 0; j < arguments_size; ++j)
-                argument_types[j] = header.getByName(desc->argument_names[j]).type;
+                argument_types[j] = header.getByName(desc.argument_names[j]).type;
 
             Block block_with_count{
-                {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc->parameters), desc->column_name}};
+                {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc.parameters), desc.column_name}};
 
             auto istream = std::make_shared<OneBlockInputStream>(block_with_count);
             pipeline.init(Pipe(std::make_shared<SourceFromInputStream>(istream)));

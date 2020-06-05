@@ -294,7 +294,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
 
     const ColumnsDescription & columns_desc = storage->getColumns();
-    const IndicesDescription & indices_desc = storage->getIndices();
+    const IndicesDescription & indices_desc = storage->getSecondaryIndices();
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     NameSet updated_columns;
@@ -391,15 +391,15 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
             auto it = std::find_if(
-                    std::cbegin(indices_desc.indices), std::end(indices_desc.indices),
-                    [&](const std::shared_ptr<ASTIndexDeclaration> & index)
+                    std::cbegin(indices_desc), std::end(indices_desc),
+                    [&](const IndexDescription & index)
                     {
-                        return index->name == command.index_name;
+                        return index.name == command.index_name;
                     });
-            if (it == std::cend(indices_desc.indices))
+            if (it == std::cend(indices_desc))
                 throw Exception("Unknown index: " + command.index_name, ErrorCodes::BAD_ARGUMENTS);
 
-            auto query = (*it)->expr->clone();
+            auto query = (*it).expression_list_ast->clone();
             auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
             const auto required_columns = syntax_result->requiredSourceColumns();
             for (const auto & column : required_columns)
