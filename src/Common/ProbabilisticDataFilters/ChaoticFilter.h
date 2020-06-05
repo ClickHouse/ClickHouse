@@ -76,10 +76,14 @@ private:
 
 public:
     template<size_t L, size_t R, typename returnType = UInt64>
-    returnType getBits(UInt64 x) const {
-        if constexpr (R == 63) {
+    returnType getBits(UInt64 x) const
+    {
+        if constexpr (R == 63)
+        {
             return x >> L;
-        } else {
+        }
+        else
+        {
             return (((1ull << (R + 1)) - (1ull << L)) & x) >> L;
         }
     }

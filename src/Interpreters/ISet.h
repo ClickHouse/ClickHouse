@@ -65,4 +65,4 @@ using SetPtr = std::shared_ptr<ISet>;
 using ConstSetPtr = std::shared_ptr<const ISet>;
 using Sets = std::vector<SetPtr>;
 
-}  // namespace DB
+}

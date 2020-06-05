@@ -189,12 +189,15 @@ SetPtr makeExplicitSet(
         throw_unsupported_type(right_arg_type);
 
     SetPtr set;
-    if (is_bloomfilter) {
+    if (is_bloomfilter)
+    {
         set = std::make_shared<MySet>(
             size_limits, create_ordered_set, context.getSettingsRef().transform_null_in,
             context.getSettings().bloomfilter_storage_len, context.getSettings().bloomfilter_hashes_count
         );
-    } else {
+    }
+    else
+    {
         set = std::make_shared<Set>(size_limits, create_ordered_set, context.getSettingsRef().transform_null_in);
     }
 
@@ -724,12 +727,15 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         }
 
         SetPtr set;
-        if (is_bloomfilter) {
+        if (is_bloomfilter)
+        {
             set = std::make_shared<MySet>(
                 data.set_size_limit, false, data.context.getSettingsRef().transform_null_in,
                 data.context.getSettings().bloomfilter_storage_len, data.context.getSettings().bloomfilter_hashes_count
             );
-        } else {
+        }
+        else
+        {
             set = std::make_shared<Set>(data.set_size_limit, false, data.context.getSettingsRef().transform_null_in);
         }
 

@@ -87,7 +87,8 @@ public:
     {
         // // // std::cerr << "HERE in executeImpl of in.cpp\n";
         std::cerr << "name: " << name << std::endl;
-        for (auto i : arguments) {
+        for (auto i : arguments)
+        {
             std::cerr << i << " ";
         }
         std::cerr << std::endl;
@@ -104,11 +105,9 @@ public:
         const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(column_set_ptr.get());
         if (!column_set)
             column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr.get());
-        if (!column_set) {
-            // // // std::cerr << "HERE before error\n";
+        if (!column_set)
             throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
-        }
 
         Block block_of_key_columns;
 

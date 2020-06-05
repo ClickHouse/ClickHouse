@@ -28,11 +28,6 @@ struct Range;
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 class MySet : public ISet
 {
 public:
@@ -41,12 +36,14 @@ public:
     {
     }
 
-    bool empty() const override {
+    bool empty() const override
+    {
         std::unique_lock lock(rwlock);
         return !hash_set || hash_set->added_counts() == 0;
     }
 
-    void setHeader(const Block & header) override {
+    void setHeader(const Block & header) override
+    {
         std::unique_lock lock(rwlock);
 
         // std::cerr << "HERE in setHeader, rows: " << header.rows() << std::endl;
@@ -59,7 +56,8 @@ public:
         // hash_set = std::make_shared<ChaoticFilter>(filter_length);
 
         std::cerr << "filter_length: " << filter_length << " ," << "hashes_count: " << hashes_count << std::endl;
-        for (size_t i = 0; i < columns_count; ++i) {
+        for (size_t i = 0; i < columns_count; ++i)
+        {
             data_types.emplace_back(header.safeGetByPosition(i).type);
         }
     }
@@ -73,14 +71,16 @@ public:
 
         // const auto& col = typeid_cast<const ColumnVector<char8_t>&>(*block.getByPosition(0).column);
 
-        for (const auto & elem : row_hashes) {
+        for (const auto & elem : row_hashes)
+        {
             hash_set->add(elem);
         }
 
         return true;
     }
 
-    ColumnPtr execute(const Block & block, bool negative) const override {
+    ColumnPtr execute(const Block & block, bool negative) const override
+    {
         std::shared_lock lock(rwlock);
         // // // std::cerr << "HERE in execute\n";
 
@@ -91,10 +91,14 @@ public:
         vec_res.resize(block.safeGetByPosition(0).column->size());
 
         size_t i = 0;
-        for (const auto & elem : row_hashes) {
-            if (hash_set->contains(elem)) {
+        for (const auto & elem : row_hashes)
+        {
+            if (hash_set->contains(elem))
+            {
                 vec_res[i] = 1 ^ negative;
-            } else {
+            }
+            else
+            {
                 vec_res[i] = negative;
             }
             ++i;
@@ -102,7 +106,8 @@ public:
         return res;
     }
 
-    void finishInsert() override {
+    void finishInsert() override
+    {
         std::shared_lock lock(rwlock);
         // // // std::cerr << "HERE in finishInsert, size of hashset: " + std::to_string(hash_set->added_counts()) + "\n";
         is_created = true;
@@ -117,7 +122,8 @@ public:
     const DataTypes & getDataTypes() const override { return data_types; }
 
 private:
-    ColumnUInt64::Container calculate_hashes(const Block & block) const {
+    ColumnUInt64::Container calculate_hashes(const Block & block) const
+    {
         ColumnUInt64::Container row_hashes(block.rows(), 0);
 
         // // // std::cerr << "HERE in calculate_hashes, columns_count : " + std::to_string(columns_count) + "\n";
@@ -161,4 +167,4 @@ private:
     DataTypes data_types;
 };
 
-}  // namespace DB
+}

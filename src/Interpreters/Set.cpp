@@ -39,7 +39,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
-    extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
