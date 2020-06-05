@@ -18,7 +18,7 @@ RabbitMQHandler::RabbitMQHandler(event_base * evbase_, Poco::Logger * log_) :
 }
 
 
-void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * message) 
+void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * message)
 {
     LOG_ERROR(log, "Library error report: {}", message);
 
@@ -44,7 +44,7 @@ void RabbitMQHandler::start(std::atomic<bool> & check_param)
          */
         if (!check_param)
         {
-            event_base_loop(evbase, EVLOOP_NONBLOCK); 
+            event_base_loop(evbase, EVLOOP_NONBLOCK);
         }
 
         mutex_before_event_loop.unlock();
