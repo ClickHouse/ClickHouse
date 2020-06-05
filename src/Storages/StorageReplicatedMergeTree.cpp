@@ -501,7 +501,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         }
 
         if (metadata_diff.skip_indices_changed)
-            metadata.indices = IndicesDescription::parse(metadata_diff.new_skip_indices);
+            metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, global_context);
 
         if (metadata_diff.constraints_changed)
             metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
@@ -2907,44 +2907,60 @@ void StorageReplicatedMergeTree::startup()
     if (is_readonly)
         return;
 
-    queue.initialize(
-        zookeeper_path, replica_path,
-        getStorageID().getFullTableName() + " (ReplicatedMergeTreeQueue)",
-        getDataParts());
-
-    data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(*this);
-    global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint);
-
-    /// In this thread replica will be activated.
-    restarting_thread.start();
-
-    /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attmept to do it
-    startup_event.wait();
-
-    /// If we don't separate create/start steps, race condition will happen
-    /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
+    try
     {
-        auto lock = queue.lockQueue();
-        auto & pool = global_context.getBackgroundPool();
-        queue_task_handle = pool.createTask([this] { return queueTask(); });
-        pool.startTask(queue_task_handle);
-    }
+        queue.initialize(
+            zookeeper_path, replica_path,
+            getStorageID().getFullTableName() + " (ReplicatedMergeTreeQueue)",
+            getDataParts());
 
-    if (areBackgroundMovesNeeded())
-    {
-        auto & pool = global_context.getBackgroundMovePool();
-        move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
-        pool.startTask(move_parts_task_handle);
+        data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(*this);
+        global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint);
+
+        /// In this thread replica will be activated.
+        restarting_thread.start();
+
+        /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attmept to do it
+        startup_event.wait();
+
+        /// If we don't separate create/start steps, race condition will happen
+        /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
+        {
+            auto lock = queue.lockQueue();
+            auto & pool = global_context.getBackgroundPool();
+            queue_task_handle = pool.createTask([this] { return queueTask(); });
+            pool.startTask(queue_task_handle);
+        }
+
+        if (areBackgroundMovesNeeded())
+        {
+            auto & pool = global_context.getBackgroundMovePool();
+            move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
+            pool.startTask(move_parts_task_handle);
+        }
     }
-    need_shutdown.store(true);
+    catch (...)
+    {
+        /// Exception safety: failed "startup" does not require a call to "shutdown" from the caller.
+        /// And it should be able to safely destroy table after exception in "startup" method.
+        /// It means that failed "startup" must not create any background tasks that we will have to wait.
+        try
+        {
+            shutdown();
+        }
+        catch (...)
+        {
+            std::terminate();
+        }
+
+        /// Note: after failed "startup", the table will be in a state that only allows to destroy the object.
+        throw;
+    }
 }
 
 
 void StorageReplicatedMergeTree::shutdown()
 {
-    if (!need_shutdown.load())
-        return;
-
     clearOldPartsFromFilesystem(true);
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
     fetcher.blocker.cancelForever();
@@ -2981,7 +2997,6 @@ void StorageReplicatedMergeTree::shutdown()
         std::unique_lock lock(data_parts_exchange_endpoint->rwlock);
     }
     data_parts_exchange_endpoint.reset();
-    need_shutdown.store(false);
 }
 
 
@@ -3243,7 +3258,8 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     zookeeper->multi(requests);
 
     {
-        /// TODO (relax this lock)
+        /// TODO (relax this lock and remove this action lock)
+        auto merges_block = getActionLock(ActionLocks::PartsMerge);
         auto table_lock = lockExclusively(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
@@ -3276,7 +3292,7 @@ void StorageReplicatedMergeTree::alter(
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         StorageInMemoryMetadata metadata = getInMemoryMetadata();
-        params.apply(metadata);
+        params.apply(metadata, query_context);
 
 
         changeSettings(metadata.settings_ast, table_lock_holder);
@@ -3310,7 +3326,7 @@ void StorageReplicatedMergeTree::alter(
         StorageInMemoryMetadata current_metadata = getInMemoryMetadata();
 
         StorageInMemoryMetadata future_metadata = current_metadata;
-        params.apply(future_metadata);
+        params.apply(future_metadata, query_context);
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this);
         if (ast_to_str(future_metadata.order_by_ast) != ast_to_str(current_metadata.order_by_ast))
@@ -3319,8 +3335,8 @@ void StorageReplicatedMergeTree::alter(
         if (ast_to_str(future_metadata.ttl_for_table_ast) != ast_to_str(current_metadata.ttl_for_table_ast))
             future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.ttl_for_table_ast);
 
-        String new_indices_str = future_metadata.indices.toString();
-        if (new_indices_str != current_metadata.indices.toString())
+        String new_indices_str = future_metadata.secondary_indices.toString();
+        if (new_indices_str != current_metadata.secondary_indices.toString())
             future_metadata_in_zk.skip_indices = new_indices_str;
 
         String new_constraints_str = future_metadata.constraints.toString();
@@ -3357,7 +3373,7 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->alter_version = new_metadata_version;
         alter_entry->create_time = time(nullptr);
 
-        auto maybe_mutation_commands = params.getMutationCommands(current_metadata, query_context.getSettingsRef().materialize_ttl_after_modify);
+        auto maybe_mutation_commands = params.getMutationCommands(current_metadata, query_context.getSettingsRef().materialize_ttl_after_modify, query_context);
         alter_entry->have_mutation = !maybe_mutation_commands.empty();
 
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", alter_entry->toString(), zkutil::CreateMode::PersistentSequential));
@@ -5307,7 +5323,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
     queue.pullLogsToQueue(getZooKeeper());
     /// This is significant, because the execution of this task could be delayed at BackgroundPool.
     /// And we force it to be executed.
-    queue_task_handle->wake();
+    queue_task_handle->signalReadyToRun();
 
     Poco::Event target_size_event;
     auto callback = [&target_size_event, queue_size] (size_t new_queue_size)

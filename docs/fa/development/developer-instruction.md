@@ -143,7 +143,7 @@ toc_title: "\u062F\u0633\u062A\u0648\u0631\u0627\u0644\u0639\u0645\u0644 \u062A\
 
 برای نصب شورای همکاری خلیج فارس در اوبونتو اجرای: `sudo apt install gcc g++`
 
-بررسی نسخه شورای همکاری خلیج فارس: `gcc --version`. اگر زیر است 9, سپس دستورالعمل اینجا را دنبال کنید: https://clickhouse.فناوری / اسناد / ارتباطات / توسعه/ساختن / \#نصب شورای همکاری خلیج فارس-9.
+بررسی نسخه شورای همکاری خلیج فارس: `gcc --version`. اگر زیر است 9, سپس دستورالعمل اینجا را دنبال کنید: https://clickhouse.tech/docs/fa/development/build/#install-gcc-9.
 
 سیستم عامل مک ایکس ساخت فقط برای صدای جرنگ جرنگ پشتیبانی می شود. فقط فرار کن `brew install llvm`
 
@@ -251,7 +251,7 @@ KDevelop و QTCreator دیگر از جایگزین های بسیار خوبی ا
 
 تست نوشتن: https://clickhouse.فناوری / اسناد/توسعه/تست/
 
-فهرست تکلیفها: https://github.com/ClickHouse/ClickHouse/blob/master/testsructions/easy\_tasks\_sorted\_en.md
+فهرست تکلیفها: https://github.com/ClickHouse/ClickHouse/contribute
 
 # داده های تست {#test-data}
 
