@@ -66,22 +66,22 @@ class S3AuthSigner : public Aws::Client::AWSAuthV4Signer
 {
 public:
     S3AuthSigner(
-        const Aws::Client::ClientConfiguration & clientConfiguration,
+        const Aws::Client::ClientConfiguration & client_configuration,
         const Aws::Auth::AWSCredentials & credentials,
         const DB::HeaderCollection & headers_)
         : Aws::Client::AWSAuthV4Signer(
             std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials),
             "s3",
-            clientConfiguration.region,
+            client_configuration.region,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
             false)
         , headers(headers_)
     {
     }
 
-    bool SignRequest(Aws::Http::HttpRequest & request, const char * region, bool signBody) const override
+    bool SignRequest(Aws::Http::HttpRequest & request, const char * region, bool sign_body) const override
     {
-        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, signBody);
+        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, sign_body);
         for (const auto & header : headers)
             request.SetHeaderValue(header.name, header.value);
         return result;
@@ -91,9 +91,9 @@ public:
         Aws::Http::HttpRequest & request,
         const char * region,
         const char * serviceName,
-        long long expirationTimeInSeconds) const override // NOLINT
+        long long expiration_time_sec) const override // NOLINT
     {
-        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, serviceName, expirationTimeInSeconds);
+        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, serviceName, expiration_time_sec);
         for (const auto & header : headers)
             request.SetHeaderValue(header.name, header.value);
         return result;
