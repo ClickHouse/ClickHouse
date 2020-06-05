@@ -74,6 +74,18 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
         throw Exception("Table function '" + getName() + "' requires 2 or more arguments: structure and values.",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+    // All the arguments must be literals.
+    for (const auto & arg : args)
+    {
+        if (!arg->as<const ASTLiteral>())
+        {
+            throw Exception(fmt::format(
+                "All arguments of table function '{}' must be literals. "
+                "Got '{}' instead", getName(), arg->formatForErrorMessage()),
+                ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
+
     /// Parsing first argument as table structure and creating a sample block
     std::string structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
