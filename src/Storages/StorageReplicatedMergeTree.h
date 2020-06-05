@@ -117,9 +117,9 @@ public:
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    /** Removes a specific replica from Zookeeper.
+    /** Remove a specific replica from zookeeper.
      */
-    void dropReplica(const String & replica_name);
+    void dropReplica(const String & replica, bool is_drop_table);
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
@@ -183,6 +183,10 @@ public:
     bool canUseAdaptiveGranularity() const override;
 
     int getMetadataVersion() const { return metadata_version; }
+
+    /** Remove a specific replica from zookeeper by zkpath.
+     */
+    static void dropReplicaByZkPath(Context & context, const String & replica_zk_path, const String & replica);
 
 private:
 
@@ -306,10 +310,6 @@ private:
     /** Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
       */
     void createReplica();
-
-    /** Remove replica by name
-     */
-    void removeReplica(const String & replica);
 
     /** Create nodes in the ZK, which must always be, but which might not exist when older versions of the server are running.
       */
