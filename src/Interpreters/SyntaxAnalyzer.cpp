@@ -598,7 +598,7 @@ void SyntaxAnalyzerResult::collectSourceColumns(bool add_special)
 /// Calculate which columns are required to execute the expression.
 /// Then, delete all other columns from the list of available columns.
 /// After execution, columns will only contain the list of columns needed to read from the table.
-void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
+void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, bool is_select)
 {
     /// We calculate required_source_columns with source_columns modifications and swap them on exit
     required_source_columns = source_columns;
@@ -648,12 +648,11 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
                 required.insert(column_name_type.name);
     }
 
-    const auto * select_query = query->as<ASTSelectQuery>();
-
     /// You need to read at least one column to find the number of rows.
-    if (select_query && required.empty())
+    if (is_select && required.empty())
     {
-        maybe_optimize_trivial_count = true;
+        optimize_trivial_count = true;
+
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
         struct ColumnSizeTuple
@@ -662,12 +661,14 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
             size_t type_size;
             size_t uncompressed_size;
             String name;
+
             bool operator<(const ColumnSizeTuple & that) const
             {
                 return std::tie(compressed_size, type_size, uncompressed_size)
                     < std::tie(that.compressed_size, that.type_size, that.uncompressed_size);
             }
         };
+
         std::vector<ColumnSizeTuple> columns;
         if (storage)
         {
@@ -681,6 +682,7 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
                 columns.emplace_back(ColumnSizeTuple{c->second.data_compressed, type_size, c->second.data_uncompressed, source_column.name});
             }
         }
+
         if (!columns.empty())
             required.insert(std::min_element(columns.begin(), columns.end())->name);
         else
@@ -759,6 +761,7 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
 
     required_source_columns.swap(source_columns);
 }
+
 
 SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     ASTPtr & query,
@@ -848,7 +851,14 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     }
 
     result.aggregates = getAggregates(query, *select_query);
-    result.collectUsedColumns(query);
+    result.collectUsedColumns(query, true);
+
+    if (result.optimize_trivial_count)
+        result.optimize_trivial_count = settings.optimize_trivial_count_query &&
+            !select_query->where() && !select_query->prewhere() && !select_query->groupBy() && !select_query->having() &&
+            !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final() &&
+            (tables_with_column_names.size() < 2 || isLeft(result.analyzed_join->kind()));
+
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
@@ -882,7 +892,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
     else
         assertNoAggregates(query, "in wrong place");
 
-    result.collectUsedColumns(query);
+    result.collectUsedColumns(query, false);
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
