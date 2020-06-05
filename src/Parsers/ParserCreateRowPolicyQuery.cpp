@@ -11,6 +11,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
 #include <ext/range.h>
+#include <boost/range/algorithm_ext/push_back.hpp>
 
 
 namespace DB
@@ -33,7 +34,7 @@ namespace
         });
     }
 
-    bool parseAsRestrictiveOrPermissive(IParserBase::Pos & pos, Expected & expected, std::optional<bool> & is_restrictive)
+    bool parseAsRestrictiveOrPermissive(IParserBase::Pos & pos, Expected & expected, bool & is_restrictive)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -54,7 +55,7 @@ namespace
         });
     }
 
-    bool parseConditionalExpression(IParserBase::Pos & pos, Expected & expected, std::optional<ASTPtr> & expr)
+    bool parseConditionalExpression(IParserBase::Pos & pos, Expected & expected, ASTPtr & expr)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -74,67 +75,79 @@ namespace
         });
     }
 
-    bool parseConditions(
-        IParserBase::Pos & pos, Expected & expected, bool alter, std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> & conditions)
+    void addAllCommands(boost::container::flat_set<std::string_view> & commands)
+    {
+        for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
+        {
+            const std::string_view & command = ConditionTypeInfo::get(condition_type).command;
+            commands.emplace(command);
+        }
+    }
+
+    bool parseCommands(IParserBase::Pos & pos, Expected & expected, boost::container::flat_set<std::string_view> & commands)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (ParserKeyword{"ALL"}.ignore(pos, expected))
+            {
+                addAllCommands(commands);
+                return true;
+            }
+
+            boost::container::flat_set<std::string_view> res_commands;
+            do
+            {
+                bool found_keyword = false;
+                for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
+                {
+                    const std::string_view & command = ConditionTypeInfo::get(condition_type).command;
+                    if (ParserKeyword{command.data()}.ignore(pos, expected))
+                    {
+                        res_commands.emplace(command);
+                        found_keyword = true;
+                        break;
+                    }
+                }
+
+                if (!found_keyword)
+                    return false;
+            }
+            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+
+            commands = std::move(res_commands);
+            return true;
+        });
+    }
+
+    bool parseForClause(IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<std::pair<ConditionType, ASTPtr>> & conditions)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             boost::container::flat_set<std::string_view> commands;
 
-            auto add_all_commands = [&]
-            {
-                for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
-                {
-                    const std::string_view & command = ConditionTypeInfo::get(condition_type).command;
-                    commands.emplace(command);
-                }
-            };
-
             if (ParserKeyword{"FOR"}.ignore(pos, expected))
             {
-                do
-                {
-                    size_t old_size = commands.size();
-                    if (ParserKeyword{"ALL"}.ignore(pos, expected))
-                    {
-                        add_all_commands();
-                    }
-                    else
-                    {
-                        for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
-                        {
-                            const std::string_view & command = ConditionTypeInfo::get(condition_type).command;
-                            if (ParserKeyword{command.data()}.ignore(pos, expected))
-                            {
-                                commands.emplace(command);
-                                break;
-                            }
-                        }
-                    }
-                    if (commands.size() == old_size)
-                        return false;
-                }
-                while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+                if (!parseCommands(pos, expected, commands))
+                    return false;
             }
+            else
+                addAllCommands(commands);
 
             std::optional<ASTPtr> filter;
             std::optional<ASTPtr> check;
             if (ParserKeyword{"USING"}.ignore(pos, expected))
             {
-                if (!parseConditionalExpression(pos, expected, filter))
+                if (!parseConditionalExpression(pos, expected, filter.emplace()))
                     return false;
             }
             if (ParserKeyword{"WITH CHECK"}.ignore(pos, expected))
             {
-                if (!parseConditionalExpression(pos, expected, check))
+                if (!parseConditionalExpression(pos, expected, check.emplace()))
                     return false;
             }
 
             if (!filter && !check)
                 return false;
-
-            if (commands.empty())
-                add_all_commands();
 
             if (!check && !alter)
                 check = filter;
@@ -145,9 +158,9 @@ namespace
                 if (commands.count(type_info.command))
                 {
                     if (type_info.is_check && check)
-                        conditions[condition_type] = check;
+                        conditions.emplace_back(condition_type, *check);
                     else if (filter)
-                        conditions[condition_type] = filter;
+                        conditions.emplace_back(condition_type, *filter);
                 }
             }
 
@@ -155,15 +168,15 @@ namespace
         });
     }
 
-    bool parseMultipleConditions(
-        IParserBase::Pos & pos, Expected & expected, bool alter, std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> & conditions)
+    bool parseForClauses(
+        IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<std::pair<ConditionType, ASTPtr>> & conditions)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> res_conditions;
+            std::vector<std::pair<ConditionType, ASTPtr>> res_conditions;
             do
             {
-                if (!parseConditions(pos, expected, alter, res_conditions))
+                if (!parseForClause(pos, expected, alter, res_conditions))
                     return false;
             }
             while (ParserToken{TokenType::Comma}.ignore(pos, expected));
@@ -178,7 +191,7 @@ namespace
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected))
+            if (!ParserKeyword{"TO"}.ignore(pos, expected))
                 return false;
 
             ParserRolesOrUsersSet roles_p;
@@ -244,18 +257,29 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     String new_short_name;
     std::optional<bool> is_restrictive;
-    std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> conditions;
+    std::vector<std::pair<ConditionType, ASTPtr>> conditions;
 
     while (true)
     {
         if (alter && new_short_name.empty() && (names->name_parts.size() == 1) && parseRenameTo(pos, expected, new_short_name))
             continue;
 
-        if (!is_restrictive && parseAsRestrictiveOrPermissive(pos, expected, is_restrictive))
-            continue;
+        if (!is_restrictive)
+        {
+            bool new_is_restrictive;
+            if (parseAsRestrictiveOrPermissive(pos, expected, new_is_restrictive))
+            {
+                is_restrictive = new_is_restrictive;
+                continue;
+            }
+        }
 
-        if (parseMultipleConditions(pos, expected, alter, conditions))
+        std::vector<std::pair<ConditionType, ASTPtr>> new_conditions;
+        if (parseForClauses(pos, expected, alter, new_conditions))
+        {
+            boost::range::push_back(conditions, std::move(new_conditions));
             continue;
+        }
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
             continue;

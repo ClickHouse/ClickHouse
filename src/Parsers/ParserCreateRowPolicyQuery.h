@@ -7,7 +7,7 @@ namespace DB
 {
 /** Parses queries like
   * CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] name ON [database.]table
-  *      [AS {PERMISSIVE | RESTRICTIVE}]
+  *      [AS {permissive | restrictive}]
   *      [FOR {SELECT | INSERT | UPDATE | DELETE | ALL}]
   *      [USING condition]
   *      [WITH CHECK condition] [,...]
@@ -15,7 +15,7 @@ namespace DB
   *
   * ALTER [ROW] POLICY [IF EXISTS] name ON [database.]table
   *      [RENAME TO new_name]
-  *      [AS {PERMISSIVE | RESTRICTIVE}]
+  *      [AS {permissive | restrictive}]
   *      [FOR {SELECT | INSERT | UPDATE | DELETE | ALL}]
   *      [USING {condition | NONE}]
   *      [WITH CHECK {condition | NONE}] [,...]

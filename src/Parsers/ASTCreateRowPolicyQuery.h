@@ -3,7 +3,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Access/RowPolicy.h>
-#include <array>
 #include <optional>
 
 
@@ -13,7 +12,7 @@ class ASTRowPolicyNames;
 class ASTRolesOrUsersSet;
 
 /** CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] name ON [database.]table
-  *      [AS {PERMISSIVE | RESTRICTIVE}]
+  *      [AS {permissive | restrictive}]
   *      [FOR {SELECT | INSERT | UPDATE | DELETE | ALL}]
   *      [USING condition]
   *      [WITH CHECK condition] [,...]
@@ -21,7 +20,7 @@ class ASTRolesOrUsersSet;
   *
   * ALTER [ROW] POLICY [IF EXISTS] name ON [database.]table
   *      [RENAME TO new_name]
-  *      [AS {PERMISSIVE | RESTRICTIVE}]
+  *      [AS {permissive | restrictive}]
   *      [FOR {SELECT | INSERT | UPDATE | DELETE | ALL}]
   *      [USING {condition | NONE}]
   *      [WITH CHECK {condition | NONE}] [,...]
@@ -41,7 +40,7 @@ public:
     String new_short_name;
 
     std::optional<bool> is_restrictive;
-    std::array<std::optional<ASTPtr>, RowPolicy::MAX_CONDITION_TYPE> conditions; /// `nullopt` means "not set", `nullptr` means set to NONE.
+    std::vector<std::pair<RowPolicy::ConditionType, ASTPtr>> conditions; /// `nullptr` means set to NONE.
 
     std::shared_ptr<ASTRolesOrUsersSet> roles;
 
