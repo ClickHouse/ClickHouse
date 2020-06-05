@@ -176,6 +176,8 @@ SRCS(
     VirtualColumnUtils.cpp
     extractKeyExpressionList.cpp
     TTLDescription.cpp
+    KeyDescription.cpp
+    SelectQueryDescription.cpp
 )
 
 END()

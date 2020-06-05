@@ -15,7 +15,9 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TTLDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/ColumnDependency.h>
+#include <Storages/SelectQueryDescription.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -152,6 +154,15 @@ public: /// thread-unsafe part. lockStructure must be acquired
     const ConstraintsDescription & getConstraints() const;
     void setConstraints(ConstraintsDescription constraints_);
 
+    /// Storage settings
+    ASTPtr getSettingsChanges() const;
+    void setSettingsChanges(const ASTPtr & settings_changes_);
+    bool hasSettingsChanges() const { return settings_changes != nullptr; }
+
+    const SelectQueryDescription & getSelectQuery() const;
+    void setSelectQuery(const SelectQueryDescription & select_);
+    bool hasSelectQuery() const;
+
     /// Returns storage metadata copy. Direct modification of
     /// result structure doesn't affect storage.
     virtual StorageInMemoryMetadata getInMemoryMetadata() const;
@@ -203,13 +214,16 @@ private:
     IndicesDescription secondary_indices;
     ConstraintsDescription constraints;
 
-    StorageMetadataKeyField partition_key;
-    StorageMetadataKeyField primary_key;
-    StorageMetadataKeyField sorting_key;
-    StorageMetadataKeyField sampling_key;
+    KeyDescription partition_key;
+    KeyDescription primary_key;
+    KeyDescription sorting_key;
+    KeyDescription sampling_key;
 
     TTLColumnsDescription column_ttls_by_name;
     TTLTableDescription table_ttl;
+
+    ASTPtr settings_changes;
+    SelectQueryDescription select;
 
 private:
     RWLockImpl::LockHolder tryLockTimed(
@@ -443,10 +457,10 @@ public:
     virtual Strings getDataPaths() const { return {}; }
 
     /// Returns structure with partition key.
-    const StorageMetadataKeyField & getPartitionKey() const;
+    const KeyDescription & getPartitionKey() const;
     /// Set partition key for storage (methods bellow, are just wrappers for this
     /// struct).
-    void setPartitionKey(const StorageMetadataKeyField & partition_key_);
+    void setPartitionKey(const KeyDescription & partition_key_);
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
     ASTPtr getPartitionKeyAST() const { return partition_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) partition key.
@@ -458,10 +472,10 @@ public:
 
 
     /// Returns structure with sorting key.
-    const StorageMetadataKeyField & getSortingKey() const;
+    const KeyDescription & getSortingKey() const;
     /// Set sorting key for storage (methods bellow, are just wrappers for this
     /// struct).
-    void setSortingKey(const StorageMetadataKeyField & sorting_key_);
+    void setSortingKey(const KeyDescription & sorting_key_);
     /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
     ASTPtr getSortingKeyAST() const { return sorting_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sorting key.
@@ -475,10 +489,10 @@ public:
     Names getSortingKeyColumns() const;
 
     /// Returns structure with primary key.
-    const StorageMetadataKeyField & getPrimaryKey() const;
+    const KeyDescription & getPrimaryKey() const;
     /// Set primary key for storage (methods bellow, are just wrappers for this
     /// struct).
-    void setPrimaryKey(const StorageMetadataKeyField & primary_key_);
+    void setPrimaryKey(const KeyDescription & primary_key_);
     /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
     ASTPtr getPrimaryKeyAST() const { return primary_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sorting key.
@@ -493,10 +507,10 @@ public:
     Names getPrimaryKeyColumns() const;
 
     /// Returns structure with sampling key.
-    const StorageMetadataKeyField & getSamplingKey() const;
+    const KeyDescription & getSamplingKey() const;
     /// Set sampling key for storage (methods bellow, are just wrappers for this
     /// struct).
-    void setSamplingKey(const StorageMetadataKeyField & sampling_key_);
+    void setSamplingKey(const KeyDescription & sampling_key_);
     /// Returns sampling expression AST for storage or nullptr if there is none.
     ASTPtr getSamplingKeyAST() const { return sampling_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sampling key.

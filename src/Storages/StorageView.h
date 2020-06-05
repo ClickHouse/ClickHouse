@@ -33,9 +33,6 @@ public:
 
     ASTPtr getRuntimeViewQuery(ASTSelectQuery * outer_query, const Context & context, bool normalize);
 
-private:
-    ASTPtr inner_query;
-
 protected:
     StorageView(
         const StorageID & table_id_,

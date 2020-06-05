@@ -131,7 +131,6 @@ MergeTreeData::MergeTreeData(
     : IStorage(table_id_)
     , global_context(context_)
     , merging_params(merging_params_)
-    , settings_ast(metadata.settings_ast)
     , require_part_metadata(require_part_metadata_)
     , relative_data_path(relative_data_path_)
     , broken_part_callback(broken_part_callback_)
@@ -145,6 +144,7 @@ MergeTreeData::MergeTreeData(
     if (relative_data_path.empty())
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
+    setSettingsChanges(metadata.settings_ast);
     const auto settings = getSettings();
     setProperties(metadata, /*only_check*/ false, attach);
 
@@ -153,7 +153,7 @@ MergeTreeData::MergeTreeData(
 
     if (metadata.sample_by_ast != nullptr)
     {
-        StorageMetadataKeyField candidate_sampling_key = StorageMetadataKeyField::getKeyFromAST(metadata.sample_by_ast, getColumns(), global_context);
+        KeyDescription candidate_sampling_key = KeyDescription::getKeyFromAST(metadata.sample_by_ast, getColumns(), global_context);
 
         const auto & pk_sample_block = getPrimaryKey().sample_block;
         if (!pk_sample_block.has(candidate_sampling_key.column_names[0]) && !attach
@@ -265,8 +265,8 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
     if (isSamplingKeyDefined())
         metadata.sample_by_ast = getSamplingKeyAST()->clone();
 
-    if (settings_ast)
-        metadata.settings_ast = settings_ast->clone();
+    if (hasSettingsChanges())
+        metadata.settings_ast = getSettingsChanges();
 
     return metadata;
 }
@@ -444,7 +444,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     {
         setColumns(std::move(metadata.columns));
 
-        StorageMetadataKeyField new_sorting_key;
+        KeyDescription new_sorting_key;
         new_sorting_key.definition_ast = metadata.order_by_ast;
         new_sorting_key.column_names = std::move(new_sorting_key_columns);
         new_sorting_key.expression_list_ast = std::move(new_sorting_key_expr_list);
@@ -453,7 +453,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         new_sorting_key.data_types = std::move(new_sorting_key_data_types);
         setSortingKey(new_sorting_key);
 
-        StorageMetadataKeyField new_primary_key;
+        KeyDescription new_primary_key;
         new_primary_key.definition_ast = metadata.primary_key_ast;
         new_primary_key.column_names = std::move(new_primary_key_columns);
         new_primary_key.expression_list_ast = std::move(new_primary_key_expr_list);
@@ -472,7 +472,7 @@ namespace
 {
 
 ExpressionActionsPtr getCombinedIndicesExpression(
-    const StorageMetadataKeyField & key,
+    const KeyDescription & key,
     const IndicesDescription & indices,
     const ColumnsDescription & columns,
     const Context & context)
@@ -523,7 +523,7 @@ ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
 
 void MergeTreeData::initPartitionKey(ASTPtr partition_by_ast)
 {
-    StorageMetadataKeyField new_partition_key = StorageMetadataKeyField::getKeyFromAST(partition_by_ast, getColumns(), global_context);
+    KeyDescription new_partition_key = KeyDescription::getKeyFromAST(partition_by_ast, getColumns(), global_context);
 
     if (new_partition_key.expression_list_ast->children.empty())
         return;
@@ -1460,9 +1460,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 
     setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast, /* only_check = */ true);
 
-    if (settings_ast)
+    if (hasSettingsChanges())
     {
-        const auto & current_changes = settings_ast->as<const ASTSetQuery &>().changes;
+
+        const auto & current_changes = getSettingsChanges()->as<const ASTSetQuery &>().changes;
         const auto & new_changes = metadata.settings_ast->as<const ASTSetQuery &>().changes;
         for (const auto & changed_setting : new_changes)
         {
@@ -1601,7 +1602,7 @@ void MergeTreeData::changeSettings(
         MergeTreeSettings copy = *getSettings();
         copy.applyChanges(new_changes);
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
-        settings_ast = new_settings;
+        setSettingsChanges(new_settings);
     }
 }
 

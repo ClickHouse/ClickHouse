@@ -677,8 +677,6 @@ protected:
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
 
-    ASTPtr settings_ast;
-
     bool require_part_metadata;
 
     String relative_data_path;

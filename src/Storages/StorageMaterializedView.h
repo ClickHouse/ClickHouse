@@ -19,8 +19,6 @@ public:
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
 
-    ASTPtr getSelectQuery() const { return select->clone(); }
-    ASTPtr getInnerQuery() const { return inner_query->clone(); }
     bool hasInnerTable() const { return has_inner_table; }
 
     StorageInMemoryMetadata getInMemoryMetadata() const override;
@@ -76,13 +74,8 @@ public:
     Strings getDataPaths() const override;
 
 private:
-    /// Can be empty if SELECT query doesn't contain table
-    StorageID select_table_id = StorageID::createEmpty();
     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();
-
-    ASTPtr select;
-    ASTPtr inner_query;
 
     Context & global_context;
     bool has_inner_table = false;
