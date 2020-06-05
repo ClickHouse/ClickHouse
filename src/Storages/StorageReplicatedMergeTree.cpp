@@ -483,20 +483,22 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
             ParserNotEmptyExpressionList parser(false);
             auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
+            ASTPtr order_by_ast;
             if (new_sorting_key_expr_list->children.size() == 1)
-                metadata.order_by_ast = new_sorting_key_expr_list->children[0];
+                order_by_ast = new_sorting_key_expr_list->children[0];
             else
             {
                 auto tuple = makeASTFunction("tuple");
                 tuple->arguments->children = new_sorting_key_expr_list->children;
-                metadata.order_by_ast = tuple;
+                order_by_ast = tuple;
             }
+            metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, global_context);
 
             if (!isPrimaryKeyDefined())
             {
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
-                metadata.primary_key_ast = getSortingKeyAST()->clone();
+                metadata.primary_key = getSortingKey();
             }
         }
 
@@ -509,7 +511,8 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         if (metadata_diff.ttl_table_changed)
         {
             ParserTTLExpressionList parser;
-            metadata.ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            auto ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl_for_table_ast, metadata.columns, global_context, metadata.primary_key);
         }
     }
 
@@ -519,7 +522,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
     setProperties(metadata);
-    setTTLExpressions(new_columns, metadata.ttl_for_table_ast);
+    setTTLExpressions(new_columns, metadata.table_ttl);
 }
 
 
@@ -3295,7 +3298,7 @@ void StorageReplicatedMergeTree::alter(
         params.apply(metadata, query_context);
 
 
-        changeSettings(metadata.settings_ast, table_lock_holder);
+        changeSettings(metadata.settings_changes, table_lock_holder);
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata);
         return;
@@ -3329,11 +3332,11 @@ void StorageReplicatedMergeTree::alter(
         params.apply(future_metadata, query_context);
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this);
-        if (ast_to_str(future_metadata.order_by_ast) != ast_to_str(current_metadata.order_by_ast))
-            future_metadata_in_zk.sorting_key = serializeAST(*extractKeyExpressionList(future_metadata.order_by_ast));
+        if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata.sorting_key.definition_ast))
+            future_metadata_in_zk.sorting_key = serializeAST(*future_metadata.sorting_key.expression_list_ast);
 
-        if (ast_to_str(future_metadata.ttl_for_table_ast) != ast_to_str(current_metadata.ttl_for_table_ast))
-            future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.ttl_for_table_ast);
+        if (ast_to_str(future_metadata.table_ttl.definition_ast) != ast_to_str(current_metadata.table_ttl.definition_ast))
+            future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.table_ttl.definition_ast);
 
         String new_indices_str = future_metadata.secondary_indices.toString();
         if (new_indices_str != current_metadata.secondary_indices.toString())
@@ -3352,13 +3355,13 @@ void StorageReplicatedMergeTree::alter(
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/columns", new_columns_str, -1));
 
 
-        if (ast_to_str(current_metadata.settings_ast) != ast_to_str(future_metadata.settings_ast))
+        if (ast_to_str(current_metadata.settings_changes) != ast_to_str(future_metadata.settings_changes))
         {
             lockStructureExclusively(
                     table_lock_holder, query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
             /// Just change settings
-            current_metadata.settings_ast = future_metadata.settings_ast;
-            changeSettings(current_metadata.settings_ast, table_lock_holder);
+            current_metadata.settings_changes = future_metadata.settings_changes;
+            changeSettings(current_metadata.settings_changes, table_lock_holder);
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, current_metadata);
         }
 

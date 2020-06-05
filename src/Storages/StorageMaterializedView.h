@@ -21,8 +21,6 @@ public:
 
     bool hasInnerTable() const { return has_inner_table; }
 
-    StorageInMemoryMetadata getInMemoryMetadata() const override;
-
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }

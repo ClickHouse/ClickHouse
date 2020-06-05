@@ -260,7 +260,7 @@ void StorageMergeTree::alter(
     {
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-        changeSettings(metadata.settings_ast, table_lock_holder);
+        changeSettings(metadata.settings_changes, table_lock_holder);
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     }
@@ -271,11 +271,11 @@ void StorageMergeTree::alter(
             auto merges_block = getActionLock(ActionLocks::PartsMerge);
             lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-            changeSettings(metadata.settings_ast, table_lock_holder);
+            changeSettings(metadata.settings_changes, table_lock_holder);
             /// Reinitialize primary key because primary key column types might have changed.
             setProperties(metadata);
 
-            setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast);
+            setTTLExpressions(metadata.columns, metadata.table_ttl);
 
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
 

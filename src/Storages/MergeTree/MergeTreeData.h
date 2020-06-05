@@ -333,9 +333,6 @@ public:
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
 
-    /// See comments about methods below in IStorage interface
-    StorageInMemoryMetadata getInMemoryMetadata() const override;
-
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool supportsPrewhere() const override { return true; }
@@ -785,10 +782,10 @@ protected:
 
     void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false, bool attach = false);
 
-    void initPartitionKey(ASTPtr partition_by_ast);
+    void initPartitionKey(const KeyDescription & new_partition_key);
 
     void setTTLExpressions(const ColumnsDescription & columns,
-        const ASTPtr & new_ttl_table_ast, bool only_check = false);
+        const TTLTableDescription & new_table_ttl, bool only_check = false);
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 

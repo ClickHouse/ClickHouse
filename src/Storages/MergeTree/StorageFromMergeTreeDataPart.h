@@ -39,11 +39,6 @@ public:
         return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
     }
 
-    StorageInMemoryMetadata getInMemoryMetadata() const override
-    {
-        return part->storage.getInMemoryMetadata();
-    }
-
     NamesAndTypesList getVirtuals() const override
     {
         return part->storage.getVirtuals();

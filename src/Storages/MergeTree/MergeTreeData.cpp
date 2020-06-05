@@ -144,23 +144,21 @@ MergeTreeData::MergeTreeData(
     if (relative_data_path.empty())
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    setSettingsChanges(metadata.settings_ast);
+    setSettingsChanges(metadata.settings_changes);
     const auto settings = getSettings();
     setProperties(metadata, /*only_check*/ false, attach);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
 
-    if (metadata.sample_by_ast != nullptr)
+    if (metadata.sampling_key.definition_ast != nullptr)
     {
-        KeyDescription candidate_sampling_key = KeyDescription::getKeyFromAST(metadata.sample_by_ast, getColumns(), global_context);
-
         const auto & pk_sample_block = getPrimaryKey().sample_block;
-        if (!pk_sample_block.has(candidate_sampling_key.column_names[0]) && !attach
+        if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !attach
             && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
-        setSamplingKey(candidate_sampling_key);
+        setSamplingKey(metadata.sampling_key);
     }
 
     MergeTreeDataFormatVersion min_format_version(0);
@@ -169,7 +167,8 @@ MergeTreeData::MergeTreeData(
         try
         {
             auto partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
-            initPartitionKey(partition_by_ast);
+            auto partition_key = KeyDescription::getKeyFromAST(partition_by_ast, getColumns(), global_context);
+            initPartitionKey(partition_key);
 
             if (minmax_idx_date_column_pos == -1)
                 throw Exception("Could not find Date column", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -184,11 +183,11 @@ MergeTreeData::MergeTreeData(
     else
     {
         is_custom_partitioned = true;
-        initPartitionKey(metadata.partition_by_ast);
+        initPartitionKey(metadata.partition_key);
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
-    setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast);
+    setTTLExpressions(metadata.columns, metadata.table_ttl);
 
     /// format_file always contained on any data path
     PathWithDisk version_file;
@@ -245,32 +244,6 @@ MergeTreeData::MergeTreeData(
         LOG_WARNING(log, "{} Settings 'min_bytes_for_wide_part' and 'min_bytes_for_wide_part' will be ignored.", reason);
 }
 
-
-StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
-{
-    StorageInMemoryMetadata metadata(getColumns(), getSecondaryIndices(), getConstraints());
-
-    if (isPartitionKeyDefined())
-        metadata.partition_by_ast = getPartitionKeyAST()->clone();
-
-    if (isSortingKeyDefined())
-        metadata.order_by_ast = getSortingKeyAST()->clone();
-
-    if (isPrimaryKeyDefined())
-        metadata.primary_key_ast = getPrimaryKeyAST()->clone();
-
-    if (hasAnyTableTTL())
-        metadata.ttl_for_table_ast = getTableTTLs().definition_ast->clone();
-
-    if (isSamplingKeyDefined())
-        metadata.sample_by_ast = getSamplingKeyAST()->clone();
-
-    if (hasSettingsChanges())
-        metadata.settings_ast = getSettingsChanges();
-
-    return metadata;
-}
-
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 {
     return global_context.getStoragePolicy(getSettings()->storage_policy);
@@ -306,35 +279,43 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 
 void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool only_check, bool attach)
 {
-    if (!metadata.order_by_ast)
+    KeyDescription new_sorting_key = metadata.sorting_key;
+    KeyDescription new_primary_key = metadata.primary_key;
+
+    if (!new_sorting_key.definition_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
-    ASTPtr new_sorting_key_expr_list = extractKeyExpressionList(metadata.order_by_ast);
-    ASTPtr new_primary_key_expr_list = metadata.primary_key_ast
-        ? extractKeyExpressionList(metadata.primary_key_ast) : new_sorting_key_expr_list->clone();
-
     if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
-        new_sorting_key_expr_list->children.push_back(std::make_shared<ASTIdentifier>(merging_params.version_column));
+        new_sorting_key = KeyDescription::getKeyFromAST(
+            metadata.sorting_key.definition_ast,
+            metadata.columns,
+            global_context,
+            std::make_shared<ASTIdentifier>(merging_params.version_column));
 
-    size_t primary_key_size = new_primary_key_expr_list->children.size();
-    size_t sorting_key_size = new_sorting_key_expr_list->children.size();
+    /// Primary key not defined at all
+    if (new_primary_key.definition_ast == nullptr)
+    {
+        /// We copy sorting key, and restore definition_ast to empty value
+        new_primary_key = metadata.sorting_key;
+        new_primary_key.definition_ast = nullptr;
+    }
+
+    size_t sorting_key_size = new_sorting_key.column_names.size();
+    size_t primary_key_size = new_primary_key.column_names.size();
     if (primary_key_size > sorting_key_size)
         throw Exception("Primary key must be a prefix of the sorting key, but its length: "
             + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sorting_key_size),
             ErrorCodes::BAD_ARGUMENTS);
 
-    Names new_primary_key_columns;
-    Names new_sorting_key_columns;
     NameSet primary_key_columns_set;
 
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
-        String sorting_key_column = new_sorting_key_expr_list->children[i]->getColumnName();
-        new_sorting_key_columns.push_back(sorting_key_column);
+        const String & sorting_key_column = new_sorting_key.column_names[i];
 
         if (i < primary_key_size)
         {
-            String pk_column = new_primary_key_expr_list->children[i]->getColumnName();
+            const String & pk_column = new_primary_key.column_names[i];
             if (pk_column != sorting_key_column)
                 throw Exception("Primary key must be a prefix of the sorting key, but in position "
                     + toString(i) + " its column is " + pk_column + ", not " + sorting_key_column,
@@ -343,7 +324,6 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
             if (!primary_key_columns_set.emplace(pk_column).second)
                 throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
-            new_primary_key_columns.push_back(pk_column);
         }
     }
 
@@ -355,6 +335,9 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
         /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
 
+        Names new_primary_key_columns = new_primary_key.column_names;
+        Names new_sorting_key_columns = new_sorting_key.column_names;
+
         ASTPtr added_key_column_expr_list = std::make_shared<ASTExpressionList>();
         const auto & old_sorting_key_columns = getSortingKeyColumns();
         for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
@@ -362,12 +345,12 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
             if (old_i < old_sorting_key_columns.size())
             {
                 if (new_sorting_key_columns[new_i] != old_sorting_key_columns[old_i])
-                    added_key_column_expr_list->children.push_back(new_sorting_key_expr_list->children[new_i]);
+                    added_key_column_expr_list->children.push_back(new_sorting_key.expression_list_ast->children[new_i]);
                 else
                     ++old_i;
             }
             else
-                added_key_column_expr_list->children.push_back(new_sorting_key_expr_list->children[new_i]);
+                added_key_column_expr_list->children.push_back(new_sorting_key.expression_list_ast->children[new_i]);
         }
 
         if (!added_key_column_expr_list->children.empty())
@@ -394,37 +377,9 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         }
     }
 
-    auto new_sorting_key_syntax = SyntaxAnalyzer(global_context).analyze(new_sorting_key_expr_list, all_columns);
-    auto new_sorting_key_expr = ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, global_context)
-        .getActions(false);
-    auto new_sorting_key_sample =
-        ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, global_context)
-        .getActions(true)->getSampleBlock();
-
-    checkKeyExpression(*new_sorting_key_expr, new_sorting_key_sample, "Sorting");
-
-    auto new_primary_key_syntax = SyntaxAnalyzer(global_context).analyze(new_primary_key_expr_list, all_columns);
-    auto new_primary_key_expr = ExpressionAnalyzer(new_primary_key_expr_list, new_primary_key_syntax, global_context)
-        .getActions(false);
-
-    Block new_primary_key_sample;
-    DataTypes new_primary_key_data_types;
-    for (size_t i = 0; i < primary_key_size; ++i)
-    {
-        const auto & elem = new_sorting_key_sample.getByPosition(i);
-        new_primary_key_sample.insert(elem);
-        new_primary_key_data_types.push_back(elem.type);
-    }
-
-    DataTypes new_sorting_key_data_types;
-    for (size_t i = 0; i < sorting_key_size; ++i)
-    {
-        new_sorting_key_data_types.push_back(new_sorting_key_sample.getByPosition(i).type);
-    }
-
     if (!metadata.secondary_indices.empty())
     {
-        std::set<String> indices_names;
+        std::unordered_set<String> indices_names;
 
         for (const auto & index : metadata.secondary_indices)
         {
@@ -444,22 +399,8 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     {
         setColumns(std::move(metadata.columns));
 
-        KeyDescription new_sorting_key;
-        new_sorting_key.definition_ast = metadata.order_by_ast;
-        new_sorting_key.column_names = std::move(new_sorting_key_columns);
-        new_sorting_key.expression_list_ast = std::move(new_sorting_key_expr_list);
-        new_sorting_key.expression = std::move(new_sorting_key_expr);
-        new_sorting_key.sample_block = std::move(new_sorting_key_sample);
-        new_sorting_key.data_types = std::move(new_sorting_key_data_types);
         setSortingKey(new_sorting_key);
 
-        KeyDescription new_primary_key;
-        new_primary_key.definition_ast = metadata.primary_key_ast;
-        new_primary_key.column_names = std::move(new_primary_key_columns);
-        new_primary_key.expression_list_ast = std::move(new_primary_key_expr_list);
-        new_primary_key.expression = std::move(new_primary_key_expr);
-        new_primary_key.sample_block = std::move(new_primary_key_sample);
-        new_primary_key.data_types = std::move(new_primary_key_data_types);
         setPrimaryKey(new_primary_key);
 
         setSecondaryIndices(metadata.secondary_indices);
@@ -521,10 +462,8 @@ ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
 }
 
 
-void MergeTreeData::initPartitionKey(ASTPtr partition_by_ast)
+void MergeTreeData::initPartitionKey(const KeyDescription & new_partition_key)
 {
-    KeyDescription new_partition_key = KeyDescription::getKeyFromAST(partition_by_ast, getColumns(), global_context);
-
     if (new_partition_key.expression_list_ast->children.empty())
         return;
 
@@ -580,10 +519,10 @@ void MergeTreeData::initPartitionKey(ASTPtr partition_by_ast)
 }
 
 
+/// Todo replace columns with TTL for columns
 void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
-        const ASTPtr & new_ttl_table_ast, bool only_check)
+        const TTLTableDescription & new_table_ttl, bool only_check)
 {
-
     auto new_column_ttls_asts = new_columns.getColumnTTLs();
 
     TTLColumnsDescription new_column_ttl_by_name = getColumnTTLs();
@@ -614,56 +553,24 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
             setColumnTTLs(new_column_ttl_by_name);
     }
 
-    if (new_ttl_table_ast)
+    if (new_table_ttl.definition_ast)
     {
-        TTLDescriptions update_move_ttl_entries;
-        TTLDescription update_rows_ttl_entry;
-
-        bool seen_delete_ttl = false;
-        for (const auto & ttl_element_ptr : new_ttl_table_ast->children)
+        for (const auto & move_ttl : new_table_ttl.move_ttl)
         {
-            const auto * ttl_element = ttl_element_ptr->as<ASTTTLElement>();
-            if (!ttl_element)
-                throw Exception("Unexpected AST element in TTL expression", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
-
-            if (ttl_element->destination_type == DataDestinationType::DELETE)
+            if (!getDestinationForTTL(move_ttl))
             {
-                if (seen_delete_ttl)
-                {
-                    throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
-                }
-
-                update_rows_ttl_entry = TTLDescription::getTTLFromAST(ttl_element_ptr, new_columns, global_context, getPrimaryKey());
-
-                seen_delete_ttl = true;
-            }
-            else
-            {
-                auto new_ttl_entry = TTLDescription::getTTLFromAST(ttl_element_ptr, new_columns, global_context, getPrimaryKey());
-
-                if (!getDestinationForTTL(new_ttl_entry))
-                {
-                    String message;
-                    if (new_ttl_entry.destination_type == DataDestinationType::DISK)
-                        message = "No such disk " + backQuote(new_ttl_entry.destination_name) + " for given storage policy.";
-                    else
-                        message = "No such volume " + backQuote(new_ttl_entry.destination_name) + " for given storage policy.";
-                    throw Exception(message, ErrorCodes::BAD_TTL_EXPRESSION);
-                }
-
-                update_move_ttl_entries.emplace_back(std::move(new_ttl_entry));
+                String message;
+                if (move_ttl.destination_type == DataDestinationType::DISK)
+                    message = "No such disk " + backQuote(move_ttl.destination_name) + " for given storage policy.";
+                else
+                    message = "No such volume " + backQuote(move_ttl.destination_name) + " for given storage policy.";
+                throw Exception(message, ErrorCodes::BAD_TTL_EXPRESSION);
             }
         }
 
+
         if (!only_check)
         {
-            TTLTableDescription new_table_ttl
-            {
-                .definition_ast = new_ttl_table_ast,
-                .rows_ttl = update_rows_ttl_entry,
-                .move_ttl = update_move_ttl_entries,
-            };
-
             auto move_ttl_entries_lock = std::lock_guard<std::mutex>(move_ttl_entries_mutex);
             setTableTTLs(new_table_ttl);
         }
@@ -1458,13 +1365,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 
     setProperties(metadata, /* only_check = */ true);
 
-    setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast, /* only_check = */ true);
+    setTTLExpressions(metadata.columns, metadata.table_ttl, /* only_check = */ true);
 
     if (hasSettingsChanges())
     {
 
         const auto & current_changes = getSettingsChanges()->as<const ASTSetQuery &>().changes;
-        const auto & new_changes = metadata.settings_ast->as<const ASTSetQuery &>().changes;
+        const auto & new_changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
         for (const auto & changed_setting : new_changes)
         {
             if (MergeTreeSettings::findIndex(changed_setting.name) == MergeTreeSettings::npos)

@@ -316,14 +316,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
     }
     else if (type == MODIFY_ORDER_BY)
     {
-        if (!metadata.primary_key_ast && metadata.order_by_ast)
+        if (metadata.primary_key.definition_ast == nullptr && metadata.sorting_key.definition_ast != nullptr)
         {
             /// Primary and sorting key become independent after this ALTER so we have to
             /// save the old ORDER BY expression as the new primary key.
-            metadata.primary_key_ast = metadata.order_by_ast->clone();
+            metadata.primary_key = metadata.sorting_key;
         }
 
-        metadata.order_by_ast = order_by;
+        metadata.sorting_key = KeyDescription::getKeyFromAST(order_by, metadata.columns, context);
     }
     else if (type == COMMENT_COLUMN)
     {
@@ -430,15 +430,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
     }
     else if (type == MODIFY_TTL)
     {
-        metadata.ttl_for_table_ast = ttl;
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl, metadata.columns, context, metadata.primary_key);
     }
     else if (type == MODIFY_QUERY)
     {
-        metadata.select = select;
+        metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, context);
     }
     else if (type == MODIFY_SETTING)
     {
-        auto & settings_from_storage = metadata.settings_ast->as<ASTSetQuery &>().changes;
+        auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & change : settings_changes)
         {
             auto finder = [&change](const SettingChange & c) { return c.name == change.name; };
@@ -465,8 +465,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
                     rename_visitor.visit(column_to_modify.ttl);
             });
         }
-        if (metadata.ttl_for_table_ast)
-            rename_visitor.visit(metadata.ttl_for_table_ast);
+        if (metadata.table_ttl.definition_ast)
+            rename_visitor.visit(metadata.table_ttl.definition_ast);
+
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            metadata.table_ttl.definition_ast, metadata.columns, context, metadata.primary_key);
 
         for (auto & constraint : metadata.constraints.constraints)
             rename_visitor.visit(constraint);
@@ -832,7 +835,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         }
         else if (command.type == AlterCommand::MODIFY_SETTING)
         {
-            if (metadata.settings_ast == nullptr)
+            if (metadata.settings_changes == nullptr)
                 throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)

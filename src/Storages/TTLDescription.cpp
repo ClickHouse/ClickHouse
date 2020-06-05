@@ -55,6 +55,41 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 
 }
 
+TTLDescription::TTLDescription(const TTLDescription & other)
+    : mode(other.mode)
+    , expression_ast(other.expression_ast ? other.expression_ast->clone() : nullptr)
+    , expression(other.expression)
+    , result_column(other.result_column)
+    , where_expression(other.where_expression)
+    , where_result_column(other.where_result_column)
+    , group_by_keys(other.group_by_keys)
+    , set_parts(other.set_parts)
+    , aggregate_descriptions(other.aggregate_descriptions)
+    , destination_type(other.destination_type)
+    , destination_name(other.destination_name)
+{
+}
+
+TTLDescription & TTLDescription::operator=(const TTLDescription & other)
+{
+    mode = other.mode;
+    if (other.expression_ast)
+        expression_ast = other.expression_ast->clone();
+    else
+        expression_ast.reset();
+
+    expression = other.expression;
+    result_column = other.result_column;
+    where_expression = other.where_expression;
+    where_result_column = other.where_result_column;
+    group_by_keys = other.group_by_keys;
+    set_parts = other.set_parts;
+    aggregate_descriptions = other.aggregate_descriptions;
+    destination_type = other.destination_type;
+    destination_name = other.destination_name;
+    return * this;
+}
+
 TTLDescription TTLDescription::getTTLFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
@@ -192,6 +227,36 @@ TTLDescription TTLDescription::getTTLFromAST(
     checkTTLExpression(result.expression, result.result_column);
 
 
+    return result;
+}
+
+
+TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
+    const ASTPtr & definition_ast,
+    const ColumnsDescription & columns,
+    const Context & context,
+    const KeyDescription & primary_key)
+{
+    TTLTableDescription result;
+    if (!definition_ast)
+        return result;
+
+    result.definition_ast = definition_ast->clone();
+
+    bool seen_delete_ttl = false;
+    for (const auto & ttl_element_ptr : definition_ast->children)
+    {
+        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key);
+        if (ttl.destination_type == DataDestinationType::DELETE)
+        {
+            if (seen_delete_ttl)
+                throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
+            result.rows_ttl = ttl;
+            seen_delete_ttl = true;
+        }
+        else
+            result.move_ttl.emplace_back(std::move(ttl));
+    }
     return result;
 }
 
