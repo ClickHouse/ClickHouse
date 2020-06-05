@@ -79,6 +79,11 @@ static MergeTreeDataPartChecksum createUncompressedChecksum(size_t size, SipHash
 
 void MergeTreeDataPartWriterInMemory::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
 {
+    /// If part is empty we still need to initialize block by empty columns.
+    if (!part_in_memory->block)
+        for (const auto & column : columns_list)
+            part_in_memory->block.insert(ColumnWithTypeAndName{column.type, column.name});
+
     SipHash hash;
     for (const auto & column : part_in_memory->block)
         column.column->updateHashFast(hash);

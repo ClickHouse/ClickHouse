@@ -45,8 +45,8 @@ public:
 
     void flushToDisk(const String & base_path, const String & new_relative_path) const;
 
-    bool waitUntilMerged(size_t timeout) const override;
-    void notifyMerged() const override;
+    bool waitUntilMerged(size_t timeout) const;
+    void notifyMerged() const;
 
     mutable Block block;
 
@@ -58,5 +58,6 @@ private:
 };
 
 using DataPartInMemoryPtr = std::shared_ptr<const MergeTreeDataPartInMemory>;
+DataPartInMemoryPtr asInMemoryPart(const MergeTreeDataPartPtr & part);
 
 }

@@ -681,11 +681,11 @@ bool StorageMergeTree::merge(
             auto lock = lockParts();
             for (const auto & part : future_part.parts)
             {
-                part->notifyMerged();
-                if (isInMemoryPart(part))
+                if (auto part_in_memory = asInMemoryPart(part))
                 {
-                    modifyPartState(part, DataPartState::Deleting);
-                    parts_to_remove_immediately.push_back(part);
+                    part_in_memory->notifyMerged();
+                    modifyPartState(part_in_memory, DataPartState::Deleting);
+                    parts_to_remove_immediately.push_back(part_in_memory);
                 }
             }
         }

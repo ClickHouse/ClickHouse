@@ -32,14 +32,14 @@ void MergeTreeBlockOutputStream::write(const Block & block)
 
         PartLog::addNewPart(storage.global_context, part, watch.elapsed());
 
-        if (auto * part_in_memory = dynamic_cast<MergeTreeDataPartInMemory *>(part.get()))
+        if (auto part_in_memory = asInMemoryPart(part))
         {
             storage.in_memory_merges_throttler.add(part_in_memory->block.bytes(), part_in_memory->rows_count);
 
             auto settings = storage.getSettings();
             if (settings->in_memory_parts_insert_sync)
             {
-                if (!part->waitUntilMerged(in_memory_parts_timeout))
+                if (!part_in_memory->waitUntilMerged(in_memory_parts_timeout))
                     throw Exception("Timeout exceeded while waiting to write part "
                         + part->name + " on disk", ErrorCodes::TIMEOUT_EXCEEDED);
             }
