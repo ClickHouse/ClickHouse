@@ -304,17 +304,17 @@ void TCPHandler::runImpl()
              *  We will try to send exception to the client in any case - see below.
              */
             state.io.onException();
-            exception.emplace(Exception::CreateFromPoco, e);
+            exception.emplace(Exception::CreateFromPocoTag{}, e);
         }
         catch (const Poco::Exception & e)
         {
             state.io.onException();
-            exception.emplace(Exception::CreateFromPoco, e);
+            exception.emplace(Exception::CreateFromPocoTag{}, e);
         }
         catch (const std::exception & e)
         {
             state.io.onException();
-            exception.emplace(Exception::CreateFromSTD, e);
+            exception.emplace(Exception::CreateFromSTDTag{}, e);
         }
         catch (...)
         {
