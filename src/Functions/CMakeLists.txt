@@ -61,20 +61,14 @@ if(USE_BASE64)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${BASE64_INCLUDE_DIR})
 endif()
 
-if(USE_XXHASH)
-    target_link_libraries(clickhouse_functions PRIVATE ${XXHASH_LIBRARY})
-    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${XXHASH_INCLUDE_DIR})
-endif()
+target_link_libraries(clickhouse_functions PRIVATE lz4)
 
 if (USE_H3)
     target_link_libraries(clickhouse_functions PRIVATE ${H3_LIBRARY})
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${H3_INCLUDE_DIR})
 endif()
 
-if(USE_HYPERSCAN)
-    target_link_libraries(clickhouse_functions PRIVATE ${HYPERSCAN_LIBRARY})
-    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
-endif()
+target_link_libraries(clickhouse_functions PRIVATE hyperscan)
 
 if(USE_SIMDJSON)
     target_link_libraries(clickhouse_functions PRIVATE ${SIMDJSON_LIBRARY})
