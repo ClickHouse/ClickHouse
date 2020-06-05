@@ -115,6 +115,9 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
                 {
                     String table_name = iterator->name();
                     StoragePtr storage = iterator->table();
+                    if (!storage)
+                        continue;
+
                     String engine_name = storage->getName();
 
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))

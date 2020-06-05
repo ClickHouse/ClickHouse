@@ -843,6 +843,10 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 **Значение по умолчанию**: 15.
 
+**Смотрите также**
+
+-   [background_schedule_pool_size](../settings/settings.md#background_schedule_pool_size)
+
 ## access_control_path {#access_control_path}
 
 Путь к каталогу, где сервер ClickHouse хранит конфигурации пользователей и ролей, созданные командами SQL.
