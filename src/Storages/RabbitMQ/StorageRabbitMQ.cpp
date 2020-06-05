@@ -74,10 +74,14 @@ StorageRabbitMQ::StorageRabbitMQ(
         , hash_exchange(hash_exchange_)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
+        , login_password(std::make_pair(
+                    rabbitmq_context.getConfigRef().getString("rabbitmq_username", "root"),
+                    rabbitmq_context.getConfigRef().getString("rabbitmq_password", "clickhouse")))
         , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
         , evbase(event_base_new())
         , eventHandler(evbase, log)
-        , connection(&eventHandler, AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login("root", "clickhouse"), "/"))
+        , connection(&eventHandler, AMQP::Address(parsed_address.first, parsed_address.second,
+                    AMQP::Login(login_password.first, login_password.second), "/"))
 {
     size_t cnt_retries = 0;
     while (!connection.ready() && ++cnt_retries != Connection_setup_retries_max)
@@ -208,14 +212,14 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 
     ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
 
-    return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer_channel, eventHandler, exchange_name,
-            routing_key, next_channel_id, log, row_delimiter, bind_by_id, hash_exchange, num_queues, stream_cancelled);
+    return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer_channel, eventHandler, exchange_name, routing_key,
+            next_channel_id, log, row_delimiter, bind_by_id, hash_exchange, num_queues, stream_cancelled);
 }
 
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
-    return std::make_shared<WriteBufferToRabbitMQProducer>(parsed_address, routing_key, exchange_name,
+    return std::make_shared<WriteBufferToRabbitMQProducer>(parsed_address, login_password, routing_key, exchange_name,
             log, num_consumers * num_queues, bind_by_id, hash_exchange,
             row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }

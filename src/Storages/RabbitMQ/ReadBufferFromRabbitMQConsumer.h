@@ -66,6 +66,7 @@ private:
     String current_exchange_name;
     size_t count_subscribed = 0;
     size_t count_bound_queues = 0;
+    std::atomic<bool> loop_attempt;
 
     Messages received;
     Messages messages;

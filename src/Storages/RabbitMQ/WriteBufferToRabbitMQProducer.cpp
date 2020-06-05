@@ -20,7 +20,8 @@ enum
 };
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
-        std::pair<std::string, UInt16> & parsed_address,
+        std::pair<String, UInt16> & parsed_address,
+        std::pair<String, String> & login_password_,
         const String & routing_key_,
         const String & exchange_,
         Poco::Logger * log_,
@@ -31,6 +32,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         size_t rows_per_message,
         size_t chunk_size_)
         : WriteBuffer(nullptr, 0)
+        , login_password(login_password_)
         , routing_key(routing_key_)
         , exchange_name(exchange_)
         , log(log_)
@@ -42,7 +44,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , chunk_size(chunk_size_)
         , producerEvbase(event_base_new())
         , eventHandler(producerEvbase, log)
-        , connection(&eventHandler, AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login("root", "clickhouse"), "/"))
+        , connection(&eventHandler, AMQP::Address(parsed_address.first, parsed_address.second,
+                    AMQP::Login(login_password.first, login_password.second), "/"))
 {
     /* The reason behind making a separate connection for each concurrent producer is explained here:
      * https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/128#issuecomment-300780086 - publishing from
