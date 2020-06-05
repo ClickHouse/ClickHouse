@@ -4,6 +4,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProbabilisticDataFilters/BasicBloomFilter.h>
+#include <Common/ProbabilisticDataFilters/ChaoticFilter.h>
 #include <Core/Block.h>
 #include <DataStreams/SizeLimits.h>
 #include <DataTypes/IDataType.h>
@@ -42,26 +43,21 @@ public:
 
     bool empty() const override {
         std::unique_lock lock(rwlock);
-        // // // std::cerr << "HERE in empty: " << (!hash_set || hash_set->added_counts() == 0) << "\n";
         return !hash_set || hash_set->added_counts() == 0;
     }
 
     void setHeader(const Block & header) override {
         std::unique_lock lock(rwlock);
 
-        // // // std::cerr << "HERE in setHeader, rows: " << header.rows() << std::endl;
+        // std::cerr << "HERE in setHeader, rows: " << header.rows() << std::endl;
 
         columns_count = header.columns();
 
         if (columns_count == 0) return;
 
-        // hash_set = std::make_shared<BasicBloomFilter>(header.rows(), 3)
-        // hash_set = std::make_shared<BasicBloomFilter>(64 * 110000, 4);
-        // hash_set = std::make_shared<BasicBloomFilter>(64 * 81200, 3);
-        // hash_set = std::make_shared<BasicBloomFilter>(64 * 54500, 2);
-        // for tests with 15M & 25M arrays;
-        // hash_set = std::make_shared<BasicBloomFilter>(2e7, 2);
         hash_set = std::make_shared<BasicBloomFilter>(filter_length, hashes_count);
+        // hash_set = std::make_shared<ChaoticFilter>(filter_length);
+
         std::cerr << "filter_length: " << filter_length << " ," << "hashes_count: " << hashes_count << std::endl;
         for (size_t i = 0; i < columns_count; ++i) {
             data_types.emplace_back(header.safeGetByPosition(i).type);
@@ -155,6 +151,7 @@ private:
 
     mutable std::shared_mutex rwlock;
     BasicBloomFilterPtr hash_set;
+    // ChaoticFilterPtr hash_set;
 
     size_t columns_count = 0;
     bool is_created = false;
