@@ -26,4 +26,8 @@ namespace DB
     class CompressionCodecFactory;
     void registerCodecGroupVarint(CompressionCodecFactory & factory);
 
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> d97731e9f9d1f708407ae6f81f75ec3701cc1f10
