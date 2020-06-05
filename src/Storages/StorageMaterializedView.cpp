@@ -100,13 +100,6 @@ StorageMaterializedView::StorageMaterializedView(
         DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
 }
 
-StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
-{
-    StorageInMemoryMetadata result(getColumns(), getSecondaryIndices(), getConstraints());
-    result.select = getSelectQuery().select_query;
-    return result;
-}
-
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
     return getTargetTable()->getQueryProcessingStage(context, to_stage, query_ptr);
@@ -207,7 +200,7 @@ void StorageMaterializedView::alter(
     /// start modify query
     if (context.getSettingsRef().allow_experimental_alter_materialized_view_structure)
     {
-        auto new_select = SelectQueryDescription::getSelectQueryFromASTForMatView(metadata.select, context);
+        const auto & new_select = metadata.select;
         const auto & old_select = getSelectQuery();
 
         DatabaseCatalog::instance().updateDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);

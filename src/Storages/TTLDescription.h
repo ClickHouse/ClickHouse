@@ -5,7 +5,6 @@
 #include <Storages/KeyDescription.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TTLMode.h>
 
 namespace DB
@@ -75,6 +74,10 @@ struct TTLDescription
     /// Parse TTL structure from definition. Able to parse both column and table
     /// TTLs.
     static TTLDescription getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context, const KeyDescription & primary_key);
+
+    TTLDescription() = default;
+    TTLDescription(const TTLDescription & other);
+    TTLDescription & operator=(const TTLDescription & other);
 };
 
 /// Mapping from column name to column TTL
@@ -94,6 +97,9 @@ struct TTLTableDescription
 
     /// Moving data TTL (to other disks or volumes)
     TTLDescriptions move_ttl;
+
+    static TTLTableDescription getTTLForTableFromAST(
+        const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context, const KeyDescription & primary_key);
 };
 
 }

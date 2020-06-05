@@ -572,47 +572,46 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     String date_column_name;
-    ASTPtr partition_by_ast;
-    ASTPtr order_by_ast;
-    ASTPtr primary_key_ast;
-    ASTPtr sample_by_ast;
-    ASTPtr ttl_table_ast;
-    ASTPtr settings_ast;
-    IndicesDescription indices_description;
-    ConstraintsDescription constraints_description;
+
+    StorageInMemoryMetadata metadata;
+    metadata.columns = args.columns;
 
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(args.context.getMergeTreeSettings());
 
     if (is_extended_storage_def)
     {
         if (args.storage_def->partition_by)
-            partition_by_ast = args.storage_def->partition_by->ptr();
+            metadata.partition_key = KeyDescription::getKeyFromAST(
+                args.storage_def->partition_by->ptr(), metadata.columns, args.context);
 
         if (!args.storage_def->order_by)
             throw Exception("You must provide an ORDER BY expression in the table definition. "
                 "If you don't want this table to be sorted, use ORDER BY tuple()",
                 ErrorCodes::BAD_ARGUMENTS);
 
-        order_by_ast = args.storage_def->order_by->ptr();
+        metadata.sorting_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context);
 
         if (args.storage_def->primary_key)
-            primary_key_ast = args.storage_def->primary_key->ptr();
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
 
         if (args.storage_def->sample_by)
-            sample_by_ast = args.storage_def->sample_by->ptr();
+            metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.context);
 
         if (args.storage_def->ttl_table)
-            ttl_table_ast = args.storage_def->ttl_table->ptr();
-
+            metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                args.storage_def->ttl_table->ptr(),
+                metadata.columns,
+                args.context,
+                metadata.primary_key);
 
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
-                indices_description.push_back(IndexDescription::getIndexFromAST(index, args.columns, args.context));
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, args.columns, args.context));
 
         storage_settings->loadFromQuery(*args.storage_def);
 
         if (args.storage_def->settings)
-            settings_ast = args.storage_def->settings->ptr();
+            metadata.settings_changes = args.storage_def->settings->ptr();
     }
     else
     {
@@ -627,12 +626,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If there is an expression for sampling
         if (arg_cnt - arg_num == 3)
         {
-            sample_by_ast = engine_args[arg_num];
+            metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context);
             ++arg_num;
         }
 
         /// Now only two parameters remain - primary_key, index_granularity.
-        order_by_ast = engine_args[arg_num];
+        metadata.sorting_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context);
         ++arg_num;
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
@@ -648,17 +647,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (arg_num != arg_cnt)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
 
-    if (!args.attach && !indices_description.empty() && !args.local_context.getSettingsRef().allow_experimental_data_skipping_indices)
+    if (!args.attach && !metadata.secondary_indices.empty() && !args.local_context.getSettingsRef().allow_experimental_data_skipping_indices)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
-
-    StorageInMemoryMetadata metadata(args.columns, indices_description, args.constraints);
-    metadata.partition_by_ast = partition_by_ast;
-    metadata.order_by_ast = order_by_ast;
-    metadata.primary_key_ast = primary_key_ast;
-    metadata.ttl_for_table_ast = ttl_table_ast;
-    metadata.sample_by_ast = sample_by_ast;
-    metadata.settings_ast = settings_ast;
 
     if (replicated)
         return StorageReplicatedMergeTree::create(

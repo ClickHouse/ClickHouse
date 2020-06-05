@@ -10,12 +10,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
 #include <Storages/CheckResults.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/IndicesDescription.h>
-#include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/TTLDescription.h>
-#include <Storages/KeyDescription.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Common/ActionLock.h>
@@ -157,15 +152,13 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// Storage settings
     const ASTPtr & getSettingsChanges() const;
     void setSettingsChanges(const ASTPtr & settings_changes_);
-    bool hasSettingsChanges() const { return settings_changes != nullptr; }
+    bool hasSettingsChanges() const { return metadata.settings_changes != nullptr; }
 
     const SelectQueryDescription & getSelectQuery() const;
     void setSelectQuery(const SelectQueryDescription & select_);
     bool hasSelectQuery() const;
 
-    /// Returns storage metadata copy. Direct modification of
-    /// result structure doesn't affect storage.
-    virtual StorageInMemoryMetadata getInMemoryMetadata() const;
+    const StorageInMemoryMetadata & getInMemoryMetadata() const { return metadata; }
 
     Block getSampleBlock() const; /// ordinary + materialized.
     Block getSampleBlockWithVirtuals() const; /// ordinary + materialized + virtuals.
@@ -210,21 +203,8 @@ private:
     StorageID storage_id;
     mutable std::mutex id_mutex;
 
-    ColumnsDescription columns;
-    IndicesDescription secondary_indices;
-    ConstraintsDescription constraints;
 
-    KeyDescription partition_key;
-    KeyDescription primary_key;
-    KeyDescription sorting_key;
-    KeyDescription sampling_key;
-
-    TTLColumnsDescription column_ttls_by_name;
-    TTLTableDescription table_ttl;
-
-    ASTPtr settings_changes;
-    SelectQueryDescription select;
-
+    StorageInMemoryMetadata metadata;
 private:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
@@ -462,7 +442,7 @@ public:
     /// struct).
     void setPartitionKey(const KeyDescription & partition_key_);
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
-    ASTPtr getPartitionKeyAST() const { return partition_key.definition_ast; }
+    ASTPtr getPartitionKeyAST() const { return metadata.partition_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) partition key.
     bool isPartitionKeyDefined() const;
     /// Storage has partition key.
@@ -477,7 +457,7 @@ public:
     /// struct).
     void setSortingKey(const KeyDescription & sorting_key_);
     /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
-    ASTPtr getSortingKeyAST() const { return sorting_key.definition_ast; }
+    ASTPtr getSortingKeyAST() const { return metadata.sorting_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sorting key.
     bool isSortingKeyDefined() const;
     /// Storage has sorting key. It means, that it contains at least one column.
@@ -494,7 +474,7 @@ public:
     /// struct).
     void setPrimaryKey(const KeyDescription & primary_key_);
     /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
-    ASTPtr getPrimaryKeyAST() const { return primary_key.definition_ast; }
+    ASTPtr getPrimaryKeyAST() const { return metadata.primary_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sorting key.
     bool isPrimaryKeyDefined() const;
     /// Storage has primary key (maybe part of some other key). It means, that
@@ -512,7 +492,7 @@ public:
     /// struct).
     void setSamplingKey(const KeyDescription & sampling_key_);
     /// Returns sampling expression AST for storage or nullptr if there is none.
-    ASTPtr getSamplingKeyAST() const { return sampling_key.definition_ast; }
+    ASTPtr getSamplingKeyAST() const { return metadata.sampling_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sampling key.
     bool isSamplingKeyDefined() const;
     /// Storage has sampling key.

@@ -19,6 +19,43 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 };
 
+IndexDescription::IndexDescription(const IndexDescription & other)
+    : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
+    , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
+    , name(other.name)
+    , type(other.type)
+    , expression(other.expression) /// actions never changed
+    , arguments(other.arguments)
+    , column_names(other.column_names)
+    , data_types(other.data_types)
+    , sample_block(other.sample_block)
+    , granularity(other.granularity)
+{
+}
+
+
+IndexDescription & IndexDescription::operator=(const IndexDescription & other)
+{
+    if (other.definition_ast)
+        definition_ast = other.definition_ast->clone();
+    else
+        definition_ast.reset();
+
+    if (other.expression_list_ast)
+        expression_list_ast = other.expression_list_ast->clone();
+    else
+        expression_list_ast.reset();
+
+    name = other.name;
+    type = other.type;
+    expression = other.expression;
+    arguments = other.arguments;
+    column_names = other.column_names;
+    data_types = other.data_types;
+    sample_block = other.sample_block;
+    granularity = other.granularity;
+    return *this;
+}
 
 IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context)
 {
