@@ -86,7 +86,8 @@ private:
     const bool hash_exchange;
 
     Poco::Logger * log;
-    std::pair<std::string, UInt16> parsed_address;
+    std::pair<String, UInt16> parsed_address;
+    std::pair<String, String> login_password;
 
     event_base * evbase;
     RabbitMQHandler eventHandler;

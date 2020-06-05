@@ -6,8 +6,7 @@ namespace DB
 
 enum
 {
-    Lock_timeout = 50, 
-    Max_threads_to_pass = 10
+    Lock_timeout = 50
 };
 
 
@@ -49,17 +48,6 @@ void RabbitMQHandler::start(std::atomic<bool> & check_param)
         }
 
         mutex_before_event_loop.unlock();
-    }
-    else
-    {
-        if (++count_passed == Max_threads_to_pass)
-        {
-            /* Event loop is blocking to the thread that started it and it is not good to block one single thread as it loops 
-             * untill there are no active events, but there can be too many of them for one thread to be blocked for so long.
-             */
-            stop();
-            count_passed = 0;
-        }
     }
 }
 

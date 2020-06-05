@@ -7,6 +7,7 @@
 #include <atomic>
 #include <amqpcpp.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -18,7 +19,8 @@ class WriteBufferToRabbitMQProducer : public WriteBuffer
 {
 public:
     WriteBufferToRabbitMQProducer(
-            std::pair<std::string, UInt16> & parsed_address,
+            std::pair<String, UInt16> & parsed_address,
+            std::pair<String, String> & login_password_,
             const String & routing_key_,
             const String & exchange_,
             Poco::Logger * log_,
@@ -40,6 +42,7 @@ private:
     void checkExchange();
     void startEventLoop(std::atomic<bool> & check_param);
 
+    std::pair<String, String> & login_password;
     const String routing_key;
     const String exchange_name;
     const bool bind_by_id;

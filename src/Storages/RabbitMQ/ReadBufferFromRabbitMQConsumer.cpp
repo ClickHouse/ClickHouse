@@ -44,6 +44,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , stopped(stopped_)
         , exchange_declared(false)
         , false_param(false)
+        , loop_attempt(false)
 {
     messages.clear();
     current = messages.begin();
@@ -225,7 +226,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
                 message_received += row_delimiter;
 
             //LOG_TRACE(log, "Consumer {} received a message", channel_id);
-            
+
             bool stop_loop = false;
 
             /// Needed to avoid data race because this vector can be used at the same time by another thread in nextImpl() (below).
@@ -236,7 +237,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
                 /* As event loop is blocking to the thread that started it and a single thread should not be blocked while
                  * executing all callbacks on the connection (not only its own), then there should be some point to unblock
                  */
-                if (received.size() >= Received_max_to_stop_loop)
+                if (!loop_attempt && received.size() % Received_max_to_stop_loop == 0)
                 {
                     stop_loop = true;
                 }
@@ -284,7 +285,9 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
         if (received.empty())
         {
             /// Run the onReceived callbacks to save the messages that have been received by now
+            loop_attempt = true;
             startEventLoop(false_param);
+            loop_attempt = false;
         }
 
         if (received.empty())
