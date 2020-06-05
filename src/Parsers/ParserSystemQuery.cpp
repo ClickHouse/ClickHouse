@@ -2,6 +2,7 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 
@@ -63,20 +64,38 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!ParserStringLiteral{}.parse(pos, ast, expected))
                 return false;
             res->replica = ast->as<ASTLiteral &>().value.safeGet<String>();
-            if (!ParserKeyword{"FROM"}.ignore(pos, expected))
-                return false;
-            // way 1. parse database and tables
-            // way 2. parse replica zk path
-            if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
+            if (ParserKeyword{"FROM"}.ignore(pos, expected))
             {
-                ASTPtr path_ast;
-                if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
+                // way 1. parse replica database
+                // way 2. parse replica tables
+                // way 3. parse replica zkpath
+                if (ParserKeyword{"DATABASE"}.ignore(pos, expected))
+                {
+                    ParserIdentifier database_parser;
+                    ASTPtr database;
+                    if (!database_parser.parse(pos, database, expected))
+                        return false;
+                    tryGetIdentifierNameInto(database, res->database);
+                }
+                else if (ParserKeyword{"TABLE"}.ignore(pos, expected))
+                {
+                    parseDatabaseAndTableName(pos, expected, res->database, res->table);
+                }
+                else if (ParserKeyword{"ZKPATH"}.ignore(pos, expected))
+                {
+                    ASTPtr path_ast;
+                    if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
+                        return false;
+                    String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
+                    if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
+                        zk_path.pop_back();
+                    res->replica_zk_path = zk_path;
+                }
+                else
                     return false;
-                String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
-                if (zk_path[zk_path.size()-1] == '/')
-                    zk_path.pop_back();
-                res->replica_zk_path = zk_path;
             }
+            else
+                res->is_drop_whole_replica = true;
 
             break;
         }
