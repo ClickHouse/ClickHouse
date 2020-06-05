@@ -593,15 +593,9 @@ CurrentMetric_ReplicatedChecks:                             0
 
 Можно отключить логгирование настройкой [log_queries = 0](settings/settings.md#settings-log-queries). По-возможности, не отключайте логгирование, поскольку информация из таблицы важна при решении проблем.
 
-Период сброса логов в таблицу задаётся параметром `flush_interval_milliseconds` в конфигурационной секции [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs).
+Период сброса данных в таблицу задаётся параметром `flush_interval_milliseconds` в конфигурационной секции [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs).
 
-ClickHouse не удаляет логи из таблица автоматически. Смотрите [Введение](#system-tables-introduction).
-
-Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) (параметр `partition_by`).
-
-
-
-Если таблицу удалить вручную, она создается заново автоматически «на лету». При этом все логи на момент удаления таблицы будут убраны.
+ClickHouse не удаляет данные из таблица автоматически. Смотрите [Введение](#system-tables-introduction).
 
 Таблица `system.query_log` содержит информацию о двух видах запросов:
 
@@ -736,9 +730,9 @@ Settings.Values:      ['0','random','1','10000000000']
 1. Настройте параметры [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) в конфигурации сервера.
 2. Установите значение [log_query_threads](settings/settings.md#settings-log-query-threads) равным 1.
 
-Интервал сброса логов в таблицу задаётся параметром `flush_interval_milliseconds` в разделе настроек сервера [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log). Чтобы принудительно записать логи из буфера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs).
+Интервал сброса данных в таблицу задаётся параметром `flush_interval_milliseconds` в разделе настроек сервера [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log). Чтобы принудительно записать логи из буфера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs).
 
-ClickHouse не удаляет логи из таблицы автоматически. Подробности в разделе [Введение](#system-tables-introduction).
+ClickHouse не удаляет данные из таблицы автоматически. Подробности в разделе [Введение](#system-tables-introduction).
 
 Столбцы:
 

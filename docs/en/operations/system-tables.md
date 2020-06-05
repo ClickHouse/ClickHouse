@@ -18,9 +18,11 @@ System tables:
 - Available only for reading data.
 - Can't be dropped or altered, but can be detached.
 
-Most of system tables store their data in RAM. ClickHouse server creates such system tables at the start.
+Most of system tables store their data in RAM. A ClickHouse server creates such system tables at the start.
 
-The system tables [metric_log](#system_tables-metric_log), [query_log](#system_tables-query_log), [query_thread_log](#system_tables-query_thread_log), [trace_log](#system_tables-trace_log) are served by [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) table engine that store data in a storage filesystem. You can alter some properties of these tables or remove them from a filesystem manually. If you remove a table from a filesystem, the ClickHouse server creates the empty one again at the time of the next data writing. A storage period for these tables is not limited, and ClickHouse server doesn't delete their data automatically. You need to organize removing of outdated logs by yourself. For example, you can use [TTL](../sql-reference/statements/alter.md#manipulations-with-table-ttl) settings for removing outdated log records. Also you can use the partitioning feature of `MergeTree`-engine tables.
+Unlike other system tables, the system tables [metric_log](#system_tables-metric_log), [query_log](#system_tables-query_log), [query_thread_log](#system_tables-query_thread_log), [trace_log](#system_tables-trace_log) are served by [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) table engine and store their data in a storage filesystem. If you remove a table from a filesystem, the ClickHouse server creates the empty one again at the time of the next data writing. If system table schema changed in a new release, then ClickHouse renames the current table and creates a new one.
+
+By default, table growth is unlimited. To control a size of a table, you can use [TTL](../sql-reference/statements/alter.md#manipulations-with-table-ttl) settings for removing outdated log records. Also you can use the partitioning feature of `MergeTree`-engine tables.
 
 
 ### Sources of System Metrics {#system-tables-sources-of-system-metrics}
@@ -636,9 +638,9 @@ You can change settings of queries logging in the [query_log](server-configurati
 
 You can disable queries logging by setting [log_queries = 0](settings/settings.md#settings-log-queries). We don't recommend to turn off logging because information in this table is important for solving issues.
 
-The flushing period of logs is set in `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing logs, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse doesn't delete logs from the table automatically. See [Introduction](#system-tables-introduction) for more details.
+ClickHouse doesn't delete data from the table automatically. See [Introduction](#system-tables-introduction) for more details.
 
 The `system.query_log` table registers two kinds of queries:
 
@@ -773,9 +775,9 @@ To start logging:
 1. Configure parameters in the [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
 2. Set [log_query_threads](settings/settings.md#settings-log-query-threads) to 1.
 
-The flushing period of logs is set in `flush_interval_milliseconds` parameter of the [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force logs flushing, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse doesn't delete logs from the table automatically. See [Introduction](#system-tables-introduction) for more details.
+ClickHouse doesn't delete data from the table automatically. See [Introduction](#system-tables-introduction) for more details.
 
 Columns:
 
