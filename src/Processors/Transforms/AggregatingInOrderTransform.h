@@ -60,7 +60,7 @@ private:
     Chunk current_chunk;
     Chunk to_push_chunk;
 
-    Logger * log = &Logger::get("AggregatingInOrderTransform");
+    Poco::Logger * log = &Poco::Logger::get("AggregatingInOrderTransform");
 };
 
 
