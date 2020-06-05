@@ -39,4 +39,8 @@ ALTER TABLE in_memory DROP COLUMN str;
 
 SELECT * FROM in_memory ORDER BY a LIMIT 5;
 
+-- in-memory parts works if they're empty.
+ALTER TABLE in_memory DELETE WHERE 1;
+SELECT count() FROM in_memory;
+
 DROP TABLE in_memory;

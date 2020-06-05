@@ -1007,7 +1007,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
             if (part)
             {
-                if (const auto * part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(part.get()))
+                if (auto part_in_memory = asInMemoryPart(part))
                     sum_parts_size_in_bytes += part_in_memory->block.bytes();
                 else
                     sum_parts_size_in_bytes += part->getBytesOnDisk();

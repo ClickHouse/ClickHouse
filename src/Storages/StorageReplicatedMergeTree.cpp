@@ -1089,11 +1089,11 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
             DataPartsVector parts_to_remove_immediatly;
             for (const auto & part_ptr : parts)
             {
-                part_ptr->notifyMerged();
-                if (isInMemoryPart(part_ptr))
+                if (auto part_in_memory = asInMemoryPart(part_ptr))
                 {
-                    modifyPartState(part_ptr, DataPartState::Deleting);
-                    parts_to_remove_immediatly.push_back(part_ptr);
+                    part_in_memory->notifyMerged();
+                    modifyPartState(part_in_memory, DataPartState::Deleting);
+                    parts_to_remove_immediatly.push_back(part_in_memory);
                 }
             }
 

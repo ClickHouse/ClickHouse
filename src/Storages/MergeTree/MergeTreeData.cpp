@@ -1941,7 +1941,7 @@ void MergeTreeData::renameTempPartAndReplace(
         addPartContributionToColumnSizes(part);
     }
 
-    auto * part_in_memory = dynamic_cast<MergeTreeDataPartInMemory *>(part.get());
+    auto part_in_memory = asInMemoryPart(part);
     if (part_in_memory && getSettings()->in_memory_parts_enable_wal)
     {
         auto wal = getWriteAheadLog();
@@ -3271,7 +3271,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
         throw Exception("Part in " + fullPath(disk, dst_part_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     /// If source part is in memory, flush it to disk and clone it already in on-disk format
-    if (const auto * src_part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(src_part.get()))
+    if (auto src_part_in_memory = asInMemoryPart(src_part))
     {
         const auto & src_relative_data_path = src_part_in_memory->storage.relative_data_path;
         auto flushed_part_path = src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
@@ -3367,7 +3367,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
 
         String backup_part_path = backup_path + relative_data_path + part->relative_path;
-        if (const auto * part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(part.get()))
+        if (auto part_in_memory = asInMemoryPart(part))
             part_in_memory->flushToDisk(backup_path + relative_data_path, part->relative_path);
         else
             localBackup(part->volume->getDisk(), part->getFullRelativePath(), backup_part_path);

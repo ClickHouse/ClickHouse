@@ -1455,7 +1455,7 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
 {
     /// In compact parts we read all columns, because they all stored in a
     /// single file
-    if (isCompactPart(source_part))
+    if (!isWidePart(source_part))
         return updated_header.getNamesAndTypesList();
 
     NameSet removed_columns;

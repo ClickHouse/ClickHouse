@@ -13,7 +13,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int DIRECTORY_ALREADY_EXISTS;
 }
 
@@ -123,5 +122,11 @@ void MergeTreeDataPartInMemory::calculateEachColumnSizesOnDisk(ColumnSizeByName 
     for (const auto & column : columns)
         each_columns_size[column.name].data_uncompressed += block.getByName(column.name).column->byteSize();
 }
+
+DataPartInMemoryPtr asInMemoryPart(const MergeTreeDataPartPtr & part)
+{
+    return std::dynamic_pointer_cast<const MergeTreeDataPartInMemory>(part);
+}
+
 
 }
