@@ -26,9 +26,6 @@ public:
 
 private:
     InputPorts::iterator current_input;
-
-    bool is_initialized = false;
-    void prepareInitializeInputs();
 };
 
 }
