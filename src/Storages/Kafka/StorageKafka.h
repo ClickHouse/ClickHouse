@@ -59,6 +59,7 @@ public:
     const auto & getSchemaName() const { return schema_name; }
     const auto & skipBroken() const { return skip_broken; }
 
+    NamesAndTypesList getVirtuals() const override;
 protected:
     StorageKafka(
         const StorageID & table_id_,
@@ -66,6 +67,7 @@ protected:
         const ColumnsDescription & columns_,
         const String & brokers_,
         const String & group_,
+        const String & client_id_,
         const Names & topics_,
         const String & format_name_,
         char row_delimiter_,
@@ -82,6 +84,7 @@ private:
     Names topics;
     const String brokers;
     const String group;
+    const String client_id;
     const String format_name;
     char row_delimiter; /// optional row delimiter for generating char delimited stream in order to make various input stream parsers happy.
     const String schema_name;
@@ -107,12 +110,13 @@ private:
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
 
-    ConsumerBufferPtr createReadBuffer();
+    ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
 
     // Update Kafka configuration with values from CH user configuration.
     void updateConfiguration(cppkafka::Configuration & conf);
 
     void threadFunc();
+    static String getDefaultClientId(const StorageID & table_id_);
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 };

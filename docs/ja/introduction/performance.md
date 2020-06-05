@@ -1,6 +1,6 @@
 ---
 toc_priority: 6
-toc_title: パフォーマンス
+toc_title: "\u30D1\u30D5\u30A9\u30FC\u30DE\u30F3\u30B9"
 ---
 
 # パフォーマンス {#pahuomansu}

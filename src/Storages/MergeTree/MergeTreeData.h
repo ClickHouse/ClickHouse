@@ -1,14 +1,14 @@
 #pragma once
 
 #include <Common/SimpleIncrement.h>
-#include <Interpreters/Context.h>
+#include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/PartDestinationType.h>
+#include <Storages/DataDestinationType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -19,7 +19,8 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Interpreters/PartLog.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
+#include <Interpreters/Aggregator.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -34,6 +35,7 @@ class MergeListEntry;
 class AlterCommands;
 class MergeTreePartsMover;
 class MutationCommands;
+class Context;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -70,7 +72,7 @@ namespace ErrorCodes
 /// [Column].mrk - marks, pointing to seek positions allowing to skip n * k rows.
 ///
 /// File structure of tables with custom partitioning (format_version >= 1):
-/// Part directory - / partiiton-id _ min-id _ max-id _ level /
+/// Part directory - / partition-id _ min-id _ max-id _ level /
 /// Inside the part directory:
 /// The same files as for month-partitioned tables, plus
 /// count.txt - contains total number of rows in this part.
@@ -194,14 +196,14 @@ public:
     /// After this method setColumns must be called
     MutableDataPartPtr createPart(const String & name,
         MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-        const DiskPtr & disk, const String & relative_path) const;
+        const VolumePtr & volume, const String & relative_path) const;
 
     /// After this methods 'loadColumnsChecksumsIndexes' must be called
     MutableDataPartPtr createPart(const String & name,
-        const DiskPtr & disk, const String & relative_path) const;
+        const VolumePtr & volume, const String & relative_path) const;
 
     MutableDataPartPtr createPart(const String & name, const MergeTreePartInfo & part_info,
-        const DiskPtr & disk, const String & relative_path) const;
+        const VolumePtr & volume, const String & relative_path) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreCommitted parts (the parts are ready, but not yet in the active set).
@@ -331,25 +333,12 @@ public:
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
 
+    /// See comments about methods below in IStorage interface
     StorageInMemoryMetadata getInMemoryMetadata() const override;
-    ASTPtr getPartitionKeyAST() const override { return partition_by_ast; }
-    ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
-    ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
-    ASTPtr getSamplingKeyAST() const override { return sample_by_ast; }
-
-    Names getColumnsRequiredForPartitionKey() const override { return (partition_key_expr ? partition_key_expr->getRequiredColumns() : Names{}); }
-    Names getColumnsRequiredForSortingKey() const override { return sorting_key_expr->getRequiredColumns(); }
-    Names getColumnsRequiredForPrimaryKey() const override { return primary_key_expr->getRequiredColumns(); }
-    Names getColumnsRequiredForSampling() const override { return columns_required_for_sampling; }
-    Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
-    Names getSortingKeyColumns() const override { return sorting_key_columns; }
-
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override;
 
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool supportsPrewhere() const override { return true; }
-    bool supportsSampling() const override { return sample_by_ast != nullptr; }
 
     bool supportsFinal() const override
     {
@@ -361,31 +350,9 @@ public:
     }
 
     bool supportsSettings() const override { return true; }
+    NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &) const override;
-
-    NameAndTypePair getColumn(const String & column_name) const override
-    {
-        if (column_name == "_part")
-            return NameAndTypePair("_part", std::make_shared<DataTypeString>());
-        if (column_name == "_part_index")
-            return NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>());
-        if (column_name == "_partition_id")
-            return NameAndTypePair("_partition_id", std::make_shared<DataTypeString>());
-        if (column_name == "_sample_factor")
-            return NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>());
-
-        return getColumns().getPhysical(column_name);
-    }
-
-    bool hasColumn(const String & column_name) const override
-    {
-        return getColumns().hasPhysical(column_name)
-            || column_name == "_part"
-            || column_name == "_part_index"
-            || column_name == "_partition_id"
-            || column_name == "_sample_factor";
-    }
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -521,8 +488,7 @@ public:
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
-    void rename(const String & new_table_path, const String & new_database_name,
-        const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_table_path, const StorageID & new_table_id) override;
 
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
@@ -550,17 +516,9 @@ public:
      */
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
-    bool hasSortingKey() const { return !sorting_key_columns.empty(); }
-    bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
-    bool hasSkipIndices() const { return !skip_indices.empty(); }
-
-    bool hasAnyColumnTTL() const { return !column_ttl_entries_by_name.empty(); }
-    bool hasAnyMoveTTL() const { return !move_ttl_entries.empty(); }
-    bool hasRowsTTL() const override { return !rows_ttl_entry.isEmpty(); }
-    bool hasAnyTTL() const override { return hasRowsTTL() || hasAnyMoveTTL() || hasAnyColumnTTL(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path) const;
+    MutableDataPartPtr loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const;
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
@@ -660,6 +618,13 @@ public:
 
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
+    /// Returns destination disk or volume for the TTL rule according to current
+    /// storage policy
+    SpacePtr getDestinationForTTL(const TTLDescription & ttl) const;
+
+    /// Checks if given part already belongs destination disk or volume for the
+    /// TTL rule.
+    bool isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -669,8 +634,6 @@ public:
     const MergingParams merging_params;
 
     bool is_custom_partitioned = false;
-    ExpressionActionsPtr partition_key_expr;
-    Block partition_key_sample;
 
     ExpressionActionsPtr minmax_idx_expr;
     Names minmax_idx_columns;
@@ -678,59 +641,15 @@ public:
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
-    /// Secondary (data skipping) indices for MergeTree
-    MergeTreeIndices skip_indices;
+    ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression() const;
+    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression() const;
 
-    ExpressionActionsPtr primary_key_and_skip_indices_expr;
-    ExpressionActionsPtr sorting_key_and_skip_indices_expr;
+    std::optional<TTLDescription> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
-    /// Names of columns for primary key + secondary sorting columns.
-    Names sorting_key_columns;
-    ASTPtr sorting_key_expr_ast;
-    ExpressionActionsPtr sorting_key_expr;
-
-    /// Names of columns for primary key.
-    Names primary_key_columns;
-    ASTPtr primary_key_expr_ast;
-    ExpressionActionsPtr primary_key_expr;
-    Block primary_key_sample;
-    DataTypes primary_key_data_types;
-
-    struct TTLEntry
-    {
-        ExpressionActionsPtr expression;
-        String result_column;
-
-        /// Name and type of a destination are only valid in table-level context.
-        PartDestinationType destination_type;
-        String destination_name;
-
-        ASTPtr entry_ast;
-
-        /// Returns destination disk or volume for this rule.
-        SpacePtr getDestination(StoragePolicyPtr policy) const;
-
-        /// Checks if given part already belongs destination disk or volume for this rule.
-        bool isPartInDestination(StoragePolicyPtr policy, const IMergeTreeDataPart & part) const;
-
-        bool isEmpty() const { return expression == nullptr; }
-    };
-
-    std::optional<TTLEntry> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
-
-    using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
-    TTLEntriesByName column_ttl_entries_by_name;
-
-    TTLEntry rows_ttl_entry;
-
-    /// This mutex is required for background move operations which do not obtain global locks.
+    /// This mutex is required for background move operations which do not
+    /// obtain global locks.
+    /// TODO (alesap) It will be removed after metadata became atomic
     mutable std::mutex move_ttl_entries_mutex;
-
-    /// Vector rw operations have to be done under "move_ttl_entries_mutex".
-    std::vector<TTLEntry> move_ttl_entries;
-
-    String sampling_expr_column_name;
-    Names columns_required_for_sampling;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
@@ -758,11 +677,6 @@ protected:
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
 
-    ASTPtr partition_by_ast;
-    ASTPtr order_by_ast;
-    ASTPtr primary_key_ast;
-    ASTPtr sample_by_ast;
-    ASTPtr ttl_table_ast;
     ASTPtr settings_ast;
 
     bool require_part_metadata;
@@ -777,7 +691,7 @@ protected:
     BrokenPartCallback broken_part_callback;
 
     String log_name;
-    Logger * log;
+    Poco::Logger * log;
 
     /// Storage settings.
     /// Use get and set to receive readonly versions.
@@ -871,9 +785,9 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false);
+    void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false, bool attach = false);
 
-    void initPartitionKey();
+    void initPartitionKey(ASTPtr partition_by_ast);
 
     void setTTLExpressions(const ColumnsDescription & columns,
         const ASTPtr & new_ttl_table_ast, bool only_check = false);

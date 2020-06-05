@@ -1,6 +1,7 @@
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
@@ -20,6 +21,12 @@
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
 #endif
+
+
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTracking;
+}
 
 
 namespace DB
@@ -146,6 +153,7 @@ void AsynchronousMetrics::update()
         /// Otherwise it might be calculated incorrectly - it can include a "drift" of memory amount.
         /// See https://github.com/ClickHouse/ClickHouse/issues/10293
         total_memory_tracker.set(data.resident);
+        CurrentMetrics::set(CurrentMetrics::MemoryTracking, data.resident);
     }
 #endif
 
@@ -177,6 +185,9 @@ void AsynchronousMetrics::update()
             {
                 ++total_number_of_tables;
                 const auto & table = iterator->table();
+                if (!table)
+                    continue;
+
                 StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
                 StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
 

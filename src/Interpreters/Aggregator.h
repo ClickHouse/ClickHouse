@@ -45,8 +45,8 @@ namespace ErrorCodes
 
 class IBlockOutputStream;
 
-class Volume;
-using VolumePtr = std::shared_ptr<Volume>;
+class VolumeJBOD;
+using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
 /** Different data structures that can be used for aggregation
   * For efficiency, the aggregation data itself is put into the pool.
@@ -829,7 +829,7 @@ using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants>;
 
 /** How are "total" values calculated with WITH TOTALS?
-  * (For more details, see TotalsHavingBlockInputStream.)
+  * (For more details, see TotalsHavingTransform.)
   *
   * In the absence of group_by_overflow_mode = 'any', the data is aggregated as usual, but the states of the aggregate functions are not finalized.
   * Later, the aggregate function states for all rows (passed through HAVING) are merged into one - this will be TOTALS.
@@ -878,7 +878,7 @@ public:
         /// Return empty result when aggregating without keys on empty set.
         bool empty_result_for_aggregation_by_empty_set;
 
-        VolumePtr tmp_volume;
+        VolumeJBODPtr tmp_volume;
 
         /// Settings is used to determine cache size. No threads are created.
         size_t max_threads;
@@ -891,7 +891,7 @@ public:
             size_t group_by_two_level_threshold_, size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
-            VolumePtr tmp_volume_, size_t max_threads_,
+            VolumeJBODPtr tmp_volume_, size_t max_threads_,
             size_t min_free_disk_space_)
             : src_header(src_header_),
             keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
@@ -1048,7 +1048,7 @@ protected:
 
     std::mutex mutex;
 
-    Logger * log = &Logger::get("Aggregator");
+    Poco::Logger * log = &Poco::Logger::get("Aggregator");
 
     /// Returns true if you can abort the current task.
     CancellationHook isCancelled;

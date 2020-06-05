@@ -68,7 +68,7 @@ using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.
-std::string writeData(int rows, DB::StoragePtr & table, DB::Context & context)
+std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
 
@@ -77,9 +77,10 @@ std::string writeData(int rows, DB::StoragePtr & table, DB::Context & context)
     Block block;
 
     {
+        const auto & storage_columns = table->getColumns();
         ColumnWithTypeAndName column;
         column.name = "a";
-        column.type = table->getColumn("a").type;
+        column.type = storage_columns.getPhysical("a").type;
         auto col = column.type->createColumn();
         ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col).getData();
 
@@ -103,7 +104,7 @@ std::string writeData(int rows, DB::StoragePtr & table, DB::Context & context)
 }
 
 // Returns all table data in Values format.
-std::string readData(DB::StoragePtr & table, DB::Context & context)
+std::string readData(DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
 
@@ -135,7 +136,7 @@ std::string readData(DB::StoragePtr & table, DB::Context & context)
 TYPED_TEST(StorageLogTest, testReadWrite)
 {
     using namespace DB;
-    auto context_holder = getContext();
+    const auto & context_holder = getContext();
 
     std::string data;
 

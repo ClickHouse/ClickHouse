@@ -113,11 +113,11 @@ public:
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
-    void drop(TableStructureWriteLockHolder &) override;
+    void drop() override;
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     bool supportsIndexForIn() const override { return true; }
 
@@ -484,7 +484,7 @@ private:
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
       */
-    void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
+    bool waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /// Choose leader replica, send requst to it and wait.
     void sendRequestToLeaderReplica(const ASTPtr & query, const Context & query_context);

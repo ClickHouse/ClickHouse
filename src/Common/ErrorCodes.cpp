@@ -492,6 +492,12 @@ namespace ErrorCodes
     extern const int CANNOT_COMMIT_OFFSET = 518;
     extern const int NO_REMOTE_SHARD_AVAILABLE = 519;
     extern const int CANNOT_DETACH_DICTIONARY_AS_TABLE = 520;
+    extern const int ATOMIC_RENAME_FAIL = 521;
+    extern const int OPENCL_ERROR = 522;
+    extern const int UNKNOWN_ROW_POLICY = 523;
+    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN = 524;
+    extern const int INCORRECT_DISK_INDEX = 525;
+    extern const int UNKNOWN_VOLUME_TYPE = 526;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

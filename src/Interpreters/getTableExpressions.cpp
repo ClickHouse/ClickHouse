@@ -1,4 +1,5 @@
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -90,17 +91,17 @@ static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression 
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();
-        virtuals = columns.getVirtuals();
+        virtuals = function_storage->getVirtuals();
     }
     else if (table_expression.database_and_table_name)
     {
         auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
-        const auto & table = DatabaseCatalog::instance().getTable(table_id);
+        const auto & table = DatabaseCatalog::instance().getTable(table_id, context);
         const auto & columns = table->getColumns();
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();
-        virtuals = columns.getVirtuals();
+        virtuals = table->getVirtuals();
     }
 
     return names_and_type_list;

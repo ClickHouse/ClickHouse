@@ -5,8 +5,10 @@
 #include <Poco/String.h>
 #include <common/logger_useful.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadBufferFromFile.h>
 #include <common/demangle.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
@@ -25,6 +27,8 @@ namespace ErrorCodes
     extern const int STD_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int CANNOT_MREMAP;
 }
 
 
@@ -36,7 +40,7 @@ Exception::Exception(const std::string & msg, int code)
 #ifndef NDEBUG
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        LOG_ERROR(&Poco::Logger::root(), "Logical error: '" + msg + "'.");
+        LOG_ERROR(&Poco::Logger::root(), "Logical error: '{}'.", msg);
         assert(false);
     }
 #endif
@@ -118,14 +122,17 @@ void throwFromErrnoWithPath(const std::string & s, const std::string & path, int
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
 {
-    tryLogCurrentException(&Logger::get(log_name), start_of_message);
+    tryLogCurrentException(&Poco::Logger::get(log_name), start_of_message);
 }
 
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
 {
     try
     {
-        LOG_ERROR(logger, start_of_message << (start_of_message.empty() ? "" : ": ") << getCurrentExceptionMessage(true));
+        if (start_of_message.empty())
+            LOG_ERROR(logger, "{}", getCurrentExceptionMessage(true));
+        else
+            LOG_ERROR(logger, "{}: {}", start_of_message, getCurrentExceptionMessage(true));
     }
     catch (...)
     {
@@ -141,15 +148,76 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & 
         path = path.parent_path();
 
     auto fs = getStatVFS(path);
-    msg += "\nTotal space: "      + formatReadableSizeWithBinarySuffix(fs.f_blocks * fs.f_bsize)
-         + "\nAvailable space: "  + formatReadableSizeWithBinarySuffix(fs.f_bavail * fs.f_bsize)
-         + "\nTotal inodes: "     + formatReadableQuantity(fs.f_files)
-         + "\nAvailable inodes: " + formatReadableQuantity(fs.f_favail);
-
     auto mount_point = getMountPoint(path).string();
-    msg += "\nMount point: " + mount_point;
+
+    fmt::format_to(std::back_inserter(msg),
+        "\nTotal space: {}\nAvailable space: {}\nTotal inodes: {}\nAvailable inodes: {}\nMount point: {}",
+        ReadableSize(fs.f_blocks * fs.f_bsize),
+        ReadableSize(fs.f_bavail * fs.f_bsize),
+        formatReadableQuantity(fs.f_files),
+        formatReadableQuantity(fs.f_favail),
+        mount_point);
+
 #if defined(__linux__)
     msg += "\nFilesystem: " + getFilesystemName(mount_point);
+#endif
+}
+
+
+/** It is possible that the system has enough memory,
+  *  but we have shortage of the number of available memory mappings.
+  * Provide good diagnostic to user in that case.
+  */
+static void getNotEnoughMemoryMessage(std::string & msg)
+{
+#if defined(__linux__)
+    try
+    {
+        static constexpr size_t buf_size = 4096;
+        char buf[buf_size];
+
+        UInt64 max_map_count = 0;
+        {
+            ReadBufferFromFile file("/proc/sys/vm/max_map_count", buf_size, -1, buf);
+            readText(max_map_count, file);
+        }
+
+        UInt64 num_maps = 0;
+        {
+            ReadBufferFromFile file("/proc/self/maps", buf_size, -1, buf);
+            while (!file.eof())
+            {
+                char * next_pos = find_first_symbols<'\n'>(file.position(), file.buffer().end());
+                file.position() = next_pos;
+
+                if (!file.hasPendingData())
+                    continue;
+
+                if (*file.position() == '\n')
+                {
+                    ++num_maps;
+                    ++file.position();
+                }
+            }
+        }
+
+        if (num_maps > max_map_count * 0.99)
+        {
+            msg += fmt::format(
+                "\nIt looks like that the process is near the limit on number of virtual memory mappings."
+                "\nCurrent number of mappings (/proc/self/maps): {}."
+                "\nLimit on number of mappings (/proc/sys/vm/max_map_count): {}."
+                "\nYou should increase the limit for vm.max_map_count in /etc/sysctl.conf"
+                "\n",
+                num_maps, max_map_count);
+        }
+    }
+    catch (...)
+    {
+        msg += "\nCannot obtain additional info about memory usage.";
+    }
+#else
+    (void)msg;
 #endif
 }
 
@@ -167,6 +235,13 @@ static std::string getExtraExceptionInfo(const std::exception & e)
         {
             if (errno_exception->getErrno() == ENOSPC && errno_exception->getPath())
                 getNoSpaceLeftInfoMessage(errno_exception->getPath().value(), msg);
+            else if (errno_exception->code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+                || errno_exception->code() == ErrorCodes::CANNOT_MREMAP)
+                getNotEnoughMemoryMessage(msg);
+        }
+        else if (dynamic_cast<const std::bad_alloc *>(&e))
+        {
+            getNotEnoughMemoryMessage(msg);
         }
     }
     catch (...)

@@ -39,6 +39,7 @@ public:
 
     std::string getName() const override { return "ColumnLowCardinality"; }
     const char * getFamilyName() const override { return "ColumnLowCardinality"; }
+    TypeIndex getDataType() const override { return TypeIndex::LowCardinality; }
 
     ColumnPtr convertToFullColumn() const { return getDictionary().getNestedColumn()->index(getIndexes(), 0); }
     ColumnPtr convertToFullColumnIfLowCardinality() const override { return convertToFullColumn(); }
@@ -110,6 +111,8 @@ public:
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+
+    void updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_range) const override;
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {

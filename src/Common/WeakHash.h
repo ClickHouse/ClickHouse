@@ -17,6 +17,8 @@ public:
     explicit WeakHash32(size_t size) : data(size, ~UInt32(0)) {}
     WeakHash32(const WeakHash32 & other) { data.assign(other.data); }
 
+    void reset(size_t size) { data.assign(size, ~UInt32(0)); }
+
     const Container & getData() const { return data; }
     Container & getData() { return data; }
 

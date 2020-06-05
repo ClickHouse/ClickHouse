@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=20.4.1.*
+ARG version=20.5.1.*
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
@@ -16,7 +16,8 @@ RUN apt-get update \
         apt-get install --allow-unauthenticated --yes --no-install-recommends \
             clickhouse-client=$version \
             clickhouse-common-static=$version \
-            locales
+            locales \
+            tzdata \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf \
     && apt-get clean
 

@@ -24,8 +24,7 @@ protected:
                                                 WriteBuffer & out, size_t file_column);
 
     virtual bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) = 0;
-    virtual void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column,
-                                     ReadBuffer::Position & prev_pos, ReadBuffer::Position & curr_pos) = 0;
+    virtual void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) = 0;
     virtual bool isGarbageAfterField(size_t after_input_pos_idx, ReadBuffer::Position pos) = 0;
 
     /// For convenient diagnostics in case of an error.

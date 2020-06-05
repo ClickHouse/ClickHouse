@@ -1,4 +1,4 @@
-<test>
+<test max_ignored_relative_change="0.2">
     <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(rand() % 2 ? ['Hello', 'World'] : ['a', 'b', 'c'])</query>
     <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(rand() % 2 ? materialize(['Hello', 'World']) : ['a', 'b', 'c'])</query>
     <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(rand() % 2 ? ['Hello', 'World'] : materialize(['a', 'b', 'c']))</query>

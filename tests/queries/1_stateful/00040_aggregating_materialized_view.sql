@@ -1,6 +1,6 @@
-DROP TABLE IF EXISTS test.basic;
+DROP TABLE IF EXISTS test.basic_00040;
 
-CREATE MATERIALIZED VIEW test.basic
+CREATE MATERIALIZED VIEW test.basic_00040
 ENGINE = AggregatingMergeTree(StartDate, (CounterID, StartDate), 8192)
 POPULATE AS
 SELECT
@@ -16,7 +16,7 @@ SELECT
     StartDate,
     sumMerge(Visits)	AS Visits,
     uniqMerge(Users)	AS Users
-FROM test.basic
+FROM test.basic_00040
 GROUP BY StartDate
 ORDER BY StartDate;
 
@@ -25,7 +25,7 @@ SELECT
     StartDate,
     sumMerge(Visits)	AS Visits,
     uniqMerge(Users)	AS Users
-FROM test.basic
+FROM test.basic_00040
 WHERE CounterID = 942285
 GROUP BY StartDate
 ORDER BY StartDate;
@@ -41,4 +41,4 @@ GROUP BY StartDate
 ORDER BY StartDate;
 
 
-DROP TABLE test.basic;
+DROP TABLE test.basic_00040;

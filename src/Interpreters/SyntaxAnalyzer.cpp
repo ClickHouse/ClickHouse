@@ -22,6 +22,7 @@
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
+#include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -209,10 +210,10 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
 }
 
 /// Replacing scalar subqueries with constant values.
-void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth, Scalars & scalars)
+void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth, Scalars & scalars, bool only_analyze)
 {
     LogAST log;
-    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth, scalars};
+    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth, scalars, only_analyze};
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
@@ -429,6 +430,16 @@ void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_miltiif)
         OptimizeIfChainsVisitor().visit(query);
 }
 
+void optimizeArithmeticOperationsInAgr(ASTPtr & query, bool optimize_arithmetic_operations_in_agr_func)
+{
+    if (optimize_arithmetic_operations_in_agr_func)
+    {
+        /// Removing arithmetic operations from functions
+        ArithmeticOperationsInAgrFuncVisitor::Data data = {};
+        ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
+    }
+}
+
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
@@ -566,13 +577,14 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 }
 
 /// Add columns from storage to source_columns list. Deduplicate resulted list.
-void SyntaxAnalyzerResult::collectSourceColumns(bool add_virtuals)
+/// Special columns are non physical columns, for example ALIAS
+void SyntaxAnalyzerResult::collectSourceColumns(bool add_special)
 {
     if (storage)
     {
         const ColumnsDescription & columns = storage->getColumns();
 
-        auto columns_from_storage = add_virtuals ? columns.getAll() : columns.getAllPhysical();
+        auto columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);
         else
@@ -693,11 +705,13 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
     /// in columns list, so that when further processing they are also considered.
     if (storage)
     {
+        const auto storage_virtuals = storage->getVirtuals();
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
-            if (storage->hasColumn(*it))
+            auto column = storage_virtuals.tryGetByName(*it);
+            if (column)
             {
-                source_columns.push_back(storage->getColumn(*it));
+                source_columns.push_back(*column);
                 unknown_required_source_columns.erase(it++);
             }
             else
@@ -764,8 +778,13 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     const auto & settings = context.getSettingsRef();
 
     const NameSet & source_columns_set = result.source_columns_set;
-    result.analyzed_join = table_join;
-    if (!result.analyzed_join) /// ExpressionAnalyzer expects some not empty object here
+
+    if (table_join)
+    {
+        result.analyzed_join = table_join;
+        result.analyzed_join->resetCollected();
+    }
+    else /// TODO: remove. For now ExpressionAnalyzer expects some not empty object here
         result.analyzed_join = std::make_shared<TableJoin>();
 
     if (remove_duplicates)
@@ -798,10 +817,12 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, context, subquery_depth, result.scalars);
+    executeScalarSubqueries(query, context, subquery_depth, result.scalars, select_options.only_analyze);
 
     {
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
+
+        optimizeArithmeticOperationsInAgr(query, settings.optimize_arithmetic_operations_in_agr_func);
 
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_column_names, settings).optimize(*select_query);
@@ -831,7 +852,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
-SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage) const
+SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage, bool allow_aggregations) const
 {
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
@@ -843,11 +864,24 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
     normalize(query, result.aliases, settings);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, context, 0, result.scalars);
+    executeScalarSubqueries(query, context, 0, result.scalars, false);
 
     optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
-    assertNoAggregates(query, "in wrong place");
+    if (allow_aggregations)
+    {
+        GetAggregatesVisitor::Data data;
+        GetAggregatesVisitor(data).visit(query);
+
+        /// There can not be other aggregate functions within the aggregate functions.
+        for (const ASTFunction * node : data.aggregates)
+            for (auto & arg : node->arguments->children)
+                assertNoAggregates(arg, "inside another aggregate function");
+        result.aggregates = data.aggregates;
+    }
+    else
+        assertNoAggregates(query, "in wrong place");
+
     result.collectUsedColumns(query);
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
