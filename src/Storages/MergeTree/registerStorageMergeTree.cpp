@@ -205,7 +205,7 @@ static void setGraphitePatternsFromConfig(const Context & context,
 }
 
 
-static String getMergeTreeVerboseHelp(bool is_extended_syntax)
+static String getMergeTreeVerboseHelp(bool)
 {
     using namespace std::string_literals;
 
