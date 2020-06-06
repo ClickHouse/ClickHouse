@@ -358,6 +358,9 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
     if (has_empty_bound)
         return false;
 
+    if (std::isnan(x) || std::isnan(y))
+        return false;
+
     CoordinateType float_row = (y + y_shift) * y_scale;
     CoordinateType float_col = (x + x_shift) * x_scale;
 
