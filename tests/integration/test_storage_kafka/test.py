@@ -236,6 +236,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
 
 @pytest.mark.timeout(180)
 def test_kafka_issue11308(kafka_cluster):
+    # Check that matview does respect Kafka SETTINGS
     kafka_produce('issue11308', ['{"t": 123, "e": {"x": "woof"} }', '{"t": 123, "e": {"x": "woof"} }', '{"t": 124, "e": {"x": "test"} }'])
 
     instance.query('''
@@ -282,6 +283,7 @@ def test_kafka_issue11308(kafka_cluster):
 
 @pytest.mark.timeout(180)
 def test_kafka_issue4116(kafka_cluster):
+    # Check that format_csv_delimiter parameter works now - as part of all available format settings.
     kafka_produce('issue4116', ['1|foo', '2|bar', '42|answer','100|multi\n101|row\n103|message'])
 
     instance.query('''
