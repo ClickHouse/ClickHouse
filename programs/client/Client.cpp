@@ -575,7 +575,18 @@ private:
             LineReader::Patterns query_delimiters = {";", "\\G"};
 
 #if USE_REPLXX
-            ReplxxLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters, highlight);
+            replxx::Replxx::highlighter_callback_t highlight_callback{};
+            if (config().getBool("highlight"))
+                highlight_callback = highlight;
+
+            ReplxxLineReader lr(
+                Suggest::instance(),
+                history_file,
+                config().has("multiline"),
+                query_extenders,
+                query_delimiters,
+                highlight_callback);
+
 #elif defined(USE_READLINE) && USE_READLINE
             ReadlineLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
@@ -1839,6 +1850,7 @@ public:
             ("echo", "in batch mode, print query before execution")
             ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", po::value<bool>(), "enable or disable compression")
+            ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
         ;
@@ -1985,6 +1997,8 @@ public:
             config().setBool("disable_suggestion", true);
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
+        if (options.count("highlight"))
+            config().setBool("highlight", options["highlight"].as<bool>());
 
         argsToConfig(common_arguments, config(), 100);
 
