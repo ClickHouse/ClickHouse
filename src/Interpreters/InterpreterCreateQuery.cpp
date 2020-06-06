@@ -690,6 +690,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// Then background task is created by "startup" method. And when destructor of a table object is called, background task is still active,
     /// and the task will use references to freed data.
 
+    /// Also note that "startup" method is exception-safe. If exception is thrown from "startup",
+    /// we can safely destroy the object without a call to "shutdown", because there is guarantee
+    /// that no background threads/similar resources remain after exception from "startup".
+
     res->startup();
     return true;
 }

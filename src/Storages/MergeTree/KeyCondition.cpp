@@ -849,7 +849,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
             || const_value.getType() == Field::Types::Float64)
         {
             /// Zero in all types is represented in memory the same way as in UInt64.
-            out.function = const_value.get<UInt64>()
+            out.function = const_value.safeGet<UInt64>()
                 ? RPNElement::ALWAYS_TRUE
                 : RPNElement::ALWAYS_FALSE;
 
