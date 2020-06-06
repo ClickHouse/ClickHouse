@@ -54,7 +54,7 @@ public:
 
 private:
     template<typename UpdateF, typename ElemsT>
-    bool updateCacheImpl(UpdateF update_func, const ElemsT & elems, const String & log_msg);
+    bool updateCacheImpl(UpdateF && update_func, ElemsT && elems, const String & log_msg);
 
     DNSResolver();
 
