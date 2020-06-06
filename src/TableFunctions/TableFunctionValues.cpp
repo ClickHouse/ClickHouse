@@ -25,6 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -74,19 +75,14 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
         throw Exception("Table function '" + getName() + "' requires 2 or more arguments: structure and values.",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    // All the arguments must be literals.
-    for (const auto & arg : args)
-    {
-        if (!arg->as<const ASTLiteral>())
-        {
-            throw Exception(fmt::format(
-                "All arguments of table function '{}' must be literals. "
-                "Got '{}' instead", getName(), arg->formatForErrorMessage()),
-                ErrorCodes::BAD_ARGUMENTS);
-        }
-    }
-
     /// Parsing first argument as table structure and creating a sample block
+    if (!args[0]->as<const ASTLiteral>())
+    {
+        throw Exception(fmt::format(
+            "The first argument of table function '{}' must be a literal. "
+            "Got '{}' instead", getName(), args[0]->formatForErrorMessage()),
+            ErrorCodes::BAD_ARGUMENTS);
+    }
     std::string structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
     ColumnsDescription columns = parseColumnsListFromString(structure, context);
