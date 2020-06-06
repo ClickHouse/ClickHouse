@@ -60,11 +60,11 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
 -   `ORDER BY` — The sorting key.
 
-    A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
+    A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
 
-    Use the `ORDER BY tuple()` syntax, if you don't need sorting. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](../../../operations/settings/settings.md#settings-max-insert-threads).
+    ClickHouse uses the sorting key as a primary key if the primary key is not defined obviously by the `PRIMARY KEY` clause. 
     
-    To select data in the initial order, use [single-threaded](../../../operations/settings/settings.md#settings-max_threads) `SELECT` queries.
+    Use the `ORDER BY tuple()` syntax, if you don't need sorting. See [Selecting the Primary Key](#selecting-the-primary-key).
 
 -   `PARTITION BY` — The [partitioning key](custom-partitioning-key.md). Optional.
 
@@ -201,6 +201,10 @@ The number of columns in the primary key is not explicitly limited. Depending on
     In this case it makes sense to specify the *sorting key* that is different from the primary key.
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
+
+You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](../../../operations/settings/settings.md#settings-max-insert-threads).
+    
+To select data in the initial order, use [single-threaded](../../../operations/settings/settings.md#settings-max_threads) `SELECT` queries.
 
 ### Choosing a Primary Key that Differs from the Sorting Key {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
