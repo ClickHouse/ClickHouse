@@ -5323,7 +5323,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
     queue.pullLogsToQueue(getZooKeeper());
     /// This is significant, because the execution of this task could be delayed at BackgroundPool.
     /// And we force it to be executed.
-    queue_task_handle->wake();
+    queue_task_handle->signalReadyToRun();
 
     Poco::Event target_size_event;
     auto callback = [&target_size_event, queue_size] (size_t new_queue_size)

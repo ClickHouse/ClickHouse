@@ -180,8 +180,8 @@ Pipes StorageMaterializedView::read(
     auto lock = storage->lockStructureForShare(
             false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-    if (query_info.order_by_optimizer)
-        query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
+    if (query_info.order_optimizer)
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage);
 
     Pipes pipes = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 
