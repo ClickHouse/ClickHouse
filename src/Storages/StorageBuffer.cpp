@@ -171,8 +171,8 @@ Pipes StorageBuffer::read(
 
         if (dst_has_same_structure)
         {
-            if (query_info.order_by_optimizer)
-                query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(destination);
+            if (query_info.order_optimizer)
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             pipes_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
@@ -449,7 +449,6 @@ void StorageBuffer::startup()
     {
         LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate system_profile to fix this.", getName());
     }
-
 
     flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ flushBack(); });
     flush_handle->activateAndSchedule();

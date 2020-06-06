@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
@@ -649,11 +648,21 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
     auto & node_data = cluster_nodes_data[key];
     if (!node_data.directory_monitor)
     {
-        node_data.conneciton_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
+        node_data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
         node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
-            *this, path, node_data.conneciton_pool, monitors_blocker, global_context->getDistributedSchedulePool());
+            *this, path, node_data.connection_pool, monitors_blocker, global_context->getDistributedSchedulePool());
     }
     return *node_data.directory_monitor;
+}
+
+std::vector<StorageDistributedDirectoryMonitor::Status> StorageDistributed::getDirectoryMonitorsStatuses() const
+{
+    std::vector<StorageDistributedDirectoryMonitor::Status> statuses;
+    std::lock_guard lock(cluster_nodes_mutex);
+    statuses.reserve(cluster_nodes_data.size());
+    for (const auto & node : cluster_nodes_data)
+        statuses.push_back(node.second.directory_monitor->getStatus());
+    return statuses;
 }
 
 size_t StorageDistributed::getShardCount() const

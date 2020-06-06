@@ -104,9 +104,7 @@ const RowRef * AsofRowRefs::findAsof(TypeIndex type, ASOF::Inequality inequality
 
 std::optional<TypeIndex> AsofRowRefs::getTypeSize(const IColumn * asof_column, size_t & size)
 {
-    TypeIndex idx = columnVectorDataType(asof_column);
-    if (idx == TypeIndex::Nothing)
-        idx = columnDecimalDataType(asof_column);
+    TypeIndex idx = asof_column->getDataType();
 
     switch (idx)
     {

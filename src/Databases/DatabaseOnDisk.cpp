@@ -294,7 +294,7 @@ void DatabaseOnDisk::renameTable(
     {
         attachTable(table_name, table, table_data_relative_path);
         /// Better diagnostics.
-        throw Exception{Exception::CreateFromPoco, e};
+        throw Exception{Exception::CreateFromPocoTag{}, e};
     }
 
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
