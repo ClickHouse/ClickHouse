@@ -362,8 +362,11 @@ static DataTypePtr create(const ASTPtr & arguments)
         {
             const auto * literal = parameters[i]->as<ASTLiteral>();
             if (!literal)
-                throw Exception("Parameters to aggregate functions must be literals",
-                    ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
+                throw Exception(
+                    ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
+                    "Parameters to aggregate functions must be literals. "
+                    "Got parameter '{}' for function '{}'",
+                    parameters[i]->formatForErrorMessage(), function_name);
 
             params_row[i] = literal->value;
         }

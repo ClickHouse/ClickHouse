@@ -113,12 +113,13 @@ private:
         const Names & columns_to_remove_after_prewhere);
 
     void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
-    void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
     void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
     void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     static void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info);
+    void executeOrder(QueryPipeline & pipeline, InputOrderInfoPtr sorting_info);
+    void executeOrderOptimized(QueryPipeline & pipeline, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
     void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
     void executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset);

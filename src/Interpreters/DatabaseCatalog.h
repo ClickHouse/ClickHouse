@@ -169,6 +169,11 @@ public:
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
 
 private:
+    // The global instance of database catalog. unique_ptr is to allow
+    // deferred initialization. Thought I'd use std::optional, but I can't
+    // make emplace(global_context_) compile with private constructor ¯\_(ツ)_/¯.
+    static std::unique_ptr<DatabaseCatalog> database_catalog;
+
     DatabaseCatalog(Context * global_context_);
     void assertDatabaseExistsUnlocked(const String & database_name) const;
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const;

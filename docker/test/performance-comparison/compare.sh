@@ -104,13 +104,12 @@ function run_tests
         # allows the tests to pass even when we add new functions and tests for
         # them, that are not supported in the old revision.
         test_prefix=left/performance
-    elif [ "$PR_TO_TEST" != "" ] && [ "$PR_TO_TEST" != "0" ]
-    then
+    else
         # For PRs, use newer test files so we can test these changes.
         test_prefix=right/performance
 
-        # If some tests were changed in the PR, we may want to run only these
-        # ones. The list of changed tests in changed-test.txt is prepared in
+        # If only the perf tests were changed in the PR, we will run only these
+        # tests. The list of changed tests in changed-test.txt is prepared in
         # entrypoint.sh from git diffs, because it has the cloned repo.  Used
         # to use rsync for that but it was really ugly and not always correct
         # (e.g. when the reference SHA is really old and has some other
