@@ -25,6 +25,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Defines.h>
 #include <ext/range.h>
+#include <boost/range/algorithm/sort.hpp>
 #include <sstream>
 
 
@@ -232,10 +233,8 @@ BlockIO InterpreterShowCreateAccessEntityQuery::execute()
 
 BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 {
-    auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
-
     /// Build a create queries.
-    ASTs create_queries = getCreateQueries(show_query);
+    ASTs create_queries = getCreateQueries();
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
@@ -249,6 +248,7 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 
     /// Prepare description of the result column.
     std::stringstream desc_ss;
+    const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
     formatAST(show_query, desc_ss, false, true);
     String desc = desc_ss.str();
     String prefix = "SHOW ";
@@ -259,49 +259,91 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 }
 
 
-ASTs InterpreterShowCreateAccessEntityQuery::getCreateQueries(ASTShowCreateAccessEntityQuery & show_query) const
+std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities() const
 {
+    auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
     const auto & access_control = context.getAccessControlManager();
     context.checkAccess(getRequiredAccess());
     show_query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
+    std::vector<AccessEntityPtr> entities;
 
-    if (show_query.current_user)
+    if (show_query.all)
     {
-        auto user = context.getUser();
-        if (!user)
-            return {};
-        return {getCreateQueryImpl(*user, &access_control, false)};
+        auto ids = access_control.findAll(show_query.type);
+        for (const auto & id : ids)
+        {
+            if (auto entity = access_control.tryRead(id))
+                entities.push_back(entity);
+        }
     }
-
-    if (show_query.current_quota)
+    else if (show_query.current_user)
+    {
+        if (auto user = context.getUser())
+            entities.push_back(user);
+    }
+    else if (show_query.current_quota)
     {
         auto usage = context.getQuotaUsage();
-        if (!usage)
-            return {};
-        auto quota = access_control.read<Quota>(usage->quota_id);
-        return {getCreateQueryImpl(*quota, &access_control, false)};
+        if (usage)
+            entities.push_back(access_control.read<Quota>(usage->quota_id));
     }
-
-    ASTs list;
-
-    if (show_query.type == EntityType::ROW_POLICY)
+    else if (show_query.type == EntityType::ROW_POLICY)
     {
-        for (const String & name : show_query.row_policy_names->toStrings())
+        auto ids = access_control.findAll<RowPolicy>();
+        if (show_query.row_policy_names)
         {
-            RowPolicyPtr policy = access_control.read<RowPolicy>(name);
-            list.push_back(getCreateQueryImpl(*policy, &access_control, false));
+            for (const String & name : show_query.row_policy_names->toStrings())
+                entities.push_back(access_control.read<RowPolicy>(name));
+        }
+        else
+        {
+            for (const auto & id : ids)
+            {
+                auto policy = access_control.tryRead<RowPolicy>(id);
+                if (!policy)
+                    continue;
+                if (!show_query.short_name.empty() && (policy->getShortName() != show_query.short_name))
+                    continue;
+                if (show_query.database_and_table_name)
+                {
+                    const String & database = show_query.database_and_table_name->first;
+                    const String & table_name = show_query.database_and_table_name->second;
+                    if (!database.empty() && (policy->getDatabase() != database))
+                        continue;
+                    if (!table_name.empty() && (policy->getTableName() != table_name))
+                        continue;
+                }
+                entities.push_back(policy);
+            }
         }
     }
     else
     {
         for (const String & name : show_query.names)
-        {
-            auto entity = access_control.read(access_control.getID(show_query.type, name));
-            list.push_back(getCreateQueryImpl(*entity, &access_control, false));
-        }
+            entities.push_back(access_control.read(access_control.getID(show_query.type, name)));
     }
 
+    boost::range::sort(entities, IAccessEntity::LessByName{});
+    return entities;
+}
+
+
+ASTs InterpreterShowCreateAccessEntityQuery::getCreateQueries() const
+{
+    auto entities = getEntities();
+
+    ASTs list;
+    const auto & access_control = context.getAccessControlManager();
+    for (const auto & entity : entities)
+        list.push_back(getCreateQuery(*entity, access_control));
+
     return list;
+}
+
+
+ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const IAccessEntity & entity, const AccessControlManager & access_control)
+{
+    return getCreateQueryImpl(entity, &access_control, false);
 }
 
 

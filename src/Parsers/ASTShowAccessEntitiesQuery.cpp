@@ -4,49 +4,51 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
+using EntityTypeInfo = IAccessEntity::TypeInfo;
 
 
-const char * ASTShowAccessEntitiesQuery::getKeyword() const
+String ASTShowAccessEntitiesQuery::getKeyword() const
 {
-    switch (type)
-    {
-        case EntityType::ROW_POLICY:
-            return "SHOW ROW POLICIES";
-        case EntityType::QUOTA:
-            return current_quota ? "SHOW CURRENT QUOTA" : "SHOW QUOTAS";
-        case EntityType::SETTINGS_PROFILE:
-            return "SHOW SETTINGS PROFILES";
-        case EntityType::USER:
-            return "SHOW USERS";
-        case EntityType::ROLE:
-            return current_roles ? "SHOW CURRENT ROLES" : (enabled_roles ? "SHOW ENABLED ROLES" : "SHOW ROLES");
-        case EntityType::MAX:
-            break;
-    }
-    throw Exception(toString(type) + ": type is not supported by SHOW query", ErrorCodes::NOT_IMPLEMENTED);
+    if (current_quota)
+        return "CURRENT QUOTA";
+    if (current_roles)
+        return "CURRENT ROLES";
+    if (enabled_roles)
+        return "ENABLED ROLES";
+    return EntityTypeInfo::get(type).plural_name;
 }
 
 
 String ASTShowAccessEntitiesQuery::getID(char) const
 {
-    return String(getKeyword()) + " query";
+    return "SHOW " + String(getKeyword()) + " query";
 }
 
 void ASTShowAccessEntitiesQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    const char * keyword = getKeyword();
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << getKeyword() << (settings.hilite ? hilite_none : "");
 
-    if ((type == EntityType::ROW_POLICY) && !table_name.empty())
+    if (!short_name.empty())
+        settings.ostr << " " << backQuoteIfNeed(short_name);
+
+    if (database_and_table_name)
     {
+        const String & database = database_and_table_name->first;
+        const String & table_name = database_and_table_name->second;
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
-        if (!database.empty())
-            settings.ostr << backQuoteIfNeed(database) << ".";
-        settings.ostr << backQuoteIfNeed(table_name);
+        settings.ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
+        settings.ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
+    }
+}
+
+
+void ASTShowAccessEntitiesQuery::replaceEmptyDatabaseWithCurrent(const String & current_database)
+{
+    if (database_and_table_name)
+    {
+        String & database = database_and_table_name->first;
+        if (database.empty())
+            database = current_database;
     }
 }
 
