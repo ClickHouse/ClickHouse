@@ -69,8 +69,16 @@ def test_introspection():
     instance.query('GRANT CREATE ON *.* TO B WITH GRANT OPTION')
 
     assert instance.query("SHOW USERS") == TSV([ "A", "B", "default" ])
+    assert instance.query("SHOW CREATE USERS A") == TSV([ "CREATE USER A" ])
+    assert instance.query("SHOW CREATE USERS B") == TSV([ "CREATE USER B" ])
+    assert instance.query("SHOW CREATE USERS A,B") == TSV([ "CREATE USER A", "CREATE USER B" ])
+    assert instance.query("SHOW CREATE USERS") == TSV([ "CREATE USER A", "CREATE USER B", "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE default" ])
+
     assert instance.query("SHOW GRANTS FOR A") == TSV([ "GRANT SELECT ON test.table TO A" ])
     assert instance.query("SHOW GRANTS FOR B") == TSV([ "GRANT CREATE ON *.* TO B WITH GRANT OPTION" ])
+    assert instance.query("SHOW GRANTS FOR A,B") == TSV([ "GRANT SELECT ON test.table TO A", "GRANT CREATE ON *.* TO B WITH GRANT OPTION" ])
+    assert instance.query("SHOW GRANTS FOR B,A") == TSV([ "GRANT SELECT ON test.table TO A", "GRANT CREATE ON *.* TO B WITH GRANT OPTION" ])
+    assert instance.query("SHOW GRANTS FOR ALL") == TSV([ "GRANT SELECT ON test.table TO A", "GRANT CREATE ON *.* TO B WITH GRANT OPTION", "GRANT ALL ON *.* TO default WITH GRANT OPTION" ])
     
     assert instance.query("SHOW GRANTS", user='A') == TSV([ "GRANT SELECT ON test.table TO A" ])
     assert instance.query("SHOW GRANTS", user='B') == TSV([ "GRANT CREATE ON *.* TO B WITH GRANT OPTION" ])

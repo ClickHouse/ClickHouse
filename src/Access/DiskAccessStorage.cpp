@@ -265,7 +265,9 @@ namespace
     /// Calculates the path for storing a map of name of access entity to UUID for access entities of some type.
     std::filesystem::path getListFilePath(const String & directory_path, EntityType type)
     {
-        std::string_view file_name = EntityTypeInfo::get(type).list_filename;
+        String file_name = EntityTypeInfo::get(type).plural_raw_name;
+        boost::to_lower(file_name);
+        file_name += ".list";
         return std::filesystem::path(directory_path).append(file_name);
     }
 

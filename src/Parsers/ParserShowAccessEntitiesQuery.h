@@ -6,10 +6,12 @@
 namespace DB
 {
 /** Parses queries like
-  * SHOW [ROW] POLICIES [ON [database.]table]
-    SHOW QUOTAS
-    SHOW [CURRENT] QUOTA
-    SHOW [SETTINGS] PROFILES
+  * SHOW USERS
+  * SHOW [CURRENT|ENABLED] ROLES
+  * SHOW [SETTINGS] PROFILES
+  * SHOW [ROW] POLICIES [name | ON [database.]table]
+  * SHOW QUOTAS
+  * SHOW [CURRENT] QUOTA
   */
 class ParserShowAccessEntitiesQuery : public IParserBase
 {

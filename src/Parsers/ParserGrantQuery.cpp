@@ -1,13 +1,12 @@
 #include <Parsers/ParserGrantQuery.h>
 #include <Parsers/ASTGrantQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserRolesOrUsersSet.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 
@@ -85,72 +84,6 @@ namespace
         });
     }
 
-
-    bool parseDatabaseAndTableNameOrMaybeAsterisks(
-        IParser::Pos & pos, Expected & expected, String & database_name, bool & any_database, String & table_name, bool & any_table)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            ASTPtr ast[2];
-            if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
-            {
-                if (ParserToken{TokenType::Dot}.ignore(pos, expected))
-                {
-                    if (!ParserToken{TokenType::Asterisk}.ignore(pos, expected))
-                        return false;
-
-                    /// *.* (any table in any database)
-                    any_database = true;
-                    database_name.clear();
-                    any_table = true;
-                    table_name.clear();
-                    return true;
-                }
-
-                /// * (any table in the current database)
-                any_database = false;
-                database_name.clear();
-                any_table = true;
-                table_name.clear();
-                return true;
-            }
-
-            if (!ParserIdentifier().parse(pos, ast[0], expected))
-                return false;
-
-            if (ParserToken{TokenType::Dot}.ignore(pos, expected))
-            {
-                if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
-                {
-                    /// <database_name>.*
-                    any_database = false;
-                    database_name = getIdentifierName(ast[0]);
-                    any_table = true;
-                    table_name.clear();
-                    return true;
-                }
-
-                if (!ParserIdentifier().parse(pos, ast[1], expected))
-                    return false;
-
-                /// <database_name>.<table_name>
-                any_database = false;
-                database_name = getIdentifierName(ast[0]);
-                any_table = false;
-                table_name = getIdentifierName(ast[1]);
-                return true;
-            }
-
-            /// <table_name>  - the current database, specified table
-            any_database = false;
-            database_name.clear();
-            any_table = false;
-            table_name = getIdentifierName(ast[0]);
-            return true;
-        });
-    }
-
-
     bool parseAccessTypesWithColumns(IParser::Pos & pos, Expected & expected,
                                      std::vector<std::pair<AccessFlags, Strings>> & access_and_columns)
     {
@@ -193,7 +126,7 @@ namespace
 
                 String database_name, table_name;
                 bool any_database = false, any_table = false;
-                if (!parseDatabaseAndTableNameOrMaybeAsterisks(pos, expected, database_name, any_database, table_name, any_table))
+                if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
                     return false;
 
                 for (auto & [access_flags, columns] : access_and_columns)

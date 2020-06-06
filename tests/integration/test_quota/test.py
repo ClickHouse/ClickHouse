@@ -167,7 +167,6 @@ def test_add_remove_quota():
 
     # Add quota.
     copy_quota_xml('two_quotas.xml')
-    print system_quotas()
     assert system_quotas() == [["myQuota",  "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']",              "[31556952]",     0, "['default']", "[]"],
                                ["myQuota2", "4590510c-4d13-bf21-ec8a-c2187b092e73", "users.xml", "['client_key','user_name']", "[3600,2629746]", 0, "[]",          "[]"]]
     assert system_quota_limits() == [["myQuota",  31556952, 0, 1000, "\N", "\N", "\N",   1000, "\N",   "\N"],
@@ -208,6 +207,7 @@ def test_reload_users_xml_by_timer():
 def test_dcl_introspection():
     assert instance.query("SHOW QUOTAS") == "myQuota\n"
     assert instance.query("SHOW CREATE QUOTA") == "CREATE QUOTA myQuota KEYED BY user_name FOR INTERVAL 1 year MAX queries = 1000, read_rows = 1000 TO default\n"
+    assert instance.query("SHOW CREATE QUOTAS") == "CREATE QUOTA myQuota KEYED BY user_name FOR INTERVAL 1 year MAX queries = 1000, read_rows = 1000 TO default\n"
     assert re.match("myQuota\\tdefault\\t.*\\t31556952\\t0\\t1000\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t1000\\t0\\t\\\\N\\t.*\\t\\\\N\n",
                     instance.query("SHOW QUOTA"))
 
@@ -228,6 +228,8 @@ def test_dcl_introspection():
     assert instance.query("SHOW QUOTAS") == "myQuota\nmyQuota2\n"
     assert instance.query("SHOW CREATE QUOTA myQuota") == "CREATE QUOTA myQuota KEYED BY user_name FOR INTERVAL 1 year MAX queries = 1000, read_rows = 1000 TO default\n"
     assert instance.query("SHOW CREATE QUOTA myQuota2") == "CREATE QUOTA myQuota2 KEYED BY client_key, user_name FOR RANDOMIZED INTERVAL 1 hour MAX result_rows = 4000, result_bytes = 400000, read_rows = 4000, read_bytes = 400000, execution_time = 60, FOR INTERVAL 1 month MAX execution_time = 1800\n"
+    assert instance.query("SHOW CREATE QUOTAS") == "CREATE QUOTA myQuota KEYED BY user_name FOR INTERVAL 1 year MAX queries = 1000, read_rows = 1000 TO default\n"\
+                                                   "CREATE QUOTA myQuota2 KEYED BY client_key, user_name FOR RANDOMIZED INTERVAL 1 hour MAX result_rows = 4000, result_bytes = 400000, read_rows = 4000, read_bytes = 400000, execution_time = 60, FOR INTERVAL 1 month MAX execution_time = 1800\n"
     assert re.match("myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\n",
                     instance.query("SHOW QUOTA"))
 

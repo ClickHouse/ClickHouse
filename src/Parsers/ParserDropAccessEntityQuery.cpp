@@ -15,6 +15,23 @@ namespace
     using EntityType = IAccessEntity::Type;
     using EntityTypeInfo = IAccessEntity::TypeInfo;
 
+
+    bool parseEntityType(IParserBase::Pos & pos, Expected & expected, EntityType & type)
+    {
+        for (auto i : ext::range(EntityType::MAX))
+        {
+            const auto & type_info = EntityTypeInfo::get(i);
+            if (ParserKeyword{type_info.name.c_str()}.ignore(pos, expected)
+                || (!type_info.alias.empty() && ParserKeyword{type_info.alias.c_str()}.ignore(pos, expected)))
+            {
+                type = i;
+                return true;
+            }
+        }
+        return false;
+    }
+
+
     bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -30,17 +47,8 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!ParserKeyword{"DROP"}.ignore(pos, expected))
         return false;
 
-    std::optional<EntityType> type;
-    for (auto type_i : ext::range(EntityType::MAX))
-    {
-        const auto & type_info = EntityTypeInfo::get(type_i);
-        if (ParserKeyword{type_info.name.c_str()}.ignore(pos, expected)
-            || (!type_info.alias.empty() && ParserKeyword{type_info.alias.c_str()}.ignore(pos, expected)))
-        {
-            type = type_i;
-        }
-    }
-    if (!type)
+    EntityType type;
+    if (!parseEntityType(pos, expected, type))
         return false;
 
     bool if_exists = false;
@@ -78,7 +86,7 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     auto query = std::make_shared<ASTDropAccessEntityQuery>();
     node = query;
 
-    query->type = *type;
+    query->type = type;
     query->if_exists = if_exists;
     query->cluster = std::move(cluster);
     query->names = std::move(names);

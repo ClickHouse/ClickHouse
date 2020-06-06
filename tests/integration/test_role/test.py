@@ -109,6 +109,11 @@ def test_introspection():
     instance.query('REVOKE SELECT(x) ON test.table FROM R2')
 
     assert instance.query("SHOW ROLES") == TSV([ "R1", "R2" ])
+    assert instance.query("SHOW CREATE ROLE R1") == TSV([ "CREATE ROLE R1" ])
+    assert instance.query("SHOW CREATE ROLE R2") == TSV([ "CREATE ROLE R2" ])
+    assert instance.query("SHOW CREATE ROLES R1, R2") == TSV([ "CREATE ROLE R1", "CREATE ROLE R2" ])
+    assert instance.query("SHOW CREATE ROLES") == TSV([ "CREATE ROLE R1", "CREATE ROLE R2" ])
+
     assert instance.query("SHOW GRANTS FOR A") == TSV([ "GRANT SELECT ON test.table TO A", "GRANT R1 TO A" ])
     assert instance.query("SHOW GRANTS FOR B") == TSV([ "GRANT CREATE ON *.* TO B WITH GRANT OPTION", "GRANT R2 TO B WITH ADMIN OPTION" ])
     assert instance.query("SHOW GRANTS FOR R1") == ""
