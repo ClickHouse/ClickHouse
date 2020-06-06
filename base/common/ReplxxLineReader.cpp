@@ -26,24 +26,26 @@ ReplxxLineReader::ReplxxLineReader(
 
     if (!history_file_path.empty())
     {
-        errno = 0;
         history_file_fd = open(history_file_path.c_str(), O_RDWR);
         if (history_file_fd < 0)
         {
             rx.print("Open of history file failed: %s\n", strerror(errno));
         }
-
-        errno = 0;
-        if (flock(history_file_fd, LOCK_SH))
+        else
         {
-            rx.print("Shared lock of history file failed: %s\n", strerror(errno));
-        }
-        rx.history_load(history_file_path);
+            if (flock(history_file_fd, LOCK_SH))
+            {
+                rx.print("Shared lock of history file failed: %s\n", strerror(errno));
+            }
+            else
+            {
+                rx.history_load(history_file_path);
 
-        errno = 0;
-        if (flock(history_file_fd, LOCK_UN))
-        {
-            rx.print("Unlock of history file failed: %s\n", strerror(errno));
+                if (flock(history_file_fd, LOCK_UN))
+                {
+                    rx.print("Unlock of history file failed: %s\n", strerror(errno));
+                }
+            }
         }
     }
 
