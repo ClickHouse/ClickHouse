@@ -104,7 +104,11 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
     /// It should not affect client address checking, since client cannot connect from IPv6 address
     /// if server has no IPv6 addresses.
     flags |= Poco::Net::DNS::DNS_HINT_AI_ADDRCONFIG;
+#if defined(ARCADIA_BUILD)
+    auto addresses = Poco::Net::DNS::hostByName(host, &Poco::Net::DNS::DEFAULT_DNS_TIMEOUT, flags).addresses();
+#else
     auto addresses = Poco::Net::DNS::hostByName(host, flags).addresses();
+#endif
     if (addresses.empty())
         throw Exception("Not found address of host: " + host, ErrorCodes::DNS_ERROR);
 
@@ -230,7 +234,7 @@ static const String & cacheElemToString(const String & str) { return str; }
 static String cacheElemToString(const Poco::Net::IPAddress & addr) { return addr.toString(); }
 
 template<typename UpdateF, typename ElemsT>
-bool DNSResolver::updateCacheImpl(UpdateF update_func, const ElemsT & elems, const String & log_msg)
+bool DNSResolver::updateCacheImpl(UpdateF && update_func, ElemsT && elems, const String & log_msg)
 {
     bool updated = false;
     String lost_elems;
