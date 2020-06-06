@@ -8,6 +8,8 @@
 
 #include <Common/StackTrace.h>
 
+#include <fmt/format.h>
+
 namespace Poco { class Logger; }
 
 
@@ -20,8 +22,14 @@ public:
     Exception() = default;
     Exception(const std::string & msg, int code);
 
-    enum CreateFromPocoTag { CreateFromPoco };
-    enum CreateFromSTDTag { CreateFromSTD };
+    // Format message with fmt::format, like the logging functions.
+    template <typename ...Fmt>
+    Exception(int code, Fmt&&... fmt)
+        : Exception(fmt::format(std::forward<Fmt>(fmt)...), code)
+    {}
+
+    struct CreateFromPocoTag {};
+    struct CreateFromSTDTag {};
 
     Exception(CreateFromPocoTag, const Poco::Exception & exc);
     Exception(CreateFromSTDTag, const std::exception & exc);

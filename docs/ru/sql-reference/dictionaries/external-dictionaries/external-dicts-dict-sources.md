@@ -19,7 +19,7 @@
 </yandex>
 ```
 
-Аналогичный [DDL-запрос](../../../sql-reference/statements/create.md#create-dictionary-query):
+Аналогичный [DDL-запрос](../../statements/create.md#create-dictionary-query):
 
 ``` sql
 CREATE DICTIONARY dict_name (...)
@@ -150,7 +150,7 @@ SOURCE(HTTP(
 ))
 ```
 
-Чтобы ClickHouse смог обратиться к HTTPS-ресурсу, необходимо [настроить openSSL](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md) в конфигурации сервера.
+Чтобы ClickHouse смог обратиться к HTTPS-ресурсу, необходимо [настроить openSSL](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl) в конфигурации сервера.
 
 Поля настройки:
 
@@ -531,7 +531,7 @@ SOURCE(CLICKHOUSE(
 
 Поля настройки:
 
--   `host` — хост ClickHouse. Если host локальный, то запрос выполняется без сетевого взаимодействия. Чтобы повысить отказоустойчивость решения, можно создать таблицу типа [Distributed](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md) и прописать её в дальнейших настройках.
+-   `host` — хост ClickHouse. Если host локальный, то запрос выполняется без сетевого взаимодействия. Чтобы повысить отказоустойчивость решения, можно создать таблицу типа [Distributed](../../../engines/table-engines/special/distributed.md) и прописать её в дальнейших настройках.
 -   `port` — порт сервера ClickHouse.
 -   `user` — имя пользователя ClickHouse.
 -   `password` — пароль пользователя ClickHouse.
