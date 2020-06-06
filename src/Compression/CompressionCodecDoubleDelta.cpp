@@ -290,7 +290,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
             if (sign)
             {
                 /// It's well defined for unsigned data types.
-                /// In constrast, it's undefined to to negation of the most negative signed number due to overflow.
+                /// In constrast, it's undefined to do negation of the most negative signed number due to overflow.
                 double_delta = -double_delta;
             }
         }
