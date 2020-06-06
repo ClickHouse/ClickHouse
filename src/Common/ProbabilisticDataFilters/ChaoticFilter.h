@@ -31,16 +31,19 @@ public:
 
     bool contains(HashType hash) const
     {
-        UnderType proof = getBits<120 % 64, 127 % 64, UnderType>(hash);
+        UnderType proof = static_cast<UnderType>(MurmurHash3(hash) % 256);
         if (proof == 0) proof = 1;
 
-        UInt64 hash1 = getBits<0, 29, UnderType>(hash) % size;
+        UInt64 hash1 = MurmurHash3_mix1(hash) % size;
         if (filter[hash1] == proof) { return true; }
-        UInt64 hash2 = getBits<30, 59, UnderType>(hash) % size;
+
+        UInt64 hash2 = MurmurHash3_mix2(hash) % size;
         if (filter[hash2] == proof) { return true; }
-        UInt64 hash3 = (getBits<60, 63, UnderType>(hash) + (getBits<64 % 64, 89 % 64, UnderType>(hash) << 4)) % size;
+
+        UInt64 hash3 = MurmurHash3_mix3(hash) % size;
         if (filter[hash3] == proof) { return true; }
-        UInt64 hash4 = getBits<90 % 64, 119 % 64, UnderType>(hash) % size;
+
+        UInt64 hash4 = MurmurHash3_mix4(hash) % size;
         if (filter[hash4] == proof) { return true; }
 
         return false;
@@ -48,19 +51,23 @@ public:
     void add(HashType hash)
     {
         ++elements_added;
-        UnderType proof = static_cast<UnderType>(getBits<120 % 64, 127 % 64>(hash));
+        UnderType proof = static_cast<UnderType>(MurmurHash3(hash) % 256);
         if (proof == 0) proof = 1;
 
-        UInt64 hash1 = getBits<0, 29>(hash) % size;
+        // UInt64 hash1 = getBits<0, 29>(hash) % size;
+        UInt64 hash1 = MurmurHash3_mix1(hash) % size;
         if (filter[hash1] == proof) { return; }
         if (filter[hash1] == 0) { filter[hash1] = proof; return; }
-        UInt64 hash2 = getBits<30, 59>(hash) % size;
+        // UInt64 hash2 = getBits<30, 59>(hash) % size;
+        UInt64 hash2 = MurmurHash3_mix2(hash) % size;
         if (filter[hash2] == proof) { return; }
         if (filter[hash2] == 0) { filter[hash2] = proof; return; }
-        UInt64 hash3 = (getBits<60, 63>(hash) + (getBits<64 % 64, 89 % 64>(hash) << 4)) % size;
+        // UInt64 hash3 = (getBits<60, 63>(hash) + (getBits<64 % 64, 89 % 64>(hash) << 4)) % size;
+        UInt64 hash3 = MurmurHash3_mix3(hash) % size;
         if (filter[hash3] == proof) { return; }
         if (filter[hash3] == 0) { filter[hash3] = proof; return; }
-        UInt64 hash4 = getBits<90 % 64, 119 % 64>(hash) % size;
+        // UInt64 hash4 = getBits<90 % 64, 119 % 64>(hash) % size;
+        UInt64 hash4 = MurmurHash3_mix4(hash) % size;
         if (filter[hash4] == proof) { return; }
         if (filter[hash4] == 0) { filter[hash4] = proof; return; }
     }
@@ -74,18 +81,54 @@ private:
 
     size_t elements_added = 0;
 
-public:
-    template<size_t L, size_t R, typename returnType = UInt64>
-    returnType getBits(UInt64 x) const
+    inline DB::UInt64 MurmurHash3(DB::UInt64 x) const
     {
-        if constexpr (R == 63)
-        {
-            return x >> L;
-        }
-        else
-        {
-            return (((1ull << (R + 1)) - (1ull << L)) & x) >> L;
-        }
+        x ^= x >> 33;
+        x *= 0xff51afd7ed558ccdULL;
+        x ^= x >> 33;
+        x *= 0xc4ceb9fe1a85ec53ULL;
+        x ^= x >> 33;
+        return x;
+    }
+
+    inline DB::UInt64 MurmurHash3_mix1(DB::UInt64 x) const
+    {
+        x ^= x >> 31;
+        x *= 0x7fb5d329728ea185ULL;
+        x ^= x >> 27;
+        x *= 0x81dadef4bc2dd44dULL;
+        x ^= x >> 33;
+        return x;
+    }
+
+    inline DB::UInt64 MurmurHash3_mix2(DB::UInt64 x) const
+    {
+        x ^= x >> 33;
+        x *= 0x64dd81482cbd31d7ULL;
+        x ^= x >> 31;
+        x *= 0xe36aa5c613612997ULL;
+        x ^= x >> 31;
+        return x;
+    }
+
+    inline DB::UInt64 MurmurHash3_mix3(DB::UInt64 x) const
+    {
+        x ^= x >> 31;
+        x *= 0x99bcf6822b23ca35;
+        x ^= x >> 30;
+        x *= 0x14020a57acced8b7;
+        x ^= x >> 33;
+        return x;
+    }
+
+    inline DB::UInt64 MurmurHash3_mix4(DB::UInt64 x) const
+    {
+        x ^= x >> 33;
+        x *= 0x62a9d9ed799705f5;
+        x ^= x >> 28;
+        x *= 0xcb24d0a5c88c35b3;
+        x ^= x >> 32;
+        return x;
     }
 
 };

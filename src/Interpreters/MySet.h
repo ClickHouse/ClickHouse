@@ -32,7 +32,7 @@ class MySet : public ISet
 {
 public:
     MySet(const SizeLimits&, bool, bool, size_t filter_length_, size_t hashes_count_)
-        : log(&Logger::get("MySet")), filter_length(filter_length_), hashes_count(hashes_count_)
+        : log(&Poco::Logger::get("MySet")), filter_length(filter_length_), hashes_count(hashes_count_)
     {
     }
 

@@ -58,7 +58,7 @@ public:
     virtual void checkColumnsNumber(size_t) const { throw Exception("Not Implemented: checkColumnsNumber", ErrorCodes::NOT_IMPLEMENTED); }
     virtual void checkTypesEqual(size_t, const DataTypePtr&) const { throw Exception("Not Implemented: checkTypesEqual", ErrorCodes::NOT_IMPLEMENTED); }
 
-    virtual ~ISet() {};
+    virtual ~ISet() {}
 };
 
 using SetPtr = std::shared_ptr<ISet>;
