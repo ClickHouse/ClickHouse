@@ -271,11 +271,11 @@ bool DNSResolver::updateCache()
     {
         std::lock_guard lock(impl->drop_mutex);
 
-        for (auto & host : impl->new_hosts)
+        for (const auto & host : impl->new_hosts)
             impl->known_hosts.insert(std::move(host));
         impl->new_hosts.clear();
 
-        for (auto & address : impl->new_addresses)
+        for (const auto & address : impl->new_addresses)
             impl->known_addresses.insert(std::move(address));
         impl->new_addresses.clear();
 
