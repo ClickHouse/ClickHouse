@@ -83,15 +83,15 @@ BlockIO InterpreterRenameQuery::execute()
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
         if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
             database->propose(query_ptr);
+        } else {
+            database->renameTable(
+                context,
+                elem.from_table_name,
+                *database_catalog.getDatabase(elem.to_database_name),
+                elem.to_table_name,
+                rename.exchange);
         }
-        database->renameTable(
-            context,
-            elem.from_table_name,
-            *database_catalog.getDatabase(elem.to_database_name),
-            elem.to_table_name,
-            rename.exchange);
     }
-
     return {};
 }
 

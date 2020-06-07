@@ -99,8 +99,9 @@ BlockIO InterpreterDropQuery::executeToTable(
             /// Drop table from memory, don't touch data and metadata
             if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
                 database->propose(query_ptr);
+            } else {
+                database->detachTable(table_id.table_name);
             }
-            database->detachTable(table_id.table_name);
         }
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
@@ -113,8 +114,9 @@ BlockIO InterpreterDropQuery::executeToTable(
             auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
                 database->propose(query_ptr);
+            } else {
+                table->truncate(query_ptr, metadata_snapshot, context, table_lock);
             }
-            table->truncate(query_ptr, metadata_snapshot, context, table_lock);
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
@@ -129,8 +131,9 @@ BlockIO InterpreterDropQuery::executeToTable(
 
             if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
                 database->propose(query_ptr);
+            } else {
+                database->dropTable(context, table_id.table_name, query.no_delay);
             }
-            database->dropTable(context, table_id.table_name, query.no_delay);
         }
     }
 

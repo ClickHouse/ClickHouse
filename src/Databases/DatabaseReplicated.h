@@ -59,6 +59,8 @@ private:
 
     std::atomic<size_t> current_log_entry_n = 0;
 
+    String last_executed_log_entry = "";
+
     BackgroundSchedulePool::TaskHolder background_log_executor;
 
     String replica_path;
