@@ -52,9 +52,14 @@ public:
         }
     }
 
-    Float64Point createContainer() const
+    Float64Geometry createContainer() const
     {
         return Float64Point();
+    }
+
+    void get(Float64Geometry & container, size_t i) const
+    {
+        get(boost::get<Float64Point>(container), i);
     }
 
     void get(Float64Point & container, size_t i) const
@@ -62,13 +67,12 @@ public:
         boost::geometry::set<0>(container, x[i]);
         boost::geometry::set<0>(container, y[i]);
     }
-
 private:
     const Float64 * x;
     const Float64 * y;
 };
 
-template<class RingType, class PointParser>
+template<class Geometry, class RingType, class PointParser>
 class RingFromColumnParser
 {
 public:
@@ -77,9 +81,14 @@ public:
         , pointParser(static_cast<const ColumnArray &>(col).getData())
     {}
 
-    RingType createContainer() const
+    Geometry createContainer() const
     {
         return RingType();
+    }
+
+    void get(Geometry & container, size_t i) const
+    {
+        get(boost::get<RingType>(container), i);
     }
 
     void get(RingType & container, size_t i) const
@@ -107,9 +116,7 @@ private:
     const PointParser pointParser;
 };
 
-using Float64RingFromColumnParser = RingFromColumnParser<Float64Ring, Float64PointFromColumnParser>;
-
-template<class PolygonType, class RingParser>
+template<class Geometry, class PolygonType, class RingParser>
 class PolygonFromColumnParser
 {
 public:
@@ -118,9 +125,14 @@ public:
         , ringParser(static_cast<const ColumnArray &>(col).getData())
     {}
 
-    PolygonType createContainer() const
+    Geometry createContainer() const
     {
         return PolygonType();
+    }
+
+    void get(Geometry & container, size_t i) const
+    {
+        get(boost::get<PolygonType>(container), i);
     }
 
     void get(PolygonType & container, size_t i) const
@@ -128,7 +140,6 @@ public:
         size_t l = offsets[i - 1];
         size_t r = offsets[i];
 
-        container.resize(r - l);
         ringParser.get(container.outer(), l);
 
         container.inners().resize(r - l - 1);
@@ -143,9 +154,7 @@ private:
     const RingParser ringParser;
 };
 
-using Float64PolygonFromColumnParser = PolygonFromColumnParser<Float64Polygon, Float64RingFromColumnParser>;
-
-template<class MultiPolygonType, class PolygonParser>
+template<class Geometry, class MultiPolygonType, class PolygonParser>
 class MultiPolygonFromColumnParser
 {
 public:
@@ -154,20 +163,21 @@ public:
         , polygonParser(static_cast<const ColumnArray &>(col).getData())
     {}
 
-    MultiPolygonType createContainer() const
+    Geometry createContainer() const
     {
         return MultiPolygonType();
     }
 
-    void get(MultiPolygonType & container, size_t i) const
+    void get(Geometry & container, size_t i) const
     {
+        MultiPolygonType & multi_polygon = boost::get<MultiPolygonType>(container);
         size_t l = offsets[i - 1];
         size_t r = offsets[i];
 
-        container.resize(r - l);
+        multi_polygon.resize(r - l);
         for (size_t j = l; j < r; j++)
         {
-            polygonParser.get(container[j - l], j - l);
+            polygonParser.get(multi_polygon[j - l], j - l);
         }
     }
 
@@ -176,7 +186,9 @@ private:
     const PolygonParser polygonParser;
 };
 
-using Float64MultiPolygonFromColumnParser = MultiPolygonFromColumnParser<Float64Polygon, Float64PolygonFromColumnParser>;
+using Float64RingFromColumnParser = RingFromColumnParser<Float64Geometry, Float64Ring, Float64PointFromColumnParser>;
+using Float64PolygonFromColumnParser = PolygonFromColumnParser<Float64Geometry, Float64Polygon, Float64RingFromColumnParser>;
+using Float64MultiPolygonFromColumnParser = MultiPolygonFromColumnParser<Float64Geometry, Float64MultiPolygon, Float64PolygonFromColumnParser>;
 
 using GeometryFromColumnParser = boost::variant<
     Float64PointFromColumnParser,
@@ -184,6 +196,10 @@ using GeometryFromColumnParser = boost::variant<
     Float64PolygonFromColumnParser,
     Float64MultiPolygonFromColumnParser
 >;
+
+Float64Geometry createContainer(const GeometryFromColumnParser & parser);
+
+void get(const GeometryFromColumnParser & parser, Float64Geometry & container, size_t i);
 
 GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 

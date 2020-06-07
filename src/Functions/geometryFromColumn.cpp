@@ -15,6 +15,35 @@ size_t getArrayDepth(DataTypePtr data_type, size_t max_depth)
     return max_depth;
 }
 
+class ContainerCreator : public boost::static_visitor<Float64Geometry>
+{
+public:
+    template <class T>
+    Float64Geometry operator()(const T & parser) const
+    {
+        return parser.createContainer();
+    }
+};
+
+class Getter : public boost::static_visitor<void>
+{
+public:
+    Getter(Float64Geometry & container_, size_t i_)
+        : container(container_)
+        , i(i_)
+    {}
+
+    template <class T>
+    void operator()(const T & parser) const
+    {
+        parser.get(container, i);
+    }
+
+private:
+    Float64Geometry & container;
+    size_t i;
+};
+
 }
 
 GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col)
@@ -27,6 +56,17 @@ GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndNam
         default: throw Exception("Cannot parse geometry from column with type " + col.type->getName()
                 + ", array depth is too big", ErrorCodes::ILLEGAL_COLUMN);
     }
+}
+
+Float64Geometry createContainer(const GeometryFromColumnParser & parser)
+{
+    static ContainerCreator creator;
+    return boost::apply_visitor(creator, parser);
+}
+
+void get(const GeometryFromColumnParser & parser, Float64Geometry & container, size_t i)
+{
+    boost::apply_visitor(Getter(container, i), parser);
 }
 
 }
