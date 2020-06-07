@@ -13,6 +13,8 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/castColumn.h>
 
 namespace DB {
 
@@ -32,11 +34,20 @@ class Float64PointFromColumnParser
 public:
     Float64PointFromColumnParser(const IColumn & col)
     {
+        // const auto & tuple_columns = static_cast<const ColumnTuple &>(col).getColumns();
+        const auto * tuple = checkAndGetColumn<ColumnTuple>(&col);
+
+        if (!tuple)
+        {
+            throw Exception("not stonks", ErrorCodes::ILLEGAL_COLUMN);
+
+        }
+
         const auto & tuple_columns = static_cast<const ColumnTuple &>(col).getColumns();
 
         if (tuple_columns.size() != 2)
         {
-            throw Exception("tuple size must be equal to 2", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("tuple size is " + toString(tuple_columns.size()) + " != 2", ErrorCodes::ILLEGAL_COLUMN);
         }
 
         x = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
@@ -201,6 +212,7 @@ Float64Geometry createContainer(const GeometryFromColumnParser & parser);
 
 void get(const GeometryFromColumnParser & parser, Float64Geometry & container, size_t i);
 
+Float64PointFromColumnParser makePointFromColumnParser(const ColumnWithTypeAndName & col);
 GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
 }
