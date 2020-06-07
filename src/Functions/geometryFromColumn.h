@@ -30,6 +30,6 @@ private:
 
 using GeometryFromColumnParser = boost::variant<PointFromColumnParser>;
 
-GeometryFromColumnParser makeGeometryFromColumnParser();
+GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
 }
