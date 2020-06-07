@@ -34,15 +34,6 @@ class Float64PointFromColumnParser
 public:
     Float64PointFromColumnParser(const IColumn & col)
     {
-        // const auto & tuple_columns = static_cast<const ColumnTuple &>(col).getColumns();
-        const auto * tuple = checkAndGetColumn<ColumnTuple>(&col);
-
-        if (!tuple)
-        {
-            throw Exception("not stonks", ErrorCodes::ILLEGAL_COLUMN);
-
-        }
-
         const auto & tuple_columns = static_cast<const ColumnTuple &>(col).getColumns();
 
         if (tuple_columns.size() != 2)
