@@ -1,4 +1,5 @@
 #include <common/ReplxxLineReader.h>
+#include <common/errnoToString.h>
 
 #include <errno.h>
 #include <string.h>
@@ -29,13 +30,13 @@ ReplxxLineReader::ReplxxLineReader(
         history_file_fd = open(history_file_path.c_str(), O_RDWR);
         if (history_file_fd < 0)
         {
-            rx.print("Open of history file failed: %s\n", strerror(errno));
+            rx.print("Open of history file failed: %s\n", errnoToString(errno).c_str());
         }
         else
         {
             if (flock(history_file_fd, LOCK_SH))
             {
-                rx.print("Shared lock of history file failed: %s\n", strerror(errno));
+                rx.print("Shared lock of history file failed: %s\n", errnoToString(errno).c_str());
             }
             else
             {
@@ -43,7 +44,7 @@ ReplxxLineReader::ReplxxLineReader(
 
                 if (flock(history_file_fd, LOCK_UN))
                 {
-                    rx.print("Unlock of history file failed: %s\n", strerror(errno));
+                    rx.print("Unlock of history file failed: %s\n", errnoToString(errno).c_str());
                 }
             }
         }
