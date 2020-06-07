@@ -75,8 +75,7 @@ public:
     RingFromColumnParser(const IColumn & col)
         : offsets(static_cast<const ColumnArray &>(col).getOffsets())
         , pointParser(static_cast<const ColumnArray &>(col).getData())
-    {
-    }
+    {}
 
     RingType createContainer() const
     {
@@ -88,21 +87,103 @@ public:
         size_t l = offsets[i - 1];
         size_t r = offsets[i];
 
+        // reserve extra point for case when polygon is open
+        container.reserve(r - l + 1);
         container.resize(r - l);
 
         for (size_t j = l; j < r; j++) {
-            pointParser.parse(container[j - l], l);
+            pointParser.get(container[j - l], j);
+        }
+
+        // make ring closed
+        if (!boost::geometry::equals(container[0], container.back()))
+        {
+            container.push_back(container[0]);
         }
     }
 
 private:
     const IColumn::Offsets & offsets;
-    PointParser pointParser;
+    const PointParser pointParser;
 };
 
 using Float64RingFromColumnParser = RingFromColumnParser<Float64Ring, Float64PointFromColumnParser>;
 
-using GeometryFromColumnParser = boost::variant<Float64PointFromColumnParser, Float64RingFromColumnParser>;
+template<class PolygonType, class RingParser>
+class PolygonFromColumnParser
+{
+public:
+    PolygonFromColumnParser(const IColumn & col)
+        : offsets(static_cast<const ColumnArray &>(col).getOffsets())
+        , ringParser(static_cast<const ColumnArray &>(col).getData())
+    {}
+
+    PolygonType createContainer() const
+    {
+        return PolygonType();
+    }
+
+    void get(PolygonType & container, size_t i) const
+    {
+        size_t l = offsets[i - 1];
+        size_t r = offsets[i];
+
+        container.resize(r - l);
+        ringParser.get(container.outer(), l);
+
+        container.inners().resize(r - l - 1);
+        for (size_t j = l + 1; j < r; j++)
+        {
+            ringParser.get(container.inners()[j - l - 1], j);
+        }
+    }
+
+private:
+    const IColumn::Offsets & offsets;
+    const RingParser ringParser;
+};
+
+using Float64PolygonFromColumnParser = PolygonFromColumnParser<Float64Polygon, Float64RingFromColumnParser>;
+
+template<class MultiPolygonType, class PolygonParser>
+class MultiPolygonFromColumnParser
+{
+public:
+    MultiPolygonFromColumnParser(const IColumn & col)
+        : offsets(static_cast<const ColumnArray &>(col).getOffsets())
+        , polygonParser(static_cast<const ColumnArray &>(col).getData())
+    {}
+
+    MultiPolygonType createContainer() const
+    {
+        return MultiPolygonType();
+    }
+
+    void get(MultiPolygonType & container, size_t i) const
+    {
+        size_t l = offsets[i - 1];
+        size_t r = offsets[i];
+
+        container.resize(r - l);
+        for (size_t j = l; j < r; j++)
+        {
+            polygonParser.get(container[j - l], j - l);
+        }
+    }
+
+private:
+    const IColumn::Offsets & offsets;
+    const PolygonParser polygonParser;
+};
+
+using Float64MultiPolygonFromColumnParser = MultiPolygonFromColumnParser<Float64Polygon, Float64PolygonFromColumnParser>;
+
+using GeometryFromColumnParser = boost::variant<
+    Float64PointFromColumnParser,
+    Float64RingFromColumnParser,
+    Float64PolygonFromColumnParser,
+    Float64MultiPolygonFromColumnParser
+>;
 
 GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
