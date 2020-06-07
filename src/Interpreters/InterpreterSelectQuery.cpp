@@ -664,8 +664,8 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
 {
     /** Streams of data. When the query is executed in parallel, we have several data streams.
      *  If there is no GROUP BY, then perform all operations before ORDER BY and LIMIT in parallel, then
-     *  if there is an ORDER BY, then glue the streams using UnionBlockInputStream, and then MergeSortingBlockInputStream,
-     *  if not, then glue it using UnionBlockInputStream,
+     *  if there is an ORDER BY, then glue the streams using ResizeProcessor, and then MergeSorting transforms,
+     *  if not, then glue it using ResizeProcessor,
      *  then apply LIMIT.
      *  If there is GROUP BY, then we will perform all operations up to GROUP BY, inclusive, in parallel;
      *  a parallel GROUP BY will glue streams into one,

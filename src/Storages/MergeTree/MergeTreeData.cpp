@@ -1,5 +1,4 @@
 #include <Compression/CompressedReadBuffer.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>

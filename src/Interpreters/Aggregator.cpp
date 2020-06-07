@@ -692,7 +692,8 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         if (auto * memory_tracker = memory_tracker_child->getParent())
             current_memory_usage = memory_tracker->get();
 
-    auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;    /// Here all the results in the sum are taken into account, from different threads.
+    /// Here all the results in the sum are taken into account, from different threads.
+    auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
 
     bool worth_convert_to_two_level
         = (params.group_by_two_level_threshold && result_size >= params.group_by_two_level_threshold)
