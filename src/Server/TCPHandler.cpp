@@ -886,6 +886,15 @@ void TCPHandler::receiveQuery()
     query_context->applySettingsChanges(settings_changes);
     const Settings & settings = query_context->getSettingsRef();
 
+    /// Non need to reset user, since query_context will be updated to connection_context.
+    String proxied_user = settings.proxied_user.toString();
+    String current_user = query_context->getUserName();
+    if (!proxied_user.empty() && proxied_user != current_user)
+    {
+        query_context->setProxiedUser(proxied_user, socket().peerAddress());
+        LOG_DEBUG(log, "Proxied to {}, via {}", proxied_user, current_user);
+    }
+
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
     /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),
     ///  because settings.send_timeout is client-side setting which has opposite meaning on the server side.

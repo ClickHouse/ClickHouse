@@ -385,6 +385,8 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, data_type_default_nullable, false, "Data types without NULL or NOT NULL will make Nullable", 0) \
     M(SettingBool, cast_keep_nullable, false, "CAST operator keep Nullable for result data type", 0) \
     \
+    M(SettingString, proxied_user, "", "Use this user to execute query", 0) \
+    \
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     \
     M(SettingBool, allow_experimental_low_cardinality_type, true, "Obsolete setting, does nothing. Will be removed after 2019-08-13", 0) \

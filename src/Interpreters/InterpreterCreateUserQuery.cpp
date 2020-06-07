@@ -62,6 +62,19 @@ namespace
             user.settings = *override_settings;
         else if (query.settings)
             user.settings = *query.settings;
+
+        if (query.allowed_proxy_users)
+            user.allowed_proxy_users = *query.allowed_proxy_users;
+        if (query.remove_allowed_proxy_users)
+        {
+            for (const auto & proxy_user : *query.remove_allowed_proxy_users)
+                user.allowed_proxy_users.erase(proxy_user);
+        }
+        if (query.add_allowed_proxy_users)
+        {
+            for (const auto & proxy_user : *query.add_allowed_proxy_users)
+                user.allowed_proxy_users.emplace(proxy_user);
+        }
     }
 }
 

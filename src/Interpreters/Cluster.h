@@ -44,7 +44,7 @@ public:
         * <node>
         *     <host>example01-01-1</host>
         *     <port>9000</port>
-        *     <!-- <user>, <password>, <default_database> if needed -->
+        *     <!-- <user>, <password>, <default_database>, <proxy_user> if needed -->
         * </node>
         * ...
         * or in <shard> and inside in <replica> elements:
@@ -52,7 +52,7 @@ public:
         *     <replica>
         *         <host>example01-01-1</host>
         *         <port>9000</port>
-        *         <!-- <user>, <password>, <default_database>. <secure> if needed -->
+        *         <!-- <user>, <password>, <default_database>. <secure>, <proxy_user> if needed -->
         *    </replica>
         * </shard>
         */
@@ -69,6 +69,7 @@ public:
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
         bool is_local = false;
         bool user_specified = false;
+        bool proxy_user = false;
 
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;

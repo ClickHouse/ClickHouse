@@ -1,0 +1,30 @@
+<yandex>
+    <remote_servers>
+        <c1>
+            <node>
+                <host>n1</host>
+                <port>9000</port>
+            </node>
+            <node>
+                <host>n2</host>
+                <port>9000</port>
+            </node>
+        </c1>
+
+        <c2>
+            <node>
+                <host>n1</host>
+                <port>9000</port>
+                <user>nopass</user>
+                <proxy_user>true</proxy_user>
+            </node>
+            <node>
+                <host>n2</host>
+                <port>9000</port>
+                <user>nopass</user>
+                <proxy_user>true</proxy_user>
+            </node>
+        </c2>
+    </remote_servers>
+</yandex>
+

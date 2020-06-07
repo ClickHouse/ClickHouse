@@ -245,6 +245,34 @@
          https://clickhouse.tech/docs/en/operations/table_engines/distributed/
       -->
     <remote_servers incl="clickhouse_remote_servers" >
+      <!-- Verbose example (everything except host/port is optional): -->
+      <!--
+      <verbose_cluster>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <user>default</user>
+                    <password></password>
+                    <default_database>default</default_database>
+                    <secure>false</secure>
+                    <proxy_user>false</proxy_user>
+                </replica>
+            </shard>
+        </verbose_cluster>
+        -->
+
+        <!-- Or simpler (all keys from verbose form is supported): -->
+        <!--
+        <compact_cluster>
+            <node>
+                <host>localhost</host>
+                <port>9000</port>
+            </node>
+        </compact_cluster>
+        -->
+
         <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
             <shard>

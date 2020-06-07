@@ -45,6 +45,7 @@ public:
 
     /// Current values are not serialized, because it is passed separately.
     String current_user;
+    String current_proxied_user;
     String current_query_id;
     Poco::Net::SocketAddress current_address;
 

@@ -51,6 +51,7 @@ public:
             UInt16 port_,
             const String & default_database_,
             const String & user_,
+            bool proxy_user_,
             const String & password_,
             const String & client_name_ = "client",
             Protocol::Compression compression_ = Protocol::Compression::Enable,
@@ -61,10 +62,11 @@ public:
         port(port_),
         default_database(default_database_),
         user(user_),
+        proxy_user(proxy_user_),
         password(password_),
         client_name(client_name_),
         compression(compression_),
-        secure{secure_}
+        secure(secure_)
     {
     }
 
@@ -99,7 +101,9 @@ protected:
     {
         return std::make_shared<Connection>(
             host, port,
-            default_database, user, password,
+            default_database,
+            user, proxy_user,
+            password,
             client_name, compression, secure);
     }
 
@@ -108,6 +112,7 @@ private:
     UInt16 port;
     String default_database;
     String user;
+    bool proxy_user = false;
     String password;
 
     String client_name;

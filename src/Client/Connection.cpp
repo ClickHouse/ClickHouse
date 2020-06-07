@@ -53,6 +53,32 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+Connection::Connection(const String & host_, UInt16 port_,
+    const String & default_database_,
+    const String & user_,
+    bool proxy_user_,
+    const String & password_,
+    const String & client_name_,
+    Protocol::Compression compression_,
+    Protocol::Secure secure_,
+    Poco::Timespan sync_request_timeout_)
+    :
+    host(host_), port(port_), default_database(default_database_),
+    user(user_), proxy_user(proxy_user_),
+    password(password_),
+    client_name(client_name_),
+    compression(compression_),
+    secure(secure_),
+    sync_request_timeout(sync_request_timeout_),
+    log_wrapper(*this)
+{
+    /// Don't connect immediately, only on first need.
+
+    if (user.empty())
+        user = "default";
+
+    setDescription();
+}
 
 void Connection::connect(const ConnectionTimeouts & timeouts)
 {
@@ -401,7 +427,16 @@ void Connection::sendQuery(
     {
         auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
                                                                                                           : SettingsBinaryFormat::OLD;
-        settings->serialize(*out, settings_format);
+
+        /// Proxy user
+        if (proxy_user && client_info && !client_info->empty() && !client_info->current_user.empty())
+        {
+            Settings new_settings = *settings;
+            new_settings.proxied_user = client_info->current_user;
+            new_settings.serialize(*out, settings_format);
+        }
+        else
+            settings->serialize(*out, settings_format);
     }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);

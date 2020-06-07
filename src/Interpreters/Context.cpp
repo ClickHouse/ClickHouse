@@ -659,6 +659,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
 {
     auto lock = getLock();
 
+    client_info.current_proxied_user.clear();
     client_info.current_user = name;
     client_info.current_address = address;
 
@@ -684,6 +685,42 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
     user_id = new_user_id;
     access = std::move(new_access);
+    current_roles.clear();
+    use_default_roles = true;
+
+    setSettings(*access->getDefaultSettings());
+}
+
+void Context::setProxiedUser(const String & proxied_user, const Poco::Net::SocketAddress & address)
+{
+    auto lock = getLock();
+
+    String current_user = getUserName();
+    client_info.current_proxied_user = proxied_user;
+    client_info.current_address = address;
+
+    if (client_info.current_user.empty() || !user_id)
+        throw Exception("Proxying can be done only via the user", ErrorCodes::LOGICAL_ERROR);
+
+    access->checkAccess(AccessType::PROXY);
+
+    auto proxied_user_id = getAccessControlManager().find<User>(proxied_user);
+    std::shared_ptr<const ContextAccess> proxied_access;
+    if (proxied_user_id)
+    {
+        proxied_access = getAccessControlManager().getContextAccess(*proxied_user_id, {}, true, settings, current_database, client_info);
+        if (!proxied_access->isClientHostAllowed() || !proxied_access->isProxyingAllowed(current_user))
+        {
+            proxied_user_id = {};
+            proxied_access = nullptr;
+        }
+    }
+
+    if (!proxied_user_id || !proxied_access)
+        throw Exception(proxied_user + ": Authentication failed: proxying via " + current_user + " is not allowed", ErrorCodes::AUTHENTICATION_FAILED);
+
+    user_id = proxied_user_id;
+    access = std::move(proxied_access);
     current_roles.clear();
     use_default_roles = true;
 
@@ -793,6 +830,8 @@ ASTPtr Context::getRowPolicyCondition(const String & database, const String & ta
 void Context::setInitialRowPolicy()
 {
     auto lock = getLock();
+    /// XXX: can use current_proxied_user (if any)
+    /// (https://github.com/ClickHouse/ClickHouse/pull/8926)
     auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
     initial_row_policy = nullptr;
     if (initial_user_id)

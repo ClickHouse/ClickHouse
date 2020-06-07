@@ -56,6 +56,8 @@ Clusters are set like this:
             <replica>
                 <host>example01-01-2</host>
                 <port>9000</port>
+                <!-- User proxying, see bellow -->
+                <proxy_user>false</proxy_user>
             </replica>
         </shard>
         <shard>
@@ -142,6 +144,14 @@ When the `max_parallel_replicas` option is enabled, query processing is parallel
 
 !!! note "Note"
     Since [`remote`](../../../sql-reference/table-functions/remote.md)/`cluster` table functions internally create temporary instance of the same Distributed engine, `_shard_num` is available there too.
+
+## User proxying
+
+By default distributed queries uses user from the cluster configuration (or `default`), however it is not always required behaviour (since there are per-user limits), to use initial user (user who issued the query), you need to do the following:
+
+- Set `proxy_user` to `true` for each `replica`/`node` from `remote_servers` (on initator node)
+- Allow the node user (`user` from the `replica`, or `default` if not set) to execute queries as initial user, you can do this with `ALTER USER initial_user ADD PROXY default` (on each remote node)
+- And the proxy user should have `PROXY` privelege, you can do this with `GRANT PROXY ON *.* TO default` (on each remote node)
 
 **See Also**
 

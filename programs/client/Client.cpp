@@ -681,6 +681,7 @@ private:
             connection_parameters.port,
             connection_parameters.default_database,
             connection_parameters.user,
+            false /* proxy_user */,
             connection_parameters.password,
             "client",
             connection_parameters.compression,

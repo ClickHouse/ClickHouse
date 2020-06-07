@@ -140,6 +140,7 @@ Hierarchy of privileges:
         -   `SHOW_QUOTAS`
         -   `SHOW_SETTINGS_PROFILES`
     -   `ROLE ADMIN`
+    -   `PROXY`
 -   [SYSTEM](#grant-system)
     -   `SYSTEM SHUTDOWN`
     -   `SYSTEM DROP CACHE`
@@ -383,6 +384,7 @@ Allows a user to execute queries that manage users, roles and row policies.
         -   `SHOW_ROW_POLICIES`. Level: `GLOBAL`. Aliases: `SHOW POLICIES`, `SHOW CREATE ROW POLICY`, `SHOW CREATE POLICY`
         -   `SHOW_QUOTAS`. Level: `GLOBAL`. Aliases: `SHOW CREATE QUOTA`
         -   `SHOW_SETTINGS_PROFILES`. Level: `GLOBAL`. Aliases: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
+    -    `PROXY`. Level: `GLOBAL`
 
 The `ROLE ADMIN` privilege allows a user to assign and revoke any roles including those which are not assigned to the user with the admin option.
 

@@ -192,6 +192,14 @@ bool ContextAccess::isClientHostAllowed() const
     return user->allowed_client_hosts.contains(params.address);
 }
 
+bool ContextAccess::isProxyingAllowed(const String & proxy_user) const
+{
+    std::lock_guard lock{mutex};
+    if (!user)
+        return false;
+    return user->allowed_proxy_users.contains(proxy_user);
+}
+
 
 template <int mode, bool grant_option, typename... Args>
 bool ContextAccess::calculateResultAccessAndCheck(Poco::Logger * log_, const AccessFlags & flags, const Args &... args) const

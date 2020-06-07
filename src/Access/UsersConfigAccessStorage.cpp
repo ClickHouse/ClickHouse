@@ -111,6 +111,23 @@ namespace
             }
         }
 
+        /// Fill list of allowed proxy users.
+        const auto allowed_proxy_users_config = user_config + ".allowed_proxy_users";
+        if (config.has(allowed_proxy_users_config))
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config.keys(allowed_proxy_users_config, keys);
+            user->allowed_proxy_users.clear();
+            for (const String & key : keys)
+            {
+                String value = config.getString(allowed_proxy_users_config + "." + key);
+                if (key.starts_with("user"))
+                    user->allowed_proxy_users.emplace(value);
+                else
+                    throw Exception("Unknown user pattern type: " + key, ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
+
         /// Fill list of allowed databases.
         const auto databases_config = user_config + ".allow_databases";
         std::optional<Strings> databases;
