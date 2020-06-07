@@ -17,4 +17,7 @@ private:
     void addToHistory(const String & line) override;
 
     replxx::Replxx rx;
+
+    // used to call flock() to synchronize multiple clients using same history file
+    int history_file_fd = -1;
 };
