@@ -7,16 +7,12 @@
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <common/logger_useful.h>
+#include "Poco/Timer.h"
 #include <amqpcpp.h>
 
 
 namespace DB
 {
-
-enum
-{
-    Received_max_to_stop_loop = 10000 // Explained below
-};
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
@@ -44,7 +40,6 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , stopped(stopped_)
         , exchange_declared(false)
         , false_param(false)
-        , loop_attempt(false)
 {
     messages.clear();
     current = messages.begin();
@@ -112,7 +107,7 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
 
 void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
 {
-    /* This varibale can be updated from a different thread in case of some error so its better to always check
+    /* This varibale can be updated from a different thread in case of some error so its better to check
      * whether exchange is in a working state and if not - declare it once again.
      */
     if (!exchange_declared)
@@ -123,7 +118,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
 
     std::atomic<bool> bindings_created = false, bindings_error = false;
 
-    consumer_channel->declareQueue(AMQP::durable)
+    consumer_channel->declareQueue(AMQP::exclusive)
     .onSuccess([&](const std::string &  queue_name_, int /* msgcount */, int /* consumercount */)
     {
         queues.emplace_back(queue_name_);
@@ -151,12 +146,6 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
         .onSuccess([&]
         {
             bindings_created = true;
-
-            /// Unblock current thread so that it does not continue to execute all callbacks on the connection
-            if (++count_bound_queues == num_queues)
-            {
-                stopEventLoop();
-            }
         })
         .onError([&](const char * message)
         {
@@ -176,8 +165,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
      */
     while (!bindings_created && !bindings_error)
     {
-        /// No need for timeouts as this event loop is blocking for the current thread and quits in case there are no active events
-        startEventLoop(bindings_created);
+        startEventLoop(bindings_created, loop_started);
     }
 }
 
@@ -187,7 +175,7 @@ void ReadBufferFromRabbitMQConsumer::subscribeConsumer()
     if (subscribed)
         return;
 
-    LOG_TRACE(log, "Subscribing to " + std::to_string(queues.size()) + " queues");
+    LOG_TRACE(log, "Subscribing {} to {} queues", channel_id, queues.size());
 
     for (auto & queue : queues)
     {
@@ -200,17 +188,19 @@ void ReadBufferFromRabbitMQConsumer::subscribeConsumer()
 
 void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
 {
-    std::atomic<bool> consumer_created = false, consumer_error = false;
+    std::atomic<bool> consumer_created = false, consumer_failed = false;
 
     consumer_channel->consume(queue_name, AMQP::noack)
     .onSuccess([&](const std::string & /* consumer */)
     {
         consumer_created = true;
+        LOG_TRACE(log, "Consumer {} is subscribed to queue {}", channel_id, queue_name);
 
-        LOG_TRACE(log, "Consumer " + std::to_string(channel_id) + " is subscribed to queue " + queue_name);
-
-        /// Unblock current thread so that it does not continue to execute all callbacks on the connection
-        if (++count_subscribed == queues.size())
+        /* Unblock current thread if it is looping (any consumer could start the loop and only one of them) so that it does not
+         * continue to execute all active callbacks on the connection (=> one looping consumer will not be blocked for too
+         * long and events will be distributed between them)
+         */
+        if (loop_started && ++count_subscribed == queues.size())
         {
             stopEventLoop();
         }
@@ -223,9 +213,9 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
             String message_received = std::string(message.body(), message.body() + message_size);
 
             if (row_delimiter != '\0')
+            {
                 message_received += row_delimiter;
-
-            //LOG_TRACE(log, "Consumer {} received a message", channel_id);
+            }
 
             bool stop_loop = false;
 
@@ -235,9 +225,10 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
                 received.push_back(message_received);
 
                 /* As event loop is blocking to the thread that started it and a single thread should not be blocked while
-                 * executing all callbacks on the connection (not only its own), then there should be some point to unblock
+                 * executing all callbacks on the connection (not only its own), then there should be some point to unblock.
+                 * loop_started == 1 if current consumer is started the loop and not another.
                  */
-                if (!loop_attempt && received.size() % Received_max_to_stop_loop == 0)
+                if (!loop_started)
                 {
                     stop_loop = true;
                 }
@@ -245,20 +236,20 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
 
             if (stop_loop)
             {
-                stopEventLoop();
+                stopEventLoopWithTimeout();
             }
         }
     })
     .onError([&](const char * message)
     {
-        consumer_error = true;
+        consumer_failed = true;
         LOG_ERROR(log, "Consumer {} failed: {}", channel_id, message);
     });
 
-    while (!consumer_created && !consumer_error)
+    /// These variables are updated in a separate thread.
+    while (!consumer_created && !consumer_failed)
     {
-        /// No need for timeouts as this event loop is blocking for the current thread and quits in case there are no active events
-        startEventLoop(consumer_created);
+        startEventLoop(consumer_created, loop_started);
     }
 }
 
@@ -269,9 +260,15 @@ void ReadBufferFromRabbitMQConsumer::stopEventLoop()
 }
 
 
-void ReadBufferFromRabbitMQConsumer::startEventLoop(std::atomic<bool> & check_param)
+void ReadBufferFromRabbitMQConsumer::stopEventLoopWithTimeout()
 {
-    eventHandler.start(check_param);
+    eventHandler.stopWithTimeout();
+}
+
+
+void ReadBufferFromRabbitMQConsumer::startEventLoop(std::atomic<bool> & check_param, std::atomic<bool> & loop_started)
+{
+    eventHandler.startConsumerLoop(check_param, loop_started);
 }
 
 
@@ -284,10 +281,9 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
     {
         if (received.empty())
         {
-            /// Run the onReceived callbacks to save the messages that have been received by now
-            loop_attempt = true;
-            startEventLoop(false_param);
-            loop_attempt = false;
+            /// Run the onReceived callbacks to save the messages that have been received by now, blocks current thread
+            startEventLoop(false_param, loop_started);
+            loop_started = false;
         }
 
         if (received.empty())
