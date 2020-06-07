@@ -28,7 +28,7 @@ private:
     const char * end;
 
     const char * getName() const override { return "INSERT query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 public:
     ParserInsertQuery(const char * end_) : end(end_) {}
 };

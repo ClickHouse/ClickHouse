@@ -7,6 +7,6 @@ namespace DB
 
 /** Parses a name of an object which could be written in 3 forms:
   * name, `name` or 'name' */
-bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, String & result);
+bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, IParser::Ranges * ranges, String & result);
 
 }

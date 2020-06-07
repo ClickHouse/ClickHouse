@@ -15,7 +15,7 @@ class ParserShowTablesQuery : public IParserBase
 {
 protected:
     const char * getName() const override { return "SHOW [TEMPORARY] TABLES|DATABASES [[NOT] LIKE 'str'] [LIMIT expr]"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 }

@@ -29,7 +29,7 @@ class ParserAlterQuery : public IParserBase
 {
 protected:
     const char * getName() const  override{ return "ALTER query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -37,7 +37,7 @@ class ParserAlterCommandList : public IParserBase
 {
 protected:
     const char * getName() const  override{ return "a list of ALTER commands"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 
 public:
     bool is_live_view;
@@ -50,7 +50,7 @@ class ParserAlterCommand : public IParserBase
 {
 protected:
     const char * getName() const  override{ return "ALTER command"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 
 public:
     bool is_live_view;
@@ -64,7 +64,7 @@ class ParserAssignment : public IParserBase
 {
 protected:
     const char * getName() const  override{ return "column assignment"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 }

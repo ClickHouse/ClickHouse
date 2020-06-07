@@ -172,7 +172,7 @@ namespace
             if (!condition.empty())
             {
                 ParserExpression parser;
-                ASTPtr expr = parseQuery(parser, condition, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                ASTPtr expr = parseQuery(parser, condition, nullptr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
                 query->conditions[static_cast<size_t>(type)] = expr;
             }
         }

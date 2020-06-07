@@ -57,7 +57,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         ParserQuery parser(end);
         do
         {
-            ASTPtr res = parseQueryAndMovePosition(parser, pos, end, "query", multiple, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            ASTPtr res = parseQueryAndMovePosition(parser, pos, end, nullptr, "query", multiple, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
             if (!quiet)
             {
                 formatAST(*res, std::cout, hilite, oneline);

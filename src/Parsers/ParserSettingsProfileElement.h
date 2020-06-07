@@ -16,7 +16,7 @@ public:
 
 protected:
     const char * getName() const override { return "SettingsProfileElement"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 
 private:
     bool id_mode = false;
@@ -32,7 +32,7 @@ public:
 
 protected:
     const char * getName() const override { return "SettingsProfileElements"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 
 private:
     bool id_mode = false;

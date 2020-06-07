@@ -240,7 +240,7 @@ void DatabaseOrdinary::alterTable(
     }
 
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path,
+    ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), nullptr, "in file " + table_metadata_path,
         0, context.getSettingsRef().max_parser_depth);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();

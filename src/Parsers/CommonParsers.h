@@ -21,7 +21,9 @@ public:
 protected:
     const char * getName() const override;
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
+
+    const char * color() const override { return IAST::hilite_keyword; }
 };
 
 
@@ -34,7 +36,7 @@ public:
 protected:
     const char * getName() const override { return "token"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
+    bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected, Ranges *) override
     {
         if (pos->type != token_type)
         {
@@ -43,6 +45,61 @@ protected:
         }
         ++pos;
         return true;
+    }
+
+    const char * color() const override
+    {
+        switch (token_type)
+        {
+            case TokenType::Whitespace:
+            case TokenType::Comment:
+                return IAST::hilite_none;
+
+            case TokenType::Number:
+            case TokenType::StringLiteral:
+                return IAST::hilite_none;
+
+            case TokenType::QuotedIdentifier:
+
+            case TokenType::OpeningRoundBracket:
+            case TokenType::ClosingRoundBracket:
+
+            case TokenType::OpeningSquareBracket:
+            case TokenType::ClosingSquareBracket:
+
+            case TokenType::OpeningCurlyBrace:
+            case TokenType::ClosingCurlyBrace:
+
+            case TokenType::Comma:
+            case TokenType::Semicolon:
+            case TokenType::Dot:
+                return IAST::hilite_none;
+
+            case TokenType::Asterisk:
+                break;
+
+            case TokenType::Plus:
+            case TokenType::Minus:
+            case TokenType::Slash:
+            case TokenType::Percent:
+            case TokenType::Arrow:
+            case TokenType::QuestionMark:
+            case TokenType::Colon:
+            case TokenType::Equals:
+            case TokenType::NotEquals:
+            case TokenType::Less:
+            case TokenType::Greater:
+            case TokenType::LessOrEquals:
+            case TokenType::GreaterOrEquals:
+            case TokenType::Concatenation:
+            case TokenType::At:
+                return IAST::hilite_operator;
+
+            default:
+                return nullptr;
+        }
+
+        __builtin_unreachable();
     }
 };
 
@@ -53,7 +110,7 @@ class ParserNothing : public IParserBase
 public:
     const char * getName() const override { return "nothing"; }
 
-    bool parseImpl(Pos & /*pos*/, ASTPtr & /*node*/, Expected & /*expected*/) override { return true; }
+    bool parseImpl(Pos & /*pos*/, ASTPtr & /*node*/, Expected & /*expected*/, Ranges *) override { return true; }
 };
 
 }

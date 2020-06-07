@@ -8,13 +8,13 @@
 namespace DB
 {
 
-bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, String & result)
+bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, IParser::Ranges * ranges, String & result)
 {
     ASTPtr res;
 
-    if (!ParserIdentifier().parse(pos, res, expected))
+    if (!ParserIdentifier().parse(pos, res, expected, ranges))
     {
-        if (!ParserStringLiteral().parse(pos, res, expected))
+        if (!ParserStringLiteral().parse(pos, res, expected, ranges))
             return false;
 
         result = res->as<ASTLiteral &>().value.safeGet<String>();

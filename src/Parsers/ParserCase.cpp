@@ -8,7 +8,7 @@
 namespace DB
 {
 
-bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_case{"CASE"};
     ParserKeyword s_when{"WHEN"};
@@ -17,11 +17,11 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_end{ "END"};
     ParserExpressionWithOptionalAlias p_expr{false};
 
-    if (!s_case.ignore(pos, expected))
+    if (!s_case.ignore(pos, expected, ranges))
         return false;
 
     auto old_pos = pos;
-    bool has_case_expr = !s_when.ignore(pos, expected);
+    bool has_case_expr = !s_when.ignore(pos, expected, ranges);
     pos = old_pos;
 
     ASTs args;
@@ -29,20 +29,20 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto parse_branches = [&]()
     {
         bool has_branch = false;
-        while (s_when.ignore(pos, expected))
+        while (s_when.ignore(pos, expected, ranges))
         {
             has_branch = true;
 
             ASTPtr expr_when;
-            if (!p_expr.parse(pos, expr_when, expected))
+            if (!p_expr.parse(pos, expr_when, expected, ranges))
                 return false;
             args.push_back(expr_when);
 
-            if (!s_then.ignore(pos, expected))
+            if (!s_then.ignore(pos, expected, ranges))
                 return false;
 
             ASTPtr expr_then;
-            if (!p_expr.parse(pos, expr_then, expected))
+            if (!p_expr.parse(pos, expr_then, expected, ranges))
                 return false;
             args.push_back(expr_then);
         }
@@ -51,9 +51,9 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         ASTPtr expr_else;
-        if (s_else.ignore(pos, expected))
+        if (s_else.ignore(pos, expected, ranges))
         {
-            if (!p_expr.parse(pos, expr_else, expected))
+            if (!p_expr.parse(pos, expr_else, expected, ranges))
                 return false;
         }
         else
@@ -64,13 +64,13 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         args.push_back(expr_else);
 
-        return s_end.ignore(pos, expected);
+        return s_end.ignore(pos, expected, ranges);
     };
 
     if (has_case_expr)
     {
         ASTPtr case_expr;
-        if (!p_expr.parse(pos, case_expr, expected))
+        if (!p_expr.parse(pos, case_expr, expected, ranges))
             return false;
         args.push_back(case_expr);
 

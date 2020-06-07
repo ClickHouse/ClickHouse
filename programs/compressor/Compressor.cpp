@@ -125,7 +125,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             ParserCodec codec_parser;
 
             std::string codecs_line = boost::algorithm::join(codecs, ",");
-            auto ast = parseQuery(codec_parser, "(" + codecs_line + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            auto ast = parseQuery(codec_parser, "(" + codecs_line + ")", nullptr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
             codec = CompressionCodecFactory::instance().get(ast, nullptr, false);
         }
         else

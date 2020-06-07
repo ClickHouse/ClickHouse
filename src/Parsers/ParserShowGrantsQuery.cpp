@@ -6,17 +6,17 @@
 
 namespace DB
 {
-bool ParserShowGrantsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserShowGrantsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
-    if (!ParserKeyword{"SHOW GRANTS"}.ignore(pos, expected))
+    if (!ParserKeyword{"SHOW GRANTS"}.ignore(pos, expected, ranges))
         return false;
 
     String name;
     bool current_user = false;
 
-    if (ParserKeyword{"FOR"}.ignore(pos, expected))
+    if (ParserKeyword{"FOR"}.ignore(pos, expected, ranges))
     {
-        if (!parseUserNameOrCurrentUserTag(pos, expected, name, current_user))
+        if (!parseUserNameOrCurrentUserTag(pos, expected, ranges, name, current_user))
             return false;
     }
     else

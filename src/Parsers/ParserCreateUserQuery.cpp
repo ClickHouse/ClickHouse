@@ -2,7 +2,6 @@
 #include <Parsers/ASTCreateUserQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseUserName.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTLiteral.h>
@@ -23,40 +22,42 @@ namespace ErrorCodes
 
 namespace
 {
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name, std::optional<String> & new_host_pattern)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, String & new_name,
+                       std::optional<String> & new_host_pattern)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
+            if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected, ranges))
                 return false;
 
-            return parseUserName(pos, expected, new_name, new_host_pattern);
+            return parseUserName(pos, expected, ranges, new_name, new_host_pattern);
         });
     }
 
 
-    bool parseAuthentication(IParserBase::Pos & pos, Expected & expected, std::optional<Authentication> & authentication)
+    bool parseAuthentication(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges,
+                             std::optional<Authentication> & authentication)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword{"NOT IDENTIFIED"}.ignore(pos, expected))
+            if (ParserKeyword{"NOT IDENTIFIED"}.ignore(pos, expected, ranges))
             {
                 authentication = Authentication{Authentication::NO_PASSWORD};
                 return true;
             }
 
-            if (!ParserKeyword{"IDENTIFIED"}.ignore(pos, expected))
+            if (!ParserKeyword{"IDENTIFIED"}.ignore(pos, expected, ranges))
                 return false;
 
             std::optional<Authentication::Type> type;
             bool expect_password = false;
             bool expect_hash = false;
 
-            if (ParserKeyword{"WITH"}.ignore(pos, expected))
+            if (ParserKeyword{"WITH"}.ignore(pos, expected, ranges))
             {
                 for (auto check_type : ext::range(Authentication::MAX_TYPE))
                 {
-                    if (ParserKeyword{Authentication::TypeInfo::get(check_type).raw_name}.ignore(pos, expected))
+                    if (ParserKeyword{Authentication::TypeInfo::get(check_type).raw_name}.ignore(pos, expected, ranges))
                     {
                         type = check_type;
                         expect_password = (check_type != Authentication::NO_PASSWORD);
@@ -66,12 +67,12 @@ namespace
 
                 if (!type)
                 {
-                    if (ParserKeyword{"SHA256_HASH"}.ignore(pos, expected))
+                    if (ParserKeyword{"SHA256_HASH"}.ignore(pos, expected, ranges))
                     {
                         type = Authentication::SHA256_PASSWORD;
                         expect_hash = true;
                     }
-                    else if (ParserKeyword{"DOUBLE_SHA1_HASH"}.ignore(pos, expected))
+                    else if (ParserKeyword{"DOUBLE_SHA1_HASH"}.ignore(pos, expected, ranges))
                     {
                         type = Authentication::DOUBLE_SHA1_PASSWORD;
                         expect_hash = true;
@@ -91,7 +92,7 @@ namespace
             if (expect_password || expect_hash)
             {
                 ASTPtr ast;
-                if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
+                if (!ParserKeyword{"BY"}.ignore(pos, expected, ranges) || !ParserStringLiteral{}.parse(pos, ast, expected, ranges))
                     return false;
 
                 password = ast->as<const ASTLiteral &>().value.safeGet<String>();
@@ -108,17 +109,18 @@ namespace
     }
 
 
-    bool parseHosts(IParserBase::Pos & pos, Expected & expected, const char * prefix, std::optional<AllowedClientHosts> & hosts)
+    bool parseHosts(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, const char * prefix,
+                    std::optional<AllowedClientHosts> & hosts)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (prefix && !ParserKeyword{prefix}.ignore(pos, expected))
+            if (prefix && !ParserKeyword{prefix}.ignore(pos, expected, ranges))
                 return false;
 
-            if (!ParserKeyword{"HOST"}.ignore(pos, expected))
+            if (!ParserKeyword{"HOST"}.ignore(pos, expected, ranges))
                 return false;
 
-            if (ParserKeyword{"ANY"}.ignore(pos, expected))
+            if (ParserKeyword{"ANY"}.ignore(pos, expected, ranges))
             {
                 if (!hosts)
                     hosts.emplace();
@@ -126,7 +128,7 @@ namespace
                 return true;
             }
 
-            if (ParserKeyword{"NONE"}.ignore(pos, expected))
+            if (ParserKeyword{"NONE"}.ignore(pos, expected, ranges))
             {
                 if (!hosts)
                     hosts.emplace();
@@ -136,41 +138,41 @@ namespace
             AllowedClientHosts new_hosts;
             do
             {
-                if (ParserKeyword{"LOCAL"}.ignore(pos, expected))
+                if (ParserKeyword{"LOCAL"}.ignore(pos, expected, ranges))
                 {
                     new_hosts.addLocalHost();
                 }
-                else if (ParserKeyword{"REGEXP"}.ignore(pos, expected))
+                else if (ParserKeyword{"REGEXP"}.ignore(pos, expected, ranges))
                 {
                     ASTPtr ast;
-                    if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
+                    if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected, ranges))
                         return false;
 
                     for (const auto & name_regexp_ast : ast->children)
                         new_hosts.addNameRegexp(name_regexp_ast->as<const ASTLiteral &>().value.safeGet<String>());
                 }
-                else if (ParserKeyword{"NAME"}.ignore(pos, expected))
+                else if (ParserKeyword{"NAME"}.ignore(pos, expected, ranges))
                 {
                     ASTPtr ast;
-                    if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
+                    if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected, ranges))
                         return false;
 
                     for (const auto & name_ast : ast->children)
                         new_hosts.addName(name_ast->as<const ASTLiteral &>().value.safeGet<String>());
                 }
-                else if (ParserKeyword{"IP"}.ignore(pos, expected))
+                else if (ParserKeyword{"IP"}.ignore(pos, expected, ranges))
                 {
                     ASTPtr ast;
-                    if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
+                    if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected, ranges))
                         return false;
 
                     for (const auto & subnet_ast : ast->children)
                         new_hosts.addSubnet(subnet_ast->as<const ASTLiteral &>().value.safeGet<String>());
                 }
-                else if (ParserKeyword{"LIKE"}.ignore(pos, expected))
+                else if (ParserKeyword{"LIKE"}.ignore(pos, expected, ranges))
                 {
                     ASTPtr ast;
-                    if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
+                    if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected, ranges))
                         return false;
 
                     for (const auto & pattern_ast : ast->children)
@@ -179,7 +181,7 @@ namespace
                 else
                     return false;
             }
-            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+            while (ParserToken{TokenType::Comma}.ignore(pos, expected, ranges));
 
             if (!hosts)
                 hosts.emplace();
@@ -189,15 +191,16 @@ namespace
     }
 
 
-    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & default_roles)
+    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, bool id_mode,
+                           std::shared_ptr<ASTExtendedRoleSet> & default_roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"DEFAULT ROLE"}.ignore(pos, expected))
+            if (!ParserKeyword{"DEFAULT ROLE"}.ignore(pos, expected, ranges))
                 return false;
 
             ASTPtr ast;
-            if (!ParserExtendedRoleSet{}.enableCurrentUserKeyword(false).useIDMode(id_mode).parse(pos, ast, expected))
+            if (!ParserExtendedRoleSet{}.enableCurrentUserKeyword(false).useIDMode(id_mode).parse(pos, ast, expected, ranges))
                 return false;
 
             default_roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
@@ -207,15 +210,16 @@ namespace
     }
 
 
-    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTSettingsProfileElements> & settings)
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, bool id_mode,
+                       std::shared_ptr<ASTSettingsProfileElements> & settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected))
+            if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected, ranges))
                 return false;
 
             ASTPtr new_settings_ast;
-            if (!ParserSettingsProfileElements{}.useIDMode(id_mode).parse(pos, new_settings_ast, expected))
+            if (!ParserSettingsProfileElements{}.useIDMode(id_mode).parse(pos, new_settings_ast, expected, ranges))
                 return false;
 
             if (!settings)
@@ -226,29 +230,29 @@ namespace
         });
     }
 
-    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, String & cluster)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{"ON"}.ignore(pos, expected, ranges) && ASTQueryWithOnCluster::parse(pos, cluster, expected, ranges);
         });
     }
 }
 
 
-bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     bool alter = false;
     if (attach_mode)
     {
-        if (!ParserKeyword{"ATTACH USER"}.ignore(pos, expected))
+        if (!ParserKeyword{"ATTACH USER"}.ignore(pos, expected, ranges))
             return false;
     }
     else
     {
-        if (ParserKeyword{"ALTER USER"}.ignore(pos, expected))
+        if (ParserKeyword{"ALTER USER"}.ignore(pos, expected, ranges))
             alter = true;
-        else if (!ParserKeyword{"CREATE USER"}.ignore(pos, expected))
+        else if (!ParserKeyword{"CREATE USER"}.ignore(pos, expected, ranges))
             return false;
     }
 
@@ -257,20 +261,20 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool or_replace = false;
     if (alter)
     {
-        if (ParserKeyword{"IF EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{"IF EXISTS"}.ignore(pos, expected, ranges))
             if_exists = true;
     }
     else
     {
-        if (ParserKeyword{"IF NOT EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{"IF NOT EXISTS"}.ignore(pos, expected, ranges))
             if_not_exists = true;
-        else if (ParserKeyword{"OR REPLACE"}.ignore(pos, expected))
+        else if (ParserKeyword{"OR REPLACE"}.ignore(pos, expected, ranges))
             or_replace = true;
     }
 
     String name;
     std::optional<String> host_pattern;
-    if (!parseUserName(pos, expected, name, host_pattern))
+    if (!parseUserName(pos, expected, ranges, name, host_pattern))
         return false;
 
     String new_name;
@@ -285,27 +289,27 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     while (true)
     {
-        if (!authentication && parseAuthentication(pos, expected, authentication))
+        if (!authentication && parseAuthentication(pos, expected, ranges, authentication))
             continue;
 
-        if (parseHosts(pos, expected, nullptr, hosts))
+        if (parseHosts(pos, expected, ranges, nullptr, hosts))
             continue;
 
-        if (parseSettings(pos, expected, attach_mode, settings))
+        if (parseSettings(pos, expected, ranges, attach_mode, settings))
             continue;
 
-        if (!default_roles && parseDefaultRoles(pos, expected, attach_mode, default_roles))
+        if (!default_roles && parseDefaultRoles(pos, expected, ranges, attach_mode, default_roles))
             continue;
 
-        if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+        if (cluster.empty() && parseOnCluster(pos, expected, ranges, cluster))
             continue;
 
         if (alter)
         {
-            if (new_name.empty() && parseRenameTo(pos, expected, new_name, new_host_pattern))
+            if (new_name.empty() && parseRenameTo(pos, expected, ranges, new_name, new_host_pattern))
                 continue;
 
-            if (parseHosts(pos, expected, "ADD", add_hosts) || parseHosts(pos, expected, "DROP", remove_hosts))
+            if (parseHosts(pos, expected, ranges, "ADD", add_hosts) || parseHosts(pos, expected, ranges, "DROP", remove_hosts))
                 continue;
         }
 

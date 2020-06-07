@@ -23,7 +23,7 @@ namespace DB
 {
 
 
-bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserQueryWithOutput query_with_output_p(enable_explain);
     ParserInsertQuery insert_p(end);
@@ -39,19 +39,19 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserGrantQuery grant_p;
     ParserSetRoleQuery set_role_p;
 
-    bool res = query_with_output_p.parse(pos, node, expected)
-        || insert_p.parse(pos, node, expected)
-        || use_p.parse(pos, node, expected)
-        || set_role_p.parse(pos, node, expected)
-        || set_p.parse(pos, node, expected)
-        || system_p.parse(pos, node, expected)
-        || create_user_p.parse(pos, node, expected)
-        || create_role_p.parse(pos, node, expected)
-        || create_quota_p.parse(pos, node, expected)
-        || create_row_policy_p.parse(pos, node, expected)
-        || create_settings_profile_p.parse(pos, node, expected)
-        || drop_access_entity_p.parse(pos, node, expected)
-        || grant_p.parse(pos, node, expected);
+    bool res = query_with_output_p.parse(pos, node, expected, ranges)
+        || insert_p.parse(pos, node, expected, ranges)
+        || use_p.parse(pos, node, expected, ranges)
+        || set_role_p.parse(pos, node, expected, ranges)
+        || set_p.parse(pos, node, expected, ranges)
+        || system_p.parse(pos, node, expected, ranges)
+        || create_user_p.parse(pos, node, expected, ranges)
+        || create_role_p.parse(pos, node, expected, ranges)
+        || create_quota_p.parse(pos, node, expected, ranges)
+        || create_row_policy_p.parse(pos, node, expected, ranges)
+        || create_settings_profile_p.parse(pos, node, expected, ranges)
+        || drop_access_entity_p.parse(pos, node, expected, ranges)
+        || grant_p.parse(pos, node, expected, ranges);
 
     return res;
 }

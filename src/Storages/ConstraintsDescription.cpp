@@ -30,7 +30,7 @@ ConstraintsDescription ConstraintsDescription::parse(const String & str)
 
     ConstraintsDescription res;
     ParserConstraintDeclarationList parser;
-    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr list = parseQuery(parser, str, nullptr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     for (const auto & constraint : list->children)
         res.constraints.push_back(constraint);

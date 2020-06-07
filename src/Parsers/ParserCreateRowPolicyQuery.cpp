@@ -20,31 +20,32 @@ namespace
     constexpr auto MAX_CONDITION_TYPE = RowPolicy::MAX_CONDITION_TYPE;
 
 
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_short_name)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, String & new_short_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
+            if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected, ranges))
                 return false;
 
-            return parseIdentifierOrStringLiteral(pos, expected, new_short_name);
+            return parseIdentifierOrStringLiteral(pos, expected, ranges, new_short_name);
         });
     }
 
-    bool parseAsRestrictiveOrPermissive(IParserBase::Pos & pos, Expected & expected, std::optional<bool> & is_restrictive)
+    bool parseAsRestrictiveOrPermissive(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges,
+                                        std::optional<bool> & is_restrictive)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"AS"}.ignore(pos, expected))
+            if (!ParserKeyword{"AS"}.ignore(pos, expected, ranges))
                 return false;
 
-            if (ParserKeyword{"RESTRICTIVE"}.ignore(pos, expected))
+            if (ParserKeyword{"RESTRICTIVE"}.ignore(pos, expected, ranges))
             {
                 is_restrictive = true;
                 return true;
             }
 
-            if (!ParserKeyword{"PERMISSIVE"}.ignore(pos, expected))
+            if (!ParserKeyword{"PERMISSIVE"}.ignore(pos, expected, ranges))
                 return false;
 
             is_restrictive = false;
@@ -52,11 +53,11 @@ namespace
         });
     }
 
-    bool parseConditionalExpression(IParserBase::Pos & pos, Expected & expected, std::optional<ASTPtr> & expr)
+    bool parseConditionalExpression(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, std::optional<ASTPtr> & expr)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword("NONE").ignore(pos, expected))
+            if (ParserKeyword("NONE").ignore(pos, expected, ranges))
             {
                 expr = nullptr;
                 return true;
@@ -64,7 +65,7 @@ namespace
 
             ParserExpression parser;
             ASTPtr x;
-            if (!parser.parse(pos, x, expected))
+            if (!parser.parse(pos, x, expected, ranges))
                 return false;
 
             expr = x;
@@ -73,7 +74,8 @@ namespace
     }
 
     bool parseConditions(
-        IParserBase::Pos & pos, Expected & expected, bool alter, std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> & conditions)
+        IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, bool alter,
+        std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> & conditions)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -88,12 +90,12 @@ namespace
                 }
             };
 
-            if (ParserKeyword{"FOR"}.ignore(pos, expected))
+            if (ParserKeyword{"FOR"}.ignore(pos, expected, ranges))
             {
                 do
                 {
                     size_t old_size = commands.size();
-                    if (ParserKeyword{"ALL"}.ignore(pos, expected))
+                    if (ParserKeyword{"ALL"}.ignore(pos, expected, ranges))
                     {
                         add_all_commands();
                     }
@@ -102,7 +104,7 @@ namespace
                         for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
                         {
                             const std::string_view & command = ConditionTypeInfo::get(condition_type).command;
-                            if (ParserKeyword{command.data()}.ignore(pos, expected))
+                            if (ParserKeyword{command.data()}.ignore(pos, expected, ranges))
                             {
                                 commands.emplace(command);
                                 break;
@@ -112,19 +114,19 @@ namespace
                     if (commands.size() == old_size)
                         return false;
                 }
-                while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+                while (ParserToken{TokenType::Comma}.ignore(pos, expected, ranges));
             }
 
             std::optional<ASTPtr> filter;
             std::optional<ASTPtr> check;
-            if (ParserKeyword{"USING"}.ignore(pos, expected))
+            if (ParserKeyword{"USING"}.ignore(pos, expected, ranges))
             {
-                if (!parseConditionalExpression(pos, expected, filter))
+                if (!parseConditionalExpression(pos, expected, ranges, filter))
                     return false;
             }
-            if (ParserKeyword{"WITH CHECK"}.ignore(pos, expected))
+            if (ParserKeyword{"WITH CHECK"}.ignore(pos, expected, ranges))
             {
-                if (!parseConditionalExpression(pos, expected, check))
+                if (!parseConditionalExpression(pos, expected, ranges, check))
                     return false;
             }
 
@@ -154,30 +156,32 @@ namespace
     }
 
     bool parseMultipleConditions(
-        IParserBase::Pos & pos, Expected & expected, bool alter, std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> & conditions)
+        IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, bool alter,
+        std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> & conditions)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> res_conditions;
             do
             {
-                if (!parseConditions(pos, expected, alter, res_conditions))
+                if (!parseConditions(pos, expected, ranges, alter, res_conditions))
                     return false;
             }
-            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+            while (ParserToken{TokenType::Comma}.ignore(pos, expected, ranges));
 
             conditions = std::move(res_conditions);
             return true;
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, bool id_mode,
+                      std::shared_ptr<ASTExtendedRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected)
-                || !ParserExtendedRoleSet{}.useIDMode(id_mode).parse(pos, ast, expected))
+            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected, ranges)
+                || !ParserExtendedRoleSet{}.useIDMode(id_mode).parse(pos, ast, expected, ranges))
                 return false;
 
             roles = std::static_pointer_cast<ASTExtendedRoleSet>(ast);
@@ -185,29 +189,29 @@ namespace
         });
     }
 
-    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, String & cluster)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{"ON"}.ignore(pos, expected, ranges) && ASTQueryWithOnCluster::parse(pos, cluster, expected, ranges);
         });
     }
 }
 
 
-bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     bool alter = false;
     if (attach_mode)
     {
-        if (!ParserKeyword{"ATTACH POLICY"}.ignore(pos, expected) && !ParserKeyword{"ATTACH ROW POLICY"}.ignore(pos, expected))
+        if (!ParserKeyword{"ATTACH POLICY"}.ignore(pos, expected, ranges) && !ParserKeyword{"ATTACH ROW POLICY"}.ignore(pos, expected, ranges))
             return false;
     }
     else
     {
-        if (ParserKeyword{"ALTER POLICY"}.ignore(pos, expected) || ParserKeyword{"ALTER ROW POLICY"}.ignore(pos, expected))
+        if (ParserKeyword{"ALTER POLICY"}.ignore(pos, expected, ranges) || ParserKeyword{"ALTER ROW POLICY"}.ignore(pos, expected, ranges))
             alter = true;
-        else if (!ParserKeyword{"CREATE POLICY"}.ignore(pos, expected) && !ParserKeyword{"CREATE ROW POLICY"}.ignore(pos, expected))
+        else if (!ParserKeyword{"CREATE POLICY"}.ignore(pos, expected, ranges) && !ParserKeyword{"CREATE ROW POLICY"}.ignore(pos, expected, ranges))
             return false;
     }
 
@@ -216,14 +220,14 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     bool or_replace = false;
     if (alter)
     {
-        if (ParserKeyword{"IF EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{"IF EXISTS"}.ignore(pos, expected, ranges))
             if_exists = true;
     }
     else
     {
-        if (ParserKeyword{"IF NOT EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{"IF NOT EXISTS"}.ignore(pos, expected, ranges))
             if_not_exists = true;
-        else if (ParserKeyword{"OR REPLACE"}.ignore(pos, expected))
+        else if (ParserKeyword{"OR REPLACE"}.ignore(pos, expected, ranges))
             or_replace = true;
     }
 
@@ -231,8 +235,8 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     String & database = name_parts.database;
     String & table_name = name_parts.table_name;
     String & short_name = name_parts.short_name;
-    if (!parseIdentifierOrStringLiteral(pos, expected, short_name) || !ParserKeyword{"ON"}.ignore(pos, expected)
-        || !parseDatabaseAndTableName(pos, expected, database, table_name))
+    if (!parseIdentifierOrStringLiteral(pos, expected, ranges, short_name) || !ParserKeyword{"ON"}.ignore(pos, expected, ranges)
+        || !parseDatabaseAndTableName(pos, expected, ranges, database, table_name))
         return false;
 
     String new_short_name;
@@ -242,26 +246,26 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     while (true)
     {
-        if (alter && new_short_name.empty() && parseRenameTo(pos, expected, new_short_name))
+        if (alter && new_short_name.empty() && parseRenameTo(pos, expected, ranges, new_short_name))
             continue;
 
-        if (!is_restrictive && parseAsRestrictiveOrPermissive(pos, expected, is_restrictive))
+        if (!is_restrictive && parseAsRestrictiveOrPermissive(pos, expected, ranges, is_restrictive))
             continue;
 
-        if (parseMultipleConditions(pos, expected, alter, conditions))
+        if (parseMultipleConditions(pos, expected, ranges, alter, conditions))
             continue;
 
-        if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+        if (cluster.empty() && parseOnCluster(pos, expected, ranges, cluster))
             continue;
 
         break;
     }
 
     std::shared_ptr<ASTExtendedRoleSet> roles;
-    parseToRoles(pos, expected, attach_mode, roles);
+    parseToRoles(pos, expected, ranges, attach_mode, roles);
 
     if (cluster.empty())
-        parseOnCluster(pos, expected, cluster);
+        parseOnCluster(pos, expected, ranges, cluster);
 
     auto query = std::make_shared<ASTCreateRowPolicyQuery>();
     node = query;

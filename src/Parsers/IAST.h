@@ -67,7 +67,7 @@ public:
 
     ASTPtr ptr() { return shared_from_this(); }
 
-    /** Get a deep copy of the tree. Cloned object must have the same range. */
+    /** Get a deep copy of the tree. */
     virtual ASTPtr clone() const = 0;
 
     /** Get hash code, identifying this element and its subtree.
@@ -231,6 +231,7 @@ public:
     static const char * hilite_operator;
     static const char * hilite_alias;
     static const char * hilite_substitution;
+    static const char * hilite_asterisk;
     static const char * hilite_none;
 
 private:

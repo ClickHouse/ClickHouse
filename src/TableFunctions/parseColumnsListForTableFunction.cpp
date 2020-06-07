@@ -24,7 +24,7 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     ParserColumnDeclarationList parser;
     ASTPtr columns_list_raw;
 
-    if (!parser.parse(token_iterator, columns_list_raw, expected))
+    if (!parser.parse(token_iterator, columns_list_raw, expected, nullptr))
         throw Exception("Cannot parse columns declaration list.", ErrorCodes::SYNTAX_ERROR);
 
     auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());

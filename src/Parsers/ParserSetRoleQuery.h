@@ -13,6 +13,6 @@ class ParserSetRoleQuery : public IParserBase
 {
 protected:
     const char * getName() const override { return "SET ROLE or SET DEFAULT ROLE query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 }

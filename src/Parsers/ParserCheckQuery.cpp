@@ -9,7 +9,7 @@
 namespace DB
 {
 
-bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_check_table("CHECK TABLE");
     ParserKeyword s_partition("PARTITION");
@@ -21,15 +21,15 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr table;
     ASTPtr database;
 
-    if (!s_check_table.ignore(pos, expected))
+    if (!s_check_table.ignore(pos, expected, ranges))
         return false;
-    if (!table_parser.parse(pos, database, expected))
+    if (!table_parser.parse(pos, database, expected, ranges))
         return false;
 
     auto query = std::make_shared<ASTCheckQuery>();
-    if (s_dot.ignore(pos))
+    if (s_dot.ignore(pos, expected, ranges))
     {
-        if (!table_parser.parse(pos, table, expected))
+        if (!table_parser.parse(pos, table, expected, ranges))
             return false;
 
         tryGetIdentifierNameInto(database, query->database);
@@ -41,9 +41,9 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         tryGetIdentifierNameInto(table, query->table);
     }
 
-    if (s_partition.ignore(pos, expected))
+    if (s_partition.ignore(pos, expected, ranges))
     {
-        if (!partition_parser.parse(pos, query->partition, expected))
+        if (!partition_parser.parse(pos, query->partition, expected, ranges))
             return false;
     }
 

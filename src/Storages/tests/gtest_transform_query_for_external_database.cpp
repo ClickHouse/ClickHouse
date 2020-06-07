@@ -57,7 +57,7 @@ static void check(const std::string & query, const std::string & expected, const
     query_info.query = ast;
     std::string transformed_query = transformQueryForExternalDatabase(query_info, columns, IdentifierQuotingStyle::DoubleQuotes, "test", "table", context);
 
-    EXPECT_EQ(transformed_query, expected);
+    EXPECT_EQ(transformed_query, expected, ranges);
 }
 
 

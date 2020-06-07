@@ -28,7 +28,7 @@ public:
     }
 protected:
     const char * getName() const override { return "list of elements"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 private:
     ParserPtr elem_parser;
     ParserPtr separator_parser;
@@ -65,7 +65,7 @@ public:
 protected:
     const char * getName() const override { return "list, delimited by binary operators"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -88,7 +88,7 @@ public:
 protected:
     const char * getName() const override { return "list, delimited by operator of variable arity"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -111,7 +111,7 @@ public:
 
 protected:
     const char * getName() const override { return "expression with prefix unary operator"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -123,7 +123,7 @@ private:
 protected:
     const char * getName() const  override{ return "array element expression"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -135,7 +135,7 @@ private:
 protected:
     const char * getName() const override { return "tuple element expression"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -148,7 +148,7 @@ private:
 protected:
     const char * getName() const override { return "unary minus expression"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -161,9 +161,9 @@ private:
 protected:
     const char * getName() const  override { return "multiplicative expression"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override
     {
-        return operator_parser.parse(pos, node, expected);
+        return operator_parser.parse(pos, node, expected, ranges);
     }
 };
 
@@ -174,7 +174,7 @@ protected:
     ParserMultiplicativeExpression next_parser;
 
     const char * getName() const  override { return "DATE operator expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 /// TIMESTAMP operator. "TIMESTAMP '2001-01-01 12:34:56'" would be parsed as "toDateTime('2001-01-01 12:34:56')".
@@ -184,7 +184,7 @@ protected:
     ParserDateOperatorExpression next_parser;
 
     const char * getName() const  override { return "TIMESTAMP operator expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 /// Optional conversion to INTERVAL data type. Example: "INTERVAL x SECOND" parsed as "toIntervalSecond(x)".
@@ -194,7 +194,7 @@ protected:
     ParserTimestampOperatorExpression next_parser;
 
     const char * getName() const  override { return "INTERVAL operator expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 class ParserAdditiveExpression : public IParserBase
@@ -206,9 +206,9 @@ private:
 protected:
     const char * getName() const  override { return "additive expression"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override
     {
-        return operator_parser.parse(pos, node, expected);
+        return operator_parser.parse(pos, node, expected, ranges);
     }
 };
 
@@ -220,9 +220,9 @@ class ParserConcatExpression : public IParserBase
 protected:
     const char * getName() const override { return "string concatenation expression"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override
     {
-        return operator_parser.parse(pos, node, expected);
+        return operator_parser.parse(pos, node, expected, ranges);
     }
 };
 
@@ -235,7 +235,7 @@ private:
 protected:
     const char * getName() const override { return "BETWEEN expression"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -248,9 +248,9 @@ private:
 protected:
     const char * getName() const  override{ return "comparison expression"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override
     {
-        return operator_parser.parse(pos, node, expected);
+        return operator_parser.parse(pos, node, expected, ranges);
     }
 };
 
@@ -264,7 +264,7 @@ private:
 
 protected:
     const char * getName() const override { return "nullity checking"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -277,9 +277,9 @@ private:
 protected:
     const char * getName() const  override{ return "logical-NOT expression"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override
     {
-        return operator_parser.parse(pos, node, expected);
+        return operator_parser.parse(pos, node, expected, ranges);
     }
 };
 
@@ -292,9 +292,9 @@ private:
 protected:
     const char * getName() const override { return "logical-AND expression"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override
     {
-        return operator_parser.parse(pos, node, expected);
+        return operator_parser.parse(pos, node, expected, ranges);
     }
 };
 
@@ -307,9 +307,9 @@ private:
 protected:
     const char * getName() const override { return "logical-OR expression"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override
     {
-        return operator_parser.parse(pos, node, expected);
+        return operator_parser.parse(pos, node, expected, ranges);
     }
 };
 
@@ -325,7 +325,7 @@ private:
 protected:
     const char * getName() const override { return "expression with ternary operator"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -337,7 +337,7 @@ private:
 protected:
     const char * getName() const override { return "lambda expression"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -353,9 +353,9 @@ protected:
 
     const char * getName() const override { return "expression with optional alias"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override
     {
-        return impl->parse(pos, node, expected);
+        return impl->parse(pos, node, expected, ranges);
     }
 };
 
@@ -371,7 +371,7 @@ protected:
     bool allow_alias_without_as_keyword;
 
     const char * getName() const override { return "list of expressions"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -384,7 +384,7 @@ private:
     ParserExpressionList nested_parser;
 protected:
     const char * getName() const override { return "not empty list of expressions"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -392,7 +392,7 @@ class ParserOrderByExpressionList : public IParserBase
 {
 protected:
     const char * getName() const override { return "order by expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -401,7 +401,7 @@ class ParserKeyValuePair : public IParserBase
 {
 protected:
     const char * getName() const override { return "key-value pair"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -410,7 +410,7 @@ class ParserKeyValuePairsList : public IParserBase
 {
 protected:
     const char * getName() const override { return "list of pairs"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -418,7 +418,7 @@ class ParserTTLExpressionList : public IParserBase
 {
 protected:
     const char * getName() const override { return "ttl expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 }

@@ -79,7 +79,7 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
         try
         {
             ParserExpression parser;
-            parsed_conditions[type] = parseQuery(parser, condition, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            parsed_conditions[type] = parseQuery(parser, condition, nullptr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         }
         catch (...)
         {

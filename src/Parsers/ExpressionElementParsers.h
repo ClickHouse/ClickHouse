@@ -12,7 +12,7 @@ class ParserArray : public IParserBase
 {
 protected:
     const char * getName() const override { return "array"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -24,7 +24,7 @@ class ParserParenthesisExpression : public IParserBase
 {
 protected:
     const char * getName() const override { return "parenthesized expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -34,7 +34,7 @@ class ParserSubquery : public IParserBase
 {
 protected:
     const char * getName() const override { return "SELECT subquery"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -44,7 +44,8 @@ class ParserIdentifier : public IParserBase
 {
 protected:
     const char * getName() const override { return "identifier"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
+    const char * color() const override { return IAST::hilite_identifier; }
 };
 
 
@@ -52,7 +53,7 @@ class ParserBareWord : public IParserBase
 {
 protected:
     const char * getName() const override { return "bare word"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 /** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
@@ -65,7 +66,7 @@ public:
     : table_name_with_optional_uuid(table_name_with_optional_uuid_) {}
 protected:
     const char * getName() const override { return "compound identifier"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
     bool table_name_with_optional_uuid;
 };
 
@@ -74,7 +75,8 @@ class ParserAsterisk : public IParserBase
 {
 protected:
     const char * getName() const override { return "asterisk"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
+    const char * color() const override { return IAST::hilite_asterisk; }
 };
 
 /** Something like t.* or db.table.*
@@ -83,7 +85,8 @@ class ParserQualifiedAsterisk : public IParserBase
 {
 protected:
     const char * getName() const override { return "qualified asterisk"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
+    const char * color() const override { return IAST::hilite_asterisk; }
 };
 
 /** COLUMNS('<regular expression>')
@@ -92,7 +95,7 @@ class ParserColumnsMatcher : public IParserBase
 {
 protected:
     const char * getName() const override { return "COLUMNS matcher"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 /** A function, for example, f(x, y + 1, g(z)).
@@ -107,7 +110,8 @@ public:
     ParserFunction(bool allow_function_parameters_ = true) : allow_function_parameters(allow_function_parameters_) {}
 protected:
     const char * getName() const override { return "function"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
+    const char * color() const override { return IAST::hilite_function; }
     bool allow_function_parameters;
 };
 
@@ -115,7 +119,7 @@ class ParserCodecDeclarationList : public IParserBase
 {
 protected:
     const char * getName() const override { return "codec declaration list"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 /** Parse compression codec
@@ -125,63 +129,63 @@ class ParserCodec : public IParserBase
 {
 protected:
     const char * getName() const override { return "codec"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 class ParserCastExpression : public IParserBase
 {
 protected:
     const char * getName() const override { return "CAST expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 class ParserSubstringExpression : public IParserBase
 {
 protected:
     const char * getName() const override { return "SUBSTRING expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 class ParserTrimExpression : public IParserBase
 {
 protected:
     const char * getName() const override { return "TRIM expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 class ParserLeftExpression : public IParserBase
 {
 protected:
     const char * getName() const override { return "LEFT expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 class ParserRightExpression : public IParserBase
 {
 protected:
     const char * getName() const override { return "RIGHT expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 class ParserExtractExpression : public IParserBase
 {
 protected:
     const char * getName() const override { return "EXTRACT expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 class ParserDateAddExpression : public IParserBase
 {
 protected:
     const char * getName() const override { return "DATE_ADD expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 class ParserDateDiffExpression : public IParserBase
 {
 protected:
     const char * getName() const override { return "DATE_DIFF expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 /** NULL literal.
@@ -190,7 +194,7 @@ class ParserNull : public IParserBase
 {
 protected:
     const char * getName() const override { return "NULL"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -200,7 +204,7 @@ class ParserNumber : public IParserBase
 {
 protected:
     const char * getName() const override { return "number"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 /** Unsigned integer, used in right hand side of tuple access operator (x.1).
@@ -209,7 +213,7 @@ class ParserUnsignedInteger : public IParserBase
 {
 protected:
     const char * getName() const override { return "unsigned integer"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -219,7 +223,7 @@ class ParserStringLiteral : public IParserBase
 {
 protected:
     const char * getName() const override { return "string literal"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -238,7 +242,7 @@ public:
         : opening_bracket(opening_bracket_), closing_bracket(closing_bracket_) {}
 protected:
     const char * getName() const override { return "collection of literals"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 private:
     TokenType opening_bracket;
     TokenType closing_bracket;
@@ -251,9 +255,9 @@ public:
     ParserCollectionOfLiterals<Tuple> tuple_parser{TokenType::OpeningRoundBracket, TokenType::ClosingRoundBracket};
 protected:
     const char * getName() const override { return "tuple"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override
     {
-        return tuple_parser.parse(pos, node, expected);
+        return tuple_parser.parse(pos, node, expected, ranges);
     }
 };
 
@@ -263,9 +267,9 @@ public:
     ParserCollectionOfLiterals<Array> array_parser{TokenType::OpeningSquareBracket, TokenType::ClosingSquareBracket};
 protected:
     const char * getName() const override { return "array"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override
     {
-        return array_parser.parse(pos, node, expected);
+        return array_parser.parse(pos, node, expected, ranges);
     }
 };
 
@@ -276,7 +280,7 @@ class ParserLiteral : public IParserBase
 {
 protected:
     const char * getName() const override { return "literal"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -293,7 +297,8 @@ private:
     bool allow_alias_without_as_keyword;
 
     const char * getName() const override { return "alias"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
+    const char * color() const override { return IAST::hilite_alias; }
 };
 
 
@@ -304,7 +309,8 @@ class ParserSubstitution : public IParserBase
 {
 protected:
     const char * getName() const override { return "substitution"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
+    const char * color() const override { return IAST::hilite_substitution; }
 };
 
 
@@ -314,7 +320,7 @@ class ParserExpressionElement : public IParserBase
 {
 protected:
     const char * getName() const override { return "element of expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -330,7 +336,7 @@ protected:
     bool allow_alias_without_as_keyword;
 
     const char * getName() const override { return "element of expression with optional alias"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -343,7 +349,7 @@ class ParserOrderByElement : public IParserBase
 {
 protected:
     const char * getName() const override { return "element of ORDER BY expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 /** Parser for function with arguments like KEY VALUE (space separated)
@@ -357,7 +363,7 @@ public:
 protected:
 
     const char * getName() const override { return "function with key-value arguments"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 
     /// brackets for function arguments can be omitted
     bool brackets_can_be_omitted;
@@ -370,7 +376,7 @@ class ParserIdentifierWithOptionalParameters : public IParserBase
 {
 protected:
     const char * getName() const  override{ return "identifier with optional parameters"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 /** Element of TTL expression - same as expression element, but in addition,
@@ -380,7 +386,7 @@ class ParserTTLElement : public IParserBase
 {
 protected:
     const char * getName() const override { return "element of TTL expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 }

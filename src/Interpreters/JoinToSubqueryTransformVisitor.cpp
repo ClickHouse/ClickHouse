@@ -36,7 +36,7 @@ namespace
 ASTPtr makeSubqueryTemplate()
 {
     ParserTablesInSelectQueryElement parser(true);
-    ASTPtr subquery_template = parseQuery(parser, "(select * from _t) as `--.s`", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr subquery_template = parseQuery(parser, "(select * from _t) as `--.s`", nullptr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     if (!subquery_template)
         throw Exception("Cannot parse subquery template", ErrorCodes::LOGICAL_ERROR);
     return subquery_template;

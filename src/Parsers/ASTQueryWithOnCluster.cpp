@@ -16,12 +16,12 @@ std::string ASTQueryWithOnCluster::getRewrittenQueryWithoutOnCluster(const std::
 }
 
 
-bool ASTQueryWithOnCluster::parse(Pos & pos, std::string & cluster_str, Expected & expected)
+bool ASTQueryWithOnCluster::parse(Pos & pos, std::string & cluster_str, Expected & expected, IParser::Ranges * ranges)
 {
-    if (!ParserKeyword{"CLUSTER"}.ignore(pos, expected))
+    if (!ParserKeyword{"CLUSTER"}.ignore(pos, expected, ranges))
         return false;
 
-    return parseIdentifierOrStringLiteral(pos, expected, cluster_str);
+    return parseIdentifierOrStringLiteral(pos, expected, ranges, cluster_str);
 }
 
 

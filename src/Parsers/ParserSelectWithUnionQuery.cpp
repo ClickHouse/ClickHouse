@@ -23,12 +23,12 @@ static void getSelectsFromUnionListNode(ASTPtr & ast_select, ASTs & selects)
 }
 
 
-bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ASTPtr list_node;
 
     ParserList parser(std::make_unique<ParserUnionQueryElement>(), std::make_unique<ParserKeyword>("UNION ALL"), false);
-    if (!parser.parse(pos, list_node, expected))
+    if (!parser.parse(pos, list_node, expected, ranges))
         return false;
 
     auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();

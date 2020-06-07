@@ -432,7 +432,8 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
     return true;
 }
 
-bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * complex_type, size_t column_idx, const Settings & settings)
+bool ConstantExpressionTemplate::parseLiteralAndAssertType(
+    ReadBuffer & istr, const IDataType * complex_type, size_t column_idx, const Settings & settings)
 {
     using Type = Field::Types::Which;
 
@@ -455,7 +456,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         IParser::Pos iterator(tokens_number, settings.max_parser_depth);
         Expected expected;
         ASTPtr ast;
-        if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected))
+        if (!parser_array.parse(iterator, ast, expected, nullptr) && !parser_tuple.parse(iterator, ast, expected, nullptr))
             return false;
 
         istr.position() = const_cast<char *>(iterator->begin);

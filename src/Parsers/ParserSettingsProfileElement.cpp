@@ -11,22 +11,22 @@ namespace DB
 {
 namespace
 {
-    bool parseProfileNameOrID(IParserBase::Pos & pos, Expected & expected, bool parse_id, String & res)
+    bool parseProfileNameOrID(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, bool parse_id, String & res)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
             if (!parse_id)
-                return parseIdentifierOrStringLiteral(pos, expected, res);
+                return parseIdentifierOrStringLiteral(pos, expected, ranges, res);
 
-            if (!ParserKeyword{"ID"}.ignore(pos, expected))
+            if (!ParserKeyword{"ID"}.ignore(pos, expected, ranges))
                 return false;
-            if (!ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+            if (!ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected, ranges))
                 return false;
-            if (!ParserStringLiteral{}.parse(pos, ast, expected))
+            if (!ParserStringLiteral{}.parse(pos, ast, expected, ranges))
                 return false;
             String id = ast->as<ASTLiteral &>().value.safeGet<String>();
-            if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected, ranges))
                 return false;
 
             res = std::move(id);
@@ -35,15 +35,15 @@ namespace
     }
 
 
-    bool parseValue(IParserBase::Pos & pos, Expected & expected, Field & res)
+    bool parseValue(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, Field & res)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserToken{TokenType::Equals}.ignore(pos, expected))
+            if (!ParserToken{TokenType::Equals}.ignore(pos, expected, ranges))
                 return false;
 
             ASTPtr ast;
-            if (!ParserLiteral{}.parse(pos, ast, expected))
+            if (!ParserLiteral{}.parse(pos, ast, expected, ranges))
                 return false;
 
             res = ast->as<ASTLiteral &>().value;
@@ -52,19 +52,19 @@ namespace
     }
 
 
-    bool parseMinMaxValue(IParserBase::Pos & pos, Expected & expected, Field & min_value, Field & max_value)
+    bool parseMinMaxValue(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, Field & min_value, Field & max_value)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            bool is_min_value = ParserKeyword{"MIN"}.ignore(pos, expected);
-            bool is_max_value = !is_min_value && ParserKeyword{"MAX"}.ignore(pos, expected);
+            bool is_min_value = ParserKeyword{"MIN"}.ignore(pos, expected, ranges);
+            bool is_max_value = !is_min_value && ParserKeyword{"MAX"}.ignore(pos, expected, ranges);
             if (!is_min_value && !is_max_value)
                 return false;
 
-            ParserToken{TokenType::Equals}.ignore(pos, expected);
+            ParserToken{TokenType::Equals}.ignore(pos, expected, ranges);
 
             ASTPtr ast;
-            if (!ParserLiteral{}.parse(pos, ast, expected))
+            if (!ParserLiteral{}.parse(pos, ast, expected, ranges))
                 return false;
 
             auto min_or_max_value = ast->as<ASTLiteral &>().value;
@@ -78,16 +78,16 @@ namespace
     }
 
 
-    bool parseReadonlyOrWritableKeyword(IParserBase::Pos & pos, Expected & expected, std::optional<bool> & readonly)
+    bool parseReadonlyOrWritableKeyword(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, std::optional<bool> & readonly)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword{"READONLY"}.ignore(pos, expected))
+            if (ParserKeyword{"READONLY"}.ignore(pos, expected, ranges))
             {
                 readonly = true;
                 return true;
             }
-            else if (ParserKeyword{"READONLY"}.ignore(pos, expected))
+            else if (ParserKeyword{"READONLY"}.ignore(pos, expected, ranges))
             {
                 readonly = false;
                 return true;
@@ -99,7 +99,7 @@ namespace
 }
 
 
-bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     String parent_profile;
     String setting_name;
@@ -108,22 +108,22 @@ bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected 
     Field max_value;
     std::optional<bool> readonly;
 
-    if (ParserKeyword{"PROFILE"}.ignore(pos, expected) ||
-        (enable_inherit_keyword && ParserKeyword{"INHERIT"}.ignore(pos, expected)))
+    if (ParserKeyword{"PROFILE"}.ignore(pos, expected, ranges) ||
+        (enable_inherit_keyword && ParserKeyword{"INHERIT"}.ignore(pos, expected, ranges)))
     {
-        if (!parseProfileNameOrID(pos, expected, id_mode, parent_profile))
+        if (!parseProfileNameOrID(pos, expected, ranges, id_mode, parent_profile))
             return false;
     }
     else
     {
         ASTPtr name_ast;
-        if (!ParserIdentifier{}.parse(pos, name_ast, expected))
+        if (!ParserIdentifier{}.parse(pos, name_ast, expected, ranges))
             return false;
         setting_name = getIdentifierName(name_ast);
 
         bool has_value_or_constraint = false;
-        while (parseValue(pos, expected, value) || parseMinMaxValue(pos, expected, min_value, max_value)
-               || parseReadonlyOrWritableKeyword(pos, expected, readonly))
+        while (parseValue(pos, expected, ranges, value) || parseMinMaxValue(pos, expected, ranges, min_value, max_value)
+               || parseReadonlyOrWritableKeyword(pos, expected, ranges, readonly))
         {
             has_value_or_constraint = true;
         }
@@ -146,11 +146,11 @@ bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected 
 }
 
 
-bool ParserSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     std::vector<std::shared_ptr<ASTSettingsProfileElement>> elements;
 
-    if (ParserKeyword{"NONE"}.ignore(pos, expected))
+    if (ParserKeyword{"NONE"}.ignore(pos, expected, ranges))
     {
     }
     else
@@ -158,12 +158,12 @@ bool ParserSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Expected
         do
         {
             ASTPtr ast;
-            if (!ParserSettingsProfileElement{}.useIDMode(id_mode).enableInheritKeyword(enable_inherit_keyword).parse(pos, ast, expected))
+            if (!ParserSettingsProfileElement{}.useIDMode(id_mode).enableInheritKeyword(enable_inherit_keyword).parse(pos, ast, expected, ranges))
                 return false;
             auto element = typeid_cast<std::shared_ptr<ASTSettingsProfileElement>>(ast);
             elements.push_back(std::move(element));
         }
-        while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+        while (ParserToken{TokenType::Comma}.ignore(pos, expected, ranges));
     }
 
     auto result = std::make_shared<ASTSettingsProfileElements>();

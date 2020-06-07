@@ -20,7 +20,7 @@ limitations under the License. */
 namespace DB
 {
 
-bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_watch("WATCH");
     ParserToken s_dot(TokenType::Dot);
@@ -32,33 +32,33 @@ bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr table;
     auto query = std::make_shared<ASTWatchQuery>();
 
-    if (!s_watch.ignore(pos, expected))
+    if (!s_watch.ignore(pos, expected, ranges))
     {
         return false;
     }
 
-    if (!name_p.parse(pos, table, expected))
+    if (!name_p.parse(pos, table, expected, ranges))
         return false;
 
-    if (s_dot.ignore(pos, expected))
+    if (s_dot.ignore(pos, expected, ranges))
     {
         database = table;
-        if (!name_p.parse(pos, table, expected))
+        if (!name_p.parse(pos, table, expected, ranges))
             return false;
     }
 
     /// EVENTS
-    if (s_events.ignore(pos, expected))
+    if (s_events.ignore(pos, expected, ranges))
     {
         query->is_watch_events = true;
     }
 
     /// LIMIT length
-    if (s_limit.ignore(pos, expected))
+    if (s_limit.ignore(pos, expected, ranges))
     {
         ParserNumber num;
 
-        if (!num.parse(pos, query->limit_length, expected))
+        if (!num.parse(pos, query->limit_length, expected, ranges))
             return false;
     }
 

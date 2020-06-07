@@ -7,7 +7,7 @@
 namespace DB
 {
 
-bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String & database_str, String & table_str)
+bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, IParser::Ranges * ranges, String & database_str, String & table_str)
 {
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier table_parser;
@@ -18,12 +18,12 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
     database_str = "";
     table_str = "";
 
-    if (!table_parser.parse(pos, database, expected))
+    if (!table_parser.parse(pos, database, expected, ranges))
         return false;
 
-    if (s_dot.ignore(pos))
+    if (s_dot.ignore(pos, expected, ranges))
     {
-        if (!table_parser.parse(pos, table, expected))
+        if (!table_parser.parse(pos, table, expected, ranges))
         {
             database_str = "";
             return false;

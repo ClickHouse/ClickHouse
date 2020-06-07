@@ -15,7 +15,7 @@ class ParserDictionaryLifetime : public IParserBase
 {
 protected:
     const char * getName() const override { return "lifetime definition"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 /// Parser for dictionary range part. It should contain "range" keyword opening
@@ -25,7 +25,7 @@ class ParserDictionaryRange : public IParserBase
 {
 protected:
     const char * getName() const override { return "range definition"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -36,14 +36,14 @@ class ParserDictionaryLayout : public IParserBase
 {
 protected:
     const char * getName() const override { return "layout definition"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 class ParserDictionarySettings: public IParserBase
 {
 protected:
     const char * getName() const override { return "settings definition"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -61,7 +61,7 @@ class ParserDictionary : public IParserBase
 {
 protected:
     const char * getName() const override { return "dictionary definition"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 }

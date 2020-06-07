@@ -23,6 +23,7 @@ const char * IAST::hilite_function     = "\033[0;33m";
 const char * IAST::hilite_operator     = "\033[1;33m";
 const char * IAST::hilite_alias        = "\033[0;32m";
 const char * IAST::hilite_substitution = "\033[1;36m";
+const char * IAST::hilite_asterisk     = "\033[1;35m";
 const char * IAST::hilite_none         = "\033[0m";
 
 

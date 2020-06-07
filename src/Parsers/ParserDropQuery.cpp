@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, IParser::Ranges * ranges)
 {
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
@@ -32,54 +32,54 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     bool is_view = false;
     bool no_delay = false;
 
-    if (s_database.ignore(pos, expected))
+    if (s_database.ignore(pos, expected, ranges))
     {
-        if (s_if_exists.ignore(pos, expected))
+        if (s_if_exists.ignore(pos, expected, ranges))
             if_exists = true;
 
-        if (!name_p.parse(pos, database, expected))
+        if (!name_p.parse(pos, database, expected, ranges))
             return false;
 
-        if (ParserKeyword{"ON"}.ignore(pos, expected))
+        if (ParserKeyword{"ON"}.ignore(pos, expected, ranges))
         {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, ranges))
                 return false;
         }
     }
     else
     {
-        if (s_view.ignore(pos, expected))
+        if (s_view.ignore(pos, expected, ranges))
             is_view = true;
-        else if (s_dictionary.ignore(pos, expected))
+        else if (s_dictionary.ignore(pos, expected, ranges))
             is_dictionary = true;
-        else if (s_temporary.ignore(pos, expected))
+        else if (s_temporary.ignore(pos, expected, ranges))
             temporary = true;
 
-        if (!is_view && !is_dictionary && !s_table.ignore(pos, expected))
+        if (!is_view && !is_dictionary && !s_table.ignore(pos, expected, ranges))
         {
             return false;
         }
 
-        if (s_if_exists.ignore(pos, expected))
+        if (s_if_exists.ignore(pos, expected, ranges))
             if_exists = true;
 
-        if (!name_p.parse(pos, table, expected))
+        if (!name_p.parse(pos, table, expected, ranges))
             return false;
 
-        if (s_dot.ignore(pos, expected))
+        if (s_dot.ignore(pos, expected, ranges))
         {
             database = table;
-            if (!name_p.parse(pos, table, expected))
+            if (!name_p.parse(pos, table, expected, ranges))
                 return false;
         }
 
-        if (ParserKeyword{"ON"}.ignore(pos, expected))
+        if (ParserKeyword{"ON"}.ignore(pos, expected, ranges))
         {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, ranges))
                 return false;
         }
 
-        if (s_no_delay.ignore(pos, expected))
+        if (s_no_delay.ignore(pos, expected, ranges))
             no_delay = true;
     }
 
@@ -101,9 +101,9 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-bool parseDetachQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+bool parseDetachQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, IParser::Ranges * ranges)
 {
-    if (parseDropQuery(pos, node, expected))
+    if (parseDropQuery(pos, node, expected, ranges))
     {
         auto * drop_query = node->as<ASTDropQuery>();
         drop_query->kind = ASTDropQuery::Kind::Detach;
@@ -112,9 +112,9 @@ bool parseDetachQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
-bool parseTruncateQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+bool parseTruncateQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, IParser::Ranges * ranges)
 {
-    if (parseDropQuery(pos, node, expected))
+    if (parseDropQuery(pos, node, expected, ranges))
     {
         auto * drop_query = node->as<ASTDropQuery>();
         drop_query->kind = ASTDropQuery::Kind::Truncate;
@@ -125,18 +125,18 @@ bool parseTruncateQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 
 }
 
-bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, IParser::Ranges * ranges)
 {
     ParserKeyword s_drop("DROP");
     ParserKeyword s_detach("DETACH");
     ParserKeyword s_truncate("TRUNCATE");
 
-    if (s_drop.ignore(pos, expected))
-        return parseDropQuery(pos, node, expected);
-    else if (s_detach.ignore(pos, expected))
-        return parseDetachQuery(pos, node, expected);
-    else if (s_truncate.ignore(pos, expected))
-        return parseTruncateQuery(pos, node, expected);
+    if (s_drop.ignore(pos, expected, ranges))
+        return parseDropQuery(pos, node, expected, ranges);
+    else if (s_detach.ignore(pos, expected, ranges))
+        return parseDetachQuery(pos, node, expected, ranges);
+    else if (s_truncate.ignore(pos, expected, ranges))
+        return parseTruncateQuery(pos, node, expected, ranges);
     else
         return false;
 }

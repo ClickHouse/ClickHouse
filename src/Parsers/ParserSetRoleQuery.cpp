@@ -9,12 +9,12 @@ namespace DB
 {
 namespace
 {
-    bool parseRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTExtendedRoleSet> & roles)
+    bool parseRoles(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, std::shared_ptr<ASTExtendedRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (!ParserExtendedRoleSet{}.enableCurrentUserKeyword(false).parse(pos, ast, expected))
+            if (!ParserExtendedRoleSet{}.enableCurrentUserKeyword(false).parse(pos, ast, expected, ranges))
                 return false;
 
             roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
@@ -23,15 +23,15 @@ namespace
         });
     }
 
-    bool parseToUsers(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTExtendedRoleSet> & to_users)
+    bool parseToUsers(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, std::shared_ptr<ASTExtendedRoleSet> & to_users)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"TO"}.ignore(pos, expected))
+            if (!ParserKeyword{"TO"}.ignore(pos, expected, ranges))
                 return false;
 
             ASTPtr ast;
-            if (!ParserExtendedRoleSet{}.enableAllKeyword(false).parse(pos, ast, expected))
+            if (!ParserExtendedRoleSet{}.enableAllKeyword(false).parse(pos, ast, expected, ranges))
                 return false;
 
             to_users = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
@@ -42,15 +42,15 @@ namespace
 }
 
 
-bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     using Kind = ASTSetRoleQuery::Kind;
     Kind kind;
-    if (ParserKeyword{"SET ROLE DEFAULT"}.ignore(pos, expected))
+    if (ParserKeyword{"SET ROLE DEFAULT"}.ignore(pos, expected, ranges))
         kind = Kind::SET_ROLE_DEFAULT;
-    else if (ParserKeyword{"SET ROLE"}.ignore(pos, expected))
+    else if (ParserKeyword{"SET ROLE"}.ignore(pos, expected, ranges))
         kind = Kind::SET_ROLE;
-    else if (ParserKeyword{"SET DEFAULT ROLE"}.ignore(pos, expected))
+    else if (ParserKeyword{"SET DEFAULT ROLE"}.ignore(pos, expected, ranges))
         kind = Kind::SET_DEFAULT_ROLE;
     else
         return false;
@@ -60,12 +60,12 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     if ((kind == Kind::SET_ROLE) || (kind == Kind::SET_DEFAULT_ROLE))
     {
-        if (!parseRoles(pos, expected, roles))
+        if (!parseRoles(pos, expected, ranges, roles))
             return false;
 
         if (kind == Kind::SET_DEFAULT_ROLE)
         {
-            if (!parseToUsers(pos, expected, to_users))
+            if (!parseToUsers(pos, expected, ranges, to_users))
                 return false;
         }
     }

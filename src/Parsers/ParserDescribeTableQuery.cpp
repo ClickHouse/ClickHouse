@@ -11,7 +11,7 @@ namespace DB
 {
 
 
-bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_describe("DESCRIBE");
     ParserKeyword s_desc("DESC");
@@ -22,15 +22,15 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ASTPtr database;
     ASTPtr table;
 
-    if (!s_describe.ignore(pos, expected) && !s_desc.ignore(pos, expected))
+    if (!s_describe.ignore(pos, expected, ranges) && !s_desc.ignore(pos, expected, ranges))
         return false;
 
     auto query = std::make_shared<ASTDescribeQuery>();
 
-    s_table.ignore(pos, expected);
+    s_table.ignore(pos, expected, ranges);
 
     ASTPtr table_expression;
-    if (!ParserTableExpression().parse(pos, table_expression, expected))
+    if (!ParserTableExpression().parse(pos, table_expression, expected, ranges))
         return false;
 
     query->table_expression = table_expression;

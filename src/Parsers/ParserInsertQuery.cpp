@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_insert_into("INSERT INTO");
     ParserKeyword s_table("TABLE");
@@ -50,69 +50,69 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Insertion data
     const char * data = nullptr;
 
-    if (!s_insert_into.ignore(pos, expected))
+    if (!s_insert_into.ignore(pos, expected, ranges))
         return false;
 
-    s_table.ignore(pos, expected);
+    s_table.ignore(pos, expected, ranges);
 
-    if (s_function.ignore(pos, expected))
+    if (s_function.ignore(pos, expected, ranges))
     {
-        if (!table_function_p.parse(pos, table_function, expected))
+        if (!table_function_p.parse(pos, table_function, expected, ranges))
             return false;
     }
     else
     {
-        if (!name_p.parse(pos, table, expected))
+        if (!name_p.parse(pos, table, expected, ranges))
             return false;
 
-        if (s_dot.ignore(pos, expected))
+        if (s_dot.ignore(pos, expected, ranges))
         {
             database = table;
-            if (!name_p.parse(pos, table, expected))
+            if (!name_p.parse(pos, table, expected, ranges))
                 return false;
         }
     }
 
     /// Is there a list of columns
-    if (s_lparen.ignore(pos, expected))
+    if (s_lparen.ignore(pos, expected, ranges))
     {
-        if (!columns_p.parse(pos, columns, expected))
+        if (!columns_p.parse(pos, columns, expected, ranges))
             return false;
 
-        if (!s_rparen.ignore(pos, expected))
+        if (!s_rparen.ignore(pos, expected, ranges))
             return false;
     }
 
     Pos before_values = pos;
 
     /// VALUES or FORMAT or SELECT
-    if (s_values.ignore(pos, expected))
+    if (s_values.ignore(pos, expected, ranges))
     {
         data = pos->begin;
     }
-    else if (s_format.ignore(pos, expected))
+    else if (s_format.ignore(pos, expected, ranges))
     {
-        if (!name_p.parse(pos, format, expected))
+        if (!name_p.parse(pos, format, expected, ranges))
             return false;
     }
-    else if (s_select.ignore(pos, expected) || s_with.ignore(pos,expected))
+    else if (s_select.ignore(pos, expected, ranges) || s_with.ignore(pos, expected, ranges))
     {
         pos = before_values;
         ParserSelectWithUnionQuery select_p;
-        select_p.parse(pos, select, expected);
+        select_p.parse(pos, select, expected, ranges);
 
         /// FORMAT section is expected if we have input() in SELECT part
-        if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
+        if (s_format.ignore(pos, expected, ranges) && !name_p.parse(pos, format, expected, ranges))
             return false;
     }
-    else if (s_watch.ignore(pos, expected))
+    else if (s_watch.ignore(pos, expected, ranges))
     {
         pos = before_values;
         ParserWatchQuery watch_p;
-        watch_p.parse(pos, watch, expected);
+        watch_p.parse(pos, watch, expected, ranges);
 
         /// FORMAT section is expected if we have input() in SELECT part
-        if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
+        if (s_format.ignore(pos, expected, ranges) && !name_p.parse(pos, format, expected, ranges))
             return false;
     }
     else
@@ -120,10 +120,10 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
-    if (s_settings.ignore(pos, expected))
+    if (s_settings.ignore(pos, expected, ranges))
     {
         ParserSetQuery parser_settings(true);
-        if (!parser_settings.parse(pos, settings_ast, expected))
+        if (!parser_settings.parse(pos, settings_ast, expected, ranges))
             return false;
     }
 

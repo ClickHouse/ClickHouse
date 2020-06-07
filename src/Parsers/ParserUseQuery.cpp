@@ -8,16 +8,16 @@
 namespace DB
 {
 
-bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_use("USE");
     ParserIdentifier name_p;
 
-    if (!s_use.ignore(pos, expected))
+    if (!s_use.ignore(pos, expected, ranges))
         return false;
 
     ASTPtr database;
-    if (!name_p.parse(pos, database, expected))
+    if (!name_p.parse(pos, database, expected, ranges))
         return false;
 
     auto query = std::make_shared<ASTUseQuery>();

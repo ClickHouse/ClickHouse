@@ -76,6 +76,7 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
+#include <common/terminalColors.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -363,69 +364,52 @@ private:
     {
         using namespace replxx;
 
-        static const std::unordered_map<TokenType, Replxx::Color> token_to_color =
+        const char * begin = query.data();
+        const char * end = begin + query.size();
+
+        Tokens tokens(begin, end, 10000);
+        IParser::Pos token_iterator(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+        ParserQuery parser(end, true);
+        IParser::Ranges ranges;
+        Expected expected;
+        parser.checkWithoutMoving(token_iterator, expected, &ranges);
+
+        const char * byte_pos = begin;
+        size_t code_point_pos = 0;
+
+        while (token_iterator.isValid())
         {
-            { TokenType::Whitespace, Replxx::Color::DEFAULT },
-            { TokenType::Comment, Replxx::Color::GRAY },
-            { TokenType::BareWord, Replxx::Color::DEFAULT },
-            { TokenType::Number, Replxx::Color::GREEN },
-            { TokenType::StringLiteral, Replxx::Color::CYAN },
-            { TokenType::QuotedIdentifier, Replxx::Color::MAGENTA },
-            { TokenType::OpeningRoundBracket, Replxx::Color::BROWN },
-            { TokenType::ClosingRoundBracket, Replxx::Color::BROWN },
-            { TokenType::OpeningSquareBracket, Replxx::Color::BROWN },
-            { TokenType::ClosingSquareBracket, Replxx::Color::BROWN },
-            { TokenType::OpeningCurlyBrace, Replxx::Color::INTENSE },
-            { TokenType::ClosingCurlyBrace, Replxx::Color::INTENSE },
+            const Token & token = *token_iterator;
 
-            { TokenType::Comma, Replxx::Color::INTENSE },
-            { TokenType::Semicolon, Replxx::Color::INTENSE },
-            { TokenType::Dot, Replxx::Color::INTENSE },
-            { TokenType::Asterisk, Replxx::Color::INTENSE },
-            { TokenType::Plus, Replxx::Color::INTENSE },
-            { TokenType::Minus, Replxx::Color::INTENSE },
-            { TokenType::Slash, Replxx::Color::INTENSE },
-            { TokenType::Percent, Replxx::Color::INTENSE },
-            { TokenType::Arrow, Replxx::Color::INTENSE },
-            { TokenType::QuestionMark, Replxx::Color::INTENSE },
-            { TokenType::Colon, Replxx::Color::INTENSE },
-            { TokenType::Equals, Replxx::Color::INTENSE },
-            { TokenType::NotEquals, Replxx::Color::INTENSE },
-            { TokenType::Less, Replxx::Color::INTENSE },
-            { TokenType::Greater, Replxx::Color::INTENSE },
-            { TokenType::LessOrEquals, Replxx::Color::INTENSE },
-            { TokenType::GreaterOrEquals, Replxx::Color::INTENSE },
-            { TokenType::Concatenation, Replxx::Color::INTENSE },
-            { TokenType::At, Replxx::Color::INTENSE },
+            Replxx::Color color = Replxx::Color::DEFAULT;
 
-            { TokenType::EndOfStream, Replxx::Color::DEFAULT },
+            /// Find the shortest covering range that should be highlighted. This loop can be optimized.
 
-            { TokenType::Error, Replxx::Color::RED },
-            { TokenType::ErrorMultilineCommentIsNotClosed, Replxx::Color::RED },
-            { TokenType::ErrorSingleQuoteIsNotClosed, Replxx::Color::RED },
-            { TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED },
-            { TokenType::ErrorSinglePipeMark, Replxx::Color::RED },
-            { TokenType::ErrorWrongNumber, Replxx::Color::RED },
-            { TokenType::ErrorMaxQuerySizeExceeded, Replxx::Color::RED }
-        };
-
-        const Replxx::Color unknown_token_color = Replxx::Color::RED;
-
-        Lexer lexer(query.data(), query.data() + query.size());
-        size_t pos = 0;
-
-        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
-        {
-            size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token.begin), token.size());
-            for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
+            IParser::Range best_range;
+            for (const auto & range : ranges)
             {
-                if (token_to_color.find(token.type) != token_to_color.end())
-                    colors[pos + code_point_index] = token_to_color.at(token.type);
-                else
-                    colors[pos + code_point_index] = unknown_token_color;
+                if (range.begin <= token_iterator
+                    && range.end > token_iterator
+                    && range.color)
+                {
+                    if (range.begin >= best_range.begin || range.end <= best_range.end)
+                    {
+                        best_range = range;
+                        color = best_range.color;
+                    }
+                }
             }
 
-            pos += utf8_len;
+            size_t skipped_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(byte_pos), token.begin - byte_pos);
+            code_point_pos += skipped_code_points;
+            byte_pos = token.begin;
+
+            size_t num_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token.begin), token.size());
+            for (size_t code_point_offset = 0; code_point_offset < num_code_points; ++code_point_offset)
+                colors[code_point_pos + code_point_offset] = color;
+
+            ++token_iterator;
         }
     }
 #endif
@@ -1075,7 +1059,7 @@ private:
         if (is_interactive || ignore_error)
         {
             String message;
-            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            res = tryParseQuery(parser, pos, end, nullptr, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
             if (!res)
             {
@@ -1084,7 +1068,7 @@ private:
             }
         }
         else
-            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            res = parseQueryAndMovePosition(parser, pos, end, nullptr, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
         if (is_interactive)
         {

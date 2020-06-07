@@ -17,7 +17,7 @@ namespace DB
 {
 
 
-bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserLiteral literal_p;
     ParserKeyValuePairsList key_value_pairs_p;
@@ -25,7 +25,7 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     auto res = std::make_shared<ASTDictionaryLifetime>();
 
     /// simple lifetime with only maximum value e.g. LIFETIME(300)
-    if (literal_p.parse(pos, ast_lifetime, expected))
+    if (literal_p.parse(pos, ast_lifetime, expected, ranges))
     {
         auto literal = ast_lifetime->as<const ASTLiteral &>();
 
@@ -37,7 +37,7 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         return true;
     }
 
-    if (!key_value_pairs_p.parse(pos, ast_lifetime, expected))
+    if (!key_value_pairs_p.parse(pos, ast_lifetime, expected, ranges))
         return false;
 
     const ASTExpressionList & expr_list = ast_lifetime->as<const ASTExpressionList &>();
@@ -75,11 +75,11 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 }
 
 
-bool ParserDictionaryRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserDictionaryRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyValuePairsList key_value_pairs_p;
     ASTPtr ast_range;
-    if (!key_value_pairs_p.parse(pos, ast_range, expected))
+    if (!key_value_pairs_p.parse(pos, ast_range, expected, ranges))
         return false;
 
     const ASTExpressionList & expr_list = ast_range->as<const ASTExpressionList &>();
@@ -109,11 +109,11 @@ bool ParserDictionaryRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     return true;
 }
 
-bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserFunctionWithKeyValueArguments key_value_func_p(/* brackets_can_be_omitted = */ true);
     ASTPtr ast_func;
-    if (!key_value_func_p.parse(pos, ast_func, expected))
+    if (!key_value_func_p.parse(pos, ast_func, expected, ranges))
         return false;
 
     const ASTFunctionWithKeyValueArguments & func = ast_func->as<const ASTFunctionWithKeyValueArguments &>();
@@ -151,7 +151,7 @@ bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return true;
 }
 
-bool ParserDictionarySettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserDictionarySettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserToken s_comma(TokenType::Comma);
 
@@ -159,12 +159,12 @@ bool ParserDictionarySettings::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     while (true)
     {
-        if (!changes.empty() && !s_comma.ignore(pos))
+        if (!changes.empty() && !s_comma.ignore(pos, expected, ranges))
             break;
 
         changes.push_back(SettingChange{});
 
-        if (!ParserSetQuery::parseNameValuePair(changes.back(), pos, expected))
+        if (!ParserSetQuery::parseNameValuePair(changes.back(), pos, expected, ranges))
             return false;
     }
 
@@ -177,7 +177,7 @@ bool ParserDictionarySettings::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 }
 
 
-bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword primary_key_keyword("PRIMARY KEY");
     ParserKeyword source_keyword("SOURCE");
@@ -202,78 +202,78 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr ast_settings;
 
     /// Primary is required to be the first in dictionary definition
-    if (primary_key_keyword.ignore(pos) && !expression_list_p.parse(pos, primary_key, expected))
+    if (primary_key_keyword.ignore(pos, expected, ranges) && !expression_list_p.parse(pos, primary_key, expected, ranges))
         return false;
 
     /// Loop is used to avoid strict order of dictionary properties
     while (true)
     {
-        if (!ast_source && source_keyword.ignore(pos, expected))
+        if (!ast_source && source_keyword.ignore(pos, expected, ranges))
         {
 
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected, ranges))
                 return false;
 
-            if (!key_value_pairs_p.parse(pos, ast_source, expected))
+            if (!key_value_pairs_p.parse(pos, ast_source, expected, ranges))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected, ranges))
                 return false;
 
             continue;
         }
 
-        if (!ast_lifetime && lifetime_keyword.ignore(pos, expected))
+        if (!ast_lifetime && lifetime_keyword.ignore(pos, expected, ranges))
         {
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected, ranges))
                 return false;
 
-            if (!lifetime_p.parse(pos, ast_lifetime, expected))
+            if (!lifetime_p.parse(pos, ast_lifetime, expected, ranges))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected, ranges))
                 return false;
 
             continue;
         }
 
-        if (!ast_layout && layout_keyword.ignore(pos, expected))
+        if (!ast_layout && layout_keyword.ignore(pos, expected, ranges))
         {
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected, ranges))
                 return false;
 
-            if (!layout_p.parse(pos, ast_layout, expected))
+            if (!layout_p.parse(pos, ast_layout, expected, ranges))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected, ranges))
                 return false;
 
             continue;
         }
 
-        if (!ast_range && range_keyword.ignore(pos, expected))
+        if (!ast_range && range_keyword.ignore(pos, expected, ranges))
         {
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected, ranges))
                 return false;
 
-            if (!range_p.parse(pos, ast_range, expected))
+            if (!range_p.parse(pos, ast_range, expected, ranges))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected, ranges))
                 return false;
 
             continue;
         }
 
-        if (!ast_settings && settings_keyword.ignore(pos, expected))
+        if (!ast_settings && settings_keyword.ignore(pos, expected, ranges))
         {
-            if (!open.ignore(pos))
+            if (!open.ignore(pos, expected, ranges))
                 return false;
 
-            if (!settings_p.parse(pos, ast_settings, expected))
+            if (!settings_p.parse(pos, ast_settings, expected, ranges))
                 return false;
 
-            if (!close.ignore(pos))
+            if (!close.ignore(pos, expected, ranges))
                 return false;
 
             continue;

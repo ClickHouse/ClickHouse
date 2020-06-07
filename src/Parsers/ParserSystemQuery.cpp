@@ -15,9 +15,9 @@ namespace DB
 {
 
 
-bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
-    if (!ParserKeyword{"SYSTEM"}.ignore(pos, expected))
+    if (!ParserKeyword{"SYSTEM"}.ignore(pos, expected, ranges))
         return false;
 
     using Type = ASTSystemQuery::Type;
@@ -28,7 +28,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     for (int i = static_cast<int>(Type::UNKNOWN) + 1; i < static_cast<int>(Type::END); ++i)
     {
         Type t = static_cast<Type>(i);
-        if (ParserKeyword{ASTSystemQuery::typeToString(t)}.ignore(pos, expected))
+        if (ParserKeyword{ASTSystemQuery::typeToString(t)}.ignore(pos, expected, ranges))
         {
             res->type = t;
             found = true;
@@ -43,23 +43,23 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::RELOAD_DICTIONARY:
         {
             String cluster_str;
-            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            if (ParserKeyword{"ON"}.ignore(pos, expected, ranges))
             {
-                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, ranges))
                     return false;
             }
             res->cluster = cluster_str;
             ASTPtr ast;
-            if (ParserStringLiteral{}.parse(pos, ast, expected))
+            if (ParserStringLiteral{}.parse(pos, ast, expected, ranges))
                 res->target_dictionary = ast->as<ASTLiteral &>().value.safeGet<String>();
-            else if (!parseDatabaseAndTableName(pos, expected, res->database, res->target_dictionary))
+            else if (!parseDatabaseAndTableName(pos, expected, ranges, res->database, res->target_dictionary))
                 return false;
             break;
         }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
-            if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
+            if (!parseDatabaseAndTableName(pos, expected, ranges, res->database, res->table))
                 return false;
             break;
 
@@ -68,13 +68,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::FLUSH_DISTRIBUTED:
         {
             String cluster_str;
-            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            if (ParserKeyword{"ON"}.ignore(pos, expected, ranges))
             {
-                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, ranges))
                     return false;
             }
             res->cluster = cluster_str;
-            if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
+            if (!parseDatabaseAndTableName(pos, expected, ranges, res->database, res->table))
             {
                 /// FLUSH DISTRIBUTED requires table
                 /// START/STOP DISTRIBUTED SENDS does not requires table
@@ -96,7 +96,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_SENDS:
         case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
-            parseDatabaseAndTableName(pos, expected, res->database, res->table);
+            parseDatabaseAndTableName(pos, expected, ranges, res->database, res->table);
             break;
 
         default:

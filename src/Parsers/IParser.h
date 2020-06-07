@@ -2,6 +2,7 @@
 
 #include <set>
 #include <memory>
+#include <typeinfo>
 
 #include <Core/Defines.h>
 #include <Core/Types.h>
@@ -59,6 +60,7 @@ public:
         uint32_t depth = 0;
         uint32_t max_depth = 0;
 
+        Pos() = default;
         Pos(Tokens & tokens_, uint32_t max_depth_) : TokenIterator(tokens_), max_depth(max_depth_) {}
 
         void increaseDepth()
@@ -79,6 +81,18 @@ public:
     /** Get the text of this parser parses. */
     virtual const char * getName() const = 0;
 
+    /// A range of tokens for syntax highlight.
+    struct Range
+    {
+        Pos begin;
+        Pos end;
+        const char * color = nullptr;
+    };
+    using Ranges = std::vector<Range>;
+
+    /// Return ANSI escape sequence that should be used to highlight the result of this parser.
+    virtual const char * color() const { return nullptr; }
+
     /** Parse piece of text from position `pos`, but not beyond end of line (`end` - position after end of line),
       * move pointer `pos` to the maximum position to which it was possible to parse,
       * in case of success return `true` and the result in `node` if it is needed, otherwise false,
@@ -87,27 +101,21 @@ public:
       *  or what this parser parse if parsing was successful.
       * The string to which the [begin, end) range is included may be not 0-terminated.
       */
-    virtual bool parse(Pos & pos, ASTPtr & node, Expected & expected) = 0;
+    virtual bool parse(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) = 0;
 
-    bool ignore(Pos & pos, Expected & expected)
+    bool ignore(Pos & pos, Expected & expected, Ranges * ranges)
     {
         ASTPtr ignore_node;
-        return parse(pos, ignore_node, expected);
-    }
-
-    bool ignore(Pos & pos)
-    {
-        Expected expected;
-        return ignore(pos, expected);
+        return parse(pos, ignore_node, expected, ranges);
     }
 
     /** The same, but do not move the position and do not write the result to node.
       */
-    bool check(Pos & pos, Expected & expected)
+    bool check(Pos & pos, Expected & expected, Ranges * ranges)
     {
         Pos begin = pos;
         ASTPtr node;
-        if (!parse(pos, node, expected))
+        if (!parse(pos, node, expected, ranges))
         {
             pos = begin;
             return false;
@@ -118,10 +126,10 @@ public:
 
     /** The same, but doesn't move the position even if parsing was successful.
      */
-    bool checkWithoutMoving(Pos pos, Expected & expected)
+    bool checkWithoutMoving(Pos pos, Expected & expected, Ranges * ranges)
     {
         ASTPtr node;
-        return parse(pos, node, expected);
+        return parse(pos, node, expected, ranges);
     }
 
     virtual ~IParser() = default;

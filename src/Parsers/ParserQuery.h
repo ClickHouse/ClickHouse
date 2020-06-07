@@ -13,7 +13,7 @@ private:
     bool enable_explain;    /// Allow queries prefixed with AST and ANALYZE for development purposes.
 
     const char * getName() const override { return "Query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 
 public:
     ParserQuery(const char * end_, bool enable_explain_ = false)

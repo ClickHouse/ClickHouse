@@ -14,10 +14,10 @@ class ParserSetQuery : public IParserBase
 {
 public:
     explicit ParserSetQuery(bool parse_only_internals_ = false) : parse_only_internals(parse_only_internals_) {}
-    static bool parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected);
+    static bool parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected, Ranges * ranges);
 protected:
     const char * getName() const override { return "SET query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
     /// Parse the list `name = value` pairs, without SET.
     bool parse_only_internals;
 };

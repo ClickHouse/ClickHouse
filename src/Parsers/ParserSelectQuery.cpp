@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     auto select_query = std::make_shared<ASTSelectQuery>();
     node = select_query;
@@ -72,118 +72,118 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// WITH expr list
     {
-        if (s_with.ignore(pos, expected))
+        if (s_with.ignore(pos, expected, ranges))
         {
-            if (!exp_list_for_with_clause.parse(pos, with_expression_list, expected))
+            if (!exp_list_for_with_clause.parse(pos, with_expression_list, expected, ranges))
                 return false;
         }
     }
 
     /// SELECT [DISTINCT] [TOP N [WITH TIES]] expr list
     {
-        if (!s_select.ignore(pos, expected))
+        if (!s_select.ignore(pos, expected, ranges))
             return false;
 
-        if (s_distinct.ignore(pos, expected))
+        if (s_distinct.ignore(pos, expected, ranges))
             select_query->distinct = true;
 
-        if (s_top.ignore(pos, expected))
+        if (s_top.ignore(pos, expected, ranges))
         {
             ParserNumber num;
 
-            if (open_bracket.ignore(pos, expected))
+            if (open_bracket.ignore(pos, expected, ranges))
             {
-                if (!num.parse(pos, top_length, expected))
+                if (!num.parse(pos, top_length, expected, ranges))
                     return false;
-                if (!close_bracket.ignore(pos, expected))
+                if (!close_bracket.ignore(pos, expected, ranges))
                     return false;
             }
             else
             {
-                if (!num.parse(pos, top_length, expected))
+                if (!num.parse(pos, top_length, expected, ranges))
                     return false;
             }
 
-            if (s_with_ties.ignore(pos, expected))
+            if (s_with_ties.ignore(pos, expected, ranges))
                 select_query->limit_with_ties = true;
         }
 
-        if (!exp_list_for_select_clause.parse(pos, select_expression_list, expected))
+        if (!exp_list_for_select_clause.parse(pos, select_expression_list, expected, ranges))
             return false;
     }
 
     /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction(...)
-    if (s_from.ignore(pos, expected))
+    if (s_from.ignore(pos, expected, ranges))
     {
-        if (!ParserTablesInSelectQuery().parse(pos, tables, expected))
+        if (!ParserTablesInSelectQuery().parse(pos, tables, expected, ranges))
             return false;
     }
 
     /// PREWHERE expr
-    if (s_prewhere.ignore(pos, expected))
+    if (s_prewhere.ignore(pos, expected, ranges))
     {
-        if (!exp_elem.parse(pos, prewhere_expression, expected))
+        if (!exp_elem.parse(pos, prewhere_expression, expected, ranges))
             return false;
     }
 
     /// WHERE expr
-    if (s_where.ignore(pos, expected))
+    if (s_where.ignore(pos, expected, ranges))
     {
-        if (!exp_elem.parse(pos, where_expression, expected))
+        if (!exp_elem.parse(pos, where_expression, expected, ranges))
             return false;
     }
 
     /// GROUP BY expr list
-    if (s_group_by.ignore(pos, expected))
+    if (s_group_by.ignore(pos, expected, ranges))
     {
-        if (s_rollup.ignore(pos, expected))
+        if (s_rollup.ignore(pos, expected, ranges))
             select_query->group_by_with_rollup = true;
-        else if (s_cube.ignore(pos, expected))
+        else if (s_cube.ignore(pos, expected, ranges))
             select_query->group_by_with_cube = true;
 
-        if ((select_query->group_by_with_rollup || select_query->group_by_with_cube) && !open_bracket.ignore(pos, expected))
+        if ((select_query->group_by_with_rollup || select_query->group_by_with_cube) && !open_bracket.ignore(pos, expected, ranges))
             return false;
 
-        if (!exp_list.parse(pos, group_expression_list, expected))
+        if (!exp_list.parse(pos, group_expression_list, expected, ranges))
             return false;
 
-        if ((select_query->group_by_with_rollup || select_query->group_by_with_cube) && !close_bracket.ignore(pos, expected))
+        if ((select_query->group_by_with_rollup || select_query->group_by_with_cube) && !close_bracket.ignore(pos, expected, ranges))
             return false;
     }
 
     /// WITH ROLLUP, CUBE or TOTALS
-    if (s_with.ignore(pos, expected))
+    if (s_with.ignore(pos, expected, ranges))
     {
-        if (s_rollup.ignore(pos, expected))
+        if (s_rollup.ignore(pos, expected, ranges))
             select_query->group_by_with_rollup = true;
-        else if (s_cube.ignore(pos, expected))
+        else if (s_cube.ignore(pos, expected, ranges))
             select_query->group_by_with_cube = true;
-        else if (s_totals.ignore(pos, expected))
+        else if (s_totals.ignore(pos, expected, ranges))
             select_query->group_by_with_totals = true;
         else
             return false;
     }
 
     /// WITH TOTALS
-    if (s_with.ignore(pos, expected))
+    if (s_with.ignore(pos, expected, ranges))
     {
-        if (select_query->group_by_with_totals || !s_totals.ignore(pos, expected))
+        if (select_query->group_by_with_totals || !s_totals.ignore(pos, expected, ranges))
             return false;
 
         select_query->group_by_with_totals = true;
     }
 
     /// HAVING expr
-    if (s_having.ignore(pos, expected))
+    if (s_having.ignore(pos, expected, ranges))
     {
-        if (!exp_elem.parse(pos, having_expression, expected))
+        if (!exp_elem.parse(pos, having_expression, expected, ranges))
             return false;
     }
 
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
-    if (s_order_by.ignore(pos, expected))
+    if (s_order_by.ignore(pos, expected, ranges))
     {
-        if (!order_list.parse(pos, order_expression_list, expected))
+        if (!order_list.parse(pos, order_expression_list, expected, ranges))
             return false;
     }
 
@@ -191,37 +191,37 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool limit_with_ties_occured = false;
 
     /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
-    if (s_limit.ignore(pos, expected))
+    if (s_limit.ignore(pos, expected, ranges))
     {
         ParserToken s_comma(TokenType::Comma);
 
-        if (!exp_elem.parse(pos, limit_length, expected))
+        if (!exp_elem.parse(pos, limit_length, expected, ranges))
             return false;
 
-        if (s_comma.ignore(pos, expected))
+        if (s_comma.ignore(pos, expected, ranges))
         {
             limit_offset = limit_length;
-            if (!exp_elem.parse(pos, limit_length, expected))
+            if (!exp_elem.parse(pos, limit_length, expected, ranges))
                 return false;
 
-            if (s_with_ties.ignore(pos, expected))
+            if (s_with_ties.ignore(pos, expected, ranges))
             {
                 limit_with_ties_occured = true;
                 select_query->limit_with_ties = true;
             }
         }
-        else if (s_offset.ignore(pos, expected))
+        else if (s_offset.ignore(pos, expected, ranges))
         {
-            if (!exp_elem.parse(pos, limit_offset, expected))
+            if (!exp_elem.parse(pos, limit_offset, expected, ranges))
                 return false;
         }
-        else if (s_with_ties.ignore(pos, expected))
+        else if (s_with_ties.ignore(pos, expected, ranges))
         {
             limit_with_ties_occured = true;
             select_query->limit_with_ties = true;
         }
 
-        if (s_by.ignore(pos, expected))
+        if (s_by.ignore(pos, expected, ranges))
         {
             /// WITH TIES was used alongside LIMIT BY
             /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
@@ -234,16 +234,16 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             limit_length = nullptr;
             limit_offset = nullptr;
 
-            if (!exp_list.parse(pos, limit_by_expression_list, expected))
+            if (!exp_list.parse(pos, limit_by_expression_list, expected, ranges))
                 return false;
         }
 
         if (top_length && limit_length)
             throw Exception("Can not use TOP and LIMIT together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
     }
-    else if (s_offset.ignore(pos, expected))
+    else if (s_offset.ignore(pos, expected, ranges))
     {
-        if (!exp_elem.parse(pos, limit_offset, expected))
+        if (!exp_elem.parse(pos, limit_offset, expected, ranges))
             return false;
     }
 
@@ -252,29 +252,29 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         limit_length = top_length;
 
     /// LIMIT length [WITH TIES] | LIMIT offset, length [WITH TIES]
-    if (s_limit.ignore(pos, expected))
+    if (s_limit.ignore(pos, expected, ranges))
     {
         if (!limit_by_length || limit_length)
             return false;
 
         ParserToken s_comma(TokenType::Comma);
 
-        if (!exp_elem.parse(pos, limit_length, expected))
+        if (!exp_elem.parse(pos, limit_length, expected, ranges))
             return false;
 
-        if (s_comma.ignore(pos, expected))
+        if (s_comma.ignore(pos, expected, ranges))
         {
             limit_offset = limit_length;
-            if (!exp_elem.parse(pos, limit_length, expected))
+            if (!exp_elem.parse(pos, limit_length, expected, ranges))
                 return false;
         }
-        else if (s_offset.ignore(pos, expected))
+        else if (s_offset.ignore(pos, expected, ranges))
         {
-            if (!exp_elem.parse(pos, limit_offset, expected))
+            if (!exp_elem.parse(pos, limit_offset, expected, ranges))
                 return false;
         }
 
-        if (s_with_ties.ignore(pos, expected))
+        if (s_with_ties.ignore(pos, expected, ranges))
             select_query->limit_with_ties = true;
     }
 
@@ -283,11 +283,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         throw Exception("Can not use WITH TIES without ORDER BY", ErrorCodes::WITH_TIES_WITHOUT_ORDER_BY);
 
     /// SETTINGS key1 = value1, key2 = value2, ...
-    if (s_settings.ignore(pos, expected))
+    if (s_settings.ignore(pos, expected, ranges))
     {
         ParserSetQuery parser_settings(true);
 
-        if (!parser_settings.parse(pos, settings, expected))
+        if (!parser_settings.parse(pos, settings, expected, ranges))
             return false;
     }
 

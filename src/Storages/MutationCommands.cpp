@@ -138,7 +138,7 @@ void MutationCommands::readText(ReadBuffer & in)
 
     ParserAlterCommandList p_alter_commands;
     auto commands_ast = parseQuery(
-        p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), nullptr, "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     for (ASTAlterCommand * command_ast : commands_ast->as<ASTAlterCommandList &>().commands)
     {
         auto command = MutationCommand::parse(command_ast, true);

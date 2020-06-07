@@ -197,7 +197,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     IParser::Pos token_iterator(tokens, settings.max_parser_depth);
     ASTPtr ast;
 
-    bool parsed = parser.parse(token_iterator, ast, expected);
+    bool parsed = parser.parse(token_iterator, ast, expected, nullptr);
 
     /// Consider delimiter after value (',' or ')') as part of expression
     if (column_idx + 1 != num_columns)

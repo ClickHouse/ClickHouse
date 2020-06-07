@@ -17,7 +17,7 @@ public:
 
 protected:
     const char * getName() const override { return "ExtendedRoleSet"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 
 private:
     bool all_keyword = true;

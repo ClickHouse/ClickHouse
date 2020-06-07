@@ -13,7 +13,7 @@ class ParserTablePropertiesQuery : public IParserBase
 {
 protected:
     const char * getName() const override { return "EXISTS or SHOW CREATE query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 }

@@ -337,7 +337,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
         /// If database.sql doesn't exist, then engine is Ordinary
         String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
-        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+        ast = parseQuery(parser, query.data(), query.data() + query.size(), nullptr, "", 0, settings.max_parser_depth);
     }
 
     return ast;
@@ -450,7 +450,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * loger, const Contex
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
-    auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
+    auto ast = tryParseQuery(parser, pos, pos + query.size(), nullptr, error_message, /* hilite = */ false,
                              "in file " + metadata_file_path, /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
 
     if (!ast && throw_on_error)

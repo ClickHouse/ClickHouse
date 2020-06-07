@@ -6,7 +6,7 @@
 namespace DB
 {
 
-bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserIdentifier name_parser;
     ParserIdentifierWithOptionalParameters type_parser;
@@ -20,7 +20,7 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
 
     /// mandatory attribute name
     ASTPtr name;
-    if (!name_parser.parse(pos, name, expected))
+    if (!name_parser.parse(pos, name, expected, ranges))
         return false;
 
     ASTPtr type;
@@ -31,40 +31,40 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
     bool is_object_id = false;
 
     /// attribute name should be followed by type name if it
-    if (!type_parser.parse(pos, type, expected))
+    if (!type_parser.parse(pos, type, expected, ranges))
         return false;
 
     /// loop to avoid strict order of attribute properties
     while (true)
     {
-        if (!default_value && s_default.ignore(pos, expected))
+        if (!default_value && s_default.ignore(pos, expected, ranges))
         {
-            if (!default_parser.parse(pos, default_value, expected))
+            if (!default_parser.parse(pos, default_value, expected, ranges))
                 return false;
             continue;
         }
 
-        if (!expression && s_expression.ignore(pos, expected))
+        if (!expression && s_expression.ignore(pos, expected, ranges))
         {
-            if (!expression_parser.parse(pos, expression, expected))
+            if (!expression_parser.parse(pos, expression, expected, ranges))
                 return false;
             continue;
         }
 
         /// just single keyword, we don't use "true" or "1" for value
-        if (!hierarchical && s_hierarchical.ignore(pos, expected))
+        if (!hierarchical && s_hierarchical.ignore(pos, expected, ranges))
         {
             hierarchical = true;
             continue;
         }
 
-        if (!injective && s_injective.ignore(pos, expected))
+        if (!injective && s_injective.ignore(pos, expected, ranges))
         {
             injective = true;
             continue;
         }
 
-        if (!is_object_id && s_is_object_id.ignore(pos, expected))
+        if (!is_object_id && s_is_object_id.ignore(pos, expected, ranges))
         {
             is_object_id = true;
             continue;
@@ -103,11 +103,11 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
 }
 
 
-bool ParserDictionaryAttributeDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserDictionaryAttributeDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     return ParserList(std::make_unique<ParserDictionaryAttributeDeclaration>(),
         std::make_unique<ParserToken>(TokenType::Comma), false)
-        .parse(pos, node, expected);
+        .parse(pos, node, expected, ranges);
 }
 
 }

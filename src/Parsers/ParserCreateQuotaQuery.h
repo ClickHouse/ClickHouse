@@ -28,7 +28,7 @@ public:
 
 protected:
     const char * getName() const override { return "CREATE QUOTA or ALTER QUOTA query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 
 private:
     bool attach_mode = false;

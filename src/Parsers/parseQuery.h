@@ -11,6 +11,7 @@ ASTPtr tryParseQuery(
     IParser & parser,
     const char * & pos,                /// Moved to end of parsed fragment.
     const char * end,
+    IParser::Ranges * ranges,
     std::string & out_error_message,
     bool hilite,
     const std::string & description,
@@ -25,6 +26,7 @@ ASTPtr parseQueryAndMovePosition(
     IParser & parser,
     const char * & pos,                /// Moved to end of parsed fragment.
     const char * end,
+    IParser::Ranges * ranges,
     const std::string & description,
     bool allow_multi_statements,
     size_t max_query_size,
@@ -34,6 +36,7 @@ ASTPtr parseQuery(
     IParser & parser,
     const char * begin,
     const char * end,
+    IParser::Ranges * ranges,
     const std::string & description,
     size_t max_query_size,
     size_t max_parser_depth);
@@ -41,6 +44,7 @@ ASTPtr parseQuery(
 ASTPtr parseQuery(
     IParser & parser,
     const std::string & query,
+    IParser::Ranges * ranges,
     const std::string & query_description,
     size_t max_query_size,
     size_t max_parser_depth);
@@ -48,6 +52,7 @@ ASTPtr parseQuery(
 ASTPtr parseQuery(
     IParser & parser,
     const std::string & query,
+    IParser::Ranges * ranges,
     size_t max_query_size,
     size_t max_parser_depth);
 

@@ -16,11 +16,11 @@ class ParserShowProcesslistQuery : public IParserBase
 protected:
     const char * getName() const override { return "SHOW PROCESSLIST query"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override
     {
         auto query = std::make_shared<ASTShowProcesslistQuery>();
 
-        if (!ParserKeyword("SHOW PROCESSLIST").ignore(pos, expected))
+        if (!ParserKeyword("SHOW PROCESSLIST").ignore(pos, expected, ranges))
             return false;
 
         node = query;

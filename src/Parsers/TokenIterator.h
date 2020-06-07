@@ -57,6 +57,7 @@ private:
     size_t index = 0;
 
 public:
+    TokenIterator() : tokens(nullptr) {}
     explicit TokenIterator(Tokens & tokens_) : tokens(&tokens_) {}
 
     const Token & get() { return (*tokens)[index]; }
@@ -68,6 +69,8 @@ public:
 
     bool operator< (const TokenIterator & rhs) const { return index < rhs.index; }
     bool operator<= (const TokenIterator & rhs) const { return index <= rhs.index; }
+    bool operator> (const TokenIterator & rhs) const { return index > rhs.index; }
+    bool operator>= (const TokenIterator & rhs) const { return index >= rhs.index; }
     bool operator== (const TokenIterator & rhs) const { return index == rhs.index; }
     bool operator!= (const TokenIterator & rhs) const { return index != rhs.index; }
 

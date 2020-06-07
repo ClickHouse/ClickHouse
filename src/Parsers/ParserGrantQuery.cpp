@@ -59,24 +59,24 @@ namespace
     }
 
 
-    bool parseColumnNames(IParser::Pos & pos, Expected & expected, Strings & columns)
+    bool parseColumnNames(IParser::Pos & pos, Expected & expected, IParser::Ranges * ranges, Strings & columns)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
+            if (!ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected, ranges))
                 return false;
 
             Strings res_columns;
             do
             {
                 ASTPtr column_ast;
-                if (!ParserIdentifier().parse(pos, column_ast, expected))
+                if (!ParserIdentifier().parse(pos, column_ast, expected, ranges))
                     return false;
                 res_columns.emplace_back(getIdentifierName(column_ast));
             }
-            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+            while (ParserToken{TokenType::Comma}.ignore(pos, expected, ranges));
 
-            if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
+            if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected, ranges))
                 return false;
 
             columns = std::move(res_columns);
@@ -86,16 +86,17 @@ namespace
 
 
     bool parseDatabaseAndTableNameOrMaybeAsterisks(
-        IParser::Pos & pos, Expected & expected, String & database_name, bool & any_database, String & table_name, bool & any_table)
+        IParser::Pos & pos, Expected & expected, IParser::Ranges * ranges,
+        String & database_name, bool & any_database, String & table_name, bool & any_table)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast[2];
-            if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+            if (ParserToken{TokenType::Asterisk}.ignore(pos, expected, ranges))
             {
-                if (ParserToken{TokenType::Dot}.ignore(pos, expected))
+                if (ParserToken{TokenType::Dot}.ignore(pos, expected, ranges))
                 {
-                    if (!ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                    if (!ParserToken{TokenType::Asterisk}.ignore(pos, expected, ranges))
                         return false;
 
                     /// *.* (any table in any database)
@@ -114,12 +115,12 @@ namespace
                 return true;
             }
 
-            if (!ParserIdentifier().parse(pos, ast[0], expected))
+            if (!ParserIdentifier().parse(pos, ast[0], expected, ranges))
                 return false;
 
-            if (ParserToken{TokenType::Dot}.ignore(pos, expected))
+            if (ParserToken{TokenType::Dot}.ignore(pos, expected, ranges))
             {
-                if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                if (ParserToken{TokenType::Asterisk}.ignore(pos, expected, ranges))
                 {
                     /// <database_name>.*
                     any_database = false;
@@ -129,7 +130,7 @@ namespace
                     return true;
                 }
 
-                if (!ParserIdentifier().parse(pos, ast[1], expected))
+                if (!ParserIdentifier().parse(pos, ast[1], expected, ranges))
                     return false;
 
                 /// <database_name>.<table_name>
@@ -150,7 +151,7 @@ namespace
     }
 
 
-    bool parseAccessRightsElements(IParser::Pos & pos, Expected & expected, AccessRightsElements & elements)
+    bool parseAccessRightsElements(IParser::Pos & pos, Expected & expected, IParser::Ranges * ranges, AccessRightsElements & elements)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -165,17 +166,17 @@ namespace
                         return false;
 
                     Strings columns;
-                    parseColumnNames(pos, expected, columns);
+                    parseColumnNames(pos, expected, ranges, columns);
                     access_and_columns.emplace_back(access_flags, std::move(columns));
                 }
-                while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+                while (ParserToken{TokenType::Comma}.ignore(pos, expected, ranges));
 
-                if (!ParserKeyword{"ON"}.ignore(pos, expected))
+                if (!ParserKeyword{"ON"}.ignore(pos, expected, ranges))
                     return false;
 
                 String database_name, table_name;
                 bool any_database = false, any_table = false;
-                if (!parseDatabaseAndTableNameOrMaybeAsterisks(pos, expected, database_name, any_database, table_name, any_table))
+                if (!parseDatabaseAndTableNameOrMaybeAsterisks(pos, expected, ranges, database_name, any_database, table_name, any_table))
                     return false;
 
                 for (auto & [access_flags, columns] : access_and_columns)
@@ -191,7 +192,7 @@ namespace
                     res_elements.emplace_back(std::move(element));
                 }
             }
-            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+            while (ParserToken{TokenType::Comma}.ignore(pos, expected, ranges));
 
             elements = std::move(res_elements);
             return true;
@@ -199,12 +200,12 @@ namespace
     }
 
 
-    bool parseRoles(IParser::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & roles)
+    bool parseRoles(IParser::Pos & pos, Expected & expected, IParser::Ranges * ranges, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (!ParserExtendedRoleSet{}.enableAllKeyword(false).enableCurrentUserKeyword(false).useIDMode(id_mode).parse(pos, ast, expected))
+            if (!ParserExtendedRoleSet{}.enableAllKeyword(false).enableCurrentUserKeyword(false).useIDMode(id_mode).parse(pos, ast, expected, ranges))
                 return false;
 
             roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
@@ -213,24 +214,25 @@ namespace
     }
 
 
-    bool parseToRoles(IParser::Pos & pos, Expected & expected, ASTGrantQuery::Kind kind, std::shared_ptr<ASTExtendedRoleSet> & to_roles)
+    bool parseToRoles(IParser::Pos & pos, Expected & expected, IParser::Ranges * ranges,
+                      ASTGrantQuery::Kind kind, std::shared_ptr<ASTExtendedRoleSet> & to_roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             using Kind = ASTGrantQuery::Kind;
             if (kind == Kind::GRANT)
             {
-                if (!ParserKeyword{"TO"}.ignore(pos, expected))
+                if (!ParserKeyword{"TO"}.ignore(pos, expected, ranges))
                     return false;
             }
             else
             {
-                if (!ParserKeyword{"FROM"}.ignore(pos, expected))
+                if (!ParserKeyword{"FROM"}.ignore(pos, expected, ranges))
                     return false;
             }
 
             ASTPtr ast;
-            if (!ParserExtendedRoleSet{}.enableAllKeyword(kind == Kind::REVOKE).parse(pos, ast, expected))
+            if (!ParserExtendedRoleSet{}.enableAllKeyword(kind == Kind::REVOKE).parse(pos, ast, expected, ranges))
                 return false;
 
             to_roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
@@ -238,74 +240,74 @@ namespace
         });
     }
 
-    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, String & cluster)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{"ON"}.ignore(pos, expected, ranges) && ASTQueryWithOnCluster::parse(pos, cluster, expected, ranges);
         });
     }
 }
 
 
-bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     bool attach = false;
     if (attach_mode)
     {
-        if (!ParserKeyword{"ATTACH"}.ignore(pos, expected))
+        if (!ParserKeyword{"ATTACH"}.ignore(pos, expected, ranges))
             return false;
         attach = true;
     }
 
     using Kind = ASTGrantQuery::Kind;
     Kind kind;
-    if (ParserKeyword{"GRANT"}.ignore(pos, expected))
+    if (ParserKeyword{"GRANT"}.ignore(pos, expected, ranges))
         kind = Kind::GRANT;
-    else if (ParserKeyword{"REVOKE"}.ignore(pos, expected))
+    else if (ParserKeyword{"REVOKE"}.ignore(pos, expected, ranges))
         kind = Kind::REVOKE;
     else
         return false;
 
     String cluster;
     if (cluster.empty())
-        parseOnCluster(pos, expected, cluster);
+        parseOnCluster(pos, expected, ranges, cluster);
 
     bool grant_option = false;
     bool admin_option = false;
     if (kind == Kind::REVOKE)
     {
-        if (ParserKeyword{"GRANT OPTION FOR"}.ignore(pos, expected))
+        if (ParserKeyword{"GRANT OPTION FOR"}.ignore(pos, expected, ranges))
             grant_option = true;
-        else if (ParserKeyword{"ADMIN OPTION FOR"}.ignore(pos, expected))
+        else if (ParserKeyword{"ADMIN OPTION FOR"}.ignore(pos, expected, ranges))
             admin_option = true;
     }
 
     AccessRightsElements elements;
     std::shared_ptr<ASTExtendedRoleSet> roles;
-    if (!parseAccessRightsElements(pos, expected, elements) && !parseRoles(pos, expected, attach, roles))
+    if (!parseAccessRightsElements(pos, expected, ranges, elements) && !parseRoles(pos, expected, ranges, attach, roles))
         return false;
 
     if (cluster.empty())
-        parseOnCluster(pos, expected, cluster);
+        parseOnCluster(pos, expected, ranges, cluster);
 
     std::shared_ptr<ASTExtendedRoleSet> to_roles;
-    if (!parseToRoles(pos, expected, kind, to_roles))
+    if (!parseToRoles(pos, expected, ranges, kind, to_roles))
         return false;
 
     if (cluster.empty())
-        parseOnCluster(pos, expected, cluster);
+        parseOnCluster(pos, expected, ranges, cluster);
 
     if (kind == Kind::GRANT)
     {
-        if (ParserKeyword{"WITH GRANT OPTION"}.ignore(pos, expected))
+        if (ParserKeyword{"WITH GRANT OPTION"}.ignore(pos, expected, ranges))
             grant_option = true;
-        else if (ParserKeyword{"WITH ADMIN OPTION"}.ignore(pos, expected))
+        else if (ParserKeyword{"WITH ADMIN OPTION"}.ignore(pos, expected, ranges))
             admin_option = true;
     }
 
     if (cluster.empty())
-        parseOnCluster(pos, expected, cluster);
+        parseOnCluster(pos, expected, ranges, cluster);
 
     if (grant_option && roles)
         throw Exception("GRANT OPTION should be specified for access types", ErrorCodes::SYNTAX_ERROR);

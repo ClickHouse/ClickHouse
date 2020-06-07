@@ -147,7 +147,7 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
             return "toDayOfMonth";
         case IntervalKind::Week:
             // TODO: SELECT toRelativeWeekNum(toDate('2017-06-15')) - toRelativeWeekNum(toStartOfYear(toDate('2017-06-15')))
-            // else if (ParserKeyword("WEEK").ignore(pos, expected))
+            // else if (ParserKeyword("WEEK").ignore(pos, expected, ranges))
             //    function_name = "toRelativeWeekNum";
             throw Exception("The syntax 'EXTRACT(WEEK FROM date)' is not supported, cannot extract the number of a week", ErrorCodes::SYNTAX_ERROR);
         case IntervalKind::Month:

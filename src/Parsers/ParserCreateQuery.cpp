@@ -18,7 +18,7 @@
 namespace DB
 {
 
-bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserToken open(TokenType::OpeningRoundBracket);
     ParserToken close(TokenType::ClosingRoundBracket);
@@ -29,16 +29,16 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr columns;
 
     /// For now `name == 'Nested'`, probably alternative nested data structures will appear
-    if (!name_p.parse(pos, name, expected))
+    if (!name_p.parse(pos, name, expected, ranges))
         return false;
 
-    if (!open.ignore(pos))
+    if (!open.ignore(pos, expected, ranges))
         return false;
 
-    if (!columns_p.parse(pos, columns, expected))
+    if (!columns_p.parse(pos, columns, expected, ranges))
         return false;
 
-    if (!close.ignore(pos))
+    if (!close.ignore(pos, expected, ranges))
         return false;
 
     auto func = std::make_shared<ASTFunction>();
@@ -51,35 +51,35 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
-bool ParserIdentifierWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserIdentifierWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserFunction function_or_array;
-    if (function_or_array.parse(pos, node, expected))
+    if (function_or_array.parse(pos, node, expected, ranges))
         return true;
 
     ParserNestedTable nested;
-    return nested.parse(pos, node, expected);
+    return nested.parse(pos, node, expected, ranges);
 }
 
-bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     return ParserList(std::make_unique<ParserNameTypePair>(), std::make_unique<ParserToken>(TokenType::Comma), false)
-        .parse(pos, node, expected);
+        .parse(pos, node, expected, ranges);
 }
 
-bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     return ParserList(std::make_unique<ParserColumnDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
-        .parse(pos, node, expected);
+        .parse(pos, node, expected, ranges);
 }
 
-bool ParserNameList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserNameList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     return ParserList(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false)
-        .parse(pos, node, expected);
+        .parse(pos, node, expected, ranges);
 }
 
-bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_type("TYPE");
     ParserKeyword s_granularity("GRANULARITY");
@@ -94,22 +94,22 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr type;
     ASTPtr granularity;
 
-    if (!name_p.parse(pos, name, expected))
+    if (!name_p.parse(pos, name, expected, ranges))
         return false;
 
-    if (!expression_p.parse(pos, expr, expected))
+    if (!expression_p.parse(pos, expr, expected, ranges))
         return false;
 
-    if (!s_type.ignore(pos, expected))
+    if (!s_type.ignore(pos, expected, ranges))
         return false;
 
-    if (!ident_with_optional_params_p.parse(pos, type, expected))
+    if (!ident_with_optional_params_p.parse(pos, type, expected, ranges))
         return false;
 
-    if (!s_granularity.ignore(pos, expected))
+    if (!s_granularity.ignore(pos, expected, ranges))
         return false;
 
-    if (!granularity_p.parse(pos, granularity, expected))
+    if (!granularity_p.parse(pos, granularity, expected, ranges))
         return false;
 
     auto index = std::make_shared<ASTIndexDeclaration>();
@@ -122,7 +122,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return true;
 }
 
-bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_check("CHECK");
 
@@ -132,13 +132,13 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ASTPtr name;
     ASTPtr expr;
 
-    if (!name_p.parse(pos, name, expected))
+    if (!name_p.parse(pos, name, expected, ranges))
         return false;
 
-    if (!s_check.ignore(pos, expected))
+    if (!s_check.ignore(pos, expected, ranges))
         return false;
 
-    if (!expression_p.parse(pos, expr, expected))
+    if (!expression_p.parse(pos, expr, expected, ranges))
         return false;
 
     auto constraint = std::make_shared<ASTConstraintDeclaration>();
@@ -150,7 +150,7 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 }
 
 
-bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_index("INDEX");
     ParserKeyword s_constraint("CONSTRAINT");
@@ -161,19 +161,19 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
 
     ASTPtr new_node = nullptr;
 
-    if (s_index.ignore(pos, expected))
+    if (s_index.ignore(pos, expected, ranges))
     {
-        if (!index_p.parse(pos, new_node, expected))
+        if (!index_p.parse(pos, new_node, expected, ranges))
             return false;
     }
-    else if (s_constraint.ignore(pos, expected))
+    else if (s_constraint.ignore(pos, expected, ranges))
     {
-        if (!constraint_p.parse(pos, new_node, expected))
+        if (!constraint_p.parse(pos, new_node, expected, ranges))
             return false;
     }
     else
     {
-        if (!column_p.parse(pos, new_node, expected))
+        if (!column_p.parse(pos, new_node, expected, ranges))
             return false;
     }
 
@@ -181,25 +181,25 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     return true;
 }
 
-bool ParserIndexDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserIndexDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     return ParserList(std::make_unique<ParserIndexDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
-            .parse(pos, node, expected);
+            .parse(pos, node, expected, ranges);
 }
 
-bool ParserConstraintDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserConstraintDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     return ParserList(std::make_unique<ParserConstraintDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
-            .parse(pos, node, expected);
+            .parse(pos, node, expected, ranges);
 }
 
-bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ASTPtr list;
     if (!ParserList(
             std::make_unique<ParserTablePropertyDeclaration>(),
                     std::make_unique<ParserToken>(TokenType::Comma), false)
-            .parse(pos, list, expected))
+            .parse(pos, list, expected, ranges))
         return false;
 
     ASTPtr columns = std::make_shared<ASTExpressionList>();
@@ -233,7 +233,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
 }
 
 
-bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_engine("ENGINE");
     ParserToken s_eq(TokenType::Equals);
@@ -257,59 +257,59 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr ttl_table;
     ASTPtr settings;
 
-    if (!s_engine.ignore(pos, expected))
+    if (!s_engine.ignore(pos, expected, ranges))
         return false;
 
-    s_eq.ignore(pos, expected);
+    s_eq.ignore(pos, expected, ranges);
 
-    if (!ident_with_optional_params_p.parse(pos, engine, expected))
+    if (!ident_with_optional_params_p.parse(pos, engine, expected, ranges))
         return false;
 
     while (true)
     {
-        if (!partition_by && s_partition_by.ignore(pos, expected))
+        if (!partition_by && s_partition_by.ignore(pos, expected, ranges))
         {
-            if (expression_p.parse(pos, partition_by, expected))
+            if (expression_p.parse(pos, partition_by, expected, ranges))
                 continue;
             else
                 return false;
         }
 
-        if (!primary_key && s_primary_key.ignore(pos, expected))
+        if (!primary_key && s_primary_key.ignore(pos, expected, ranges))
         {
-            if (expression_p.parse(pos, primary_key, expected))
+            if (expression_p.parse(pos, primary_key, expected, ranges))
                 continue;
             else
                 return false;
         }
 
-        if (!order_by && s_order_by.ignore(pos, expected))
+        if (!order_by && s_order_by.ignore(pos, expected, ranges))
         {
-            if (expression_p.parse(pos, order_by, expected))
+            if (expression_p.parse(pos, order_by, expected, ranges))
                 continue;
             else
                 return false;
         }
 
-        if (!sample_by && s_sample_by.ignore(pos, expected))
+        if (!sample_by && s_sample_by.ignore(pos, expected, ranges))
         {
-            if (expression_p.parse(pos, sample_by, expected))
+            if (expression_p.parse(pos, sample_by, expected, ranges))
                 continue;
             else
                 return false;
         }
 
-        if (!ttl_table && s_ttl.ignore(pos, expected))
+        if (!ttl_table && s_ttl.ignore(pos, expected, ranges))
         {
-            if (parser_ttl_list.parse(pos, ttl_table, expected))
+            if (parser_ttl_list.parse(pos, ttl_table, expected, ranges))
                 continue;
             else
                 return false;
         }
 
-        if (s_settings.ignore(pos, expected))
+        if (s_settings.ignore(pos, expected, ranges))
         {
-            if (!settings_p.parse(pos, settings, expected))
+            if (!settings_p.parse(pos, settings, expected, ranges))
                 return false;
         }
 
@@ -331,7 +331,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
-bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
@@ -364,30 +364,30 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     bool if_not_exists = false;
     bool is_temporary = false;
 
-    if (!s_create.ignore(pos, expected))
+    if (!s_create.ignore(pos, expected, ranges))
     {
-        if (s_attach.ignore(pos, expected))
+        if (s_attach.ignore(pos, expected, ranges))
             attach = true;
         else
             return false;
     }
 
-    if (s_temporary.ignore(pos, expected))
+    if (s_temporary.ignore(pos, expected, ranges))
     {
         is_temporary = true;
     }
-    if (!s_table.ignore(pos, expected))
+    if (!s_table.ignore(pos, expected, ranges))
         return false;
 
-    if (s_if_not_exists.ignore(pos, expected))
+    if (s_if_not_exists.ignore(pos, expected, ranges))
         if_not_exists = true;
 
-    if (!table_name_p.parse(pos, table, expected))
+    if (!table_name_p.parse(pos, table, expected, ranges))
         return false;
 
-    if (s_on.ignore(pos, expected))
+    if (s_on.ignore(pos, expected, ranges))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, ranges))
             return false;
     }
 
@@ -411,42 +411,42 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
 
     /// List of columns.
-    if (s_lparen.ignore(pos, expected))
+    if (s_lparen.ignore(pos, expected, ranges))
     {
-        if (!table_properties_p.parse(pos, columns_list, expected))
+        if (!table_properties_p.parse(pos, columns_list, expected, ranges))
             return false;
 
-        if (!s_rparen.ignore(pos, expected))
+        if (!s_rparen.ignore(pos, expected, ranges))
             return false;
 
-        if (!storage_p.parse(pos, storage, expected) && !is_temporary)
+        if (!storage_p.parse(pos, storage, expected, ranges) && !is_temporary)
             return false;
     }
     else
     {
-        storage_p.parse(pos, storage, expected);
+        storage_p.parse(pos, storage, expected, ranges);
 
-        if (!s_as.ignore(pos, expected))
+        if (!s_as.ignore(pos, expected, ranges))
             return false;
 
-        if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
+        if (!select_p.parse(pos, select, expected, ranges)) /// AS SELECT ...
         {
-            if (!table_function_p.parse(pos, as_table_function, expected))
+            if (!table_function_p.parse(pos, as_table_function, expected, ranges))
             {
                 /// AS [db.]table
-                if (!name_p.parse(pos, as_table, expected))
+                if (!name_p.parse(pos, as_table, expected, ranges))
                     return false;
 
-                if (s_dot.ignore(pos, expected))
+                if (s_dot.ignore(pos, expected, ranges))
                 {
                     as_database = as_table;
-                    if (!name_p.parse(pos, as_table, expected))
+                    if (!name_p.parse(pos, as_table, expected, ranges))
                         return false;
                 }
 
                 /// Optional - ENGINE can be specified.
                 if (!storage)
-                    storage_p.parse(pos, storage, expected);
+                    storage_p.parse(pos, storage, expected, ranges);
             }
         }
     }
@@ -477,7 +477,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return true;
 }
 
-bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
@@ -507,60 +507,60 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     bool attach = false;
     bool if_not_exists = false;
 
-    if (!s_create.ignore(pos, expected))
+    if (!s_create.ignore(pos, expected, ranges))
     {
-        if (s_attach.ignore(pos, expected))
+        if (s_attach.ignore(pos, expected, ranges))
             attach = true;
         else
             return false;
     }
 
-    if (!s_live.ignore(pos, expected))
+    if (!s_live.ignore(pos, expected, ranges))
         return false;
 
-    if (!s_view.ignore(pos, expected))
+    if (!s_view.ignore(pos, expected, ranges))
        return false;
 
-    if (s_if_not_exists.ignore(pos, expected))
+    if (s_if_not_exists.ignore(pos, expected, ranges))
        if_not_exists = true;
 
-    if (!table_name_p.parse(pos, table, expected))
+    if (!table_name_p.parse(pos, table, expected, ranges))
         return false;
 
-    if (ParserKeyword{"WITH TIMEOUT"}.ignore(pos, expected))
+    if (ParserKeyword{"WITH TIMEOUT"}.ignore(pos, expected, ranges))
     {
-        if (!ParserNumber{}.parse(pos, live_view_timeout, expected))
+        if (!ParserNumber{}.parse(pos, live_view_timeout, expected, ranges))
             live_view_timeout = std::make_shared<ASTLiteral>(static_cast<UInt64>(DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC));
     }
 
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (ParserKeyword{"ON"}.ignore(pos, expected, ranges))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, ranges))
             return false;
     }
 
     // TO [db.]table
-    if (ParserKeyword{"TO"}.ignore(pos, expected))
+    if (ParserKeyword{"TO"}.ignore(pos, expected, ranges))
     {
-        if (!table_name_p.parse(pos, to_table, expected))
+        if (!table_name_p.parse(pos, to_table, expected, ranges))
             return false;
     }
 
     /// Optional - a list of columns can be specified. It must fully comply with SELECT.
-    if (s_lparen.ignore(pos, expected))
+    if (s_lparen.ignore(pos, expected, ranges))
     {
-        if (!table_properties_p.parse(pos, columns_list, expected))
+        if (!table_properties_p.parse(pos, columns_list, expected, ranges))
             return false;
 
-        if (!s_rparen.ignore(pos, expected))
+        if (!s_rparen.ignore(pos, expected, ranges))
             return false;
     }
 
     /// AS SELECT ...
-    if (!s_as.ignore(pos, expected))
+    if (!s_as.ignore(pos, expected, ranges))
         return false;
 
-    if (!select_p.parse(pos, select, expected))
+    if (!select_p.parse(pos, select, expected, ranges))
         return false;
 
 
@@ -592,7 +592,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
-bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
@@ -608,30 +608,30 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     bool attach = false;
     bool if_not_exists = false;
 
-    if (!s_create.ignore(pos, expected))
+    if (!s_create.ignore(pos, expected, ranges))
     {
-        if (s_attach.ignore(pos, expected))
+        if (s_attach.ignore(pos, expected, ranges))
             attach = true;
         else
             return false;
     }
 
-    if (!s_database.ignore(pos, expected))
+    if (!s_database.ignore(pos, expected, ranges))
         return false;
 
-    if (s_if_not_exists.ignore(pos, expected))
+    if (s_if_not_exists.ignore(pos, expected, ranges))
         if_not_exists = true;
 
-    if (!name_p.parse(pos, database, expected))
+    if (!name_p.parse(pos, database, expected, ranges))
         return false;
 
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (ParserKeyword{"ON"}.ignore(pos, expected, ranges))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, ranges))
             return false;
     }
 
-    storage_p.parse(pos, storage, expected);
+    storage_p.parse(pos, storage, expected, ranges);
 
 
     auto query = std::make_shared<ASTCreateQuery>();
@@ -648,7 +648,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
-bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
@@ -684,74 +684,74 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool is_populate = false;
     bool replace_view = false;
 
-    if (!s_create.ignore(pos, expected))
+    if (!s_create.ignore(pos, expected, ranges))
     {
-        if (s_attach.ignore(pos, expected))
+        if (s_attach.ignore(pos, expected, ranges))
             attach = true;
         else
             return false;
     }
 
     /// VIEW or MATERIALIZED VIEW
-    if (s_or_replace.ignore(pos, expected))
+    if (s_or_replace.ignore(pos, expected, ranges))
     {
         replace_view = true;
     }
 
-    if (!replace_view && s_materialized.ignore(pos, expected))
+    if (!replace_view && s_materialized.ignore(pos, expected, ranges))
     {
         is_materialized_view = true;
     }
     else
         is_view = true;
 
-    if (!s_view.ignore(pos, expected))
+    if (!s_view.ignore(pos, expected, ranges))
         return false;
 
-    if (!replace_view && s_if_not_exists.ignore(pos, expected))
+    if (!replace_view && s_if_not_exists.ignore(pos, expected, ranges))
         if_not_exists = true;
 
-    if (!table_name_p.parse(pos, table, expected))
+    if (!table_name_p.parse(pos, table, expected, ranges))
         return false;
 
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (ParserKeyword{"ON"}.ignore(pos, expected, ranges))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, ranges))
             return false;
     }
 
     // TO [db.]table
-    if (ParserKeyword{"TO"}.ignore(pos, expected))
+    if (ParserKeyword{"TO"}.ignore(pos, expected, ranges))
     {
-        if (!table_name_p.parse(pos, to_table, expected))
+        if (!table_name_p.parse(pos, to_table, expected, ranges))
             return false;
     }
 
     /// Optional - a list of columns can be specified. It must fully comply with SELECT.
-    if (s_lparen.ignore(pos, expected))
+    if (s_lparen.ignore(pos, expected, ranges))
     {
-        if (!table_properties_p.parse(pos, columns_list, expected))
+        if (!table_properties_p.parse(pos, columns_list, expected, ranges))
             return false;
 
-        if (!s_rparen.ignore(pos, expected))
+        if (!s_rparen.ignore(pos, expected, ranges))
             return false;
     }
 
     if (is_materialized_view && !to_table)
     {
         /// Internal ENGINE for MATERIALIZED VIEW must be specified.
-        if (!storage_p.parse(pos, storage, expected))
+        if (!storage_p.parse(pos, storage, expected, ranges))
             return false;
 
-        if (s_populate.ignore(pos, expected))
+        if (s_populate.ignore(pos, expected, ranges))
             is_populate = true;
     }
 
     /// AS SELECT ...
-    if (!s_as.ignore(pos, expected))
+    if (!s_as.ignore(pos, expected, ranges))
         return false;
 
-    if (!select_p.parse(pos, select, expected))
+    if (!select_p.parse(pos, select, expected, ranges))
         return false;
 
 
@@ -785,7 +785,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 }
 
-bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
@@ -809,48 +809,48 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     String cluster_str;
 
     bool attach = false;
-    if (!s_create.ignore(pos, expected))
+    if (!s_create.ignore(pos, expected, ranges))
     {
-        if (s_attach.ignore(pos, expected))
+        if (s_attach.ignore(pos, expected, ranges))
             attach = true;
         else
             return false;
     }
 
-    if (!s_dictionary.ignore(pos, expected))
+    if (!s_dictionary.ignore(pos, expected, ranges))
         return false;
 
-    if (s_if_not_exists.ignore(pos, expected))
+    if (s_if_not_exists.ignore(pos, expected, ranges))
         if_not_exists = true;
 
-    if (!name_p.parse(pos, name, expected))
+    if (!name_p.parse(pos, name, expected, ranges))
         return false;
 
-    if (s_dot.ignore(pos))
+    if (s_dot.ignore(pos, expected, ranges))
     {
         database = name;
-        if (!name_p.parse(pos, name, expected))
+        if (!name_p.parse(pos, name, expected, ranges))
             return false;
     }
 
-    if (s_on.ignore(pos, expected))
+    if (s_on.ignore(pos, expected, ranges))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, ranges))
             return false;
     }
 
     if (!attach)
     {
-        if (!s_left_paren.ignore(pos, expected))
+        if (!s_left_paren.ignore(pos, expected, ranges))
             return false;
 
-        if (!attributes_p.parse(pos, attributes, expected))
+        if (!attributes_p.parse(pos, attributes, expected, ranges))
             return false;
 
-        if (!s_right_paren.ignore(pos, expected))
+        if (!s_right_paren.ignore(pos, expected, ranges))
             return false;
 
-        if (!dictionary_p.parse(pos, dictionary, expected))
+        if (!dictionary_p.parse(pos, dictionary, expected, ranges))
             return false;
     }
 
@@ -871,7 +871,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
 }
 
 
-bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserCreateTableQuery table_p;
     ParserCreateDatabaseQuery database_p;
@@ -879,11 +879,11 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateDictionaryQuery dictionary_p;
     ParserCreateLiveViewQuery live_view_p;
 
-    return table_p.parse(pos, node, expected)
-        || database_p.parse(pos, node, expected)
-        || view_p.parse(pos, node, expected)
-        || dictionary_p.parse(pos, node, expected)
-        || live_view_p.parse(pos, node, expected);
+    return table_p.parse(pos, node, expected, ranges)
+        || database_p.parse(pos, node, expected, ranges)
+        || view_p.parse(pos, node, expected, ranges)
+        || dictionary_p.parse(pos, node, expected, ranges)
+        || live_view_p.parse(pos, node, expected, ranges);
 }
 
 }

@@ -14,26 +14,27 @@ namespace DB
 {
 namespace
 {
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, String & new_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
+            if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected, ranges))
                 return false;
 
-            return parseIdentifierOrStringLiteral(pos, expected, new_name);
+            return parseIdentifierOrStringLiteral(pos, expected, ranges, new_name);
         });
     }
 
-    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTSettingsProfileElements> & settings)
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, bool id_mode,
+                       std::shared_ptr<ASTSettingsProfileElements> & settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected))
+            if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected, ranges))
                 return false;
 
             ASTPtr new_settings_ast;
-            if (!ParserSettingsProfileElements{}.useIDMode(id_mode).enableInheritKeyword(true).parse(pos, new_settings_ast, expected))
+            if (!ParserSettingsProfileElements{}.useIDMode(id_mode).enableInheritKeyword(true).parse(pos, new_settings_ast, expected, ranges))
                 return false;
 
             if (!settings)
@@ -44,13 +45,14 @@ namespace
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, bool id_mode,
+                      std::shared_ptr<ASTExtendedRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected)
-                || !ParserExtendedRoleSet{}.useIDMode(id_mode).parse(pos, ast, expected))
+            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected, ranges)
+                || !ParserExtendedRoleSet{}.useIDMode(id_mode).parse(pos, ast, expected, ranges))
                 return false;
 
             roles = std::static_pointer_cast<ASTExtendedRoleSet>(ast);
@@ -58,29 +60,29 @@ namespace
         });
     }
 
-    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, IParser::Ranges * ranges, String & cluster)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{"ON"}.ignore(pos, expected, ranges) && ASTQueryWithOnCluster::parse(pos, cluster, expected, ranges);
         });
     }
 }
 
 
-bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     bool alter = false;
     if (attach_mode)
     {
-        if (!ParserKeyword{"ATTACH SETTINGS PROFILE"}.ignore(pos, expected) && !ParserKeyword{"ATTACH PROFILE"}.ignore(pos, expected))
+        if (!ParserKeyword{"ATTACH SETTINGS PROFILE"}.ignore(pos, expected, ranges) && !ParserKeyword{"ATTACH PROFILE"}.ignore(pos, expected, ranges))
             return false;
     }
     else
     {
-        if (ParserKeyword{"ALTER SETTINGS PROFILE"}.ignore(pos, expected) || ParserKeyword{"ALTER PROFILE"}.ignore(pos, expected))
+        if (ParserKeyword{"ALTER SETTINGS PROFILE"}.ignore(pos, expected, ranges) || ParserKeyword{"ALTER PROFILE"}.ignore(pos, expected, ranges))
             alter = true;
-        else if (!ParserKeyword{"CREATE SETTINGS PROFILE"}.ignore(pos, expected) && !ParserKeyword{"CREATE PROFILE"}.ignore(pos, expected))
+        else if (!ParserKeyword{"CREATE SETTINGS PROFILE"}.ignore(pos, expected, ranges) && !ParserKeyword{"CREATE PROFILE"}.ignore(pos, expected, ranges))
             return false;
     }
 
@@ -89,19 +91,19 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     bool or_replace = false;
     if (alter)
     {
-        if (ParserKeyword{"IF EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{"IF EXISTS"}.ignore(pos, expected, ranges))
             if_exists = true;
     }
     else
     {
-        if (ParserKeyword{"IF NOT EXISTS"}.ignore(pos, expected))
+        if (ParserKeyword{"IF NOT EXISTS"}.ignore(pos, expected, ranges))
             if_not_exists = true;
-        else if (ParserKeyword{"OR REPLACE"}.ignore(pos, expected))
+        else if (ParserKeyword{"OR REPLACE"}.ignore(pos, expected, ranges))
             or_replace = true;
     }
 
     String name;
-    if (!parseIdentifierOrStringLiteral(pos, expected, name))
+    if (!parseIdentifierOrStringLiteral(pos, expected, ranges, name))
         return false;
 
     String new_name;
@@ -110,23 +112,23 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
 
     while (true)
     {
-        if (alter && parseRenameTo(pos, expected, new_name))
+        if (alter && parseRenameTo(pos, expected, ranges, new_name))
             continue;
 
-        if (parseSettings(pos, expected, attach_mode, settings))
+        if (parseSettings(pos, expected, ranges, attach_mode, settings))
             continue;
 
-        if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+        if (cluster.empty() && parseOnCluster(pos, expected, ranges, cluster))
             continue;
 
         break;
     }
 
     std::shared_ptr<ASTExtendedRoleSet> to_roles;
-    parseToRoles(pos, expected, attach_mode, to_roles);
+    parseToRoles(pos, expected, ranges, attach_mode, to_roles);
 
     if (cluster.empty())
-        parseOnCluster(pos, expected, cluster);
+        parseOnCluster(pos, expected, ranges, cluster);
 
     auto query = std::make_shared<ASTCreateSettingsProfileQuery>();
     node = query;

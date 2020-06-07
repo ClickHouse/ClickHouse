@@ -62,19 +62,19 @@ namespace
     protected:
         const char * getName() const override { return "ATTACH access entity query"; }
 
-        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override
         {
-            if (ParserCreateUserQuery{}.enableAttachMode(true).parse(pos, node, expected))
+            if (ParserCreateUserQuery{}.enableAttachMode(true).parse(pos, node, expected, ranges))
                 return true;
-            if (ParserCreateRoleQuery{}.enableAttachMode(true).parse(pos, node, expected))
+            if (ParserCreateRoleQuery{}.enableAttachMode(true).parse(pos, node, expected, ranges))
                 return true;
-            if (ParserCreateRowPolicyQuery{}.enableAttachMode(true).parse(pos, node, expected))
+            if (ParserCreateRowPolicyQuery{}.enableAttachMode(true).parse(pos, node, expected, ranges))
                 return true;
-            if (ParserCreateQuotaQuery{}.enableAttachMode(true).parse(pos, node, expected))
+            if (ParserCreateQuotaQuery{}.enableAttachMode(true).parse(pos, node, expected, ranges))
                 return true;
-            if (ParserCreateSettingsProfileQuery{}.enableAttachMode(true).parse(pos, node, expected))
+            if (ParserCreateSettingsProfileQuery{}.enableAttachMode(true).parse(pos, node, expected, ranges))
                 return true;
-            if (ParserGrantQuery{}.enableAttachMode(true).parse(pos, node, expected))
+            if (ParserGrantQuery{}.enableAttachMode(true).parse(pos, node, expected, ranges))
                 return true;
             return false;
         }
@@ -97,7 +97,7 @@ namespace
         const char * end = begin + file_contents.size();
         while (pos < end)
         {
-            queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH));
+            queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, nullptr, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH));
             while (isWhitespaceASCII(*pos) || *pos == ';')
                 ++pos;
         }

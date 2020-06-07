@@ -10,7 +10,7 @@
 namespace DB
 {
 
-bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserKeyword s_id("ID");
     ParserStringLiteral parser_string_literal;
@@ -20,10 +20,10 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto partition = std::make_shared<ASTPartition>();
 
-    if (s_id.ignore(pos, expected))
+    if (s_id.ignore(pos, expected, ranges))
     {
         ASTPtr partition_id;
-        if (!parser_string_literal.parse(pos, partition_id, expected))
+        if (!parser_string_literal.parse(pos, partition_id, expected, ranges))
             return false;
 
         partition->id = partition_id->as<ASTLiteral &>().value.get<String>();
@@ -31,7 +31,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
     {
         ASTPtr value;
-        if (!parser_expr.parse(pos, value, expected))
+        if (!parser_expr.parse(pos, value, expected, ranges))
             return false;
 
         size_t fields_count;

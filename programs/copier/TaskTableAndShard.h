@@ -266,7 +266,7 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
 
     {
         ParserStorage parser_storage;
-        engine_push_ast = parseQuery(parser_storage, engine_push_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        engine_push_ast = parseQuery(parser_storage, engine_push_str, nullptr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         engine_push_partition_key_ast = extractPartitionKey(engine_push_ast);
         primary_key_comma_separated = createCommaSeparatedStringFrom(extractPrimaryKeyColumnNames(engine_push_ast));
         engine_push_zk_path = extractReplicatedTableZookeeperPath(engine_push_ast);
@@ -277,7 +277,7 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
     auxiliary_engine_split_asts.reserve(number_of_splits);
     {
         ParserExpressionWithOptionalAlias parser_expression(false);
-        sharding_key_ast = parseQuery(parser_expression, sharding_key_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        sharding_key_ast = parseQuery(parser_expression, sharding_key_str, nullptr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         main_engine_split_ast = createASTStorageDistributed(cluster_push_name, table_push.first, table_push.second,
                                                             sharding_key_ast);
 
@@ -295,7 +295,7 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
     if (!where_condition_str.empty())
     {
         ParserExpressionWithOptionalAlias parser_expression(false);
-        where_condition_ast = parseQuery(parser_expression, where_condition_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        where_condition_ast = parseQuery(parser_expression, where_condition_str, nullptr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
         // Will use canonical expression form
         where_condition_str = queryToString(where_condition_ast);

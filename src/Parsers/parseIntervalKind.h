@@ -7,5 +7,5 @@
 namespace DB
 {
 /// Parses an interval kind.
-bool parseIntervalKind(IParser::Pos & pos, Expected & expected, IntervalKind & result);
+bool parseIntervalKind(IParser::Pos & pos, Expected & expected, IParser::Ranges * ranges, IntervalKind & result);
 }

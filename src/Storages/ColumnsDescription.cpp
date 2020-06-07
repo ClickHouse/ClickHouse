@@ -104,7 +104,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
     ParserColumnDeclaration column_parser(/* require type */ true);
     String column_line;
     readEscapedStringUntilEOL(column_line, buf);
-    ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr ast = parseQuery(column_parser, column_line, nullptr, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     if (const auto * col_ast = ast->as<ASTColumnDeclaration>())
     {
         name = col_ast->name;

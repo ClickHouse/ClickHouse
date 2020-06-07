@@ -13,7 +13,7 @@ namespace DB
 
 
 /// Parse `name = value`.
-bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected)
+bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected, Ranges * ranges)
 {
     ParserIdentifier name_p;
     ParserLiteral value_p;
@@ -22,13 +22,13 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
     ASTPtr name;
     ASTPtr value;
 
-    if (!name_p.parse(pos, name, expected))
+    if (!name_p.parse(pos, name, expected, ranges))
         return false;
 
-    if (!s_eq.ignore(pos, expected))
+    if (!s_eq.ignore(pos, expected, ranges))
         return false;
 
-    if (!value_p.parse(pos, value, expected))
+    if (!value_p.parse(pos, value, expected, ranges))
         return false;
 
     tryGetIdentifierNameInto(name, change.name);
@@ -38,7 +38,7 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
 }
 
 
-bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
     ParserToken s_comma(TokenType::Comma);
 
@@ -46,7 +46,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         ParserKeyword s_set("SET");
 
-        if (!s_set.ignore(pos, expected))
+        if (!s_set.ignore(pos, expected, ranges))
             return false;
     }
 
@@ -54,12 +54,12 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     while (true)
     {
-        if (!changes.empty() && !s_comma.ignore(pos))
+        if (!changes.empty() && !s_comma.ignore(pos, expected, ranges))
             break;
 
         changes.push_back(SettingChange{});
 
-        if (!parseNameValuePair(changes.back(), pos, expected))
+        if (!parseNameValuePair(changes.back(), pos, expected, ranges))
             return false;
     }
 

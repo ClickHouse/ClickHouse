@@ -6,18 +6,18 @@
 
 namespace DB
 {
-bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name, std::optional<String> & host_like_pattern)
+bool parseUserName(IParser::Pos & pos, Expected & expected, IParser::Ranges * ranges, String & user_name, std::optional<String> & host_like_pattern)
 {
     String name;
-    if (!parseIdentifierOrStringLiteral(pos, expected, name))
+    if (!parseIdentifierOrStringLiteral(pos, expected, ranges, name))
         return false;
 
     boost::algorithm::trim(name);
 
     std::optional<String> pattern;
-    if (ParserToken{TokenType::At}.ignore(pos, expected))
+    if (ParserToken{TokenType::At}.ignore(pos, expected, ranges))
     {
-        if (!parseIdentifierOrStringLiteral(pos, expected, pattern.emplace()))
+        if (!parseIdentifierOrStringLiteral(pos, expected, ranges, pattern.emplace()))
             return false;
 
         boost::algorithm::trim(*pattern);
@@ -32,27 +32,27 @@ bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name, 
 }
 
 
-bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name)
+bool parseUserName(IParser::Pos & pos, Expected & expected, IParser::Ranges * ranges, String & user_name)
 {
     std::optional<String> unused_pattern;
-    return parseUserName(pos, expected, user_name, unused_pattern);
+    return parseUserName(pos, expected, ranges, user_name, unused_pattern);
 }
 
 
-bool parseUserNameOrCurrentUserTag(IParser::Pos & pos, Expected & expected, String & user_name, bool & current_user)
+bool parseUserNameOrCurrentUserTag(IParser::Pos & pos, Expected & expected, IParser::Ranges * ranges, String & user_name, bool & current_user)
 {
-    if (ParserKeyword{"CURRENT_USER"}.ignore(pos, expected) || ParserKeyword{"currentUser"}.ignore(pos, expected))
+    if (ParserKeyword{"CURRENT_USER"}.ignore(pos, expected, ranges) || ParserKeyword{"currentUser"}.ignore(pos, expected, ranges))
     {
-        if (ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
+        if (ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected, ranges))
         {
-            if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
+            if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected, ranges))
                 return false;
         }
         current_user = true;
         return true;
     }
 
-    if (parseUserName(pos, expected, user_name))
+    if (parseUserName(pos, expected, ranges, user_name))
     {
         current_user = false;
         return true;

@@ -56,7 +56,7 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
         if (table_id.alias.empty() && table_id.isShort())
         {
             ParserTableExpression parser;
-            table_expr = parseQuery(parser, expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH)->as<ASTTableExpression &>();
+            table_expr = parseQuery(parser, expr, nullptr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH)->as<ASTTableExpression &>();
         }
     }
 }

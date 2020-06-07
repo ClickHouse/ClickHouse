@@ -8,9 +8,9 @@
 namespace DB
 {
 
-bool ParserUnionQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserUnionQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges)
 {
-    if (!ParserSubquery().parse(pos, node, expected) && !ParserSelectQuery().parse(pos, node, expected))
+    if (!ParserSubquery().parse(pos, node, expected, ranges) && !ParserSelectQuery().parse(pos, node, expected, ranges))
         return false;
 
     if (const auto * ast_subquery = node->as<ASTSubquery>())

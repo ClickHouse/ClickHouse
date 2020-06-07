@@ -17,7 +17,7 @@ class ParserDictionaryAttributeDeclaration : public IParserBase
 protected:
     const char * getName() const override { return "attribute declaration"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 
@@ -26,7 +26,7 @@ class ParserDictionaryAttributeDeclarationList : public IParserBase
 {
 protected:
     const char * getName() const  override{ return "attribute declaration list"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 };
 
 }

@@ -18,7 +18,7 @@ public:
 protected:
     const char * getName() const override { return "Query with output"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected, Ranges * ranges) override;
 
 private:
     bool enable_explain;
