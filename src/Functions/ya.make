@@ -526,6 +526,7 @@ SRCS(
     visitParamExtractString.cpp
     visitParamExtractUInt.cpp
     visitParamHas.cpp
+    wkt.cpp
     yandexConsistentHash.cpp
     yesterday.cpp
 
