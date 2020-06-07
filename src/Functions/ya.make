@@ -193,6 +193,7 @@ SRCS(
     geohashDecode.cpp
     geohashEncode.cpp
     geohashesInBox.cpp
+    geometryFromColumn.cpp
     getMacro.cpp
     getScalar.cpp
     getSizeOfEnumType.cpp
