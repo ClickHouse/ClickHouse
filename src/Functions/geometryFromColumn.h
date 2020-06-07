@@ -41,6 +41,7 @@ public:
             throw Exception("tuple size is " + toString(tuple_columns.size()) + " != 2", ErrorCodes::ILLEGAL_COLUMN);
         }
 
+        // x = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
         x = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
         if (!x)
         {
@@ -67,7 +68,7 @@ public:
     void get(Float64Point & container, size_t i) const
     {
         boost::geometry::set<0>(container, x[i]);
-        boost::geometry::set<0>(container, y[i]);
+        boost::geometry::set<1>(container, y[i]);
     }
 private:
     const Float64 * x;
@@ -81,7 +82,8 @@ public:
     RingFromColumnParser(const IColumn & col)
         : offsets(static_cast<const ColumnArray &>(col).getOffsets())
         , pointParser(static_cast<const ColumnArray &>(col).getData())
-    {}
+    {
+    }
 
     Geometry createContainer() const
     {
@@ -103,6 +105,7 @@ public:
         container.resize(r - l);
 
         for (size_t j = l; j < r; j++) {
+            // LOG_FATAL
             pointParser.get(container[j - l], j);
         }
 
@@ -203,7 +206,6 @@ Float64Geometry createContainer(const GeometryFromColumnParser & parser);
 
 void get(const GeometryFromColumnParser & parser, Float64Geometry & container, size_t i);
 
-Float64PointFromColumnParser makePointFromColumnParser(const ColumnWithTypeAndName & col);
 GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
 }

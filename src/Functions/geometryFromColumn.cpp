@@ -50,10 +50,8 @@ private:
     size_t i;
 };
 
-}
-
-template <class DataType>
-Float64PointFromColumnParser makeParser(const ColumnWithTypeAndName & col)
+template <class DataType, class Parser>
+Parser makeParser(const ColumnWithTypeAndName & col)
 {
     auto wanted_data_type = DataType::nestedDataType();
     ColumnPtr casted = castColumn(col, wanted_data_type);
@@ -62,16 +60,18 @@ Float64PointFromColumnParser makeParser(const ColumnWithTypeAndName & col)
         throw Exception("Failed to cast " + col.type->getName() + " to " + wanted_data_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    return Float64PointFromColumnParser(*casted);
+    return Parser(*casted);
+}
+
 }
 
 GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col)
 {
     switch (getArrayDepth(col.type, 3)) {
-        case 0: return makeParser<DataTypeCustomPointSerialization>(col);
-        case 1: return makeParser<DataTypeCustomRingSerialization>(col);
-        case 2: return makeParser<DataTypeCustomPolygonSerialization>(col);
-        case 3: return makeParser<DataTypeCustomMultiPolygonSerialization>(col);
+        case 0: return makeParser<DataTypeCustomPointSerialization, Float64PointFromColumnParser>(col);
+        case 1: return makeParser<DataTypeCustomRingSerialization, Float64RingFromColumnParser>(col);
+        case 2: return makeParser<DataTypeCustomPolygonSerialization, Float64PolygonFromColumnParser>(col);
+        case 3: return makeParser<DataTypeCustomMultiPolygonSerialization, Float64MultiPolygonFromColumnParser>(col);
         default: throw Exception("Cannot parse geometry from column with type " + col.type->getName()
                 + ", array depth is too big", ErrorCodes::ILLEGAL_COLUMN);
     }
