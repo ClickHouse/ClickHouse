@@ -145,7 +145,7 @@ namespace
                 const size_t n = src_data_concrete->getN();
                 const ColumnFixedString::Chars & src_data_vec = src_data_concrete->getChars();
 
-                auto concrete_res_data = typeid_cast<ColumnFixedString *>(&res_data_col);
+                auto * concrete_res_data = typeid_cast<ColumnFixedString *>(&res_data_col);
                 if (!concrete_res_data)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
@@ -211,14 +211,14 @@ namespace
             {
                 const ColumnString::Offsets & src_string_offsets = src_data_concrete->getOffsets();
 
-                auto concrete_res_string_offsets = typeid_cast<ColumnString *>(&res_data_col);
+                auto * concrete_res_string_offsets = typeid_cast<ColumnString *>(&res_data_col);
                 if (!concrete_res_string_offsets)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 ColumnString::Offsets & res_string_offsets = concrete_res_string_offsets->getOffsets();
 
                 const ColumnString::Chars & src_data_vec = src_data_concrete->getChars();
 
-                auto concrete_res_data = typeid_cast<ColumnString *>(&res_data_col);
+                auto * concrete_res_data = typeid_cast<ColumnString *>(&res_data_col);
                 if (!concrete_res_data)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 ColumnString::Chars & res_data = concrete_res_data->getChars();
@@ -393,7 +393,7 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
     const IColumn * inner_col;
     IColumn * inner_res_col;
 
-    auto nullable_col = checkAndGetColumn<ColumnNullable>(src_data);
+    const auto * nullable_col = checkAndGetColumn<ColumnNullable>(src_data);
     if (nullable_col)
     {
         inner_col = &nullable_col->getNestedColumn();

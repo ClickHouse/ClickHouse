@@ -35,6 +35,7 @@ struct AlterCommand
         MODIFY_TTL,
         MODIFY_SETTING,
         MODIFY_QUERY,
+        RENAME_COLUMN,
     };
 
     Type type;
@@ -96,15 +97,18 @@ struct AlterCommand
     /// For MODIFY_QUERY
     ASTPtr select = nullptr;
 
-    static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
+    /// Target column name
+    String rename_to;
 
-    void apply(StorageInMemoryMetadata & metadata) const;
+    static std::optional<AlterCommand> parse(const ASTAlterCommand * command, bool sanity_check_compression_codecs);
+
+    void apply(StorageInMemoryMetadata & metadata, const Context & context) const;
 
     /// Checks that alter query changes data. For MergeTree:
     ///    * column files (data and marks)
     ///    * each part meta (columns.txt)
     /// in each part on disk (it's not lightweight alter).
-    bool isModifyingData() const;
+    bool isModifyingData(const StorageInMemoryMetadata & metadata) const;
 
     bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
 
@@ -114,10 +118,13 @@ struct AlterCommand
     /// Checks that only comment changed by alter
     bool isCommentAlter() const;
 
+    /// Checks that any TTL changed by alter
+    bool isTTLAlter(const StorageInMemoryMetadata & metadata) const;
+
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
     /// metadata changes.
-    std::optional<MutationCommand> tryConvertToMutationCommand(const StorageInMemoryMetadata & metadata) const;
+    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, const Context & context) const;
 };
 
 /// Return string representation of AlterCommand::Type
@@ -144,10 +151,10 @@ public:
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.
-    void apply(StorageInMemoryMetadata & metadata) const;
+    void apply(StorageInMemoryMetadata & metadata, const Context & context) const;
 
     /// At least one command modify data on disk.
-    bool isModifyingData() const;
+    bool isModifyingData(const StorageInMemoryMetadata & metadata) const;
 
     /// At least one command modify settings.
     bool isSettingsAlter() const;
@@ -156,9 +163,10 @@ public:
     bool isCommentAlter() const;
 
     /// Return mutation commands which some storages may execute as part of
-    /// alter. If alter can be performed is pure metadata update, than result is
-    /// empty.
-    MutationCommands getMutationCommands(const StorageInMemoryMetadata & metadata) const;
+    /// alter. If alter can be performed as pure metadata update, than result is
+    /// empty. If some TTL changes happened than, depending on materialize_ttl
+    /// additional mutation command (MATERIALIZE_TTL) will be returned.
+    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, const Context & context) const;
 };
 
 }

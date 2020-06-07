@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 CUR_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
-DEFAULT_CLICKHOUSE_ROOT = os.path.abspath(os.path.join(CUR_FILE_DIR, "../../../"))
+DEFAULT_CLICKHOUSE_ROOT = os.path.abspath(os.path.join(CUR_FILE_DIR, "../../"))
 CURRENT_WORK_DIR = os.getcwd()
 CONTAINER_NAME = "clickhouse_integration_tests"
 

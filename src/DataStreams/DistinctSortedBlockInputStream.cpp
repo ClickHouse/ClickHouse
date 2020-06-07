@@ -126,7 +126,7 @@ ColumnRawPtrs DistinctSortedBlockInputStream::getKeyColumns(const Block & block)
 
     for (size_t i = 0; i < columns; ++i)
     {
-        auto & column = columns_names.empty()
+        const auto & column = columns_names.empty()
             ? block.safeGetByPosition(i).column
             : block.getByName(columns_names[i]).column;
 
@@ -144,7 +144,7 @@ ColumnRawPtrs DistinctSortedBlockInputStream::getClearingColumns(const Block & b
     clearing_hint_columns.reserve(description.size());
     for (const auto & sort_column_description : description)
     {
-        const auto sort_column_ptr = block.safeGetByPosition(sort_column_description.column_number).column.get();
+        const auto * sort_column_ptr = block.safeGetByPosition(sort_column_description.column_number).column.get();
         const auto it = std::find(key_columns.cbegin(), key_columns.cend(), sort_column_ptr);
         if (it != key_columns.cend()) /// if found in key_columns
             clearing_hint_columns.emplace_back(sort_column_ptr);

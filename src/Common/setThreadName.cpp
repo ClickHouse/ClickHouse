@@ -29,11 +29,10 @@ void setThreadName(const char * name)
         throw DB::Exception("Thread name cannot be longer than 15 bytes", DB::ErrorCodes::PTHREAD_ERROR);
 #endif
 
-#if defined(__FreeBSD__)
+#if defined(OS_FREEBSD)
     pthread_set_name_np(pthread_self(), name);
-    return;
-
-#elif defined(__APPLE__)
+    if ((false))
+#elif defined(OS_DARWIN)
     if (0 != pthread_setname_np(name))
 #else
     if (0 != prctl(PR_SET_NAME, name, 0, 0, 0))

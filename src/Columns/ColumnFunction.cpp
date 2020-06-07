@@ -134,7 +134,7 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_c
 size_t ColumnFunction::byteSize() const
 {
     size_t total_size = 0;
-    for (auto & column : captured_columns)
+    for (const auto & column : captured_columns)
         total_size += column.column->byteSize();
 
     return total_size;
@@ -143,7 +143,7 @@ size_t ColumnFunction::byteSize() const
 size_t ColumnFunction::allocatedBytes() const
 {
     size_t total_size = 0;
-    for (auto & column : captured_columns)
+    for (const auto & column : captured_columns)
         total_size += column.column->allocatedBytes();
 
     return total_size;

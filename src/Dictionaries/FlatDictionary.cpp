@@ -2,6 +2,8 @@
 #include <IO/WriteHelpers.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
+#include <Core/Defines.h>
+
 
 namespace DB
 {
@@ -77,7 +79,7 @@ void FlatDictionary::isInImpl(const ChildType & child_ids, const AncestorType & 
         auto id = getAt(child_ids, row);
         const auto ancestor_id = getAt(ancestor_ids, row);
 
-        while (id < loaded_size && id != null_value && id != ancestor_id)
+        for (size_t i = 0; id < loaded_size && id != null_value && id != ancestor_id && i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
             id = attr[id];
 
         out[row] = id != null_value && id == ancestor_id;
@@ -603,7 +605,7 @@ template <>
 void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, const Key id, const String & value)
 {
     resize<StringRef>(attribute, id);
-    const auto string_in_arena = attribute.string_arena->insert(value.data(), value.size());
+    const auto * string_in_arena = attribute.string_arena->insert(value.data(), value.size());
     auto & array = std::get<ContainerType<StringRef>>(attribute.arrays);
     array[id] = StringRef{string_in_arena, value.size()};
     loaded_ids[id] = true;

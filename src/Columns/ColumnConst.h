@@ -50,6 +50,11 @@ public:
         return "Const";
     }
 
+    TypeIndex getDataType() const override
+    {
+        return data->getDataType();
+    }
+
     MutableColumnPtr cloneResized(size_t new_size) const override
     {
         return ColumnConst::create(data, new_size);
@@ -170,6 +175,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
 
     size_t byteSize() const override
     {

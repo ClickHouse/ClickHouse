@@ -29,7 +29,7 @@
             <table_push>trivial</table_push>
 
             <!-- Engine of destination tables -->
-            <engine>ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster{cluster}/{shard}/hits', '{replica}') PARTITION BY d % 5 ORDER BY d SETTINGS index_granularity = 16</engine>
+            <engine>ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster{cluster}/{shard}/hits', '{replica}') PARTITION BY d % 5 ORDER BY (d, sipHash64(d)) SAMPLE BY sipHash64(d) SETTINGS index_granularity = 16</engine>
 
             <!-- Which sarding key to use while copying -->
             <sharding_key>d + 1</sharding_key>

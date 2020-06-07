@@ -139,7 +139,7 @@ public:
         bool cat_features_are_strings = true;
         for (size_t i = float_features_count; i < float_features_count + cat_features_count; ++i)
         {
-            auto column = columns[i];
+            const auto * column = columns[i];
             if (column->isNumeric())
                 cat_features_are_strings = false;
             else if (!(typeid_cast<const ColumnString *>(column)
@@ -160,7 +160,7 @@ public:
             return result;
 
         size_t column_size = columns.front()->size();
-        auto result_buf = result->getData().data();
+        auto * result_buf = result->getData().data();
 
         /// Multiple trees case. Copy data to several columns.
         MutableColumns mutable_columns(tree_count);
@@ -262,7 +262,7 @@ private:
         T * data = data_column->getData().data();
         for (size_t i = 0; i < size; ++i)
         {
-            auto column = columns[offset + i];
+            const auto * column = columns[offset + i];
             if (column->isNumeric())
                 placeColumnAsNumber(column, data + i, size);
         }
@@ -288,10 +288,10 @@ private:
         std::vector<PODArray<char>> data;
         for (size_t i = 0; i < size; ++i)
         {
-            auto column = columns[offset + i];
-            if (auto column_string = typeid_cast<const ColumnString *>(column))
+            const auto * column = columns[offset + i];
+            if (const auto * column_string = typeid_cast<const ColumnString *>(column))
                 placeStringColumn(*column_string, buffer + i, size);
-            else if (auto column_fixed_string = typeid_cast<const ColumnFixedString *>(column))
+            else if (const auto * column_fixed_string = typeid_cast<const ColumnFixedString *>(column))
                 data.push_back(placeFixedStringColumn(*column_fixed_string, buffer + i, size));
             else
                 throw Exception("Cannot place string column.", ErrorCodes::LOGICAL_ERROR);
@@ -335,10 +335,10 @@ private:
         std::vector<PODArray<char>> data;
         for (size_t i = 0; i < size; ++i)
         {
-            auto column = columns[offset + i];
-            if (auto column_string = typeid_cast<const ColumnString *>(column))
+            const auto * column = columns[offset + i];
+            if (const auto * column_string = typeid_cast<const ColumnString *>(column))
                 calcStringHashes(column_string, i, buffer);
-            else if (auto column_fixed_string = typeid_cast<const ColumnFixedString *>(column))
+            else if (const auto * column_fixed_string = typeid_cast<const ColumnFixedString *>(column))
                 calcStringHashes(column_fixed_string, i, buffer);
             else
                 calcIntHashes(column_size, i, buffer);
@@ -369,14 +369,14 @@ private:
         size_t column_size = columns.front()->size();
 
         auto result = ColumnFloat64::create(column_size * tree_count);
-        auto result_buf = result->getData().data();
+        auto * result_buf = result->getData().data();
 
         if (!column_size)
             return result;
 
         /// Prepare float features.
         PODArray<const float *> float_features(column_size);
-        auto float_features_buf = float_features.data();
+        auto * float_features_buf = float_features.data();
         /// Store all float data into single column. float_features is a list of pointers to it.
         auto float_features_col = placeNumericColumns<float>(columns, 0, float_features_count, float_features_buf);
 
@@ -398,7 +398,7 @@ private:
             /// cat_features_holder stores pointers to ColumnString data or fixed_strings_data.
             PODArray<const char *> cat_features_holder(cat_features_count * column_size);
             PODArray<const char **> cat_features(column_size);
-            auto cat_features_buf = cat_features.data();
+            auto * cat_features_buf = cat_features.data();
 
             fillCatFeaturesBuffer(cat_features_buf, cat_features_holder.data(), column_size);
             /// Fixed strings are stored without termination zero, so have to copy data into fixed_strings_data.
@@ -416,7 +416,7 @@ private:
         else
         {
             PODArray<const int *> cat_features(column_size);
-            auto cat_features_buf = cat_features.data();
+            auto * cat_features_buf = cat_features.data();
             auto cat_features_col = placeNumericColumns<int>(columns, float_features_count,
                                                              cat_features_count, cat_features_buf);
             calcHashes(columns, float_features_count, cat_features_count, cat_features_buf);

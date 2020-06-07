@@ -149,7 +149,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
     IColumn & res_col = *result_holder;
 
     /// AggregateFunction's states should be inserted into column using specific way
-    auto res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(&res_col);
+    auto * res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(&res_col);
 
     if (!res_col_aggregate_function && agg_func.isState())
         throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
@@ -177,9 +177,9 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
     });
 
     {
-        auto that = &agg_func;
+        auto * that = &agg_func;
         /// Unnest consecutive trailing -State combinators
-        while (auto func = typeid_cast<AggregateFunctionState *>(that))
+        while (auto * func = typeid_cast<AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
 
         that->addBatchArray(input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());

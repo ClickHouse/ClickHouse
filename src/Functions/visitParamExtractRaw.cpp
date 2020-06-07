@@ -15,12 +15,18 @@ struct ExtractRaw
         ExpectChars expects_end;
         UInt8 current_expect_end = 0;
 
-        for (auto extract_begin = pos; pos != end; ++pos)
+        for (const auto * extract_begin = pos; pos != end; ++pos)
         {
             if (current_expect_end && *pos == current_expect_end)
             {
                 expects_end.pop_back();
                 current_expect_end = expects_end.empty() ? 0 : expects_end.back();
+            }
+            else if (current_expect_end == '"')
+            {
+                /// skip backslash
+                if (*pos == '\\' && pos + 1 < end && pos[1] == '"')
+                    ++pos;
             }
             else
             {
@@ -37,11 +43,6 @@ struct ExtractRaw
                     case '"' :
                         current_expect_end = '"';
                         expects_end.push_back(current_expect_end);
-                        break;
-                    case '\\':
-                        /// skip backslash
-                        if (pos + 1 < end && pos[1] == '"')
-                            pos++;
                         break;
                     default:
                         if (!current_expect_end && (*pos == ',' || *pos == '}'))

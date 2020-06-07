@@ -1,13 +1,15 @@
 #pragma once
 
-#include "config_formats.h"
-#if USE_PROTOBUF
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
 
-#include <Core/Block.h>
-#include <Formats/FormatSettings.h>
-#include <Formats/ProtobufWriter.h>
-#include <Formats/FormatSchemaInfo.h>
-#include <Processors/Formats/IRowOutputFormat.h>
+#if USE_PROTOBUF
+#    include <Core/Block.h>
+#    include <Formats/FormatSchemaInfo.h>
+#    include <Formats/FormatSettings.h>
+#    include <Formats/ProtobufWriter.h>
+#    include <Processors/Formats/IRowOutputFormat.h>
 
 
 namespace google

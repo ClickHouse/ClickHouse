@@ -34,11 +34,7 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void rename(
-        const String & new_path_to_table_data,
-        const String & new_database_name,
-        const String & new_table_name,
-        TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 
@@ -46,7 +42,7 @@ public:
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void drop(TableStructureWriteLockHolder &) override;
+    void drop() override;
 
 protected:
     StorageTinyLog(
@@ -75,7 +71,7 @@ private:
     FileChecker file_checker;
     mutable std::shared_mutex rwlock;
 
-    Logger * log;
+    Poco::Logger * log;
 
     void addFiles(const String & column_name, const IDataType & type);
 };

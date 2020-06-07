@@ -27,11 +27,9 @@ class FunctionRange : public IFunction
 public:
     static constexpr auto name = "range";
     static constexpr size_t max_elements = 100'000'000;
-    static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionRange>(context_); }
-    explicit FunctionRange(const Context & context_) : context(context_) {}
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRange>(); }
 
 private:
-    const Context & context;
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 0; }
@@ -328,7 +326,7 @@ private:
     {
         if (arguments.size() == 1)
         {
-            const auto col = block.getByPosition(arguments[0]).column.get();
+            const auto * col = block.getByPosition(arguments[0]).column.get();
             if (!executeInternal<UInt8>(block, col, result) &&
                 !executeInternal<UInt16>(block, col, result) &&
                 !executeInternal<UInt32>(block, col, result) &&
@@ -347,9 +345,9 @@ private:
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             if (i == 1)
-                columns_holder[i] = castColumn(block.getByPosition(arguments[i]), return_type, context)->convertToFullColumnIfConst();
+                columns_holder[i] = castColumn(block.getByPosition(arguments[i]), return_type)->convertToFullColumnIfConst();
             else
-                columns_holder[i] = castColumn(block.getByPosition(arguments[i]), return_type, context);
+                columns_holder[i] = castColumn(block.getByPosition(arguments[i]), return_type);
 
             columns[i] = columns_holder[i].get();
         }

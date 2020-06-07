@@ -31,7 +31,8 @@ struct MutationCommand
         READ_COLUMN,
         DROP_COLUMN,
         DROP_INDEX,
-        MATERIALIZE_TTL
+        MATERIALIZE_TTL,
+        RENAME_COLUMN,
     };
 
     Type type = EMPTY;
@@ -52,6 +53,9 @@ struct MutationCommand
 
     /// We need just clear column, not drop from metadata.
     bool clear = false;
+
+    /// Column rename_to
+    String rename_to;
 
     /// If parse_alter_commands, than consider more Alter commands as mutation commands
     static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);

@@ -113,11 +113,11 @@ public:
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
-    void drop(TableStructureWriteLockHolder &) override;
+    void drop() override;
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     bool supportsIndexForIn() const override { return true; }
 
@@ -464,6 +464,9 @@ private:
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
 
+    /// Deletes info from quorum/last_part node for particular partition_id.
+    void cleanLastPartNode(const String & partition_id);
+
     /// Creates new block number if block with such block_id does not exist
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
@@ -481,7 +484,7 @@ private:
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
       */
-    void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
+    bool waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /// Choose leader replica, send requst to it and wait.
     void sendRequestToLeaderReplica(const ASTPtr & query, const Context & query_context);
@@ -526,7 +529,7 @@ private:
     void waitMutationToFinishOnReplicas(
         const Strings & replicas, const String & mutation_id) const;
 
-    StorageInMemoryMetadata getMetadataFromSharedZookeeper(const String & metadata_str, const String & columns_str) const;
+    MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
@@ -543,6 +546,7 @@ protected:
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
+
 };
 
 

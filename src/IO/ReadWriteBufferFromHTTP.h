@@ -14,9 +14,13 @@
 #include <Poco/URI.h>
 #include <Poco/Version.h>
 #include <Common/DNSResolver.h>
-#include <Common/config.h>
+#include <Common/RemoteHostFilter.h>
 #include <common/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
@@ -123,7 +127,7 @@ namespace detail
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
 
-            LOG_TRACE((&Logger::get("ReadWriteBufferFromHTTP")), "Sending request to " << uri.toString());
+            LOG_TRACE((&Poco::Logger::get("ReadWriteBufferFromHTTP")), "Sending request to {}", uri.toString());
 
             auto sess = session->getSession();
 
@@ -302,4 +306,3 @@ public:
 };
 
 }
-

@@ -10,13 +10,16 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
-#include <Common/config.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_EMBEDDED_COMPILER
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <llvm/IR/IRBuilder.h>
-#pragma GCC diagnostic pop
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wunused-parameter"
+#    include <llvm/IR/IRBuilder.h>
+#    pragma GCC diagnostic pop
 #endif
 
 
@@ -112,7 +115,7 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const Block &) override { return is_injective; }
+    bool isInjective(const Block &) const override { return is_injective; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 

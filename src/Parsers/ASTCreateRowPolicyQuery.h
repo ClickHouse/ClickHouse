@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 #include <Access/RowPolicy.h>
-#include <utility>
-#include <vector>
+#include <array>
+#include <optional>
 
 
 namespace DB
@@ -25,7 +26,7 @@ class ASTExtendedRoleSet;
   *      [WITH CHECK {condition | NONE}] [,...]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   */
-class ASTCreateRowPolicyQuery : public IAST
+class ASTCreateRowPolicyQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     bool alter = false;
@@ -35,17 +36,18 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    RowPolicy::FullNameParts name_parts;
-    String new_policy_name;
+    RowPolicy::NameParts name_parts;
+    String new_short_name;
 
     std::optional<bool> is_restrictive;
-    using ConditionType = RowPolicy::ConditionType;
-    std::vector<std::pair<ConditionType, ASTPtr>> conditions;
+    std::array<std::optional<ASTPtr>, RowPolicy::MAX_CONDITION_TYPE> conditions; /// `nullopt` means "not set", `nullptr` means set to NONE.
 
     std::shared_ptr<ASTExtendedRoleSet> roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void replaceCurrentUserTagWithName(const String & current_user_name) const;
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateRowPolicyQuery>(clone()); }
 };
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 #include <Access/Quota.h>
 
 
@@ -12,20 +13,19 @@ class ASTExtendedRoleSet;
 /** CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name
   *      [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
   *      [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
-  *       {[SET] MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] |
-  *        [SET] TRACKING} [,...]]
+  *       {MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number} [,...] |
+  *        NO LIMITS | TRACKING ONLY} [,...]]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   *
   * ALTER QUOTA [IF EXISTS] name
   *      [RENAME TO new_name]
   *      [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
   *      [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
-  *       {[SET] MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] |
-  *        [SET] TRACKING |
-  *        UNSET TRACKING} [,...]]
+  *       {MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number} [,...] |
+  *        NO LIMITS | TRACKING ONLY} [,...]]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   */
-class ASTCreateQuotaQuery : public IAST
+class ASTCreateQuotaQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     bool alter = false;
@@ -35,19 +35,17 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
+    using KeyType = Quota::KeyType;
+    using ResourceAmount = Quota::ResourceAmount;
+
     String name;
     String new_name;
-    using KeyType = Quota::KeyType;
     std::optional<KeyType> key_type;
-
-    using ResourceType = Quota::ResourceType;
-    using ResourceAmount = Quota::ResourceAmount;
-    static constexpr size_t MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
 
     struct Limits
     {
-        std::optional<ResourceAmount> max[MAX_RESOURCE_TYPE];
-        bool unset_tracking = false;
+        std::optional<ResourceAmount> max[Quota::MAX_RESOURCE_TYPE];
+        bool drop = false;
         std::chrono::seconds duration = std::chrono::seconds::zero();
         bool randomize_interval = false;
     };
@@ -58,5 +56,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void replaceCurrentUserTagWithName(const String & current_user_name) const;
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateQuotaQuery>(clone()); }
 };
 }

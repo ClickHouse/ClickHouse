@@ -31,12 +31,15 @@ public:
             interpreter_context.emplace_back(context);
 
         totals_port = pipe.getTotalsPort();
+        extremes_port = pipe.getExtremesPort();
         processors = std::move(pipe).detachProcessors();
         init();
     }
 
     String getName() const override { return "TreeExecutor"; }
     Block getHeader() const override { return root->getOutputs().front().getHeader(); }
+
+    void cancel(bool kill) override;
 
     /// This methods does not affect TreeExecutor as IBlockInputStream itself.
     /// They just passed to all SourceWithProgress processors.
@@ -52,10 +55,12 @@ protected:
 private:
     OutputPort & output_port;
     OutputPort * totals_port = nullptr;
+    OutputPort * extremes_port = nullptr;
     Processors processors;
     IProcessor * root = nullptr;
     std::unique_ptr<InputPort> input_port;
     std::unique_ptr<InputPort> input_totals_port;
+    std::unique_ptr<InputPort> input_extremes_port;
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
     /// Remember sources that support progress.
@@ -65,7 +70,7 @@ private:
 
     void init();
     /// Execute tree step-by-step until root returns next chunk or execution is finished.
-    void execute(bool on_totals);
+    void execute(bool on_totals, bool on_extremes);
 
     void initRowsBeforeLimit();
 

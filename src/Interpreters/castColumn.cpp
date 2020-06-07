@@ -38,9 +38,4 @@ ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type
     return temporary_block.getByPosition(2).column;
 }
 
-ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, const Context &)
-{
-    return castColumn(arg, type);
-}
-
 }

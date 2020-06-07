@@ -247,19 +247,19 @@ SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(fixed_string
 DROP TABLE IF EXISTS bloom_filter_array_lc_null_types_test;
 
 DROP TABLE IF EXISTS bloom_filter_array_offsets_lc_str;
-CREATE TABLE bloom_filter_array_offsets_lc_str (order_key int, str Array(LowCardinality((String))), INDEX idx str TYPE bloom_filter(1.01) GRANULARITY 1024) ENGINE = MergeTree() ORDER BY order_key SETTINGS index_granularity = 1024;
+CREATE TABLE bloom_filter_array_offsets_lc_str (order_key int, str Array(LowCardinality((String))), INDEX idx str TYPE bloom_filter(1.) GRANULARITY 1024) ENGINE = MergeTree() ORDER BY order_key SETTINGS index_granularity = 1024;
 INSERT INTO bloom_filter_array_offsets_lc_str SELECT number AS i, if(i%2, ['value'], []) FROM system.numbers LIMIT 10000;
 SELECT count() FROM bloom_filter_array_offsets_lc_str WHERE has(str, 'value');
 DROP TABLE IF EXISTS bloom_filter_array_offsets_lc_str;
 
 DROP TABLE IF EXISTS bloom_filter_array_offsets_str;
-CREATE TABLE bloom_filter_array_offsets_str (order_key int, str Array(String), INDEX idx str TYPE bloom_filter(1.01) GRANULARITY 1024) ENGINE = MergeTree() ORDER BY order_key SETTINGS index_granularity = 1024;
+CREATE TABLE bloom_filter_array_offsets_str (order_key int, str Array(String), INDEX idx str TYPE bloom_filter(1.) GRANULARITY 1024) ENGINE = MergeTree() ORDER BY order_key SETTINGS index_granularity = 1024;
 INSERT INTO bloom_filter_array_offsets_str SELECT number AS i, if(i%2, ['value'], []) FROM system.numbers LIMIT 10000;
 SELECT count() FROM bloom_filter_array_offsets_str WHERE has(str, 'value');
 DROP TABLE IF EXISTS bloom_filter_array_offsets_str;
 
 DROP TABLE IF EXISTS bloom_filter_array_offsets_i;
-CREATE TABLE bloom_filter_array_offsets_i (order_key int, i Array(int), INDEX idx i TYPE bloom_filter(1.01) GRANULARITY 1024) ENGINE = MergeTree() ORDER BY order_key SETTINGS index_granularity = 1024;
+CREATE TABLE bloom_filter_array_offsets_i (order_key int, i Array(int), INDEX idx i TYPE bloom_filter(1.) GRANULARITY 1024) ENGINE = MergeTree() ORDER BY order_key SETTINGS index_granularity = 1024;
 INSERT INTO bloom_filter_array_offsets_i SELECT number AS i, if(i%2, [99999], []) FROM system.numbers LIMIT 10000;
 SELECT count() FROM bloom_filter_array_offsets_i WHERE has(i, 99999);
 DROP TABLE IF EXISTS bloom_filter_array_offsets_i;

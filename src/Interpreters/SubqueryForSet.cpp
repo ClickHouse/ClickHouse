@@ -1,6 +1,6 @@
 #include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/Join.h>
+#include <Interpreters/IJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataStreams/LazyBlockInputStream.h>
@@ -13,7 +13,7 @@ void SubqueryForSet::makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery>
 {
     joined_block_aliases = std::move(joined_block_aliases_);
     source = std::make_shared<LazyBlockInputStream>(interpreter->getSampleBlock(),
-                                                    [interpreter]() mutable { return interpreter->execute().in; });
+                                                    [interpreter]() mutable { return interpreter->execute().getInputStream(); });
 
     sample_block = source->getHeader();
     renameColumns(sample_block);

@@ -7,6 +7,7 @@
 #include <common/LocalDateTime.h>
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
+#include <Interpreters/Context.h>
 
 namespace Poco
 {
@@ -64,7 +65,7 @@ private:
     std::string update_field;
     const std::string format;
     Block sample_block;
-    const Context & context;
+    Context context;
     ConnectionTimeouts timeouts;
 };
 

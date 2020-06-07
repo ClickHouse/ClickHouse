@@ -2,20 +2,20 @@
 
 #include <boost/noncopyable.hpp>
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 /// https://stackoverflow.com/questions/20759750/resolving-redefinition-of-timespec-in-time-h
-#define timespec linux_timespec
-#define timeval linux_timeval
-#define itimerspec linux_itimerspec
-#define sigset_t linux_sigset_t
+#    define timespec linux_timespec
+#    define timeval linux_timeval
+#    define itimerspec linux_itimerspec
+#    define sigset_t linux_sigset_t
 
-#include <linux/aio_abi.h>
+#    include <linux/aio_abi.h>
 
-#undef timespec
-#undef timeval
-#undef itimerspec
-#undef sigset_t
+#    undef timespec
+#    undef timeval
+#    undef itimerspec
+#    undef sigset_t
 
 
 /** Small wrappers for asynchronous I/O.
@@ -39,12 +39,12 @@ struct AIOContext : private boost::noncopyable
     ~AIOContext();
 };
 
-#elif defined(__FreeBSD__)
+#elif defined(OS_FREEBSD)
 
-#include <aio.h>
-#include <sys/types.h>
-#include <sys/event.h>
-#include <sys/time.h>
+#    include <aio.h>
+#    include <sys/event.h>
+#    include <sys/time.h>
+#    include <sys/types.h>
 
 typedef struct kevent io_event;
 typedef int aio_context_t;

@@ -1,9 +1,11 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include <Common/config_version.h>
 #include <Core/Field.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 
 namespace DB
 {

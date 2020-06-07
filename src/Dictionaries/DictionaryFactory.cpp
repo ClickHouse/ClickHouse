@@ -5,6 +5,8 @@
 #include "DictionaryStructure.h"
 #include "getDictionaryConfigurationFromAST.h"
 
+#include <common/logger_useful.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -41,6 +43,7 @@ DictionaryPtr DictionaryFactory::create(
     const DictionaryStructure dict_struct{config, config_prefix + ".structure"};
 
     DictionarySourcePtr source_ptr = DictionarySourceFactory::instance().create(name, config, config_prefix + ".source", dict_struct, context, check_source_config);
+    LOG_TRACE(&Poco::Logger::get("DictionaryFactory"), "Created dictionary source '{}' for dictionary '{}'", source_ptr->toString(), name);
 
     const auto & layout_type = keys.front();
 

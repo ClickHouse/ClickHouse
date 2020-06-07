@@ -4,6 +4,7 @@
 #include <boost/noncopyable.hpp>
 #include <common/types.h>
 #include "GeodataProviders/IHierarchiesProvider.h"
+#include <Core/Defines.h>
 
 
 class IRegionsHierarchyDataProvider;
@@ -59,7 +60,7 @@ public:
         if (lhs >= parents.size())
             return false;
 
-        while (lhs != 0 && lhs != rhs)
+        for (size_t i = 0; lhs != 0 && lhs != rhs && i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
             lhs = parents[lhs];
 
         return lhs != 0;

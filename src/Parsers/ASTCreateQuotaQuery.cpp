@@ -10,14 +10,16 @@ namespace DB
 namespace
 {
     using KeyType = Quota::KeyType;
+    using KeyTypeInfo = Quota::KeyTypeInfo;
     using ResourceType = Quota::ResourceType;
+    using ResourceTypeInfo = Quota::ResourceTypeInfo;
     using ResourceAmount = Quota::ResourceAmount;
 
 
     void formatKeyType(const KeyType & key_type, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " KEYED BY " << (settings.hilite ? IAST::hilite_none : "") << "'"
-                      << Quota::getNameOfKeyType(key_type) << "'";
+                      << KeyTypeInfo::get(key_type).name << "'";
     }
 
 
@@ -28,19 +30,16 @@ namespace
     }
 
 
-    void formatLimit(ResourceType resource_type, ResourceAmount max, const IAST::FormatSettings & settings)
+    void formatLimit(ResourceType resource_type, ResourceAmount max, bool first, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX " << Quota::resourceTypeToKeyword(resource_type)
-                      << (settings.hilite ? IAST::hilite_none : "");
-
-        settings.ostr << (settings.hilite ? IAST::hilite_operator : "") << " = " << (settings.hilite ? IAST::hilite_none : "");
-
-        if (max == Quota::UNLIMITED)
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ANY" << (settings.hilite ? IAST::hilite_none : "");
-        else if (resource_type == Quota::EXECUTION_TIME)
-            settings.ostr << Quota::executionTimeToSeconds(max);
+        if (first)
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX" << (settings.hilite ? IAST::hilite_none : "");
         else
-            settings.ostr << max;
+            settings.ostr << ",";
+
+        const auto & type_info = ResourceTypeInfo::get(resource_type);
+        settings.ostr << " " << (settings.hilite ? IAST::hilite_keyword : "") << type_info.keyword
+                      << (settings.hilite ? IAST::hilite_none : "") << " " << type_info.amountToString(max);
     }
 
 
@@ -59,32 +58,30 @@ namespace
                       << interval_kind.toKeyword()
                       << (settings.hilite ? IAST::hilite_none : "");
 
-        if (limits.unset_tracking)
+        if (limits.drop)
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " UNSET TRACKING" << (settings.hilite ? IAST::hilite_none : "");
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NO LIMITS" << (settings.hilite ? IAST::hilite_none : "");
         }
         else
         {
             bool limit_found = false;
-            for (auto resource_type : ext::range_with_static_cast<ResourceType>(Quota::MAX_RESOURCE_TYPE))
+            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
             {
                 if (limits.max[resource_type])
                 {
-                    if (limit_found)
-                        settings.ostr << ",";
+                    formatLimit(resource_type, *limits.max[resource_type], !limit_found, settings);
                     limit_found = true;
-                    formatLimit(resource_type, *limits.max[resource_type], settings);
                 }
             }
             if (!limit_found)
-                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TRACKING" << (settings.hilite ? IAST::hilite_none : "");
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TRACKING ONLY" << (settings.hilite ? IAST::hilite_none : "");
         }
     }
 
     void formatAllLimits(const std::vector<ASTCreateQuotaQuery::Limits> & all_limits, const IAST::FormatSettings & settings)
     {
         bool need_comma = false;
-        for (auto & limits : all_limits)
+        for (const auto & limits : all_limits)
         {
             if (need_comma)
                 settings.ostr << ",";
@@ -135,6 +132,8 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
 
     settings.ostr << " " << backQuoteIfNeed(name);
 
+    formatOnCluster(settings);
+
     if (!new_name.empty())
         formatRenameTo(new_name, settings);
 
@@ -146,4 +145,12 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
     if (roles && (!roles->empty() || alter))
         formatToRoles(*roles, settings);
 }
+
+
+void ASTCreateQuotaQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
+{
+    if (roles)
+        roles->replaceCurrentUserTagWithName(current_user_name);
+}
+
 }

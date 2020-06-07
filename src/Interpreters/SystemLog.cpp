@@ -41,9 +41,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     if (database != default_database_name)
     {
         /// System tables must be loaded before other tables, but loading order is undefined for all databases except `system`
-        LOG_ERROR(&Logger::get("SystemLog"), "Custom database name for a system table specified in config. "
-                                             "Table `" << table << "` will be created in `system` database "
-                                             "instead of `" << database << "`");
+        LOG_ERROR(&Poco::Logger::get("SystemLog"), "Custom database name for a system table specified in config. Table `{}` will be created in `system` database instead of `{}`", table, database);
         database = default_database_name;
     }
 
@@ -78,6 +76,31 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
     text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log");
     metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log");
 
+    if (query_log)
+        logs.emplace_back(query_log.get());
+    if (query_thread_log)
+        logs.emplace_back(query_thread_log.get());
+    if (part_log)
+        logs.emplace_back(part_log.get());
+    if (trace_log)
+        logs.emplace_back(trace_log.get());
+    if (text_log)
+        logs.emplace_back(text_log.get());
+    if (metric_log)
+        logs.emplace_back(metric_log.get());
+
+    try
+    {
+        for (auto & log : logs)
+            log->startup();
+    }
+    catch (...)
+    {
+        /// join threads
+        shutdown();
+        throw;
+    }
+
     if (metric_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds");
@@ -93,21 +116,8 @@ SystemLogs::~SystemLogs()
 
 void SystemLogs::shutdown()
 {
-    if (query_log)
-        query_log->shutdown();
-    if (query_thread_log)
-        query_thread_log->shutdown();
-    if (part_log)
-        part_log->shutdown();
-    if (trace_log)
-        trace_log->shutdown();
-    if (text_log)
-        text_log->shutdown();
-    if (metric_log)
-    {
-        metric_log->stopCollectMetric();
-        metric_log->shutdown();
-    }
+    for (auto & log : logs)
+        log->shutdown();
 }
 
 }

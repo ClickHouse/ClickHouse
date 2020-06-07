@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <string>
 #include <Common/ThreadPool.h>
+#include <Common/MemoryStatisticsOS.h>
 
 
 namespace DB
@@ -43,6 +44,10 @@ private:
 
     Container container;
     mutable std::mutex container_mutex;
+
+#if defined(OS_LINUX)
+    MemoryStatisticsOS memory_stat;
+#endif
 
     ThreadFromGlobalPool thread;
 

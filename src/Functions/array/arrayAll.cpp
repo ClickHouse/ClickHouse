@@ -31,7 +31,7 @@ struct ArrayAllImpl
 
         if (!column_filter)
         {
-            auto column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
+            const auto * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);

@@ -126,7 +126,6 @@ void checkCreationIsAllowed(const Context & context_global, const std::string & 
 }
 }
 
-
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
@@ -184,14 +183,7 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 }
 
 StorageFile::StorageFile(CommonArguments args)
-    : IStorage(args.table_id,
-               ColumnsDescription({
-                                      {"_path", std::make_shared<DataTypeString>()},
-                                      {"_file", std::make_shared<DataTypeString>()}
-                                  },
-                                  true    /// all_virtuals
-                                 )
-              )
+    : IStorage(args.table_id)
     , format_name(args.format_name)
     , compression_method(args.compression_method)
     , base_path(args.context.getPath())
@@ -498,7 +490,7 @@ Strings StorageFile::getDataPaths() const
     return paths;
 }
 
-void StorageFile::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     if (!is_db_table)
         throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
@@ -513,7 +505,7 @@ void StorageFile::rename(const String & new_path_to_table_data, const String & n
     Poco::File(paths[0]).renameTo(path_new);
 
     paths[0] = std::move(path_new);
-    renameInMemory(new_database_name, new_table_name);
+    renameInMemory(new_table_id);
 }
 
 void StorageFile::truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &)
@@ -541,67 +533,78 @@ void StorageFile::truncate(const ASTPtr & /*query*/, const Context & /* context 
 
 void registerStorageFile(StorageFactory & factory)
 {
-    factory.registerStorage("File", [](const StorageFactory::Arguments & args)
-    {
-        ASTs & engine_args = args.engine_args;
-
-        if (!(engine_args.size() >= 1 && engine_args.size() <= 3))  // NOLINT
-            throw Exception(
-                "Storage File requires from 1 to 3 arguments: name of used format, source and compression_method.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
-        String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-
-        String compression_method;
-        StorageFile::CommonArguments common_args{args.table_id, format_name, compression_method,
-                                                 args.columns, args.constraints, args.context};
-
-        if (engine_args.size() == 1)    /// Table in database
-            return StorageFile::create(args.relative_data_path, common_args);
-
-        /// Will use FD if engine_args[1] is int literal or identifier with std* name
-        int source_fd = -1;
-        String source_path;
-
-        if (auto opt_name = tryGetIdentifierName(engine_args[1]))
+    factory.registerStorage(
+        "File",
+        [](const StorageFactory::Arguments & args)
         {
-            if (*opt_name == "stdin")
-                source_fd = STDIN_FILENO;
-            else if (*opt_name == "stdout")
-                source_fd = STDOUT_FILENO;
-            else if (*opt_name == "stderr")
-                source_fd = STDERR_FILENO;
+            ASTs & engine_args = args.engine_args;
+
+            if (!(engine_args.size() >= 1 && engine_args.size() <= 3)) // NOLINT
+                throw Exception(
+                    "Storage File requires from 1 to 3 arguments: name of used format, source and compression_method.",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+            engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
+            String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+
+            String compression_method;
+            StorageFile::CommonArguments common_args{
+                args.table_id, format_name, compression_method, args.columns, args.constraints, args.context};
+
+            if (engine_args.size() == 1) /// Table in database
+                return StorageFile::create(args.relative_data_path, common_args);
+
+            /// Will use FD if engine_args[1] is int literal or identifier with std* name
+            int source_fd = -1;
+            String source_path;
+
+            if (auto opt_name = tryGetIdentifierName(engine_args[1]))
+            {
+                if (*opt_name == "stdin")
+                    source_fd = STDIN_FILENO;
+                else if (*opt_name == "stdout")
+                    source_fd = STDOUT_FILENO;
+                else if (*opt_name == "stderr")
+                    source_fd = STDERR_FILENO;
+                else
+                    throw Exception(
+                        "Unknown identifier '" + *opt_name + "' in second arg of File storage constructor", ErrorCodes::UNKNOWN_IDENTIFIER);
+            }
+            else if (const auto * literal = engine_args[1]->as<ASTLiteral>())
+            {
+                auto type = literal->value.getType();
+                if (type == Field::Types::Int64)
+                    source_fd = static_cast<int>(literal->value.get<Int64>());
+                else if (type == Field::Types::UInt64)
+                    source_fd = static_cast<int>(literal->value.get<UInt64>());
+                else if (type == Field::Types::String)
+                    source_path = literal->value.get<String>();
+                else
+                    throw Exception("Second argument must be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
+            }
+
+            if (engine_args.size() == 3)
+            {
+                engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+                compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            }
             else
-                throw Exception("Unknown identifier '" + *opt_name + "' in second arg of File storage constructor",
-                                ErrorCodes::UNKNOWN_IDENTIFIER);
-        }
-        else if (const auto * literal = engine_args[1]->as<ASTLiteral>())
-        {
-            auto type = literal->value.getType();
-            if (type == Field::Types::Int64)
-                source_fd = static_cast<int>(literal->value.get<Int64>());
-            else if (type == Field::Types::UInt64)
-                source_fd = static_cast<int>(literal->value.get<UInt64>());
-            else if (type == Field::Types::String)
-                source_path = literal->value.get<String>();
-            else
-                throw Exception("Second argument must be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
-        }
+                compression_method = "auto";
 
-        if (engine_args.size() == 3)
+            if (0 <= source_fd) /// File descriptor
+                return StorageFile::create(source_fd, common_args);
+            else /// User's file
+                return StorageFile::create(source_path, args.context.getUserFilesPath(), common_args);
+        },
         {
-            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
-            compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        }
-        else
-            compression_method = "auto";
-
-        if (0 <= source_fd)     /// File descriptor
-            return StorageFile::create(source_fd, common_args);
-        else                    /// User's file
-            return StorageFile::create(source_path, args.context.getUserFilesPath(), common_args);
-    });
+            .source_access_type = AccessType::FILE,
+        });
 }
-
+NamesAndTypesList StorageFile::getVirtuals() const
+{
+    return NamesAndTypesList{
+        {"_path", std::make_shared<DataTypeString>()},
+        {"_file", std::make_shared<DataTypeString>()}
+    };
+}
 }

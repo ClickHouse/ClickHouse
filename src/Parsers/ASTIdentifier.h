@@ -40,6 +40,8 @@ public:
     bool isShort() const { return name_parts.empty() || name == name_parts.back(); }
 
     void setShortName(const String & new_name);
+
+    /// Restore name field from name_parts in case it was cropped by analyzer but we need a full form for future (re)analyze.
     void restoreCompoundName();
 
     const String & shortName() const
@@ -66,6 +68,7 @@ private:
     friend struct IdentifierSemantic;
     friend ASTPtr createTableIdentifier(const StorageID & table_id);
     friend void setIdentifierSpecial(ASTPtr & ast);
+    friend StorageID getTableIdentifier(const ASTPtr & ast);
 };
 
 
@@ -78,6 +81,7 @@ void setIdentifierSpecial(ASTPtr & ast);
 String getIdentifierName(const IAST * ast);
 std::optional<String> tryGetIdentifierName(const IAST * ast);
 bool tryGetIdentifierNameInto(const IAST * ast, String & name);
+StorageID getTableIdentifier(const ASTPtr & ast);
 
 inline String getIdentifierName(const ASTPtr & ast) { return getIdentifierName(ast.get()); }
 inline std::optional<String> tryGetIdentifierName(const ASTPtr & ast) { return tryGetIdentifierName(ast.get()); }

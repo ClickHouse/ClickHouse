@@ -5,13 +5,15 @@
 #include <Common/UInt128.h>
 #include <Core/UUID.h>
 
-#include "config_formats.h"
-#if USE_PROTOBUF
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
 
-#include <boost/noncopyable.hpp>
-#include "ProtobufColumnMatcher.h"
-#include <IO/ReadBuffer.h>
-#include <memory>
+#if USE_PROTOBUF
+#    include <memory>
+#    include <IO/ReadBuffer.h>
+#    include <boost/noncopyable.hpp>
+#    include "ProtobufColumnMatcher.h"
 
 namespace google
 {
@@ -122,12 +124,12 @@ private:
         void ignoreGroup();
 
         ReadBuffer & in;
-        UInt64 cursor;
+        Int64 cursor;
         size_t current_message_level;
-        UInt64 current_message_end;
-        std::vector<UInt64> parent_message_ends;
-        UInt64 field_end;
-        UInt64 last_string_pos;
+        Int64 current_message_end;
+        std::vector<Int64> parent_message_ends;
+        Int64 field_end;
+        Int64 last_string_pos;
     };
 
     class IConverter

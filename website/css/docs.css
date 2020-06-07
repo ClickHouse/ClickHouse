@@ -1,3 +1,15 @@
+details {
+    background: #444451;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    margin-top: 1rem;
+}
+
+summary {
+    font-weight: bold;
+    color: #fff;
+}
+
 #sidebar {
     position: fixed;
     z-index: 50;
@@ -21,7 +33,6 @@
 }
 
 .headerlink {
-    display: none;
     text-decoration: none !important;
     margin-left: .5rem;
 }
@@ -58,7 +69,6 @@
 #content code {
     color: #111;
     background: #eee;
-    padding: 2px;
 }
 
 
@@ -109,6 +119,15 @@
     border-color: #333;
 }
 
+.algolia-autocomplete .algolia-docsearch-suggestion--content {
+    background-color: #333;
+}
+
+.algolia-autocomplete .algolia-docsearch-suggestion--content:hover,
+.algolia-autocomplete .ds-dropdown-menu .ds-suggestion.ds-cursor .algolia-docsearch-suggestion:not(.suggestion-layout-simple) .algolia-docsearch-suggestion--content {
+    background-color: #444451 !important;
+}
+
 .algolia-autocomplete .algolia-docsearch-suggestion--category-header,
 .algolia-autocomplete .algolia-docsearch-suggestion--subcategory-column,
 .algolia-autocomplete .algolia-docsearch-suggestion--title,
@@ -150,9 +169,13 @@
 }
 
 @media (prefers-color-scheme: dark) {
-    body[data-spy] {
+    body[data-spy], body.amp, #to-full-website {
         background: #1c1c1c;
         color: #efefef;
+    }
+
+    .invert-dark {
+        filter: invert(100%);
     }
 
     #sidebar {
@@ -170,6 +193,7 @@
     #content td {
         border: 1px solid #444451;
     }
+
     #content code {
         background: #444;
         color: #eee;
@@ -184,4 +208,3 @@
         color: #bbb;
     }
 }
-

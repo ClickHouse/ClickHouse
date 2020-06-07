@@ -1,12 +1,4 @@
 <test>
-
-    <stop_conditions>
-        <all_of>
-            <iterations>10</iterations>
-        </all_of>
-    </stop_conditions>
-
-
     <create_query>CREATE TABLE rand_unlimited_10m_8 (key UInt8) Engine = Memory</create_query>
 
     <create_query>CREATE TABLE rand_1k_10m_16 (key UInt16) Engine = Memory</create_query>

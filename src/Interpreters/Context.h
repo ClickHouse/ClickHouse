@@ -13,7 +13,6 @@
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
-#include "config_core.h"
 #include <Storages/IStorage_fwd.h>
 #include <atomic>
 #include <chrono>
@@ -24,6 +23,10 @@
 #include <optional>
 #include <thread>
 #include <Common/RemoteHostFilter.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 
 namespace Poco
@@ -48,8 +51,10 @@ class Context;
 class ContextAccess;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
+struct EnabledRolesInfo;
 class EnabledRowPolicies;
 class EnabledQuota;
+struct QuotaUsage;
 class AccessFlags;
 struct AccessRightsElement;
 class AccessRightsElements;
@@ -76,6 +81,7 @@ class TextLog;
 class TraceLog;
 class MetricLog;
 struct MergeTreeSettings;
+class StorageS3Settings;
 class IDatabase;
 class DDLWorker;
 class ITableFunction;
@@ -92,15 +98,17 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
+using DisksMap = std::map<String, DiskPtr>;
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
-class Volume;
-using VolumePtr = std::shared_ptr<Volume>;
+class VolumeJBOD;
+using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 struct NamedSession;
 
 
@@ -128,6 +136,23 @@ struct IHostContext
 
 using IHostContextPtr = std::shared_ptr<IHostContext>;
 
+/// A small class which owns ContextShared.
+/// We don't use something like unique_ptr directly to allow ContextShared type to be incomplete.
+struct SharedContextHolder
+{
+    ~SharedContextHolder();
+    SharedContextHolder();
+    SharedContextHolder(std::unique_ptr<ContextShared> shared_context);
+    SharedContextHolder(SharedContextHolder &&) noexcept;
+
+    SharedContextHolder & operator=(SharedContextHolder &&);
+
+    ContextShared * get() const { return shared.get(); }
+    void reset();
+private:
+    std::unique_ptr<ContextShared> shared;
+};
+
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -137,8 +162,7 @@ using IHostContextPtr = std::shared_ptr<IHostContext>;
 class Context
 {
 private:
-    using Shared = std::shared_ptr<ContextShared>;
-    Shared shared;
+    ContextShared * shared;
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
@@ -147,11 +171,10 @@ private:
     InputBlocksReader input_blocks_reader;
 
     std::optional<UUID> user_id;
-    std::vector<UUID> current_roles;
+    boost::container::flat_set<UUID> current_roles;
     bool use_default_roles = false;
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
-    std::shared_ptr<const Settings> active_default_settings;
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -191,7 +214,8 @@ private:
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static Context createGlobal();
+    static Context createGlobal(ContextShared * shared);
+    static SharedContextHolder createShared();
 
     Context(const Context &);
     Context & operator=(const Context &);
@@ -202,14 +226,14 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
 
-    VolumePtr getTemporaryVolume() const;
+    VolumeJBODPtr getTemporaryVolume() const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
 
-    VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
+    VolumeJBODPtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -229,18 +253,18 @@ public:
 
     /// Sets the current user, checks the password and that the specified host is allowed.
     /// Must be called before getClientInfo.
-    void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
+    void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address);
+    void setQuotaKey(String quota_key_);
 
     UserPtr getUser() const;
     String getUserName() const;
-    UUID getUserID() const;
+    std::optional<UUID> getUserID() const;
 
-    void setCurrentRoles(const std::vector<UUID> & current_roles_);
+    void setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_);
     void setCurrentRolesDefault();
-    std::vector<UUID> getCurrentRoles() const;
-    Strings getCurrentRolesNames() const;
-    std::vector<UUID> getEnabledRoles() const;
-    Strings getEnabledRolesNames() const;
+    boost::container::flat_set<UUID> getCurrentRoles() const;
+    boost::container::flat_set<UUID> getEnabledRoles() const;
+    std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
     /// Checks access rights.
     /// Empty database means the current database.
@@ -259,7 +283,6 @@ public:
 
     std::shared_ptr<const ContextAccess> getAccess() const;
 
-    std::shared_ptr<const EnabledRowPolicies> getRowPolicies() const;
     ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType type) const;
 
     /// Sets an extra row policy based on `client_info.initial_user`, if it exists.
@@ -268,6 +291,7 @@ public:
     void setInitialRowPolicy();
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
+    std::optional<QuotaUsage> getQuotaUsage() const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -345,9 +369,6 @@ public:
     void setSetting(const StringRef & name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
-
-    /// Reset settings to the default values for the current user.
-    void resetSettingsToDefault();
 
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change) const;
@@ -472,9 +493,11 @@ public:
       */
     void dropCaches() const;
 
+    BackgroundSchedulePool & getBufferFlushSchedulePool();
     BackgroundProcessingPool & getBackgroundPool();
     BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
+    BackgroundSchedulePool & getDistributedSchedulePool();
 
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
@@ -509,6 +532,7 @@ public:
     std::shared_ptr<PartLog> getPartLog(const String & part_database);
 
     const MergeTreeSettings & getMergeTreeSettings() const;
+    const StorageS3Settings & getStorageS3Settings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
@@ -521,14 +545,12 @@ public:
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
-    DiskSelectorPtr getDiskSelector() const;
 
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;
-    DiskPtr getDefaultDisk() const { return getDisk("default"); }
 
-    StoragePolicySelectorPtr getStoragePolicySelector() const;
-
+    StoragePoliciesMap getPoliciesMap() const;
+    DisksMap getDisksMap() const;
     void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     /// Provides storage politics schemes
@@ -606,6 +628,10 @@ private:
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 
     void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const;
+
+    StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
+
+    DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
 };
 
 

@@ -9,7 +9,6 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <Interpreters/sortBlock.h>
-#include <Interpreters/Context.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -35,7 +34,7 @@ using BlocksWithPartition = std::vector<BlockWithPartition>;
 class MergeTreeDataWriter
 {
 public:
-    MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Logger::get(data.getLogName() + " (Writer)")) {}
+    MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get(data.getLogName() + " (Writer)")) {}
 
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
@@ -51,7 +50,7 @@ public:
 private:
     MergeTreeData & data;
 
-    Logger * log;
+    Poco::Logger * log;
 };
 
 }

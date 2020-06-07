@@ -1,10 +1,11 @@
 #include <Interpreters/InterpreterCreateUserQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetRoleQuery.h>
+#include <Interpreters/DDLWorker.h>
 #include <Parsers/ASTCreateUserQuery.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
-#include <Access/ExtendedRoleSet.h>
 #include <Access/ContextAccess.h>
 #include <boost/range/algorithm/copy.hpp>
 
@@ -47,7 +48,7 @@ namespace
         if (default_roles)
         {
             if (!query.alter && !default_roles->all)
-                boost::range::copy(default_roles->getMatchingIDs(), std::inserter(user.granted_roles, user.granted_roles.end()));
+                user.granted_roles.grant(default_roles->getMatchingIDs());
 
             InterpreterSetRoleQuery::updateUserSetDefaultRoles(user, *default_roles);
         }
@@ -82,6 +83,9 @@ BlockIO InterpreterCreateUserQuery::execute()
                 access->checkAdminOption(role);
         }
     }
+
+    if (!query.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context);
 
     std::optional<SettingsProfileElements> settings_from_query;
     if (query.settings)

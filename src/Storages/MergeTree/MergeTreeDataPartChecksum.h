@@ -126,7 +126,7 @@ struct MinimalisticDataPartChecksums
 
     void serialize(WriteBuffer & to) const;
     void serializeWithoutHeader(WriteBuffer & to) const;
-    String getSerializedString();
+    String getSerializedString() const;
     static String getSerializedString(const MergeTreeDataPartChecksums & full_checksums, bool minimalistic);
 
     void checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;

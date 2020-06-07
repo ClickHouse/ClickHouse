@@ -30,10 +30,7 @@ struct MergeTreeWriterSettings
     size_t aio_threshold;
     bool can_use_adaptive_granularity;
     bool blocks_are_granules_size;
-    /// true if we write temporary files during alter.
-    bool is_writing_temp_files = false;
+
     size_t estimated_size = 0;
-    /// used when ALTERing columns if we know that array offsets are not altered.
-    bool skip_offsets = false;
 };
 }

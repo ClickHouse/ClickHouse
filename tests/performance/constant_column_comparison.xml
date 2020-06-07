@@ -8,16 +8,6 @@
     </preconditions>
 
 
-    <stop_conditions>
-        <all_of>
-            <iterations>5</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>50</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < '']]></query>
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz']]></query>

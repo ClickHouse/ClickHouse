@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 17
 toc_title: "\u0645\u0634\u062A\u0631\u06CC \u062E\u0637 \u0641\u0631\u0645\u0627\u0646"
 ---
@@ -9,7 +9,7 @@ toc_title: "\u0645\u0634\u062A\u0631\u06CC \u062E\u0637 \u0641\u0631\u0645\u0627
 
 تاتر یک مشتری خط فرمان بومی فراهم می کند: `clickhouse-client`. مشتری پشتیبانی از گزینه های خط فرمان و فایل های پیکربندی. برای کسب اطلاعات بیشتر, دیدن [پیکربندی](#interfaces_cli_configuration).
 
-[نصب](../getting_started/index.md) این از `clickhouse-client` بسته بندی و اجرا با فرمان `clickhouse-client`.
+[نصب](../getting-started/index.md) این از `clickhouse-client` بسته بندی و اجرا با فرمان `clickhouse-client`.
 
 ``` bash
 $ clickhouse-client
@@ -89,7 +89,7 @@ $ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = 
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [نوع داده](../sql_reference/data_types/index.md) از مقدار پارامتر برنامه. برای مثال یک ساختار داده مانند `(integer, ('string', integer))` می تواند داشته باشد `Tuple(UInt8, Tuple(String, UInt8))` نوع داده (شما همچنین می توانید از یکی دیگر استفاده کنید [عدد صحیح](../sql_reference/data_types/int_uint.md) انواع).
+-   `data type` — [نوع داده](../sql-reference/data-types/index.md) از مقدار پارامتر برنامه. برای مثال یک ساختار داده مانند `(integer, ('string', integer))` می تواند داشته باشد `Tuple(UInt8, Tuple(String, UInt8))` نوع داده (شما همچنین می توانید از یکی دیگر استفاده کنید [عدد صحیح](../sql-reference/data-types/int-uint.md) انواع).
 
 #### مثال {#example}
 

@@ -1,10 +1,5 @@
 <test>
 
-    <stop_conditions>
-        <all_of>
-            <iterations>10</iterations>
-        </all_of>
-    </stop_conditions>
 
     <!-- gcc-8 generates 20% faster code than gcc-9
          clang-8 generates more than two times slower code than gcc

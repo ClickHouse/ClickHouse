@@ -5,8 +5,8 @@
 
 #include <type_traits>
 
-#ifdef __SSE2__
-    #define LIBDIVIDE_USE_SSE2 1
+#if defined(__SSE2__)
+#    define LIBDIVIDE_SSE2 1
 #endif
 
 #include <libdivide.h>

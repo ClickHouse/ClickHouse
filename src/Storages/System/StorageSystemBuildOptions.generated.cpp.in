@@ -35,7 +35,6 @@ const char * auto_config_build[]
     "USE_EMBEDDED_COMPILER", "@USE_EMBEDDED_COMPILER@",
     "USE_GLIBC_COMPATIBILITY", "@GLIBC_COMPATIBILITY@",
     "USE_JEMALLOC", "@ENABLE_JEMALLOC@",
-    "USE_MIMALLOC", "@USE_MIMALLOC@",
     "USE_UNWIND", "@USE_UNWIND@",
     "USE_ICU", "@USE_ICU@",
     "USE_H3", "@USE_H3@",
@@ -44,10 +43,6 @@ const char * auto_config_build[]
     "USE_LIBGSASL", "@USE_LIBGSASL@",
     "USE_RDKAFKA", "@USE_RDKAFKA@",
     "USE_CAPNP", "@USE_CAPNP@",
-    "USE_POCO_SQLODBC", "@USE_POCO_SQLODBC@",
-    "USE_POCO_DATAODBC", "@USE_POCO_DATAODBC@",
-    "USE_POCO_MONGODB", "@USE_POCO_MONGODB@",
-    "USE_POCO_NETSSL", "@USE_POCO_NETSSL@",
     "USE_BASE64", "@USE_BASE64@",
     "USE_XXHASH", "@USE_XXHASH@",
     "USE_HDFS", "@USE_HDFS@",
@@ -58,7 +53,7 @@ const char * auto_config_build[]
     "USE_SSL", "@USE_SSL@",
     "USE_HYPERSCAN", "@USE_HYPERSCAN@",
     "USE_SIMDJSON", "@USE_SIMDJSON@",
-    "USE_POCO_REDIS", "@USE_POCO_REDIS@",
+    "USE_GRPC", "@USE_GRPC@",
 
     nullptr, nullptr
 };

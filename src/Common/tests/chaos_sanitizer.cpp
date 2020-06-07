@@ -1,5 +1,6 @@
 #include <thread>
 #include <iostream>
+#include <atomic>
 
 #include <common/sleep.h>
 
@@ -20,31 +21,31 @@ int main(int argc, char ** argv)
 
     std::cerr << (DB::ThreadFuzzer::instance().isEffective() ? "ThreadFuzzer is enabled.\n" : "ThreadFuzzer is not enabled.\n");
 
-    volatile size_t counter1 = 0;
-    volatile size_t counter2 = 0;
+    std::atomic<size_t> counter1 = 0;
+    std::atomic<size_t> counter2 = 0;
 
     /// These threads are synchronized by sleep (that's intentionally incorrect).
 
     std::thread t1([&]
     {
         for (size_t i = 0; i < num_iterations; ++i)
-            ++counter1;
+            counter1.store(counter1.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
 
         sleepForNanoseconds(100000000);
 
         for (size_t i = 0; i < num_iterations; ++i)
-            ++counter2;
+            counter2.store(counter2.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     });
 
     std::thread t2([&]
     {
         for (size_t i = 0; i < num_iterations; ++i)
-            ++counter2;
+            counter2.store(counter2.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
 
         sleepForNanoseconds(100000000);
 
         for (size_t i = 0; i < num_iterations; ++i)
-            ++counter1;
+            counter1.store(counter1.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     });
 
     t1.join();
