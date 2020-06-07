@@ -16,6 +16,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 
+#include <common/logger_useful.h>
+
 namespace DB {
 
 namespace ErrorCodes
@@ -34,21 +36,35 @@ class Float64PointFromColumnParser
 public:
     Float64PointFromColumnParser(const IColumn & col)
     {
-        const auto & tuple_columns = static_cast<const ColumnTuple &>(col).getColumns();
+        const auto * tuple = checkAndGetColumn<ColumnTuple>(col);
+        if (!tuple)
+        {
+            throw Exception("not tuple ", ErrorCodes::ILLEGAL_COLUMN);
+        }
+        const auto & tuple_columns = tuple->getColumns();
 
         if (tuple_columns.size() != 2)
         {
             throw Exception("tuple size is " + toString(tuple_columns.size()) + " != 2", ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        // x = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
-        x = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
+        const auto * x_data = checkAndGetColumn<ColumnFloat64>(*tuple_columns[0]);
+        if (!x_data)
+        {
+            throw Exception("not x ", ErrorCodes::ILLEGAL_COLUMN);
+        }
+        x = x_data->getData().data();
         if (!x)
         {
             throw Exception("failed to get x column", ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        y = static_cast<const ColumnFloat64 &>(*tuple_columns[1]).getData().data();
+        const auto * y_data = checkAndGetColumn<ColumnFloat64>(*tuple_columns[1]);
+        if (!y_data)
+        {
+            throw Exception("not y ", ErrorCodes::ILLEGAL_COLUMN);
+        }
+        y = y_data->getData().data();
         if (!y)
         {
             throw Exception("failed to get y column", ErrorCodes::ILLEGAL_COLUMN);

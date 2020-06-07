@@ -1,7 +1,6 @@
 #include <Functions/geometryFromColumn.h>
 #include <DataTypes/DataTypeCustomGeo.h>
 
-#include <common/logger_useful.h>
 
 namespace DB {
 
@@ -54,7 +53,11 @@ template <class DataType, class Parser>
 Parser makeParser(const ColumnWithTypeAndName & col)
 {
     auto wanted_data_type = DataType::nestedDataType();
-    ColumnPtr casted = castColumn(col, wanted_data_type);
+    ColumnPtr casted = castColumn(col,
+        std::make_shared<DataTypeTuple>(DataTypes{
+            std::make_shared<DataTypeFloat64>(),
+            std::make_shared<DataTypeFloat64>()}));
+    LOG_FATAL(&Poco::Logger::get("geometryFromColumn"), col.type->getName() + " to " + wanted_data_type->getName());
     if (!casted)
     {
         throw Exception("Failed to cast " + col.type->getName() + " to " + wanted_data_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
