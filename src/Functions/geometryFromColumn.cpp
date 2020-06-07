@@ -1,18 +1,24 @@
 #include <Functions/geometryFromColumn.h>
+#include <DataTypes/DataTypeCustomGeo.h>
+
+#include <common/logger_useful.h>
 
 namespace DB {
-
 
 namespace {
 
 size_t getArrayDepth(DataTypePtr data_type, size_t max_depth)
 {
+    LOG_FATAL(&Poco::Logger::get("geometryFromColumn"), "start get depth");
     size_t depth = 0;
-    while (isArray(data_type) && depth != max_depth + 1)
+    while (data_type && isArray(data_type) && depth != max_depth + 1)
     {
+        LOG_FATAL(&Poco::Logger::get("geometryFromColumn"), data_type->getName());
+        depth++;
         data_type = static_cast<const DataTypeArray &>(*data_type).getNestedType();
     }
-    return max_depth;
+    LOG_FATAL(&Poco::Logger::get("geometryFromColumn"), "End get depth");
+    return depth;
 }
 
 class ContainerCreator : public boost::static_visitor<Float64Geometry>
@@ -46,10 +52,24 @@ private:
 
 }
 
+Float64PointFromColumnParser makePointFromColumnParser(const ColumnWithTypeAndName & col)
+{
+    auto wanted_data_type = DataTypeCustomPointSerialization::nestedDataType();
+
+    auto casted = castColumn(col, wanted_data_type);
+    LOG_FATAL(&Poco::Logger::get("geometryFromColumn"), col.type->getName() + " to " + wanted_data_type->getName());
+    if (!casted)
+    {
+        throw Exception("Failed to cast " + col.type->getName() + " to " + wanted_data_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
+    }
+
+    return Float64PointFromColumnParser(*casted);
+}
+
 GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col)
 {
     switch (getArrayDepth(col.type, 3)) {
-        case 0: return Float64PointFromColumnParser(*col.column);
+        case 0: return makePointFromColumnParser(col);
         case 1: return Float64RingFromColumnParser(*col.column);
         case 2: return Float64PolygonFromColumnParser(*col.column);
         case 3: return Float64MultiPolygonFromColumnParser(*col.column);
