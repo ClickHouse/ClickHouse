@@ -25,4 +25,7 @@ private:
 
     replxx::Replxx rx;
     replxx::Replxx::highlighter_callback_t highlighter;
+
+    // used to call flock() to synchronize multiple clients using same history file
+    int history_file_fd = -1;
 };
