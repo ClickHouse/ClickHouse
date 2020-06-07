@@ -52,6 +52,7 @@ BlockIO InterpreterAlterQuery::execute()
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY && !table->supportsReplication()) {
         database->propose(query_ptr);
+        return {};
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions,

@@ -132,19 +132,34 @@ void DatabaseReplicated::createDatabaseZKNodes() {
 
 void DatabaseReplicated::runBackgroundLogExecutor() {
     current_zookeeper = getZooKeeper();
-    String last_n = current_zookeeper->get(zookeeper_path + "/last_entry", {}, NULL);
-    size_t last_n_parsed = parse<size_t>(last_n);
+    Strings log_entry_names = current_zookeeper->getChildren(zookeeper_path + "/log");
 
-    bool newEntries = current_log_entry_n < last_n_parsed;
-    while (current_log_entry_n < last_n_parsed) {
-        current_log_entry_n++;
-        String log_path = zookeeper_path + "/log/log." + std::to_string(current_log_entry_n);
-        executeFromZK(log_path);
+    std::sort(log_entry_names.begin(), log_entry_names.end());
+    auto newest_entry_it = std::upper_bound(log_entry_names.begin(), log_entry_names.end(), last_executed_log_entry);
+
+    log_entry_names.erase(log_entry_names.begin(), newest_entry_it);
+
+    for (const String & log_entry_name : log_entry_names) {
+        String log_entry_path = zookeeper_path + "/log/" + log_entry_name;
+        executeFromZK(log_entry_path);
+        last_executed_log_entry = log_entry_name;
     }
-    if (newEntries) {
-        saveState();
-    }
+
     background_log_executor->scheduleAfter(500);
+
+    // String last_n = current_zookeeper->get(zookeeper_path + "/last_entry", {}, NULL);
+    // size_t last_n_parsed = parse<size_t>(last_n);
+
+    // bool newEntries = current_log_entry_n < last_n_parsed;
+    // while (current_log_entry_n < last_n_parsed) {
+    //     current_log_entry_n++;
+    //     String log_path = zookeeper_path + "/log/log." + std::to_string(current_log_entry_n);
+    //     executeFromZK(log_path);
+    // }
+    // if (newEntries) {
+    //     saveState();
+    // }
+    // background_log_executor->scheduleAfter(500);
 }
 
 void DatabaseReplicated::saveState() {
@@ -187,53 +202,22 @@ void DatabaseReplicated::executeFromZK(String & path) {
 }
 
 // TODO Move to ZooKeeper/Lock and remove it from here and ddlworker
-static std::unique_ptr<zkutil::Lock> createSimpleZooKeeperLock(
-    const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message)
-{
-    auto zookeeper_holder = std::make_shared<zkutil::ZooKeeperHolder>();
-    zookeeper_holder->initFromInstance(zookeeper);
-    return std::make_unique<zkutil::Lock>(std::move(zookeeper_holder), lock_prefix, lock_name, lock_message);
-}
+// static std::unique_ptr<zkutil::Lock> createSimpleZooKeeperLock(
+//     const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message)
+// {
+//     auto zookeeper_holder = std::make_shared<zkutil::ZooKeeperHolder>();
+//     zookeeper_holder->initFromInstance(zookeeper);
+//     return std::make_unique<zkutil::Lock>(std::move(zookeeper_holder), lock_prefix, lock_name, lock_message);
+// }
 
 
 void DatabaseReplicated::propose(const ASTPtr & query) {
-    // TODO remove that log message i think
-    LOG_DEBUG(log, "PROPOSING\n" << queryToString(query));
-
     current_zookeeper = getZooKeeper();
-    auto lock = createSimpleZooKeeperLock(current_zookeeper, zookeeper_path, "propose_lock", replica_name);
 
-    while (!lock->tryLock()) {
-        // TODO it seems that zk lock doesn't work at all
-        // need to find a different solution for proposal
-        pcg64 rng(randomSeed());
-        std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<int>(0, 1000)(rng)));
-    }
+    LOG_DEBUG(log, "PROPOSINGGG query: " << queryToString(query));
+    current_zookeeper->create(zookeeper_path + "/log/log-", queryToString(query), zkutil::CreateMode::PersistentSequential);
 
-    // schedule and deactive combo 
-    // ensures that replica is up to date
-    // and since propose lock is acquired,
-    // no other propose can happen from
-    // different replicas during this call
     background_log_executor->schedule();
-    background_log_executor->deactivate();
-
-//    if (current_log_entry_n > 5) { // make a settings variable
-//        // TODO check that all the replicas are up to date!
-//        updateSnapshot();
-//        current_log_entry_n = 0;
-//        current_zookeeper->removeChildren(zookeeper_path + "/log");
-//    }
-
-    current_log_entry_n++; // starting from 1
-    String log_entry = zookeeper_path + "/log/log." + std::to_string(current_log_entry_n);
-    current_zookeeper->createOrUpdate(log_entry, queryToString(query), zkutil::CreateMode::Persistent);
-
-    current_zookeeper->createOrUpdate(zookeeper_path + "/last_entry", std::to_string(current_log_entry_n), zkutil::CreateMode::Persistent);
-
-    lock->unlock();
-    saveState();
-    background_log_executor->activateAndSchedule();
 }
 
 void DatabaseReplicated::updateSnapshot() {
