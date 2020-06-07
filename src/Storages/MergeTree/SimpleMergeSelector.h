@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeSelector.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 
 namespace DB
@@ -79,6 +80,7 @@ public:
 
 private:
     const Settings settings;
+    MergeTreeData & data;
 };
 
 }

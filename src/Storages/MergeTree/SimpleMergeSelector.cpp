@@ -146,10 +146,12 @@ void selectWithinPartition(
     if (parts_count <= 1)
         return;
 
+    const auto data_settings = data.getSettings();
+
     for (size_t begin = 0; begin < parts_count; ++begin)
     {
         /// If too many parts, select only from first, to avoid complexity.
-        if (begin > 1000)
+        if (begin > data_settings->merge_max_parts)
             break;
 
         size_t sum_size = parts[begin].size;
