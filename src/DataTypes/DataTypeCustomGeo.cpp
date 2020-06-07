@@ -1,3 +1,6 @@
+#include <DataTypes/DataTypeCustomGeo.h>
+
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -9,29 +12,24 @@
 namespace DB
 {
 
-namespace
+void DataTypeCustomPointSerialization::serializeText(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    nestedDataType()->serializeAsText(column, row_num, ostr, settings);
+}
 
-class DataTypeCustomPointSerialization : public DataTypeCustomSimpleTextSerialization
+void DataTypeCustomPointSerialization::deserializeText(
+    IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-public:
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        nestedDataType()->serializeAsText(column, row_num, ostr, settings);
-    }
+    nestedDataType()->deserializeAsWholeText(column, istr, settings);
+}
 
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        nestedDataType()->deserializeAsWholeText(column, istr, settings);
-    }
-
-    static DataTypePtr nestedDataType()
-    {
-        static auto data_type = DataTypePtr(std::make_unique<DataTypeTuple>(
-            DataTypes({std::make_unique<DataTypeFloat64>(), std::make_unique<DataTypeFloat64>()})));
-        return data_type;
-    }
-};
+DataTypePtr DataTypeCustomPointSerialization::nestedDataType()
+{
+    static auto data_type = DataTypePtr(std::make_unique<DataTypeTuple>(
+        DataTypes({std::make_unique<DataTypeFloat64>(), std::make_unique<DataTypeFloat64>()})));
+    return data_type;
+}
 
 class DataTypeCustomRingSerialization : public DataTypeCustomSimpleTextSerialization
 {
@@ -92,8 +90,6 @@ public:
         return data_type;
     }
 };
-
-}
 
 void registerDataTypeDomainGeo(DataTypeFactory & factory)
 {
