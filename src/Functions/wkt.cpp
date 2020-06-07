@@ -54,6 +54,11 @@ public:
 
         block.getByPosition(result).column = std::move(res_column);
     }
+
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
+    }
 };
 
 
