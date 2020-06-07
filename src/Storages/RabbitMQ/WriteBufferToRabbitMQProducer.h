@@ -40,7 +40,7 @@ public:
 private:
     void nextImpl() override;
     void checkExchange();
-    void startEventLoop(std::atomic<bool> & check_param);
+    void startEventLoop();
 
     std::pair<String, String> & login_password;
     const String routing_key;

@@ -41,7 +41,6 @@ public:
 
 private:
     using Messages = std::vector<String>;
-    using Queues = std::vector<String>;
 
     ChannelPtr consumer_channel;
     RabbitMQHandler & eventHandler;
@@ -51,6 +50,7 @@ private:
     const size_t channel_id;
     const bool bind_by_id;
     const bool hash_exchange;
+    const size_t num_queues;
 
     Poco::Logger * log;
     char row_delimiter;
@@ -60,14 +60,12 @@ private:
 
     std::atomic<bool> exchange_declared;
     std::atomic<bool> false_param;
-    const size_t num_queues;
-    Queues queues;
     bool subscribed = false;
     String current_exchange_name;
     size_t count_subscribed = 0;
-    size_t count_bound_queues = 0;
-    std::atomic<bool> loop_attempt;
+    std::atomic<bool> loop_started;
 
+    std::vector<String> queues;
     Messages received;
     Messages messages;
     Messages::iterator current;
@@ -79,7 +77,8 @@ private:
     void initExchange();
     void initQueueBindings(const size_t queue_id);
     void subscribe(const String & queue_name);
-    void startEventLoop(std::atomic<bool> & check_param);
+    void startEventLoop(std::atomic<bool> & check_param, std::atomic<bool> & loop_started);
+    void stopEventLoopWithTimeout();
     void stopEventLoop();
 
 };

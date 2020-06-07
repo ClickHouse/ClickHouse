@@ -19,13 +19,16 @@ public:
     RabbitMQHandler(event_base * evbase_, Poco::Logger * log_);
 
     void onError(AMQP::TcpConnection * connection, const char * message) override;
-    void start(std::atomic<bool> & check_param);
+    void startConsumerLoop(std::atomic<bool> & check_param, std::atomic<bool> & loop_started);
+    void startProducerLoop();
+    void stopWithTimeout();
     void stop();
 
 private:
     event_base * evbase;
     Poco::Logger * log;
 
+    timeval tv;
     size_t count_passed = 0;
     std::timed_mutex mutex_before_event_loop;
     std::timed_mutex mutex_before_loop_stop;

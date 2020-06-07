@@ -153,9 +153,10 @@ void WriteBufferToRabbitMQProducer::flush()
         LOG_ERROR(log, "Exchange was not declared: {}", message);
     });
 
+    /// These variables are updated in a separate thread and starting the loop blocks current thread
     while (!exchange_declared && !exchange_error)
     {
-        startEventLoop(exchange_declared);
+        startEventLoop();
     }
 }
 
@@ -168,9 +169,9 @@ void WriteBufferToRabbitMQProducer::nextImpl()
 }
 
 
-void WriteBufferToRabbitMQProducer::startEventLoop(std::atomic<bool> & check_param)
+void WriteBufferToRabbitMQProducer::startEventLoop()
 {
-    eventHandler.start(check_param);
+    eventHandler.startProducerLoop();
 }
 
 }
