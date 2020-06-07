@@ -29,6 +29,7 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("BIGINT", "Int64", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("FLOAT", "Float32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("DOUBLE", "Float64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("DOUBLE PRECISION", "Float64", DataTypeFactory::CaseInsensitive);
 }
 
 }

@@ -7,6 +7,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/CommonParsers.h>
 #include <Poco/String.h>
 
@@ -150,6 +151,39 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         if (!type_parser.parse(pos, type, expected))
             return false;
+
+        ASTFunction * type_func = type->as<ASTFunction>();
+        if (!type_func->arguments)
+        {
+            if (boost::algorithm::iequals(type_func->name, "DOUBLE"))
+            {
+                if (ParserKeyword{"PRESICION"}.ignore(pos))
+                {
+                    type_func->name += " PRESICION";
+                }
+            }
+            else if (boost::algorithm::iequals(type_func->name, "CHAR"))
+            {
+                if (ParserKeyword{"VARYING"}.ignore(pos))
+                {
+                    type_func->name += " VARYING";
+                }
+            }
+            else if (boost::algorithm::iequals(type_func->name, "NATIVE"))
+            {
+                if (ParserKeyword{"CHARACTER"}.ignore(pos))
+                {
+                    type_func->name += " CHARACTER";
+                }
+            }
+            else if (boost::algorithm::iequals(type_func->name, "VARYING"))
+            {
+                if (ParserKeyword{"CHAR"}.ignore(pos))
+                {
+                    type_func->name += " CHAR";
+                }
+            }
+        }
     }
 
     Pos pos_before_specifier = pos;
@@ -165,35 +199,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
 
-    auto first_word = type->getID();
 
-    if (boost::algorithm::to_lower_copy(first_word) == "function_double") {
-        ParserKeyword s_presicion{"PRESICION"};
-        s_presicion.ignore(pos);
-    } else if (boost::algorithm::to_lower_copy(first_word) == "function_char") {
-        ParserKeyword s_varying{"VARYING"};
-        s_varying.ignore(pos);
-    } else if (boost::algorithm::to_lower_copy(first_word) == "function_native") {
-        ParserIdentifierWithOptionalParameters tmp;
-        ASTPtr second_word;
-        if (!tmp.parse(pos, second_word, expected)) {
-            return false;
-        }
-        if (boost::algorithm::to_lower_copy(second_word->getID()) != "function_character") {
-            return false;
-        }
-
-        type = second_word;
-    } else if (boost::algorithm::to_lower_copy(first_word) == "function_varying")
-    {
-        ParserIdentifierWithOptionalParameters tmp;
-        ASTPtr second_word;
-        if (!tmp.parse(pos, second_word, expected))
-            return false;
-        if (boost::algorithm::to_lower_copy(second_word->getID()) != "function_char")
-            return false;
-        type = second_word;
-    }
 
 
     if (s_comment.ignore(pos, expected))
