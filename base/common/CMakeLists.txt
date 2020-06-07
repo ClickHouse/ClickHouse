@@ -16,6 +16,7 @@ set (SRCS
     shift10.cpp
     sleep.cpp
     terminalColors.cpp
+    errnoToString.cpp
 )
 
 if (ENABLE_REPLXX)
