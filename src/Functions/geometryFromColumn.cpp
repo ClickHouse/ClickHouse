@@ -52,12 +52,11 @@ private:
 
 }
 
-Float64PointFromColumnParser makePointFromColumnParser(const ColumnWithTypeAndName & col)
+template <class DataType>
+Float64PointFromColumnParser makeParser(const ColumnWithTypeAndName & col)
 {
-    auto wanted_data_type = DataTypeCustomPointSerialization::nestedDataType();
-
-    auto casted = castColumn(col, wanted_data_type);
-    LOG_FATAL(&Poco::Logger::get("geometryFromColumn"), col.type->getName() + " to " + wanted_data_type->getName());
+    auto wanted_data_type = DataType::nestedDataType();
+    ColumnPtr casted = castColumn(col, wanted_data_type);
     if (!casted)
     {
         throw Exception("Failed to cast " + col.type->getName() + " to " + wanted_data_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
@@ -69,10 +68,10 @@ Float64PointFromColumnParser makePointFromColumnParser(const ColumnWithTypeAndNa
 GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col)
 {
     switch (getArrayDepth(col.type, 3)) {
-        case 0: return makePointFromColumnParser(col);
-        case 1: return Float64RingFromColumnParser(*col.column);
-        case 2: return Float64PolygonFromColumnParser(*col.column);
-        case 3: return Float64MultiPolygonFromColumnParser(*col.column);
+        case 0: return makeParser<DataTypeCustomPointSerialization>(col);
+        case 1: return makeParser<DataTypeCustomRingSerialization>(col);
+        case 2: return makeParser<DataTypeCustomPolygonSerialization>(col);
+        case 3: return makeParser<DataTypeCustomMultiPolygonSerialization>(col);
         default: throw Exception("Cannot parse geometry from column with type " + col.type->getName()
                 + ", array depth is too big", ErrorCodes::ILLEGAL_COLUMN);
     }
