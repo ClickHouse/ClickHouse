@@ -272,11 +272,11 @@ bool DNSResolver::updateCache()
         std::lock_guard lock(impl->drop_mutex);
 
         for (const auto & host : impl->new_hosts)
-            impl->known_hosts.insert(std::move(host));
+            impl->known_hosts.insert(host);
         impl->new_hosts.clear();
 
         for (const auto & address : impl->new_addresses)
-            impl->known_addresses.insert(std::move(address));
+            impl->known_addresses.insert(address);
         impl->new_addresses.clear();
 
         impl->host_name.emplace(Poco::Net::DNS::hostName());
