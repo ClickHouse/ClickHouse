@@ -237,7 +237,7 @@ if (ENABLE_HYPERSCAN)
         find_library (LIBRARY_HYPERSCAN hs)
         find_path (INCLUDE_HYPERSCAN NAMES hs/hs.h hs.h)
 
-        add_library (hyperscan UNKNOWN IMPORTED)
+        add_library (hyperscan UNKNOWN IMPORTED GLOBAL)
         set_target_properties (hyperscan PROPERTIES IMPORTED_LOCATION ${LIBRARY_HYPERSCAN})
         set_target_properties (hyperscan PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_HYPERSCAN})
         set_property(TARGET hyperscan APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS USE_HYPERSCAN=1)
