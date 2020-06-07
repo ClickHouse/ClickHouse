@@ -204,7 +204,6 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_DNS_CACHE:
             context.checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
-            AllowedClientHosts::dropDNSCaches();
             /// Reinitialize clusters to update their resolved_addresses
             system_context.reloadClusterConfig();
             break;
