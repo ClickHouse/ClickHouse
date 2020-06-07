@@ -65,6 +65,7 @@ public:
     ASTPtr getInnerBlocksQuery();
 
     /// It is passed inside the query and solved at its level.
+    bool supportsPrewhere() const override { return true; }
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
