@@ -49,7 +49,7 @@ def test_simple_alter_table(started_cluster):
     assert node1.query("desc table testdb.alter_test") == node2.query("desc table testdb.alter_test")
 
 def test_create_replica_after_delay(started_cluster):
-    DURATION_SECONDS = 3
+    DURATION_SECONDS = 2
 
     node3.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', '{replica}');")
 
@@ -65,18 +65,20 @@ def test_alters_from_different_replicas(started_cluster):
     DURATION_SECONDS = 1
 
     node1.query("CREATE TABLE testdb.concurrent_test (CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) ENGINE = MergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192);")
+
     time.sleep(DURATION_SECONDS)
 
     node3.query("ALTER TABLE testdb.concurrent_test ADD COLUMN Added0 UInt32;")
-    time.sleep(DURATION_SECONDS)
     node1.query("ALTER TABLE testdb.concurrent_test ADD COLUMN Added2 UInt32;")
-    time.sleep(DURATION_SECONDS)
     node3.query("ALTER TABLE testdb.concurrent_test ADD COLUMN Added1 UInt32 AFTER Added0;")
-    time.sleep(DURATION_SECONDS)
     node1.query("ALTER TABLE testdb.concurrent_test ADD COLUMN AddedNested1 Nested(A UInt32, B UInt64) AFTER Added2;")
-    time.sleep(DURATION_SECONDS)
     node3.query("ALTER TABLE testdb.concurrent_test ADD COLUMN AddedNested1.C Array(String) AFTER AddedNested1.B;")
-    time.sleep(DURATION_SECONDS)
     node1.query("ALTER TABLE testdb.concurrent_test ADD COLUMN AddedNested2 Nested(A UInt32, B UInt64) AFTER AddedNested1;")
+
     time.sleep(DURATION_SECONDS)
+
+    logging.info("NODE3")
+    logging.info(node3.query("desc table testdb.concurrent_test"))
+    logging.info("NODE1")
+    logging.info(node1.query("desc table testdb.concurrent_test"))
     assert node3.query("desc table testdb.concurrent_test") == node1.query("desc table testdb.concurrent_test")
