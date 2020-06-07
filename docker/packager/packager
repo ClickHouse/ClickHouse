@@ -120,6 +120,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
         result.append("CCACHE_BASEDIR=/build")
         result.append("CCACHE_NOHASHDIR=true")
         result.append("CCACHE_COMPILERCHECK=content")
+        result.append("CCACHE_MAXSIZE=15G")
         # result.append("CCACHE_UMASK=777")
 
     if distcc_hosts:

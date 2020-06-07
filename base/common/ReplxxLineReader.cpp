@@ -1,9 +1,11 @@
 #include <common/ReplxxLineReader.h>
+#include <common/errnoToString.h>
 
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
 #include <functional>
+#include <sys/file.h>
 
 namespace
 {
@@ -16,14 +18,37 @@ void trim(String & s)
 
 }
 
-ReplxxLineReader::ReplxxLineReader(const Suggest & suggest, const String & history_file_path_, char extender_, char delimiter_)
-    : LineReader(history_file_path_, extender_, delimiter_)
+ReplxxLineReader::ReplxxLineReader(
+    const Suggest & suggest, const String & history_file_path_, bool multiline_, Patterns extenders_, Patterns delimiters_)
+    : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_))
 {
     using namespace std::placeholders;
     using Replxx = replxx::Replxx;
 
     if (!history_file_path.empty())
-        rx.history_load(history_file_path);
+    {
+        history_file_fd = open(history_file_path.c_str(), O_RDWR);
+        if (history_file_fd < 0)
+        {
+            rx.print("Open of history file failed: %s\n", errnoToString(errno).c_str());
+        }
+        else
+        {
+            if (flock(history_file_fd, LOCK_SH))
+            {
+                rx.print("Shared lock of history file failed: %s\n", errnoToString(errno).c_str());
+            }
+            else
+            {
+                rx.history_load(history_file_path);
+
+                if (flock(history_file_fd, LOCK_UN))
+                {
+                    rx.print("Unlock of history file failed: %s\n", errnoToString(errno).c_str());
+                }
+            }
+        }
+    }
 
     auto callback = [&suggest] (const String & context, size_t context_size)
     {
@@ -48,8 +73,8 @@ ReplxxLineReader::ReplxxLineReader(const Suggest & suggest, const String & histo
 
 ReplxxLineReader::~ReplxxLineReader()
 {
-    if (!history_file_path.empty())
-        rx.history_save(history_file_path);
+    if (close(history_file_fd))
+        rx.print("Close of history file failed: %s\n", strerror(errno));
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
@@ -67,7 +92,20 @@ LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 
 void ReplxxLineReader::addToHistory(const String & line)
 {
+    // locking history file to prevent from inconsistent concurrent changes
+    bool locked = false;
+    if (flock(history_file_fd, LOCK_EX))
+        rx.print("Lock of history file failed: %s\n", strerror(errno));
+    else
+        locked = true;
+
     rx.history_add(line);
+
+    // flush changes to the disk
+    rx.history_save(history_file_path);
+
+    if (locked && 0 != flock(history_file_fd, LOCK_UN))
+        rx.print("Unlock of history file failed: %s\n", strerror(errno));
 }
 
 void ReplxxLineReader::enableBracketedPaste()
