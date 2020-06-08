@@ -3977,8 +3977,7 @@ void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const Repli
     {
         if (wait_for_non_active || zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
         {
-            if (!waitForReplicaToProcessLogEntry(replica, entry, wait_for_non_active))
-                unwaited.push_back(replica);
+            waitForReplicaToProcessLogEntry(replica, entry);
         }
     }
 
