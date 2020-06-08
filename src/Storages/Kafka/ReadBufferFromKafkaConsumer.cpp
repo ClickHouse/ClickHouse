@@ -10,6 +10,7 @@ namespace DB
 
 using namespace std::chrono_literals;
 const auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
+const auto DRAIN_TIMEOUT_MS = 5000ms;
 
 
 ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
@@ -77,20 +78,70 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
 
 ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
 {
-    /// NOTE: see https://github.com/edenhill/librdkafka/issues/2077
     try
     {
         if (!consumer->get_subscription().empty())
-            consumer->unsubscribe();
-        if (!assignment.empty())
-            consumer->unassign();
-        while (consumer->get_consumer_queue().next_event(100ms));
+        {
+            try
+            {
+                consumer->unsubscribe();
+            }
+            catch (const cppkafka::HandleException & e)
+            {
+                LOG_ERROR(log, "Error during unsubscribe: " << e.what());
+            }
+            drain();
+        }
     }
     catch (const cppkafka::HandleException & e)
     {
-        LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer destructor: " << e.what());
+        LOG_ERROR(log, "Error while destructing consumer: " << e.what());
+    }
+
+}
+
+// Needed to drain rest of the messages / queued callback calls from the consumer
+// after unsubscribe, otherwise consumer will hang on destruction
+// see https://github.com/edenhill/librdkafka/issues/2077
+//     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
+void ReadBufferFromKafkaConsumer::drain()
+{
+    auto start_time = std::chrono::steady_clock::now();
+    cppkafka::Error last_error(RD_KAFKA_RESP_ERR_NO_ERROR);
+
+    while (true)
+    {
+        auto msg = consumer->poll(100ms);
+        if (!msg)
+            break;
+
+        auto error = msg.get_error();
+
+        if (error)
+        {
+            if (msg.is_eof() || error == last_error)
+            {
+                break;
+            }
+            else
+            {
+                LOG_ERROR(log, "Error during draining: " << error);
+            }
+        }
+
+        // i don't stop draining on first error,
+        // only if it repeats once again sequentially
+        last_error = error;
+
+        auto ts = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time) > DRAIN_TIMEOUT_MS)
+        {
+            LOG_ERROR(log, "Timeout during draining.");
+            break;
+        }
     }
 }
+
 
 void ReadBufferFromKafkaConsumer::commit()
 {
@@ -196,8 +247,13 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
     // it should not raise exception as used in destructor
     try
     {
-        if (!consumer->get_subscription().empty())
-            consumer->unsubscribe();
+        // From docs: Any previous subscription will be unassigned and unsubscribed first.
+        consumer->subscribe(topics);
+
+        // I wanted to avoid explicit unsubscribe as it requires draining the messages
+        // to close the consumer safely after unsubscribe
+        // see https://github.com/edenhill/librdkafka/issues/2077
+        //     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
     }
     catch (const cppkafka::HandleException & e)
     {
@@ -229,11 +285,23 @@ void ReadBufferFromKafkaConsumer::resetToLastCommitted(const char * msg)
 /// Do commit messages implicitly after we processed the previous batch.
 bool ReadBufferFromKafkaConsumer::nextImpl()
 {
+
     /// NOTE: ReadBuffer was implemented with an immutable underlying contents in mind.
     ///       If we failed to poll any message once - don't try again.
     ///       Otherwise, the |poll_timeout| expectations get flawn.
-    if (stalled || stopped || !allowed || rebalance_happened)
+
+    // we can react on stop only during fetching data
+    // after block is formed (i.e. during copying data to MV / commiting)  we ignore stop attempts
+    if (stopped)
+    {
+        was_stopped = true;
+        offsets_stored = 0;
         return false;
+    }
+
+    if (stalled || was_stopped || !allowed || rebalance_happened)
+        return false;
+
 
     if (current == messages.end())
     {
@@ -246,7 +314,13 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
             /// Don't drop old messages immediately, since we may need them for virtual columns.
             auto new_messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));
 
-            if (rebalance_happened)
+            if (stopped)
+            {
+                was_stopped = true;
+                offsets_stored = 0;
+                return false;
+            }
+            else if (rebalance_happened)
             {
                 if (!new_messages.empty())
                 {
@@ -317,7 +391,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
 
 void ReadBufferFromKafkaConsumer::storeLastReadMessageOffset()
 {
-    if (!stalled && !rebalance_happened)
+    if (!stalled && !was_stopped && !rebalance_happened)
     {
         consumer->store_offset(*(current - 1));
         ++offsets_stored;
