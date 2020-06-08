@@ -252,8 +252,7 @@ private:
         /// There are loops of NUM_PASSES. It is very important that they are unfolded at compile-time.
 
         /// For each of the NUM_PASSES bit ranges of the key, consider how many times each value of this bit range met.
-        std::unique_ptr<CountType[HISTOGRAM_SIZE * NUM_PASSES]> histograms_holder = std::unique_ptr<CountType[HISTOGRAM_SIZE * NUM_PASSES]>();
-        CountType * histograms = *histograms_holder;
+        std::unique_ptr<CountType[]> histograms{new CountType[HISTOGRAM_SIZE * NUM_PASSES]{}};
 
         typename Traits::Allocator allocator;
 
