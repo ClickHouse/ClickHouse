@@ -49,6 +49,7 @@ namespace
 {
     const auto RESCHEDULE_MS = 500;
     const auto CLEANUP_TIMEOUT_MS = 3000;
+    const auto MAX_THREAD_WORK_DURATION_MS = 60000;  // once per minute leave do reschedule (we can't lock threads in pool forever)
 
     /// Configuration prefix
     const String CONFIG_PREFIX = "kafka";
@@ -175,17 +176,14 @@ void StorageKafka::shutdown()
     // Interrupt streaming thread
     stream_cancelled = true;
 
+    LOG_TRACE(log, "Waiting for cleanup");
+    task->deactivate();
+
     // Close all consumers
     for (size_t i = 0; i < num_created_consumers; ++i)
-    {
         auto buffer = popReadBuffer();
-        // FIXME: not sure if we really close consumers here, and if we really need to close them here.
-    }
 
-    LOG_TRACE(log, "Waiting for cleanup");
     rd_kafka_wait_destroyed(CLEANUP_TIMEOUT_MS);
-
-    task->deactivate();
 }
 
 void StorageKafka::updateDependencies()
@@ -248,17 +246,23 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 ConsumerBufferPtr StorageKafka::createReadBuffer()
 {
     cppkafka::Configuration conf;
+
     conf.set("metadata.broker.list", brokers);
     conf.set("group.id", group);
     conf.set("client.id", VERSION_FULL);
+
     conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
+
+    updateConfiguration(conf);
+
+    // those settings should not be changed by users.
     conf.set("enable.auto.commit", "false");       // We manually commit offsets after a stream successfully finished
     conf.set("enable.auto.offset.store", "false"); // Update offset automatically - to commit them all at once.
     conf.set("enable.partition.eof", "false");     // Ignore EOF messages
-    updateConfiguration(conf);
 
     // Create a consumer and subscribe to topics
     auto consumer = std::make_shared<cppkafka::Consumer>(conf);
+    consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
     // Limit the number of batched messages to allow early cancellations
     const Settings & settings = global_context.getSettingsRef();
@@ -323,6 +327,8 @@ void StorageKafka::threadFunc()
         // Check if at least one direct dependency is attached
         auto dependencies = global_context.getDependencies(table_id);
 
+        auto start_time = std::chrono::steady_clock::now();
+
         // Keep streaming as long as there are attached views and streaming is not cancelled
         while (!stream_cancelled && num_created_consumers > 0 && !dependencies.empty())
         {
@@ -331,9 +337,21 @@ void StorageKafka::threadFunc()
 
             LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
 
-            // Reschedule if not limited
-            if (!streamToViews())
+            // Exit the loop & reschedule if some stream stalled
+            auto some_stream_is_stalled = streamToViews();
+            if (some_stream_is_stalled)
+            {
+                LOG_TRACE(log, "Stream(s) stalled. Reschedule.");
                 break;
+            }
+
+            auto ts = std::chrono::steady_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
+            if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+            {
+                LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
+                break;
+            }
         }
     }
     catch (...)
@@ -392,17 +410,19 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
+    // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
+    // It will be cancelled on underlying layer (kafka buffer)
     std::atomic<bool> stub = {false};
     copyData(*in, *block_io.out, &stub);
+
+    bool some_stream_is_stalled = false;
     for (auto & stream : streams)
+    {
+        some_stream_is_stalled = some_stream_is_stalled || stream->as<KafkaBlockInputStream>()->isStalled();
         stream->as<KafkaBlockInputStream>()->commit();
+    }
 
-    // Check whether the limits were applied during query execution
-    bool limits_applied = false;
-    const BlockStreamProfileInfo & info = in->getProfileInfo();
-    limits_applied = info.hasAppliedLimit();
-
-    return limits_applied;
+    return some_stream_is_stalled;
 }
 
 void registerStorageKafka(StorageFactory & factory)

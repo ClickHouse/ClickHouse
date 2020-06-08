@@ -28,7 +28,6 @@ import kafka_pb2
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
 # TODO: add test for SELECT LIMIT is working.
-# TODO: modify tests to respect `skip_broken_messages` setting.
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
@@ -197,6 +196,98 @@ def test_kafka_settings_new_syntax(kafka_cluster):
             break
 
     kafka_check_result(result, True)
+
+
+@pytest.mark.timeout(180)
+def test_kafka_consumer_hang(kafka_cluster):
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'consumer_hang',
+                     kafka_group_name = 'consumer_hang',
+                     kafka_format = 'JSONEachRow',
+                     kafka_num_consumers = 8,
+                     kafka_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = Memory();
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
+        ''')
+
+    time.sleep(10)
+    instance.query('SELECT * FROM test.view')
+
+    # This should trigger heartbeat fail,
+    # which will trigger REBALANCE_IN_PROGRESS,
+    # and which can lead to consumer hang.
+    kafka_cluster.pause_container('kafka1')
+    time.sleep(0.5)
+    kafka_cluster.unpause_container('kafka1')
+
+    # print("Attempt to drop")
+    instance.query('DROP TABLE test.kafka')
+
+    #kafka_cluster.open_bash_shell('instance')
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    # original problem appearance was a sequence of the following messages in librdkafka logs:
+    # BROKERFAIL -> |ASSIGN| -> REBALANCE_IN_PROGRESS -> "waiting for rebalance_cb" (repeated forever)
+    # so it was waiting forever while the application will execute queued rebalance callback
+
+    # from a user perspective: we expect no hanging 'drop' queries
+    # 'dr'||'op' to avoid self matching
+    assert int(instance.query("select count() from system.processes where position(lower(query),'dr'||'op')>0")) == 0
+
+@pytest.mark.timeout(180)
+def test_kafka_consumer_hang2(kafka_cluster):
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.kafka;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'consumer_hang2',
+                     kafka_group_name = 'consumer_hang2',
+                     kafka_format = 'JSONEachRow';
+
+        CREATE TABLE test.kafka2 (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'consumer_hang2',
+                     kafka_group_name = 'consumer_hang2',
+                     kafka_format = 'JSONEachRow';
+        ''')
+
+    # first consumer subscribe the topic, try to poll some data, and go to rest
+    instance.query('SELECT * FROM test.kafka')
+
+    # second consumer do the same leading to rebalance in the first
+    # consumer, try to poll some data
+    instance.query('SELECT * FROM test.kafka2')
+
+#echo 'SELECT * FROM test.kafka; SELECT * FROM test.kafka2; DROP TABLE test.kafka;' | clickhouse client -mn &
+#    kafka_cluster.open_bash_shell('instance')
+
+    # first consumer has pending rebalance callback unprocessed (no poll after select)
+    # one of those queries was failing because of
+    # https://github.com/edenhill/librdkafka/issues/2077
+    # https://github.com/edenhill/librdkafka/issues/2898
+    instance.query('DROP TABLE test.kafka')
+    instance.query('DROP TABLE test.kafka2')
+
+
+    # from a user perspective: we expect no hanging 'drop' queries
+    # 'dr'||'op' to avoid self matching
+    assert int(instance.query("select count() from system.processes where position(lower(query),'dr'||'op')>0")) == 0
 
 
 @pytest.mark.timeout(180)
@@ -926,7 +1017,10 @@ def test_kafka_flush_by_block_size(kafka_cluster):
 
     time.sleep(1)
 
-    result = instance.query('SELECT count() FROM test.view')
+    # TODO: due to https://github.com/ClickHouse/ClickHouse/issues/11216
+    # second flush happens earlier than expected, so we have 2 parts here instead of one
+    # flush by block size works correctly, so the feature checked by the test is working correctly
+    result = instance.query("SELECT count() FROM test.view WHERE _part='all_1_1_0'")
     # print(result)
 
     # kafka_cluster.open_bash_shell('instance')
@@ -1083,12 +1177,25 @@ def test_kafka_rebalance(kafka_cluster):
 
     print(instance.query('SELECT count(), uniqExact(key), max(key) + 1 FROM test.destination'))
 
+    # Some queries to debug...
     # SELECT * FROM test.destination where key in (SELECT key FROM test.destination group by key having count() <> 1)
     # select number + 1 as key from numbers(4141) left join test.destination using (key) where  test.destination.key = 0;
     # SELECT * FROM test.destination WHERE key between 2360 and 2370 order by key;
     # select _partition from test.destination group by _partition having count() <> max(_offset) + 1;
     # select toUInt64(0) as _partition, number + 1 as _offset from numbers(400) left join test.destination using (_partition,_offset) where test.destination.key = 0 order by _offset;
     # SELECT * FROM test.destination WHERE _partition = 0 and _offset between 220 and 240 order by _offset;
+
+    # CREATE TABLE test.reference (key UInt64, value UInt64) ENGINE = Kafka SETTINGS kafka_broker_list = 'kafka1:19092',
+    #             kafka_topic_list = 'topic_with_multiple_partitions',
+    #             kafka_group_name = 'rebalance_test_group_reference',
+    #             kafka_format = 'JSONEachRow',
+    #             kafka_max_block_size = 100000;
+    #
+    # CREATE MATERIALIZED VIEW test.reference_mv Engine=Log AS
+    #     SELECT  key, value, _topic,_key,_offset, _partition, _timestamp, 'reference' as _consumed_by
+    # FROM test.reference;
+    #
+    # select * from test.reference_mv left join test.destination using (key,_topic,_offset,_partition) where test.destination._consumed_by = '';
 
     result = int(instance.query('SELECT count() == uniqExact(key) FROM test.destination'))
 
@@ -1190,8 +1297,194 @@ def test_exception_from_destructor(kafka_cluster):
         DROP TABLE test.kafka;
     ''')
 
-    kafka_cluster.open_bash_shell('instance')
+    #kafka_cluster.open_bash_shell('instance')
     assert TSV(instance.query('SELECT 1')) == TSV('1')
+
+
+@pytest.mark.timeout(120)
+def test_commits_of_unprocessed_messages_on_drop(kafka_cluster):
+    messages = [json.dumps({'key': j+1, 'value': j+1}) for j in range(1)]
+    kafka_produce('commits_of_unprocessed_messages_on_drop', messages)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+        CREATE TABLE test.destination (
+            key UInt64,
+            value UInt64,
+            _topic String,
+            _key String,
+            _offset UInt64,
+            _partition UInt64,
+            _timestamp Nullable(DateTime),
+            _consumed_by LowCardinality(String)
+        )
+        ENGINE = MergeTree()
+        ORDER BY key;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                    kafka_topic_list = 'commits_of_unprocessed_messages_on_drop',
+                    kafka_group_name = 'commits_of_unprocessed_messages_on_drop_test_group',
+                    kafka_format = 'JSONEachRow',
+                    kafka_max_block_size = 1000;
+
+        CREATE MATERIALIZED VIEW test.kafka_consumer TO test.destination AS
+            SELECT
+            key,
+            value,
+            _topic,
+            _key,
+            _offset,
+            _partition,
+            _timestamp
+        FROM test.kafka;
+    ''')
+
+    while int(instance.query("SELECT count() FROM test.destination")) == 0:
+        print("Waiting for test.kafka_consumer to start consume")
+        time.sleep(1)
+
+    cancel = threading.Event()
+
+    i = [2]
+    def produce():
+        while not cancel.is_set():
+            messages = []
+            for _ in range(113):
+                messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+                i[0] += 1
+            kafka_produce('commits_of_unprocessed_messages_on_drop', messages)
+            time.sleep(1)
+
+    kafka_thread = threading.Thread(target=produce)
+    kafka_thread.start()
+    time.sleep(12)
+
+    instance.query('''
+        DROP TABLE test.kafka;
+    ''')
+
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                    kafka_topic_list = 'commits_of_unprocessed_messages_on_drop',
+                    kafka_group_name = 'commits_of_unprocessed_messages_on_drop_test_group',
+                    kafka_format = 'JSONEachRow',
+                    kafka_max_block_size = 10000;
+    ''')
+
+    cancel.set()
+    time.sleep(15)
+
+    #kafka_cluster.open_bash_shell('instance')
+    # SELECT key, _timestamp, _offset FROM test.destination where runningDifference(key) <> 1 ORDER BY key;
+
+    result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.destination')
+    print(result)
+
+    instance.query('''
+        DROP TABLE test.kafka_consumer;
+        DROP TABLE test.destination;
+    ''')
+
+    kafka_thread.join()
+    assert TSV(result) == TSV('{0}\t{0}\t{0}'.format(i[0]-1)), 'Missing data!'
+
+
+
+@pytest.mark.timeout(120)
+def test_bad_reschedule(kafka_cluster):
+    messages = [json.dumps({'key': j+1, 'value': j+1}) for j in range(20000)]
+    kafka_produce('test_bad_reschedule', messages)
+
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                    kafka_topic_list = 'test_bad_reschedule',
+                    kafka_group_name = 'test_bad_reschedule',
+                    kafka_format = 'JSONEachRow',
+                    kafka_max_block_size = 1000;
+
+        CREATE MATERIALIZED VIEW test.destination Engine=Log AS
+        SELECT
+            key,
+            now() as consume_ts,
+            value,
+            _topic,
+            _key,
+            _offset,
+            _partition,
+            _timestamp
+        FROM test.kafka;
+    ''')
+
+    while int(instance.query("SELECT count() FROM test.destination")) < 20000:
+        print("Waiting for consume")
+        time.sleep(1)
+
+    assert int(instance.query("SELECT max(consume_ts) - min(consume_ts) FROM test.destination")) < 8
+
+
+@pytest.mark.timeout(1200)
+def test_kafka_duplicates_when_commit_failed(kafka_cluster):
+    messages = [json.dumps({'key': j+1, 'value': 'x' * 300}) for j in range(22)]
+    kafka_produce('duplicates_when_commit_failed', messages)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'duplicates_when_commit_failed',
+                     kafka_group_name = 'duplicates_when_commit_failed',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 20;
+
+        CREATE TABLE test.view (key UInt64, value String)
+            ENGINE = MergeTree()
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka
+            WHERE NOT sleepEachRow(0.5);
+    ''')
+
+    #print time.strftime("%m/%d/%Y %H:%M:%S")
+    time.sleep(12) # 5-6 sec to connect to kafka, do subscription, and fetch 20 rows, another 10 sec for MV, after that commit should happen
+
+    #print time.strftime("%m/%d/%Y %H:%M:%S")
+    kafka_cluster.pause_container('kafka1')
+    # that timeout it VERY important, and picked after lot of experiments
+    # when too low (<30sec) librdkafka will not report any timeout (alternative is to decrease the default session timeouts for librdkafka)
+    # when too high (>50sec) broker will decide to remove us from the consumer group, and will start answering "Broker: Unknown member"
+    time.sleep(40)
+
+    #print time.strftime("%m/%d/%Y %H:%M:%S")
+    kafka_cluster.unpause_container('kafka1')
+
+    #kafka_cluster.open_bash_shell('instance')
+
+    # connection restored and it will take a while until next block will be flushed
+    # it takes years on CI :\
+    time.sleep(30)
+
+    # as it's a bit tricky to hit the proper moment - let's check in logs if we did it correctly
+    assert instance.contains_in_log("Local: Waiting for coordinator")
+
+    result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.view')
+    print(result)
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    assert TSV(result) == TSV('22\t22\t22')
 
 
 if __name__ == '__main__':
