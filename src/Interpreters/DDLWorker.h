@@ -94,6 +94,7 @@ private:
     void attachToThreadGroup();
 
 private:
+    bool is_circular_replicated;
     Context & context;
     Logger * log;
     std::unique_ptr<Context> current_context;
