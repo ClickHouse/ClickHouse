@@ -3,11 +3,6 @@
     <tags>
     </tags>
 
-    <stop_conditions>
-        <any_of>
-            <total_time_ms>10000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
     <substitutions>
        <substitution>

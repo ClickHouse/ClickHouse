@@ -14,7 +14,7 @@ path_to_data = '/var/lib/clickhouse/'
 def started_cluster():
     try:
         cluster.start()
-        q('CREATE DATABASE test')
+        q('CREATE DATABASE test ENGINE = Ordinary')
 
         yield cluster
 

@@ -1,10 +1,5 @@
 <test>
 
-    <stop_conditions>
-        <any_of>
-            <iterations>10</iterations>
-        </any_of>
-    </stop_conditions>
 
 
     <create_query>CREATE TABLE ints (i64 Int64, i32 Int32, i16 Int16, i8 Int8) ENGINE = Memory</create_query>

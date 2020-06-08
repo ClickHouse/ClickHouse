@@ -73,7 +73,7 @@ private:
 
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
-            const auto arg = arguments[arg_idx].get();
+            const auto * arg = arguments[arg_idx].get();
             if (!WhichDataType(arg).isFloat64())
             {
                 throw Exception(
@@ -99,8 +99,8 @@ private:
             for (const auto idx : ext::range(0, 4))
             {
                 int arg_idx = 2 + 4 * ellipse_idx + idx;
-                const auto column = block.getByPosition(arguments[arg_idx]).column.get();
-                if (const auto col = checkAndGetColumnConst<ColumnVector<Float64>>(column))
+                const auto * column = block.getByPosition(arguments[arg_idx]).column.get();
+                if (const auto * col = checkAndGetColumnConst<ColumnVector<Float64>>(column))
                 {
                     ellipse_data[idx] = col->getValue<Float64>();
                 }
@@ -117,7 +117,7 @@ private:
         int const_cnt = 0;
         for (const auto idx : ext::range(0, 2))
         {
-            const auto column = block.getByPosition(arguments[idx]).column.get();
+            const auto * column = block.getByPosition(arguments[idx]).column.get();
             if (typeid_cast<const ColumnConst *> (column))
             {
                 ++const_cnt;
@@ -129,12 +129,12 @@ private:
             }
         }
 
-        const auto col_x = block.getByPosition(arguments[0]).column.get();
-        const auto col_y = block.getByPosition(arguments[1]).column.get();
+        const auto * col_x = block.getByPosition(arguments[0]).column.get();
+        const auto * col_y = block.getByPosition(arguments[1]).column.get();
         if (const_cnt == 0)
         {
-                const auto col_vec_x = assert_cast<const ColumnVector<Float64> *> (col_x);
-                const auto col_vec_y = assert_cast<const ColumnVector<Float64> *> (col_y);
+                const auto * col_vec_x = assert_cast<const ColumnVector<Float64> *> (col_x);
+                const auto * col_vec_y = assert_cast<const ColumnVector<Float64> *> (col_y);
 
                 auto dst = ColumnVector<UInt8>::create();
                 auto & dst_data = dst->getData();
@@ -150,8 +150,8 @@ private:
             }
             else if (const_cnt == 2)
             {
-                const auto col_const_x = assert_cast<const ColumnConst *> (col_x);
-                const auto col_const_y = assert_cast<const ColumnConst *> (col_y);
+                const auto * col_const_x = assert_cast<const ColumnConst *> (col_x);
+                const auto * col_const_y = assert_cast<const ColumnConst *> (col_y);
                 size_t start_index = 0;
                 UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses.data(), ellipses_count, start_index);
                 block.getByPosition(result).column = DataTypeUInt8().createColumnConst(size, res);

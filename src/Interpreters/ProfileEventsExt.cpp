@@ -14,8 +14,8 @@ namespace ProfileEvents
 void dumpToArrayColumns(const Counters & counters, DB::IColumn * column_names_, DB::IColumn * column_values_, bool nonzero_only)
 {
     /// Convert ptr and make simple check
-    auto column_names = (column_names_) ? &typeid_cast<DB::ColumnArray &>(*column_names_) : nullptr;
-    auto column_values = (column_values_) ? &typeid_cast<DB::ColumnArray &>(*column_values_) : nullptr;
+    auto * column_names = (column_names_) ? &typeid_cast<DB::ColumnArray &>(*column_names_) : nullptr;
+    auto * column_values = (column_values_) ? &typeid_cast<DB::ColumnArray &>(*column_values_) : nullptr;
 
     size_t size = 0;
 

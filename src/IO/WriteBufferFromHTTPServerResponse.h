@@ -13,7 +13,10 @@
 #include <IO/Progress.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
-#include <Common/config.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 
 namespace Poco

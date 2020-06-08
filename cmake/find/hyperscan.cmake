@@ -14,10 +14,12 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/hyperscan/CMakeLists.txt")
    set (USE_INTERNAL_HYPERSCAN_LIBRARY 0)
 endif ()
 
-if (NOT USE_INTERNAL_HYPERSCAN_LIBRARY)
-    find_library (HYPERSCAN_LIBRARY hs)
-    find_path (HYPERSCAN_INCLUDE_DIR NAMES hs/hs.h hs.h PATHS ${HYPERSCAN_INCLUDE_PATHS})
-endif ()
+# We cannot use OS hyperscan library due to different include path.
+#
+#if (NOT USE_INTERNAL_HYPERSCAN_LIBRARY)
+#    find_library (HYPERSCAN_LIBRARY hs)
+#    find_path (HYPERSCAN_INCLUDE_DIR NAMES hs/hs.h hs.h PATHS ${HYPERSCAN_INCLUDE_PATHS})
+#endif ()
 
 if (HYPERSCAN_LIBRARY AND HYPERSCAN_INCLUDE_DIR)
     set (USE_HYPERSCAN 1)

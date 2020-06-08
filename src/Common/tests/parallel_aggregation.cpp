@@ -139,7 +139,7 @@ static void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source:
 
     for (auto it = begin; it != end; ++it)
     {
-        auto found = local_map.find(*it);
+        auto * found = local_map.find(*it);
 
         if (found)
             ++found->getMapped();
@@ -199,7 +199,7 @@ static void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexe
         {
             for (; it != block_end; ++it)
             {
-                auto found = local_map.find(*it);
+                auto * found = local_map.find(*it);
 
                 if (found)
                     ++found->getMapped();

@@ -4,11 +4,6 @@
     <fill_query>INSERT INTO t SELECT number AS x, x AS d32, x AS d64, x d128 FROM numbers(1000000)</fill_query>
     <drop_query>DROP TABLE IF EXISTS t</drop_query>
 
-    <stop_conditions>
-        <all_of>
-            <iterations>10</iterations>
-        </all_of>
-    </stop_conditions>
 
 
     <query>SELECT min(d32), max(d32), argMin(x, d32), argMax(x, d32) FROM t</query>

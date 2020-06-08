@@ -16,7 +16,6 @@
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 
-
 namespace DB
 {
 static const UInt64 max_block_size = 8192;
@@ -54,7 +53,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(
     const std::string & config_prefix,
     Block & sample_block_,
     const Context & context_)
-    : log(&Logger::get("ExecutableDictionarySource"))
+    : log(&Poco::Logger::get("ExecutableDictionarySource"))
     , dict_struct{dict_struct_}
     , command{config.getString(config_prefix + ".command")}
     , update_field{config.getString(config_prefix + ".update_field", "")}
@@ -65,7 +64,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(
 }
 
 ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionarySource & other)
-    : log(&Logger::get("ExecutableDictionarySource"))
+    : log(&Poco::Logger::get("ExecutableDictionarySource"))
     , update_time{other.update_time}
     , dict_struct{other.dict_struct}
     , command{other.command}
@@ -78,7 +77,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 
 BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 {
-    LOG_TRACE(log, "loadAll " + toString());
+    LOG_TRACE(log, "loadAll {}", toString());
     auto process = ShellCommand::execute(command);
     auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
     return std::make_shared<ShellCommandOwningBlockInputStream>(input_stream, std::move(process));
@@ -93,7 +92,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadUpdatedAll()
     if (update_time)
         command_with_update_field += " " + update_field + " " + DB::toString(LocalDateTime(update_time - 1));
 
-    LOG_TRACE(log, "loadUpdatedAll " + command_with_update_field);
+    LOG_TRACE(log, "loadUpdatedAll {}", command_with_update_field);
     auto process = ShellCommand::execute(command_with_update_field);
     auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
     return std::make_shared<ShellCommandOwningBlockInputStream>(input_stream, std::move(process));
@@ -164,7 +163,7 @@ namespace
 
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
+    LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
     auto process = ShellCommand::execute(command);
 
     auto output_stream = context.getOutputFormat(format, process->in, sample_block);
@@ -176,7 +175,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
 
 BlockInputStreamPtr ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
-    LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
+    LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
     auto process = ShellCommand::execute(command);
 
     auto output_stream = context.getOutputFormat(format, process->in, sample_block);
@@ -232,9 +231,11 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
         if (check_config)
             throw Exception("Dictionaries with Executable dictionary source is not allowed", ErrorCodes::DICTIONARY_ACCESS_DENIED);
 
+        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+
         return std::make_unique<ExecutableDictionarySource>(
             dict_struct, config, config_prefix + ".executable",
-            sample_block, context);
+            sample_block, context_local_copy);
     };
     factory.registerSource("executable", create_table_source);
 }

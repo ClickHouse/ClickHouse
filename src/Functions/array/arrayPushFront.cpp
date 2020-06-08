@@ -10,8 +10,8 @@ class FunctionArrayPushFront : public FunctionArrayPush
 {
 public:
     static constexpr auto name = "arrayPushFront";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayPushFront>(context); }
-    explicit FunctionArrayPushFront(const Context & context_) : FunctionArrayPush(context_, true, name) {}
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayPushFront>(); }
+    FunctionArrayPushFront() : FunctionArrayPush(true, name) {}
 };
 
 

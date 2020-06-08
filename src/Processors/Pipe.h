@@ -22,12 +22,17 @@ public:
     /// Transform must have the number of inputs equals to the number of pipes. And single output.
     /// Will connect pipes outputs with transform inputs automatically.
     Pipe(Pipes && pipes, ProcessorPtr transform);
+    /// Create pipe from output port. If pipe was created that way, it possibly will not have tree shape.
+    explicit Pipe(OutputPort * port);
 
     Pipe(const Pipe & other) = delete;
     Pipe(Pipe && other) = default;
 
     Pipe & operator=(const Pipe & other) = delete;
     Pipe & operator=(Pipe && other) = default;
+
+    /// Append processors to pipe. After this, it possibly will not have tree shape.
+    void addProcessors(const Processors & processors_);
 
     OutputPort & getPort() const { return *output_port; }
     const Block & getHeader() const { return output_port->getHeader(); }
@@ -47,8 +52,11 @@ public:
 
     void enableQuota();
 
+    /// Totals and extremes port.
     void setTotalsPort(OutputPort * totals_) { totals = totals_; }
+    void setExtremesPort(OutputPort * extremes_) { extremes = extremes_; }
     OutputPort * getTotalsPort() const { return totals; }
+    OutputPort * getExtremesPort() const { return extremes; }
 
     size_t maxParallelStreams() const { return max_parallel_streams; }
 
@@ -67,6 +75,7 @@ private:
     Processors processors;
     OutputPort * output_port = nullptr;
     OutputPort * totals = nullptr;
+    OutputPort * extremes = nullptr;
 
     /// It is the max number of processors which can be executed in parallel for each step. See QueryPipeline::Streams.
     size_t max_parallel_streams = 0;
@@ -84,7 +93,7 @@ private:
     ///  and therefore we can skip those checks.
     /// Note that Pipe represents a tree if it was created using public interface. But this constructor can't assert it.
     /// So, it's possible that TreeExecutorBlockInputStream could be unable to convert such Pipe to IBlockInputStream.
-    explicit Pipe(Processors processors_, OutputPort * output_port, OutputPort * totals);
+    explicit Pipe(Processors processors_, OutputPort * output_port, OutputPort * totals, OutputPort * extremes);
 
     friend class QueryPipeline;
 };

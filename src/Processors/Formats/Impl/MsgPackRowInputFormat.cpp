@@ -24,138 +24,144 @@ namespace ErrorCodes
 }
 
 MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
-    : IRowInputFormat(header_, in_, std::move(params_)), buf(in_), data_types(header_.getDataTypes()) {}
+    : IRowInputFormat(header_, in_, std::move(params_)), buf(in), parser(visitor), data_types(header_.getDataTypes())  {}
+
+void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type) // NOLINT
+{
+    while (!info_stack.empty())
+    {
+        info_stack.pop();
+    }
+    info_stack.push(Info{column, type});
+}
+
+void MsgPackVisitor::insert_integer(UInt64 value) // NOLINT
+{
+    Info & info = info_stack.top();
+    switch (info.type->getTypeId())
+    {
+        case TypeIndex::UInt8:
+        {
+            assert_cast<ColumnUInt8 &>(info.column).insertValue(value);
+            break;
+        }
+        case TypeIndex::Date: [[fallthrough]];
+        case TypeIndex::UInt16:
+        {
+            assert_cast<ColumnUInt16 &>(info.column).insertValue(value);
+            break;
+        }
+        case TypeIndex::DateTime: [[fallthrough]];
+        case TypeIndex::UInt32:
+        {
+            assert_cast<ColumnUInt32 &>(info.column).insertValue(value);
+            break;
+        }
+        case TypeIndex::UInt64:
+        {
+            assert_cast<ColumnUInt64 &>(info.column).insertValue(value);
+            break;
+        }
+        case TypeIndex::Int8:
+        {
+            assert_cast<ColumnInt8 &>(info.column).insertValue(value);
+            break;
+        }
+        case TypeIndex::Int16:
+        {
+            assert_cast<ColumnInt16 &>(info.column).insertValue(value);
+            break;
+        }
+        case TypeIndex::Int32:
+        {
+            assert_cast<ColumnInt32 &>(info.column).insertValue(value);
+            break;
+        }
+        case TypeIndex::Int64:
+        {
+            assert_cast<ColumnInt64 &>(info.column).insertValue(value);
+            break;
+        }
+        case TypeIndex::DateTime64:
+        {
+            assert_cast<DataTypeDateTime64::ColumnType &>(info.column).insertValue(value);
+            break;
+        }
+        default:
+            throw Exception("Type " + info.type->getName() + " is not supported for MsgPack input format", ErrorCodes::ILLEGAL_COLUMN);
+    }
+}
+
+bool MsgPackVisitor::visit_positive_integer(UInt64 value) // NOLINT
+{
+    insert_integer(value);
+    return true;
+}
+
+bool MsgPackVisitor::visit_negative_integer(Int64 value) // NOLINT
+{
+    insert_integer(value);
+    return true;
+}
+
+bool MsgPackVisitor::visit_str(const char* value, size_t size) // NOLINT
+{
+    info_stack.top().column.insertData(value, size);
+    return true;
+}
+
+bool MsgPackVisitor::visit_float32(Float32 value) // NOLINT
+{
+    assert_cast<ColumnFloat32 &>(info_stack.top().column).insertValue(value);
+    return true;
+}
+
+bool MsgPackVisitor::visit_float64(Float64 value) // NOLINT
+{
+    assert_cast<ColumnFloat64 &>(info_stack.top().column).insertValue(value);
+    return true;
+}
+
+bool MsgPackVisitor::start_array(size_t size) // NOLINT
+{
+    auto nested_type = assert_cast<const DataTypeArray &>(*info_stack.top().type).getNestedType();
+    ColumnArray & column_array = assert_cast<ColumnArray &>(info_stack.top().column);
+    ColumnArray::Offsets & offsets = column_array.getOffsets();
+    IColumn & nested_column = column_array.getData();
+    offsets.push_back(offsets.back() + size);
+    info_stack.push(Info{nested_column, nested_type});
+    return true;
+}
+
+bool MsgPackVisitor::end_array() // NOLINT
+{
+    info_stack.pop();
+    return true;
+}
+
+void MsgPackVisitor::parse_error(size_t, size_t) // NOLINT
+{
+    throw Exception("Error occurred while parsing msgpack data.", ErrorCodes::INCORRECT_DATA);
+}
 
 bool MsgPackRowInputFormat::readObject()
 {
     if (buf.eof())
         return false;
+
     PeekableReadBufferCheckpoint checkpoint{buf};
     size_t offset = 0;
-    bool need_more_data = true;
-    while (need_more_data)
+    while (!parser.execute(buf.position(), buf.available(), offset))
     {
-        offset = 0;
-        try
-        {
-            object_handle = msgpack::unpack(buf.position(), buf.buffer().end() - buf.position(), offset);
-            need_more_data = false;
-        }
-        catch (msgpack::insufficient_bytes &)
-        {
-            buf.position() = buf.buffer().end();
-            if (buf.eof())
-                throw Exception("Unexpected end of file while parsing msgpack object.", ErrorCodes::INCORRECT_DATA);
-            buf.position() = buf.buffer().end();
-            buf.makeContinuousMemoryFromCheckpointToPos();
-            buf.rollbackToCheckpoint();
-        }
+        buf.position() = buf.buffer().end();
+        if (buf.eof())
+            throw Exception("Unexpected end of file while parsing msgpack object.", ErrorCodes::INCORRECT_DATA);
+        buf.position() = buf.buffer().end();
+        buf.makeContinuousMemoryFromCheckpointToPos();
+        buf.rollbackToCheckpoint();
     }
     buf.position() += offset;
     return true;
-}
-
-void MsgPackRowInputFormat::insertObject(IColumn & column, DataTypePtr data_type, const msgpack::object & object)
-{
-    switch (data_type->getTypeId())
-    {
-        case TypeIndex::UInt8:
-        {
-            assert_cast<ColumnUInt8 &>(column).insertValue(object.as<uint8_t>());
-            return;
-        }
-        case TypeIndex::Date: [[fallthrough]];
-        case TypeIndex::UInt16:
-        {
-            assert_cast<ColumnUInt16 &>(column).insertValue(object.as<UInt16>());
-            return;
-        }
-        case TypeIndex::DateTime: [[fallthrough]];
-        case TypeIndex::UInt32:
-        {
-            assert_cast<ColumnUInt32 &>(column).insertValue(object.as<UInt32>());
-            return;
-        }
-        case TypeIndex::UInt64:
-        {
-            assert_cast<ColumnUInt64 &>(column).insertValue(object.as<UInt64>());
-            return;
-        }
-        case TypeIndex::Int8:
-        {
-            assert_cast<ColumnInt8 &>(column).insertValue(object.as<Int8>());
-            return;
-        }
-        case TypeIndex::Int16:
-        {
-            assert_cast<ColumnInt16 &>(column).insertValue(object.as<Int16>());
-            return;
-        }
-        case TypeIndex::Int32:
-        {
-            assert_cast<ColumnInt32 &>(column).insertValue(object.as<Int32>());
-            return;
-        }
-        case TypeIndex::Int64:
-        {
-            assert_cast<ColumnInt64 &>(column).insertValue(object.as<Int64>());
-            return;
-        }
-        case TypeIndex::Float32:
-        {
-            assert_cast<ColumnFloat32 &>(column).insertValue(object.as<Float32>());
-            return;
-        }
-        case TypeIndex::Float64:
-        {
-            assert_cast<ColumnFloat64 &>(column).insertValue(object.as<Float64>());
-            return;
-        }
-        case TypeIndex::DateTime64:
-        {
-            assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(object.as<UInt64>());
-            return;
-        }
-        case TypeIndex::FixedString: [[fallthrough]];
-        case TypeIndex::String:
-        {
-            String str = object.as<String>();
-            column.insertData(str.data(), str.size());
-            return;
-        }
-        case TypeIndex::Array:
-        {
-            msgpack::object_array object_array = object.via.array;
-            auto nested_type = assert_cast<const DataTypeArray &>(*data_type).getNestedType();
-            ColumnArray & column_array = assert_cast<ColumnArray &>(column);
-            ColumnArray::Offsets & offsets = column_array.getOffsets();
-            IColumn & nested_column = column_array.getData();
-            for (size_t i = 0; i != object_array.size; ++i)
-            {
-                insertObject(nested_column, nested_type, object_array.ptr[i]);
-            }
-            offsets.push_back(offsets.back() + object_array.size);
-            return;
-        }
-        case TypeIndex::Nullable:
-        {
-            auto nested_type = removeNullable(data_type);
-            ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(column);
-            if (object.type == msgpack::type::NIL)
-                column_nullable.insertDefault();
-            else
-                insertObject(column_nullable.getNestedColumn(), nested_type, object);
-            return;
-        }
-        case TypeIndex::Nothing:
-        {
-            // Nothing to insert, MsgPack object is nil.
-            return;
-        }
-        default:
-            break;
-    }
-    throw Exception("Type " + data_type->getName() + " is not supported for MsgPack input format", ErrorCodes::ILLEGAL_COLUMN);
 }
 
 bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
@@ -164,10 +170,10 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     bool has_more_data = true;
     for (; column_index != columns.size(); ++column_index)
     {
+        visitor.set_info(*columns[column_index], data_types[column_index]);
         has_more_data = readObject();
         if (!has_more_data)
             break;
-        insertObject(*columns[column_index], data_types[column_index], object_handle.get());
     }
     if (!has_more_data)
     {

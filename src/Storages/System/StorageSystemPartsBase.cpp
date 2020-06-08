@@ -14,6 +14,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -62,7 +63,7 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
 }
 
 StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const Context & context)
-    : query_id(context.getCurrentQueryId())
+    : query_id(context.getCurrentQueryId()), settings(context.getSettings())
 {
     /// Will apply WHERE to subset of columns and then add more columns.
     /// This is kind of complicated, but we use WHERE to do less work.
@@ -114,6 +115,9 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
                 {
                     String table_name = iterator->name();
                     StoragePtr storage = iterator->table();
+                    if (!storage)
+                        continue;
+
                     String engine_name = storage->getName();
 
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
@@ -192,7 +196,7 @@ StoragesInfo StoragesInfoStream::next()
         try
         {
             /// For table not to be dropped and set of columns to remain constant.
-            info.table_lock = info.storage->lockStructureForShare(false, query_id);
+            info.table_lock = info.storage->lockStructureForShare(false, query_id, settings.lock_acquire_timeout);
         }
         catch (const Exception & e)
         {
@@ -255,30 +259,15 @@ Pipes StorageSystemPartsBase::read(
     return pipes;
 }
 
-NameAndTypePair StorageSystemPartsBase::getColumn(const String & column_name) const
-{
-    if (column_name == "_state")
-        return NameAndTypePair("_state", std::make_shared<DataTypeString>());
-
-    return IStorage::getColumn(column_name);
-}
-
-bool StorageSystemPartsBase::hasColumn(const String & column_name) const
-{
-    if (column_name == "_state")
-        return true;
-
-    return IStorage::hasColumn(column_name);
-}
 
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
-    : IStorage({"system", name_})
+    : IStorage(StorageID{"system", name_})
 {
     ColumnsDescription tmp_columns(std::move(columns_));
 
     auto add_alias = [&](const String & alias_name, const String & column_name)
     {
-        ColumnDescription column(alias_name, tmp_columns.get(column_name).type, false);
+        ColumnDescription column(alias_name, tmp_columns.get(column_name).type);
         column.default_desc.kind = ColumnDefaultKind::Alias;
         column.default_desc.expression = std::make_shared<ASTIdentifier>(column_name);
         tmp_columns.add(column);
@@ -291,4 +280,10 @@ StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesL
     setColumns(tmp_columns);
 }
 
+NamesAndTypesList StorageSystemPartsBase::getVirtuals() const
+{
+    return NamesAndTypesList{
+        NameAndTypePair("_state", std::make_shared<DataTypeString>())
+    };
+}
 }

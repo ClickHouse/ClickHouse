@@ -37,7 +37,7 @@ void ASTExtendedRoleSet::formatImpl(const FormatSettings & settings, FormatState
     }
     else
     {
-        for (auto & role : names)
+        for (const auto & role : names)
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
@@ -57,7 +57,7 @@ void ASTExtendedRoleSet::formatImpl(const FormatSettings & settings, FormatState
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " EXCEPT " << (settings.hilite ? IAST::hilite_none : "");
         need_comma = false;
 
-        for (auto & except_role : except_names)
+        for (const auto & except_role : except_names)
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";

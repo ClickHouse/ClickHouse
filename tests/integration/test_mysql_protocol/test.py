@@ -144,7 +144,7 @@ def test_mysql_federated(mysql_server, server_address):
     node.query('''CREATE TABLE mysql_federated.test (col UInt32) ENGINE = Log''', settings={"password": "123"})
     node.query('''INSERT INTO mysql_federated.test VALUES (0), (1), (5)''', settings={"password": "123"})
 
-    code, (_, stderr) = mysql_server.exec_run('''
+    code, (stdout, stderr) = mysql_server.exec_run('''
         mysql
         -e "DROP SERVER IF EXISTS clickhouse;"
         -e "CREATE SERVER clickhouse FOREIGN DATA WRAPPER mysql OPTIONS (USER 'default', PASSWORD '123', HOST '{host}', PORT {port}, DATABASE 'mysql_federated');"
@@ -152,6 +152,9 @@ def test_mysql_federated(mysql_server, server_address):
         -e "CREATE DATABASE mysql_federated;"
     '''.format(host=server_address, port=server_port), demux=True)
 
+    if code != 0:
+        print(stdout)
+        print(stderr)
     assert code == 0
 
     code, (stdout, stderr) = mysql_server.exec_run('''
@@ -278,11 +281,25 @@ def test_java_client(server_address, java_container):
     with open(os.path.join(SCRIPT_DIR, 'clients', 'java', '0.reference')) as fp:
         reference = fp.read()
 
+    # database not exists exception.
     code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database '
                                                        'abc'.format(host=server_address, port=server_port), demux=True)
     assert code == 1
 
+    # empty password passed.
     code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database '
+                                                       'default'.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == reference
+
+    # non-empty password passed.
+    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user default --password 123 --database '
+                                                       'default'.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == reference
+
+    # double-sha1 password passed.
+    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_double_sha1 --password abacaba  --database '
                                                        'default'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
     assert stdout == reference

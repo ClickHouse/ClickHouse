@@ -4,14 +4,6 @@
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>10000</total_time_ms>
-        </all_of>
-        <any_of>
-            <total_time_ms>20000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
 
     <query>SELECT categoricalInformationValue(Age &lt; 15, IsMobile) from hits_100m_single</query>

@@ -3,6 +3,7 @@
 #include <Access/EnabledRoles.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/EnabledQuota.h>
+#include <Access/QuotaUsage.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
@@ -121,7 +122,6 @@ void ContextAccess::setUser(const UserPtr & user_) const
         subscription_for_roles_changes = {};
         enabled_roles = nullptr;
         roles_info = nullptr;
-        roles_with_admin_option = nullptr;
         enabled_row_policies = nullptr;
         enabled_quota = nullptr;
         enabled_settings = nullptr;
@@ -131,28 +131,27 @@ void ContextAccess::setUser(const UserPtr & user_) const
     user_name = user->getName();
     trace_log = &Poco::Logger::get("ContextAccess (" + user_name + ")");
 
-    std::vector<UUID> current_roles, current_roles_with_admin_option;
+    boost::container::flat_set<UUID> current_roles, current_roles_with_admin_option;
     if (params.use_default_roles)
     {
-        for (const UUID & id : user->granted_roles)
+        for (const UUID & id : user->granted_roles.roles)
         {
             if (user->default_roles.match(id))
-                current_roles.push_back(id);
+                current_roles.emplace(id);
         }
-        boost::range::set_intersection(current_roles, user->granted_roles_with_admin_option,
-                                       std::back_inserter(current_roles_with_admin_option));
     }
     else
     {
-        current_roles.reserve(params.current_roles.size());
-        for (const auto & id : params.current_roles)
-        {
-            if (user->granted_roles.contains(id))
-                current_roles.push_back(id);
-            if (user->granted_roles_with_admin_option.contains(id))
-                current_roles_with_admin_option.push_back(id);
-        }
+        boost::range::set_intersection(
+            params.current_roles,
+            user->granted_roles.roles,
+            std::inserter(current_roles, current_roles.end()));
     }
+
+    boost::range::set_intersection(
+        current_roles,
+        user->granted_roles.roles_with_admin_option,
+        std::inserter(current_roles_with_admin_option, current_roles_with_admin_option.end()));
 
     subscription_for_roles_changes = {};
     enabled_roles = manager->getEnabledRoles(current_roles, current_roles_with_admin_option);
@@ -170,7 +169,6 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 {
     assert(roles_info_);
     roles_info = roles_info_;
-    roles_with_admin_option.store(boost::make_shared<boost::container::flat_set<UUID>>(roles_info->enabled_roles_with_admin_option.begin(), roles_info->enabled_roles_with_admin_option.end()));
     boost::range::fill(result_access, nullptr /* need recalculate */);
     enabled_row_policies = manager->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
     enabled_quota = manager->getEnabledQuota(*params.user_id, user_name, roles_info->enabled_roles, params.address, params.quota_key);
@@ -196,13 +194,13 @@ bool ContextAccess::isClientHostAllowed() const
 
 
 template <int mode, bool grant_option, typename... Args>
-bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags, const Args &... args) const
+bool ContextAccess::calculateResultAccessAndCheck(Poco::Logger * log_, const AccessFlags & flags, const Args &... args) const
 {
     auto access = calculateResultAccess(grant_option);
     bool is_granted = access->isGranted(flags, args...);
 
     if (trace_log)
-        LOG_TRACE(trace_log, "Access " << (is_granted ? "granted" : "denied") << ": " << (AccessRightsElement{flags, args...}.toString()));
+        LOG_TRACE(trace_log, "Access {}: {}", (is_granted ? "granted" : "denied"), (AccessRightsElement{flags, args...}.toString()));
 
     if (is_granted)
         return true;
@@ -221,7 +219,7 @@ bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessFlags & fla
         if constexpr (mode == THROW_IF_ACCESS_DENIED)
             throw Exception(user_name + ": " + msg, error_code);
         else if constexpr (mode == LOG_WARNING_IF_ACCESS_DENIED)
-            LOG_WARNING(log_, user_name + ": " + msg + formatSkippedMessage(args...));
+            LOG_WARNING(log_, "{}: {}{}", user_name, msg, formatSkippedMessage(args...));
     };
 
     if (!user)
@@ -268,6 +266,22 @@ bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessFlags & fla
 
 
 template <int mode, bool grant_option>
+bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags) const
+{
+    return calculateResultAccessAndCheck<mode, grant_option>(log_, flags);
+}
+
+template <int mode, bool grant_option, typename... Args>
+bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags, const std::string_view & database, const Args &... args) const
+{
+    if (database.empty())
+        return calculateResultAccessAndCheck<mode, grant_option>(log_, flags, params.current_database, args...);
+    else
+        return calculateResultAccessAndCheck<mode, grant_option>(log_, flags, database, args...);
+}
+
+
+template <int mode, bool grant_option>
 bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessRightsElement & element) const
 {
     if (element.any_database)
@@ -276,24 +290,15 @@ bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessRightsEleme
     }
     else if (element.any_table)
     {
-        if (element.database.empty())
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, params.current_database);
-        else
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database);
+        return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database);
     }
     else if (element.any_column)
     {
-        if (element.database.empty())
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, params.current_database, element.table);
-        else
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table);
+        return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table);
     }
     else
     {
-        if (element.database.empty())
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, params.current_database, element.table, element.columns);
-        else
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table, element.columns);
+        return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table, element.columns);
     }
 }
 
@@ -350,9 +355,12 @@ void ContextAccess::checkAdminOption(const UUID & role_id) const
     if (isGranted(AccessType::ROLE_ADMIN))
         return;
 
-    auto roles_with_admin_option_loaded = roles_with_admin_option.load();
-    if (roles_with_admin_option_loaded && roles_with_admin_option_loaded->contains(role_id))
+    auto info = getRolesInfo();
+    if (info && info->enabled_roles_with_admin_option.count(role_id))
         return;
+
+    if (!user)
+        throw Exception(user_name + ": User has been dropped", ErrorCodes::UNKNOWN_USER);
 
     std::optional<String> role_name = manager->readName(role_id);
     if (!role_name)
@@ -390,13 +398,13 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
 
     if (grant_option)
     {
-        *merged_access = user->access_with_grant_option;
+        *merged_access = user->access.access_with_grant_option;
         if (roles_info)
             merged_access->merge(roles_info->access_with_grant_option);
     }
     else
     {
-        *merged_access = user->access;
+        *merged_access = user->access.access;
         if (roles_info)
             merged_access->merge(roles_info->access);
     }
@@ -443,15 +451,18 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
 
     if (trace_log && (params.readonly == readonly_) && (params.allow_ddl == allow_ddl_) && (params.allow_introspection == allow_introspection_))
     {
-        LOG_TRACE(trace_log, "List of all grants: " << merged_access->toString() << (grant_option ? " WITH GRANT OPTION" : ""));
+        if (grant_option)
+            LOG_TRACE(trace_log, "List of all grants: {} WITH GRANT OPTION", merged_access->toString());
+        else
+            LOG_TRACE(trace_log, "List of all grants: {}", merged_access->toString());
+
         if (roles_info && !roles_info->getCurrentRolesNames().empty())
         {
-            LOG_TRACE(
-                trace_log,
-                "Current_roles: " << boost::algorithm::join(roles_info->getCurrentRolesNames(), ", ")
-                                  << ", enabled_roles: " << boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
+            LOG_TRACE(trace_log, "Current_roles: {}, enabled_roles: {}",
+                boost::algorithm::join(roles_info->getCurrentRolesNames(), ", "),
+                boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
         }
-        LOG_TRACE(trace_log, "Settings: readonly=" << readonly_ << ", allow_ddl=" << allow_ddl_ << ", allow_introspection_functions=" << allow_introspection_);
+        LOG_TRACE(trace_log, "Settings: readonly={}, allow_ddl={}, allow_introspection_functions={}", readonly_, allow_ddl_, allow_introspection_);
     }
 
     res = std::move(merged_access);
@@ -478,31 +489,7 @@ std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
     return roles_info;
 }
 
-std::vector<UUID> ContextAccess::getCurrentRoles() const
-{
-    std::lock_guard lock{mutex};
-    return roles_info ? roles_info->current_roles : std::vector<UUID>{};
-}
-
-Strings ContextAccess::getCurrentRolesNames() const
-{
-    std::lock_guard lock{mutex};
-    return roles_info ? roles_info->getCurrentRolesNames() : Strings{};
-}
-
-std::vector<UUID> ContextAccess::getEnabledRoles() const
-{
-    std::lock_guard lock{mutex};
-    return roles_info ? roles_info->enabled_roles : std::vector<UUID>{};
-}
-
-Strings ContextAccess::getEnabledRolesNames() const
-{
-    std::lock_guard lock{mutex};
-    return roles_info ? roles_info->getEnabledRolesNames() : Strings{};
-}
-
-std::shared_ptr<const EnabledRowPolicies> ContextAccess::getRowPolicies() const
+std::shared_ptr<const EnabledRowPolicies> ContextAccess::getEnabledRowPolicies() const
 {
     std::lock_guard lock{mutex};
     return enabled_row_policies;
@@ -518,6 +505,13 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 {
     std::lock_guard lock{mutex};
     return enabled_quota;
+}
+
+
+std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
+{
+    std::lock_guard lock{mutex};
+    return enabled_quota ? enabled_quota->getUsage() : std::optional<QuotaUsage>{};
 }
 
 

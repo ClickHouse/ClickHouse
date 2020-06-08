@@ -1,12 +1,12 @@
+#include <Formats/FormatFactory.h>
+
 #include <algorithm>
-#include <Common/config.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
 #include <DataStreams/ParallelParsingBlockInputStream.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
@@ -15,6 +15,10 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
 #include <Poco/URI.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 namespace DB
 {
@@ -87,6 +91,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
 static FormatSettings getOutputFormatSetting(const Settings & settings, const Context & context)
 {
     FormatSettings format_settings;
+    format_settings.enable_streaming = settings.output_format_enable_streaming;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
@@ -96,6 +101,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
+    format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_format = settings.format_template_row;
@@ -274,6 +280,10 @@ OutputFormatPtr FormatFactory::getOutputFormat(
       */
     auto format = output_getter(buf, sample, std::move(callback), format_settings);
 
+    /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
+    if (format_settings.enable_streaming)
+        format->setAutoFlush();
+
     /// It's a kludge. Because I cannot remove context from MySQL format.
     if (auto * mysql = typeid_cast<MySQLOutputFormat *>(format.get()))
         mysql->setContext(context);
@@ -347,22 +357,28 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorJSONCompactEachRow(*this);
     registerInputFormatProcessorProtobuf(*this);
     registerOutputFormatProcessorProtobuf(*this);
+#if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorCapnProto(*this);
     registerInputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
+    registerInputFormatProcessorArrow(*this);
+    registerOutputFormatProcessorArrow(*this);
     registerInputFormatProcessorAvro(*this);
     registerOutputFormatProcessorAvro(*this);
+#endif
     registerInputFormatProcessorTemplate(*this);
     registerOutputFormatProcessorTemplate(*this);
     registerInputFormatProcessorRegexp(*this);
     registerInputFormatProcessorMsgPack(*this);
     registerOutputFormatProcessorMsgPack(*this);
+    registerInputFormatProcessorJSONAsString(*this);
 
     registerFileSegmentationEngineTabSeparated(*this);
     registerFileSegmentationEngineCSV(*this);
     registerFileSegmentationEngineJSONEachRow(*this);
     registerFileSegmentationEngineRegexp(*this);
+    registerFileSegmentationEngineJSONAsString(*this);
 
     registerOutputFormatNull(*this);
 
@@ -377,6 +393,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
     registerOutputFormatProcessorMySQLWrite(*this);
+    registerOutputFormatProcessorMarkdown(*this);
 }
 
 FormatFactory & FormatFactory::instance()

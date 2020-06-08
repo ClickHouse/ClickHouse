@@ -19,9 +19,7 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     Expected expected;
 
     Tokens tokens(structure.c_str(), structure.c_str() + structure.size());
-    IParser::Pos token_iterator(tokens);
-    const Settings & settings = context.getSettingsRef();
-    token_iterator.max_depth = settings.max_parser_depth;
+    IParser::Pos token_iterator(tokens, context.getSettingsRef().max_parser_depth);
 
     ParserColumnDeclarationList parser;
     ASTPtr columns_list_raw;
@@ -33,7 +31,7 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     if (!columns_list)
         throw Exception("Could not cast AST to ASTExpressionList", ErrorCodes::LOGICAL_ERROR);
 
-    return InterpreterCreateQuery::getColumnsDescription(*columns_list, context);
+    return InterpreterCreateQuery::getColumnsDescription(*columns_list, context, !context.getSettingsRef().allow_suspicious_codecs);
 }
 
 }

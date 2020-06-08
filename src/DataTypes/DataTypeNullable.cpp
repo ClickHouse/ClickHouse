@@ -93,7 +93,7 @@ void DataTypeNullable::serializeBinaryBulkWithMultipleStreams(
 
     /// First serialize null map.
     settings.path.push_back(Substream::NullMap);
-    if (auto stream = settings.getter(settings.path))
+    if (auto * stream = settings.getter(settings.path))
         DataTypeUInt8().serializeBinaryBulk(col.getNullMapColumn(), *stream, offset, limit);
 
     /// Then serialize contents of arrays.
@@ -112,7 +112,7 @@ void DataTypeNullable::deserializeBinaryBulkWithMultipleStreams(
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
 
     settings.path.push_back(Substream::NullMap);
-    if (auto stream = settings.getter(settings.path))
+    if (auto * stream = settings.getter(settings.path))
         DataTypeUInt8().deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
 
     settings.path.back() = Substream::NullableElements;

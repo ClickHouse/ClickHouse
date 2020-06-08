@@ -21,7 +21,7 @@
 
                 {% for release in config.extra.stable_releases %}
                     <a class="dropdown-item{% if release.0 == config.extra.version_prefix %} disable{% endif %}"
-                       href="/docs/{{ release.0 }}/{{ language }}/">{{ release.0 }}</a>
+                       href="/docs/{{ release.0 }}/{{ language }}/">{{ release.0 }}{% if release.1.2 %} LTS{% endif %}</a>
                 {% endfor %}
             </div>
         </div>

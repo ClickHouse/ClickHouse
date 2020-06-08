@@ -67,8 +67,8 @@ public:
 
         const ColumnString::Offsets & src_offsets = input->getOffsets();
 
-        auto src_begin = reinterpret_cast<const char *>(input->getChars().data());
-        auto src_pos = src_begin;
+        const auto * src_begin = reinterpret_cast<const char *>(input->getChars().data());
+        const auto * src_pos = src_begin;
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {

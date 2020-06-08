@@ -36,6 +36,8 @@ public:
 
 private:
     String query_id;
+    Settings settings;
+
 
     ColumnPtr database_column;
     ColumnPtr table_column;
@@ -53,10 +55,6 @@ private:
 class StorageSystemPartsBase : public IStorage
 {
 public:
-    NameAndTypePair getColumn(const String & column_name) const override;
-
-    bool hasColumn(const String & column_name) const override;
-
     Pipes read(
             const Names & column_names,
             const SelectQueryInfo & query_info,
@@ -64,6 +62,8 @@ public:
             QueryProcessingStage::Enum processed_stage,
             size_t max_block_size,
             unsigned num_streams) override;
+
+    NamesAndTypesList getVirtuals() const override;
 
 private:
     bool hasStateColumn(const Names & column_names) const;

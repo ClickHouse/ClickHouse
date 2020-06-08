@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -57,7 +58,12 @@ void fillBufferWithRandomData(char * __restrict data, size_t size, pcg64 & rng)
 
 
 ColumnPtr fillColumnWithRandomData(
-    const DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, const Context & context)
+    const DataTypePtr type,
+    UInt64 limit,
+    UInt64 max_array_length,
+    UInt64 max_string_length,
+    pcg64 & rng,
+    const Context & context)
 {
     TypeIndex idx = type->getTypeId();
 
@@ -205,7 +211,10 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnUInt16::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt16), rng);
+
+            for (size_t i = 0; i < limit; ++i)
+                column->getData()[i] = rng() % (DATE_LUT_MAX_DAY_NUM + 1);   /// Slow
+
             return column;
         }
         case TypeIndex::UInt32: [[fallthrough]];
@@ -329,8 +338,9 @@ class GenerateSource : public SourceWithProgress
 {
 public:
     GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, const Context & context_)
-        : SourceWithProgress(block_header_), block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
-        , block_header(block_header_), rng(random_seed_), context(context_) {}
+        : SourceWithProgress(Nested::flatten(prepareBlockToFill(block_header_)))
+        , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
+        , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
 
     String getName() const override { return "GenerateRandom"; }
 
@@ -338,12 +348,12 @@ protected:
     Chunk generate() override
     {
         Columns columns;
-        columns.reserve(block_header.columns());
-        DataTypes types = block_header.getDataTypes();
+        columns.reserve(block_to_fill.columns());
 
-        for (const auto & type : types)
-            columns.emplace_back(fillColumnWithRandomData(type, block_size, max_array_length, max_string_length, rng, context));
+        for (const auto & elem : block_to_fill)
+            columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, context));
 
+        columns = Nested::flatten(block_to_fill.cloneWithColumns(std::move(columns))).getColumns();
         return {std::move(columns), block_size};
     }
 
@@ -351,11 +361,23 @@ private:
     UInt64 block_size;
     UInt64 max_array_length;
     UInt64 max_string_length;
-    Block block_header;
+    Block block_to_fill;
 
     pcg64 rng;
 
     const Context & context;
+
+    static Block & prepareBlockToFill(Block & block)
+    {
+        /// To support Nested types, we will collect them to single Array of Tuple.
+        auto names_and_types = Nested::collect(block.getNamesAndTypesList());
+        block.clear();
+
+        for (auto & column : names_and_types)
+            block.insert(ColumnWithTypeAndName(column.type, column.name));
+
+        return block;
+    }
 };
 
 }

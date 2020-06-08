@@ -198,7 +198,7 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
     result_arr->getOffsets().insert(ranges_offsets->begin(), ranges_offsets->end());
 
     /// AggregateFunction's states should be inserted into column using specific way
-    auto res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(&result_data);
+    auto * res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(&result_data);
 
     if (!res_col_aggregate_function && agg_func.isState())
         throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
@@ -256,9 +256,9 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
                 agg_func.destroy(places[j]);
         });
 
-        auto true_func = &agg_func;
+        auto * true_func = &agg_func;
         /// Unnest consecutive trailing -State combinators
-        while (auto func = typeid_cast<AggregateFunctionState *>(true_func))
+        while (auto * func = typeid_cast<AggregateFunctionState *>(true_func))
             true_func = func->getNestedFunction().get();
 
         /// Pre-aggregate to the initial level

@@ -1,15 +1,17 @@
 #pragma once
 
-#include "config_formats.h"
-#if USE_PROTOBUF
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
 
-#include <memory>
-#include <unordered_map>
-#include <vector>
-#include <Core/Types.h>
-#include <boost/blank.hpp>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/descriptor.pb.h>
+#if USE_PROTOBUF
+#    include <memory>
+#    include <unordered_map>
+#    include <vector>
+#    include <Core/Types.h>
+#    include <boost/blank.hpp>
+#    include <google/protobuf/descriptor.h>
+#    include <google/protobuf/descriptor.pb.h>
 
 namespace google
 {
@@ -190,4 +192,5 @@ namespace ProtobufColumnMatcher
 }
 
 }
+
 #endif
