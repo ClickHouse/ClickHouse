@@ -35,7 +35,7 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
     else if (cluster)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CLUSTER" << (settings.hilite ? hilite_none : "");
-	settings.ostr << " " << backQuoteIfNeed(cluster_str);
+        settings.ostr << " " << backQuoteIfNeed(cluster_str);
     }
     else
     {

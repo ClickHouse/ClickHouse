@@ -9,7 +9,6 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 
 #include <Common/typeid_cast.h>
-#include <common/logger_useful.h>
 
 
 namespace DB

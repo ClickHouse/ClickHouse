@@ -8,7 +8,6 @@
 #include <Common/typeid_cast.h>
 #include <iomanip>
 #include <sstream>
-#include <iostream>
 
 
 namespace DB
@@ -41,23 +40,23 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 	rewritten_query << "SELECT cluster FROM system.clusters";
 
         if (!query.like.empty())
-	{
-	    rewritten_query << " WHERE cluster " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');
-	}
+        {
+            rewritten_query << " WHERE cluster " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');
+        }
 
-	if (query.limit_length)
+        if (query.limit_length)
             rewritten_query << " LIMIT " << query.limit_length;
 
-	return rewritten_query.str();
+        return rewritten_query.str();
     }
     else if (query.cluster)
     {
         std::stringstream rewritten_query;
-	rewritten_query << "SELECT * FROM system.clusters";
+        rewritten_query << "SELECT * FROM system.clusters";
 
         rewritten_query << " WHERE cluster = " << std::quoted(query.cluster_str, '\'');
 
-	return rewritten_query.str();
+        return rewritten_query.str();
     }
 
     if (query.temporary && !query.from.empty())
