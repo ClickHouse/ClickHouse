@@ -409,11 +409,11 @@ create table all_query_runs_json engine File(JSON, 'report/all-query-runs.json')
     ;
 
 create table changed_perf_tsv engine File(TSV, 'report/changed-perf.tsv') as
-    select left, right, diff, stat_threshold, changed_fail, test, query_display_name
+    select left, right, diff, stat_threshold, changed_fail, test, query_index, query_display_name
     from queries where changed_show order by abs(diff) desc;
 
 create table unstable_queries_tsv engine File(TSV, 'report/unstable-queries.tsv') as
-    select left, right, diff, stat_threshold, unstable_fail, test, query_display_name
+    select left, right, diff, stat_threshold, unstable_fail, test, query_index, query_display_name
     from queries where unstable_show order by stat_threshold desc;
 
 create table queries_for_flamegraph engine File(TSVWithNamesAndTypes,
@@ -464,8 +464,8 @@ create table all_tests_tsv engine File(TSV, 'report/all-queries.tsv') as
     select changed_fail, unstable_fail,
         left, right, diff,
         floor(left > right ? left / right : right / left, 3),
-        stat_threshold, test, query_display_name
-    from queries order by test, query_display_name;
+        stat_threshold, test, query_index, query_display_name
+    from queries order by test, query_index;
 
 -- new report for all queries with all metrics (no page yet)
 create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.tsv') as

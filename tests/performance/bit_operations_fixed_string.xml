@@ -1,13 +1,10 @@
 <test>
-
-
-
     <preconditions>
-        <table_exists>test.hits</table_exists>
+        <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(bitAnd(toFixedString(ClientIP6, 16), IPv6StringToNum('ffff:ffff:ffff:0000:0000:0000:0000:0000')))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(bitOr(toFixedString(ClientIP6, 16), IPv6StringToNum('ffff:ffff:ffff:0000:0000:0000:0000:0000')))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(bitXor(toFixedString(ClientIP6, 16), IPv6StringToNum('ffff:ffff:ffff:0000:0000:0000:0000:0000')))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(bitNot(toFixedString(ClientIP6, 16)))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(bitAnd(toFixedString(ClientIP6, 16), IPv6StringToNum('ffff:ffff:ffff:0000:0000:0000:0000:0000')))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(bitOr(toFixedString(ClientIP6, 16), IPv6StringToNum('ffff:ffff:ffff:0000:0000:0000:0000:0000')))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(bitXor(toFixedString(ClientIP6, 16), IPv6StringToNum('ffff:ffff:ffff:0000:0000:0000:0000:0000')))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(bitNot(toFixedString(ClientIP6, 16)))</query>
 </test>
