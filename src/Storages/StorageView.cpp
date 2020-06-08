@@ -128,7 +128,7 @@ ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Cont
     /// TODO: remove getTableExpressions and getTablesWithColumns
     {
         const auto & table_expressions = getTableExpressions(*outer_query);
-        const auto & tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
+        const auto & tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
 
         replaceTableNameWithSubquery(outer_query, runtime_view_query);
         if (context.getSettingsRef().joined_subquery_requires_alias && tables_with_columns.size() > 1)
