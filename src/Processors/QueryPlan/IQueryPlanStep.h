@@ -51,4 +51,5 @@ protected:
     std::optional<DataStream> output_stream;
 };
 
+using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 }
