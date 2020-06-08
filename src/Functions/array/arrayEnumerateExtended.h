@@ -58,8 +58,8 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
-    /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
-    static constexpr size_t INITIAL_SIZE_DEGREE = 9;
+    /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
+    static constexpr size_t INITIAL_SIZE_DEGREE = 6;
 
     template <typename T>
     struct MethodOneNumber
