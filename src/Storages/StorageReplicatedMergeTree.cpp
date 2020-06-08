@@ -2961,7 +2961,6 @@ void StorageReplicatedMergeTree::startup()
 
 void StorageReplicatedMergeTree::shutdown()
 {
-    clearOldPartsFromFilesystem(true);
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
@@ -2997,6 +2996,12 @@ void StorageReplicatedMergeTree::shutdown()
         std::unique_lock lock(data_parts_exchange_endpoint->rwlock);
     }
     data_parts_exchange_endpoint.reset();
+
+    /// We clear all parts after stopping all background operations. It's
+    /// important, because background operations can produce temporary parts
+    /// which will remove themselfs in their descrutors. If so, we may have race
+    /// condition between our remove call and background process.
+    clearOldPartsFromFilesystem(true);
 }
 
 
