@@ -8,7 +8,7 @@ namespace DB
 
 PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(IServer & server_)
     : server(server_)
-    , log(&Logger::get("PostgreSQLHandlerFactory"))
+    , log(&Poco::Logger::get("PostgreSQLHandlerFactory"))
 {
     auth_methods =
     {
