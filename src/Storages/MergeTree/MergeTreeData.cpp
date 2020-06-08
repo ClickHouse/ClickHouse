@@ -296,7 +296,10 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     /// Primary key not defined at all
     if (new_primary_key.definition_ast == nullptr)
     {
-        /// We copy sorting key, and restore definition_ast to empty value
+        /// We copy sorting key, and restore definition_ast to empty value,
+        /// because in merge tree code we sometimes chech, that our primary key
+        /// is fake (copied from sorting key, i.e. isPrimaryKeyDefined() ==
+        /// false, but hasSortingKey() == true)
         new_primary_key = metadata.sorting_key;
         new_primary_key.definition_ast = nullptr;
     }
