@@ -96,6 +96,10 @@ Pipe::Pipe(Pipes && pipes, ProcessorPtr transform)
     processors.emplace_back(std::move(transform));
 }
 
+Pipe::Pipe(OutputPort * port) : output_port(port)
+{
+}
+
 void Pipe::addSimpleTransform(ProcessorPtr transform)
 {
     checkSimpleTransform(*transform);
