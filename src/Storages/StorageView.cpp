@@ -73,7 +73,7 @@ Pipes StorageView::read(
         for (auto & stream : streams)
         {
             stream = std::make_shared<MaterializingBlockInputStream>(stream);
-            stream = std::make_shared<ConvertingBlockInputStream>(stream, getSampleBlockForColumns(column_names),
+            stream = std::make_shared<ConvertingBlockInputStream>(context, stream, getSampleBlockForColumns(column_names),
                                                                   ConvertingBlockInputStream::MatchColumnsMode::Name);
         }
 
