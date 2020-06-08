@@ -24,6 +24,7 @@
          </server>
      </openSSL>
 
+     <tcp_port>9000</tcp_port>
      <postgresql_port>5433</postgresql_port>
      <listen_host>127.0.0.1</listen_host>
 
