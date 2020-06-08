@@ -106,7 +106,6 @@ namespace ErrorCodes
     extern const int READONLY_SETTING;
     extern const int ABORTED;
     extern const int UNKNOWN_PART_TYPE;
-    extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int UNKNOWN_DISK;
     extern const int NOT_ENOUGH_SPACE;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
