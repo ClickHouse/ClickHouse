@@ -3,6 +3,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <Columns/IColumn.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
 
@@ -59,12 +61,16 @@ public:
     {
     }
 
-    void serialize(ConstAggregateDataPtr, WriteBuffer &) const override
+    /// We have to serialize to at least one byte, because otherwise
+    /// the reader cannot read expected number of serialized states.
+    void serialize(ConstAggregateDataPtr, WriteBuffer & out) const override
     {
+        out.write(0);
     }
 
-    void deserialize(AggregateDataPtr, ReadBuffer &, Arena *) const override
+    void deserialize(AggregateDataPtr, ReadBuffer & in, Arena *) const override
     {
+        in.ignore(1);
     }
 
     void insertResultInto(AggregateDataPtr, IColumn & to) const override
