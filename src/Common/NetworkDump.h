@@ -21,7 +21,7 @@ namespace NetworkDump
     using SendHook = std::function<void(ssize_t, int, const void *, size_t, int)>;
     using RecvHook = std::function<void(ssize_t, int, void *, size_t, int)>;
 
-    /// Non thread-safe. Should be called once before any network interaction.
+    /// Thread-safe.
     void initialize(SendHook send_hook, RecvHook recv_hook);
 
     /// Write network dump to file in RowBinary format. Calls initialize.
