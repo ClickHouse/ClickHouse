@@ -106,7 +106,7 @@ echo "Finishing alters"
 # following for loop.
 #
 # 120 seconds is more than enough, but in rare cases for slow builds (debug,
-# thread) it maybe necessary
+# thread) it maybe necessary.
 while [[ $(timeout 120 $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_alter_mt_1 MODIFY COLUMN value1 String SETTINGS replication_alter_partitions_sync=2" 2>&1) ]]; do
     sleep 1
 done
