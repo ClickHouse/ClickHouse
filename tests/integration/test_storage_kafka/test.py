@@ -1487,7 +1487,6 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
     assert TSV(result) == TSV('22\t22\t22')
 
 
-
 if __name__ == '__main__':
     cluster.start()
     raw_input("Cluster created, press any key to destroy...")
