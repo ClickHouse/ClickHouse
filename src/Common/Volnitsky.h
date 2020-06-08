@@ -318,7 +318,7 @@ protected:
 
     /** max needle length is 255, max distinct ngrams for case-sensitive is (255 - 1), case-insensitive is 4 * (255 - 1)
       *  storage of 64K ngrams (n = 2, 128 KB) should be large enough for both cases */
-    VolnitskyTraits::Offset hash[VolnitskyTraits::hash_size]; /// Hash table.
+    std::unique_ptr<VolnitskyTraits::Offset[]> hash; /// Hash table.
 
     const bool fallback; /// Do we need to use the fallback algorithm.
 
@@ -340,7 +340,7 @@ public:
         if (fallback)
             return;
 
-        memset(hash, 0, sizeof(hash));
+        hash = std::unique_ptr<VolnitskyTraits::Offset[]>(new VolnitskyTraits::Offset[VolnitskyTraits::hash_size]{});
 
         auto callback = [this](const VolnitskyTraits::Ngram ngram, const int offset) { return this->putNGramBase(ngram, offset); };
         /// ssize_t is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
@@ -419,7 +419,7 @@ private:
         VolnitskyTraits::Offset off;
     };
 
-    OffsetId hash[VolnitskyTraits::hash_size];
+    std::unique_ptr<OffsetId[]> hash;
 
     /// step for each bunch of strings
     size_t step;
@@ -434,6 +434,7 @@ public:
     MultiVolnitskyBase(const std::vector<StringRef> & needles_) : needles{needles_}, step{0}, last{0}
     {
         fallback_searchers.reserve(needles.size());
+        hash = std::unique_ptr<OffsetId[]>(new OffsetId[VolnitskyTraits::hash_size]);   /// No zero initialization, it will be done later.
     }
 
     /**
@@ -454,7 +455,7 @@ public:
         if (last == needles.size())
             return false;
 
-        memset(hash, 0, sizeof(hash));
+        memset(hash.get(), 0, VolnitskyTraits::hash_size * sizeof(OffsetId));
         fallback_needles.clear();
         step = std::numeric_limits<size_t>::max();
 
