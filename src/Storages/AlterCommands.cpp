@@ -327,7 +327,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
     }
     else if (type == COMMENT_COLUMN)
     {
-        metadata.columns.modify(column_name, [&](ColumnDescription & column) { column.comment = *comment; });
+        metadata.columns.modify(column_name,
+            [&](ColumnDescription & column) { column.comment = *comment; });
     }
     else if (type == ADD_INDEX)
     {

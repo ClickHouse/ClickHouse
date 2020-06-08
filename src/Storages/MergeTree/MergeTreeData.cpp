@@ -404,10 +404,10 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     {
         /// Other parts of metadata initialized is separate methods
         setColumns(std::move(metadata.columns));
-        setSecondaryIndices(metadata.secondary_indices);
-        setConstraints(metadata.constraints);
-        setSortingKey(new_sorting_key);
-        setPrimaryKey(new_primary_key);
+        setSecondaryIndices(std::move(metadata.secondary_indices));
+        setConstraints(std::move(metadata.constraints));
+        setSortingKey(std::move(new_sorting_key));
+        setPrimaryKey(std::move(new_primary_key));
     }
 }
 
