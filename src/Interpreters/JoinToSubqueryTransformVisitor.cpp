@@ -586,7 +586,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
     {
         bool got_alias = aliases.count(ident->name);
 
-        if (auto table_pos = IdentifierSemantic::chooseTable(*ident, tables))
+        if (auto table_pos = IdentifierSemantic::chooseTableColumnMatch(*ident, tables))
         {
             if (!ident->isShort())
             {
