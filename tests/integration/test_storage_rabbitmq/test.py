@@ -145,9 +145,14 @@ def test_rabbitmq_select_from_new_syntax_table(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange='clickhouse-exchange', routing_key='new', body=message)
 
-    result = instance.query('SELECT * FROM test.rabbitmq', ignore_error=False)
-
     connection.close()
+
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
+        if rabbitmq_check_result(result):
+            break
+
     rabbitmq_check_result(result, True)
 
 
@@ -171,9 +176,14 @@ def test_rabbitmq_select_from_old_syntax_table(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange='clickhouse-exchange', routing_key='old', body=message)
 
-    result = instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
-
     connection.close()
+
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
+        if rabbitmq_check_result(result):
+            break
+
     rabbitmq_check_result(result, True)
 
 
@@ -294,7 +304,11 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange='clickhouse-exchange', routing_key='tsv', body=message)
 
-    result = instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
+        if rabbitmq_check_result(result):
+            break
 
     connection.close()
     rabbitmq_check_result(result, True)
@@ -997,7 +1011,6 @@ def test_rabbitmq_sharding_between_channels_insert(rabbitmq_cluster):
     while True:
         result = instance.query('SELECT count() FROM test.view_sharding')
         time.sleep(1)
-        print result
         if int(result) == messages_num * threads_num:
             break
 
