@@ -410,8 +410,6 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         setSecondaryIndices(metadata.secondary_indices);
 
         setConstraints(metadata.constraints);
-        LOG_DEBUG(log, "HAS PRIMARY KEY {}", hasPrimaryKey());
-        LOG_DEBUG(log, "IS PRIMARY KEY {}", isPrimaryKeyDefined());
     }
 }
 
