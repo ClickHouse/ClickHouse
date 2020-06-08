@@ -56,7 +56,7 @@ private:
     const Context & context;
 
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
-    static constexpr size_t INITIAL_SIZE_DEGREE = 4;
+    static constexpr size_t INITIAL_SIZE_DEGREE = 6;
 
     struct UnpackedArrays
     {
