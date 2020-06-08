@@ -359,7 +359,8 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
         not short and not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
         
         left, right, diff, stat_threshold,
-        if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
+        --if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
+        0.10 as report_threshold,
         test, query_index, query_display_name
     from query_metric_stats
     left join file('analyze/report-thresholds.tsv', TSV,
@@ -582,7 +583,7 @@ create table metric_devation engine File(TSVWithNamesAndTypes,
             union all select * from unstable_run_traces
             union all select * from unstable_run_metrics_2) mm
         group by test, query_index, metric
-        having d > 0.5
+        having d > 0.5 and q[3] > 5
     ) metrics
     left join query_display_names using (test, query_index)
     order by test, query_index, d desc
