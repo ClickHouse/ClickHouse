@@ -12,9 +12,10 @@ namespace DB
 class PostgreSQLHandlerFactory : public Poco::Net::TCPServerConnectionFactory
 {
 private:
-#if USE_SSL
     IServer & server;
     Poco::Logger * log;
+
+#if USE_SSL
     bool ssl_enabled = true;
 #else
     bool ssl_enabled = false;
