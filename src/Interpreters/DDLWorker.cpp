@@ -481,6 +481,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     const auto & shards = task.cluster->getShardsAddresses();
 
     bool found_exact_match = false;
+    String default_database;
     for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
     {
         for (size_t replica_num = 0; replica_num < shards[shard_num].size(); ++replica_num)
@@ -491,14 +492,30 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
             {
                 if (found_exact_match)
                 {
-                    throw Exception("There are two exactly the same ClickHouse instances " + address.readableString()
-                        + " in cluster " + task.cluster_name, ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
+                    if(default_database == address.default_database)
+                    {
+                        throw Exception(
+                            "There are two exactly the same Snowball instances " + address.readableString() + " in cluster "
+                                + task.cluster_name, ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
                 }
-
+                    else  ///circular replication is used.
+                    {
+                        is_circular_replicated = true;
+                        auto query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get());
+                        if(query_with_table == nullptr || query_with_table->database.empty())
+                        {
+                            throw Exception(
+                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name."
+                                ,ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
+                        }
+                        if(default_database == query_with_table->database) return;
+                    }
+                }
                 found_exact_match = true;
                 task.host_shard_num = shard_num;
                 task.host_replica_num = replica_num;
                 task.address_in_cluster = address;
+                default_database = address.default_database;
             }
         }
     }
@@ -621,6 +638,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
     {
         try
         {
+            is_circular_replicated = false;
             parseQueryAndResolveHost(task);
 
             ASTPtr rewritten_ast = task.query_on_cluster->getRewrittenASTWithoutOnCluster(task.address_in_cluster.default_database);
@@ -643,7 +661,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
                 if (storage && query_with_table->as<ASTAlterQuery>())
                     checkShardConfig(query_with_table->table, task, storage);
 
-                if (storage && taskShouldBeExecutedOnLeader(rewritten_ast, storage))
+                if (storage && taskShouldBeExecutedOnLeader(rewritten_ast, storage)  && !is_circular_replicated)
                     tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper);
                 else
                     tryExecuteQuery(rewritten_query, task, task.execution_status);
