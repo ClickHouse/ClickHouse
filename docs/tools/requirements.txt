@@ -2,7 +2,7 @@ Babel==2.8.0
 backports-abc==0.5
 backports.functools-lru-cache==1.6.1
 beautifulsoup4==4.9.1
-certifi==2020.4.5.1
+certifi==2020.4.5.2
 chardet==3.0.4
 click==7.1.2
 closure==20191111
