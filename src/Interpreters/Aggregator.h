@@ -1140,6 +1140,11 @@ protected:
         MutableColumns & final_aggregate_columns,
         bool final) const;
 
+    template <typename Mapped>
+    void insertAggregatesIntoColumns(
+        Mapped & mapped,
+        MutableColumns & final_aggregate_columns) const;
+
     template <typename Method, typename Table>
     void convertToBlockImplFinal(
         Method & method,
