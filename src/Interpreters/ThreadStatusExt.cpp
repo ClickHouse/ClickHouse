@@ -8,6 +8,7 @@
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/TraceCollector.h>
+#include <common/errnoToString.h>
 
 #if defined(OS_LINUX)
 #   include <Common/hasLinuxCapability.h>
