@@ -242,7 +242,7 @@ Initialization replication quene based on ZooKeeper date happens in the same way
 SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
-### RESTART REPLICAS {#query_language-system-restart-replica}
+### RESTART REPLICAS {#query_language-system-restart-replicas}
 Provides possibility to reinitialize Zookeeper sessions state for all `ReplicatedMergeTree` tables, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed  
 
 ``` sql
