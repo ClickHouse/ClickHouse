@@ -582,7 +582,7 @@ create table metric_devation engine File(TSVWithNamesAndTypes,
             union all select * from unstable_run_traces
             union all select * from unstable_run_metrics_2) mm
         group by test, query_index, metric
-        having d > 0.5
+        having d > 0.5 and q[3] > 5
     ) metrics
     left join query_display_names using (test, query_index)
     order by test, query_index, d desc
