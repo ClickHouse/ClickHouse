@@ -7,6 +7,7 @@ void registerFunctionsWindow(FunctionFactory& factory)
 {
     factory.registerFunction<FunctionTumble>();
     factory.registerFunction<FunctionHop>();
+    factory.registerFunction<FunctionHopSlice>();
     factory.registerFunction<FunctionTumbleStart>();
     factory.registerFunction<FunctionTumbleEnd>();
     factory.registerFunction<FunctionHopStart>();

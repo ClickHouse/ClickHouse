@@ -54,6 +54,7 @@ public:
 
 private:
     ASTPtr inner_query;
+    ASTPtr mergeable_query;
     ASTPtr final_query;
 
     Context global_context;
@@ -63,6 +64,7 @@ private:
     bool is_tumble; // false if is hop
     std::atomic<bool> shutdown_called{false};
     mutable Block sample_block;
+    mutable Block mergeable_header;
     UInt64 clean_interval;
     const DateLUTImpl & time_zone;
     UInt32 max_timestamp = 0;
@@ -90,10 +92,12 @@ private:
     IntervalKind::Kind lateness_kind;
     Int64 window_num_units;
     Int64 hop_num_units;
+    Int64 slice_num_units;
     Int64 watermark_num_units = 0;
     Int64 lateness_num_units = 0;
+    String window_id_name;
+    String window_id_alias;
     String window_column_name;
-    String window_column_alias;
     String timestamp_column_name;
 
     StorageID select_table_id = StorageID::createEmpty();
@@ -111,6 +115,7 @@ private:
     std::shared_ptr<ASTCreateQuery> generateInnerTableCreateQuery(ASTStorage * storage, const String & database_name, const String & table_name);
     ASTPtr generateCleanCacheQuery(UInt32 timestamp);
 
+    UInt32 addTime(UInt32 time_sec, IntervalKind::Kind kind, Int64 num_units) const;
     UInt32 getWindowLowerBound(UInt32 time_sec);
     UInt32 getWindowUpperBound(UInt32 time_sec);
 
@@ -126,8 +131,9 @@ private:
     static Pipes blocksToPipes(BlocksList & blocks, Block & sample_block);
 
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
+    ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
     ASTPtr getFinalQuery() const { return final_query->clone(); }
-    ASTPtr getFetchColumnQuery(UInt32 watermark) const;
+    ASTPtr getFetchColumnQuery(UInt32 w_start, UInt32 w_end) const;
 
     StoragePtr getParentStorage() const;
 
@@ -136,6 +142,8 @@ private:
     StoragePtr & getTargetStorage() const;
 
     Block & getHeader() const;
+
+    Block & getMergeableHeader() const;
 
     StorageWindowView(
         const StorageID & table_id_,
