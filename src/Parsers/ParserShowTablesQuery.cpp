@@ -70,11 +70,11 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         query->cluster = true;
 
-	String cluster_str;
-	if (!parseIdentifierOrStringLiteral(pos, expected, cluster_str))
-	    return false;
-
-	query->cluster_str = std::move(cluster_str);
+        String cluster_str;
+        if (!parseIdentifierOrStringLiteral(pos, expected, cluster_str))
+            return false;
+        
+        query->cluster_str = std::move(cluster_str);
     }
     else
     {
