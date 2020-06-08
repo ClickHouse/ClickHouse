@@ -408,6 +408,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
+    if (storage && storage->isView())
+        query_info.tables_with_columns = joined_tables.moveTablesWithColumns();
     const StorageID & left_table_id = joined_tables.leftTableID();
 
     if (left_table_id)

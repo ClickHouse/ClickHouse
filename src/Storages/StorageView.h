@@ -29,7 +29,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    ASTPtr getRuntimeViewQuery(const ASTSelectQuery & outer_query, const Context & context);
+    ASTPtr getRuntimeViewQuery(const SelectQueryInfo & query_info, const Context & context);
 
     ASTPtr getRuntimeViewQuery(ASTSelectQuery * outer_query, const Context & context, bool normalize);
 

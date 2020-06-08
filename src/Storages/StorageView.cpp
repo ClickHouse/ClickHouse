@@ -62,7 +62,7 @@ Pipes StorageView::read(
     ASTPtr current_inner_query = inner_query;
 
     if (context.getSettings().enable_optimize_predicate_expression)
-        current_inner_query = getRuntimeViewQuery(*query_info.query->as<const ASTSelectQuery>(), context);
+        current_inner_query = getRuntimeViewQuery(query_info, context);
 
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
 
@@ -87,17 +87,9 @@ Pipes StorageView::read(
     return pipes;
 }
 
-ASTPtr StorageView::getRuntimeViewQuery(const ASTSelectQuery & outer_query, const Context & context)
+static void replaceTableNameWithSubquery(ASTSelectQuery & select_query, ASTPtr & subquery)
 {
-    auto temp_outer_query = outer_query.clone();
-    auto * new_outer_select = temp_outer_query->as<ASTSelectQuery>();
-    return getRuntimeViewQuery(new_outer_select, context, false);
-}
-
-
-static void replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
-{
-    auto * select_element = select_query->tables()->children[0]->as<ASTTablesInSelectQueryElement>();
+    auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
@@ -116,6 +108,32 @@ static void replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr &
         table_expression->subquery->setAlias(alias);
 }
 
+static void checkTableAliases(const TablesWithColumns & tables_with_columns)
+{
+    if (tables_with_columns.size() <= 1)
+        return;
+
+    for (const auto & t : tables_with_columns)
+        if (t.table.table.empty() && t.table.alias.empty())
+            throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
+                            ErrorCodes::ALIAS_REQUIRED);
+}
+
+ASTPtr StorageView::getRuntimeViewQuery(const SelectQueryInfo & query_info, const Context & context)
+{
+    auto query = query_info.query->clone();
+    ASTSelectQuery & outer_select = *query->as<ASTSelectQuery>();
+
+    auto runtime_view_query = inner_query->clone();
+    replaceTableNameWithSubquery(outer_select, runtime_view_query);
+
+    const auto & tables_with_columns = query_info.tables_with_columns;
+    if (context.getSettingsRef().joined_subquery_requires_alias)
+        checkTableAliases(tables_with_columns);
+
+    PredicateExpressionsOptimizer(context, tables_with_columns, context.getSettings()).optimize(outer_select);
+    return runtime_view_query;
+}
 
 ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Context & context, bool normalize)
 {
@@ -126,14 +144,9 @@ ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Cont
         const auto & table_expressions = getTableExpressions(*outer_query);
         const auto & tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
 
-        replaceTableNameWithSubquery(outer_query, runtime_view_query);
-        if (context.getSettingsRef().joined_subquery_requires_alias && tables_with_columns.size() > 1)
-        {
-            for (const auto & pr : tables_with_columns)
-                if (pr.table.table.empty() && pr.table.alias.empty())
-                    throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
-                                    ErrorCodes::ALIAS_REQUIRED);
-        }
+        replaceTableNameWithSubquery(*outer_query, runtime_view_query);
+        if (context.getSettingsRef().joined_subquery_requires_alias)
+            checkTableAliases(tables_with_columns);
 
         if (PredicateExpressionsOptimizer(context, tables_with_columns, context.getSettings()).optimize(*outer_query) && normalize)
             InterpreterSelectWithUnionQuery(
