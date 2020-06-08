@@ -1,13 +1,21 @@
 set(SIMDJSON_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/simdjson/include")
-set(SIMDJSON_SRC_DIR "${SIMDJSON_INCLUDE_DIR}/../src")
+set(SIMDJSON_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/simdjson/src")
 set(SIMDJSON_SRC
-    ${SIMDJSON_SRC_DIR}/document.cpp
     ${SIMDJSON_SRC_DIR}/error.cpp
     ${SIMDJSON_SRC_DIR}/implementation.cpp
-    ${SIMDJSON_SRC_DIR}/jsonioutil.cpp
-    ${SIMDJSON_SRC_DIR}/jsonminifier.cpp
-    ${SIMDJSON_SRC_DIR}/stage1_find_marks.cpp
-    ${SIMDJSON_SRC_DIR}/stage2_build_tape.cpp
+    ${SIMDJSON_SRC_DIR}/simdjson.cpp
+
+    ${SIMDJSON_SRC_DIR}/arm64/implementation.cpp
+    ${SIMDJSON_SRC_DIR}/arm64/dom_parser_implementation.cpp
+
+    ${SIMDJSON_SRC_DIR}/fallback/implementation.cpp
+    ${SIMDJSON_SRC_DIR}/fallback/dom_parser_implementation.cpp
+
+    ${SIMDJSON_SRC_DIR}/haswell/implementation.cpp
+    ${SIMDJSON_SRC_DIR}/haswell/dom_parser_implementation.cpp
+
+    ${SIMDJSON_SRC_DIR}/westmere/implementation.cpp
+    ${SIMDJSON_SRC_DIR}/westmere/dom_parser_implementation.cpp
 )
 
 add_library(${SIMDJSON_LIBRARY} ${SIMDJSON_SRC})
