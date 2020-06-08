@@ -14,15 +14,21 @@ class Client:
         if os.path.basename(command) == 'clickhouse':
             self.command.append('client')
 
-        self.command += ['--host', self.host, '--port', str(self.port), '--stacktrace']
+
+    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False, secure=False):
+        return self.get_query_request(
+            sql, stdin=stdin, timeout=timeout, settings=settings, user=user,
+            password=password, ignore_error=ignore_error, secure=secure).get_answer()
 
 
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False):
-        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, ignore_error=ignore_error).get_answer()
+    def get_query_request(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False, secure=False):
 
-
-    def get_query_request(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False):
         command = self.command[:]
+
+        if secure:
+            command += ['--secure', '--host', self.host, '--port', '9440', '--stacktrace']
+        else:
+            command += ['--host', self.host, '--port', str(self.port), '--stacktrace']
 
         if stdin is None:
             command += ['--multiquery', '--testmode']
@@ -39,6 +45,8 @@ class Client:
 
         if password is not None:
             command += ['--password', password]
+
+        print(command)
 
         return CommandRequest(command, stdin, timeout, ignore_error)
 

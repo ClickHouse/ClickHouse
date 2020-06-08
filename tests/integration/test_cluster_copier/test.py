@@ -90,6 +90,11 @@ class Task1:
                                   "PARTITION BY d % 3 ORDER BY (d, sipHash64(d)) SAMPLE BY sipHash64(d) SETTINGS index_granularity = 16")
         ddl_check_query(instance, "CREATE TABLE hits_all ON CLUSTER cluster0 (d UInt64) ENGINE=Distributed(cluster0, default, hits, d)")
         ddl_check_query(instance, "CREATE TABLE hits_all ON CLUSTER cluster1 (d UInt64) ENGINE=Distributed(cluster1, default, hits, d + 1)")
+        print("Selecting...")
+        print(instance.query("SELECT * FROM numbers(10)", secure=True))
+        print("Selecting...")
+        print(instance.query("SELECT * FROM hits_all"))
+        print("Inserting...")
         instance.query("INSERT INTO hits_all SELECT * FROM system.numbers LIMIT 1002", settings={"insert_distributed_sync": 1})
 
 

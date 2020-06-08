@@ -707,8 +707,8 @@ class ClickHouseInstance:
         self.with_installed_binary = with_installed_binary
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False):
-        return self.client.query(sql, stdin, timeout, settings, user, password, ignore_error)
+    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False, secure=False):
+        return self.client.query(sql, stdin, timeout, settings, user, password, ignore_error, secure)
 
     def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False,
                          retry_count=20, sleep_time=0.5, check_callback=lambda x: True):

@@ -1,12 +1,9 @@
 import os
-import os.path as p
 import sys
 import time
-import datetime
 import pytest
 from contextlib import contextmanager
 import docker
-from kazoo.client import KazooClient
 
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -16,33 +13,31 @@ from helpers.test_tools import TSV
 
 COPYING_FAIL_PROBABILITY = 0.33
 MOVING_FAIL_PROBABILITY = 0.1
-cluster = None
+
+cluster = ClickHouseCluster(__file__)
 
 @pytest.fixture(scope="function")
 def started_cluster():
-    global cluster
     try:
         clusters_schema = {
             "0" : {"0" : ["0"]},
             "1" : {"0" : ["0"]}
         }
 
-        cluster = ClickHouseCluster(__file__)
-
         for cluster_name, shards in clusters_schema.iteritems():
             for shard_name, replicas in shards.iteritems():
                 for replica_name in replicas:
                     name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
                     cluster.add_instance(name,
-                                         config_dir="configs",
-                                         macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
+                                         config_dir="configs_secure",
                                          with_zookeeper=True)
 
         cluster.start()
         yield cluster
 
     finally:
-        cluster.shutdown()
+        pass
+        # cluster.shutdown()
 
 
 class TaskTrivial:
@@ -67,12 +62,16 @@ class TaskTrivial:
                      "ENGINE=ReplicatedMergeTree('/clickhouse/tables/source_trivial_cluster/1/trivial', '1') "
                      "PARTITION BY d % 5 ORDER BY (d, sipHash64(d)) SAMPLE BY sipHash64(d) SETTINGS index_granularity = 16")
 
-        source.query("INSERT INTO trivial SELECT * FROM system.numbers LIMIT 1002", settings={"insert_distributed_sync": 1})
+        source.query("INSERT INTO default.trivial SELECT * FROM system.numbers LIMIT 1002", settings={"insert_distributed_sync": 1})
+        print(source.query("select count() from default.trivial", secure=True))
 
 
     def check(self):
         source = cluster.instances['s0_0_0']
         destination = cluster.instances['s1_0_0']
+
+
+        print(source.query("SHOW TABLES"))
 
         assert TSV(source.query("SELECT count() FROM trivial")) == TSV("1002\n")
         assert TSV(destination.query("SELECT count() FROM trivial")) == TSV("1002\n")
@@ -126,6 +125,7 @@ def execute_task(task, cmd_options):
     try:
         task.check()
     finally:
+        pass
         zk.delete(zk_task_path, recursive=True)
 
 
@@ -135,8 +135,7 @@ def execute_task(task, cmd_options):
 @pytest.mark.parametrize(
     ('use_sample_offset'),
     [
-        False,
-        True
+        False
     ]
 )
 
