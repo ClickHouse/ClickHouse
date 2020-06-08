@@ -23,6 +23,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
+#include <Interpreters/AnyInputOptimize.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -440,6 +441,16 @@ void optimizeArithmeticOperationsInAgr(ASTPtr & query, bool optimize_arithmetic_
     }
 }
 
+void optimizeAnyInput(ASTPtr & query, bool optimize_any_input)
+{
+    if (optimize_any_input)
+    {
+        /// Removing arithmetic operations from functions
+        AnyInputVisitor::Data data = {};
+        AnyInputVisitor(data).visit(query);
+    }
+}
+
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
@@ -821,6 +832,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         /// Move arithmetic operations out of aggregation functions
         optimizeArithmeticOperationsInAgr(query, settings.optimize_arithmetic_operations_in_aggregate_functions);
+
+        ///Move all operations out of any function
+        optimizeAnyInput(query, settings.optimize_any_input);
 
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
