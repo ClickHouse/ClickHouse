@@ -46,9 +46,6 @@ KeyDescription KeyDescription::getKeyFromAST(const ASTPtr & definition_ast, cons
     if (additional_key_expression)
         result.expression_list_ast->children.push_back(additional_key_expression);
 
-    if (result.expression_list_ast->children.empty())
-        return result;
-
     const auto & children = result.expression_list_ast->children;
     for (const auto & child : children)
         result.column_names.emplace_back(child->getColumnName());
@@ -56,8 +53,10 @@ KeyDescription KeyDescription::getKeyFromAST(const ASTPtr & definition_ast, cons
     {
         auto expr = result.expression_list_ast->clone();
         auto syntax_result = SyntaxAnalyzer(context).analyze(expr, columns.getAllPhysical());
-        result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(true);
-        result.sample_block = result.expression->getSampleBlock();
+        /// In expression we also need to store source columns
+        result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
+        /// In sample block we use just key columns
+        result.sample_block = ExpressionAnalyzer(expr, syntax_result, context).getActions(true)->getSampleBlock();
     }
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
