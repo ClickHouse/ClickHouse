@@ -160,7 +160,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     bool attach,
     const StorageID & table_id_,
     const String & relative_data_path_,
-    const StorageInMemoryMetadata & metadata,
+    const StorageInMemoryMetadata & metadata_,
     Context & context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
@@ -168,7 +168,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     bool has_force_restore_data_flag)
     : MergeTreeData(table_id_,
                     relative_data_path_,
-                    metadata,
+                    metadata_,
                     context_,
                     date_column_name,
                     merging_params_,
@@ -472,9 +472,9 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
 
 void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    if (new_columns != metadata.columns)
-        metadata.columns = new_columns;
+    StorageInMemoryMetadata current_metadata = getInMemoryMetadata();
+    if (new_columns != current_metadata.columns)
+        current_metadata.columns = new_columns;
 
     if (!metadata_diff.empty())
     {
@@ -492,37 +492,37 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
                 tuple->arguments->children = new_sorting_key_expr_list->children;
                 order_by_ast = tuple;
             }
-            metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, global_context);
+            current_metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, current_metadata.columns, global_context);
 
             if (!isPrimaryKeyDefined())
             {
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
-                metadata.primary_key = getSortingKey();
+                current_metadata.primary_key = getSortingKey();
             }
         }
 
         if (metadata_diff.skip_indices_changed)
-            metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, global_context);
+            current_metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, global_context);
 
         if (metadata_diff.constraints_changed)
-            metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
+            current_metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
 
         if (metadata_diff.ttl_table_changed)
         {
             ParserTTLExpressionList parser;
             auto ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-            metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl_for_table_ast, metadata.columns, global_context, metadata.primary_key);
+            current_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl_for_table_ast, current_metadata.columns, global_context, current_metadata.primary_key);
         }
     }
 
     auto table_id = getStorageID();
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id, current_metadata);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    setProperties(metadata);
-    setTTLExpressions(new_columns, metadata.table_ttl);
+    setProperties(current_metadata);
+    setTTLExpressions(new_columns, current_metadata.table_ttl);
 }
 
 
@@ -3294,13 +3294,13 @@ void StorageReplicatedMergeTree::alter(
                 table_lock_holder, query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
-        StorageInMemoryMetadata metadata = getInMemoryMetadata();
-        params.apply(metadata, query_context);
+        StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
+        params.apply(future_metadata, query_context);
 
 
-        changeSettings(metadata.settings_changes, table_lock_holder);
+        changeSettings(future_metadata.settings_changes, table_lock_holder);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
         return;
     }
 
