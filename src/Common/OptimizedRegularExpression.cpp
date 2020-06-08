@@ -3,7 +3,7 @@
 #include <Common/OptimizedRegularExpression.h>
 
 #define MIN_LENGTH_FOR_STRSTR 3
-#define MAX_SUBPATTERNS 5
+#define MAX_SUBPATTERNS 1024
 
 
 namespace DB
@@ -454,7 +454,7 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
                 return 0;
         }
 
-        DB::PODArrayWithStackMemory<StringPieceType, sizeof(StringPieceType) * (MAX_SUBPATTERNS + 1)> pieces(limit);
+        DB::PODArrayWithStackMemory<StringPieceType, 128> pieces(limit);
 
         if (!re2->Match(StringPieceType(subject, subject_size), 0, subject_size, RegexType::UNANCHORED, pieces.data(), pieces.size()))
             return 0;

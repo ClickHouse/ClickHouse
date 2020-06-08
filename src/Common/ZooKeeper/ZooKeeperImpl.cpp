@@ -15,8 +15,8 @@
 #    include <Common/config.h>
 #endif
 
-#if USE_POCO_NETSSL
-#include <Poco/Net/SecureStreamSocket.h>
+#if USE_SSL
+#    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
 #include <array>
@@ -898,7 +898,7 @@ void ZooKeeper::connect(
                 /// Reset the state of previous attempt.
                 if (node.secure)
                 {
-#if USE_POCO_NETSSL
+#if USE_SSL
                     socket = Poco::Net::SecureStreamSocket();
 #else
                     throw Exception{"Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};

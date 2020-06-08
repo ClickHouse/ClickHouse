@@ -288,8 +288,6 @@ private:
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
 
-    std::atomic_bool need_shutdown{false};
-
     template <class Func>
     void foreachCommittedParts(const Func & func) const;
 
@@ -486,7 +484,7 @@ private:
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
       */
-    void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
+    bool waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /// Choose leader replica, send requst to it and wait.
     void sendRequestToLeaderReplica(const ASTPtr & query, const Context & query_context);

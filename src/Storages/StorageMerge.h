@@ -61,7 +61,7 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
-    DatabaseTablesIteratorPtr getDatabaseIterator() const;
+    DatabaseTablesIteratorPtr getDatabaseIterator(const Context & context) const;
 
     NamesAndTypesList getVirtuals() const override;
 

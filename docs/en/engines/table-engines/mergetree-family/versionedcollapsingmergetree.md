@@ -62,7 +62,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE [=] VersionedCollapsingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, sign, version)
+) ENGINE [=] VersionedCollapsingMergeTree(date-column [, samp#table_engines_versionedcollapsingmergetreeling_expression], (primary, key), index_granularity, sign, version)
 ```
 
 All of the parameters except `sign` and `version` have the same meaning as in `MergeTree`.
@@ -77,7 +77,7 @@ All of the parameters except `sign` and `version` have the same meaning as in `M
 
 </details>
 
-## Collapsing {#table_engines-versionedcollapsingmergetree}
+## Collapsing {#table_engines_versionedcollapsingmergetree}
 
 ### Data {#data}
 

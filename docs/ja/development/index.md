@@ -1,10 +1,10 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
-toc_folder_title: Development
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: "\u958B\u767A"
 toc_hidden: true
 toc_priority: 58
-toc_title: "\u96A0\u3055\u308C\u305F"
+toc_title: "\u96A0\u3057"
 ---
 
 # ClickHouse開発 {#clickhouse-development}

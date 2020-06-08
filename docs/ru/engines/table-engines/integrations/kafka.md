@@ -123,7 +123,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-Для улучшения производительности полученные сообщения группируются в блоки размера [max\_insert\_block\_size](../../../operations/settings/settings.md#settings-max_insert_block_size). Если блок не удалось сформировать за [stream\_flush\_interval\_ms](../../../operations/settings/settings.md) миллисекунд, то данные будут сброшены в таблицу независимо от полноты блока.
+Для улучшения производительности полученные сообщения группируются в блоки размера [max\_insert\_block\_size](../../../operations/settings/settings.md#settings-max_insert_block_size). Если блок не удалось сформировать за [stream\_flush\_interval\_ms](../../../operations/settings/settings.md#stream-flush-interval-ms) миллисекунд, то данные будут сброшены в таблицу независимо от полноты блока.
 
 Чтобы остановить получение данных топика или изменить логику преобразования, отсоедините материализованное представление:
 
@@ -165,5 +165,6 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 **Смотрите также**
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
+-   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/kafka/) <!--hide-->

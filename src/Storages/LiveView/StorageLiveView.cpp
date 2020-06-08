@@ -19,7 +19,7 @@ limitations under the License. */
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/BlocksBlockInputStream.h>
+#include <DataStreams/BlocksSource.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/copyData.h>
@@ -111,7 +111,7 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(const Context & conte
 
     InterpreterSelectQuery interpreter(mergeable_query->clone(), context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
 
-    auto view_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(interpreter.execute().in);
+    auto view_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(interpreter.execute().getInputStream());
 
     while (Block this_block = view_mergeable_stream->read())
         base_blocks->push_back(this_block);
@@ -148,7 +148,7 @@ BlockInputStreamPtr StorageLiveView::completeQuery(Pipes pipes)
     block_context->addExternalTable(getBlocksTableName(), TemporaryTableHolder(global_context, creator));
 
     InterpreterSelectQuery select(getInnerBlocksQuery(), *block_context, StoragePtr(), SelectQueryOptions(QueryProcessingStage::Complete));
-    BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+    BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().getInputStream());
 
     /// Squashing is needed here because the view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
@@ -218,7 +218,7 @@ void StorageLiveView::writeIntoLiveView(
             QueryProcessingStage::WithMergeableState);
 
         auto data_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
-            select_block.execute().in);
+            select_block.execute().getInputStream());
 
         while (Block this_block = data_mergeable_stream->read())
             new_mergeable_blocks->push_back(this_block);
@@ -401,7 +401,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
 
     if (drop_table)
     {
-        if (DatabaseCatalog::instance().tryGetTable(table_id))
+        if (DatabaseCatalog::instance().tryGetTable(table_id, storage->global_context))
         {
             try
             {
@@ -467,6 +467,10 @@ void StorageLiveView::shutdown()
     bool expected = false;
     if (!shutdown_called.compare_exchange_strong(expected, true))
         return;
+
+    /// WATCH queries should be stopped after setting shutdown_called to true.
+    /// Otherwise livelock is possible for LiveView table in Atomic database:
+    /// WATCH query will wait for table to be dropped and DatabaseCatalog will wait for queries to finish
 
     {
         std::lock_guard no_users_thread_lock(no_users_thread_mutex);

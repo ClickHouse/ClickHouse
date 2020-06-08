@@ -840,7 +840,7 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayReverse(arr) {#array_functions-arrayreverse}
+## arrayReverse(arr) {#arrayreverse}
 
 Возвращает массив того же размера, что и исходный массив, содержащий элементы в обратном порядке.
 
@@ -858,7 +858,7 @@ SELECT arrayReverse([1, 2, 3])
 
 ## reverse(arr) {#array-functions-reverse}
 
-Синоним для [«arrayReverse»](#array_functions-arrayreverse)
+Синоним для [«arrayReverse»](#arrayreverse)
 
 ## arrayFlatten {#arrayflatten}
 

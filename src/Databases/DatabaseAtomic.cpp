@@ -1,12 +1,15 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Poco/File.h>
+#include <Poco/Path.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
 #include <Parsers/formatAST.h>
 #include <Common/renameat2.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Interpreters/Context.h>
+#include <filesystem>
 
 
 namespace DB
@@ -227,7 +230,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 
 void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path)
 {
-    SCOPE_EXIT({ Poco::File(table_metadata_tmp_path).remove(); });
+    SCOPE_EXIT({ std::error_code code; std::filesystem::remove(table_metadata_tmp_path, code); });
 
     std::unique_lock lock{mutex};
     auto actual_table_id = getTableUnlocked(table_id.table_name, lock)->getStorageID();
@@ -285,15 +288,15 @@ void DatabaseAtomic::assertCanBeDetached(bool cleenup)
                         "because some tables are still in use. Retry later.", ErrorCodes::DATABASE_NOT_EMPTY);
 }
 
-DatabaseTablesIteratorPtr DatabaseAtomic::getTablesIterator(const IDatabase::FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseAtomic::getTablesIterator(const Context & context, const IDatabase::FilterByNameFunction & filter_by_table_name)
 {
-    auto base_iter = DatabaseWithOwnTablesBase::getTablesIterator(filter_by_table_name);
+    auto base_iter = DatabaseWithOwnTablesBase::getTablesIterator(context, filter_by_table_name);
     return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
 }
 
 UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
 {
-    if (auto table = tryGetTable(table_name))
+    if (auto table = tryGetTable(table_name, global_context))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
 }
@@ -323,7 +326,7 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     try
     {
         String link = path_to_table_symlinks + escapeForFileName(table_name);
-        String data = global_context.getPath() + actual_data_path;
+        String data = Poco::Path(global_context.getPath()).makeAbsolute().toString() + actual_data_path;
         Poco::File{data}.linkTo(link, Poco::File::LINK_SYMBOLIC);
     }
     catch (...)

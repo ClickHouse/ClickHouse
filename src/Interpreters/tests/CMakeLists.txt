@@ -1,15 +1,3 @@
-add_executable (expression expression.cpp)
-target_link_libraries (expression PRIVATE dbms clickhouse_parsers)
-
-add_executable (create_query create_query.cpp)
-target_link_libraries (create_query PRIVATE dbms clickhouse_parsers)
-
-add_executable (select_query select_query.cpp)
-target_link_libraries (select_query PRIVATE clickhouse_storages_system dbms clickhouse_common_io)
-
-add_executable (aggregate aggregate.cpp)
-target_link_libraries (aggregate PRIVATE dbms)
-
 add_executable (hash_map hash_map.cpp)
 target_include_directories (hash_map SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 target_link_libraries (hash_map PRIVATE dbms)
@@ -50,10 +38,6 @@ target_link_libraries (two_level_hash_map PRIVATE dbms)
 add_executable (in_join_subqueries_preprocessor in_join_subqueries_preprocessor.cpp)
 target_link_libraries (in_join_subqueries_preprocessor PRIVATE dbms clickhouse_parsers)
 add_check(in_join_subqueries_preprocessor)
-
-add_executable (expression_analyzer expression_analyzer.cpp)
-target_link_libraries (expression_analyzer PRIVATE dbms clickhouse_storages_system clickhouse_parsers clickhouse_common_io)
-add_check(expression_analyzer)
 
 add_executable (users users.cpp)
 target_link_libraries (users PRIVATE dbms clickhouse_common_config)

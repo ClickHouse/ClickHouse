@@ -149,7 +149,7 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
-        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table})->getStorageID();
+        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table}, global_context)->getStorageID();
     }
 
     if (!select_table_id.empty())
@@ -158,7 +158,7 @@ StorageMaterializedView::StorageMaterializedView(
 
 StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
 {
-    StorageInMemoryMetadata result(getColumns(), getIndices(), getConstraints());
+    StorageInMemoryMetadata result(getColumns(), getSecondaryIndices(), getConstraints());
     result.select = getSelectQuery();
     return result;
 }
@@ -180,8 +180,8 @@ Pipes StorageMaterializedView::read(
     auto lock = storage->lockStructureForShare(
             false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-    if (query_info.order_by_optimizer)
-        query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
+    if (query_info.order_optimizer)
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage);
 
     Pipes pipes = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 
@@ -204,7 +204,7 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
 
 static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id)
 {
-    if (DatabaseCatalog::instance().tryGetTable(target_table_id))
+    if (DatabaseCatalog::instance().tryGetTable(target_table_id, global_context))
     {
         /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
@@ -257,7 +257,7 @@ void StorageMaterializedView::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata);
+    params.apply(metadata, context);
 
     /// start modify query
     if (context.getSettingsRef().allow_experimental_alter_materialized_view_structure)
@@ -362,12 +362,12 @@ void StorageMaterializedView::shutdown()
 
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
-    return DatabaseCatalog::instance().getTable(target_table_id);
+    return DatabaseCatalog::instance().getTable(target_table_id, global_context);
 }
 
 StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
-    return DatabaseCatalog::instance().tryGetTable(target_table_id);
+    return DatabaseCatalog::instance().tryGetTable(target_table_id, global_context);
 }
 
 Strings StorageMaterializedView::getDataPaths() const

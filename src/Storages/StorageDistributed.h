@@ -3,6 +3,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -17,10 +18,9 @@ namespace DB
 {
 
 class Context;
-class StorageDistributedDirectoryMonitor;
 
-class Volume;
-using VolumePtr = std::shared_ptr<Volume>;
+class VolumeJBOD;
+using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -107,6 +107,9 @@ public:
     void createDirectoryMonitors(const std::string & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
     StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & disk, const std::string & name);
+    /// Return list of metrics for all created monitors
+    /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
+    std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
 
     void flushClusterNodesAllData();
 
@@ -127,8 +130,8 @@ public:
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    Context global_context;
-    Logger * log = &Logger::get("StorageDistributed");
+    std::unique_ptr<Context> global_context;
+    Poco::Logger * log;
 
     /// Used to implement TableFunctionRemote.
     std::shared_ptr<Cluster> owned_cluster;
@@ -176,18 +179,18 @@ protected:
     String storage_policy;
     String relative_data_path;
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
-    VolumePtr volume;
+    VolumeJBODPtr volume;
 
     struct ClusterNodeData
     {
         std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
-        ConnectionPoolPtr conneciton_pool;
+        ConnectionPoolPtr connection_pool;
 
         void flushAllData() const;
         void shutdownAndDropAllData() const;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
-    std::mutex cluster_nodes_mutex;
+    mutable std::mutex cluster_nodes_mutex;
 
 };
 

@@ -5,12 +5,17 @@ PEERDIR(
 )
 
 SRCS(
+    createVolume.cpp
     DiskFactory.cpp
     DiskLocal.cpp
     DiskMemory.cpp
-    DiskSpaceMonitor.cpp
+    DiskSelector.cpp
     IDisk.cpp
+    IVolume.cpp
     registerDisks.cpp
+    SingleDiskVolume.cpp
+    StoragePolicy.cpp
+    VolumeJBOD.cpp
 )
 
 END()

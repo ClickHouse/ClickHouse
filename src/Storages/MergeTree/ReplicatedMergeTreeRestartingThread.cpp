@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
 
@@ -41,7 +42,7 @@ static String generateActiveNodeIdentifier()
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeRestartingThread)")
-    , log(&Logger::get(log_name))
+    , log(&Poco::Logger::get(log_name))
     , active_node_identifier(generateActiveNodeIdentifier())
 {
     const auto storage_settings = storage.getSettings();
@@ -132,7 +133,7 @@ void ReplicatedMergeTreeRestartingThread::run()
             storage.getReplicaDelays(absolute_delay, relative_delay);
 
             if (absolute_delay)
-                LOG_TRACE(log, "Absolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".");
+                LOG_TRACE(log, "Absolute delay: {}. Relative delay: {}.", absolute_delay, relative_delay);
 
             prev_time_of_check_delay = current_time;
 
@@ -140,8 +141,7 @@ void ReplicatedMergeTreeRestartingThread::run()
             if (storage.is_leader
                 && relative_delay > static_cast<time_t>(storage_settings->min_relative_delay_to_yield_leadership))
             {
-                LOG_INFO(log, "Relative replica delay (" << relative_delay << " seconds) is bigger than threshold ("
-                    << storage_settings->min_relative_delay_to_yield_leadership << "). Will yield leadership.");
+                LOG_INFO(log, "Relative replica delay ({} seconds) is bigger than threshold ({}). Will yield leadership.", relative_delay, storage_settings->min_relative_delay_to_yield_leadership);
 
                 ProfileEvents::increment(ProfileEvents::ReplicaYieldLeadership);
 
@@ -214,7 +214,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         }
         catch (const Coordination::Exception & e)
         {
-            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ". " << DB::getCurrentExceptionMessage(true));
+            LOG_ERROR(log, "Couldn't start replication: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
         }
         catch (const Exception & e)
@@ -222,7 +222,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
             if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
                 throw;
 
-            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ". " << DB::getCurrentExceptionMessage(true));
+            LOG_ERROR(log, "Couldn't start replication: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
         }
     }
@@ -247,7 +247,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
 
         if (part)
         {
-            LOG_DEBUG(log, "Found part " << part_name << " with failed quorum. Moving to detached. This shouldn't happen often.");
+            LOG_DEBUG(log, "Found part {} with failed quorum. Moving to detached. This shouldn't happen often.", part_name);
             storage.forgetPartAndMoveToDetached(part, "noquorum");
             storage.queue.removeFromVirtualParts(part->info);
         }
@@ -268,8 +268,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
         if (!quorum_entry.replicas.count(storage.replica_name)
             && zookeeper->exists(storage.replica_path + "/parts/" + quorum_entry.part_name))
         {
-            LOG_WARNING(log, "We have part " << quorum_entry.part_name
-                << " but we is not in quorum. Updating quorum. This shouldn't happen often.");
+            LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", quorum_entry.part_name);
             storage.updateQuorum(quorum_entry.part_name);
         }
     }

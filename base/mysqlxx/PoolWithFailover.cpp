@@ -10,46 +10,47 @@ static bool startsWith(const std::string & s, const char * prefix)
 
 using namespace mysqlxx;
 
-PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & config,
-                                   const std::string & config_name, const unsigned default_connections,
-                                   const unsigned max_connections, const size_t max_tries)
-    : max_tries(max_tries)
+PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & config_,
+                                   const std::string & config_name_, const unsigned default_connections_,
+                                   const unsigned max_connections_, const size_t max_tries_)
+    : max_tries(max_tries_)
 {
-    shareable = config.getBool(config_name + ".share_connection", false);
-    if (config.has(config_name + ".replica"))
+    shareable = config_.getBool(config_name_ + ".share_connection", false);
+    if (config_.has(config_name_ + ".replica"))
     {
         Poco::Util::AbstractConfiguration::Keys replica_keys;
-        config.keys(config_name, replica_keys);
+        config_.keys(config_name_, replica_keys);
         for (const auto & replica_config_key : replica_keys)
         {
             /// There could be another elements in the same level in configuration file, like "password", "port"...
             if (startsWith(replica_config_key, "replica"))
             {
-                std::string replica_name = config_name + "." + replica_config_key;
+                std::string replica_name = config_name_ + "." + replica_config_key;
 
-                int priority = config.getInt(replica_name + ".priority", 0);
+                int priority = config_.getInt(replica_name + ".priority", 0);
 
                 replicas_by_priority[priority].emplace_back(
-                    std::make_shared<Pool>(config, replica_name, default_connections, max_connections, config_name.c_str()));
+                    std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections_, config_name_.c_str()));
             }
         }
     }
     else
     {
         replicas_by_priority[0].emplace_back(
-            std::make_shared<Pool>(config, config_name, default_connections, max_connections));
+            std::make_shared<Pool>(config_, config_name_, default_connections_, max_connections_));
     }
 }
 
-PoolWithFailover::PoolWithFailover(const std::string & config_name, const unsigned default_connections,
-    const unsigned max_connections, const size_t max_tries)
+PoolWithFailover::PoolWithFailover(const std::string & config_name_, const unsigned default_connections_,
+    const unsigned max_connections_, const size_t max_tries_)
     : PoolWithFailover{
-        Poco::Util::Application::instance().config(), config_name,
-        default_connections, max_connections, max_tries}
-{}
+        Poco::Util::Application::instance().config(), config_name_,
+        default_connections_, max_connections_, max_tries_}
+{
+}
 
 PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
-    : max_tries{other.max_tries}, config_name{other.config_name}, shareable{other.shareable}
+    : max_tries{other.max_tries}, shareable{other.shareable}
 {
     if (shareable)
     {

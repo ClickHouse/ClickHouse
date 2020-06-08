@@ -197,13 +197,24 @@ Debug version of `jemalloc` is used for debug build.
 
 ## Fuzzing {#fuzzing}
 
-We use simple fuzz test to generate random SQL queries and to check that the server doesn’t die. Fuzz testing is performed with Address sanitizer. You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
+ClickHouse fuzzing is implemented both using [libFuzzer](https://llvm.org/docs/LibFuzzer.html) and random SQL queries.
+All the fuzz testing should be performed with sanitizers (Address and Undefined).
 
-As of December 2018, we still don’t use isolated fuzz testing of library code.
+LibFuzzer is used for isolated fuzz testing of library code. Fuzzers are implemented as part of test code and have "\_fuzzer" name postfixes.
+Fuzzer example can be found at `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
+We encourage you to write fuzz tests for every functionality that handles user input.
+
+Fuzzers are not built by default. To build fuzzers both `-DENABLE_FUZZING=1` and `-DENABLE_TESTS=1` options should be set.
+We recommend to disable Jemalloc while building fuzzers. Configuration used to integrate ClickHouse fuzzing to
+Google OSS-Fuzz can be found at `docker/fuzz`.
+
+We also use simple fuzz test to generate random SQL queries and to check that the server doesn’t die executing them.
+You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
+
 
 ## Security Audit {#security-audit}
 
-People from Yandex Cloud department do some basic overview of ClickHouse capabilities from the security standpoint.
+People from Yandex Security Team do some basic overview of ClickHouse capabilities from the security standpoint.
 
 ## Static Analyzers {#static-analyzers}
 

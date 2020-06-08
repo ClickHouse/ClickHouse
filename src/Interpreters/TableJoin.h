@@ -24,8 +24,8 @@ class DictionaryReader;
 
 struct Settings;
 
-class Volume;
-using VolumePtr = std::shared_ptr<Volume>;
+class VolumeJBOD;
+using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
 class TableJoin
 {
@@ -70,11 +70,11 @@ class TableJoin
     /// Original name -> name. Only ranamed columns.
     std::unordered_map<String, String> renames;
 
-    VolumePtr tmp_volume;
+    VolumeJBODPtr tmp_volume;
 
 public:
     TableJoin() = default;
-    TableJoin(const Settings &, VolumePtr tmp_volume);
+    TableJoin(const Settings &, VolumeJBODPtr tmp_volume);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
@@ -96,7 +96,7 @@ public:
     ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(ASTTableJoin::Strictness, ASTTableJoin::Kind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
-    VolumePtr getTemporaryVolume() { return tmp_volume; }
+    VolumeJBODPtr getTemporaryVolume() { return tmp_volume; }
     bool allowMergeJoin() const;
     bool allowDictJoin(const String & dict_key, const Block & sample_block, Names &, NamesAndTypesList &) const;
     bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
@@ -112,6 +112,7 @@ public:
     const String & temporaryFilesCodec() const { return temporary_files_codec; }
     bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
 
+    void resetCollected();
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
