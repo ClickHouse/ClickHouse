@@ -1390,9 +1390,12 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         create_query_push_ast->as<ASTCreateQuery &>().if_not_exists = true;
         String query = queryToString(create_query_push_ast);
 
-        LOG_DEBUG(log, "Create destination tables. Query: {}", query);
-        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, PoolMode::GET_MANY);
-        LOG_DEBUG(log, "Destination tables {} have been created on {} shards of {}", getQuotedTable(task_table.table_push), shards, task_table.cluster_push->getShardCount());
+        LOG_DEBUG(log, "Create destination tables. Query: " << query);
+        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query,
+                                              task_cluster->settings_push,
+                                              PoolMode::GET_MANY);
+        LOG_DEBUG(log, "Destination tables " << getQuotedTable(task_table.table_push)
+                        << " have been created on " << shards << " shards of " << task_table.cluster_push->getShardCount());
     }
 
     /// Do the copying
@@ -1513,9 +1516,12 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         create_query_push_ast->as<ASTCreateQuery &>().if_not_exists = true;
         String query = queryToString(create_query_push_ast);
 
-        LOG_DEBUG(log, "Create destination tables. Query: {}", query);
-        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, PoolMode::GET_MANY);
-        LOG_DEBUG(log, "Destination tables {} have been created on {} shards of {}", getQuotedTable(task_table.table_push), shards, task_table.cluster_push->getShardCount());
+        LOG_DEBUG(log, "Create destination tables. Query: " << query);
+        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query,
+                                              task_cluster->settings_push,
+                                              PoolMode::GET_MANY);
+        LOG_DEBUG(log, "Destination tables " << getQuotedTable(task_table.table_push)
+                                             << " have been created on " << shards << " shards of " << task_table.cluster_push->getShardCount());
     }
     catch (...)
     {
@@ -1831,8 +1837,6 @@ UInt64 ClusterCopier::executeQueryOnCluster(
         ClusterExecutionMode execution_mode,
         UInt64 max_successful_executions_per_shard) const
 {
-    Settings current_settings = settings ? *settings : task_cluster->settings_common;
-
     auto num_shards = cluster->getShardsInfo().size();
     std::vector<UInt64> per_shard_num_successful_replicas(num_shards, 0);
 
