@@ -524,7 +524,6 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     Field & out_value,
     DataTypePtr & out_type)
 {
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "KEY EXPR EXMPTY: {}", (key_expr == nullptr));
     String expr_name = node->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
