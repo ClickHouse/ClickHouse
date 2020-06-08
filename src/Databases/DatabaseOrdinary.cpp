@@ -234,8 +234,7 @@ void DatabaseOrdinary::alterTable(
     String statement;
 
     {
-        char in_buf[METADATA_FILE_BUFFER_SIZE];
-        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
+        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE);
         readStringUntilEOF(statement, in);
     }
 
