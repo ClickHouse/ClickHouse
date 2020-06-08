@@ -1001,7 +1001,7 @@ void Aggregator::convertToBlockImpl(
 
 
 template <typename Mapped>
-void ALWAYS_INLINE Aggregator::insertAggregatesIntoColumns(
+inline void Aggregator::insertAggregatesIntoColumns(
     Mapped & mapped,
     MutableColumns & final_aggregate_columns) const
 {
