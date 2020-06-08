@@ -235,7 +235,7 @@ if (ENABLE_HYPERSCAN)
         target_link_libraries (hyperscan PRIVATE boost::headers_only)
     else ()
         find_library (LIBRARY_HYPERSCAN hs)
-        find_path (INCLUDE_HYPERSCAN NAMES hs/hs.h hs.h)
+        find_path (INCLUDE_HYPERSCAN NAMES hs.h HINTS /usr/include/hs) # Ubuntu puts headers in this folder
 
         add_library (hyperscan UNKNOWN IMPORTED GLOBAL)
         set_target_properties (hyperscan PROPERTIES IMPORTED_LOCATION ${LIBRARY_HYPERSCAN})
