@@ -506,6 +506,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->primary_key)
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
+        else
+        {
+            metadata.primary_key = metadata.sorting_key;
+            metadata.primary_key.definition_ast = nullptr;
+        }
 
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.context);
@@ -520,6 +525,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, args.columns, args.context));
+
+        if (args.query.columns_list && args.query.columns_list->constraints)
+            for (auto & constraint : args.query.columns_list->constraints->children)
+                metadata.constraints.constraints.push_back(constraint);
 
         storage_settings->loadFromQuery(*args.storage_def);
 
