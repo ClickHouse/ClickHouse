@@ -116,6 +116,8 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
             << " UNION ALL "
             "SELECT DISTINCT name FROM system.dictionaries LIMIT " << limit_str
             << " UNION ALL "
+            "SELECT DISTINCT name FROM system.users LIMIT " << limit_str
+            << " UNION ALL "
             "SELECT DISTINCT name FROM system.columns LIMIT " << limit_str;
     }
 
