@@ -17,7 +17,7 @@ namespace
 
 template <typename T>
 std::optional<size_t> tryChooseTable(const ASTIdentifier & identifier, const std::vector<T> & tables,
-                                     bool allow_ambiguous, bool column_match = false [[maybe_unused]])
+                                     bool allow_ambiguous, bool column_match [[maybe_unused]] = false)
 {
     using ColumnMatch = IdentifierSemantic::ColumnMatch;
 
