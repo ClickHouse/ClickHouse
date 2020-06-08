@@ -102,7 +102,7 @@ echo "Finishing alters"
 
 # This alter will finish all previous, but replica 1 maybe still not up-to-date.
 # If query will throw something, than we will sleep 1 and retry. If timeout
-# happened we will silentrly go out of loop and probably fail tests in the
+# happened we will silently go out of loop and probably fail tests in the
 # following for loop.
 #
 # 120 seconds is more than enough, but in rare cases for slow builds (debug,
