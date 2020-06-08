@@ -4,7 +4,7 @@
         INSERT INTO polygons
         WITH number + 1 AS radius
         SELECT [arrayMap(x -> (cos(x / 90. * pi()) * radius, sin(x / 90. * pi()) * radius), range(180))]
-        FROM numbers(100000)
+        FROM numbers(1000000)
     </create_query>
 
     <query>SELECT pointInPolygon((100, 100), polygon) FROM polygons</query>

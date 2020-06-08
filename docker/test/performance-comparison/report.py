@@ -207,7 +207,8 @@ if args.report == 'main':
             'p&nbsp;<&nbsp;0.001 threshold',                   # 3
             # Failed                                           # 4
             'Test',                                            # 5
-            'Query',                                           # 6
+            '#',                                               # 6
+            'Query',                                           # 7
             ]
 
         print(tableHeader(columns))
@@ -248,7 +249,8 @@ if args.report == 'main':
             'p&nbsp;<&nbsp;0.001 threshold', #3
             # Failed #4
             'Test', #5
-            'Query' #6
+            '#',    #6
+            'Query' #7
         ]
 
         print(tableStart('Unstable queries'))
@@ -391,7 +393,8 @@ elif args.report == 'all-queries':
             'Times speedup / slowdown',                 #5
             'p&nbsp;<&nbsp;0.001 threshold',          #6
             'Test',                                   #7
-            'Query',                                  #8
+            '#',                                      #8
+            'Query',                                  #9
             ]
 
         print(tableStart('All query times'))
