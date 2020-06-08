@@ -55,7 +55,7 @@ public:
         hash_set = std::make_shared<BasicBloomFilter>(filter_length, hashes_count);
         // hash_set = std::make_shared<ChaoticFilter>(filter_length);
 
-        std::cerr << "filter_length: " << filter_length << " ," << "hashes_count: " << hashes_count << std::endl;
+        // std::cerr << "filter_length: " << filter_length << " ," << "hashes_count: " << hashes_count << std::endl;
         for (size_t i = 0; i < columns_count; ++i)
         {
             data_types.emplace_back(header.safeGetByPosition(i).type);
@@ -65,7 +65,7 @@ public:
     bool insertFromBlock(const Block & block) override
     {
         std::unique_lock lock(rwlock);
-        // // // std::cerr << "HERE in insertFromBlock\n";
+        // std::cerr << "HERE in insertFromBlock\n";
 
         const auto row_hashes = calculate_hashes(block);
 
@@ -82,7 +82,7 @@ public:
     ColumnPtr execute(const Block & block, bool negative) const override
     {
         std::shared_lock lock(rwlock);
-        // // // std::cerr << "HERE in execute\n";
+        // std::cerr << "HERE in execute\n";
 
         const auto row_hashes = calculate_hashes(block);
 
@@ -109,7 +109,7 @@ public:
     void finishInsert() override
     {
         std::shared_lock lock(rwlock);
-        // // // std::cerr << "HERE in finishInsert, size of hashset: " + std::to_string(hash_set->added_counts()) + "\n";
+        // std::cerr << "HERE in finishInsert, size of hashset: " + std::to_string(hash_set->added_counts()) + "\n";
         is_created = true;
     }
     bool isCreated() const override { return is_created; }
@@ -126,7 +126,7 @@ private:
     {
         ColumnUInt64::Container row_hashes(block.rows(), 0);
 
-        // // // std::cerr << "HERE in calculate_hashes, columns_count : " + std::to_string(columns_count) + "\n";
+        // std::cerr << "HERE in calculate_hashes, columns_count : " + std::to_string(columns_count) + "\n";
 
         for (size_t column_index = 0; column_index < columns_count; ++column_index)
         {

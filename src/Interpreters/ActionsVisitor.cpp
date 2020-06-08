@@ -352,7 +352,6 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
-    // // // std::cerr << "HERE in ::visit\n";
     CachedColumnName column_name;
     if (data.hasColumn(column_name.get(ast)))
         return;
@@ -381,23 +380,16 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     }
 
     SetPtr prepared_set;
-    // // // std::cerr << "HERE\n";
-    // std::stringstream ss;
-    // ast->dumpTree(ss);
-    // std::cerr << ss.str();
-    // std::cerr << "HERE2\n";
 
     if (functionIsInOrGlobalInOperator(node.name))
     {
         bool is_bloomfilter = node.name == "inBloomfilter";
-        // std::cerr << "HERE3\n";
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
 
         if (!data.no_makeset && (prepared_set = makeSet(node, data, data.no_subqueries, is_bloomfilter)))
         {
             /// Transform tuple or subquery into a set.
-            // std::cerr << "HERE4\n";
         }
         else
         {
@@ -447,7 +439,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     for (size_t arg = 0; arg < node.arguments->children.size(); ++arg)
     {
-        // // // std::cerr << "HERE arg: " << arg << std::endl;
         auto & child = node.arguments->children[arg];
 
         const auto * lambda = child->as<ASTFunction>();
@@ -544,8 +535,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (data.only_consts && !arguments_present)
         return;
 
-    // std::cerr << "HERE5\n";
-
     if (has_lambda_arguments && !data.only_consts)
     {
         function_builder->getLambdaArgumentTypes(argument_types);
@@ -601,11 +590,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
     }
 
-    // std::cerr << "HERE6\n";
-
     if (data.only_consts)
     {
-        // std::cerr << "HERE7\n";
         for (const auto & argument_name : argument_names)
         {
             if (!data.hasColumn(argument_name))
@@ -615,8 +601,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             }
         }
     }
-
-    // std::cerr << "HERE8\n";
 
     if (arguments_present)
     {

@@ -85,17 +85,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) override
     {
-        // // // std::cerr << "HERE in executeImpl of in.cpp\n";
-        std::cerr << "name: " << name << std::endl;
-        for (auto i : arguments)
-        {
-            std::cerr << i << " ";
-        }
-        std::cerr << std::endl;
-
         if constexpr (ignore_set)
         {
-            std::cerr << "ignore_set = true\n";
             block.getByPosition(result).column = ColumnUInt8::create(input_rows_count, 0u);
             return;
         }
