@@ -13,7 +13,7 @@ idna==2.9
 Jinja2==2.11.2
 jinja2-highlight==0.6.1
 jsmin==2.2.2
-livereload==2.6.1
+livereload==2.6.2
 Markdown==3.2.1
 MarkupSafe==1.1.1
 mkdocs==1.1.2
