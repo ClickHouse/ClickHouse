@@ -1,6 +1,4 @@
 <test>
-    <create_query>DROP TABLE IF EXISTS test</create_query>
-
     <create_query>
         CREATE TABLE test(
             t UInt64,
