@@ -21,7 +21,7 @@ endif ()
 option (WEVERYTHING "Enables -Weverything option with some exceptions. This is intended for exploration of new compiler warnings that may be found to be useful. Only makes sense for clang." ON)
 
 # Control maximum size of stack frames. It can be important if the code is run in fibers with small stack size.
-add_warning(frame-larger-than=32768)
+add_warning(frame-larger-than=16384)
 
 if (COMPILER_CLANG)
     add_warning(pedantic)
