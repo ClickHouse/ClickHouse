@@ -26,6 +26,7 @@ void registerFunctionCutFragment(FunctionFactory & factory);
 void registerFunctionCutQueryStringAndFragment(FunctionFactory & factory);
 void registerFunctionCutURLParameter(FunctionFactory & factory);
 void registerFunctionDecodeURLComponent(FunctionFactory & factory);
+void registerFunctionNetloc(FunctionFactory & factory);
 
 void registerFunctionsURL(FunctionFactory & factory)
 {
@@ -52,6 +53,7 @@ void registerFunctionsURL(FunctionFactory & factory)
     registerFunctionCutQueryStringAndFragment(factory);
     registerFunctionCutURLParameter(factory);
     registerFunctionDecodeURLComponent(factory);
+    registerFunctionNetloc(factory);
 }
 
 }

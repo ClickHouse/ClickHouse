@@ -8,6 +8,7 @@
 
 #include <Poco/File.h>
 #include <common/logger_useful.h>
+#include <common/errnoToString.h>
 #include <Common/ClickHouseRevision.h>
 #include <common/LocalDateTime.h>
 
