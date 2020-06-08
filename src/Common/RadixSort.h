@@ -358,7 +358,7 @@ private:
 
         /// The beginning of every i-1-th bucket. 0th element will be equal to 1st.
         /// Last element will point to array end.
-        Element * prev_buckets[HISTOGRAM_SIZE + 1];
+        std::unique_ptr<Element *[]> prev_buckets{new Element*[HISTOGRAM_SIZE + 1]};
         /// The beginning of every i-th bucket (the same array shifted by one).
         Element ** buckets = &prev_buckets[1];
 
@@ -375,7 +375,7 @@ private:
         ///  also it corresponds with the results from https://github.com/powturbo/TurboHist
 
         static constexpr size_t UNROLL_COUNT = 8;
-        CountType count[HISTOGRAM_SIZE * UNROLL_COUNT]{};
+        std::unique_ptr<CountType[]> count{new CountType[HISTOGRAM_SIZE * UNROLL_COUNT]{}};
         size_t unrolled_size = size / UNROLL_COUNT * UNROLL_COUNT;
 
         for (Element * elem = arr; elem < arr + unrolled_size; elem += UNROLL_COUNT)
