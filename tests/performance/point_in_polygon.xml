@@ -7,7 +7,7 @@
         FROM numbers(1000000)
     </create_query>
 
-    <query>SELECT pointInPolygon((100, 100), polygon) FROM polygons</query>
+    <query>SELECT pointInPolygon((100, 100), polygon) FROM polygons FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS polygons</drop_query>
 </test>
