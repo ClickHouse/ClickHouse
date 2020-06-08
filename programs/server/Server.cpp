@@ -60,6 +60,7 @@
 #include <Server/TCPHandlerFactory.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/NetworkDump.h>
 #include <Server/MySQLHandlerFactory.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -260,6 +261,8 @@ void checkForUsersNotInMainConfig(
 
 int Server::main(const std::vector<std::string> & /*args*/)
 {
+    NetworkDump::dumpToFile("network.dump");
+
     Poco::Logger * log = &logger();
     UseSSL use_ssl;
 
