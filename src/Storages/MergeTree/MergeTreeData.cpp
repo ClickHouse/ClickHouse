@@ -296,13 +296,9 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     /// Primary key not defined at all
     if (new_primary_key.definition_ast == nullptr)
     {
-        LOG_DEBUG(log, "PRIMARY KEY EMPTY, MAKING COPY");
         /// We copy sorting key, and restore definition_ast to empty value
         new_primary_key = metadata.sorting_key;
         new_primary_key.definition_ast = nullptr;
-        LOG_DEBUG(log, "NEW PK DEF NULLPTR: {}", new_primary_key.definition_ast == nullptr);
-        LOG_DEBUG(log, "NEW PK EXPR NULLPTR: {}", new_primary_key.expression == nullptr);
-        LOG_DEBUG(log, "NEW PK COLUMN NAMES SIZE: {}", new_primary_key.column_names.size());
     }
 
     size_t sorting_key_size = new_sorting_key.column_names.size();
@@ -399,6 +395,8 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
             indices_names.insert(index.name);
         }
     }
+
+    checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting");
 
     if (!only_check)
     {
