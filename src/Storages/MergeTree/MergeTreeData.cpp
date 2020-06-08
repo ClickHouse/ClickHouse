@@ -1865,7 +1865,7 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
             part->remove_time.store(remove_time, std::memory_order_relaxed);
 
         if (part->state != IMergeTreeDataPart::State::Outdated)
-            modifyPartState(part,IMergeTreeDataPart::State::Outdated);
+            modifyPartState(part, IMergeTreeDataPart::State::Outdated);
     }
 }
 
