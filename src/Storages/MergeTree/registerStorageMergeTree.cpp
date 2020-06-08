@@ -491,9 +491,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (is_extended_storage_def)
     {
+        ASTPtr partition_by_key;
         if (args.storage_def->partition_by)
-            metadata.partition_key = KeyDescription::getKeyFromAST(
-                args.storage_def->partition_by->ptr(), metadata.columns, args.context);
+            partition_by_key = args.storage_def->partition_by->ptr();
+
+        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, args.context);
 
         if (!args.storage_def->order_by)
             throw Exception("You must provide an ORDER BY expression in the table definition. "
