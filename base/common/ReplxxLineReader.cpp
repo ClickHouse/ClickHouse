@@ -19,8 +19,13 @@ void trim(String & s)
 }
 
 ReplxxLineReader::ReplxxLineReader(
-    const Suggest & suggest, const String & history_file_path_, bool multiline_, Patterns extenders_, Patterns delimiters_)
-    : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_))
+    const Suggest & suggest,
+    const String & history_file_path_,
+    bool multiline_,
+    Patterns extenders_,
+    Patterns delimiters_,
+    replxx::Replxx::highlighter_callback_t highlighter_)
+    : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_)), highlighter(std::move(highlighter_))
 {
     using namespace std::placeholders;
     using Replxx = replxx::Replxx;
@@ -59,6 +64,9 @@ ReplxxLineReader::ReplxxLineReader(
     rx.set_completion_callback(callback);
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
+
+    if (highlighter)
+        rx.set_highlighter_callback(highlighter);
 
     /// By default C-p/C-n binded to COMPLETE_NEXT/COMPLETE_PREV,
     /// bind C-p/C-n to history-previous/history-next like readline.
