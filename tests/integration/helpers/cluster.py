@@ -473,7 +473,7 @@ class ClickHouseCluster:
                 instance.client = Client(instance.ip_address, command=self.client_bin_path)
 
             self.is_up = True
-        
+
         except BaseException, e:
             print "Failed to start cluster: "
             print str(e)
@@ -505,6 +505,13 @@ class ClickHouseCluster:
         if sanitizer_assert_instance is not None:
             raise Exception("Sanitizer assert found in {} for instance {}".format(self.docker_logs_path, sanitizer_assert_instance))
 
+    def pause_container(self, instance_name):
+        subprocess_check_call(self.base_cmd + ['pause', instance_name])
+    #    subprocess_check_call(self.base_cmd + ['kill', '-s SIGSTOP', instance_name])
+
+    def unpause_container(self, instance_name):
+        subprocess_check_call(self.base_cmd + ['unpause', instance_name])
+    #    subprocess_check_call(self.base_cmd + ['kill', '-s SIGCONT', instance_name])
 
     def open_bash_shell(self, instance_name):
         os.system(' '.join(self.base_cmd + ['exec', instance_name, '/bin/bash']))
