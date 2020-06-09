@@ -2907,45 +2907,60 @@ void StorageReplicatedMergeTree::startup()
     if (is_readonly)
         return;
 
-    queue.initialize(
-        zookeeper_path, replica_path,
-        getStorageID().getFullTableName() + " (ReplicatedMergeTreeQueue)",
-        getDataParts());
-
-    data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(*this);
-    global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint);
-
-    /// In this thread replica will be activated.
-    restarting_thread.start();
-
-    /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attmept to do it
-    startup_event.wait();
-
-    /// If we don't separate create/start steps, race condition will happen
-    /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
+    try
     {
-        auto lock = queue.lockQueue();
-        auto & pool = global_context.getBackgroundPool();
-        queue_task_handle = pool.createTask([this] { return queueTask(); });
-        pool.startTask(queue_task_handle);
-    }
+        queue.initialize(
+            zookeeper_path, replica_path,
+            getStorageID().getFullTableName() + " (ReplicatedMergeTreeQueue)",
+            getDataParts());
 
-    if (areBackgroundMovesNeeded())
-    {
-        auto & pool = global_context.getBackgroundMovePool();
-        move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
-        pool.startTask(move_parts_task_handle);
+        data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(*this);
+        global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint);
+
+        /// In this thread replica will be activated.
+        restarting_thread.start();
+
+        /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attmept to do it
+        startup_event.wait();
+
+        /// If we don't separate create/start steps, race condition will happen
+        /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
+        {
+            auto lock = queue.lockQueue();
+            auto & pool = global_context.getBackgroundPool();
+            queue_task_handle = pool.createTask([this] { return queueTask(); });
+            pool.startTask(queue_task_handle);
+        }
+
+        if (areBackgroundMovesNeeded())
+        {
+            auto & pool = global_context.getBackgroundMovePool();
+            move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
+            pool.startTask(move_parts_task_handle);
+        }
     }
-    need_shutdown.store(true);
+    catch (...)
+    {
+        /// Exception safety: failed "startup" does not require a call to "shutdown" from the caller.
+        /// And it should be able to safely destroy table after exception in "startup" method.
+        /// It means that failed "startup" must not create any background tasks that we will have to wait.
+        try
+        {
+            shutdown();
+        }
+        catch (...)
+        {
+            std::terminate();
+        }
+
+        /// Note: after failed "startup", the table will be in a state that only allows to destroy the object.
+        throw;
+    }
 }
 
 
 void StorageReplicatedMergeTree::shutdown()
 {
-    if (!need_shutdown.load())
-        return;
-
-    clearOldPartsFromFilesystem(true);
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
@@ -2981,7 +2996,12 @@ void StorageReplicatedMergeTree::shutdown()
         std::unique_lock lock(data_parts_exchange_endpoint->rwlock);
     }
     data_parts_exchange_endpoint.reset();
-    need_shutdown.store(false);
+
+    /// We clear all old parts after stopping all background operations. It's
+    /// important, because background operations can produce temporary parts
+    /// which will remove themselves in their descrutors. If so, we may have
+    /// race condition between our remove call and background process.
+    clearOldPartsFromFilesystem(true);
 }
 
 
@@ -5308,7 +5328,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
     queue.pullLogsToQueue(getZooKeeper());
     /// This is significant, because the execution of this task could be delayed at BackgroundPool.
     /// And we force it to be executed.
-    queue_task_handle->wake();
+    queue_task_handle->signalReadyToRun();
 
     Poco::Event target_size_event;
     auto callback = [&target_size_event, queue_size] (size_t new_queue_size)
