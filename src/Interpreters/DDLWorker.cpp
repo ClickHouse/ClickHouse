@@ -492,23 +492,25 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
             {
                 if (found_exact_match)
                 {
-                    if(default_database == address.default_database)
+                    if (default_database == address.default_database)
                     {
                         throw Exception(
                             "There are two exactly the same ClickHouse instances " + address.readableString() + " in cluster "
-                                + task.cluster_name, ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
-                }
-                    else  ///circular replication is used.
+                                + task.cluster_name,
+                            ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
+                    }
+                    else ///circular replication is used.
                     {
                         is_circular_replicated = true;
                         auto query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get());
-                        if(query_with_table == nullptr || query_with_table->database.empty())
+                        if (query_with_table == nullptr || query_with_table->database.empty())
                         {
                             throw Exception(
-                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name."
-                                ,ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
+                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.",
+                                ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
                         }
-                        if(default_database == query_with_table->database) return;
+                        if (default_database == query_with_table->database)
+                            return;
                     }
                 }
                 found_exact_match = true;
