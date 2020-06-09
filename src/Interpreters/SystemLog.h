@@ -77,7 +77,8 @@ class ISystemLog
 public:
     virtual String getName() = 0;
     virtual ASTPtr getCreateTableQuery() = 0;
-    virtual void flush() = 0;
+    //// force -- force table creation (used for SYSTEM FLUSH LOGS)
+    virtual void flush(bool force = false) = 0;
     virtual void prepareTable() = 0;
     virtual void startup() = 0;
     virtual void shutdown() = 0;
@@ -136,7 +137,7 @@ public:
     void stopFlushThread();
 
     /// Flush data in the buffer to disk
-    void flush() override;
+    void flush(bool force = false) override;
 
     /// Start the background thread.
     void startup() override;
@@ -177,6 +178,7 @@ private:
     // synchronous log flushing for SYSTEM FLUSH LOGS.
     uint64_t queue_front_index = 0;
     bool is_shutdown = false;
+    bool is_force_prepare_tables = false;
     std::condition_variable flush_event;
     // Requested to flush logs up to this index, exclusive
     uint64_t requested_flush_before = 0;
@@ -275,7 +277,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
 
 
 template <typename LogElement>
-void SystemLog<LogElement>::flush()
+void SystemLog<LogElement>::flush(bool force)
 {
     std::unique_lock lock(mutex);
 
@@ -284,7 +286,8 @@ void SystemLog<LogElement>::flush()
 
     const uint64_t queue_end = queue_front_index + queue.size();
 
-    if (requested_flush_before < queue_end)
+    is_force_prepare_tables = force;
+    if (requested_flush_before < queue_end || force)
     {
         requested_flush_before = queue_end;
         flush_event.notify_all();
@@ -293,7 +296,7 @@ void SystemLog<LogElement>::flush()
     // Use an arbitrary timeout to avoid endless waiting.
     const int timeout_seconds = 60;
     bool result = flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds),
-        [&] { return flushed_before >= queue_end; });
+        [&] { return flushed_before >= queue_end && !is_force_prepare_tables; });
 
     if (!result)
     {
@@ -350,8 +353,7 @@ void SystemLog<LogElement>::savingThreadFunction()
                     std::chrono::milliseconds(flush_interval_milliseconds),
                     [&] ()
                     {
-                        return requested_flush_before > flushed_before
-                            || is_shutdown;
+                        return requested_flush_before > flushed_before || is_shutdown || is_force_prepare_tables;
                     }
                 );
 
@@ -367,10 +369,20 @@ void SystemLog<LogElement>::savingThreadFunction()
 
             if (to_flush.empty())
             {
-                continue;
-            }
+                if (is_force_prepare_tables)
+                {
+                    prepareTable();
+                    LOG_TRACE(log, "Table created (force)");
 
-            flushImpl(to_flush, to_flush_end);
+                    std::lock_guard lock(mutex);
+                    is_force_prepare_tables = false;
+                    flush_event.notify_all();
+                }
+            }
+            else
+            {
+                flushImpl(to_flush, to_flush_end);
+            }
         }
         catch (...)
         {
@@ -422,6 +434,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     {
         std::lock_guard lock(mutex);
         flushed_before = to_flush_end;
+        is_force_prepare_tables = false;
         flush_event.notify_all();
     }
 
