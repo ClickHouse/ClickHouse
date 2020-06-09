@@ -52,7 +52,7 @@ namespace ActionLocks
 StorageMergeTree::StorageMergeTree(
     const StorageID & table_id_,
     const String & relative_data_path_,
-    const StorageInMemoryMetadata & metadata,
+    const StorageInMemoryMetadata & metadata_,
     bool attach,
     Context & context_,
     const String & date_column_name,
@@ -62,7 +62,7 @@ StorageMergeTree::StorageMergeTree(
     : MergeTreeData(
         table_id_,
         relative_data_path_,
-        metadata,
+        metadata_,
         context_,
         date_column_name,
         merging_params_,
@@ -256,20 +256,20 @@ void StorageMergeTree::alter(
 {
     auto table_id = getStorageID();
 
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    auto maybe_mutation_commands = commands.getMutationCommands(metadata, context.getSettingsRef().materialize_ttl_after_modify, context);
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, context.getSettingsRef().materialize_ttl_after_modify, context);
     String mutation_file_name;
     Int64 mutation_version = -1;
-    commands.apply(metadata, context);
+    commands.apply(new_metadata, context);
 
-    /// This alter can be performed at metadata level only
+    /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-        changeSettings(metadata.settings_changes, table_lock_holder);
+        changeSettings(new_metadata.settings_changes, table_lock_holder);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
     }
     else
     {
@@ -278,13 +278,13 @@ void StorageMergeTree::alter(
             auto merges_block = getActionLock(ActionLocks::PartsMerge);
             lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-            changeSettings(metadata.settings_changes, table_lock_holder);
+            changeSettings(new_metadata.settings_changes, table_lock_holder);
             /// Reinitialize primary key because primary key column types might have changed.
-            setProperties(metadata);
+            setProperties(new_metadata);
 
-            setTTLExpressions(metadata.columns, metadata.table_ttl);
+            setTTLExpressions(new_metadata.columns, new_metadata.table_ttl);
 
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
 
             if (!maybe_mutation_commands.empty())
                 mutation_version = startMutation(maybe_mutation_commands, mutation_file_name);

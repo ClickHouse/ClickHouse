@@ -118,7 +118,7 @@ const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
 MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
     const String & relative_data_path_,
-    const StorageInMemoryMetadata & metadata,
+    const StorageInMemoryMetadata & metadata_,
     Context & context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
@@ -142,21 +142,21 @@ MergeTreeData::MergeTreeData(
     if (relative_data_path.empty())
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    setSettingsChanges(metadata.settings_changes);
+    setSettingsChanges(metadata_.settings_changes);
     const auto settings = getSettings();
-    setProperties(metadata, /*only_check*/ false, attach);
+    setProperties(metadata_, /*only_check*/ false, attach);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
 
-    if (metadata.sampling_key.definition_ast != nullptr)
+    if (metadata_.sampling_key.definition_ast != nullptr)
     {
         const auto & pk_sample_block = getPrimaryKey().sample_block;
-        if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !attach
+        if (!pk_sample_block.has(metadata_.sampling_key.column_names[0]) && !attach
             && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
-        setSamplingKey(metadata.sampling_key);
+        setSamplingKey(metadata_.sampling_key);
     }
 
     MergeTreeDataFormatVersion min_format_version(0);
@@ -181,11 +181,11 @@ MergeTreeData::MergeTreeData(
     else
     {
         is_custom_partitioned = true;
-        initPartitionKey(metadata.partition_key);
+        initPartitionKey(metadata_.partition_key);
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
-    setTTLExpressions(metadata.columns, metadata.table_ttl);
+    setTTLExpressions(metadata_.columns, metadata_.table_ttl);
 
     /// format_file always contained on any data path
     PathWithDisk version_file;
