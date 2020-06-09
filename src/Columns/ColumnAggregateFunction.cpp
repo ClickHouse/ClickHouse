@@ -41,14 +41,14 @@ static std::string getTypeString(const AggregateFunctionPtr & func)
         for (size_t i = 0; i < parameters.size(); ++i)
         {
             if (i)
-                stream << ',';
+                stream << ", ";
             stream << applyVisitor(FieldVisitorToString(), parameters[i]);
         }
         stream << ')';
     }
 
     for (const auto & argument_type : argument_types)
-        stream << ',' << argument_type->getName();
+        stream << ", " << argument_type->getName();
 
     stream << ')';
     return stream.str();
