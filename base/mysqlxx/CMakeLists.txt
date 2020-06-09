@@ -32,10 +32,18 @@ else ()
     endif ()
 endif ()
 
-target_link_libraries(mysqlxx PUBLIC common PRIVATE ${MYSQLCLIENT_LIBRARIES} PUBLIC ${Boost_SYSTEM_LIBRARY} PRIVATE ${ZLIB_LIBRARIES})
+target_link_libraries (mysqlxx
+    PUBLIC
+        common
+    PRIVATE
+        ${MYSQLCLIENT_LIBRARIES}
+        ${ZLIB_LIBRARIES}
+)
+
 if(OPENSSL_LIBRARIES)
     target_link_libraries(mysqlxx PRIVATE ${OPENSSL_LIBRARIES})
 endif()
+
 target_link_libraries(mysqlxx PRIVATE ${PLATFORM_LIBRARIES})
 
 if (NOT USE_INTERNAL_MYSQL_LIBRARY AND OPENSSL_INCLUDE_DIR)
