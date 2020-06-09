@@ -701,7 +701,7 @@ inline void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         {
             fire_signal.push_back(max_watermark);
             max_fired_watermark = max_watermark;
-            if(is_tumble)
+            if (is_tumble)
                 max_watermark = addTime(max_watermark, window_kind, window_num_units);
             else
                 max_watermark = addTime(max_watermark, hop_kind, hop_num_units);
@@ -715,7 +715,7 @@ inline void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         {
             fire_signal.push_back(max_watermark);
             max_fired_watermark = max_watermark;
-            if(is_tumble)
+            if (is_tumble)
             {
                 max_watermark = addTime(max_watermark, window_kind, window_num_units);
                 max_watermark_bias = addTime(max_watermark, window_kind, window_num_units);
@@ -1228,7 +1228,7 @@ BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr(UInt32 waterma
 
     auto proxy_storage = std::make_shared<WindowViewProxyStorage>(
         StorageID(getStorageID().database_name, "WindowViewProxyStorage"), getParentStorage()->getColumns(), std::move(pipes), QueryProcessingStage::WithMergeableState);
-    
+
     SelectQueryOptions query_options(QueryProcessingStage::Complete);
     query_options.ignore_limits = true;
     query_options.ignore_quota = true;

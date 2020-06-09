@@ -40,7 +40,7 @@ public:
                 break;
             }
         }
-        if(position < 0)
+        if (position < 0)
             throw Exception("Not found column HOP_SLICE", ErrorCodes::LOGICAL_ERROR);
     }
 
