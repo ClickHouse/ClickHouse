@@ -74,6 +74,9 @@ private:
     /// Array of pointers to aggregation states, that are placed in arenas.
     Container data;
 
+    /// Name of the type to distinguish different aggregation states.
+    String type_string;
+
     ColumnAggregateFunction() {}
 
     /// Create a new column that has another column as a source.
@@ -84,29 +87,17 @@ private:
     ///  but ownership of different elements cannot be mixed by different columns.
     void ensureOwnership();
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_)
-        : func(func_)
-    {
-    }
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_);
 
     ColumnAggregateFunction(const AggregateFunctionPtr & func_,
-                            const ConstArenas & arenas_)
-        : foreign_arenas(arenas_), func(func_)
-    {
-    }
-
+                            const ConstArenas & arenas_);
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
-
-    String getTypeString() const;
 
 public:
     ~ColumnAggregateFunction() override;
 
-    void set(const AggregateFunctionPtr & func_)
-    {
-        func = func_;
-    }
+    void set(const AggregateFunctionPtr & func_);
 
     AggregateFunctionPtr getAggregateFunction() { return func; }
     AggregateFunctionPtr getAggregateFunction() const { return func; }
