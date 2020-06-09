@@ -6,6 +6,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/PipeFDs.h>
 #include <common/logger_useful.h>
+#include <common/errnoToString.h>
 #include <IO/WriteHelpers.h>
 #include <unistd.h>
 #include <csignal>

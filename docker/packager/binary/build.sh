@@ -18,7 +18,7 @@ ccache --zero-stats ||:
 ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so ||:
 rm -f CMakeCache.txt
 cmake .. -LA -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS
-ninja
+ninja clickhouse-bundle
 mv ./programs/clickhouse* /output
 mv ./src/unit_tests_dbms /output
 find . -name '*.so' -print -exec mv '{}' /output \;
