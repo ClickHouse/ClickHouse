@@ -131,7 +131,7 @@ namespace
     {
         using TypeToVisit = ASTFunction;
 
-        void visit(const ASTFunction & node, ASTPtr & node_ptr)
+        static void visit(const ASTFunction & node, ASTPtr & node_ptr)
         {
             if (node.name == "HOP_SLICE")
                 std::static_pointer_cast<ASTFunction>(node_ptr)->name = "HOP";
@@ -163,7 +163,7 @@ namespace
     {
         using TypeToVisit = ASTFunction;
 
-        void visit(ASTFunction & node, ASTPtr & node_ptr)
+        static void visit(ASTFunction & node, ASTPtr & node_ptr)
         {
             if (node.name == "HOP")
                 std::static_pointer_cast<ASTFunction>(node_ptr)->name = "HOP_SLICE";
@@ -536,13 +536,13 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
         }
         if (storage->primary_key)
         {
-            auto primary_key_ = storage->primary_key->clone();
+            auto tmp_primary_key = storage->primary_key->clone();
             if (is_time_column_func_now)
-                time_now_visitor.visit(primary_key_);
+                time_now_visitor.visit(tmp_primary_key);
             if (!is_tumble)
-                func_hop_visitor.visit(primary_key_);
-            visitor.visit(primary_key_);
-            new_storage->set(new_storage->primary_key, primary_key_);
+                func_hop_visitor.visit(tmp_primary_key);
+            visitor.visit(tmp_primary_key);
+            new_storage->set(new_storage->primary_key, tmp_primary_key);
         }
         if (storage->order_by)
         {
