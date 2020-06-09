@@ -518,7 +518,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
     }
     else
     {
-        if (shard_info.isLocal())
+        if (shard_info.isLocal() && settings.prefer_localhost_replica)
             writeToLocal(block, shard_info.getLocalNodeCount());
 
         std::vector<std::string> dir_names;
