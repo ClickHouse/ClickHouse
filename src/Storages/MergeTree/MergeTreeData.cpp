@@ -275,22 +275,22 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
-void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool only_check, bool attach)
+void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, bool only_check, bool attach)
 {
-    KeyDescription new_primary_key = metadata.primary_key;
+    KeyDescription new_primary_key = new_metadata.primary_key;
 
-    if (!metadata.sorting_key.definition_ast)
+    if (!new_metadata.sorting_key.definition_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
     KeyDescription new_sorting_key;
     if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
         new_sorting_key = KeyDescription::getKeyFromAST(
-            metadata.sorting_key.definition_ast,
-            metadata.columns,
+            new_metadata.sorting_key.definition_ast,
+            new_metadata.columns,
             global_context,
             std::make_shared<ASTIdentifier>(merging_params.version_column));
     else
-        new_sorting_key = metadata.sorting_key;
+        new_sorting_key = new_metadata.sorting_key;
 
     /// Primary key not defined at all
     if (new_primary_key.definition_ast == nullptr)
@@ -299,7 +299,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         /// because in merge tree code we sometimes chech, that our primary key
         /// is fake (copied from sorting key, i.e. isPrimaryKeyDefined() ==
         /// false, but hasSortingKey() == true)
-        new_primary_key = metadata.sorting_key;
+        new_primary_key = new_metadata.sorting_key;
         new_primary_key.definition_ast = nullptr;
     }
 
@@ -330,7 +330,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         }
     }
 
-    auto all_columns = metadata.columns.getAllPhysical();
+    auto all_columns = new_metadata.columns.getAllPhysical();
 
     /// Order by check AST
     if (hasSortingKey() && only_check)
@@ -372,7 +372,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
                         "added to the sorting key. You can add expressions that use only the newly added columns",
                         ErrorCodes::BAD_ARGUMENTS);
 
-                if (metadata.columns.getDefaults().count(col))
+                if (new_metadata.columns.getDefaults().count(col))
                     throw Exception("Newly added column " + col + " has a default expression, so adding "
                         "expressions that use it to the sorting key is forbidden",
                         ErrorCodes::BAD_ARGUMENTS);
@@ -380,11 +380,11 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         }
     }
 
-    if (!metadata.secondary_indices.empty())
+    if (!new_metadata.secondary_indices.empty())
     {
         std::unordered_set<String> indices_names;
 
-        for (const auto & index : metadata.secondary_indices)
+        for (const auto & index : new_metadata.secondary_indices)
         {
 
             MergeTreeIndexFactory::instance().validate(index, attach);
@@ -403,9 +403,9 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     if (!only_check)
     {
         /// Other parts of metadata initialized is separate methods
-        setColumns(std::move(metadata.columns));
-        setSecondaryIndices(std::move(metadata.secondary_indices));
-        setConstraints(std::move(metadata.constraints));
+        setColumns(std::move(new_metadata.columns));
+        setSecondaryIndices(std::move(new_metadata.secondary_indices));
+        setConstraints(std::move(new_metadata.constraints));
         setSortingKey(std::move(new_sorting_key));
         setPrimaryKey(std::move(new_primary_key));
     }
