@@ -347,9 +347,11 @@ create table query_metric_stats engine File(TSVWithNamesAndTypes,
 create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     as select
         -- FIXME Comparison mode doesn't make sense for queries that complete
-        -- immediately, so for now we pretend they don't exist. We don't want to
-        -- remove them altogether because we want to be able to detect regressions,
-        -- but the right way to do this is not yet clear.
+        -- immediately (on the same order of time as noise). We compute average
+        -- run time between old and new version, and if it is below a threshold,
+        -- we just skip the query. If there is a significant regression, the
+        -- average will be above threshold, we'll process it normally and will
+        -- detect the regression.
         (left + right) / 2 < 0.02 as short,
 
         not short and abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
