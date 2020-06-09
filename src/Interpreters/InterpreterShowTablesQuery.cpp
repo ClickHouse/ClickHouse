@@ -37,7 +37,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.clusters)
     {
         std::stringstream rewritten_query;
-        rewritten_query << "SELECT cluster FROM system.clusters";
+        rewritten_query << "SELECT DISTINCT cluster FROM system.clusters";
 
         if (!query.like.empty())
         {
