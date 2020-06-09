@@ -95,11 +95,8 @@ bool ReadBufferAIO::nextImpl()
     if (profile_callback)
         watch.emplace(clock_type);
 
-    if (!is_aio)
-    {
+    if (!is_pending_read)
         synchronousRead();
-        is_aio = true;
-    }
     else
         receive();
 
@@ -215,7 +212,9 @@ void ReadBufferAIO::synchronousRead()
 void ReadBufferAIO::receive()
 {
     if (!waitForAIOCompletion())
-        return;
+    {
+        throw Exception("Trying to receive data from AIO, but nothing was queued. It's a bug", ErrorCodes::LOGICAL_ERROR);
+    }
     finalize();
 }
 
@@ -223,8 +222,6 @@ void ReadBufferAIO::skip()
 {
     if (!waitForAIOCompletion())
         return;
-
-    is_aio = false;
 
     /// @todo I presume this assignment is redundant since waitForAIOCompletion() performs a similar one
 //    bytes_read = future_bytes_read.get();
