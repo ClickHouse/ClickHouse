@@ -141,16 +141,6 @@ void StorageMergeTree::shutdown()
         mutation_wait_event.notify_all();
     }
 
-    try
-    {
-        clearOldPartsFromFilesystem(true);
-    }
-    catch (...)
-    {
-        /// Example: the case of readonly filesystem, we have failure removing old parts.
-        /// Should not prevent table shutdown.
-        tryLogCurrentException(log);
-    }
 
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
@@ -160,6 +150,23 @@ void StorageMergeTree::shutdown()
 
     if (moving_task_handle)
         global_context.getBackgroundMovePool().removeTask(moving_task_handle);
+
+
+    try
+    {
+        /// We clear all old parts after stopping all background operations.
+        /// It's important, because background operations can produce temporary
+        /// parts which will remove themselves in their descrutors. If so, we
+        /// may have race condition between our remove call and background
+        /// process.
+        clearOldPartsFromFilesystem(true);
+    }
+    catch (...)
+    {
+        /// Example: the case of readonly filesystem, we have failure removing old parts.
+        /// Should not prevent table shutdown.
+        tryLogCurrentException(log);
+    }
 }
 
 
