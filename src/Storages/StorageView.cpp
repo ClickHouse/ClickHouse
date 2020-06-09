@@ -1,8 +1,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/getTableExpressions.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -60,9 +58,8 @@ Pipes StorageView::read(
     Pipes pipes;
 
     ASTPtr current_inner_query = inner_query;
-
-    if (context.getSettings().enable_optimize_predicate_expression)
-        current_inner_query = getRuntimeViewQuery(query_info, context);
+    if (query_info.view_query)
+        current_inner_query = query_info.view_query;
 
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
 
@@ -87,73 +84,53 @@ Pipes StorageView::read(
     return pipes;
 }
 
-static void replaceTableNameWithSubquery(ASTSelectQuery & select_query, ASTPtr & subquery)
+static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
 {
     auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
 
-    auto * table_expression = select_element->table_expression->as<ASTTableExpression>();
+    return select_element->table_expression->as<ASTTableExpression>();
+}
+
+ASTPtr StorageView::replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name) const
+{
+    ASTPtr subquery = inner_query->clone();
+    ASTTableExpression * table_expression = getFirstTableExpression(select_query);
 
     if (!table_expression->database_and_table_name)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
 
-    const auto alias = table_expression->database_and_table_name->tryGetAlias();
+    DatabaseAndTableWithAlias db_table(table_expression->database_and_table_name);
+    String alias = db_table.alias.empty() ? db_table.table : db_table.alias;
+
+    view_name = table_expression->database_and_table_name;
     table_expression->database_and_table_name = {};
     table_expression->subquery = std::make_shared<ASTSubquery>();
     table_expression->subquery->children.push_back(subquery);
-    table_expression->children.push_back(table_expression->subquery);
-    if (!alias.empty())
-        table_expression->subquery->setAlias(alias);
+    table_expression->subquery->setAlias(alias);
+
+    for (auto & child : table_expression->children)
+        if (child.get() == view_name.get())
+            child = subquery;
+    return subquery;
 }
 
-static void checkTableAliases(const TablesWithColumns & tables_with_columns)
+void StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name) const
 {
-    if (tables_with_columns.size() <= 1)
-        return;
+    ASTTableExpression * table_expression = getFirstTableExpression(select_query);
 
-    for (const auto & t : tables_with_columns)
-        if (t.table.table.empty() && t.table.alias.empty())
-            throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
-                            ErrorCodes::ALIAS_REQUIRED);
-}
+    if (!table_expression->subquery)
+        throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
 
-ASTPtr StorageView::getRuntimeViewQuery(const SelectQueryInfo & query_info, const Context & context)
-{
-    auto query = query_info.query->clone();
-    ASTSelectQuery & outer_select = *query->as<ASTSelectQuery>();
+    ASTPtr subquery = table_expression->subquery;
+    table_expression->subquery = {};
+    table_expression->database_and_table_name = view_name;
 
-    auto runtime_view_query = inner_query->clone();
-    replaceTableNameWithSubquery(outer_select, runtime_view_query);
-
-    const auto & tables_with_columns = query_info.tables_with_columns;
-    if (context.getSettingsRef().joined_subquery_requires_alias)
-        checkTableAliases(tables_with_columns);
-
-    PredicateExpressionsOptimizer(context, tables_with_columns, context.getSettings()).optimize(outer_select);
-    return runtime_view_query;
-}
-
-ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Context & context, bool normalize)
-{
-    auto runtime_view_query = inner_query->clone();
-
-    /// TODO: remove getTableExpressions and getTablesWithColumns
-    {
-        const auto & table_expressions = getTableExpressions(*outer_query);
-        const auto & tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
-
-        replaceTableNameWithSubquery(*outer_query, runtime_view_query);
-        if (context.getSettingsRef().joined_subquery_requires_alias)
-            checkTableAliases(tables_with_columns);
-
-        if (PredicateExpressionsOptimizer(context, tables_with_columns, context.getSettings()).optimize(*outer_query) && normalize)
-            InterpreterSelectWithUnionQuery(
-                runtime_view_query, context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify(), {});
-    }
-
-    return runtime_view_query;
+    for (auto & child : table_expression->children)
+        if (child.get() == subquery.get())
+            child = view_name;
 }
 
 void registerStorageView(StorageFactory & factory)

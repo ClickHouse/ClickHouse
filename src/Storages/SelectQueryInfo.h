@@ -71,9 +71,9 @@ using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 struct SelectQueryInfo
 {
     ASTPtr query;
+    ASTPtr view_query; /// Optimized VIEW query
 
     SyntaxAnalyzerResultPtr syntax_analyzer_result;
-    TablesWithColumns tables_with_columns;
 
     PrewhereInfoPtr prewhere_info;
 
