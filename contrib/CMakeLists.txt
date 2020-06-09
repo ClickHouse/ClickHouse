@@ -16,13 +16,18 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
+add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
 add_subdirectory (consistent-hashing-sumbur)
 add_subdirectory (consistent-hashing)
 add_subdirectory (croaring)
 add_subdirectory (FastMemcpy)
+add_subdirectory (hyperscan-cmake)
 add_subdirectory (jemalloc-cmake)
 add_subdirectory (libcpuid-cmake)
+add_subdirectory (libdivide)
+add_subdirectory (libmetrohash)
+add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (ryu-cmake)
@@ -32,14 +37,6 @@ add_subdirectory (poco-cmake)
 
 
 # TODO: refactor the contrib libraries below this comment.
-
-if (USE_INTERNAL_BOOST_LIBRARY)
-    add_subdirectory (boost-cmake)
-endif ()
-
-if (USE_INTERNAL_LZ4_LIBRARY)
-    add_subdirectory (lz4-cmake)
-endif ()
 
 if (USE_INTERNAL_ZSTD_LIBRARY)
     add_subdirectory (zstd-cmake)
@@ -61,10 +58,6 @@ endif ()
 
 if (USE_INTERNAL_FARMHASH_LIBRARY)
     add_subdirectory (libfarmhash)
-endif ()
-
-if (USE_INTERNAL_METROHASH_LIBRARY)
-    add_subdirectory (libmetrohash)
 endif ()
 
 if (USE_INTERNAL_BTRIE_LIBRARY)
@@ -298,18 +291,6 @@ endif ()
 
 if (USE_BASE64)
     add_subdirectory (base64-cmake)
-endif()
-
-if (USE_INTERNAL_HYPERSCAN_LIBRARY)
-    # The library is large - avoid bloat.
-    if (USE_STATIC_LIBRARIES)
-        add_subdirectory (hyperscan)
-        target_compile_options (hs PRIVATE -g0)
-    else ()
-        set(BUILD_SHARED_LIBS 1 CACHE INTERNAL "")
-        add_subdirectory (hyperscan)
-        target_compile_options (hs_shared PRIVATE -g0)
-    endif ()
 endif()
 
 if (USE_SIMDJSON)
