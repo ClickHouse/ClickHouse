@@ -72,6 +72,9 @@ TTLDescription::TTLDescription(const TTLDescription & other)
 
 TTLDescription & TTLDescription::operator=(const TTLDescription & other)
 {
+    if (&other == this)
+        return *this;
+
     mode = other.mode;
     if (other.expression_ast)
         expression_ast = other.expression_ast->clone();

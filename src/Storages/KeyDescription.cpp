@@ -22,6 +22,9 @@ KeyDescription::KeyDescription(const KeyDescription & other)
 
 KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 {
+    if (&other == this)
+        return *this;
+
     if (other.definition_ast)
         definition_ast = other.definition_ast->clone();
     else

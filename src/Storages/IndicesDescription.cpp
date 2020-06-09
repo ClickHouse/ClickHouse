@@ -36,6 +36,9 @@ IndexDescription::IndexDescription(const IndexDescription & other)
 
 IndexDescription & IndexDescription::operator=(const IndexDescription & other)
 {
+    if (&other == this)
+        return *this;
+
     if (other.definition_ast)
         definition_ast = other.definition_ast->clone();
     else
