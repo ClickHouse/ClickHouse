@@ -10,7 +10,6 @@ set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     PingHandler.cpp
     validateODBCConnectionString.cpp
 )
-set (USE_SENTRY OFF CACHE BOOL "" FORCE)
 set (CLICKHOUSE_ODBC_BRIDGE_LINK
     PRIVATE
         clickhouse_parsers
