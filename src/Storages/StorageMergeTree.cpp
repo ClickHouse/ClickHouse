@@ -95,16 +95,36 @@ void StorageMergeTree::startup()
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
 
-    auto & merge_pool = global_context.getBackgroundPool();
-    merging_mutating_task_handle = merge_pool.createTask([this] { return mergeMutateTask(); });
-    /// Ensure that thread started only after assignment to 'merging_mutating_task_handle' is done.
-    merge_pool.startTask(merging_mutating_task_handle);
-
-    if (areBackgroundMovesNeeded())
+    try
     {
-        auto & move_pool = global_context.getBackgroundMovePool();
-        moving_task_handle = move_pool.createTask([this] { return movePartsTask(); });
-        move_pool.startTask(moving_task_handle);
+        auto & merge_pool = global_context.getBackgroundPool();
+        merging_mutating_task_handle = merge_pool.createTask([this] { return mergeMutateTask(); });
+        /// Ensure that thread started only after assignment to 'merging_mutating_task_handle' is done.
+        merge_pool.startTask(merging_mutating_task_handle);
+
+        if (areBackgroundMovesNeeded())
+        {
+            auto & move_pool = global_context.getBackgroundMovePool();
+            moving_task_handle = move_pool.createTask([this] { return movePartsTask(); });
+            move_pool.startTask(moving_task_handle);
+        }
+    }
+    catch (...)
+    {
+        /// Exception safety: failed "startup" does not require a call to "shutdown" from the caller.
+        /// And it should be able to safely destroy table after exception in "startup" method.
+        /// It means that failed "startup" must not create any background tasks that we will have to wait.
+        try
+        {
+            shutdown();
+        }
+        catch (...)
+        {
+            std::terminate();
+        }
+
+        /// Note: after failed "startup", the table will be in a state that only allows to destroy the object.
+        throw;
     }
 }
 
@@ -121,16 +141,6 @@ void StorageMergeTree::shutdown()
         mutation_wait_event.notify_all();
     }
 
-    try
-    {
-        clearOldPartsFromFilesystem(true);
-    }
-    catch (...)
-    {
-        /// Example: the case of readonly filesystem, we have failure removing old parts.
-        /// Should not prevent table shutdown.
-        tryLogCurrentException(log);
-    }
 
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
@@ -140,6 +150,23 @@ void StorageMergeTree::shutdown()
 
     if (moving_task_handle)
         global_context.getBackgroundMovePool().removeTask(moving_task_handle);
+
+
+    try
+    {
+        /// We clear all old parts after stopping all background operations.
+        /// It's important, because background operations can produce temporary
+        /// parts which will remove themselves in their descrutors. If so, we
+        /// may have race condition between our remove call and background
+        /// process.
+        clearOldPartsFromFilesystem(true);
+    }
+    catch (...)
+    {
+        /// Example: the case of readonly filesystem, we have failure removing old parts.
+        /// Should not prevent table shutdown.
+        tryLogCurrentException(log);
+    }
 }
 
 
@@ -390,7 +417,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
     current_mutations_by_version.emplace(version, insertion.first->second);
 
     LOG_INFO(log, "Added mutation: {}", mutation_file_name);
-    merging_mutating_task_handle->wake();
+    merging_mutating_task_handle->signalReadyToRun();
     return version;
 }
 
@@ -523,7 +550,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     }
 
     /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
-    merging_mutating_task_handle->wake();
+    merging_mutating_task_handle->signalReadyToRun();
 
     return CancellationCode::CancelSent;
 }

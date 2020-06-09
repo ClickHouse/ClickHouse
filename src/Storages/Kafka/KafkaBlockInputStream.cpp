@@ -13,7 +13,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 KafkaBlockInputStream::KafkaBlockInputStream(
-    StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
+    StorageKafka & storage_, const std::shared_ptr<Context> & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
     : storage(storage_)
     , context(context_)
     , column_names(columns)
@@ -22,12 +22,6 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     , non_virtual_header(storage.getSampleBlockNonMaterialized())
     , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp","_timestamp_ms","_headers.name","_headers.value"}))
 {
-    context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context (JSON or TSKV)
-    context.setSetting("input_format_allow_errors_ratio", 0.);
-    context.setSetting("input_format_allow_errors_num", storage.skipBroken());
-
-    if (!storage.getSchemaName().empty())
-        context.setSetting("format_schema", storage.getSchemaName());
 }
 
 KafkaBlockInputStream::~KafkaBlockInputStream()
@@ -48,7 +42,7 @@ Block KafkaBlockInputStream::getHeader() const
 
 void KafkaBlockInputStream::readPrefixImpl()
 {
-    auto timeout = std::chrono::milliseconds(context.getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
+    auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
     buffer = storage.popReadBuffer(timeout);
 
     if (!buffer)
@@ -73,7 +67,7 @@ Block KafkaBlockInputStream::readImpl()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     auto input_format = FormatFactory::instance().getInputFormat(
-        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
+        storage.getFormatName(), *buffer, non_virtual_header, *context, max_block_size);
 
     InputPort port(input_format->getPort().getHeader(), input_format.get());
     connect(input_format->getPort(), port);

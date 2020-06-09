@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/StorageDistributed.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Client/ConnectionPool.h>
 
 #include <atomic>
 #include <mutex>
@@ -13,6 +13,10 @@ namespace CurrentMetrics { class Increment; }
 
 namespace DB
 {
+
+class StorageDistributed;
+class ActionBlocker;
+class BackgroundSchedulePool;
 
 /** Details of StorageDistributed.
   * This type is not designed for standalone use.
@@ -37,9 +41,24 @@ public:
 
     /// For scheduling via DistributedBlockOutputStream
     bool scheduleAfter(size_t ms);
+
+    /// system.distribution_queue interface
+    struct Status
+    {
+        std::string path;
+        std::exception_ptr last_exception;
+        size_t error_count;
+        size_t files_count;
+        size_t bytes_count;
+        bool is_blocked;
+    };
+    Status getStatus() const;
+
 private:
     void run();
-    bool processFiles(CurrentMetrics::Increment & metric_pending_files);
+
+    std::map<UInt64, std::string> getFiles(CurrentMetrics::Increment & metric_pending_files);
+    bool processFiles(const std::map<UInt64, std::string> & files, CurrentMetrics::Increment & metric_pending_files);
     void processFile(const std::string & file_path, CurrentMetrics::Increment & metric_pending_files);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files, CurrentMetrics::Increment & metric_pending_files);
 
@@ -61,7 +80,12 @@ private:
     struct BatchHeader;
     struct Batch;
 
-    size_t error_count{};
+    mutable std::mutex metrics_mutex;
+    size_t error_count = 0;
+    size_t files_count = 0;
+    size_t bytes_count = 0;
+    std::exception_ptr last_exception;
+
     const std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;
     const std::chrono::milliseconds max_sleep_time;

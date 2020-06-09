@@ -1,5 +1,5 @@
 Babel==2.8.0
-certifi==2020.4.5.1
+certifi==2020.4.5.2
 chardet==3.0.4
 googletrans==2.4.0
 idna==2.9

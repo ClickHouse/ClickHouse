@@ -150,7 +150,7 @@ public:
         return res;
     }
 
-    /// Get peice of memory with alignment
+    /// Get piece of memory with alignment
     char * alignedAlloc(size_t size, size_t alignment)
     {
         do
