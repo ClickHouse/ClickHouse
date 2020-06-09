@@ -382,8 +382,8 @@ void IStorage::alter(
     auto table_id = getStorageID();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     params.apply(old_metadata, context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
-    setColumns(std::move(metadata.columns));
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, old_metadata);
+    setColumns(std::move(old_metadata.columns));
 }
 
 
