@@ -16,17 +16,9 @@ public:
         BlockInputStreamPtr input_,
         StorageWindowView& storage_,
         String& window_column_name_)
-        : allowed_lateness(false)
-        , update_timestamp(false)
-        , watermark_specified(false)
-        , is_tumble(true)
-        , storage(storage_)
-        , window_column_name(window_column_name_)
-        , lateness_upper_bound(0)
-        , max_timestamp(0)
-        , max_watermark(0)
+        : WatermarkBlockInputStream(input_, storage_, window_column_name_, 0)
     {
-        children.push_back(input_);
+        watermark_specified = false;
     }
 
     WatermarkBlockInputStream(
@@ -43,6 +35,7 @@ public:
         , lateness_upper_bound(0)
         , max_timestamp(0)
         , max_watermark(max_watermark_)
+        , slice_num_units(0)
     {
         children.push_back(input_);
     }
