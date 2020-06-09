@@ -120,7 +120,6 @@ public:
     DB::SimpleActionBlocker blocker;
 };
 
-
 /// Convenience methods, that use current thread's memory_tracker if it is available.
 namespace CurrentMemoryTracker
 {
