@@ -58,7 +58,11 @@ Pipes StorageView::read(
 
     ASTPtr current_inner_query = inner_query;
     if (query_info.view_query)
-        current_inner_query = query_info.view_query;
+    {
+        if (!query_info.view_query->as<ASTSelectWithUnionQuery>())
+            throw Exception("Unexpected optimized VIEW query", ErrorCodes::LOGICAL_ERROR);
+        current_inner_query = query_info.view_query->clone();
+    }
 
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
 
@@ -128,7 +132,7 @@ ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr 
     for (auto & child : table_expression->children)
         if (child.get() == subquery.get())
             child = view_name;
-    return subquery;
+    return subquery->children[0];
 }
 
 void registerStorageView(StorageFactory & factory)
