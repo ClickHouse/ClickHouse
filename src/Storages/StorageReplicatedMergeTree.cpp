@@ -415,12 +415,12 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
     zookeeper->createAncestors(zookeeper_path);
 
     /// We write metadata of table so that the replicas can check table parameters with them.
-    String metadata = ReplicatedMergeTreeTableMetadata(*this).toString();
+    String metadata_str = ReplicatedMergeTreeTableMetadata(*this).toString();
 
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "",
         zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata,
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata_str,
         zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/columns", getColumns().toString(),
         zkutil::CreateMode::Persistent));
