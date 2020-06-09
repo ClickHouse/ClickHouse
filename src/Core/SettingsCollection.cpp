@@ -246,7 +246,7 @@ void SettingTimespan<io_unit>::set(const Field & x)
     if (x.getType() == Field::Types::String)
         set(get<const String &>(x));
     else
-        set(safeGet<UInt64>(x));
+        set(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), x));
 }
 
 template <SettingTimespanIO io_unit>
