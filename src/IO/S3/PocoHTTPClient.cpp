@@ -2,8 +2,6 @@
 
 #include <utility>
 #include <IO/HTTPCommon.h>
-#include <IO/S3/PocoHTTPResponseStream.h>
-#include <IO/S3/PocoHTTPResponseStream.cpp>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
@@ -151,7 +149,8 @@ void PocoHTTPClient::MakeRequestInternal(
                 response->SetClientErrorMessage(error_message);
             }
             else
-                response->GetResponseStream().SetUnderlyingStream(std::make_shared<PocoHTTPResponseStream>(session, response_body_stream));
+                /// TODO: Do not copy whole stream.
+                Poco::StreamCopier::copyStream(response_body_stream, response->GetResponseBody());
 
             break;
         }
