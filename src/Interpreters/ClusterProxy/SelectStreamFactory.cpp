@@ -11,11 +11,11 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <common/logger_useful.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 
 namespace ProfileEvents
 {
@@ -71,31 +71,19 @@ SelectStreamFactory::SelectStreamFactory(
 namespace
 {
 
-Pipe createLocalStream(const ASTPtr & query_ast, const Block & header, const Context & context, QueryProcessingStage::Enum processed_stage, bool force_tree_shaped_pipeline)
+QueryPipeline createLocalStream(
+    const ASTPtr & query_ast, const Block & header, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
     checkStackSize();
 
     InterpreterSelectQuery interpreter{query_ast, context, SelectQueryOptions(processed_stage)};
 
-    if (force_tree_shaped_pipeline)
-    {
-        /// This flag means that pipeline must be tree-shaped,
-        /// so we can't enable processors for InterpreterSelectQuery here.
-        auto stream = interpreter.execute().in;
-        Pipe pipe(std::make_shared<SourceFromInputStream>(std::move(stream)));
-
-        pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
-                pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name, context));
-
-        return pipe;
-    }
-
-    auto pipeline = interpreter.executeWithProcessors();
+    auto pipeline = interpreter.execute().pipeline;
 
     pipeline.addSimpleTransform([&](const Block & source_header)
     {
         return std::make_shared<ConvertingTransform>(
-                source_header, header, ConvertingTransform::MatchColumnsMode::Name, context);
+                source_header, header, ConvertingTransform::MatchColumnsMode::Name);
     });
 
     /** Materialization is needed, since from remote servers the constants come materialized.
@@ -108,7 +96,8 @@ Pipe createLocalStream(const ASTPtr & query_ast, const Block & header, const Con
      */
     /// return std::make_shared<MaterializingBlockInputStream>(stream);
 
-    return std::move(pipeline).getPipe();
+    pipeline.setMaxThreads(1);
+    return pipeline;
 }
 
 String formattedAST(const ASTPtr & ast)
@@ -126,11 +115,17 @@ void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
     const String &, const ASTPtr & query_ast,
     const Context & context, const ThrottlerPtr & throttler,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo &,
     Pipes & res)
 {
     bool force_add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
-    bool add_totals_port = processed_stage == QueryProcessingStage::Complete;
+    bool add_totals_port = false;
+    bool add_extremes_port = false;
+    if (processed_stage == QueryProcessingStage::Complete)
+    {
+        add_totals_port = query_ast->as<ASTSelectQuery &>().group_by_with_totals;
+        add_extremes_port = context.getSettingsRef().extremes;
+    }
 
     auto modified_query_ast = query_ast->clone();
     if (has_virtual_shard_num_column)
@@ -138,7 +133,7 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_local_stream = [&]()
     {
-        res.emplace_back(createLocalStream(modified_query_ast, header, context, processed_stage, query_info.force_tree_shaped_pipeline));
+        res.emplace_back(createLocalStream(modified_query_ast, header, context, processed_stage).getPipe());
     };
 
     String modified_query = formattedAST(modified_query_ast);
@@ -155,6 +150,8 @@ void SelectStreamFactory::createForShard(
 
         if (add_totals_port)
             source->addTotalsPort();
+        if (add_extremes_port)
+            source->addExtremesPort();
 
         res.emplace_back(std::move(source));
     };
@@ -174,7 +171,7 @@ void SelectStreamFactory::createForShard(
         else
         {
             auto resolved_id = context.resolveStorageID(main_table);
-            main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id);
+            main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
         }
 
 
@@ -183,10 +180,7 @@ void SelectStreamFactory::createForShard(
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             if (shard_info.hasRemoteConnections())
             {
-                LOG_WARNING(
-                        &Logger::get("ClusterProxy::SelectStreamFactory"),
-                        "There is no table " << main_table.getNameForLogs()
-                        << " on local replica of shard " << shard_info.shard_num << ", will try remote replicas.");
+                LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"), "There is no table {} on local replica of shard {}, will try remote replicas.", main_table.getNameForLogs(), shard_info.shard_num);
                 emplace_remote_stream();
             }
             else
@@ -222,9 +216,7 @@ void SelectStreamFactory::createForShard(
 
         /// If we reached this point, local replica is stale.
         ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
-        LOG_WARNING(
-            &Logger::get("ClusterProxy::SelectStreamFactory"),
-            "Local replica of shard " << shard_info.shard_num << " is stale (delay: " << local_delay << "s.)");
+        LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"), "Local replica of shard {} is stale (delay: {}s.)", shard_info.shard_num, local_delay);
 
         if (!settings.fallback_to_stale_replicas_for_distributed_queries)
         {
@@ -272,9 +264,7 @@ void SelectStreamFactory::createForShard(
             catch (const Exception & ex)
             {
                 if (ex.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
-                    LOG_WARNING(
-                        &Logger::get("ClusterProxy::SelectStreamFactory"),
-                        "Connections to remote replicas of local shard " << shard_num << " failed, will use stale local replica");
+                    LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"), "Connections to remote replicas of local shard {} failed, will use stale local replica", shard_num);
                 else
                     throw;
             }
@@ -287,7 +277,8 @@ void SelectStreamFactory::createForShard(
             }
 
             if (try_results.empty() || local_delay < max_remote_delay)
-                return std::make_shared<TreeExecutorBlockInputStream>(createLocalStream(modified_query_ast, header, context, stage, true));
+                return std::make_shared<PipelineExecutingBlockInputStream>(
+                        createLocalStream(modified_query_ast, header, context, stage));
             else
             {
                 std::vector<IConnectionPool::Entry> connections;
@@ -305,6 +296,8 @@ void SelectStreamFactory::createForShard(
 
         if (add_totals_port)
             source->addTotalsPort();
+        if (add_extremes_port)
+            source->addExtremesPort();
 
         res.emplace_back(std::move(source));
     }

@@ -1,9 +1,0 @@
-version: '2.2'
-services:
-    postgres1:
-        image: postgres
-        restart: always
-        environment:
-            POSTGRES_PASSWORD: mysecretpassword
-        ports:
-          - 5432:5432

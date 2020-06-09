@@ -5,5 +5,6 @@ CREATE TABLE replicated_optimize2 (d Date, k UInt64, i32 Int32) ENGINE=Replicate
 
 OPTIMIZE TABLE replicated_optimize1 FINAL;
 
-DROP TABLE replicated_optimize1;
-DROP TABLE replicated_optimize2;
+DROP TABLE replicated_optimize1 NO DELAY;
+DROP TABLE replicated_optimize2 NO DELAY;
+SELECT sleep(1) FORMAT Null;

@@ -5,16 +5,6 @@
     </tags>
 
 
-    <stop_conditions>
-        <all_of>
-            <iterations>5</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>50</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
     <query>SELECT toInt32(number) AS n FROM numbers(1000000) ORDER BY n DESC FORMAT Null</query>
     <query>SELECT toDecimal32(number, 0) AS n FROM numbers(1000000) ORDER BY n FORMAT Null</query>

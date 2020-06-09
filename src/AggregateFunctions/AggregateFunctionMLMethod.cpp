@@ -245,7 +245,7 @@ void Adam::read(ReadBuffer & buf)
 
 void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 {
-    auto & adam_rhs = static_cast<const Adam &>(rhs);
+    const auto & adam_rhs = static_cast<const Adam &>(rhs);
 
     if (adam_rhs.average_gradient.empty())
         return;
@@ -330,7 +330,7 @@ void Nesterov::write(WriteBuffer & buf) const
 
 void Nesterov::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 {
-    auto & nesterov_rhs = static_cast<const Nesterov &>(rhs);
+    const auto & nesterov_rhs = static_cast<const Nesterov &>(rhs);
     if (accumulated_gradient.empty())
         accumulated_gradient.resize(nesterov_rhs.accumulated_gradient.size(), Float64{0.0});
 
@@ -395,7 +395,7 @@ void Momentum::write(WriteBuffer & buf) const
 
 void Momentum::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 {
-    auto & momentum_rhs = static_cast<const Momentum &>(rhs);
+    const auto & momentum_rhs = static_cast<const Momentum &>(rhs);
     for (size_t i = 0; i < accumulated_gradient.size(); ++i)
     {
         accumulated_gradient[i] = accumulated_gradient[i] * frac + momentum_rhs.accumulated_gradient[i] * rhs_frac;
@@ -473,7 +473,7 @@ void LogisticRegression::predict(
         if (!isNativeNumber(cur_col.type))
             throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
 
-        auto & features_column = cur_col.column;
+        const auto & features_column = cur_col.column;
 
         for (size_t row_num = 0; row_num < limit; ++row_num)
             results[row_num] += weights[i - 1] * features_column->getFloat64(offset + row_num);

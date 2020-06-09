@@ -24,6 +24,22 @@ namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int UNKNOWN_PART_TYPE;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int CANNOT_MUNMAP;
+    extern const int CANNOT_MREMAP;
+}
+
+
+bool isNotEnoughMemoryErrorCode(int code)
+{
+    /// Don't count the part as broken if there is not enough memory to load it.
+    /// In fact, there can be many similar situations.
+    /// But it is OK, because there is a safety guard against deleting too many parts.
+    return code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+        || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+        || code == ErrorCodes::CANNOT_MUNMAP
+        || code == ErrorCodes::CANNOT_MREMAP;
 }
 
 
@@ -151,7 +167,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     std::function<bool()> is_cancelled)
 {
     return checkDataPart(
-        data_part->disk,
+        data_part->volume->getDisk(),
         data_part->getFullRelativePath(),
         data_part->getColumns(),
         data_part->getType(),

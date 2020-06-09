@@ -1,0 +1,103 @@
+flat: left on
+0	0	0	0	0
+1	1	1	1	1
+2	2	2	2	2
+3	3	3	3	3
+4	0	0		0
+flat: left
+0	0	0	0
+1	1	1	1
+2	2	2	2
+3	3	3	3
+4	0		0
+flat: any left
+0	0	0	0
+1	1	1	1
+2	2	2	2
+3	3	3	3
+4	0		0
+flat: semi left
+0	0	0	0
+1	1	1	1
+2	2	2	2
+3	3	3	3
+flat: anti left
+4	0		0
+flat: inner
+0	0	0	0
+1	1	1	1
+flat: inner on
+0	0	0	0	0
+1	1	1	1	1
+2	2	2	2	2
+3	3	3	3	3
+hashed: left on
+0	0	0	0	0
+1	1	1	1	1
+2	2	2	2	2
+3	3	3	3	3
+4	\N	\N	\N	\N
+hashed: left
+0	0	0	0
+1	1	1	1
+2	2	2	2
+3	3	3	3
+4	\N	\N	\N
+hashed: any left
+0	0	0	0
+1	1	1	1
+2	2	2	2
+3	3	3	3
+4	\N	\N	\N
+hashed: semi left
+0	0	0	0
+1	1	1	1
+2	2	2	2
+3	3	3	3
+hashed: anti left
+4	\N	\N	\N
+hashed: inner
+0	0	0	0
+1	1	1	1
+hashed: inner on
+0	0	0	0	0
+1	1	1	1	1
+2	2	2	2	2
+3	3	3	3	3
+complex_cache (smoke)
+0	\N	\N	\N	\N
+1	\N	\N	\N	\N
+2	\N	\N	\N	\N
+3	\N	\N	\N	\N
+4	\N	\N	\N	\N
+not optimized (smoke)
+0	0	0	0
+1	1	1	1
+2	2	2	2
+3	3	3	3
+-
+0	0	0	0	0
+1	1	1	1	1
+\N	2	2	2	2
+\N	3	3	3	3
+-
+2	2	2	2
+3	3	3	3
+4	\N	\N	\N
+5	\N	\N	\N
+\N	0	0	0
+\N	1	1	1
+-
+0	0	0	0
+1	1	1	1
+-
+0	0	0	0
+1	1	1	1
+3	3	3	3
+2	2	2	2
+-
+0	0	0	0
+1	1	1	1
+-
+3	3	3	3
+2	2	2	2

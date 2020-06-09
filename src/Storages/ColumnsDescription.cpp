@@ -23,10 +23,12 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
+#include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+
 
 namespace DB
 {
@@ -40,8 +42,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, bool is_virtual_)
-    : name(std::move(name_)), type(std::move(type_)), is_virtual(is_virtual_)
+ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
+    : name(std::move(name_)), type(std::move(type_))
 {
 }
 
@@ -102,7 +104,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
     ParserColumnDeclaration column_parser(/* require type */ true);
     String column_line;
     readEscapedStringUntilEOL(column_line, buf);
-    ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0);
+    ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     if (const auto * col_ast = ast->as<ASTColumnDeclaration>())
     {
         name = col_ast->name;
@@ -118,7 +120,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_ast->codec)
-            codec = CompressionCodecFactory::instance().get(col_ast->codec, type);
+            codec = CompressionCodecFactory::instance().get(col_ast->codec, type, false);
 
         if (col_ast->ttl)
             ttl = col_ast->ttl;
@@ -128,10 +130,10 @@ void ColumnDescription::readText(ReadBuffer & buf)
 }
 
 
-ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, bool all_virtuals)
+ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
 {
     for (auto & elem : ordinary)
-        add(ColumnDescription(std::move(elem.name), std::move(elem.type), all_virtuals));
+        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
 }
 
 
@@ -258,7 +260,7 @@ NamesAndTypesList ColumnsDescription::getOrdinary() const
 {
     NamesAndTypesList ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind == ColumnDefaultKind::Default && !col.is_virtual)
+        if (col.default_desc.kind == ColumnDefaultKind::Default)
             ret.emplace_back(col.name, col.type);
     return ret;
 }
@@ -279,15 +281,6 @@ NamesAndTypesList ColumnsDescription::getAliases() const
         if (col.default_desc.kind == ColumnDefaultKind::Alias)
             ret.emplace_back(col.name, col.type);
     return ret;
-}
-
-NamesAndTypesList ColumnsDescription::getVirtuals() const
-{
-    NamesAndTypesList result;
-    for (const auto & column : columns)
-        if (column.is_virtual)
-            result.emplace_back(column.name, column.type);
-    return result;
 }
 
 NamesAndTypesList ColumnsDescription::getAll() const
@@ -325,7 +318,7 @@ NamesAndTypesList ColumnsDescription::getAllPhysical() const
 {
     NamesAndTypesList ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind != ColumnDefaultKind::Alias && !col.is_virtual)
+        if (col.default_desc.kind != ColumnDefaultKind::Alias)
             ret.emplace_back(col.name, col.type);
     return ret;
 }
@@ -334,7 +327,7 @@ Names ColumnsDescription::getNamesOfPhysical() const
 {
     Names ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind != ColumnDefaultKind::Alias && !col.is_virtual)
+        if (col.default_desc.kind != ColumnDefaultKind::Alias)
             ret.emplace_back(col.name);
     return ret;
 }
@@ -342,7 +335,7 @@ Names ColumnsDescription::getNamesOfPhysical() const
 NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    if (it == columns.get<1>().end() || it->default_desc.kind == ColumnDefaultKind::Alias || it->is_virtual)
+    if (it == columns.get<1>().end() || it->default_desc.kind == ColumnDefaultKind::Alias)
         throw Exception("There is no physical column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     return NameAndTypePair(it->name, it->type);
 }
@@ -350,7 +343,7 @@ NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) cons
 bool ColumnsDescription::hasPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias && !it->is_virtual;
+    return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias;
 }
 
 
@@ -452,7 +445,7 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
     {
         auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(default_expr_list, all_columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
-        for (auto & action : actions->getActions())
+        for (const auto & action : actions->getActions())
             if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
                 throw Exception("Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 

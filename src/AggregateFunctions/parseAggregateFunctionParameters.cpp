@@ -2,6 +2,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Common/typeid_cast.h>
+#include <Core/Defines.h>
 
 
 namespace DB
@@ -26,8 +27,12 @@ Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const 
         const auto * literal = parameters[i]->as<ASTLiteral>();
         if (!literal)
         {
-            throw Exception("Parameters to aggregate functions must be literals" + (error_context.empty() ? "" : " (in " + error_context +")"),
-                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
+            throw Exception(
+                ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
+                "Parameters to aggregate functions must be literals. "
+                "Got parameter '{}'{}",
+                parameters[i]->formatForErrorMessage(),
+                (error_context.empty() ? "" : " (in " + error_context +")"));
         }
 
         params_row[i] = literal->value;
@@ -65,7 +70,7 @@ void getAggregateFunctionNameAndParametersArray(
     ParserExpressionList params_parser(false);
     ASTPtr args_ast = parseQuery(params_parser,
         parameters_str.data(), parameters_str.data() + parameters_str.size(),
-        "parameters of aggregate function in " + error_context, 0);
+        "parameters of aggregate function in " + error_context, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     if (args_ast->children.empty())
         throw Exception("Incorrect list of parameters to aggregate function "

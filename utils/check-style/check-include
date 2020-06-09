@@ -59,8 +59,8 @@ inc="-I. \
 -I./contrib/lz4/lib \
 -I./contrib/hyperscan/src \
 -I./contrib/simdjson/include \
--I./dbms \
--I${BUILD_DIR}/dbms"
+-I./src \
+-I${BUILD_DIR}/src"
 
 if [ -z $1 ]; then
     cd ${ROOT_DIR=${CUR_DIR}../..}

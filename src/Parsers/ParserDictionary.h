@@ -3,6 +3,8 @@
 #include <Parsers/IParser.h>
 #include <Parsers/IParserBase.h>
 
+#include <Parsers/ParserSetQuery.h>
+
 namespace DB
 {
 
@@ -34,6 +36,13 @@ class ParserDictionaryLayout : public IParserBase
 {
 protected:
     const char * getName() const override { return "layout definition"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserDictionarySettings: public IParserBase
+{
+protected:
+    const char * getName() const override { return "settings definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

@@ -36,7 +36,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        auto arg = arguments[0].get();
+        const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isStringOrFixedString())
             throw Exception(
                 "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be String or FixedString",
@@ -47,15 +47,15 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto col_hindex = block.getByPosition(arguments[0]).column.get();
+        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        if (auto * h3index = checkAndGetColumn<ColumnString>(col_hindex))
+        if (const auto * h3index = checkAndGetColumn<ColumnString>(col_hindex))
             execute<StringSource>(StringSource(*h3index), dst_data);
-        else if (auto * h3index_fixed = checkAndGetColumn<ColumnFixedString>(col_hindex))
+        else if (const auto * h3index_fixed = checkAndGetColumn<ColumnFixedString>(col_hindex))
             execute<FixedStringSource>(FixedStringSource(*h3index_fixed), dst_data);
         else if (const ColumnConst * h3index_const = checkAndGetColumnConst<ColumnString>(col_hindex))
             execute<ConstSource<StringSource>>(ConstSource<StringSource>(*h3index_const), dst_data);

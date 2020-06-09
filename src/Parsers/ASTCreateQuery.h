@@ -5,6 +5,7 @@
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -69,8 +70,8 @@ public:
     ASTColumns * columns_list = nullptr;
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of dictionary
     ASTExpressionList * tables = nullptr;
-    String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
-    String to_table;
+    //FIXME
+    StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
     ASTStorage * storage = nullptr;
     ASTPtr watermark_function;
     ASTPtr lateness_function;
@@ -80,6 +81,7 @@ public:
     ASTSelectWithUnionQuery * select = nullptr;
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
     std::optional<UInt64> live_view_timeout;    /// For CREATE LIVE VIEW ... WITH TIMEOUT ...
+    bool attach_short_syntax{false};
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }

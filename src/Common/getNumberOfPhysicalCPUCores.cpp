@@ -1,12 +1,10 @@
-#include <Common/getNumberOfPhysicalCPUCores.h>
-#include <thread>
+#include "getNumberOfPhysicalCPUCores.h"
 
-#include <Common/config.h>
 #if USE_CPUID
-#   include <libcpuid/libcpuid.h>
-#elif USE_CPUINFO
-#   include <cpuinfo.h>
+#    include <libcpuid/libcpuid.h>
 #endif
+
+#include <thread>
 
 
 unsigned getNumberOfPhysicalCPUCores()
@@ -31,14 +29,6 @@ unsigned getNumberOfPhysicalCPUCores()
 
     if (res != 0)
         return res;
-
-#elif USE_CPUINFO
-    uint32_t cores = 0;
-    if (cpuinfo_initialize())
-        cores = cpuinfo_get_cores_count();
-
-    if (cores)
-        return cores;
 #endif
 
     /// As a fallback (also for non-x86 architectures) assume there are no hyper-threading on the system.

@@ -1,19 +1,20 @@
 #pragma once
+
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequestHandler.h>
-#include <Common/config.h>
 
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
-/** This handler establish connection to database, and retrieve quote style identifier
-  */
+#if USE_ODBC
+
+/// This handler establishes connection to database, and retrieve quote style identifier
 namespace DB
 {
+
 class IdentifierQuoteHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-    IdentifierQuoteHandler(size_t keep_alive_timeout_, std::shared_ptr<Context> context_)
-        : log(&Poco::Logger::get("IdentifierQuoteHandler")), keep_alive_timeout(keep_alive_timeout_), context(context_)
+    IdentifierQuoteHandler(size_t keep_alive_timeout_, Context &)
+        : log(&Poco::Logger::get("IdentifierQuoteHandler")), keep_alive_timeout(keep_alive_timeout_)
     {
     }
 
@@ -22,7 +23,8 @@ public:
 private:
     Poco::Logger * log;
     size_t keep_alive_timeout;
-    std::shared_ptr<Context> context;
 };
+
 }
+
 #endif

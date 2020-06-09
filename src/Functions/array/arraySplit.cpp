@@ -62,7 +62,7 @@ struct ArraySplitImpl
         }
         else
         {
-            auto column_cut_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
+            const auto * column_cut_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_cut_const)
                 throw Exception("Unexpected type of cut column", ErrorCodes::ILLEGAL_COLUMN);

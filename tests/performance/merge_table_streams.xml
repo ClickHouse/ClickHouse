@@ -4,15 +4,6 @@
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>60000</total_time_ms>
-            <iterations>3</iterations>
-        </all_of>
-        <any_of>
-            <iterations>30</iterations>
-        </any_of>
-    </stop_conditions>
 
 
 <settings>

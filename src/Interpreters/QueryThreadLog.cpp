@@ -67,10 +67,8 @@ Block QueryThreadLogElement::createBlock()
     };
 }
 
-void QueryThreadLogElement::appendToBlock(Block & block) const
+void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
 {
-    MutableColumns columns = block.mutateColumns();
-
     size_t i = 0;
 
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
@@ -98,8 +96,8 @@ void QueryThreadLogElement::appendToBlock(Block & block) const
 
     if (profile_counters)
     {
-        auto column_names = columns[i++].get();
-        auto column_values = columns[i++].get();
+        auto * column_names = columns[i++].get();
+        auto * column_values = columns[i++].get();
         dumpToArrayColumns(*profile_counters, column_names, column_values, true);
     }
     else

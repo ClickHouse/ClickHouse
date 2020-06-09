@@ -26,12 +26,14 @@ void registerFunctionsHashing(FunctionFactory & factory)
     factory.registerFunction<FunctionJavaHash>();
     factory.registerFunction<FunctionJavaHashUTF16LE>();
     factory.registerFunction<FunctionHiveHash>();
+#if !defined(ARCADIA_BUILD)
     factory.registerFunction<FunctionMurmurHash2_32>();
     factory.registerFunction<FunctionMurmurHash2_64>();
     factory.registerFunction<FunctionMurmurHash3_32>();
     factory.registerFunction<FunctionMurmurHash3_64>();
     factory.registerFunction<FunctionMurmurHash3_128>();
     factory.registerFunction<FunctionGccMurmurHash>();
+#endif
 
 #if USE_XXHASH
     factory.registerFunction<FunctionXxHash32>();

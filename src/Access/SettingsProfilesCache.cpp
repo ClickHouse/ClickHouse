@@ -1,6 +1,7 @@
 #include <Access/SettingsProfilesCache.h>
 #include <Access/AccessControlManager.h>
 #include <Access/SettingsProfile.h>
+#include <Core/Settings.h>
 #include <Common/quoteString.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -104,16 +105,17 @@ void SettingsProfilesCache::setDefaultProfileName(const String & default_profile
 void SettingsProfilesCache::mergeSettingsAndConstraints()
 {
     /// `mutex` is already locked.
-    std::erase_if(
-        enabled_settings,
-        [&](const std::pair<EnabledSettings::Params, std::weak_ptr<EnabledSettings>> & pr)
+    for (auto i = enabled_settings.begin(), e = enabled_settings.end(); i != e;)
+    {
+        auto enabled = i->second.lock();
+        if (!enabled)
+            i = enabled_settings.erase(i);
+        else
         {
-            auto enabled = pr.second.lock();
-            if (!enabled)
-                return true; // remove from the `enabled_settings` list.
             mergeSettingsAndConstraintsFor(*enabled);
-            return false; // keep in the `enabled_settings` list.
-        });
+            ++i;
+        }
+    }
 }
 
 
@@ -148,32 +150,34 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
 
 void SettingsProfilesCache::substituteProfiles(SettingsProfileElements & elements) const
 {
-    bool stop_substituting = false;
     boost::container::flat_set<UUID> already_substituted;
-    while (!stop_substituting)
+    for (size_t i = 0; i != elements.size();)
     {
-        stop_substituting = true;
-        for (size_t i = 0; i != elements.size(); ++i)
+        auto & element = elements[i];
+        if (!element.parent_profile)
         {
-            auto & element = elements[i];
-            if (!element.parent_profile)
-                continue;
-
-            auto parent_profile_id = *element.parent_profile;
-            element.parent_profile.reset();
-            if (already_substituted.contains(parent_profile_id))
-                continue;
-
-            already_substituted.insert(parent_profile_id);
-            auto parent_profile = all_profiles.find(parent_profile_id);
-            if (parent_profile == all_profiles.end())
-                continue;
-
-            const auto & parent_profile_elements = parent_profile->second->elements;
-            elements.insert(elements.begin() + i + 1, parent_profile_elements.begin(), parent_profile_elements.end());
-            i += parent_profile_elements.size();
-            stop_substituting = false;
+            ++i;
+            continue;
         }
+
+        auto parent_profile_id = *element.parent_profile;
+        element.parent_profile.reset();
+        if (already_substituted.count(parent_profile_id))
+        {
+            ++i;
+            continue;
+        }
+
+        already_substituted.insert(parent_profile_id);
+        auto parent_profile = all_profiles.find(parent_profile_id);
+        if (parent_profile == all_profiles.end())
+        {
+            ++i;
+            continue;
+        }
+
+        const auto & parent_profile_elements = parent_profile->second->elements;
+        elements.insert(elements.begin() + i, parent_profile_elements.begin(), parent_profile_elements.end());
     }
 }
 
@@ -181,7 +185,7 @@ void SettingsProfilesCache::substituteProfiles(SettingsProfileElements & element
 std::shared_ptr<const EnabledSettings> SettingsProfilesCache::getEnabledSettings(
     const UUID & user_id,
     const SettingsProfileElements & settings_from_user,
-    const std::vector<UUID> & enabled_roles,
+    const boost::container::flat_set<UUID> & enabled_roles,
     const SettingsProfileElements & settings_from_enabled_roles)
 {
     std::lock_guard lock{mutex};

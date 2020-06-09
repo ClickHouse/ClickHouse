@@ -31,7 +31,7 @@ public:
 
     void checkTableCanBeDropped() const override;
 
-    void drop(TableStructureWriteLockHolder &) override;
+    void drop() override;
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
@@ -57,8 +57,8 @@ private:
     ASTPtr mergeable_query;
     ASTPtr final_query;
 
-    Context global_context;
-    Context wv_context;
+    Context & global_context;
+    std::unique_ptr<Context> wv_context;
     bool is_proctime{true};
     bool is_time_column_func_now;
     bool is_tumble; // false if is hop

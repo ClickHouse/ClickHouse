@@ -56,8 +56,6 @@ public:
     /// Token iterator augmented with depth information. This allows to control recursion depth.
     struct Pos : TokenIterator
     {
-        using TokenIterator::TokenIterator;
-
         uint32_t depth = 0;
         uint32_t max_depth = 0;
 

@@ -1,4 +1,3 @@
-#include <common/config_common.h>
 #include <common/memory.h>
 #include <Common/MemoryTracker.h>
 
@@ -14,21 +13,22 @@
 /// Replace default new/delete with memory tracking versions.
 /// @sa https://en.cppreference.com/w/cpp/memory/new/operator_new
 ///     https://en.cppreference.com/w/cpp/memory/new/operator_delete
-#if !UNBUNDLED
 
 namespace Memory
 {
 
 inline ALWAYS_INLINE void trackMemory(std::size_t size)
 {
-#if USE_JEMALLOC
+    std::size_t actual_size = size;
+
+#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 5
     /// The nallocx() function allocates no memory, but it performs the same size computation as the mallocx() function
     /// @note je_mallocx() != je_malloc(). It's expected they don't differ much in allocation logic.
     if (likely(size != 0))
-        CurrentMemoryTracker::alloc(nallocx(size, 0));
-#else
-    CurrentMemoryTracker::alloc(size);
+        actual_size = nallocx(size, 0);
 #endif
+
+    CurrentMemoryTracker::alloc(actual_size);
 }
 
 inline ALWAYS_INLINE bool trackMemoryNoExcept(std::size_t size) noexcept
@@ -49,18 +49,18 @@ inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t
 {
     try
     {
-#if USE_JEMALLOC
+#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 5
         /// @note It's also possible to use je_malloc_usable_size() here.
         if (likely(ptr != nullptr))
             CurrentMemoryTracker::free(sallocx(ptr, 0));
 #else
         if (size)
             CurrentMemoryTracker::free(size);
-#   ifdef _GNU_SOURCE
+#    if defined(_GNU_SOURCE)
         /// It's innaccurate resource free for sanitizers. malloc_usable_size() result is greater or equal to allocated size.
         else
             CurrentMemoryTracker::free(malloc_usable_size(ptr));
-#   endif
+#    endif
 #endif
     }
     catch (...)
@@ -130,26 +130,3 @@ void operator delete[](void * ptr, std::size_t size) noexcept
     Memory::untrackMemory(ptr, size);
     Memory::deleteSized(ptr, size);
 }
-
-#else
-
-/// new
-
-void * operator new(std::size_t size) { return Memory::newImpl(size); }
-void * operator new[](std::size_t size) { return Memory::newImpl(size); }
-
-void * operator new(std::size_t size, const std::nothrow_t &) noexcept { return Memory::newNoExept(size); }
-void * operator new[](std::size_t size, const std::nothrow_t &) noexcept { return Memory::newNoExept(size); }
-
-/// delete
-
-void operator delete(void * ptr) noexcept { Memory::deleteImpl(ptr); }
-void operator delete[](void * ptr) noexcept { Memory::deleteImpl(ptr); }
-
-void operator delete(void * ptr, const std::nothrow_t &) noexcept { Memory::deleteImpl(ptr); }
-void operator delete[](void * ptr, const std::nothrow_t &) noexcept { Memory::deleteImpl(ptr); }
-
-void operator delete(void * ptr, std::size_t size) noexcept { Memory::deleteSized(ptr, size); }
-void operator delete[](void * ptr, std::size_t size) noexcept { Memory::deleteSized(ptr, size); }
-
-#endif

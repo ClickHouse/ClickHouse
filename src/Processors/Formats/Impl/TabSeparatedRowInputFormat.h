@@ -50,8 +50,7 @@ private:
     void fillUnreadColumnsWithDefaults(MutableColumns & columns, RowReadExtension & row_read_extension);
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
-    void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column,
-                             ReadBuffer::Position & prev_pos, ReadBuffer::Position & curr_pos) override;
+    void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
 };
 

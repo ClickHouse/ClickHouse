@@ -1,13 +1,15 @@
 #pragma once
 
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
 #if USE_RAPIDJSON
+#    include <Core/Types.h>
+#    include <Common/Exception.h>
+#    include <common/StringRef.h>
 
-#include <common/StringRef.h>
-#include <Common/Exception.h>
-#include <Core/Types.h>
-
-#include <rapidjson/document.h>
+#    include <rapidjson/document.h>
 
 
 namespace DB

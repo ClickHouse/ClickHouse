@@ -38,6 +38,7 @@ public:
         const Context & context;
         size_t subquery_depth;
         Scalars & scalars;
+        bool only_analyze;
     };
 
     static bool needChildVisit(ASTPtr & node, const ASTPtr &);

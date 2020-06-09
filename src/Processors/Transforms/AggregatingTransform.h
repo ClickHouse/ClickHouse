@@ -28,6 +28,8 @@ struct AggregatingTransformParams
         : params(params_), aggregator(params), final(final_) {}
 
     Block getHeader() const { return aggregator.getHeader(final); }
+
+    Block getCustomHeader(bool final_) const { return aggregator.getHeader(final_); }
 };
 
 struct ManyAggregatedData
@@ -49,6 +51,21 @@ struct ManyAggregatedData
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 
+/** Aggregates the stream of blocks using the specified key columns and aggregate functions.
+  * Columns with aggregate functions adds to the end of the block.
+  * If final = false, the aggregate functions are not finalized, that is, they are not replaced by their value, but contain an intermediate state of calculations.
+  * This is necessary so that aggregation can continue (for example, by combining streams of partially aggregated data).
+  *
+  * For every separate stream of data separate AggregatingTransform is created.
+  * Every AggregatingTransform reads data from the first port till is is not run out, or max_rows_to_group_by reached.
+  * When the last AggregatingTransform finish reading, the result of aggregation is needed to be merged together.
+  * This task is performed by ConvertingAggregatedToChunksTransform.
+  * Last AggregatingTransform expands pipeline and adds second input port, which reads from ConvertingAggregated.
+  *
+  * Aggregation data is passed by ManyAggregatedData structure, which is shared between all aggregating transforms.
+  * At aggregation step, every transform uses it's own AggregatedDataVariants structure.
+  * At merging step, all structures pass to ConvertingAggregatedToChunksTransform.
+  */
 class AggregatingTransform : public IProcessor
 {
 public:
@@ -57,7 +74,7 @@ public:
     /// For Parallel aggregating.
     AggregatingTransform(Block header, AggregatingTransformParamsPtr params_,
                          ManyAggregatedDataPtr many_data, size_t current_variant,
-                         size_t temporary_data_merge_threads, size_t max_threads);
+                         size_t max_threads, size_t temporary_data_merge_threads);
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }
@@ -73,7 +90,7 @@ private:
     Processors processors;
 
     AggregatingTransformParamsPtr params;
-    Logger * log = &Logger::get("AggregatingTransform");
+    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
@@ -101,5 +118,7 @@ private:
 
     void initGenerate();
 };
+
+Chunk convertToChunk(const Block & block);
 
 }

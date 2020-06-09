@@ -56,3 +56,6 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | while 
 
 # Broken XML files (requires libxml2-utils)
 find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' | xargs xmllint --noout --nonet
+
+# Machine translation to Russian is strictly prohibited
+find $ROOT_PATH/docs/ru -name '*.md' | xargs grep -l -F 'machine_translated: true'

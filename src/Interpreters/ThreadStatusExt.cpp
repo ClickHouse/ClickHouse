@@ -8,6 +8,7 @@
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/TraceCollector.h>
+#include <common/errnoToString.h>
 
 #if defined(OS_LINUX)
 #   include <Common/hasLinuxCapability.h>
@@ -84,12 +85,18 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         query_id = query_context->getCurrentQueryId();
         initQueryProfiler();
 
+        const Settings & settings = query_context->getSettingsRef();
+
+        untracked_memory_limit = settings.max_untracked_memory;
+        if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
+            untracked_memory_limit = settings.memory_profiler_step;
+
 #if defined(OS_LINUX)
         /// Set "nice" value if required.
-        Int32 new_os_thread_priority = query_context->getSettingsRef().os_thread_priority;
+        Int32 new_os_thread_priority = settings.os_thread_priority;
         if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
         {
-            LOG_TRACE(log, "Setting nice to " << new_os_thread_priority);
+            LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
 
             if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
                 throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
@@ -128,6 +135,54 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     setupState(thread_group_);
 }
 
+void ThreadStatus::initPerformanceCounters()
+{
+    performance_counters_finalized = false;
+
+    /// Clear stats from previous query if a new query is started
+    /// TODO: make separate query_thread_performance_counters and thread_performance_counters
+    performance_counters.resetCounters();
+    memory_tracker.resetCounters();
+    memory_tracker.setDescription("(for thread)");
+
+    query_start_time_nanoseconds = getCurrentTimeNanoseconds();
+    query_start_time = time(nullptr);
+    ++queries_started;
+
+    *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
+
+    if (query_context)
+    {
+        const Settings & settings = query_context->getSettingsRef();
+        if (settings.metrics_perf_events_enabled)
+        {
+            try
+            {
+                current_thread_counters.initializeProfileEvents(
+                    settings.metrics_perf_events_list);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
+
+    if (!taskstats)
+    {
+        try
+        {
+            taskstats = TasksStatsCounters::create(thread_id);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    }
+    if (taskstats)
+        taskstats->reset();
+}
+
 void ThreadStatus::finalizePerformanceCounters()
 {
     if (performance_counters_finalized)
@@ -136,11 +191,26 @@ void ThreadStatus::finalizePerformanceCounters()
     performance_counters_finalized = true;
     updatePerformanceCounters();
 
+    bool close_perf_descriptors = true;
+    if (query_context)
+        close_perf_descriptors = !query_context->getSettingsRef().metrics_perf_events_enabled;
+
+    try
+    {
+        current_thread_counters.finalizeProfileEvents(performance_counters);
+        if (close_perf_descriptors)
+            current_thread_counters.closeEventDescriptors();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+
     try
     {
         if (global_context && query_context)
         {
-            auto & settings = query_context->getSettingsRef();
+            const auto & settings = query_context->getSettingsRef();
             if (settings.log_queries && settings.log_query_threads)
                 if (auto thread_log = global_context->getQueryThreadLog())
                     logToQueryThreadLog(*thread_log);
@@ -215,7 +285,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         LOG_TRACE(log, "Resetting nice");
 
         if (0 != setpriority(PRIO_PROCESS, thread_id, 0))
-            LOG_ERROR(log, "Cannot 'setpriority' back to zero: " << errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
+            LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
 
         os_thread_priority = 0;
     }

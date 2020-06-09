@@ -81,6 +81,14 @@ SELECT sum(x) FROM distributed SETTINGS
     max_replica_delay_for_distributed_queries=1
 ''').strip() == '3'
 
+        # Regression for skip_unavailable_shards in conjunction with skip_unavailable_shards
+        assert instance_with_dist_table.query('''
+SELECT sum(x) FROM distributed SETTINGS
+    load_balancing='in_order',
+    skip_unavailable_shards=1,
+    max_replica_delay_for_distributed_queries=1
+''').strip() == '3'
+
         # If we forbid stale replicas, the query must fail.
         with pytest.raises(Exception):
             print instance_with_dist_table.query('''
