@@ -82,8 +82,8 @@ RUN apt-get --allow-unauthenticated update -y \
             libcctz-dev \
             libldap2-dev \
             libsasl2-dev \
-            heimdal-multidev
-
+            heimdal-multidev \
+            libhyperscan-dev
 
 
 # This symlink required by gcc to find lld compiler

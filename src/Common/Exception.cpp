@@ -10,6 +10,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
 #include <common/demangle.h>
+#include <common/errnoToString.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
 #include <filesystem>
@@ -84,31 +85,6 @@ std::string Exception::getStackTraceString() const
 #endif
 }
 
-
-std::string errnoToString(int code, int the_errno)
-{
-    const size_t buf_size = 128;
-    char buf[buf_size];
-#ifndef _GNU_SOURCE
-    int rc = strerror_r(the_errno, buf, buf_size);
-#ifdef __APPLE__
-    if (rc != 0 && rc != EINVAL)
-#else
-    if (rc != 0)
-#endif
-    {
-        std::string tmp = std::to_string(code);
-        const char * code_str = tmp.c_str();
-        const char * unknown_message = "Unknown error ";
-        strcpy(buf, unknown_message);
-        strcpy(buf + strlen(unknown_message), code_str);
-    }
-    return "errno: " + toString(the_errno) + ", strerror: " + std::string(buf);
-#else
-    (void)code;
-    return "errno: " + toString(the_errno) + ", strerror: " + std::string(strerror_r(the_errno, buf, sizeof(buf)));
-#endif
-}
 
 void throwFromErrno(const std::string & s, int code, int the_errno)
 {
