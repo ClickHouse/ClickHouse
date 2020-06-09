@@ -313,6 +313,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
                 column.default_desc.expression = default_expression;
             }
         });
+
+        if (metadata.sorting_key.sample_block.has(column_name))
+            metadata.sorting_key = KeyDescription::getKeyFromAST(metadata.sorting_key.definition_ast, metadata.columns, context);
     }
     else if (type == MODIFY_ORDER_BY)
     {
