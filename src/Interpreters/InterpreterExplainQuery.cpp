@@ -4,20 +4,16 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Parsers/DumpASTNode.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 
-#include <Core/Field.h>
-#include <Common/typeid_cast.h>
+#include <Storages/StorageView.h>
 #include <sstream>
 
 
@@ -30,25 +26,30 @@ namespace
     {
         struct Data
         {
-            bool analyzed = false;
             const Context & context;
         };
 
-        static bool needChildVisit(ASTPtr &, ASTPtr &) { return true; }
+        static bool needChildVisit(ASTPtr & node, ASTPtr &)
+        {
+            return !node->as<ASTSelectQuery>();
+        }
 
         static void visit(ASTPtr & ast, Data & data)
         {
-            if (auto * union_select_query = ast->as<ASTSelectWithUnionQuery>())
-                visit(*union_select_query, ast, data);
+            if (auto * select = ast->as<ASTSelectQuery>())
+                visit(*select, ast, data);
         }
 
-        static void visit(ASTSelectWithUnionQuery &, ASTPtr & node, Data & data)
+        static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
-            if (!data.analyzed)
+            InterpreterSelectQuery interpreter(
+                node, data.context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+
+            const SelectQueryInfo & query_info = interpreter.getQueryInfo();
+            if (query_info.view_query)
             {
-                data.analyzed = true;
-                InterpreterSelectWithUnionQuery interpreter(
-                    node, data.context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+                ASTPtr tmp;
+                StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp);
             }
         }
     };

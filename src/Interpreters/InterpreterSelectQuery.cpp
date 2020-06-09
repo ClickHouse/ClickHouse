@@ -299,10 +299,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
-        /// Allow push down and other optimizations for VIEW: replace with subquery, rewrite and save it.
+        /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
         if (view)
-            query_info.view_query = view->replaceWithSubquery(getSelectQuery(), view_table);
+            view->replaceWithSubquery(getSelectQuery(), view_table);
 
         syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
                 query_ptr, SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage),
@@ -310,8 +310,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (view)
         {
-            /// Restore original view name. We will use rewritten subquery in StorageView.
-            view->restoreViewName(getSelectQuery(), view_table);
+            /// Restore original view name. Save rewritten subquery for future usage in StorageView.
+            query_info.view_query = view->restoreViewName(getSelectQuery(), view_table);
             view = nullptr;
         }
 

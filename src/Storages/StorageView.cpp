@@ -93,10 +93,9 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_quer
     return select_element->table_expression->as<ASTTableExpression>();
 }
 
-ASTPtr StorageView::replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name) const
+void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name)
 {
-    ASTPtr subquery = inner_query->clone();
-    ASTTableExpression * table_expression = getFirstTableExpression(select_query);
+    ASTTableExpression * table_expression = getFirstTableExpression(outer_query);
 
     if (!table_expression->database_and_table_name)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
@@ -107,16 +106,15 @@ ASTPtr StorageView::replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & 
     view_name = table_expression->database_and_table_name;
     table_expression->database_and_table_name = {};
     table_expression->subquery = std::make_shared<ASTSubquery>();
-    table_expression->subquery->children.push_back(subquery);
+    table_expression->subquery->children.push_back(view_query);
     table_expression->subquery->setAlias(alias);
 
     for (auto & child : table_expression->children)
         if (child.get() == view_name.get())
-            child = subquery;
-    return subquery;
+            child = view_query;
 }
 
-void StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name) const
+ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name)
 {
     ASTTableExpression * table_expression = getFirstTableExpression(select_query);
 
@@ -130,6 +128,7 @@ void StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr & 
     for (auto & child : table_expression->children)
         if (child.get() == subquery.get())
             child = view_name;
+    return subquery;
 }
 
 void registerStorageView(StorageFactory & factory)
