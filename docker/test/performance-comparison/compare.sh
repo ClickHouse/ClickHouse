@@ -421,9 +421,39 @@ create table queries_for_flamegraph engine File(TSVWithNamesAndTypes,
     select test, query_index from queries where unstable_show or changed_show
     ;
 
-create table unstable_tests_tsv engine File(TSV, 'report/bad-tests.tsv') as
-    select test, sum(unstable_fail) u, sum(changed_fail) c, u + c s from queries
-    group by test having s > 0 order by s desc;
+create table test_time_changes_tsv engine File(TSV, 'report/test-time-changes.tsv') as
+    select test, queries, average_time_change from (
+        select test, count(*) queries,
+            sum(left) as left, sum(right) as right,
+            (right - left) / right average_time_change
+        from queries
+        group by test
+        order by abs(average_time_change) desc
+    )
+    ;
+
+create table unstable_tests_tsv engine File(TSV, 'report/unstable-tests.tsv') as
+    select test, sum(unstable_show) total_unstable, sum(changed_show) total_changed
+    from queries
+    group by test
+    order by total_unstable + total_changed desc
+    ;
+
+create table test_perf_changes_tsv engine File(TSV, 'report/test-perf-changes.tsv') as
+    select test,
+        queries,
+        coalesce(total_unstable, 0) total_unstable,
+        coalesce(total_changed, 0) total_changed,
+        total_unstable + total_changed total_bad,
+        coalesce(toString(floor(average_time_change, 3)), '??') average_time_change_str
+    from test_time_changes_tsv
+    full join unstable_tests_tsv
+    using test
+    where (abs(average_time_change) > 0.05 and queries > 5)
+        or (total_bad > 0)
+    order by total_bad desc, average_time_change desc
+    settings join_use_nulls = 1
+    ;
 
 create table query_time engine Memory as select *
     from file('analyze/client-times.tsv', TSV,
