@@ -495,7 +495,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
                     if(default_database == address.default_database)
                     {
                         throw Exception(
-                            "There are two exactly the same Snowball instances " + address.readableString() + " in cluster "
+                            "There are two exactly the same ClickHouse instances " + address.readableString() + " in cluster "
                                 + task.cluster_name, ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
                 }
                     else  ///circular replication is used.
