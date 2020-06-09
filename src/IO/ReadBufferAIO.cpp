@@ -4,6 +4,7 @@
 #include <IO/AIOContextPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/MemorySanitizer.h>
 #include <Core/Defines.h>
 
 #include <sys/types.h>
@@ -271,6 +272,9 @@ void ReadBufferAIO::prepare()
     region_aligned_size = region_aligned_end - region_aligned_begin;
 
     buffer_begin = fill_buffer.internalBuffer().begin();
+
+    /// Unpoison because msan doesn't instrument linux AIO
+    __msan_unpoison(buffer_begin, fill_buffer.internalBuffer().size());
 }
 
 void ReadBufferAIO::finalize()
