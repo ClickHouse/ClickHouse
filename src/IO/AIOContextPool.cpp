@@ -59,7 +59,7 @@ void AIOContextPool::waitForCompletion()
 }
 
 
-int AIOContextPool::getCompletionEvents(io_event events[], const int max_events)
+int AIOContextPool::getCompletionEvents(io_event events[], const int max_events) const
 {
     timespec timeout{timeout_sec, 0};
 
@@ -98,7 +98,7 @@ void AIOContextPool::fulfillPromises(const io_event events[], const int num_even
         const auto it = promises.find(completed_id);
         if (it == std::end(promises))
         {
-            LOG_ERROR(&Poco::Logger::get("AIOcontextPool"), "Found io_event with unknown id " << completed_id);
+            LOG_ERROR(&Poco::Logger::get("AIOcontextPool"), "Found io_event with unknown id {}", completed_id);
             continue;
         }
 
@@ -146,11 +146,10 @@ std::future<AIOContextPool::BytesRead> AIOContextPool::post(struct iocb & iocb)
     /// store id in AIO request for further identification
     iocb.aio_data = request_id;
 
-    auto num_requests = 0;
     struct iocb * requests[] { &iocb };
 
     /// submit a request
-    while ((num_requests = io_submit(aio_context.ctx, 1, requests)) < 0)
+    while (io_submit(aio_context.ctx, 1, requests) < 0)
     {
         if (errno == EAGAIN)
             /// wait until at least one event has been completed (or a spurious wakeup) and try again

@@ -324,7 +324,7 @@ void MinimalisticDataPartChecksums::serializeWithoutHeader(WriteBuffer & to) con
     writePODBinary(uncompressed_hash_of_compressed_files, to);
 }
 
-String MinimalisticDataPartChecksums::getSerializedString()
+String MinimalisticDataPartChecksums::getSerializedString() const
 {
     WriteBufferFromOwnString wb;
     serialize(wb);

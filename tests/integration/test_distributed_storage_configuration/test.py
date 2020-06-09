@@ -16,6 +16,7 @@ node = cluster.add_instance('node',
 def start_cluster():
     try:
         cluster.start()
+        node.query('CREATE DATABASE test ENGINE=Ordinary')
         yield cluster
     finally:
         cluster.shutdown()
@@ -25,41 +26,41 @@ def _files_in_dist_mon(node, root, table):
         'bash',
         '-c',
         # `-maxdepth 1` to avoid /tmp/ subdirectory
-        'find /{root}/data/default/{table}/default@127%2E0%2E0%2E2:9000 -maxdepth 1 -type f | wc -l'.format(root=root, table=table)
+        'find /{root}/data/test/{table}/default@127%2E0%2E0%2E2:9000 -maxdepth 1 -type f 2>/dev/null | wc -l'.format(root=root, table=table)
     ]).split('\n')[0])
 
 def test_different_versions(start_cluster):
-    node.query('CREATE TABLE foo (key Int) Engine=Memory()')
+    node.query('CREATE TABLE test.foo (key Int) Engine=Memory()')
     node.query("""
-    CREATE TABLE dist_foo (key Int)
+    CREATE TABLE test.dist_foo (key Int)
     Engine=Distributed(
         test_cluster_two_shards,
-        currentDatabase(),
+        test,
         foo,
         key%2,
         'default'
     )
     """)
-    # manual only
-    node.query('SYSTEM STOP DISTRIBUTED SENDS dist_foo')
+    # manual only (but only for remote node)
+    node.query('SYSTEM STOP DISTRIBUTED SENDS test.dist_foo')
 
-    node.query('INSERT INTO dist_foo SELECT * FROM numbers(100)')
+    node.query('INSERT INTO test.dist_foo SELECT * FROM numbers(100)')
     assert _files_in_dist_mon(node, 'disk1', 'dist_foo') == 1
     assert _files_in_dist_mon(node, 'disk2', 'dist_foo') == 0
 
-    assert node.query('SELECT count() FROM dist_foo') == '100\n'
-    node.query('SYSTEM FLUSH DISTRIBUTED dist_foo')
-    assert node.query('SELECT count() FROM dist_foo') == '200\n'
+    assert node.query('SELECT count() FROM test.dist_foo') == '100\n'
+    node.query('SYSTEM FLUSH DISTRIBUTED test.dist_foo')
+    assert node.query('SELECT count() FROM test.dist_foo') == '200\n'
 
     #
     # RENAME
     #
-    node.query('RENAME TABLE dist_foo TO dist2_foo')
+    node.query('RENAME TABLE test.dist_foo TO test.dist2_foo')
 
-    node.query('INSERT INTO dist2_foo SELECT * FROM numbers(100)')
+    node.query('INSERT INTO test.dist2_foo SELECT * FROM numbers(100)')
     assert _files_in_dist_mon(node, 'disk1', 'dist2_foo') == 0
     assert _files_in_dist_mon(node, 'disk2', 'dist2_foo') == 1
 
-    assert node.query('SELECT count() FROM dist2_foo') == '300\n'
-    node.query('SYSTEM FLUSH DISTRIBUTED dist2_foo')
-    assert node.query('SELECT count() FROM dist2_foo') == '400\n'
+    assert node.query('SELECT count() FROM test.dist2_foo') == '300\n'
+    node.query('SYSTEM FLUSH DISTRIBUTED test.dist2_foo')
+    assert node.query('SELECT count() FROM test.dist2_foo') == '400\n'

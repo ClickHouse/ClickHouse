@@ -11,9 +11,7 @@ public:
     using ColumnToSize = std::map<std::string, UInt64>;
 
     MergeTreeDataPartWriterWide(
-        DiskPtr disk,
-        const String & part_path,
-        const MergeTreeData & storage,
+        const MergeTreeData::DataPartPtr & data_part,
         const NamesAndTypesList & columns_list,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
@@ -24,7 +22,7 @@ public:
     void write(const Block & block, const IColumn::Permutation * permutation,
         const Block & primary_key_block, const Block & skip_indexes_block) override;
 
-    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) override;
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
 

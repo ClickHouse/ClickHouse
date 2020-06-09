@@ -10,7 +10,10 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-
+/// Try to read Decimal into underlying type T from ReadBuffer. Throws if 'digits_only' is set and there's unexpected symbol in input.
+/// Returns integer 'exponent' factor that x should be muntiplyed by to get correct Decimal value: result = x * 10^exponent.
+/// Use 'digits' input as max allowed meaning decimal digits in result. Place actual meanin digits in 'digits' output.
+/// Do not care about decimal scale, only about meaning digits in decimal text representation.
 template <bool _throw_on_error, typename T>
 inline bool readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exponent, bool digits_only = false)
 {
@@ -30,17 +33,14 @@ inline bool readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exp
         return false;
     }
 
-    if (!buf.eof())
+    switch (*buf.position())
     {
-        switch (*buf.position())
-        {
-            case '-':
-                sign = -1;
-                [[fallthrough]];
-            case '+':
-                ++buf.position();
-                break;
-        }
+        case '-':
+            sign = -1;
+            [[fallthrough]];
+        case '+':
+            ++buf.position();
+            break;
     }
 
     bool stop = false;

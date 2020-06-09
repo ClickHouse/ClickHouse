@@ -1,18 +1,20 @@
 {
     "docker/packager/deb": "yandex/clickhouse-deb-builder",
     "docker/packager/binary": "yandex/clickhouse-binary-builder",
+    "docker/test/coverage": "yandex/clickhouse-coverage",
     "docker/test/compatibility/centos": "yandex/clickhouse-test-old-centos",
     "docker/test/compatibility/ubuntu": "yandex/clickhouse-test-old-ubuntu",
-    "docker/test/integration": "yandex/clickhouse-integration-test",
-    "docker/test/performance": "yandex/clickhouse-performance-test",
+    "docker/test/integration/base": "yandex/clickhouse-integration-test",
     "docker/test/performance-comparison": "yandex/clickhouse-performance-comparison",
     "docker/test/pvs": "yandex/clickhouse-pvs-test",
     "docker/test/stateful": "yandex/clickhouse-stateful-test",
     "docker/test/stateful_with_coverage": "yandex/clickhouse-stateful-test-with-coverage",
     "docker/test/stateless": "yandex/clickhouse-stateless-test",
+    "docker/test/stateless_pytest": "yandex/clickhouse-stateless-pytest",
     "docker/test/stateless_with_coverage": "yandex/clickhouse-stateless-test-with-coverage",
     "docker/test/unit": "yandex/clickhouse-unit-test",
     "docker/test/stress": "yandex/clickhouse-stress-test",
     "docker/test/split_build_smoke_test": "yandex/clickhouse-split-build-smoke-test",
-    "tests/integration/image": "yandex/clickhouse-integration-tests-runner"
+    "docker/test/codebrowser": "yandex/clickhouse-codebrowser",
+    "docker/test/integration/runner": "yandex/clickhouse-integration-tests-runner"
 }

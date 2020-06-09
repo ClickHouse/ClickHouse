@@ -68,7 +68,7 @@ using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.
-std::string writeData(int rows, DB::StoragePtr & table)
+std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
 
@@ -77,9 +77,10 @@ std::string writeData(int rows, DB::StoragePtr & table)
     Block block;
 
     {
+        const auto & storage_columns = table->getColumns();
         ColumnWithTypeAndName column;
         column.name = "a";
-        column.type = table->getColumn("a").type;
+        column.type = storage_columns.getPhysical("a").type;
         auto col = column.type->createColumn();
         ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col).getData();
 
@@ -96,23 +97,23 @@ std::string writeData(int rows, DB::StoragePtr & table)
         block.insert(column);
     }
 
-    BlockOutputStreamPtr out = table->write({}, getContext());
+    BlockOutputStreamPtr out = table->write({}, context);
     out->write(block);
 
     return data;
 }
 
 // Returns all table data in Values format.
-std::string readData(DB::StoragePtr & table)
+std::string readData(DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
 
     Names column_names;
     column_names.push_back("a");
 
-    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(getContext());
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
-    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, getContext(), stage, 8192, 1)[0]));
+    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 8192, 1)[0]));
 
     Block sample;
     {
@@ -123,7 +124,7 @@ std::string readData(DB::StoragePtr & table)
 
     std::ostringstream ss;
     WriteBufferFromOStream out_buf(ss);
-    BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, getContext());
+    BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, context);
 
     copyData(*in, *output);
 
@@ -135,15 +136,16 @@ std::string readData(DB::StoragePtr & table)
 TYPED_TEST(StorageLogTest, testReadWrite)
 {
     using namespace DB;
+    const auto & context_holder = getContext();
 
     std::string data;
 
     // Write several chunks of data.
-    data += writeData(10, this->getTable());
+    data += writeData(10, this->getTable(), context_holder.context);
     data += ",";
-    data += writeData(20, this->getTable());
+    data += writeData(20, this->getTable(), context_holder.context);
     data += ",";
-    data += writeData(10, this->getTable());
+    data += writeData(10, this->getTable(), context_holder.context);
 
-    ASSERT_EQ(data, readData(this->getTable()));
+    ASSERT_EQ(data, readData(this->getTable(), context_holder.context));
 }

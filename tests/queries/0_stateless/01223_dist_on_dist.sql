@@ -82,6 +82,10 @@ select count() from merge_dist_01223;
 select 'distributed_group_by_no_merge';
 select count() from merge_dist_01223 settings distributed_group_by_no_merge=1;
 
+-- global in
+select 'GLOBAL IN';
+select distinct * from dist_01223 where key global in (select toInt32(1));
+
 drop table merge_dist_01223;
 drop table dist_01223;
 drop table dist_layer_01223;

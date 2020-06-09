@@ -38,7 +38,7 @@ MultipleAccessStorage::MultipleAccessStorage(
 }
 
 
-std::vector<UUID> MultipleAccessStorage::findMultiple(std::type_index type, const String & name) const
+std::vector<UUID> MultipleAccessStorage::findMultiple(EntityType type, const String & name) const
 {
     std::vector<UUID> ids;
     for (const auto & nested_storage : nested_storages)
@@ -55,7 +55,7 @@ std::vector<UUID> MultipleAccessStorage::findMultiple(std::type_index type, cons
 }
 
 
-std::optional<UUID> MultipleAccessStorage::findImpl(std::type_index type, const String & name) const
+std::optional<UUID> MultipleAccessStorage::findImpl(EntityType type, const String & name) const
 {
     auto ids = findMultiple(type, name);
     if (ids.empty())
@@ -66,19 +66,19 @@ std::optional<UUID> MultipleAccessStorage::findImpl(std::type_index type, const 
     std::vector<const Storage *> storages_with_duplicates;
     for (const auto & id : ids)
     {
-        auto * storage = findStorage(id);
+        const auto * storage = findStorage(id);
         if (storage)
             storages_with_duplicates.push_back(storage);
     }
 
     throw Exception(
-        "Found " + getTypeName(type) + " " + backQuote(name) + " in " + std::to_string(ids.size())
-            + " storages: " + joinStorageNames(storages_with_duplicates),
+        "Found " + outputEntityTypeAndName(type, name) + " in " + std::to_string(ids.size())
+            + " storages [" + joinStorageNames(storages_with_duplicates) + "]",
         ErrorCodes::ACCESS_ENTITY_FOUND_DUPLICATES);
 }
 
 
-std::vector<UUID> MultipleAccessStorage::findAllImpl(std::type_index type) const
+std::vector<UUID> MultipleAccessStorage::findAllImpl(EntityType type) const
 {
     std::vector<UUID> all_ids;
     for (const auto & nested_storage : nested_storages)
@@ -143,6 +143,14 @@ const IAccessStorage & MultipleAccessStorage::getStorage(const UUID & id) const
     return const_cast<MultipleAccessStorage *>(this)->getStorage(id);
 }
 
+void MultipleAccessStorage::addStorage(std::unique_ptr<Storage> nested_storage)
+{
+    /// Note that IStorage::storage_name is not changed. It is ok as this method
+    /// is considered as a temporary solution allowing third-party Arcadia applications
+    /// using CH as a library to register their own access storages. Do not remove
+    /// this method without providing any alternative :)
+    nested_storages.emplace_back(std::move(nested_storage));
+}
 
 AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id) const
 {
@@ -180,11 +188,7 @@ UUID MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool repl
     }
 
     if (!nested_storage_for_insertion)
-    {
-        throw Exception(
-            "Not found a storage to insert " + entity->getTypeName() + backQuote(entity->getName()),
-            ErrorCodes::ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND);
-    }
+        throw Exception("Not found a storage to insert " + entity->outputTypeAndName(), ErrorCodes::ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND);
 
     auto id = replace_if_exists ? nested_storage_for_insertion->insertOrReplace(entity) : nested_storage_for_insertion->insert(entity);
     std::lock_guard lock{ids_cache_mutex};
@@ -207,14 +211,14 @@ void MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 
 ext::scope_guard MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
-    auto storage = findStorage(id);
+    const auto * storage = findStorage(id);
     if (!storage)
         return {};
     return storage->subscribeForChanges(id, handler);
 }
 
 
-ext::scope_guard MultipleAccessStorage::subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const
+ext::scope_guard MultipleAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
     ext::scope_guard subscriptions;
     for (const auto & nested_storage : nested_storages)
@@ -234,7 +238,7 @@ bool MultipleAccessStorage::hasSubscriptionImpl(const UUID & id) const
 }
 
 
-bool MultipleAccessStorage::hasSubscriptionImpl(std::type_index type) const
+bool MultipleAccessStorage::hasSubscriptionImpl(EntityType type) const
 {
     for (const auto & nested_storage : nested_storages)
     {

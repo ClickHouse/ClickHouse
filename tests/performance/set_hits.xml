@@ -5,15 +5,6 @@
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>8000</total_time_ms>
-        </all_of>
-        <any_of>
-            <min_time_not_changing_for_ms>7000</min_time_not_changing_for_ms>
-            <total_time_ms>20000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
 
     <query>SELECT count() FROM hits_100m_single WHERE UserID IN (SELECT UserID FROM hits_100m_single WHERE AdvEngineID != 0)</query>

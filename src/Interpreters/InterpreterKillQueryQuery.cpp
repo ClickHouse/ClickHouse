@@ -261,13 +261,13 @@ BlockIO InterpreterKillQueryQuery::execute()
             CancellationCode code = CancellationCode::Unknown;
             if (!query.test)
             {
-                auto storage = DatabaseCatalog::instance().tryGetTable(table_id);
+                auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 if (!storage)
                     code = CancellationCode::NotFound;
                 else
                 {
                     ParserAlterCommand parser;
-                    auto command_ast = parseQuery(parser, command_col.getDataAt(i).toString(), 0);
+                    auto command_ast = parseQuery(parser, command_col.getDataAt(i).toString(), 0, context.getSettingsRef().max_parser_depth);
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name);
                     if (!access->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), required_access_rights))
                     {
@@ -302,10 +302,11 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + queryToString(where_expression);
 
-    BlockIO block_io = executeQuery(select_query, context.getGlobalContext(), true, QueryProcessingStage::Complete, false, false);
-    Block res = block_io.in->read();
+    BlockIO block_io = executeQuery(select_query, context.getGlobalContext(), true);
+    auto stream = block_io.getInputStream();
+    Block res = stream->read();
 
-    if (res && block_io.in->read())
+    if (res && stream->read())
         throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
 
     return res;

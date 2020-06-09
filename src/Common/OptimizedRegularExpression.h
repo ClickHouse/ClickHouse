@@ -5,12 +5,16 @@
 #include <memory>
 #include <optional>
 #include <Common/StringSearcher.h>
-#include <Common/config.h>
 #include <re2/re2.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 #if USE_RE2_ST
-    #include <re2_st/re2.h>
+#    include <re2_st/re2.h>
 #else
-    #define re2_st re2
+#    define re2_st re2
 #endif
 
 

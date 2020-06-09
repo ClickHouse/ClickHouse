@@ -42,7 +42,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     context.checkAccess(getRequiredAccess());
     auto table_id = context.resolveStorageID(alter, Context::ResolveOrdinary);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions,
     /// mutation expression, etc.
@@ -56,7 +56,7 @@ BlockIO InterpreterAlterQuery::execute()
     LiveViewCommands live_view_commands;
     for (ASTAlterCommand * command_ast : alter.command_list->commands)
     {
-        if (auto alter_command = AlterCommand::parse(command_ast))
+        if (auto alter_command = AlterCommand::parse(command_ast, !context.getSettingsRef().allow_suspicious_codecs))
             alter_commands.emplace_back(std::move(*alter_command));
         else if (auto partition_command = PartitionCommand::parse(command_ast))
         {
@@ -82,7 +82,9 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!mutation_commands.empty())
     {
-        auto table_lock_holder = table->lockStructureForShare(false /* because mutation is executed asyncronously */, context.getCurrentQueryId());
+        auto table_lock_holder = table->lockStructureForShare(
+                false /* because mutation is executed asyncronously */,
+                context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
         MutationsInterpreter(table, mutation_commands, context, false).validate(table_lock_holder);
         table->mutate(mutation_commands, context);
     }
@@ -109,7 +111,8 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!alter_commands.empty())
     {
-        auto table_lock_holder = table->lockAlterIntention(context.getCurrentQueryId());
+        auto table_lock_holder = table->lockAlterIntention(
+                context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
         alter_commands.validate(metadata, context);
         alter_commands.prepare(metadata);
@@ -241,12 +244,12 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         }
         case ASTAlterCommand::MOVE_PARTITION:
         {
-            if ((command.move_destination_type == PartDestinationType::DISK)
-                || (command.move_destination_type == PartDestinationType::VOLUME))
+            if ((command.move_destination_type == DataDestinationType::DISK)
+                || (command.move_destination_type == DataDestinationType::VOLUME))
             {
                 required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
             }
-            else if (command.move_destination_type == PartDestinationType::TABLE)
+            else if (command.move_destination_type == DataDestinationType::TABLE)
             {
                 required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
                 required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);

@@ -99,3 +99,5 @@ merge()
 distributed_group_by_no_merge
 33
 33
+GLOBAL IN
+1

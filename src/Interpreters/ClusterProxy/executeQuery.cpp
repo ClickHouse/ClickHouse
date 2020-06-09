@@ -23,13 +23,10 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     /// Does not matter on remote servers, because queries are sent under different user.
     new_settings.max_concurrent_queries_for_user = 0;
     new_settings.max_memory_usage_for_user = 0;
-    /// This setting is really not for user and should not be sent to remote server.
-    new_settings.max_memory_usage_for_all_queries = 0;
 
     /// Set as unchanged to avoid sending to remote server.
     new_settings.max_concurrent_queries_for_user.changed = false;
     new_settings.max_memory_usage_for_user.changed = false;
-    new_settings.max_memory_usage_for_all_queries.changed = false;
 
     if (settings.force_optimize_skip_unused_shards_no_nested)
     {
@@ -54,7 +51,7 @@ Pipes executeQuery(
     Context new_context = removeUserRestrictionsFromSettings(context, settings);
 
     ThrottlerPtr user_level_throttler;
-    if (auto process_list_element = context.getProcessListElement())
+    if (auto * process_list_element = context.getProcessListElement())
         user_level_throttler = process_list_element->getUserNetworkThrottler();
 
     /// Network bandwidth limit, if needed.

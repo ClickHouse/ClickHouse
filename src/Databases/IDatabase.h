@@ -5,8 +5,11 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Dictionaries/IDictionary.h>
+#include <Databases/DictionaryAttachInfo.h>
 #include <Common/Exception.h>
 
+#include <boost/range/adaptor/map.hpp>
+#include <boost/range/algorithm/copy.hpp>
 #include <ctime>
 #include <functional>
 #include <memory>
@@ -18,11 +21,10 @@ namespace DB
 class Context;
 struct Settings;
 struct ConstraintsDescription;
-class ColumnsDescription;
 struct IndicesDescription;
 struct TableStructureWriteLockHolder;
 class ASTCreateQuery;
-using Dictionaries = std::set<String>;
+using Dictionaries = std::vector<String>;
 
 namespace ErrorCodes
 {
@@ -38,17 +40,33 @@ public:
     virtual bool isValid() const = 0;
 
     virtual const String & name() const = 0;
+
+    /// This method can return nullptr if it's Lazy database
+    /// (a database with support for lazy tables loading
+    /// - it maintains a list of tables but tables are loaded lazily).
     virtual const StoragePtr & table() const = 0;
 
     virtual ~IDatabaseTablesIterator() = default;
+
+    virtual UUID uuid() const { return UUIDHelpers::Nil; }
 };
 
 /// Copies list of tables and iterates through such snapshot.
-class DatabaseTablesSnapshotIterator final : public IDatabaseTablesIterator
+class DatabaseTablesSnapshotIterator : public IDatabaseTablesIterator
 {
 private:
     Tables tables;
     Tables::iterator it;
+
+protected:
+    DatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && other)
+    {
+        size_t idx = std::distance(other.tables.begin(), other.it);
+        std::swap(tables, other.tables);
+        other.it = other.tables.end();
+        it = tables.begin();
+        std::advance(it, idx);
+    }
 
 public:
     DatabaseTablesSnapshotIterator(Tables & tables_) : tables(tables_), it(tables.begin()) {}
@@ -74,8 +92,13 @@ private:
 public:
     DatabaseDictionariesSnapshotIterator() = default;
     DatabaseDictionariesSnapshotIterator(Dictionaries & dictionaries_) : dictionaries(dictionaries_), it(dictionaries.begin()) {}
-
     DatabaseDictionariesSnapshotIterator(Dictionaries && dictionaries_) : dictionaries(dictionaries_), it(dictionaries.begin()) {}
+
+    DatabaseDictionariesSnapshotIterator(const std::unordered_map<String, DictionaryAttachInfo> & dictionaries_)
+    {
+        boost::range::copy(dictionaries_ | boost::adaptors::map_keys, std::back_inserter(dictionaries));
+        it = dictionaries.begin();
+    }
 
     void next() { ++it; }
 
@@ -111,22 +134,18 @@ public:
     virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/) {}
 
     /// Check the existence of the table.
-    virtual bool isTableExist(
-        const Context & context,
-        const String & name) const = 0;
+    virtual bool isTableExist(const String & name, const Context & context) const = 0;
 
     /// Check the existence of the dictionary
-    virtual bool isDictionaryExist(
-        const Context & /*context*/,
-        const String & /*name*/) const
+    virtual bool isDictionaryExist(const String & /*name*/) const
     {
         return false;
     }
 
     /// Get the table for work. Return nullptr if there is no table.
-    virtual StoragePtr tryGetTable(
-        const Context & context,
-        const String & name) const = 0;
+    virtual StoragePtr tryGetTable(const String & name, const Context & context) const = 0;
+
+    virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
     using FilterByNameFunction = std::function<bool(const String &)>;
 
@@ -135,19 +154,13 @@ public:
     virtual DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
 
     /// Get an iterator to pass through all the dictionaries.
-    virtual DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context & /*context*/, [[maybe_unused]] const FilterByNameFunction & filter_by_dictionary_name = {})
+    virtual DatabaseDictionariesIteratorPtr getDictionariesIterator([[maybe_unused]] const FilterByNameFunction & filter_by_dictionary_name = {})
     {
         return std::make_unique<DatabaseDictionariesSnapshotIterator>();
     }
 
-    /// Get an iterator to pass through all the tables and dictionary tables.
-    virtual DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const Context & context, const FilterByNameFunction & filter_by_name = {})
-    {
-        return getTablesIterator(context, filter_by_name);
-    }
-
     /// Is the database empty.
-    virtual bool empty(const Context & context) const = 0;
+    virtual bool empty() const = 0;
 
     /// Add the table to the database. Record its presence in the metadata.
     virtual void createTable(
@@ -168,10 +181,11 @@ public:
         throw Exception("There is no CREATE DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /// Delete the table from the database. Delete the metadata.
-    virtual void removeTable(
+    /// Delete the table from the database, drop table and delete the metadata.
+    virtual void dropTable(
         const Context & /*context*/,
-        const String & /*name*/)
+        const String & /*name*/,
+        [[maybe_unused]] bool no_delay = false)
     {
         throw Exception("There is no DROP TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -185,14 +199,14 @@ public:
     }
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
-    virtual void attachTable(const String & /*name*/, const StoragePtr & /*table*/)
+    virtual void attachTable(const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {})
     {
         throw Exception("There is no ATTACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Add dictionary to the database, but do not add it to the metadata. The database may not support this method.
     /// If dictionaries_lazy_load is false it also starts loading the dictionary asynchronously.
-    virtual void attachDictionary(const String & /*name*/, const Context & /*context*/)
+    virtual void attachDictionary(const String & /* dictionary_name */, const DictionaryAttachInfo & /* attach_info */)
     {
         throw Exception("There is no ATTACH DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -204,7 +218,7 @@ public:
     }
 
     /// Forget about the dictionary without deleting it. The database may not support this method.
-    virtual void detachDictionary(const String & /*name*/, const Context & /*context*/)
+    virtual void detachDictionary(const String & /*name*/)
     {
         throw Exception("There is no DETACH DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -215,7 +229,7 @@ public:
         const String & /*name*/,
         IDatabase & /*to_database*/,
         const String & /*to_name*/,
-        TableStructureWriteLockHolder &)
+        bool /*exchange*/)
     {
         throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -226,7 +240,7 @@ public:
     /// You must call under the TableStructureLock of the corresponding table . If engine_modifier is empty, then engine does not change.
     virtual void alterTable(
         const Context & /*context*/,
-        const String & /*name*/,
+        const StorageID & /*table_id*/,
         const StorageInMemoryMetadata & /*metadata*/)
     {
         throw Exception(getEngineName() + ": alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
@@ -239,34 +253,40 @@ public:
     }
 
     /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
-    ASTPtr tryGetCreateTableQuery(const Context & context, const String & name) const noexcept
+    ASTPtr tryGetCreateTableQuery(const String & name, const Context & context) const noexcept
     {
-        return getCreateTableQueryImpl(context, name, false);
+        return getCreateTableQueryImpl(name, context, false);
     }
 
-    ASTPtr getCreateTableQuery(const Context & context, const String & name) const
+    ASTPtr getCreateTableQuery(const String & name, const Context & context) const
     {
-        return getCreateTableQueryImpl(context, name, true);
+        return getCreateTableQueryImpl(name, context, true);
     }
 
     /// Get the CREATE DICTIONARY query for the dictionary. Returns nullptr if dictionary doesn't exists.
-    ASTPtr tryGetCreateDictionaryQuery(const Context & context, const String & name) const noexcept
+    ASTPtr tryGetCreateDictionaryQuery(const String & name) const noexcept
     {
-        return getCreateDictionaryQueryImpl(context, name, false);
+        return getCreateDictionaryQueryImpl(name, false);
     }
 
-    ASTPtr getCreateDictionaryQuery(const Context & context, const String & name) const
+    ASTPtr getCreateDictionaryQuery(const String & name) const
     {
-        return getCreateDictionaryQueryImpl(context, name, true);
+        return getCreateDictionaryQueryImpl(name, true);
+    }
+
+    virtual Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfiguration(const String & /*name*/) const
+    {
+        throw Exception(getEngineName() + ": getDictionaryConfiguration() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Get the CREATE DATABASE query for current database.
-    virtual ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const = 0;
+    virtual ASTPtr getCreateDatabaseQuery() const = 0;
 
     /// Get name of database.
     String getDatabaseName() const { return database_name; }
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
+
     /// Returns path for persistent data storage for table if the database supports it, empty string otherwise. Table must exist
     virtual String getTableDataPath(const String & /*table_name*/) const { return {}; }
     /// Returns path for persistent data storage for CREATE/ATTACH query if the database supports it, empty string otherwise
@@ -275,6 +295,9 @@ public:
     virtual String getMetadataPath() const { return {}; }
     /// Returns metadata path of a concrete table if the database supports it, empty string otherwise
     virtual String getObjectMetadataPath(const String & /*table_name*/) const { return {}; }
+
+    /// All tables and dictionaries should be detached before detaching the database.
+    virtual bool shouldBeEmptyOnDetach() const { return true; }
 
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;
@@ -285,14 +308,14 @@ public:
     virtual ~IDatabase() {}
 
 protected:
-    virtual ASTPtr getCreateTableQueryImpl(const Context & /*context*/, const String & /*name*/, bool throw_on_error) const
+    virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, const Context & /*context*/, bool throw_on_error) const
     {
         if (throw_on_error)
             throw Exception("There is no SHOW CREATE TABLE query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
         return nullptr;
     }
 
-    virtual ASTPtr getCreateDictionaryQueryImpl(const Context & /*context*/, const String & /*name*/, bool throw_on_error) const
+    virtual ASTPtr getCreateDictionaryQueryImpl(const String & /*name*/, bool throw_on_error) const
     {
         if (throw_on_error)
             throw Exception("There is no SHOW CREATE DICTIONARY query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY);

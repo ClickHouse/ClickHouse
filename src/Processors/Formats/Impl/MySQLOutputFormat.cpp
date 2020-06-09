@@ -24,7 +24,7 @@ void MySQLOutputFormat::initialize()
         return;
 
     initialized = true;
-    auto & header = getPort(PortKind::Main).getHeader();
+    const auto & header = getPort(PortKind::Main).getHeader();
     data_types = header.getDataTypes();
 
     if (header.columns())
@@ -60,24 +60,25 @@ void MySQLOutputFormat::consume(Chunk chunk)
 void MySQLOutputFormat::finalize()
 {
     size_t affected_rows = 0;
-    std::stringstream human_readable_info;
+    std::string human_readable_info;
     if (QueryStatus * process_list_elem = context->getProcessListElement())
     {
         CurrentThread::finalizePerformanceCounters();
         QueryStatusInfo info = process_list_elem->getInfo();
         affected_rows = info.written_rows;
-        human_readable_info << std::fixed << std::setprecision(3)
-                            << "Read " << info.read_rows << " rows, " << formatReadableSizeWithBinarySuffix(info.read_bytes) << " in " << info.elapsed_seconds << " sec., "
-                            << static_cast<size_t>(info.read_rows / info.elapsed_seconds) << " rows/sec., "
-                            << formatReadableSizeWithBinarySuffix(info.read_bytes / info.elapsed_seconds) << "/sec.";
+        human_readable_info = fmt::format(
+            "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+            info.read_rows, ReadableSize(info.read_bytes), info.elapsed_seconds,
+            static_cast<size_t>(info.read_rows / info.elapsed_seconds),
+            ReadableSize(info.read_bytes / info.elapsed_seconds));
     }
 
     const auto & header = getPort(PortKind::Main).getHeader();
     if (header.columns() == 0)
-        packet_sender->sendPacket(OK_Packet(0x0, context->mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
+        packet_sender->sendPacket(OK_Packet(0x0, context->mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
     else
     if (context->mysql.client_capabilities & CLIENT_DEPRECATE_EOF)
-        packet_sender->sendPacket(OK_Packet(0xfe, context->mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
+        packet_sender->sendPacket(OK_Packet(0xfe, context->mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
     else
         packet_sender->sendPacket(EOF_Packet(0, 0), true);
 }

@@ -36,34 +36,45 @@ namespace ErrorCodes
 
 namespace
 {
-struct FirstNonDeterministicFuncData
+/// Helps to detect situations, where non-deterministic functions may be used in mutations of Replicated*MergeTree.
+class FirstNonDeterministicFuncMatcher
 {
-    using TypeToVisit = ASTFunction;
-
-    explicit FirstNonDeterministicFuncData(const Context & context_)
-        : context{context_}
-    {}
-
-    const Context & context;
-    std::optional<String> nondeterministic_function_name;
-
-    void visit(ASTFunction & function, ASTPtr &)
+public:
+    struct Data
     {
-        if (nondeterministic_function_name)
+        const Context & context;
+        std::optional<String> nondeterministic_function_name;
+    };
+
+    static bool needChildVisit(const ASTPtr & /*node*/, const ASTPtr & child)
+    {
+        return child != nullptr;
+    }
+
+    static void visit(const ASTPtr & node, Data & data)
+    {
+        if (data.nondeterministic_function_name)
             return;
 
-        const auto func = FunctionFactory::instance().get(function.name, context);
-        if (!func->isDeterministic())
-            nondeterministic_function_name = func->getName();
+        if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
+        {
+            /// Property of being deterministic for lambda expression is completely determined
+            /// by the contents of its definition, so we just proceed to it.
+            if (function->name != "lambda")
+            {
+                const auto func = FunctionFactory::instance().get(function->name, data.context);
+                if (!func->isDeterministic())
+                    data.nondeterministic_function_name = func->getName();
+            }
+        }
     }
 };
 
-using FirstNonDeterministicFuncFinder =
-        InDepthNodeVisitor<OneTypeMatcher<FirstNonDeterministicFuncData>, true>;
+using FirstNonDeterministicFuncFinder = InDepthNodeVisitor<FirstNonDeterministicFuncMatcher, true>;
 
 std::optional<String> findFirstNonDeterministicFuncName(const MutationCommand & command, const Context & context)
 {
-    FirstNonDeterministicFuncData finder_data(context);
+    FirstNonDeterministicFuncMatcher::Data finder_data{context, std::nullopt};
 
     switch (command.type)
     {
@@ -173,7 +184,7 @@ bool isStorageTouchedByMutations(
     /// For some reason it may copy context and and give it into ExpressionBlockInputStream
     /// after that we will use context from destroyed stack frame in our stream.
     InterpreterSelectQuery interpreter(select_query, context_copy, storage, SelectQueryOptions().ignoreLimits());
-    BlockInputStreamPtr in = interpreter.execute().in;
+    BlockInputStreamPtr in = interpreter.execute().getInputStream();
 
     Block block = in->read();
     if (!block.rows())
@@ -210,14 +221,11 @@ static NameSet getKeyColumns(const StoragePtr & storage)
 
     NameSet key_columns;
 
-    if (merge_tree_data->partition_key_expr)
-        for (const String & col : merge_tree_data->partition_key_expr->getRequiredColumns())
-            key_columns.insert(col);
+    for (const String & col : merge_tree_data->getColumnsRequiredForPartitionKey())
+        key_columns.insert(col);
 
-    auto sorting_key_expr = merge_tree_data->sorting_key_expr;
-    if (sorting_key_expr)
-        for (const String & col : sorting_key_expr->getRequiredColumns())
-            key_columns.insert(col);
+    for (const String & col : merge_tree_data->getColumnsRequiredForSortingKey())
+        key_columns.insert(col);
     /// We don't process sample_by_ast separately because it must be among the primary key columns.
 
     if (!merge_tree_data->merging_params.sign_column.empty())
@@ -286,7 +294,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
 
     const ColumnsDescription & columns_desc = storage->getColumns();
-    const IndicesDescription & indices_desc = storage->getIndices();
+    const IndicesDescription & indices_desc = storage->getSecondaryIndices();
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     NameSet updated_columns;
@@ -383,15 +391,15 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
             auto it = std::find_if(
-                    std::cbegin(indices_desc.indices), std::end(indices_desc.indices),
-                    [&](const std::shared_ptr<ASTIndexDeclaration> & index)
+                    std::cbegin(indices_desc), std::end(indices_desc),
+                    [&](const IndexDescription & index)
                     {
-                        return index->name == command.index_name;
+                        return index.name == command.index_name;
                     });
-            if (it == std::cend(indices_desc.indices))
+            if (it == std::cend(indices_desc))
                 throw Exception("Unknown index: " + command.index_name, ErrorCodes::BAD_ARGUMENTS);
 
-            auto query = (*it)->expr->clone();
+            auto query = (*it).expression_list_ast->clone();
             auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
             const auto required_columns = syntax_result->requiredSourceColumns();
             for (const auto & column : required_columns)
@@ -661,9 +669,11 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::ve
 
 void MutationsInterpreter::validate(TableStructureReadLockHolder &)
 {
+    const Settings & settings = context.getSettingsRef();
+
     /// For Replicated* storages mutations cannot employ non-deterministic functions
     /// because that produces inconsistencies between replicas
-    if (startsWith(storage->getName(), "Replicated"))
+    if (startsWith(storage->getName(), "Replicated") && !settings.allow_nondeterministic_mutations)
     {
         for (const auto & command : commands)
         {
@@ -677,7 +687,7 @@ void MutationsInterpreter::validate(TableStructureReadLockHolder &)
     }
 
     /// Do not use getSampleBlock in order to check the whole pipeline.
-    Block first_stage_header = select_interpreter->execute().in->getHeader();
+    Block first_stage_header = select_interpreter->execute().getInputStream()->getHeader();
     BlockInputStreamPtr in = std::make_shared<NullBlockInputStream>(first_stage_header);
     addStreamsForLaterStages(stages, in)->getHeader();
 }
@@ -687,7 +697,7 @@ BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
 
-    BlockInputStreamPtr in = select_interpreter->execute().in;
+    BlockInputStreamPtr in = select_interpreter->execute().getInputStream();
 
     auto result_stream = addStreamsForLaterStages(stages, in);
 

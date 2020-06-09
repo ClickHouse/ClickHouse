@@ -25,11 +25,15 @@ void registerDictionaries()
         registerDictionaryRangeHashed(factory);
         registerDictionaryComplexKeyHashed(factory);
         registerDictionaryComplexKeyCache(factory);
+        registerDictionaryComplexKeyDirect(factory);
+#if !defined(ARCADIA_BUILD)
         registerDictionaryTrie(factory);
+#endif
         registerDictionaryFlat(factory);
         registerDictionaryHashed(factory);
         registerDictionaryCache(factory);
         registerDictionaryPolygon(factory);
+        registerDictionaryDirect(factory);
     }
 }
 

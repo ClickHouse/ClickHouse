@@ -15,7 +15,7 @@ public:
     , pipes(std::move(pipes_))
     , to_stage(to_stage_)
     {
-        columns_.add({"____timestamp", std::make_shared<DataTypeDateTime>(), false});
+        columns_.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
         setColumns(std::move(columns_));
     }
 

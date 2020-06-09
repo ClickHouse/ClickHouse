@@ -6,8 +6,11 @@
 #include <Core/Defines.h>
 #include <common/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
-#include <Common/config_version.h>
 #include <unistd.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 
 
 namespace DB
@@ -110,6 +113,14 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
         else
             client_version_patch = client_revision;
     }
+}
+
+
+void ClientInfo::setInitialQuery()
+{
+    query_kind = QueryKind::INITIAL_QUERY;
+    fillOSUserHostNameAndVersionInfo();
+    client_name = (DBMS_NAME " ") + client_name;
 }
 
 
