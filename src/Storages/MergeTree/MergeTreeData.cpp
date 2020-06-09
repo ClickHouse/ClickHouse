@@ -1273,9 +1273,9 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    commands.apply(metadata, global_context);
-    if (getSecondaryIndices().empty() && !metadata.secondary_indices.empty() &&
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    commands.apply(new_metadata, global_context);
+    if (getSecondaryIndices().empty() && !new_metadata.secondary_indices.empty() &&
             !settings.allow_experimental_data_skipping_indices)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
@@ -1365,15 +1365,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         }
     }
 
-    setProperties(metadata, /* only_check = */ true);
+    setProperties(new_metadata, /* only_check = */ true);
 
-    setTTLExpressions(metadata.columns, metadata.table_ttl, /* only_check = */ true);
+    setTTLExpressions(new_metadata.columns, new_metadata.table_ttl, /* only_check = */ true);
 
     if (hasSettingsChanges())
     {
 
         const auto & current_changes = getSettingsChanges()->as<const ASTSetQuery &>().changes;
-        const auto & new_changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
         for (const auto & changed_setting : new_changes)
         {
             if (MergeTreeSettings::findIndex(changed_setting.name) == MergeTreeSettings::npos)

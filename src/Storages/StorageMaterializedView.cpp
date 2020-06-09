@@ -193,13 +193,13 @@ void StorageMaterializedView::alter(
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata, context);
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    params.apply(new_metadata, context);
 
     /// start modify query
     if (context.getSettingsRef().allow_experimental_alter_materialized_view_structure)
     {
-        const auto & new_select = metadata.select;
+        const auto & new_select = new_metadata.select;
         const auto & old_select = getSelectQuery();
 
         DatabaseCatalog::instance().updateDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
@@ -208,8 +208,8 @@ void StorageMaterializedView::alter(
     }
     /// end modify query
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
-    setColumns(std::move(metadata.columns));
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
+    setColumns(std::move(new_metadata.columns));
 }
 
 
