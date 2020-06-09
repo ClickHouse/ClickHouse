@@ -507,7 +507,7 @@ namespace
             return std::make_shared<DataTypeUInt32>();
         }
 
-        static ColumnPtr
+        [[maybe_unused]] static ColumnPtr
         dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
         {
             const auto & time_column = block.getByPosition(arguments[0]);
