@@ -34,23 +34,15 @@ void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * mes
 }
 
 
-void RabbitMQHandler::startConsumerLoop(std::atomic<bool> & check_param, std::atomic<bool> & loop_started)
+void RabbitMQHandler::startConsumerLoop(std::atomic<bool> & loop_started)
 {
     /* The object of this class is shared between concurrent consumers (who share the same connection == share the same
      * event loop). But the loop should not be attempted to start if it is already running. 
      */
     if (mutex_before_event_loop.try_lock_for(std::chrono::milliseconds(Lock_timeout)))
     {
-        /* The callback, which changes this variable, could have already been activated by another thread while we waited
-         * for the mutex to unlock (as it runs all active events on the connection). This means that there is no need to
-         * start event loop again.
-         */
-        if (!check_param)
-        {
-            loop_started = true;
-            event_base_loop(evbase, EVLOOP_NONBLOCK);
-        }
-
+        loop_started = true;
+        event_base_loop(evbase, EVLOOP_NONBLOCK);
         mutex_before_event_loop.unlock();
     }
 }

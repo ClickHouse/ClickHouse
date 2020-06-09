@@ -50,7 +50,7 @@ void RabbitMQBlockInputStream::readPrefixImpl()
     if (!buffer || finished)
         return;
 
-    buffer->subscribeConsumer();
+    buffer->checkSubscription();
 }
 
 

@@ -13,10 +13,6 @@
 namespace DB
 {
 
-enum
-{
-    Loop_retries_limit = 500
-};
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
@@ -109,9 +105,6 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
 
 void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
 {
-    /* This varibale can be updated from a different thread in case of some error so its better to check
-     * whether exchange is in a working state and if not - declare it once again.
-     */
     if (!exchange_declared)
     {
         initExchange();
@@ -144,6 +137,9 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
             }
         }
 
+        /// Must be done here, cannot be done in readPrefix()
+        subscribe(queues.back());
+
         LOG_TRACE(log, "Queue " + queue_name_ + " is bound by key " + binding_key);
 
         consumer_channel->bindQueue(current_exchange_name, queue_name_, binding_key)
@@ -169,26 +165,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
      */
     while (!bindings_created && !bindings_error)
     {
-        startEventLoop(bindings_created, loop_started);
-    }
-}
-
-
-void ReadBufferFromRabbitMQConsumer::subscribeConsumer()
-{
-    if (subscribed)
-        return;
-
-    for (auto & queue : queues)
-    {
-        subscribe(queue);
-    }
-
-    LOG_TRACE(log, "Consumer {} is subscribed to {} queues", channel_id, count_subscribed);
-
-    if (count_subscribed == queues.size())
-    {
-        subscribed = true;
+        startEventLoop(loop_started);
     }
 }
 
@@ -198,25 +175,13 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
     if (subscribed_queue[queue_name])
         return;
 
-    consumer_created = false, consumer_failed = false;
-
     consumer_channel->consume(queue_name, AMQP::noack)
     .onSuccess([&](const std::string & /* consumer */)
     {
-        consumer_created = true;
+        subscribed_queue[queue_name] = true;
         ++count_subscribed;
 
         LOG_TRACE(log, "Consumer {} is subscribed to queue {}", channel_id, queue_name);
-
-        /* Unblock current thread if it is looping (any consumer could start the loop and only one of them) so that it does not
-         * continue to execute all active callbacks on the connection (=> one looping consumer will not be blocked for too
-         * long and events will be distributed between them)
-         */
-        if (loop_started && count_subscribed == queues.size())
-        {
-            stopEventLoop();
-            subscribed = true;
-        }
     })
     .onReceived([&](const AMQP::Message & message, uint64_t /* deliveryTag */, bool /* redelivered */)
     {
@@ -232,7 +197,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
 
             bool stop_loop = false;
 
-            /// Needed to avoid data race because this vector can be used at the same time by another thread in nextImpl() (below).
+            /// Needed to avoid data race because this vector can be used at the same time by another thread in nextImpl().
             {
                 std::lock_guard lock(mutex);
                 received.push_back(message_received);
@@ -255,35 +220,32 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
     })
     .onError([&](const char * message)
     {
-        consumer_failed = true;
+        consumer_error = true;
         LOG_ERROR(log, "Consumer {} failed: {}", channel_id, message);
     });
+}
 
-    size_t cnt_retries = 0;
 
-    /// These variables are updated in a separate thread.
-    while (!consumer_created && !consumer_failed)
+void ReadBufferFromRabbitMQConsumer::checkSubscription()
+{
+    /// In general this condition will always be true and looping/resubscribing would not happen
+    if (count_subscribed == num_queues)
+        return;
+
+    wait_subscribed = num_queues;
+
+    /// These variables are updated in a separate thread
+    while (count_subscribed != wait_subscribed && !consumer_error)
     {
-        startEventLoop(consumer_created, loop_started);
-
-        if (!consumer_created && !consumer_failed)
-        {
-            if (cnt_retries >= Loop_retries_limit)
-            {
-                /* For unknown reason there is a case when subscribtion may fail and OnError callback is not activated
-                 * for a long time. In this case there should be resubscription.
-                 */
-                LOG_ERROR(log, "Consumer {} failed to subscride to queue {}", channel_id, queue_name);
-                break;
-            }
-
-            ++cnt_retries;
-        }
+        startEventLoop(loop_started);
     }
 
-    if (consumer_created)
+    LOG_TRACE(log, "Consumer {} is subscribed to {} queues", channel_id, count_subscribed);
+
+    /// A case that would not normally happen
+    for (auto & queue : queues)
     {
-        subscribed_queue[queue_name] = true;
+        subscribe(queue);
     }
 }
 
@@ -300,9 +262,9 @@ void ReadBufferFromRabbitMQConsumer::stopEventLoopWithTimeout()
 }
 
 
-void ReadBufferFromRabbitMQConsumer::startEventLoop(std::atomic<bool> & check_param, std::atomic<bool> & loop_started)
+void ReadBufferFromRabbitMQConsumer::startEventLoop(std::atomic<bool> & loop_started)
 {
-    eventHandler.startConsumerLoop(check_param, loop_started);
+    eventHandler.startConsumerLoop(loop_started);
 }
 
 
@@ -316,7 +278,7 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
         if (received.empty())
         {
             /// Run the onReceived callbacks to save the messages that have been received by now, blocks current thread
-            startEventLoop(false_param, loop_started);
+            startEventLoop(loop_started);
             loop_started = false;
         }
 
@@ -328,7 +290,7 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
 
         messages.clear();
 
-        /// Needed to avoid data race because this vector can be used at the same time by another thread in onReceived callback (above).
+        /// Needed to avoid data race because this vector can be used at the same time by another thread in onReceived callback.
         std::lock_guard lock(mutex);
 
         messages.swap(received);
