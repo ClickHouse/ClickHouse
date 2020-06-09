@@ -30,6 +30,9 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
 
 StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemoryMetadata & other)
 {
+    if (&other == this)
+        return *this;
+
     columns = other.columns;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;

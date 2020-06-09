@@ -24,6 +24,9 @@ SelectQueryDescription::SelectQueryDescription(const SelectQueryDescription & ot
 
 SelectQueryDescription & SelectQueryDescription::SelectQueryDescription::operator=(const SelectQueryDescription & other)
 {
+    if (&other == this)
+        return *this;
+
     select_table_id = other.select_table_id;
     if (other.select_query)
         select_query = other.select_query->clone();
