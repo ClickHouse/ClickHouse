@@ -76,7 +76,8 @@ class ISystemLog
 public:
     virtual String getName() = 0;
     virtual ASTPtr getCreateTableQuery() = 0;
-    virtual void flush() = 0;
+    //// force -- force table creation (used for SYSTEM FLUSH LOGS)
+    virtual void flush(bool force = false) = 0;
     virtual void prepareTable() = 0;
     virtual void startup() = 0;
     virtual void shutdown() = 0;
@@ -133,7 +134,7 @@ public:
     void stopFlushThread();
 
     /// Flush data in the buffer to disk
-    void flush() override;
+    void flush(bool force = false) override;
 
     /// Start the background thread.
     void startup() override;
@@ -166,6 +167,8 @@ private:
 
     /* Data shared between callers of add()/flush()/shutdown(), and the saving thread */
     std::mutex mutex;
+    /* prepareTable() guard */
+    std::mutex prepare_mutex;
     // Queue is bounded. But its size is quite large to not block in all normal cases.
     std::vector<LogElement> queue;
     // An always-incrementing index of the first message currently in the queue.
@@ -272,12 +275,15 @@ void SystemLog<LogElement>::add(const LogElement & element)
 
 
 template <typename LogElement>
-void SystemLog<LogElement>::flush()
+void SystemLog<LogElement>::flush(bool force)
 {
     std::unique_lock lock(mutex);
 
     if (is_shutdown)
         return;
+
+    if (force)
+        prepareTable();
 
     const uint64_t queue_end = queue_front_index + queue.size();
 
@@ -429,6 +435,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
+    std::unique_lock prepare_lock(prepare_mutex);
+
     String description = table_id.getNameForLogs();
 
     table = DatabaseCatalog::instance().tryGetTable(table_id, context);
