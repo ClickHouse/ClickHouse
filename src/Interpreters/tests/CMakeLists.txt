@@ -7,8 +7,7 @@ target_include_directories (hash_map_lookup SYSTEM BEFORE PRIVATE ${SPARSEHASH_I
 target_link_libraries (hash_map_lookup PRIVATE dbms)
 
 add_executable (hash_map3 hash_map3.cpp)
-target_include_directories(hash_map3 SYSTEM BEFORE PRIVATE ${METROHASH_INCLUDE_DIR})
-target_link_libraries (hash_map3 PRIVATE dbms ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
+target_link_libraries (hash_map3 PRIVATE dbms ${FARMHASH_LIBRARIES} metrohash)
 
 add_executable (hash_map_string hash_map_string.cpp)
 target_include_directories (hash_map_string SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
@@ -18,8 +17,7 @@ add_executable (hash_map_string_2 hash_map_string_2.cpp)
 target_link_libraries (hash_map_string_2 PRIVATE dbms)
 
 add_executable (hash_map_string_3 hash_map_string_3.cpp)
-target_include_directories(hash_map_string_3 SYSTEM BEFORE PRIVATE ${METROHASH_INCLUDE_DIR})
-target_link_libraries (hash_map_string_3 PRIVATE dbms ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
+target_link_libraries (hash_map_string_3 PRIVATE dbms ${FARMHASH_LIBRARIES} metrohash)
 
 add_executable (hash_map_string_small hash_map_string_small.cpp)
 target_include_directories (hash_map_string_small SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
