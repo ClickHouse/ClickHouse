@@ -17,3 +17,4 @@ FROM
     LIMIT 1
     SETTINGS distributed_group_by_no_merge = 1
 );
+
