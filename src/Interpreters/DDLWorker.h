@@ -1,5 +1,5 @@
 #pragma once
-#include <Interpreters/Context.h>
+
 #include <Interpreters/Cluster.h>
 #include <DataStreams/BlockIO.h>
 #include <Common/CurrentThread.h>
@@ -13,9 +13,15 @@
 #include <mutex>
 #include <thread>
 
+namespace zkutil
+{
+    class ZooKeeper;
+}
+
 namespace DB
 {
 
+class Context;
 class ASTAlterQuery;
 class AccessRightsElements;
 struct DDLLogEntry;
@@ -24,6 +30,7 @@ struct DDLTask;
 
 /// Pushes distributed DDL query to the queue
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_required_access);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context);
 
 
 class DDLWorker
@@ -94,7 +101,7 @@ private:
 
 private:
     Context & context;
-    Logger * log;
+    Poco::Logger * log;
     std::unique_ptr<Context> current_context;
 
     std::string host_fqdn;      /// current host domain name

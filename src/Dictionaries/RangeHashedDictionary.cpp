@@ -127,7 +127,7 @@ void RangeHashedDictionary::getString(
 
     for (const auto i : ext::range(0, ids.size()))
     {
-        const auto it = attr.find(ids[i]);
+        const auto * it = attr.find(ids[i]);
         if (it)
         {
             const auto date = dates[i];
@@ -407,11 +407,11 @@ void RangeHashedDictionary::getItemsImpl(
                       return v.range.contains(date);
                   });
 
-            out[i] = static_cast<OutputType>(val_it != std::end(ranges_and_values) ? val_it->value : null_value);
+            out[i] = static_cast<OutputType>(val_it != std::end(ranges_and_values) ? val_it->value : null_value); // NOLINT
         }
         else
         {
-            out[i] = static_cast<OutputType>(null_value);
+            out[i] = static_cast<OutputType>(null_value); // NOLINT
         }
     }
 
@@ -493,10 +493,10 @@ void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key i
         {
             auto & map = *std::get<Ptr<StringRef>>(attribute.maps);
             const auto & string = value.get<String>();
-            const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
             const StringRef string_ref{string_in_arena, string.size()};
 
-            const auto it = map.find(id);
+            auto * it = map.find(id);
 
             if (it)
             {
@@ -649,7 +649,7 @@ struct RangeHashedDIctionaryCallGetBlockInputStreamImpl
     template <typename RangeType, size_t>
     void operator()()
     {
-        auto & type = dict->dict_struct.range_min->type;
+        const auto & type = dict->dict_struct.range_min->type;
         if (!stream && dynamic_cast<const DataTypeNumberBase<RangeType> *>(type.get()))
             stream = dict->getBlockInputStreamImpl<RangeType>(*column_names, max_block_size);
     }

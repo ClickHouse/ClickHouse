@@ -22,10 +22,14 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
-#include "config_core.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #if USE_SSL
-#include <openssl/pem.h>
-#include <openssl/rsa.h>
+#    include <openssl/pem.h>
+#    include <openssl/rsa.h>
 #endif
 
 /// Implementation of MySQL wire protocol.
@@ -914,8 +918,17 @@ public:
         scramble.resize(SCRAMBLE_LENGTH + 1, 0);
         Poco::RandomInputStream generator;
 
-        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+       /** Generate a random string using ASCII characters but avoid separator character,
+         * produce pseudo random numbers between with about 7 bit worth of entropty between 1-127.
+         * https://github.com/mysql/mysql-server/blob/8.0/mysys/crypt_genhash_impl.cc#L427
+         */
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; ++i)
+        {
             generator >> scramble[i];
+            scramble[i] &= 0x7f;
+            if (scramble[i] == '\0' || scramble[i] == '$')
+                scramble[i] = scramble[i] + 1;
+        }
     }
 
     String getName() override
@@ -946,7 +959,7 @@ public:
 
         if (auth_response->empty())
         {
-            context.setUser(user_name, "", address, "");
+            context.setUser(user_name, "", address);
             return;
         }
 
@@ -969,7 +982,7 @@ public:
         {
             password_sha1[i] = digest[i] ^ static_cast<unsigned char>((*auth_response)[i]);
         }
-        context.setUser(user_name, password_sha1, address, "");
+        context.setUser(user_name, password_sha1, address);
     }
 private:
     String scramble;
@@ -981,7 +994,7 @@ private:
 class Sha256Password : public IPlugin
 {
 public:
-    Sha256Password(RSA & public_key_, RSA & private_key_, Logger * log_)
+    Sha256Password(RSA & public_key_, RSA & private_key_, Poco::Logger * log_)
         : public_key(public_key_)
         , private_key(private_key_)
         , log(log_)
@@ -993,8 +1006,13 @@ public:
         scramble.resize(SCRAMBLE_LENGTH + 1, 0);
         Poco::RandomInputStream generator;
 
-        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; ++i)
+        {
             generator >> scramble[i];
+            scramble[i] &= 0x7f;
+            if (scramble[i] == '\0' || scramble[i] == '$')
+                scramble[i] = scramble[i] + 1;
+        }
     }
 
     String getName() override
@@ -1050,7 +1068,7 @@ public:
 #    pragma GCC diagnostic pop
             String pem(pem_buf, pem_size);
 
-            LOG_TRACE(log, "Key: " << pem);
+            LOG_TRACE(log, "Key: {}", pem);
 
             AuthMoreData data(pem);
             packet_sender->sendPacket(data, true);
@@ -1106,13 +1124,13 @@ public:
             password.pop_back();
         }
 
-        context.setUser(user_name, password, address, "");
+        context.setUser(user_name, password, address);
     }
 
 private:
     RSA & public_key;
     RSA & private_key;
-    Logger * log;
+    Poco::Logger * log;
     String scramble;
 };
 #endif

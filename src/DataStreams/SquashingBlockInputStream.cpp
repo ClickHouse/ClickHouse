@@ -14,23 +14,19 @@ SquashingBlockInputStream::SquashingBlockInputStream(
 
 Block SquashingBlockInputStream::readImpl()
 {
-    if (all_read)
-        return {};
-
-    while (true)
+    while (!all_read)
     {
         Block block = children[0]->read();
         if (!block)
             all_read = true;
 
-        SquashingTransform::Result result = transform.add(block.mutateColumns());
-        if (result.ready)
+        auto squashed_block = transform.add(std::move(block));
+        if (squashed_block)
         {
-            if (result.columns.empty())
-                return {};
-            return header.cloneWithColumns(std::move(result.columns));
+            return squashed_block;
         }
     }
+    return {};
 }
 
 }

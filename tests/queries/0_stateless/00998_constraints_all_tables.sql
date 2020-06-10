@@ -45,8 +45,8 @@ DROP TABLE constrained;
 DROP TABLE IF EXISTS constrained2;
 CREATE TABLE constrained (URL String, CONSTRAINT is_yandex CHECK domainWithoutWWW(URL) = 'yandex.ru', CONSTRAINT is_utf8 CHECK isValidUTF8(URL)) ENGINE = Log;
 CREATE TABLE constrained2 AS constrained;
-SHOW CREATE TABLE constrained FORMAT TSVRaw;
-SHOW CREATE TABLE constrained2 FORMAT TSVRaw;
+SHOW CREATE TABLE constrained;
+SHOW CREATE TABLE constrained2;
 INSERT INTO constrained VALUES ('https://www.yandex.ru/?q=upyachka'), ('Hello'), ('test'); -- { serverError 469 }
 INSERT INTO constrained2 VALUES ('https://www.yandex.ru/?q=upyachka'), ('Hello'), ('test'); -- { serverError 469 }
 DROP TABLE constrained;

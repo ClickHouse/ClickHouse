@@ -102,7 +102,7 @@ private:
     {
         const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-        if (auto object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
+        if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
         {
             auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
             if (!std::filesystem::exists(object->name))
@@ -118,9 +118,7 @@ private:
                 writeChar(':', out);
                 writeIntText(location.line, out);
 
-                StringRef out_str = out.finish();
-                out_str.data = arena.insert(out_str.data, out_str.size);
-                return out_str;
+                return out.finish();
             }
             else
             {

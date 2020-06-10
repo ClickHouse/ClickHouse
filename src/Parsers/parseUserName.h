@@ -10,7 +10,7 @@ namespace DB
 /// The `host` can be an ip address, ip subnet, or a host name.
 /// The % and _ wildcard characters are permitted in `host`.
 /// These have the same meaning as for pattern-matching operations performed with the LIKE operator.
-bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name, String & host_like_pattern);
+bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name, std::optional<String> & host_like_pattern);
 bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name);
 
 /// Parses either a user name or the 'CURRENT_USER' keyword (or some of the aliases).

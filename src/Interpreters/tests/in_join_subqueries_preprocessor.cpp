@@ -1156,7 +1156,8 @@ static bool run()
 
 TestResult check(const TestEntry & entry)
 {
-    static DB::Context context = DB::Context::createGlobal();
+    static DB::SharedContextHolder shared_context = DB::Context::createShared();
+    static DB::Context context = DB::Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
 
     try
@@ -1222,9 +1223,9 @@ bool parse(DB::ASTPtr & ast, const std::string & query)
 {
     DB::ParserSelectQuery parser;
     std::string message;
-    auto begin = query.data();
-    auto end = begin + query.size();
-    ast = DB::tryParseQuery(parser, begin, end, message, false, "", false, 0);
+    const auto * begin = query.data();
+    const auto * end = begin + query.size();
+    ast = DB::tryParseQuery(parser, begin, end, message, false, "", false, 0, 0);
     return ast != nullptr;
 }
 

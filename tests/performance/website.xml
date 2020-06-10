@@ -1,20 +1,9 @@
-<test>
+<test max_ignored_relative_change="0.2">
 
     <preconditions>
         <table_exists>hits_10m_single</table_exists>
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
-
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>60000</total_time_ms>
-            <iterations>3</iterations>
-        </all_of>
-        <any_of>
-            <iterations>30</iterations>
-        </any_of>
-    </stop_conditions>
-
 
     <settings>
         <max_memory_usage>30000000000</max_memory_usage>
@@ -66,7 +55,7 @@
 <query>SELECT URL, count() AS c FROM {table} GROUP BY URL ORDER BY c DESC LIMIT 10</query>
 <query>SELECT 1, URL, count() AS c FROM {table} GROUP BY 1, URL ORDER BY c DESC LIMIT 10</query>
 <query>SELECT ClientIP AS x, x - 1, x - 2, x - 3, count() AS c FROM hits_100m_single GROUP BY x, x - 1, x - 2, x - 3 ORDER BY c DESC LIMIT 10</query>
-<query>SELECT URL, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND notEmpty(URL) GROUP BY URL ORDER BY PageViews DESC LIMIT 10</query>
+<query>SELECT URL, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND notEmpty(URL) GROUP BY URL ORDER BY PageViews DESC LIMIT 10 SETTINGS max_threads = 1</query>
 <query>SELECT Title, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND notEmpty(Title) GROUP BY Title ORDER BY PageViews DESC LIMIT 10</query>
 <query>SELECT URL, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT Refresh AND IsLink AND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000</query>
 <query>SELECT TraficSourceID, SearchEngineID, AdvEngineID, ((SearchEngineID = 0 AND AdvEngineID = 0) ? Referer : '') AS Src, URL AS Dst, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT Refresh GROUP BY TraficSourceID, SearchEngineID, AdvEngineID, Src, Dst ORDER BY PageViews DESC LIMIT 1000</query>

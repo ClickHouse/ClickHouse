@@ -35,7 +35,5 @@ private:
     size_t keep_alive_timeout;
 
     Poco::Logger * log;
-
-    std::shared_ptr<Context> context; /// need for settings only
 };
 }

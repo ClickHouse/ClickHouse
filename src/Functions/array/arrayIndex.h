@@ -19,7 +19,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
@@ -225,21 +224,6 @@ public:
     }
 };
 
-/// Specialization that catches internal errors.
-template <typename T, typename IndexConv>
-struct ArrayIndexNumImpl<T, Null, IndexConv>
-{
-    template <typename ScalarOrVector>
-    static void vector(
-        const PaddedPODArray<T> &, const ColumnArray::Offsets &,
-        const ScalarOrVector &,
-        PaddedPODArray<typename IndexConv::ResultType> &,
-        const PaddedPODArray<UInt8> *,
-        const PaddedPODArray<UInt8> *)
-    {
-        throw Exception{"Logical error in implementation of a function that returns array index", ErrorCodes::LOGICAL_ERROR};
-    }
-};
 
 /// Implementation for arrays of numbers when the 2nd function argument
 /// is a NULL value.
@@ -623,8 +607,7 @@ private:
             || executeNumberNumber<T, Int32>(block, arguments, result)
             || executeNumberNumber<T, Int64>(block, arguments, result)
             || executeNumberNumber<T, Float32>(block, arguments, result)
-            || executeNumberNumber<T, Float64>(block, arguments, result)
-            || executeNumberNumber<T, Null>(block, arguments, result);
+            || executeNumberNumber<T, Float64>(block, arguments, result);
     }
 
     template <typename T, typename U>

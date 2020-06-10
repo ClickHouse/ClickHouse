@@ -28,7 +28,7 @@ class Block
 {
 private:
     using Container = ColumnsWithTypeAndName;
-    using IndexByName = std::map<String, size_t>;
+    using IndexByName = std::unordered_map<String, size_t>;
 
     Container data;
     IndexByName index_by_name;
@@ -64,7 +64,20 @@ public:
     ColumnWithTypeAndName & safeGetByPosition(size_t position);
     const ColumnWithTypeAndName & safeGetByPosition(size_t position) const;
 
-    ColumnWithTypeAndName & getByName(const std::string & name);
+    ColumnWithTypeAndName* findByName(const std::string & name)
+    {
+        return const_cast<ColumnWithTypeAndName *>(
+            const_cast<const Block *>(this)->findByName(name));
+    }
+
+    const ColumnWithTypeAndName* findByName(const std::string & name) const;
+
+    ColumnWithTypeAndName & getByName(const std::string & name)
+    {
+        return const_cast<ColumnWithTypeAndName &>(
+            const_cast<const Block *>(this)->getByName(name));
+    }
+
     const ColumnWithTypeAndName & getByName(const std::string & name) const;
 
     Container::iterator begin() { return data.begin(); }

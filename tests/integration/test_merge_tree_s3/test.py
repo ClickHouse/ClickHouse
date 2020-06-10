@@ -10,16 +10,6 @@ logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
 
-# Creates S3 bucket for tests and allows anonymous read-write access to it.
-def prepare_s3_bucket(cluster):
-    minio_client = cluster.minio_client
-
-    if minio_client.bucket_exists(cluster.minio_bucket):
-        minio_client.remove_bucket(cluster.minio_bucket)
-
-    minio_client.make_bucket(cluster.minio_bucket)
-
-
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -28,9 +18,6 @@ def cluster():
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
-
-        prepare_s3_bucket(cluster)
-        logging.info("S3 bucket created")
 
         yield cluster
     finally:
@@ -67,7 +54,9 @@ def create_table(cluster, table_name, additional_settings=None):
         PARTITION BY dt
         ORDER BY (dt, id)
         SETTINGS
-            old_parts_lifetime=0, index_granularity=512
+            storage_policy='s3',
+            old_parts_lifetime=0, 
+            index_granularity=512
         """.format(table_name)
 
     if additional_settings:
@@ -83,8 +72,14 @@ def drop_table(cluster):
     node = cluster.instances["node"]
     minio = cluster.minio_client
 
-    node.query("DROP TABLE IF EXISTS s3_test")
-    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 0
+    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    time.sleep(1)
+    try:
+        assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 0
+    finally:
+        # Remove extra objects to prevent tests cascade failing
+        for obj in list(minio.list_objects(cluster.minio_bucket, 'data/')):
+            minio.remove_object(cluster.minio_bucket, obj.object_name)
 
 
 @pytest.mark.parametrize(
@@ -210,7 +205,7 @@ def test_attach_detach_partition(cluster):
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
 
     node.query("ALTER TABLE s3_test DETACH PARTITION '2020-01-04'")
-    node.query("SET allow_drop_detached=1; ALTER TABLE s3_test DROP DETACHED PARTITION '2020-01-04'")
+    node.query("ALTER TABLE s3_test DROP DETACHED PARTITION '2020-01-04'", settings={"allow_drop_detached": 1})
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD
 
@@ -245,8 +240,7 @@ def test_table_manipulations(cluster):
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE*2
     node.query("RENAME TABLE s3_renamed TO s3_test")
 
-    # TODO: Doesn't work with min_max index.
-    #assert node.query("SET check_query_single_value_result='false'; CHECK TABLE s3_test FORMAT Values") == "(1)"
+    assert node.query("CHECK TABLE s3_test FORMAT Values") == "(1)"
 
     node.query("DETACH TABLE s3_test")
     node.query("ATTACH TABLE s3_test")
@@ -301,7 +295,8 @@ def test_move_replace_partition_to_another_table(cluster):
     time.sleep(3)
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD*2 + FILES_OVERHEAD_PER_PART_WIDE*4
 
-    node.query("DROP TABLE s3_clone")
+    node.query("DROP TABLE s3_clone NO DELAY")
+    time.sleep(1)
     assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(16384)"
     # Data should remain in S3
@@ -311,7 +306,8 @@ def test_move_replace_partition_to_another_table(cluster):
     # Number S3 objects should be unchanged.
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE*4
 
-    node.query("DROP TABLE s3_test")
+    node.query("DROP TABLE s3_test NO DELAY")
+    time.sleep(1)
     # Backup data should remain in S3.
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD_PER_PART_WIDE*4
 

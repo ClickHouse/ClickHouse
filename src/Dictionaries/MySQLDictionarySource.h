@@ -2,9 +2,11 @@
 
 #include <Core/Block.h>
 
-#include "config_core.h"
-#if USE_MYSQL
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
+#if USE_MYSQL
 #    include <common/LocalDateTime.h>
 #    include <mysqlxx/PoolWithFailover.h>
 #    include "DictionaryStructure.h"

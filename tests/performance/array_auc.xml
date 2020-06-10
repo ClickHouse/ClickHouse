@@ -1,9 +1,4 @@
 <test>
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>10000</total_time_ms>
-        </all_of>
-    </stop_conditions>
 
     <query>SELECT avg(ifNotFinite(arrayAUC(arrayMap(x -> rand(x) / 0x100000000, range(2 + rand() % 100)), arrayMap(x -> rand(x) % 2, range(2 + rand() % 100))), 0)) FROM numbers(100000)</query>
 </test>

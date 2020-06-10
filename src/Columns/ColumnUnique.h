@@ -77,6 +77,7 @@ public:
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const override;
 
     void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
@@ -263,7 +264,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
     if (x.getType() == Field::Types::Null)
         return getNullValueIndex();
 
-    if (size_of_value_if_fixed)
+    if (isNumeric())
         return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
 
     auto & val = x.get<String>();
@@ -372,6 +373,39 @@ int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs,
 
     auto & column_unique = static_cast<const IColumnUnique &>(rhs);
     return getNestedColumn()->compareAt(n, m, *column_unique.getNestedColumn(), nan_direction_hint);
+}
+
+template <typename ColumnType>
+void ColumnUnique<ColumnType>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
+{
+    bool found_null_value_index = false;
+    for (size_t i = 0; i < equal_range.size() && !found_null_value_index; ++i)
+    {
+        auto& [first, last] = equal_range[i];
+        for (auto j = first; j < last; ++j)
+        {
+            if (res[j] == getNullValueIndex())
+            {
+                if ((nan_direction_hint > 0) != reverse)
+                {
+                    std::swap(res[j], res[last - 1]);
+                    --last;
+                }
+                else
+                {
+                    std::swap(res[j], res[first]);
+                    ++first;
+                }
+                if (last - first <= 1)
+                {
+                    equal_range.erase(equal_range.begin() + i);
+                }
+                found_null_value_index = true;
+                break;
+            }
+        }
+    }
+    getNestedColumn()->updatePermutation(reverse, limit, nan_direction_hint, res, equal_range);
 }
 
 template <typename IndexType>

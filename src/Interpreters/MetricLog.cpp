@@ -35,10 +35,8 @@ Block MetricLogElement::createBlock()
 }
 
 
-void MetricLogElement::appendToBlock(Block & block) const
+void MetricLogElement::appendToBlock(MutableColumns & columns) const
 {
-    MutableColumns columns = block.mutateColumns();
-
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time));
@@ -67,6 +65,13 @@ void MetricLog::stopCollectMetric()
     if (!is_shutdown_metric_thread.compare_exchange_strong(old_val, true))
         return;
     metric_flush_thread.join();
+}
+
+
+void MetricLog::shutdown()
+{
+    stopCollectMetric();
+    stopFlushThread();
 }
 
 

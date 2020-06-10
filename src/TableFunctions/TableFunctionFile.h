@@ -1,11 +1,11 @@
 #pragma once
 
 #include <TableFunctions/ITableFunctionFileLike.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+class Context;
 /* file(path, format, structure) - creates a temporary storage from file
  *
  *
@@ -24,6 +24,5 @@ public:
 private:
     StoragePtr getStorage(
         const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name, const std::string & compression_method) const override;
-    AccessType getRequiredAccessType() const override;
-};
-}
+    const char * getStorageTypeName() const override { return "File"; }
+};}

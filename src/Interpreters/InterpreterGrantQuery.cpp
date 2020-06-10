@@ -1,6 +1,8 @@
 #include <Interpreters/InterpreterGrantQuery.h>
 #include <Parsers/ASTGrantQuery.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
 #include <Access/ContextAccess.h>
 #include <Access/ExtendedRoleSet.h>
@@ -21,14 +23,16 @@ namespace
         {
             if (query.kind == Kind::GRANT)
             {
-                grantee.access.grant(query.access_rights_elements, current_database);
                 if (query.grant_option)
-                    grantee.access_with_grant_option.grant(query.access_rights_elements, current_database);
+                    grantee.access.grantWithGrantOption(query.access_rights_elements, current_database);
+                else
+                    grantee.access.grant(query.access_rights_elements, current_database);
             }
             else
             {
-                grantee.access_with_grant_option.revoke(query.access_rights_elements, current_database);
-                if (!query.grant_option)
+                if (query.grant_option)
+                    grantee.access.revokeGrantOption(query.access_rights_elements, current_database);
+                else
                     grantee.access.revoke(query.access_rights_elements, current_database);
             }
         }
@@ -37,18 +41,21 @@ namespace
         {
             if (query.kind == Kind::GRANT)
             {
-                boost::range::copy(roles_from_query, std::inserter(grantee.granted_roles, grantee.granted_roles.end()));
                 if (query.admin_option)
-                    boost::range::copy(roles_from_query, std::inserter(grantee.granted_roles_with_admin_option, grantee.granted_roles_with_admin_option.end()));
+                    grantee.granted_roles.grantWithAdminOption(roles_from_query);
+                else
+                    grantee.granted_roles.grant(roles_from_query);
             }
             else
             {
-                for (const UUID & role_from_query : roles_from_query)
+                if (query.admin_option)
+                    grantee.granted_roles.revokeAdminOption(roles_from_query);
+                else
+                    grantee.granted_roles.revoke(roles_from_query);
+
+                if constexpr (std::is_same_v<T, User>)
                 {
-                    grantee.granted_roles_with_admin_option.erase(role_from_query);
-                    if (!query.admin_option)
-                        grantee.granted_roles.erase(role_from_query);
-                    if constexpr (std::is_same_v<T, User>)
+                    for (const UUID & role_from_query : roles_from_query)
                         grantee.default_roles.ids.erase(role_from_query);
                 }
             }
@@ -59,7 +66,7 @@ namespace
 
 BlockIO InterpreterGrantQuery::execute()
 {
-    const auto & query = query_ptr->as<const ASTGrantQuery &>();
+    auto & query = query_ptr->as<ASTGrantQuery &>();
     auto & access_control = context.getAccessControlManager();
     auto access = context.getAccess();
     access->checkGrantOption(query.access_rights_elements);
@@ -70,6 +77,12 @@ BlockIO InterpreterGrantQuery::execute()
         roles_from_query = ExtendedRoleSet{*query.roles, access_control}.getMatchingIDs(access_control);
         for (const UUID & role_from_query : roles_from_query)
             access->checkAdminOption(role_from_query);
+    }
+
+    if (!query.cluster.empty())
+    {
+        query.replaceCurrentUserTagWithName(context.getUserName());
+        return executeDDLQueryOnCluster(query_ptr, context);
     }
 
     std::vector<UUID> to_roles = ExtendedRoleSet{*query.to_roles, access_control, context.getUserID()}.getMatchingIDs(access_control);

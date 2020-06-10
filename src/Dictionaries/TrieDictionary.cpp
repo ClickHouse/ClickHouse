@@ -618,7 +618,7 @@ bool TrieDictionary::setAttributeValue(Attribute & attribute, const StringRef ke
         case AttributeUnderlyingType::utString:
         {
             const auto & string = value.get<String>();
-            const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
             setAttributeValueImpl<StringRef>(attribute, key, StringRef{string_in_arena, string.size()});
             return true;
         }

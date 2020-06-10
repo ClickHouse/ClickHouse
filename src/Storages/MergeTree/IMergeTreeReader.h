@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 
-
 namespace DB
 {
 
@@ -59,6 +58,9 @@ public:
     MergeTreeData::DataPartPtr data_part;
 
 protected:
+    /// Returns actual column type in part, which can differ from table metadata.
+    NameAndTypePair getColumnFromPart(const NameAndTypePair & required_column) const;
+
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
     /// Stores states for IDataType::deserializeBinaryBulk
@@ -66,8 +68,6 @@ protected:
 
     /// Columns that are read.
     NamesAndTypesList columns;
-
-    std::unordered_map<String, DataTypePtr> columns_from_part;
 
     UncompressedCache * uncompressed_cache;
     MarkCache * mark_cache;
@@ -78,6 +78,13 @@ protected:
     MarkRanges all_mark_ranges;
 
     friend class MergeTreeRangeReader::DelayedStream;
+
+private:
+    /// Alter conversions, which must be applied on fly if required
+    MergeTreeData::AlterConversions alter_conversions;
+
+    /// Actual data type of columns in part
+    std::unordered_map<String, DataTypePtr> columns_from_part;
 };
 
 }

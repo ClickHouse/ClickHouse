@@ -1,11 +1,6 @@
 <test>
 
 
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>30000</total_time_ms>
-        </all_of>
-    </stop_conditions>
 
 
     <create_query>CREATE TABLE data(k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>

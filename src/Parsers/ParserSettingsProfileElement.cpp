@@ -102,13 +102,14 @@ namespace
 bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     String parent_profile;
-    String name;
+    String setting_name;
     Field value;
     Field min_value;
     Field max_value;
     std::optional<bool> readonly;
 
-    if (ParserKeyword{"PROFILE"}.ignore(pos, expected))
+    if (ParserKeyword{"PROFILE"}.ignore(pos, expected) ||
+        (enable_inherit_keyword && ParserKeyword{"INHERIT"}.ignore(pos, expected)))
     {
         if (!parseProfileNameOrID(pos, expected, id_mode, parent_profile))
             return false;
@@ -118,21 +119,28 @@ bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected 
         ASTPtr name_ast;
         if (!ParserIdentifier{}.parse(pos, name_ast, expected))
             return false;
-        name = getIdentifierName(name_ast);
+        setting_name = getIdentifierName(name_ast);
 
+        bool has_value_or_constraint = false;
         while (parseValue(pos, expected, value) || parseMinMaxValue(pos, expected, min_value, max_value)
                || parseReadonlyOrWritableKeyword(pos, expected, readonly))
-            ;
+        {
+            has_value_or_constraint = true;
+        }
+
+        if (!has_value_or_constraint)
+            return false;
     }
 
     auto result = std::make_shared<ASTSettingsProfileElement>();
     result->parent_profile = std::move(parent_profile);
-    result->name = std::move(name);
+    result->setting_name = std::move(setting_name);
     result->value = std::move(value);
     result->min_value = std::move(min_value);
     result->max_value = std::move(max_value);
     result->readonly = readonly;
     result->id_mode = id_mode;
+    result->use_inherit_keyword = enable_inherit_keyword;
     node = result;
     return true;
 }
@@ -142,12 +150,15 @@ bool ParserSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Expected
 {
     std::vector<std::shared_ptr<ASTSettingsProfileElement>> elements;
 
-    if (!ParserKeyword{"NONE"}.ignore(pos, expected))
+    if (ParserKeyword{"NONE"}.ignore(pos, expected))
+    {
+    }
+    else
     {
         do
         {
             ASTPtr ast;
-            if (!ParserSettingsProfileElement{}.useIDMode(id_mode).parse(pos, ast, expected))
+            if (!ParserSettingsProfileElement{}.useIDMode(id_mode).enableInheritKeyword(enable_inherit_keyword).parse(pos, ast, expected))
                 return false;
             auto element = typeid_cast<std::shared_ptr<ASTSettingsProfileElement>>(ast);
             elements.push_back(std::move(element));

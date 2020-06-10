@@ -10,6 +10,7 @@ RUN apt-get update \
             bash \
             curl \
             g++ \
+            gdb \
             git \
             libc6-dbg \
             moreutils \

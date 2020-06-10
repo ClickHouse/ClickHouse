@@ -56,6 +56,11 @@ ASTPtr ASTAlterCommand::clone() const
         res->values = values->clone();
         res->children.push_back(res->values);
     }
+    if (rename_to)
+    {
+        res->rename_to = rename_to->clone();
+        res->children.push_back(res->rename_to);
+    }
 
     return res;
 }
@@ -176,13 +181,13 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << " TO ";
         switch (move_destination_type)
         {
-            case PartDestinationType::DISK:
+            case DataDestinationType::DISK:
                 settings.ostr << "DISK ";
                 break;
-            case PartDestinationType::VOLUME:
+            case DataDestinationType::VOLUME:
                 settings.ostr << "VOLUME ";
                 break;
-            case PartDestinationType::TABLE:
+            case DataDestinationType::TABLE:
                 settings.ostr << "TABLE ";
                 if (!to_database.empty())
                 {
@@ -196,7 +201,7 @@ void ASTAlterCommand::formatImpl(
             default:
                 break;
         }
-        if (move_destination_type != PartDestinationType::TABLE)
+        if (move_destination_type != DataDestinationType::TABLE)
         {
             settings.ostr << quoteString(move_destination_name);
         }
@@ -284,6 +289,15 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REFRESH " << (settings.hilite ? hilite_none : "");
+    }
+    else if (type == ASTAlterCommand::RENAME_COLUMN)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "RENAME COLUMN " << (if_exists ? "IF EXISTS " : "")
+                      << (settings.hilite ? hilite_none : "");
+        column->formatImpl(settings, state, frame);
+
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO ";
+        rename_to->formatImpl(settings, state, frame);
     }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);

@@ -38,5 +38,5 @@ The easiest way to see the result is to use `--livereload=8888` argument of buil
 
 At the moment there’s no easy way to do just that, but you can consider:
 
--   To hit the “Watch” button on top of GitHub web interface to know as early as possible, even during pull request. Alternative to this is `#github-activity` channel of [public ClickHouse Slack](https://join.slack.com/t/clickhousedb/shared_invite/zt-d2zxkf9e-XyxDa_ucfPxzuH4SJIm~Ng).
+-   To hit the “Watch” button on top of GitHub web interface to know as early as possible, even during pull request. Alternative to this is `#github-activity` channel of [public ClickHouse Slack](https://join.slack.com/t/clickhousedb/shared_invite/enQtOTUzMjM4ODQwNTc5LWJmMjE3Yjc2YmI1ZDBlZmI4ZTc3OWY3ZTIwYTljYzY4MzBlODM3YzBjZTc1YmYyODRlZTJkYTgzYzBiNTA2Yjk).
 -   Some search engines allow to subscribe on specific website changes via email and you can opt-in for that for https://clickhouse.tech.

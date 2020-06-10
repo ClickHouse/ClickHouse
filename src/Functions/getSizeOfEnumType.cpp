@@ -55,9 +55,9 @@ public:
 
     ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments) const override
     {
-        if (auto type8 = checkAndGetDataType<DataTypeEnum8>(block.getByPosition(arguments[0]).type.get()))
+        if (const auto * type8 = checkAndGetDataType<DataTypeEnum8>(block.getByPosition(arguments[0]).type.get()))
             return DataTypeUInt8().createColumnConst(1, type8->getValues().size());
-        else if (auto type16 = checkAndGetDataType<DataTypeEnum16>(block.getByPosition(arguments[0]).type.get()))
+        else if (const auto * type16 = checkAndGetDataType<DataTypeEnum16>(block.getByPosition(arguments[0]).type.get()))
             return DataTypeUInt16().createColumnConst(1, type16->getValues().size());
         else
             throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

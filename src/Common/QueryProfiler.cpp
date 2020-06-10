@@ -6,9 +6,9 @@
 #include <Common/TraceCollector.h>
 #include <Common/thread_local_rng.h>
 #include <common/StringRef.h>
-#include <common/config_common.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
+#include <common/errnoToString.h>
 
 #include <random>
 
@@ -23,7 +23,9 @@ namespace DB
 
 namespace
 {
+#if defined(OS_LINUX)
     thread_local size_t write_trace_iteration = 0;
+#endif
 
     void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
@@ -53,7 +55,6 @@ namespace
         }
 #else
         UNUSED(info);
-        UNUSED(write_trace_iteration);
 #endif
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
@@ -79,7 +80,7 @@ namespace ErrorCodes
 
 template <typename ProfilerImpl>
 QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const int clock_type, UInt32 period, const int pause_signal_)
-    : log(&Logger::get("QueryProfiler"))
+    : log(&Poco::Logger::get("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
 #if USE_UNWIND
@@ -110,7 +111,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = pause_signal;
 
-#   if defined(__FreeBSD__)
+#   if defined(OS_FREEBSD)
         sev._sigev_un._threadid = thread_id;
 #   else
         sev._sigev_un._tid = thread_id;
@@ -165,10 +166,10 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 {
 #if USE_UNWIND
     if (timer_id != nullptr && timer_delete(timer_id))
-        LOG_ERROR(log, "Failed to delete query profiler timer " + errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
+        LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
 
     if (previous_handler != nullptr && sigaction(pause_signal, previous_handler, nullptr))
-        LOG_ERROR(log, "Failed to restore signal handler after query profiler " + errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER));
+        LOG_ERROR(log, "Failed to restore signal handler after query profiler {}", errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER));
 #endif
 }
 

@@ -1,10 +1,4 @@
-<test>
-    <stop_conditions>
-        <any_of>
-            <total_time_ms>10000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
+<test max_ignored_relative_change="0.2">
     <substitutions>
         <substitution>
            <name>param</name>

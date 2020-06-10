@@ -9,8 +9,8 @@ class FunctionArrayHasAll : public FunctionArrayHasAllAny
 {
 public:
     static constexpr auto name = "hasAll";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayHasAll>(context); }
-    explicit FunctionArrayHasAll(const Context & context_) : FunctionArrayHasAllAny(context_, true, name) {}
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayHasAll>(); }
+    FunctionArrayHasAll() : FunctionArrayHasAllAny(true, name) {}
 };
 
 void registerFunctionHasAll(FunctionFactory & factory)

@@ -1,99 +1,22 @@
 #include <Access/RowPolicyCache.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/AccessControlManager.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <ext/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
-#include <boost/range/algorithm/copy.hpp>
-#include <boost/range/algorithm_ext/erase.hpp>
+#include <Core/Defines.h>
 
 
 namespace DB
 {
 namespace
 {
-    bool tryGetLiteralBool(const IAST & ast, bool & value)
-    {
-        try
-        {
-            if (const ASTLiteral * literal = ast.as<ASTLiteral>())
-            {
-                value = !literal->value.isNull() && applyVisitor(FieldVisitorConvertToNumber<bool>(), literal->value);
-                return true;
-            }
-            return false;
-        }
-        catch (...)
-        {
-            return false;
-        }
-    }
-
-    ASTPtr applyFunctionAND(ASTs arguments)
-    {
-        bool const_arguments = true;
-        boost::range::remove_erase_if(arguments, [&](const ASTPtr & argument) -> bool
-        {
-            bool b;
-            if (!tryGetLiteralBool(*argument, b))
-                return false;
-            const_arguments &= b;
-            return true;
-        });
-
-        if (!const_arguments)
-            return std::make_shared<ASTLiteral>(Field{UInt8(0)});
-        if (arguments.empty())
-            return std::make_shared<ASTLiteral>(Field{UInt8(1)});
-        if (arguments.size() == 1)
-            return arguments[0];
-
-        auto function = std::make_shared<ASTFunction>();
-        auto exp_list = std::make_shared<ASTExpressionList>();
-        function->name = "and";
-        function->arguments = exp_list;
-        function->children.push_back(exp_list);
-        exp_list->children = std::move(arguments);
-        return function;
-    }
-
-
-    ASTPtr applyFunctionOR(ASTs arguments)
-    {
-        bool const_arguments = false;
-        boost::range::remove_erase_if(arguments, [&](const ASTPtr & argument) -> bool
-        {
-            bool b;
-            if (!tryGetLiteralBool(*argument, b))
-                return false;
-            const_arguments |= b;
-            return true;
-        });
-
-        if (const_arguments)
-            return std::make_shared<ASTLiteral>(Field{UInt8(1)});
-        if (arguments.empty())
-            return std::make_shared<ASTLiteral>(Field{UInt8(0)});
-        if (arguments.size() == 1)
-            return arguments[0];
-
-        auto function = std::make_shared<ASTFunction>();
-        auto exp_list = std::make_shared<ASTExpressionList>();
-        function->name = "or";
-        function->arguments = exp_list;
-        function->children.push_back(exp_list);
-        exp_list->children = std::move(arguments);
-        return function;
-    }
-
-
     using ConditionType = RowPolicy::ConditionType;
-    constexpr size_t MAX_CONDITION_TYPE = RowPolicy::MAX_CONDITION_TYPE;
+    constexpr auto MAX_CONDITION_TYPE = RowPolicy::MAX_CONDITION_TYPE;
 
 
     /// Accumulates conditions from multiple row policies and joins them using the AND logical operation.
@@ -111,10 +34,16 @@ namespace
         ASTPtr getResult() &&
         {
             /// Process permissive conditions.
-            restrictions.push_back(applyFunctionOR(std::move(permissions)));
+            restrictions.push_back(makeASTForLogicalOr(std::move(permissions)));
 
             /// Process restrictive conditions.
-            return applyFunctionAND(std::move(restrictions));
+            auto condition = makeASTForLogicalAnd(std::move(restrictions));
+
+            bool value;
+            if (tryGetLiteralBool(condition.get(), value) && value)
+                condition = nullptr;  /// The condition is always true, no need to check it.
+
+            return condition;
         }
 
     private:
@@ -128,8 +57,9 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
 {
     policy = policy_;
     roles = &policy->to_roles;
+    database_and_table_name = std::make_shared<std::pair<String, String>>(policy->getDatabase(), policy->getTableName());
 
-    for (auto type : ext::range_with_static_cast<ConditionType>(0, MAX_CONDITION_TYPE))
+    for (auto type : ext::range(0, MAX_CONDITION_TYPE))
     {
         parsed_conditions[type] = nullptr;
         const String & condition = policy->conditions[type];
@@ -137,7 +67,7 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
             continue;
 
         auto previous_range = std::pair(std::begin(policy->conditions), std::begin(policy->conditions) + type);
-        auto previous_it = std::find(previous_range.first, previous_range.second, condition);
+        const auto * previous_it = std::find(previous_range.first, previous_range.second, condition);
         if (previous_it != previous_range.second)
         {
             /// The condition is already parsed before.
@@ -149,14 +79,14 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
         try
         {
             ParserExpression parser;
-            parsed_conditions[type] = parseQuery(parser, condition, 0);
+            parsed_conditions[type] = parseQuery(parser, condition, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         }
         catch (...)
         {
             tryLogCurrentException(
                 &Poco::Logger::get("RowPolicy"),
-                String("Could not parse the condition ") + RowPolicy::conditionTypeToString(type) + " of row policy "
-                    + backQuote(policy->getFullName()));
+                String("Could not parse the condition ") + toString(type) + " of row policy "
+                    + backQuote(policy->getName()));
         }
     }
 }
@@ -170,7 +100,7 @@ RowPolicyCache::RowPolicyCache(const AccessControlManager & access_control_manag
 RowPolicyCache::~RowPolicyCache() = default;
 
 
-std::shared_ptr<const EnabledRowPolicies> RowPolicyCache::getEnabledRowPolicies(const UUID & user_id, const std::vector<UUID> & enabled_roles)
+std::shared_ptr<const EnabledRowPolicies> RowPolicyCache::getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles)
 {
     std::lock_guard lock{mutex};
     ensureAllRowPoliciesRead();
@@ -250,59 +180,62 @@ void RowPolicyCache::rowPolicyRemoved(const UUID & policy_id)
 void RowPolicyCache::mixConditions()
 {
     /// `mutex` is already locked.
-    std::erase_if(
-        enabled_row_policies,
-        [&](const std::pair<EnabledRowPolicies::Params, std::weak_ptr<EnabledRowPolicies>> & pr)
+    for (auto i = enabled_row_policies.begin(), e = enabled_row_policies.end(); i != e;)
+    {
+        auto elem = i->second.lock();
+        if (!elem)
+            i = enabled_row_policies.erase(i);
+        else
         {
-            auto elem = pr.second.lock();
-            if (!elem)
-                return true; // remove from the `enabled_row_policies` map.
             mixConditionsFor(*elem);
-            return false; // keep in the `enabled_row_policies` map.
-        });
+            ++i;
+        }
+    }
 }
 
 
 void RowPolicyCache::mixConditionsFor(EnabledRowPolicies & enabled)
 {
     /// `mutex` is already locked.
-    struct Mixers
-    {
-        ConditionsMixer mixers[MAX_CONDITION_TYPE];
-        std::vector<UUID> policy_ids;
-    };
+
     using MapOfMixedConditions = EnabledRowPolicies::MapOfMixedConditions;
-    using DatabaseAndTableName = EnabledRowPolicies::DatabaseAndTableName;
-    using DatabaseAndTableNameRef = EnabledRowPolicies::DatabaseAndTableNameRef;
+    using MixedConditionKey = EnabledRowPolicies::MixedConditionKey;
     using Hash = EnabledRowPolicies::Hash;
 
-    std::unordered_map<DatabaseAndTableName, Mixers, Hash> map_of_mixers;
+    struct MixerWithNames
+    {
+        ConditionsMixer mixer;
+        std::shared_ptr<const std::pair<String, String>> database_and_table_name;
+    };
+
+    std::unordered_map<MixedConditionKey, MixerWithNames, Hash> map_of_mixers;
 
     for (const auto & [policy_id, info] : all_policies)
     {
         const auto & policy = *info.policy;
-        auto & mixers = map_of_mixers[std::pair{policy.getDatabase(), policy.getTableName()}];
-        if (info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
+        bool match = info.roles->match(enabled.params.user_id, enabled.params.enabled_roles);
+        MixedConditionKey key;
+        key.database = info.database_and_table_name->first;
+        key.table_name = info.database_and_table_name->second;
+        for (auto type : ext::range(0, MAX_CONDITION_TYPE))
         {
-            mixers.policy_ids.push_back(policy_id);
-            for (auto type : ext::range(0, MAX_CONDITION_TYPE))
-                if (info.parsed_conditions[type])
-                    mixers.mixers[type].add(info.parsed_conditions[type], policy.isRestrictive());
+            if (info.parsed_conditions[type])
+            {
+                key.condition_type = type;
+                auto & mixer = map_of_mixers[key];
+                mixer.database_and_table_name = info.database_and_table_name;
+                if (match)
+                    mixer.mixer.add(info.parsed_conditions[type], policy.isRestrictive());
+            }
         }
     }
 
     auto map_of_mixed_conditions = boost::make_shared<MapOfMixedConditions>();
-    for (auto & [database_and_table_name, mixers] : map_of_mixers)
+    for (auto & [key, mixer] : map_of_mixers)
     {
-        auto database_and_table_name_keeper = std::make_unique<DatabaseAndTableName>();
-        database_and_table_name_keeper->first = database_and_table_name.first;
-        database_and_table_name_keeper->second = database_and_table_name.second;
-        auto & mixed_conditions = (*map_of_mixed_conditions)[DatabaseAndTableNameRef{database_and_table_name_keeper->first,
-                                                                                     database_and_table_name_keeper->second}];
-        mixed_conditions.database_and_table_name_keeper = std::move(database_and_table_name_keeper);
-        mixed_conditions.policy_ids = std::move(mixers.policy_ids);
-        for (auto type : ext::range(0, MAX_CONDITION_TYPE))
-            mixed_conditions.mixed_conditions[type] = std::move(mixers.mixers[type]).getResult();
+        auto & mixed_condition = (*map_of_mixed_conditions)[key];
+        mixed_condition.database_and_table_name = mixer.database_and_table_name;
+        mixed_condition.ast = std::move(mixer.mixer).getResult();
     }
 
     enabled.map_of_mixed_conditions.store(map_of_mixed_conditions);

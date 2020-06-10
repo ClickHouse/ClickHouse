@@ -36,7 +36,7 @@ def ddl_check_query(instance, query, num_hosts=3):
     return contents
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def started_cluster():
     global cluster
     try:
@@ -85,7 +85,9 @@ class Task1:
             ddl_check_query(instance, "DROP DATABASE IF EXISTS default ON CLUSTER cluster{}".format(cluster_num))
             ddl_check_query(instance, "CREATE DATABASE IF NOT EXISTS default ON CLUSTER cluster{}".format(cluster_num))
 
-        ddl_check_query(instance, "CREATE TABLE hits ON CLUSTER cluster0 (d UInt64, d1 UInt64 MATERIALIZED d+1) ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}/hits', '{replica}') PARTITION BY d % 3 ORDER BY d SETTINGS index_granularity = 16")
+        ddl_check_query(instance, "CREATE TABLE hits ON CLUSTER cluster0 (d UInt64, d1 UInt64 MATERIALIZED d+1) " +
+                                  "ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}/hits', '{replica}') " +
+                                  "PARTITION BY d % 3 ORDER BY (d, sipHash64(d)) SAMPLE BY sipHash64(d) SETTINGS index_granularity = 16")
         ddl_check_query(instance, "CREATE TABLE hits_all ON CLUSTER cluster0 (d UInt64) ENGINE=Distributed(cluster0, default, hits, d)")
         ddl_check_query(instance, "CREATE TABLE hits_all ON CLUSTER cluster1 (d UInt64) ENGINE=Distributed(cluster1, default, hits, d + 1)")
         instance.query("INSERT INTO hits_all SELECT * FROM system.numbers LIMIT 1002", settings={"insert_distributed_sync": 1})
@@ -155,7 +157,7 @@ class Task_test_block_size:
         ddl_check_query(instance, """
             CREATE TABLE test_block_size ON CLUSTER shard_0_0 (partition Date, d UInt64)
             ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}/test_block_size', '{replica}')
-            ORDER BY d""", 2)
+            ORDER BY (d, sipHash64(d)) SAMPLE BY sipHash64(d)""", 2)
 
         instance.query("INSERT INTO test_block_size SELECT toDate(0) AS partition, number as d FROM system.numbers LIMIT {}".format(self.rows))
 
@@ -260,14 +262,50 @@ def execute_task(task, cmd_options):
 
 # Tests
 
-def test_copy_simple(started_cluster):
-    execute_task(Task1(started_cluster), [])
+@pytest.mark.parametrize(
+    ('use_sample_offset'),
+    [
+        False,
+        True
+    ]
+)
 
-def test_copy_with_recovering(started_cluster):
-    execute_task(Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
+def test_copy_simple(started_cluster, use_sample_offset):
+    if use_sample_offset:
+        execute_task(Task1(started_cluster), ['--experimental-use-sample-offset', '1'])
+    else:
+        execute_task(Task1(started_cluster), [])
 
-def test_copy_with_recovering_after_move_faults(started_cluster):
-    execute_task(Task1(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
+
+@pytest.mark.parametrize(
+    ('use_sample_offset'),
+    [
+        False,
+        True
+    ]
+)
+
+def test_copy_with_recovering(started_cluster, use_sample_offset):
+    if use_sample_offset:
+        execute_task(Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
+                                              '--experimental-use-sample-offset', '1'])
+    else:
+        execute_task(Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
+
+@pytest.mark.parametrize(
+    ('use_sample_offset'),
+    [
+        False,
+        True
+    ]
+)
+
+def test_copy_with_recovering_after_move_faults(started_cluster, use_sample_offset):
+    if use_sample_offset:
+        execute_task(Task1(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),
+                                              '--experimental-use-sample-offset', '1'])
+    else:
+        execute_task(Task1(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
 
 def test_copy_month_to_week_partition(started_cluster):
     execute_task(Task2(started_cluster), [])

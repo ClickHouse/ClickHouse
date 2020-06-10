@@ -1,6 +1,8 @@
 #include <Interpreters/InterpreterCreateSettingsProfileQuery.h>
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
 #include <Access/SettingsProfile.h>
 #include <Access/AccessFlags.h>
@@ -49,12 +51,18 @@ namespace
 
 BlockIO InterpreterCreateSettingsProfileQuery::execute()
 {
-    const auto & query = query_ptr->as<const ASTCreateSettingsProfileQuery &>();
+    auto & query = query_ptr->as<ASTCreateSettingsProfileQuery &>();
     auto & access_control = context.getAccessControlManager();
     if (query.alter)
         context.checkAccess(AccessType::ALTER_SETTINGS_PROFILE);
     else
         context.checkAccess(AccessType::CREATE_SETTINGS_PROFILE);
+
+    if (!query.cluster.empty())
+    {
+        query.replaceCurrentUserTagWithName(context.getUserName());
+        return executeDDLQueryOnCluster(query_ptr, context);
+    }
 
     std::optional<SettingsProfileElements> settings_from_query;
     if (query.settings)

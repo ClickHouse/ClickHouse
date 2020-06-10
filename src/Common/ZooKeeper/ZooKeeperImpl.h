@@ -93,17 +93,23 @@ struct ZooKeeperRequest;
 class ZooKeeper : public IKeeper
 {
 public:
-    using Addresses = std::vector<Poco::Net::SocketAddress>;
+    struct Node
+    {
+        Poco::Net::SocketAddress address;
+        bool secure;
+    };
+
+    using Nodes = std::vector<Node>;
 
     using XID = int32_t;
     using OpNum = int32_t;
 
-    /** Connection to addresses is performed in order. If you want, shuffle them manually.
+    /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
       * Operation timeout applies independently for network read, network write, waiting for events and synchronization.
       */
     ZooKeeper(
-        const Addresses & addresses,
+        const Nodes & nodes,
         const String & root_path,
         const String & auth_scheme,
         const String & auth_data,
@@ -213,7 +219,7 @@ private:
     ThreadFromGlobalPool receive_thread;
 
     void connect(
-        const Addresses & addresses,
+        const Nodes & node,
         Poco::Timespan connection_timeout);
 
     void sendHandshake();

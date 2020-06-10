@@ -94,7 +94,7 @@ static ColumnData getColumnData(const IColumn * column)
     const bool is_const = isColumnConst(*column);
     if (is_const)
         column = &reinterpret_cast<const ColumnConst *>(column)->getDataColumn();
-    if (auto * nullable = typeid_cast<const ColumnNullable *>(column))
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
     {
         result.null = nullable->getNullMapColumn().getRawData().data;
         column = &nullable->getNestedColumn();
@@ -117,7 +117,7 @@ static llvm::TargetMachine * getNativeMachine()
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();
     auto triple = llvm::sys::getProcessTriple();
-    auto target = llvm::TargetRegistry::lookupTarget(triple, error);
+    const auto * target = llvm::TargetRegistry::lookupTarget(triple, error);
     if (!target)
         throw Exception("Could not initialize native target: " + error, ErrorCodes::CANNOT_COMPILE_CODE);
     llvm::SubtargetFeatures features;
@@ -290,7 +290,7 @@ public:
             std::vector<ColumnData> columns(arguments.size() + 1);
             for (size_t i = 0; i < arguments.size(); ++i)
             {
-                auto * column = block.getByPosition(arguments[i]).column.get();
+                const auto * column = block.getByPosition(arguments[i]).column.get();
                 if (!column)
                     throw Exception("Column " + block.getByPosition(arguments[i]).name + " is missing", ErrorCodes::LOGICAL_ERROR);
                 columns[i] = getColumnData(column);
@@ -307,13 +307,13 @@ static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunction
 {
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
-    auto & arg_types = f.getArgumentTypes();
+    const auto & arg_types = f.getArgumentTypes();
     auto & b = context.builder;
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
     auto * data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy(), size_type);
     auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, data_type->getPointerTo() }, /*isVarArg=*/false);
     auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, f.getName(), context.module.get());
-    auto args = func->args().begin();
+    auto * args = func->args().begin();
     llvm::Value * counter_arg = &*args++;
     llvm::Value * columns_arg = &*args++;
 
@@ -322,7 +322,7 @@ static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunction
     std::vector<ColumnDataPlaceholder> columns(arg_types.size() + 1);
     for (size_t i = 0; i <= arg_types.size(); ++i)
     {
-        auto & type = i == arg_types.size() ? f.getReturnType() : arg_types[i];
+        const auto & type = i == arg_types.size() ? f.getReturnType() : arg_types[i];
         auto * data = b.CreateLoad(b.CreateConstInBoundsGEP1_32(data_type, columns_arg, i));
         columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(type))->getPointerTo());
         columns[i].null_init = type->isNullable() ? b.CreateExtractValue(data, {1}) : nullptr;
@@ -389,9 +389,9 @@ static llvm::Constant * getNativeValue(llvm::Type * type, const IColumn & column
 {
     if (!type || column.size() <= i)
         return nullptr;
-    if (auto * constant = typeid_cast<const ColumnConst *>(&column))
+    if (const auto * constant = typeid_cast<const ColumnConst *>(&column))
         return getNativeValue(type, constant->getDataColumn(), 0);
-    if (auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
     {
         auto * value = getNativeValue(type->getContainedType(0), nullable->getNestedColumn(), i);
         auto * is_null = llvm::ConstantInt::get(type->getContainedType(1), nullable->isNullAt(i));
@@ -510,7 +510,7 @@ bool LLVMFunction::isSuitableForConstantFolding() const
     return true;
 }
 
-bool LLVMFunction::isInjective(const Block & sample_block)
+bool LLVMFunction::isInjective(const Block & sample_block) const
 {
     for (const auto & f : originals)
         if (!f->isInjective(sample_block))

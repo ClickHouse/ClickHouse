@@ -25,7 +25,7 @@ public:
 protected:
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
 
-    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
+    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
 
     /// Remove all columns marked expired in data_part. Also, clears checksums
     /// and columns array. Return set of removed files names.
@@ -37,7 +37,7 @@ protected:
 protected:
     const MergeTreeData & storage;
 
-    DiskPtr disk;
+    VolumePtr volume;
     String part_path;
 
     static Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);

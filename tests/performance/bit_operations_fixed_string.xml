@@ -1,21 +1,13 @@
 <test>
-
-    <stop_conditions>
-        <all_of>
-            <iterations>3</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>5</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
-
     <preconditions>
         <table_exists>test.hits</table_exists>
     </preconditions>
 
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- test.hits is too small for a stable test, but there is no ClientIP6 column in hits_100m_single. -->
     <query>SELECT count() FROM test.hits WHERE NOT ignore(bitAnd(toFixedString(ClientIP6, 16), IPv6StringToNum('ffff:ffff:ffff:0000:0000:0000:0000:0000')))</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(bitOr(toFixedString(ClientIP6, 16), IPv6StringToNum('ffff:ffff:ffff:0000:0000:0000:0000:0000')))</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(bitXor(toFixedString(ClientIP6, 16), IPv6StringToNum('ffff:ffff:ffff:0000:0000:0000:0000:0000')))</query>

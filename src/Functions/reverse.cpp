@@ -71,7 +71,7 @@ public:
         return 1;
     }
 
-    bool isInjective(const Block &) override
+    bool isInjective(const Block &) const override
     {
         return true;
     }

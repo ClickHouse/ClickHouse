@@ -10,8 +10,6 @@
 
 #include <Storages/StorageFile.h>
 
-#include <Access/AccessFlags.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -64,8 +62,6 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
 
     if (args.size() == 4)
         compression_method = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-
-    context.checkAccess(getRequiredAccessType());
 
     /// Create table
     StoragePtr storage = getStorage(filename, format, columns, const_cast<Context &>(context), table_name, compression_method);

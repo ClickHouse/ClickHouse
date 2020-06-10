@@ -3,6 +3,7 @@
 #include <Access/AccessFlags.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionFile.h>
+#include <Interpreters/Context.h>
 #include "registerTableFunctions.h"
 
 namespace DB
@@ -13,11 +14,6 @@ StoragePtr TableFunctionFile::getStorage(
     StorageFile::CommonArguments args{StorageID(getDatabaseName(), table_name), format, compression_method, columns, ConstraintsDescription{}, global_context};
 
     return StorageFile::create(source, global_context.getUserFilesPath(), args);
-}
-
-AccessType TableFunctionFile::getRequiredAccessType() const
-{
-    return AccessType::file;
 }
 
 void registerTableFunctionFile(TableFunctionFactory & factory)

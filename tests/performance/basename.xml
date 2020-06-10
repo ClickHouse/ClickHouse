@@ -1,22 +1,12 @@
 <test>
-
-    <stop_conditions>
-        <all_of>
-            <iterations>3</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>5</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
-
     <preconditions>
-        <table_exists>test.hits</table_exists>
+        <table_exists>hits_10m_single</table_exists>
     </preconditions>
 
-<query>SELECT count() FROM test.hits WHERE NOT ignore(basename(URL))</query>
-<query>SELECT count() FROM test.hits WHERE NOT ignore(basename(Referer))</query>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
 
+    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(basename(URL))</query>
+    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(basename(Referer))</query>
 </test>

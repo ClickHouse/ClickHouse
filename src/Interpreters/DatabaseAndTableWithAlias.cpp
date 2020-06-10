@@ -49,7 +49,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & 
         throw Exception("Logical error: no known elements in ASTTableExpression", ErrorCodes::LOGICAL_ERROR);
 }
 
-bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_table, bool table_may_be_an_alias)
+bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_table, bool table_may_be_an_alias) const
 {
     /// table.*, alias.* or database.table.*
 

@@ -22,6 +22,7 @@ public:
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
+    const char * getStorageTypeName() const override { return "Distributed"; }
 
     std::string name;
     bool is_cluster_function;

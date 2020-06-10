@@ -1,24 +1,24 @@
-d	Date	DEFAULT	CAST(\'2015-12-29\', \'Date\')			
+d	Date	DEFAULT	\'2015-12-29\'			
 k	UInt8	DEFAULT	0			
 e	Enum8(\'hello\' = 1, \'world\' = 2)					
 sign	Enum8(\'minus\' = -1, \'plus\' = 1)					
 letter	Enum16(\'*\' = -256, \'a\' = 0, \'b\' = 1, \'c\' = 2)					
 2015-12-29	0	hello	minus	*
-d	Date	DEFAULT	CAST(\'2015-12-29\', \'Date\')			
+d	Date	DEFAULT	\'2015-12-29\'			
 k	UInt8	DEFAULT	0			
 e	Enum8(\'hello\' = 1, \'world\' = 2, \'!\' = 3)					
 sign	Enum8(\'minus\' = -1, \'plus\' = 1)					
 letter	Enum16(\'*\' = -256, \'a\' = 0, \'b\' = 1, \'c\' = 2)					
 2015-12-29	0	hello	minus	*
 2015-12-29	0	!	plus	b
-d	Date	DEFAULT	CAST(\'2015-12-29\', \'Date\')			
+d	Date	DEFAULT	\'2015-12-29\'			
 k	UInt8	DEFAULT	0			
 e	Enum16(\'hello\' = 1, \'world\' = 2, \'!\' = 3)					
 sign	Enum16(\'minus\' = -1, \'plus\' = 1)					
 letter	Enum16(\'no letter\' = -256, \'a\' = 0, \'b\' = 1, \'c\' = 2)					
 2015-12-29	0	hello	minus	no letter
 2015-12-29	0	!	plus	b
-d	Date	DEFAULT	CAST(\'2015-12-29\', \'Date\')			
+d	Date	DEFAULT	\'2015-12-29\'			
 k	UInt8	DEFAULT	0			
 e	Enum8(\'hello\' = 1, \'world\' = 2, \'!\' = 3)					
 sign	Enum8(\'minus\' = -1, \'plus\' = 1)					
