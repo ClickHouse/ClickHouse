@@ -17,6 +17,7 @@
 #include <common/phdr_cache.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
+#include <common/errnoToString.h>
 #include <common/coverage.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>

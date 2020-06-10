@@ -9,6 +9,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & source_factory);
 void registerDictionarySourceMysql(DictionarySourceFactory & source_factory);
 void registerDictionarySourceClickHouse(DictionarySourceFactory & source_factory);
 void registerDictionarySourceMongoDB(DictionarySourceFactory & source_factory);
+void registerDictionarySourceCassandra(DictionarySourceFactory & source_factory);
 void registerDictionarySourceRedis(DictionarySourceFactory & source_factory);
 void registerDictionarySourceXDBC(DictionarySourceFactory & source_factory);
 void registerDictionarySourceJDBC(DictionarySourceFactory & source_factory);
