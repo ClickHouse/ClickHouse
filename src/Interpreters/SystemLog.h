@@ -217,7 +217,7 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 template <typename LogElement>
 void SystemLog<LogElement>::startup()
 {
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
     saving_thread = ThreadFromGlobalPool([this] { savingThreadFunction(); });
 }
 
@@ -231,7 +231,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
     auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (is_shutdown)
         return;
@@ -310,7 +310,7 @@ template <typename LogElement>
 void SystemLog<LogElement>::stopFlushThread()
 {
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
 
         if (!saving_thread.joinable())
         {
@@ -423,7 +423,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
 
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         flushed_before = to_flush_end;
         flush_event.notify_all();
     }
