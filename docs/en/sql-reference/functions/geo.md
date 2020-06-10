@@ -7,7 +7,7 @@ toc_title: Working with geographical coordinates
 
 ## greatCircleDistance {#greatcircledistance}
 
-Calculate the distance between two points on the Earth’s surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
+Calculates the distance between two points on the Earth’s surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
 ``` sql
 greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
@@ -42,7 +42,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 
 ## greatCircleAngle {#greatcircleangle}
 
-Calculate the central angle between two points on the Earth’s surface using [the great-circle formula]
+Calculates the central angle between two points on the Earth’s surface using [the great-circle formula]
 
 ``` sql
 greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
