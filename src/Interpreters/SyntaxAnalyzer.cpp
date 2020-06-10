@@ -1,32 +1,34 @@
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 
-#include <Interpreters/SyntaxAnalyzer.h>
-#include <Interpreters/LogicalExpressionsOptimizer.h>
-#include <Interpreters/QueryAliasesVisitor.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/ArrayJoinedColumnsVisitor.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/MarkTableIdentifiersVisitor.h>
-#include <Interpreters/QueryNormalizer.h>
-#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
-#include <Interpreters/CollectJoinOnKeysVisitor.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
-#include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/ArrayJoinedColumnsVisitor.h>
+#include <Interpreters/CollectJoinOnKeysVisitor.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DuplicateDistinct.h>
+#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
-#include <Interpreters/getTableExpressions.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/GetAggregatesVisitor.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/LogicalExpressionsOptimizer.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/OptimizeIfChains.h>
+#include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/getTableExpressions.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
@@ -80,6 +82,100 @@ struct CustomizeFunctionsData
 
 using CustomizeFunctionsMatcher = OneTypeMatcher<CustomizeFunctionsData>;
 using CustomizeFunctionsVisitor = InDepthNodeVisitor<CustomizeFunctionsMatcher, true>;
+
+
+class ASTFunctionStatefulData
+{
+public:
+    using TypeToVisit = ASTFunction;
+
+    const Context & context;
+    bool & is_stateful;
+    void visit(ASTFunction & ast_function, ASTPtr &)
+    {
+        if (ast_function.name == "any" || ast_function.name == "groupArray")
+        {
+            is_stateful = true;
+            return;
+        }
+
+        const auto & function = FunctionFactory::instance().tryGet(ast_function.name, context);
+
+        if (function && function->isStateful())
+        {
+            is_stateful = true;
+            return;
+        }
+    }
+};
+
+using ASTFunctionStatefulMatcher = OneTypeMatcher<ASTFunctionStatefulData>;
+using ASTFunctionStatefulVisitor = InDepthNodeVisitor<ASTFunctionStatefulMatcher, true>;
+
+
+class DuplicateOrderByFromSubqueriesData
+{
+public:
+    using TypeToVisit = ASTSelectQuery;
+
+    bool done = false;
+
+    void visit(ASTSelectQuery & select_query, ASTPtr &)
+    {
+        if (done)
+            return;
+
+        if (select_query.orderBy() && !select_query.limitBy() && !select_query.limitByOffset() &&
+            !select_query.limitByLength() && !select_query.limitLength() && !select_query.limitOffset())
+        {
+            select_query.setExpression(ASTSelectQuery::Expression::ORDER_BY, nullptr);
+        }
+        done = true;
+    }
+};
+
+using DuplicateOrderByFromSubqueriesMatcher = OneTypeMatcher<DuplicateOrderByFromSubqueriesData>;
+using DuplicateOrderByFromSubqueriesVisitor = InDepthNodeVisitor<DuplicateOrderByFromSubqueriesMatcher, true>;
+
+
+class DuplicateOrderByData
+{
+public:
+    using TypeToVisit = ASTSelectQuery;
+
+    const Context & context;
+    bool done = false;
+
+    void visit(ASTSelectQuery & select_query, ASTPtr &)
+    {
+        if (done)
+            return;
+
+        for (const auto & elem : select_query.children)
+        {
+            if (elem->as<ASTSetQuery>() && !elem->as<ASTSetQuery>()->is_standalone)
+                return;
+        }
+
+        if (select_query.orderBy() || select_query.groupBy())
+        {
+            for (auto & elem : select_query.children)
+            {
+                bool is_stateful = false;
+                ASTFunctionStatefulVisitor::Data data{context, is_stateful};
+                ASTFunctionStatefulVisitor(data).visit(elem);
+                if (is_stateful)
+                    return;
+            }
+
+            DuplicateOrderByFromSubqueriesVisitor::Data data{false};
+            DuplicateOrderByFromSubqueriesVisitor(data).visit(select_query.refTables());
+        }
+    }
+};
+
+using DuplicateOrderByMatcher = OneTypeMatcher<DuplicateOrderByData>;
+using DuplicateOrderByVisitor = InDepthNodeVisitor<DuplicateOrderByMatcher, true>;
 
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
@@ -374,159 +470,15 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
         elems = std::move(unique_elems);
 }
 
-/// Checks if ASTFunction or its arguments are stateful.
-bool isASTFunctionStateful(const ASTPtr & current_ast, const Context & context)
+void optimizeDuplicateOrderBy(ASTPtr & query, bool optimize_duplicate_order_by_and_distinct, const Context & context)
 {
-    if (!current_ast)
-        return false;
-
-    if (auto ast_function = current_ast->as<ASTFunction>())
+    if (optimize_duplicate_order_by_and_distinct)
     {
-        if (ast_function->name == "any" || ast_function->name == "groupArray")
-            return true;
-
-        const auto & function = FunctionFactory::instance().tryGet(ast_function->name, context);
-
-        if (function && function->isStateful())
-            return true;
-
-        for (const auto & elem : ast_function->children)
-        {
-            if (isASTFunctionStateful(elem, context))
-                return true;
-        }
+        DuplicateOrderByVisitor::Data order_by_data{context, false};
+        DuplicateOrderByVisitor(order_by_data).visit(query);
+        DuplicateDistinctVisitor::Data distinct_data{};
+        DuplicateDistinctVisitor(distinct_data).visit(query);
     }
-    else if (auto ast_expression_list = current_ast->as<ASTExpressionList>())
-    {
-        for (const auto & elem : ast_expression_list->children)
-        {
-            if (isASTFunctionStateful(elem, context))
-                return true;
-        }
-    }
-
-    return false;
-}
-
-/// Removes duplicate ORDER BY from subqueries.
-void optimizeDuplicateOrderByFromSubqueries(const ASTPtr & current_ast, const Context & context)
-{
-    if (!current_ast)
-        return;
-
-    auto select_query = current_ast->as<ASTSelectQuery>();
-
-    if (select_query)
-    {
-        if (select_query->orderBy() && !select_query->limitBy() && !select_query->limitByOffset() &&
-            !select_query->limitByLength() && !select_query->limitLength() && !select_query->limitOffset())
-        {
-            select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, nullptr);
-        }
-    }
-    else
-    {
-        for (const auto & elem : current_ast->children)
-            optimizeDuplicateOrderByFromSubqueries(elem, context);
-    }
-}
-
-/// Checks if duplicate ORDER BY from subqueries can be erased.
-void optimizeDuplicateOrderBy(const ASTPtr & current_ast, const Context & context)
-{
-    if (!current_ast)
-        return;
-
-    for (const auto & elem : current_ast->children)
-        optimizeDuplicateOrderBy(elem, context);
-
-    if (auto select_query = current_ast->as<ASTSelectQuery>())
-    {
-        for (const auto & elem : select_query->children)
-        {
-            if (elem->getID() == "Set")
-                return;
-        }
-
-        if (select_query->orderBy() || select_query->groupBy())
-        {
-            for (const auto & elem : select_query->children)
-            {
-                if (isASTFunctionStateful(elem, context))
-                    return;
-            }
-
-            optimizeDuplicateOrderByFromSubqueries(select_query->tables(), context);
-        }
-    }
-}
-
-/// Removes duplicate DISTINCT from query if subquery has the same DISTINCT.
-void optimizeDuplicateDistinct(const ASTPtr & current_ast,
-                               bool & is_distinct,
-                               std::vector<String> & last_ids)
-{
-    if (!current_ast)
-        return;
-
-    for (auto & child : current_ast->children)
-    {
-        optimizeDuplicateDistinct(child, is_distinct, last_ids);
-    }
-
-    if (const auto select_query = current_ast->as<ASTSelectQuery>())
-    {
-        for (const auto & elem : select_query->children)
-        {
-            if (elem->getID() == "Set")
-            {
-                is_distinct = false;
-                last_ids = {};
-                return;
-            }
-        }
-
-        if (select_query->distinct && select_query->select())
-        {
-            auto expression_list = select_query->select();
-            std::vector<String> current_ids;
-
-            if (expression_list->children.empty())
-                return;
-            auto asterisk_id = expression_list->children.front()->getID();
-
-            if (asterisk_id == "Asterisk" || asterisk_id == "QualifiedAsterisk")
-            {
-                auto table_expression = getTableExpression(*select_query, 0);
-
-                if (table_expression->database_and_table_name)
-                    current_ids.push_back(table_expression->database_and_table_name->getColumnName());
-
-                if (table_expression->table_function)
-                    current_ids.push_back(table_expression->table_function->getColumnName());
-
-                if (table_expression->subquery)
-                    current_ids.push_back(table_expression->subquery->getColumnName());
-            }
-
-            current_ids.reserve(expression_list->children.size() + 1);
-            for (const auto & id : expression_list->children)
-                current_ids.push_back(id->getColumnName());
-
-            if (is_distinct && current_ids == last_ids)
-                select_query->distinct = false;
-
-            is_distinct = true;
-            last_ids = std::move(current_ids);
-        }
-    }
-}
-
-void optimizeDuplicateDistinct(const ASTPtr & current_ast)
-{
-    std::vector<String> last_ids;
-    bool is_distinct = false;
-    optimizeDuplicateDistinct(current_ast, is_distinct, last_ids);
 }
 
 /// Remove duplicate items from LIMIT BY.
@@ -1000,11 +952,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         /// Remove duplicate items from ORDER BY.
         optimizeOrderBy(select_query);
 
-        /// Remove duplicate ORDER BY from subqueries.
-        optimizeDuplicateOrderBy(query, context);
-
-        /// Remove duplicate DISTINCT from queries.
-        optimizeDuplicateDistinct(query);
+        /// Remove duplicate ORDER BY and DISTINCT from queries.
+        optimizeDuplicateOrderBy(query, settings.optimize_duplicate_order_by_and_distinct, context);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
