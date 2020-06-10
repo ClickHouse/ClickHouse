@@ -274,9 +274,9 @@ if args.report == 'main':
     skipped_tests_rows = tsvRows('analyze/skipped-tests.tsv')
     printSimpleTable('Skipped tests', ['Test', 'Reason'], skipped_tests_rows)
 
-    printSimpleTable('Tests with most unstable queries',
-        ['Test', 'Unstable', 'Changed perf', 'Total not OK'],
-        tsvRows('report/bad-tests.tsv'))
+    printSimpleTable('Test performance changes',
+        ['Test', 'Queries', 'Unstable', 'Changed perf', 'Total not OK', 'Avg relative time diff'],
+        tsvRows('report/test-perf-changes.tsv'))
 
     def print_test_times():
         global slow_average_tests

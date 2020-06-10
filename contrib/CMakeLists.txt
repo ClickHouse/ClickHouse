@@ -295,4 +295,10 @@ if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
 
+if (USE_CASSANDRA)
+    add_subdirectory (libuv)
+    add_subdirectory (cassandra)
+endif()
+
 add_subdirectory (fmtlib-cmake)
+
