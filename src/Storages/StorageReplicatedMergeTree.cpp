@@ -472,9 +472,9 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
 
 void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
-    StorageInMemoryMetadata current_metadata = getInMemoryMetadata();
-    if (new_columns != current_metadata.columns)
-        current_metadata.columns = new_columns;
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    if (new_columns != new_metadata.columns)
+        new_metadata.columns = new_columns;
 
     if (!metadata_diff.empty())
     {
@@ -492,37 +492,37 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
                 tuple->arguments->children = new_sorting_key_expr_list->children;
                 order_by_ast = tuple;
             }
-            current_metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, current_metadata.columns, global_context);
+            new_metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, new_metadata.columns, global_context);
 
             if (!isPrimaryKeyDefined())
             {
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
-                current_metadata.primary_key = getSortingKey();
+                new_metadata.primary_key = getSortingKey();
             }
         }
 
         if (metadata_diff.skip_indices_changed)
-            current_metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, global_context);
+            new_metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, global_context);
 
         if (metadata_diff.constraints_changed)
-            current_metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
+            new_metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
 
         if (metadata_diff.ttl_table_changed)
         {
             ParserTTLExpressionList parser;
             auto ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-            current_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl_for_table_ast, current_metadata.columns, global_context, current_metadata.primary_key);
+            new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl_for_table_ast, new_metadata.columns, global_context, new_metadata.primary_key);
         }
     }
 
     auto table_id = getStorageID();
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id, current_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id, new_metadata);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    setProperties(current_metadata);
-    setTTLExpressions(new_columns, current_metadata.table_ttl);
+    setProperties(new_metadata);
+    setTTLExpressions(new_metadata);
 }
 
 

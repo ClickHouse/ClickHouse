@@ -314,8 +314,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
             }
         });
 
-        if (metadata.sorting_key.sample_block.has(column_name))
-            metadata.sorting_key = KeyDescription::getKeyFromAST(metadata.sorting_key.definition_ast, metadata.columns, context);
     }
     else if (type == MODIFY_ORDER_BY)
     {
@@ -713,6 +711,31 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
     for (const AlterCommand & command : *this)
         if (!command.ignore)
             command.apply(metadata_copy, context);
+
+    /// Changes in columns may lead to changes in keys expression
+    metadata_copy.sorting_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
+
+    if (metadata_copy.primary_key.definition_ast != nullptr)
+    {
+        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.primary_key.definition_ast, metadata_copy.columns, context);
+    }
+    else
+    {
+        metadata_copy.primary_key = metadata_copy.sorting_key;
+        metadata_copy.primary_key.definition_ast = nullptr;
+    }
+
+    /// Changes in columns may lead to changes in TTL expressions
+    auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
+    for (const auto & [name, ast] : column_ttl_asts)
+    {
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, metadata_copy.columns, context, metadata_copy.primary_key);
+        metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
+    }
+
+    if (metadata_copy.table_ttl.definition_ast != nullptr)
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            metadata_copy.table_ttl.definition_ast, metadata_copy.columns, context, metadata_copy.primary_key);
 
     metadata = std::move(metadata_copy);
 }

@@ -185,7 +185,7 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
-    setTTLExpressions(metadata_.columns, metadata_.table_ttl);
+    setTTLExpressions(metadata_);
 
     /// format_file always contained on any data path
     PathWithDisk version_file;
@@ -296,9 +296,9 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, 
     if (new_primary_key.definition_ast == nullptr)
     {
         /// We copy sorting key, and restore definition_ast to empty value,
-        /// because in merge tree code we sometimes chech, that our primary key
-        /// is fake (copied from sorting key, i.e. isPrimaryKeyDefined() ==
-        /// false, but hasSortingKey() == true)
+        /// because in merge tree code we chech, that our primary key is fake
+        /// (copied from sorting key, i.e. isPrimaryKeyDefined() == false, but
+        /// hasSortingKey() == true)
         new_primary_key = new_metadata.sorting_key;
         new_primary_key.definition_ast = nullptr;
     }
@@ -522,14 +522,11 @@ void MergeTreeData::initPartitionKey(const KeyDescription & new_partition_key)
 
 
 /// Todo replace columns with TTL for columns
-void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
-        const TTLTableDescription & new_table_ttl, bool only_check)
+void MergeTreeData::setTTLExpressions(const StorageInMemoryMetadata & new_metadata, bool only_check)
 {
-    auto new_column_ttls_asts = new_columns.getColumnTTLs();
+    auto new_column_ttls = new_metadata.column_ttls_by_name;
 
-    TTLColumnsDescription new_column_ttl_by_name = getColumnTTLs();
-
-    if (!new_column_ttls_asts.empty())
+    if (!new_column_ttls.empty())
     {
         NameSet columns_ttl_forbidden;
 
@@ -541,19 +538,17 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
             for (const auto & col : getColumnsRequiredForSortingKey())
                 columns_ttl_forbidden.insert(col);
 
-        for (const auto & [name, ast] : new_column_ttls_asts)
+        for (const auto & [name, ttl_description] : new_column_ttls)
         {
             if (columns_ttl_forbidden.count(name))
                 throw Exception("Trying to set TTL for key column " + name, ErrorCodes::ILLEGAL_COLUMN);
-            else
-            {
-                auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_columns, global_context, getPrimaryKey());
-                new_column_ttl_by_name[name] = new_ttl_entry;
-            }
         }
+
         if (!only_check)
-            setColumnTTLs(new_column_ttl_by_name);
+            setColumnTTLs(new_column_ttls);
     }
+
+    auto new_table_ttl = new_metadata.table_ttl;
 
     if (new_table_ttl.definition_ast)
     {
@@ -569,7 +564,6 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
                 throw Exception(message, ErrorCodes::BAD_TTL_EXPRESSION);
             }
         }
-
 
         if (!only_check)
         {
@@ -1367,7 +1361,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 
     setProperties(new_metadata, /* only_check = */ true);
 
-    setTTLExpressions(new_metadata.columns, new_metadata.table_ttl, /* only_check = */ true);
+    setTTLExpressions(new_metadata, /* only_check = */ true);
 
     if (hasSettingsChanges())
     {

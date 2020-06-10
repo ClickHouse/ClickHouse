@@ -530,6 +530,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             for (auto & constraint : args.query.columns_list->constraints->children)
                 metadata.constraints.constraints.push_back(constraint);
 
+        auto column_ttl_asts = args.columns.getColumnTTLs();
+        for (const auto & [name, ast] : column_ttl_asts)
+        {
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, args.columns, args.context, metadata.primary_key);
+            metadata.column_ttls_by_name[name] = new_ttl_entry;
+        }
+
         storage_settings->loadFromQuery(*args.storage_def);
 
         if (args.storage_def->settings)

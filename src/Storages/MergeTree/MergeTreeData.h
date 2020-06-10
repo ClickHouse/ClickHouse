@@ -784,8 +784,7 @@ protected:
 
     void initPartitionKey(const KeyDescription & new_partition_key);
 
-    void setTTLExpressions(const ColumnsDescription & columns,
-        const TTLTableDescription & new_table_ttl, bool only_check = false);
+    void setTTLExpressions(const StorageInMemoryMetadata & new_metadata, bool only_check = false);
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
