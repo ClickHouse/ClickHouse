@@ -490,9 +490,9 @@
         <table>asynchronous_metric_log</table>
         <!--
             Asynchronous metrics are updated once a minute, so there is
-            no need to flush often.
+            no need to flush more often.
         -->
-        <flush_interval_milliseconds>300000</flush_interval_milliseconds>
+        <flush_interval_milliseconds>60000</flush_interval_milliseconds>
     </asynchronous_metric_log>
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
