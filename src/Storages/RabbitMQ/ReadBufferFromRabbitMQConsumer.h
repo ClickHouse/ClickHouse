@@ -30,8 +30,9 @@ public:
             Poco::Logger * log_,
             char row_delimiter_,
             const bool bind_by_id_,
-            const bool hash_exchange_,
             const size_t num_queues_,
+            const String & exchange_type_,
+            const String table_name_,
             const std::atomic<bool> & stopped_);
 
     ~ReadBufferFromRabbitMQConsumer() override;
@@ -49,8 +50,9 @@ private:
     const String & routing_key;
     const size_t channel_id;
     const bool bind_by_id;
-    const bool hash_exchange;
     const size_t num_queues;
+    const String & exchange_type;
+    const String table_name;
 
     Poco::Logger * log;
     char row_delimiter;
@@ -58,8 +60,10 @@ private:
     bool allowed = true;
     const std::atomic<bool> & stopped;
 
-    String current_exchange_name;
-    bool exchange_declared = false;
+    String internal_exchange_name, local_exchange_name;
+    bool internal_exchange_declared = false, local_exchange_declared = false;
+    bool exchange_type_set = false, hash_exchange = false;
+
     std::atomic<bool> loop_started = false, consumer_error = false;
     std::atomic<size_t> count_subscribed = 0, wait_subscribed;
 

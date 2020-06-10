@@ -23,11 +23,10 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         std::pair<String, UInt16> & parsed_address,
         std::pair<String, String> & login_password_,
         const String & routing_key_,
-        const String & exchange_,
+        const String exchange_,
         Poco::Logger * log_,
         const size_t num_queues_,
         const bool bind_by_id_,
-        const bool hash_exchange_,
         std::optional<char> delimiter,
         size_t rows_per_message,
         size_t chunk_size_)
@@ -38,7 +37,6 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , log(log_)
         , num_queues(num_queues_)
         , bind_by_id(bind_by_id_)
-        , hash_exchange(hash_exchange_)
         , delim(delimiter)
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
@@ -101,7 +99,7 @@ void WriteBufferToRabbitMQProducer::countRow()
 
         next_queue = next_queue % num_queues + 1;
 
-        if (bind_by_id || hash_exchange)
+        if (bind_by_id)
         {
             producer_channel->publish(exchange_name, std::to_string(next_queue), payload);
         }
