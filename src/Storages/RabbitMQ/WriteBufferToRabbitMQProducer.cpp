@@ -16,7 +16,7 @@ enum
 {
     Connection_setup_sleep = 200,
     Connection_setup_retries_max = 1000,
-    Buffer_limit_to_flush = 10000 /// It is important to keep it low in order not to kill consumers
+    Batch = 10000
 };
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
@@ -64,12 +64,13 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
     }
 
     producer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
+    checkExchange();
 }
 
 
 WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
-    flush();
+    checkExchange();
     connection.close();
 
     assert(rows == 0 && chunks.empty());
@@ -98,18 +99,29 @@ void WriteBufferToRabbitMQProducer::countRow()
         chunks.clear();
         set(nullptr, 0);
 
-        messages.emplace_back(payload);
+        next_queue = next_queue % num_queues + 1;
+
+        if (bind_by_id || hash_exchange)
+        {
+            producer_channel->publish(exchange_name, std::to_string(next_queue), payload);
+        }
+        else
+        {
+            producer_channel->publish(exchange_name, routing_key, payload);
+        }
+
         ++message_counter;
 
-        if (messages.size() >= Buffer_limit_to_flush)
+        /// run event loop to actually publish, checking exchange is just a point to stop the event loop
+        if ((message_counter %= Batch) == 0)
         {
-            flush();
+            checkExchange();
         }
     }
 }
 
 
-void WriteBufferToRabbitMQProducer::flush()
+void WriteBufferToRabbitMQProducer::checkExchange()
 {
     std::atomic<bool> exchange_declared = false, exchange_error = false;
 
@@ -120,32 +132,6 @@ void WriteBufferToRabbitMQProducer::flush()
     .onSuccess([&]()
     {
         exchange_declared = true;
-
-        /* The reason for accumulating payloads and not publishing each of them at once in count_row() is that publishing
-         * needs to be wrapped inside declareExchange() callback and it is too expensive in terms of time to declare it
-         * each time we publish. Declaring it once and then publishing without wrapping inside onSuccess callback leads to
-         * exchange becoming inactive at some point and part of messages is lost as a result.
-         */
-        for (auto & payload : messages)
-        {
-            if (!message_counter)
-                break;
-
-            next_queue = next_queue % num_queues + 1;
-
-            if (bind_by_id || hash_exchange)
-            {
-                producer_channel->publish(exchange_name, std::to_string(next_queue), payload);
-            }
-            else
-            {
-                producer_channel->publish(exchange_name, routing_key, payload);
-            }
-
-            --message_counter;
-        }
-
-        messages.clear();
     })
     .onError([&](const char * message)
     {
