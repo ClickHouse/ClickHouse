@@ -1,7 +1,7 @@
 test_cluster_two_shards
+test_cluster_two_shards_different_databases
 test_cluster_two_shards_localhost
 test_shard_localhost
-test_shard_localhost[1]
 test_shard_localhost_secure
 test_unavailable_shard
 test_cluster_two_shards
