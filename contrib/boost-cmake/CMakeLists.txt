@@ -97,5 +97,36 @@ if (USE_INTERNAL_BOOST_LIBRARY)
     add_library (boost::system ALIAS _boost_system)
     target_include_directories (_boost_system PRIVATE ${LIBRARY_DIR})
 else ()
-    message (FATAL_ERROR "TODO: external Boost library is not supported!")
+    # 1.70 like in contrib/boost
+    set(BOOST_VERSION 1.70)
+
+    find_package(Boost ${BOOST_VERSION} COMPONENTS
+        system
+        filesystem
+        iostreams
+        program_options
+        regex
+    REQUIRED)
+
+    add_library (_boost_headers_only INTERFACE)
+    add_library (boost::headers_only ALIAS _boost_headers_only)
+    target_include_directories (_boost_headers_only SYSTEM BEFORE INTERFACE ${Boost_INCLUDE_DIR})
+
+    add_library (_boost_filesystem INTERFACE)
+    add_library (_boost_iostreams INTERFACE)
+    add_library (_boost_program_options INTERFACE)
+    add_library (_boost_regex INTERFACE)
+    add_library (_boost_system INTERFACE)
+
+    target_link_libraries (_boost_filesystem INTERFACE ${Boost_FILESYSTEM_LIBRARY})
+    target_link_libraries (_boost_iostreams INTERFACE ${Boost_IOSTREAMS_LIBRARY})
+    target_link_libraries (_boost_program_options INTERFACE ${Boost_PROGRAM_OPTIONS_LIBRARY})
+    target_link_libraries (_boost_regex INTERFACE ${Boost_REGEX_LIBRARY})
+    target_link_libraries (_boost_system INTERFACE ${Boost_SYSTEM_LIBRARY})
+
+    add_library (boost::filesystem ALIAS _boost_filesystem)
+    add_library (boost::iostreams ALIAS _boost_iostreams)
+    add_library (boost::program_options ALIAS _boost_program_options)
+    add_library (boost::regex ALIAS _boost_regex)
+    add_library (boost::system ALIAS _boost_system)
 endif ()
