@@ -82,7 +82,7 @@ target_compile_options(rdkafka PRIVATE -fno-sanitize=undefined)
 target_include_directories(rdkafka SYSTEM PUBLIC include)
 target_include_directories(rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})         # Because weird logic with "include_next" is used.
 target_include_directories(rdkafka SYSTEM PRIVATE ${ZSTD_INCLUDE_DIR}/common)   # Because wrong path to "zstd_errors.h" is used.
-target_link_libraries(rdkafka PRIVATE ${ZLIB_LIBRARIES} ${ZSTD_LIBRARY} ${LZ4_LIBRARY} ${LIBGSASL_LIBRARY})
+target_link_libraries(rdkafka PRIVATE lz4 ${ZLIB_LIBRARIES} ${ZSTD_LIBRARY} ${LIBGSASL_LIBRARY})
 if(OPENSSL_SSL_LIBRARY AND OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries(rdkafka PRIVATE ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
 endif()
