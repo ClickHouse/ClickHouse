@@ -14,9 +14,6 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT avg(length(URL)) as x from hits_100m_single GROUP BY URL, domain(URL)</query>
-    <query>SELECT avg(length(URL)) FROM hits_100m_single GROUP BY URL, domain(URL), WatchID, CounterID, WatchID - CounterID</query>
-    <query>SELECT avg(length(URL)) FROM {table} GROUP BY URL, domain(URL)</query>
-    <query>SELECT avg(length(URL)) FROM hits_10m_single GROUP BY URL, WatchID, CounterID</query>
-    <query>SELECT avg(length(URL)) FROM {table} GROUP BY URL, domain(URL), WatchID, CounterID</query>
+    <query>SELECT avg(length(URL)) FROM {table} GROUP BY WatchID, CounterID FORMAT Null</query>
+    <query>SELECT avg(length(URL)) FROM {table} GROUP BY WatchID, CounterID, WatchID - CounterID FORMAT Null</query>
 </test>
