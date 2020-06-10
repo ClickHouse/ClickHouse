@@ -199,12 +199,12 @@ static void symbolize(const void * const * frame_pointers, size_t offset, size_t
 
     for (size_t i = 0; i < offset; ++i)
     {
-        frames.value()[i].virtual_addr = frame_pointers[i];
+        frames[i].virtual_addr = frame_pointers[i];
     }
 
     for (size_t i = offset; i < size; ++i)
     {
-        StackTrace::Frame & current_frame = frames.value()[i];
+        StackTrace::Frame & current_frame = frames[i];
         current_frame.virtual_addr = frame_pointers[i];
         const auto * object = symbol_index.findObject(current_frame.virtual_addr);
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
@@ -244,7 +244,7 @@ static void symbolize(const void * const * frame_pointers, size_t offset, size_t
 #else
     for (size_t i = 0; i < size; ++i)
     {
-        frames.value()[i].virtual_addr = frame_pointers[i];
+        frames[i].virtual_addr = frame_pointers[i];
     }
     UNUSED(offset);
 #endif
@@ -309,16 +309,6 @@ const StackTrace::FramePointers & StackTrace::getFramePointers() const
     return frame_pointers;
 }
 
-const StackTrace::Frames & StackTrace::getFrames() const
-{
-    if (!frames.has_value())
-    {
-        frames.emplace();
-        symbolize(frame_pointers.data(), offset, size, frames);
-    }
-    return frames;
-}
-
 static void
 toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offset, size_t size, std::function<void(const std::string &)> callback)
 {
@@ -329,7 +319,7 @@ toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offset, size_t s
 
     for (size_t i = offset; i < size; ++i)
     {
-        const StackTrace::Frame & current_frame = frames.value()[i];
+        const StackTrace::Frame & current_frame = frames[i];
         out << i << ". ";
 
         if (current_frame.file.has_value() && current_frame.line.has_value())
@@ -356,8 +346,7 @@ toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offset, size_t s
 static std::string toStringImpl(const void * const * frame_pointers, size_t offset, size_t size)
 {
     std::stringstream out;
-    StackTrace::Frames frames{};
-    frames.emplace();
+    StackTrace::Frames frames;
     symbolize(frame_pointers, offset, size, frames);
     toStringEveryLineImpl(frames, offset, size, [&](const std::string & str) { out << str << '\n'; });
     return out.str();
@@ -365,12 +354,9 @@ static std::string toStringImpl(const void * const * frame_pointers, size_t offs
 
 void StackTrace::toStringEveryLine(std::function<void(const std::string &)> callback) const
 {
-    toStringEveryLineImpl(getFrames(), offset, size, std::move(callback));
-}
-
-void StackTrace::resetFrames()
-{
-    frames.reset();
+    Frames frames;
+    symbolize(frame_pointers.data(), offset, size, frames);
+    toStringEveryLineImpl(frames, offset, size, std::move(callback));
 }
 
 
