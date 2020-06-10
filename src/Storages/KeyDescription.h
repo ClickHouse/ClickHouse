@@ -30,7 +30,7 @@ struct KeyDescription
     /// Types from sample block ordered in columns order.
     DataTypes data_types;
 
-    /// Additional key column added by storage
+    /// Additional key column added by storage type
     ASTPtr additional_key_column;
 
     /// Parse key structure from key definition. Requires all columns, available
@@ -39,7 +39,7 @@ struct KeyDescription
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
         const Context & context,
-        const ASTPtr & additional_key_expression = nullptr);
+        const ASTPtr & additional_key_column = nullptr);
 
     KeyDescription() = default;
 

@@ -45,7 +45,11 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 }
 
 
-KeyDescription KeyDescription::getKeyFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context, const ASTPtr & additional_key_column)
+KeyDescription KeyDescription::getKeyFromAST(
+    const ASTPtr & definition_ast,
+    const ColumnsDescription & columns,
+    const Context & context,
+    const ASTPtr & additional_key_column)
 {
     KeyDescription result;
     result.definition_ast = definition_ast;
