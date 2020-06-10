@@ -17,6 +17,7 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , sample_block(other.sample_block)
     , column_names(other.column_names)
     , data_types(other.data_types)
+    , additional_key_column(other.additional_key_column ? other.additional_key_column->clone() : nullptr)
 {
 }
 
@@ -36,18 +37,23 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
     sample_block = other.sample_block;
     column_names = other.column_names;
     data_types = other.data_types;
+    if (other.additional_key_column)
+        additional_key_column = other.additional_key_column->clone();
+    else
+        additional_key_column.reset();
     return *this;
 }
 
 
-KeyDescription KeyDescription::getKeyFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context, ASTPtr additional_key_expression)
+KeyDescription KeyDescription::getKeyFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context, const ASTPtr & additional_key_column)
 {
     KeyDescription result;
     result.definition_ast = definition_ast;
+    result.additional_key_column = additional_key_column;
     result.expression_list_ast = extractKeyExpressionList(definition_ast);
 
-    if (additional_key_expression)
-        result.expression_list_ast->children.push_back(additional_key_expression);
+    if (additional_key_column != nullptr)
+        result.expression_list_ast->children.push_back(additional_key_column);
 
     const auto & children = result.expression_list_ast->children;
     for (const auto & child : children)

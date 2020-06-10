@@ -30,9 +30,16 @@ struct KeyDescription
     /// Types from sample block ordered in columns order.
     DataTypes data_types;
 
+    /// Additional key column added by storage
+    ASTPtr additional_key_column;
+
     /// Parse key structure from key definition. Requires all columns, available
     /// in storage.
-    static KeyDescription getKeyFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context, ASTPtr additional_key_expression = nullptr);
+    static KeyDescription getKeyFromAST(
+        const ASTPtr & definition_ast,
+        const ColumnsDescription & columns,
+        const Context & context,
+        const ASTPtr & additional_key_expression = nullptr);
 
     KeyDescription() = default;
 

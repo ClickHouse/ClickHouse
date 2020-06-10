@@ -41,7 +41,7 @@ public:
 
     void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
 
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 

@@ -213,7 +213,7 @@ void StorageMaterializedView::alter(
 }
 
 
-void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings)
+void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const
 {
     if (settings.allow_experimental_alter_materialized_view_structure)
     {

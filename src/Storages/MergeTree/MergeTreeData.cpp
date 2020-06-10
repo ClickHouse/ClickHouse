@@ -144,7 +144,7 @@ MergeTreeData::MergeTreeData(
 
     setSettingsChanges(metadata_.settings_changes);
     const auto settings = getSettings();
-    setProperties(metadata_, /*only_check*/ false, attach);
+    setProperties(metadata_, attach);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
@@ -275,33 +275,13 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
-void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, bool only_check, bool attach)
+void MergeTreeData::checkProperties(const StorageInMemoryMetadata & new_metadata, bool attach) const
 {
-    KeyDescription new_primary_key = new_metadata.primary_key;
-
     if (!new_metadata.sorting_key.definition_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
-    KeyDescription new_sorting_key;
-    if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
-        new_sorting_key = KeyDescription::getKeyFromAST(
-            new_metadata.sorting_key.definition_ast,
-            new_metadata.columns,
-            global_context,
-            std::make_shared<ASTIdentifier>(merging_params.version_column));
-    else
-        new_sorting_key = new_metadata.sorting_key;
-
-    /// Primary key not defined at all
-    if (new_primary_key.definition_ast == nullptr)
-    {
-        /// We copy sorting key, and restore definition_ast to empty value,
-        /// because in merge tree code we chech, that our primary key is fake
-        /// (copied from sorting key, i.e. isPrimaryKeyDefined() == false, but
-        /// hasSortingKey() == true)
-        new_primary_key = new_metadata.sorting_key;
-        new_primary_key.definition_ast = nullptr;
-    }
+    KeyDescription new_sorting_key = new_metadata.sorting_key;
+    KeyDescription new_primary_key = new_metadata.primary_key;
 
     size_t sorting_key_size = new_sorting_key.column_names.size();
     size_t primary_key_size = new_primary_key.column_names.size();
@@ -333,7 +313,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, 
     auto all_columns = new_metadata.columns.getAllPhysical();
 
     /// Order by check AST
-    if (hasSortingKey() && only_check)
+    if (hasSortingKey())
     {
         /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
         /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
@@ -400,15 +380,18 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, 
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting");
 
-    if (!only_check)
-    {
-        /// Other parts of metadata initialized is separate methods
-        setColumns(std::move(new_metadata.columns));
-        setSecondaryIndices(std::move(new_metadata.secondary_indices));
-        setConstraints(std::move(new_metadata.constraints));
-        setSortingKey(std::move(new_sorting_key));
-        setPrimaryKey(std::move(new_primary_key));
-    }
+}
+
+void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, bool attach)
+{
+    checkProperties(new_metadata, attach);
+
+    /// Other parts of metadata initialized is separate methods
+    setColumns(std::move(new_metadata.columns));
+    setSecondaryIndices(std::move(new_metadata.secondary_indices));
+    setConstraints(std::move(new_metadata.constraints));
+    setSortingKey(std::move(new_metadata.sorting_key));
+    setPrimaryKey(std::move(new_metadata.primary_key));
 }
 
 namespace
@@ -440,27 +423,6 @@ ExpressionActionsPtr MergeTreeData::getPrimaryKeyAndSkipIndicesExpression() cons
 ExpressionActionsPtr MergeTreeData::getSortingKeyAndSkipIndicesExpression() const
 {
     return getCombinedIndicesExpression(getSortingKey(), getSecondaryIndices(), getColumns(), global_context);
-}
-
-ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
-{
-    if (!node)
-        return std::make_shared<ASTExpressionList>();
-
-    const auto * expr_func = node->as<ASTFunction>();
-
-    if (expr_func && expr_func->name == "tuple")
-    {
-        /// Primary key is specified in tuple, extract its arguments.
-        return expr_func->arguments->clone();
-    }
-    else
-    {
-        /// Primary key consists of one column.
-        auto res = std::make_shared<ASTExpressionList>();
-        res->children.push_back(node);
-        return res;
-    }
 }
 
 
@@ -521,8 +483,7 @@ void MergeTreeData::initPartitionKey(const KeyDescription & new_partition_key)
 }
 
 
-/// Todo replace columns with TTL for columns
-void MergeTreeData::setTTLExpressions(const StorageInMemoryMetadata & new_metadata, bool only_check)
+void MergeTreeData::checkTTLExpressios(const StorageInMemoryMetadata & new_metadata) const
 {
     auto new_column_ttls = new_metadata.column_ttls_by_name;
 
@@ -543,11 +504,7 @@ void MergeTreeData::setTTLExpressions(const StorageInMemoryMetadata & new_metada
             if (columns_ttl_forbidden.count(name))
                 throw Exception("Trying to set TTL for key column " + name, ErrorCodes::ILLEGAL_COLUMN);
         }
-
-        if (!only_check)
-            setColumnTTLs(new_column_ttls);
     }
-
     auto new_table_ttl = new_metadata.table_ttl;
 
     if (new_table_ttl.definition_ast)
@@ -564,13 +521,16 @@ void MergeTreeData::setTTLExpressions(const StorageInMemoryMetadata & new_metada
                 throw Exception(message, ErrorCodes::BAD_TTL_EXPRESSION);
             }
         }
-
-        if (!only_check)
-        {
-            auto move_ttl_entries_lock = std::lock_guard<std::mutex>(move_ttl_entries_mutex);
-            setTableTTLs(new_table_ttl);
-        }
     }
+}
+
+/// Todo replace columns with TTL for columns
+void MergeTreeData::setTTLExpressions(const StorageInMemoryMetadata & new_metadata)
+{
+    checkTTLExpressios(new_metadata);
+    setColumnTTLs(new_metadata.column_ttls_by_name);
+    auto move_ttl_entries_lock = std::lock_guard<std::mutex>(move_ttl_entries_mutex);
+    setTableTTLs(new_metadata.table_ttl);
 }
 
 
@@ -1264,7 +1224,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
 }
 
-void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings)
+void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -1359,9 +1319,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         }
     }
 
-    setProperties(new_metadata, /* only_check = */ true);
+    checkProperties(new_metadata);
 
-    setTTLExpressions(new_metadata, /* only_check = */ true);
+    checkTTLExpressios(new_metadata);
 
     if (hasSettingsChanges())
     {

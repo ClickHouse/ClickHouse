@@ -387,7 +387,7 @@ void IStorage::alter(
 }
 
 
-void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
 {
     for (const auto & command : commands)
     {

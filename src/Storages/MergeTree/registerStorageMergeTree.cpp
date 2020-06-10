@@ -417,6 +417,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         ++arg_num;
     }
 
+    ASTPtr merging_param_key_arg = nullptr;
+
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
     {
         if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.sign_column))
@@ -480,6 +482,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     ErrorCodes::BAD_ARGUMENTS);
 
         --arg_cnt;
+        merging_param_key_arg = std::make_shared<ASTIdentifier>(merging_params.version_column);
     }
 
     String date_column_name;
@@ -502,13 +505,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 "If you don't want this table to be sorted, use ORDER BY tuple()",
                 ErrorCodes::BAD_ARGUMENTS);
 
-        metadata.sorting_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context);
+        metadata.sorting_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context, merging_param_key_arg);
 
         if (args.storage_def->primary_key)
+        {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
+        }
         else
         {
-            metadata.primary_key = metadata.sorting_key;
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context);
             metadata.primary_key.definition_ast = nullptr;
         }
 
@@ -560,7 +565,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
 
         /// Now only two parameters remain - primary_key, index_granularity.
-        metadata.sorting_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context);
+        metadata.sorting_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context, merging_param_key_arg);
+
+        metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context);
+        metadata.primary_key.definition_ast = nullptr;
+
         ++arg_num;
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();

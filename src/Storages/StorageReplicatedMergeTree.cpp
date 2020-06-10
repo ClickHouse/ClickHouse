@@ -492,7 +492,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
                 tuple->arguments->children = new_sorting_key_expr_list->children;
                 order_by_ast = tuple;
             }
-            new_metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, new_metadata.columns, global_context);
+            new_metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, new_metadata.columns, global_context, new_metadata.sorting_key.additional_key_column);
 
             if (!isPrimaryKeyDefined())
             {

@@ -324,7 +324,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
             metadata.primary_key = metadata.sorting_key;
         }
 
-        metadata.sorting_key = KeyDescription::getKeyFromAST(order_by, metadata.columns, context);
+        metadata.sorting_key = KeyDescription::getKeyFromAST(order_by, metadata.columns, context, metadata.sorting_key.additional_key_column);
     }
     else if (type == COMMENT_COLUMN)
     {
@@ -713,7 +713,11 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
             command.apply(metadata_copy, context);
 
     /// Changes in columns may lead to changes in keys expression
-    metadata_copy.sorting_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
+    metadata_copy.sorting_key = KeyDescription::getKeyFromAST(
+        metadata_copy.sorting_key.definition_ast,
+        metadata_copy.columns,
+        context,
+        metadata_copy.sorting_key.additional_key_column);
 
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
@@ -721,7 +725,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
     }
     else
     {
-        metadata_copy.primary_key = metadata_copy.sorting_key;
+        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
         metadata_copy.primary_key.definition_ast = nullptr;
     }
 
