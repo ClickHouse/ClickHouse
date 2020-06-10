@@ -23,6 +23,9 @@ public:
     static ASTs getGrantQueries(const IAccessEntity & user_or_role, const AccessControlManager & access_control);
     static ASTs getAttachGrantQueries(const IAccessEntity & user_or_role);
 
+    bool ignoreQuota() const override { return true; }
+    bool ignoreLimits() const override { return true; }
+
 private:
     BlockInputStreamPtr executeImpl();
     ASTs getGrantQueries() const;

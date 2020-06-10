@@ -151,11 +151,17 @@ def test_show_profiles():
     instance.query("CREATE SETTINGS PROFILE xyz")
     assert instance.query("SHOW SETTINGS PROFILES") == "default\nreadonly\nxyz\n"
     assert instance.query("SHOW PROFILES") == "default\nreadonly\nxyz\n"
+    
     assert instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE xyz\n"
     assert instance.query("SHOW CREATE SETTINGS PROFILE default") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, use_uncompressed_cache = 0, load_balancing = \\'random\\'\n"
     assert instance.query("SHOW CREATE PROFILES") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, use_uncompressed_cache = 0, load_balancing = \\'random\\'\n"\
                                                      "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"\
                                                      "CREATE SETTINGS PROFILE xyz\n"
+    
+    expected_access = "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, use_uncompressed_cache = 0, load_balancing = \\'random\\'\n"\
+                      "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"\
+                      "CREATE SETTINGS PROFILE xyz\n"
+    assert expected_access in instance.query("SHOW ACCESS")
 
 
 def test_allow_introspection():
