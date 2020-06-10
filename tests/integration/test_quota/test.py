@@ -215,6 +215,9 @@ def test_dcl_introspection():
     assert re.match("myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\n",
                     instance.query("SHOW QUOTA"))
 
+    expected_access = "CREATE QUOTA myQuota KEYED BY user_name FOR INTERVAL 1 year MAX queries = 1000, read_rows = 1000 TO default\n"
+    assert expected_access in instance.query("SHOW ACCESS")
+
     # Add interval.
     copy_quota_xml('two_intervals.xml')
     assert instance.query("SHOW QUOTAS") == "myQuota\n"

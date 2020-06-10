@@ -79,9 +79,18 @@ def test_introspection():
     assert instance.query("SHOW GRANTS FOR A,B") == TSV([ "GRANT SELECT ON test.table TO A", "GRANT CREATE ON *.* TO B WITH GRANT OPTION" ])
     assert instance.query("SHOW GRANTS FOR B,A") == TSV([ "GRANT SELECT ON test.table TO A", "GRANT CREATE ON *.* TO B WITH GRANT OPTION" ])
     assert instance.query("SHOW GRANTS FOR ALL") == TSV([ "GRANT SELECT ON test.table TO A", "GRANT CREATE ON *.* TO B WITH GRANT OPTION", "GRANT ALL ON *.* TO default WITH GRANT OPTION" ])
-    
+
     assert instance.query("SHOW GRANTS", user='A') == TSV([ "GRANT SELECT ON test.table TO A" ])
     assert instance.query("SHOW GRANTS", user='B') == TSV([ "GRANT CREATE ON *.* TO B WITH GRANT OPTION" ])
+
+    expected_access1 = "CREATE USER A\n"\
+                       "CREATE USER B\n"\
+                       "CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE default"
+    expected_access2 = "GRANT SELECT ON test.table TO A\n"\
+                       "GRANT CREATE ON *.* TO B WITH GRANT OPTION\n"\
+                       "GRANT ALL ON *.* TO default WITH GRANT OPTION\n"
+    assert expected_access1 in instance.query("SHOW ACCESS")
+    assert expected_access2 in instance.query("SHOW ACCESS")
 
     assert instance.query("SELECT name, storage, auth_type, auth_params, host_ip, host_names, host_names_regexp, host_names_like, default_roles_all, default_roles_list, default_roles_except from system.users WHERE name IN ('A', 'B') ORDER BY name") ==\
            TSV([[ "A", "disk", "no_password", "[]", "['::/0']", "[]", "[]", "[]", 1, "[]", "[]" ],

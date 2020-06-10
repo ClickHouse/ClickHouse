@@ -118,13 +118,21 @@ def test_introspection():
     assert instance.query("SHOW GRANTS FOR B") == TSV([ "GRANT CREATE ON *.* TO B WITH GRANT OPTION", "GRANT R2 TO B WITH ADMIN OPTION" ])
     assert instance.query("SHOW GRANTS FOR R1") == ""
     assert instance.query("SHOW GRANTS FOR R2") == TSV([ "GRANT SELECT ON test.table TO R2", "REVOKE SELECT(x) ON test.table FROM R2" ])
-    
+
     assert instance.query("SHOW GRANTS", user='A') == TSV([ "GRANT SELECT ON test.table TO A", "GRANT R1 TO A" ])
     assert instance.query("SHOW GRANTS", user='B') == TSV([ "GRANT CREATE ON *.* TO B WITH GRANT OPTION", "GRANT R2 TO B WITH ADMIN OPTION" ])
     assert instance.query("SHOW CURRENT ROLES", user='A') == TSV([[ "R1", 0, 1 ]])
     assert instance.query("SHOW CURRENT ROLES", user='B') == TSV([[ "R2", 1, 1 ]])
     assert instance.query("SHOW ENABLED ROLES", user='A') == TSV([[ "R1", 0, 1, 1 ]])
     assert instance.query("SHOW ENABLED ROLES", user='B') == TSV([[ "R2", 1, 1, 1 ]])
+
+    expected_access1 = "CREATE ROLE R1\n"\
+                       "CREATE ROLE R2\n"
+    expected_access2 = "GRANT R1 TO A\n"
+    expected_access3 = "GRANT R2 TO B WITH ADMIN OPTION"
+    assert expected_access1 in instance.query("SHOW ACCESS")
+    assert expected_access2 in instance.query("SHOW ACCESS")
+    assert expected_access3 in instance.query("SHOW ACCESS")
 
     assert instance.query("SELECT name, storage from system.roles WHERE name IN ('R1', 'R2') ORDER BY name") ==\
            TSV([[ "R1", "disk" ],

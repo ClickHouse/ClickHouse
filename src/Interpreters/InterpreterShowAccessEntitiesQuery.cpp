@@ -18,7 +18,7 @@ using EntityType = IAccessEntity::Type;
 
 
 InterpreterShowAccessEntitiesQuery::InterpreterShowAccessEntitiesQuery(const ASTPtr & query_ptr_, Context & context_)
-    : query_ptr(query_ptr_), context(context_), ignore_quota(query_ptr->as<ASTShowAccessEntitiesQuery &>().type == EntityType::QUOTA)
+    : query_ptr(query_ptr_), context(context_)
 {
 }
 

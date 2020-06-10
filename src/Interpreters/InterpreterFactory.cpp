@@ -17,6 +17,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSetRoleQuery.h>
 #include <Parsers/ASTShowAccessEntitiesQuery.h>
+#include <Parsers/ASTShowAccessQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/ASTShowGrantsQuery.h>
 #include <Parsers/ASTShowPrivilegesQuery.h>
@@ -51,6 +52,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterSetRoleQuery.h>
 #include <Interpreters/InterpreterShowAccessEntitiesQuery.h>
+#include <Interpreters/InterpreterShowAccessQuery.h>
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Interpreters/InterpreterShowPrivilegesQuery.h>
@@ -230,6 +232,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTShowAccessEntitiesQuery>())
     {
         return std::make_unique<InterpreterShowAccessEntitiesQuery>(query, context);
+    }
+    else if (query->as<ASTShowAccessQuery>())
+    {
+        return std::make_unique<InterpreterShowAccessQuery>(query, context);
     }
     else if (query->as<ASTShowPrivilegesQuery>())
     {

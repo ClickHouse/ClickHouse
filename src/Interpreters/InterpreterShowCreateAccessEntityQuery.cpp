@@ -218,7 +218,7 @@ namespace
 
 
 InterpreterShowCreateAccessEntityQuery::InterpreterShowCreateAccessEntityQuery(const ASTPtr & query_ptr_, const Context & context_)
-    : query_ptr(query_ptr_), context(context_), ignore_quota(query_ptr->as<ASTShowCreateAccessEntityQuery &>().type == EntityType::QUOTA)
+    : query_ptr(query_ptr_), context(context_)
 {
 }
 

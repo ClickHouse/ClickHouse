@@ -23,8 +23,8 @@ public:
 
     BlockIO execute() override;
 
-    bool ignoreQuota() const override { return ignore_quota; }
-    bool ignoreLimits() const override { return ignore_quota; }
+    bool ignoreQuota() const override { return true; }
+    bool ignoreLimits() const override { return true; }
 
     static ASTPtr getCreateQuery(const IAccessEntity & entity, const AccessControlManager & access_control);
     static ASTPtr getAttachQuery(const IAccessEntity & entity);
@@ -37,7 +37,6 @@ private:
 
     ASTPtr query_ptr;
     const Context & context;
-    bool ignore_quota = false;
 };
 
 
