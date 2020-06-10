@@ -59,9 +59,9 @@ StorageRabbitMQ::StorageRabbitMQ(
         const String & exchange_name_,
         const String & format_name_,
         char row_delimiter_,
+        const String & exchange_type_,
         size_t num_consumers_,
-        size_t num_queues_,
-        bool hash_exchange_)
+        size_t num_queues_)
         : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
         , rabbitmq_context(Context(global_context))
@@ -71,7 +71,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , row_delimiter(row_delimiter_)
         , num_consumers(num_consumers_)
         , num_queues(num_queues_)
-        , hash_exchange(hash_exchange_)
+        , exchange_type(exchange_type_)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
         , login_password(std::make_pair(
@@ -212,16 +212,20 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 
     ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
 
+    auto table_id = getStorageID();
+    String table_name = table_id.getNameForLogs(); 
+
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer_channel, eventHandler, exchange_name, routing_key,
-            next_channel_id, log, row_delimiter, bind_by_id, hash_exchange, num_queues, stream_cancelled);
+            next_channel_id, log, row_delimiter, bind_by_id, num_queues, exchange_type, table_name, stream_cancelled);
 }
 
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
-    return std::make_shared<WriteBufferToRabbitMQProducer>(parsed_address, login_password, routing_key, exchange_name,
-            log, num_consumers * num_queues, bind_by_id, hash_exchange,
-            row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
+    String producer_exchange = exchange_type == "default" ? exchange_name : exchange_name + "_default";
+
+    return std::make_shared<WriteBufferToRabbitMQProducer>(parsed_address, login_password, routing_key, producer_exchange,
+            log, num_consumers * num_queues, bind_by_id, row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
 
@@ -436,19 +440,18 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
         }
 
-        bool hash_exchange = static_cast<bool>(rabbitmq_settings.rabbitmq_hash_exchange);
+        String exchange_type = rabbitmq_settings.rabbitmq_exchange_type.value;
         if (args_count >= 6)
         {
+            engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[5], args.local_context);
+
             const auto * ast = engine_args[5]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::UInt64)
+            if (ast && ast->value.getType() == Field::Types::String)
             {
-                hash_exchange = static_cast<bool>(safeGet<UInt64>(ast->value));
-            }
-            else
-            {
-                throw Exception("Hash exchange flag must be a boolean", ErrorCodes::BAD_ARGUMENTS);
+                exchange_type = safeGet<String>(ast->value);
             }
         }
+
 
         UInt64 num_consumers = rabbitmq_settings.rabbitmq_num_consumers;
         if (args_count >= 7)
@@ -480,7 +483,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         return StorageRabbitMQ::create(
                 args.table_id, args.context, args.columns,
-                host_port, routing_key, exchange, format, row_delimiter, num_consumers, num_queues, hash_exchange);
+                host_port, routing_key, exchange, format, row_delimiter, exchange_type, num_consumers, num_queues);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

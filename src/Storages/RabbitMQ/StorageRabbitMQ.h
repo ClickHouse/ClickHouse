@@ -66,9 +66,9 @@ protected:
             const String & exchange_name_,
             const String & format_name_,
             char row_delimiter_,
+            const String & exchange_type_,
             size_t num_consumers_,
-            size_t num_queues_,
-            bool hash_exchange);
+            size_t num_queues_);
 
 private:
     Context global_context;
@@ -83,7 +83,7 @@ private:
     size_t num_created_consumers = 0;
     bool bind_by_id;
     size_t num_queues;
-    const bool hash_exchange;
+    const String exchange_type;
 
     Poco::Logger * log;
     std::pair<String, UInt16> parsed_address;
