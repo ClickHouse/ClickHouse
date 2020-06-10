@@ -474,7 +474,16 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 {
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     if (new_columns != new_metadata.columns)
+    {
         new_metadata.columns = new_columns;
+
+        new_metadata.column_ttls_by_name.clear();
+        for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
+        {
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, global_context, new_metadata.primary_key);
+            new_metadata.column_ttls_by_name[name] = new_ttl_entry;
+        }
+    }
 
     if (!metadata_diff.empty())
     {
