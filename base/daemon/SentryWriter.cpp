@@ -136,7 +136,7 @@ void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & c
         setExtras();
 
         /// Prepare data for https://develop.sentry.dev/sdk/event-payloads/stacktrace/
-        sentry_value_t frames = sentry_value_new_list();
+        sentry_value_t sentry_frames = sentry_value_new_list();
         size_t stack_size = stack_trace.getSize();
         if (stack_size > 0)
         {
@@ -151,33 +151,33 @@ void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & c
             for (size_t i = stack_size - 1; i >= offset; --i)
             {
                 const StackTrace::Frame & current_frame = frames[i];
-                sentry_value_t frame = sentry_value_new_object();
+                sentry_value_t sentry_frame = sentry_value_new_object();
                 UInt64 frame_ptr = reinterpret_cast<UInt64>(current_frame.virtual_addr);
                 std::snprintf(instruction_addr, sizeof(instruction_addr), "0x%" PRIu64 "x", frame_ptr);
-                sentry_value_set_by_key(frame, "instruction_addr", sentry_value_new_string(instruction_addr));
+                sentry_value_set_by_key(sentry_frame, "instruction_addr", sentry_value_new_string(instruction_addr));
 
                 if (current_frame.symbol.has_value())
                 {
-                    sentry_value_set_by_key(frame, "function", sentry_value_new_string(current_frame.symbol.value().c_str()));
+                    sentry_value_set_by_key(sentry_frame, "function", sentry_value_new_string(current_frame.symbol.value().c_str()));
                 }
 
                 if (current_frame.file.has_value())
                 {
-                    sentry_value_set_by_key(frame, "filename", sentry_value_new_string(current_frame.file.value().c_str()));
+                    sentry_value_set_by_key(sentry_frame, "filename", sentry_value_new_string(current_frame.file.value().c_str()));
                 }
 
                 if (current_frame.line.has_value())
                 {
-                    sentry_value_set_by_key(frame, "lineno", sentry_value_new_int32(current_frame.line.value()));
+                    sentry_value_set_by_key(sentry_frame, "lineno", sentry_value_new_int32(current_frame.line.value()));
                 }
 
-                sentry_value_append(frames, frame);
+                sentry_value_append(sentry_frames, sentry_frame);
             }
         }
 
         /// Prepare data for https://develop.sentry.dev/sdk/event-payloads/threads/
         sentry_value_t stacktrace = sentry_value_new_object();
-        sentry_value_set_by_key(stacktrace, "frames", frames);
+        sentry_value_set_by_key(stacktrace, "frames", sentry_frames);
 
         sentry_value_t thread = sentry_value_new_object();
         sentry_value_set_by_key(thread, "stacktrace", stacktrace);
