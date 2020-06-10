@@ -21,7 +21,7 @@ class Service final : public InterserverIOEndpoint
 {
 public:
     Service(MergeTreeData & data_)
-    : data(data_), log(&Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
+    : data(data_), log(&Poco::Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
 
     Service(const Service &) = delete;
     Service & operator=(const Service &) = delete;
@@ -36,7 +36,7 @@ private:
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
     MergeTreeData & data;
-    Logger * log;
+    Poco::Logger * log;
 };
 
 /** Client for getting the parts from the table *MergeTree.
@@ -44,7 +44,7 @@ private:
 class Fetcher final
 {
 public:
-    Fetcher(MergeTreeData & data_) : data(data_), log(&Logger::get("Fetcher")) {}
+    Fetcher(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get("Fetcher")) {}
 
     Fetcher(const Fetcher &) = delete;
     Fetcher & operator=(const Fetcher &) = delete;
@@ -75,7 +75,7 @@ private:
             PooledReadWriteBufferFromHTTP & in);
 
     MergeTreeData & data;
-    Logger * log;
+    Poco::Logger * log;
 };
 
 }

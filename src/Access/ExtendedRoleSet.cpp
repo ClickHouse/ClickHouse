@@ -68,15 +68,27 @@ void ExtendedRoleSet::init(const ASTExtendedRoleSet & ast, const AccessControlMa
 {
     all = ast.all;
 
-    auto name_to_id = [id_mode{ast.id_mode}, manager](const String & name) -> UUID
+    auto name_to_id = [&ast, manager](const String & name) -> UUID
     {
-        if (id_mode)
+        if (ast.id_mode)
             return parse<UUID>(name);
         assert(manager);
-        auto id = manager->find<User>(name);
-        if (id)
-            return *id;
-        return manager->getID<Role>(name);
+        if (ast.can_contain_users && ast.can_contain_roles)
+        {
+            auto id = manager->find<User>(name);
+            if (id)
+                return *id;
+            return manager->getID<Role>(name);
+        }
+        else if (ast.can_contain_users)
+        {
+            return manager->getID<User>(name);
+        }
+        else
+        {
+            assert(ast.can_contain_roles);
+            return manager->getID<Role>(name);
+        }
     };
 
     if (!ast.names.empty() && !all)

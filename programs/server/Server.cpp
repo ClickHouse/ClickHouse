@@ -17,6 +17,7 @@
 #include <common/phdr_cache.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
+#include <common/errnoToString.h>
 #include <common/coverage.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
@@ -89,7 +90,7 @@ namespace CurrentMetrics
 namespace
 {
 
-void setupTmpPath(Logger * log, const std::string & path)
+void setupTmpPath(Poco::Logger * log, const std::string & path)
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
@@ -125,6 +126,7 @@ namespace ErrorCodes
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
 
@@ -210,9 +212,55 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
     BaseDaemon::defineOptions(options);
 }
 
+
+/// Check that there is no user-level settings at the top level in config.
+/// This is a common source of mistake (user don't know where to write user-level setting).
+void checkForUserSettingsAtTopLevel(const Poco::Util::AbstractConfiguration & config, const std::string & path)
+{
+    if (config.getBool("skip_check_for_incorrect_settings", false))
+        return;
+
+    Settings settings;
+    for (const auto & setting : settings)
+    {
+        std::string name = setting.getName().toString();
+        if (config.has(name))
+        {
+            throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
+                " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
+                " You can add it to <profiles><default> if you want to change default value of this setting."
+                " You can also disable the check - specify <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
+                " in the main configuration file.",
+                name, path),
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        }
+    }
+}
+
+void checkForUsersNotInMainConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_path,
+    const std::string & users_config_path,
+    Poco::Logger * log)
+{
+    if (config.getBool("skip_check_for_incorrect_settings", false))
+        return;
+
+    if (config.has("users") || config.has("profiles") || config.has("quotas"))
+    {
+        /// We cannot throw exception here, because we have support for obsolete 'conf.d' directory
+        /// (that does not correspond to config.d or users.d) but substitute configuration to both of them.
+
+        LOG_ERROR(log, "The <users>, <profiles> and <quotas> elements should be located in users config file: {} not in main config {}."
+            " Also note that you should place configuration changes to the appropriate *.d directory like 'users.d'.",
+            users_config_path, config_path);
+    }
+}
+
+
 int Server::main(const std::vector<std::string> & /*args*/)
 {
-    Logger * log = &logger();
+    Poco::Logger * log = &logger();
     UseSSL use_ssl;
 
     ThreadStatus thread_status;
@@ -235,6 +283,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (ThreadFuzzer::instance().isEffective())
         LOG_WARNING(log, "ThreadFuzzer is enabled. Application will run slowly and unstable.");
+
+#if !defined(NDEBUG) || !defined(__OPTIMIZE__)
+    LOG_WARNING(log, "Server was built in debug mode. It will work slowly.");
+#endif
+
+#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
+    LOG_WARNING(log, "Server was built with sanitizer. It will work slowly.");
+#endif
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
@@ -260,6 +316,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
+
+    checkForUserSettingsAtTopLevel(config(), config_path);
 
     const auto memory_amount = getMemoryAmount();
 
@@ -465,13 +523,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
-    auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
+    auto main_config_reloader = std::make_unique<ConfigReloader>(
+        config_path,
         include_from_path,
         config().getString("path", ""),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
+            checkForUserSettingsAtTopLevel(*config, config_path);
+
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
@@ -500,12 +561,21 @@ int Server::main(const std::vector<std::string> & /*args*/)
         if (Poco::File(config_dir + users_config_path).exists())
             users_config_path = config_dir + users_config_path;
     }
-    auto users_config_reloader = std::make_unique<ConfigReloader>(users_config_path,
+
+    if (users_config_path != config_path)
+        checkForUsersNotInMainConfig(config(), config_path, users_config_path, log);
+
+    auto users_config_reloader = std::make_unique<ConfigReloader>(
+        users_config_path,
         include_from_path,
         config().getString("path", ""),
         zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
         std::make_shared<Poco::Event>(),
-        [&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
+        [&](ConfigurationPtr config)
+        {
+            global_context->setUsersConfig(config);
+            checkForUserSettingsAtTopLevel(*config, users_config_path);
+        },
         /* already_loaded = */ false);
 
     /// Reload config in SYSTEM RELOAD CONFIG query.

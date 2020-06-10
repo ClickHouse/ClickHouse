@@ -297,13 +297,13 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     }
 
     auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
-    BlockIO res = interpreter_subquery->execute();
+    auto stream = interpreter_subquery->execute().getInputStream();
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, context.getSettingsRef().transform_null_in);
-    set->setHeader(res.in->getHeader());
+    set->setHeader(stream->getHeader());
 
-    res.in->readPrefix();
-    while (Block block = res.in->read())
+    stream->readPrefix();
+    while (Block block = stream->read())
     {
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
         if (!set->insertFromBlock(block))
@@ -311,7 +311,7 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     }
 
     set->finishInsert();
-    res.in->readSuffix();
+    stream->readSuffix();
 
     prepared_sets[set_key] = std::move(set);
 }
@@ -322,7 +322,7 @@ SetPtr SelectQueryExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr &
     if (!table)
         return nullptr;
     auto table_id = context.resolveStorageID(subquery_or_table_name);
-    const auto storage = DatabaseCatalog::instance().getTable(table_id);
+    const auto storage = DatabaseCatalog::instance().getTable(table_id, context);
     if (storage->getName() != "Set")
         return nullptr;
     const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
@@ -726,7 +726,8 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     return true;
 }
 
-bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order,
+                                                  ManyExpressionActions & group_by_elements_actions)
 {
     const auto * select_query = getAggregatingQuery();
 
@@ -741,6 +742,20 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     {
         step.required_output.emplace_back(ast->getColumnName());
         getRootActions(ast, only_types, step.actions);
+    }
+
+    if (optimize_aggregation_in_order)
+    {
+        auto all_columns = sourceWithJoinedColumns();
+        for (auto & child : asts)
+        {
+            group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(all_columns, context));
+            getRootActions(child, only_types, group_by_elements_actions.back());
+        }
+//        std::cerr << "group_by_elements_actions\n";
+//        for (const auto & elem : group_by_elements_actions) {
+//            std::cerr << elem->dumpActions() << "\n";
+//        }
     }
 
     return true;
@@ -834,8 +849,11 @@ bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain
             order_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(all_columns, context));
             getRootActions(child, only_types, order_by_elements_actions.back());
         }
+//        std::cerr << "order_by_elements_actions\n";
+//        for (const auto & elem : order_by_elements_actions) {
+//            std::cerr << elem->dumpActions() << "\n";
+//        }
     }
-
     return true;
 }
 
@@ -1115,7 +1133,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (need_aggregate)
         {
-            query_analyzer.appendGroupBy(chain, only_types || !first_stage);
+            /// TODO correct conditions
+            optimize_aggregation_in_order =
+                    context.getSettingsRef().optimize_aggregation_in_order
+                    && storage && query.groupBy();
+
+            query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
             before_aggregation = chain.getLastActions();
 
@@ -1128,13 +1151,13 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             }
         }
 
-        bool has_stream_with_non_joned_rows = (before_join && before_join->getTableJoinAlgo()->hasStreamWithNonJoinedRows());
+        bool has_stream_with_non_joined_rows = (before_join && before_join->getTableJoinAlgo()->hasStreamWithNonJoinedRows());
         optimize_read_in_order =
             settings.optimize_read_in_order
             && storage && query.orderBy()
             && !query_analyzer.hasAggregation()
             && !query.final()
-            && !has_stream_with_non_joned_rows;
+            && !has_stream_with_non_joined_rows;
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));

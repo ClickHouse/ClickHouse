@@ -246,7 +246,7 @@ void DatabaseOrdinary::alterTable(
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
-    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.indices);
+    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
     ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
