@@ -18,9 +18,11 @@ System tables:
 - Available only for reading data.
 - Can't be dropped or altered, but can be detached.
 
-Most of system tables store their data in RAM. ClickHouse server creates such system tables at the start.
+Most of system tables store their data in RAM. A ClickHouse server creates such system tables at the start.
 
-The [metric_log](#system_tables-metric_log), [query_log](#system_tables-query_log), [query_thread_log](#system_tables-query_thread_log), [trace_log](#system_tables-trace_log) system tables store data in a storage filesystem. You can alter them or remove from a disk manually. If you remove one of that tables from a disk, the ClickHouse server creates the table again at the time of the next recording. A storage period for these tables is not limited, and ClickHouse server doesn't delete their data automatically. You need to organize removing of outdated logs by yourself. For example, you can use [TTL](../sql-reference/statements/alter.md#manipulations-with-table-ttl) settings for removing outdated log records. 
+Unlike other system tables, the system tables [metric_log](#system_tables-metric_log), [query_log](#system_tables-query_log), [query_thread_log](#system_tables-query_thread_log), [trace_log](#system_tables-trace_log) are served by [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) table engine and store their data in a storage filesystem. If you remove a table from a filesystem, the ClickHouse server creates the empty one again at the time of the next data writing. If system table schema changed in a new release, then ClickHouse renames the current table and creates a new one.
+
+By default, table growth is unlimited. To control a size of a table, you can use [TTL](../sql-reference/statements/alter.md#manipulations-with-table-ttl) settings for removing outdated log records. Also you can use the partitioning feature of `MergeTree`-engine tables.
 
 
 ### Sources of System Metrics {#system-tables-sources-of-system-metrics}
@@ -175,6 +177,41 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 This table contains a single String column called ‘name’ – the name of a database.
 Each database that the server knows about has a corresponding entry in the table.
 This system table is used for implementing the `SHOW DATABASES` query.
+
+## system.data_type_families {#system_tables-data_type_families}
+
+Contains information about supported [data types](../sql-reference/data-types/).
+
+Columns:
+
+-   `name` ([String](../sql-reference/data-types/string.md)) — Data type name.
+-   `case_insensitive` ([UInt8](../sql-reference/data-types/int-uint.md)) — Property that shows whether you can use a data type name in a query in case insensitive manner or not. For example, `Date` and `date` are both valid.
+-   `alias_to` ([String](../sql-reference/data-types/string.md)) — Data type name for which `name` is an alias.
+
+**Example**
+
+``` sql
+SELECT * FROM system.data_type_families WHERE alias_to = 'String'
+```
+
+``` text
+┌─name───────┬─case_insensitive─┬─alias_to─┐
+│ LONGBLOB   │                1 │ String   │
+│ LONGTEXT   │                1 │ String   │
+│ TINYTEXT   │                1 │ String   │
+│ TEXT       │                1 │ String   │
+│ VARCHAR    │                1 │ String   │
+│ MEDIUMBLOB │                1 │ String   │
+│ BLOB       │                1 │ String   │
+│ TINYBLOB   │                1 │ String   │
+│ CHAR       │                1 │ String   │
+│ MEDIUMTEXT │                1 │ String   │
+└────────────┴──────────────────┴──────────┘
+```
+
+**See Also**
+
+-   [Syntax](../sql-reference/syntax.md) — Information about supported syntax.
 
 ## system.detached\_parts {#system_tables-detached_parts}
 
@@ -601,9 +638,9 @@ You can change settings of queries logging in the [query_log](server-configurati
 
 You can disable queries logging by setting [log_queries = 0](settings/settings.md#settings-log-queries). We don't recommend to turn off logging because information in this table is important for solving issues.
 
-The flushing period of logs is set in `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing logs, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse doesn't delete logs from the table automatically. See [Introduction](#system-tables-introduction) for more details.
+ClickHouse doesn't delete data from the table automatically. See [Introduction](#system-tables-introduction) for more details.
 
 The `system.query_log` table registers two kinds of queries:
 
@@ -731,68 +768,117 @@ Settings.Values:      ['0','random','1','10000000000']
 
 ## system.query_thread_log {#system_tables-query_thread_log}
 
-The table contains information about each query execution thread.
+Contains information about threads which execute queries, for example, thread name, thread start time, duration of query processing.
 
-ClickHouse creates this table only if the [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
+To start logging:
 
-To enable query logging, set the [log\_query\_threads](settings/settings.md#settings-log-query-threads) parameter to 1. For details, see the [Settings](settings/settings.md) section.
+1. Configure parameters in the [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
+2. Set [log_query_threads](settings/settings.md#settings-log-query-threads) to 1.
+
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+
+ClickHouse doesn't delete data from the table automatically. See [Introduction](#system-tables-introduction) for more details.
 
 Columns:
 
--   `event_date` (Date) — the date when the thread has finished execution of the query.
--   `event_time` (DateTime) — the date and time when the thread has finished execution of the query.
--   `query_start_time` (DateTime) — Start time of query execution.
--   `query_duration_ms` (UInt64) — Duration of query execution.
--   `read_rows` (UInt64) — Number of read rows.
--   `read_bytes` (UInt64) — Number of read bytes.
--   `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
--   `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
--   `memory_usage` (Int64) — The difference between the amount of allocated and freed memory in context of this thread.
--   `peak_memory_usage` (Int64) — The maximum difference between the amount of allocated and freed memory in context of this thread.
--   `thread_name` (String) — Name of the thread.
--   `thread_number` (UInt32) — Internal thread ID.
--   `os_thread_id` (Int32) — OS thread ID.
--   `master_thread_id` (UInt64) — OS initial ID of initial thread.
--   `query` (String) — Query string.
--   `is_initial_query` (UInt8) — Query type. Possible values:
+-   `event_date` ([Date](../sql-reference/data-types/date.md)) — The date when the thread has finished execution of the query.
+-   `event_time` ([DateTime](../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query.
+-   `query_start_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Start time of query execution.
+-   `query_duration_ms` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution.
+-   `read_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read rows.
+-   `read_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read bytes.
+-   `written_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
+-   `written_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
+-   `memory_usage` ([Int64](../sql-reference/data-types/int-uint.md)) — The difference between the amount of allocated and freed memory in context of this thread.
+-   `peak_memory_usage` ([Int64](../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this thread.
+-   `thread_name` ([String](../sql-reference/data-types/string.md)) — Name of the thread.
+-   `thread_number` ([UInt32](../sql-reference/data-types/int-uint.md)) — Internal thread ID.
+-   `thread_id` ([Int32](../sql-reference/data-types/int-uint.md)) — thread ID.
+-   `master_thread_id` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — OS initial ID of initial thread.
+-   `query` ([String](../sql-reference/data-types/string.md)) — Query string.
+-   `is_initial_query` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Query type. Possible values:
     -   1 — Query was initiated by the client.
     -   0 — Query was initiated by another query for distributed query execution.
--   `user` (String) — Name of the user who initiated the current query.
--   `query_id` (String) — ID of the query.
--   `address` (IPv6) — IP address that was used to make the query.
--   `port` (UInt16) — The client port that was used to make the query.
--   `initial_user` (String) — Name of the user who ran the initial query (for distributed query execution).
--   `initial_query_id` (String) — ID of the initial query (for distributed query execution).
--   `initial_address` (IPv6) — IP address that the parent query was launched from.
--   `initial_port` (UInt16) — The client port that was used to make the parent query.
--   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
+-   `user` ([String](../sql-reference/data-types/string.md)) — Name of the user who initiated the current query.
+-   `query_id` ([String](../sql-reference/data-types/string.md)) — ID of the query.
+-   `address` ([IPv6](../sql-reference/data-types/domains/ipv6.md)) — IP address that was used to make the query.
+-   `port` ([UInt16](../sql-reference/data-types/int-uint.md#uint-ranges)) — The client port that was used to make the query.
+-   `initial_user` ([String](../sql-reference/data-types/string.md)) — Name of the user who ran the initial query (for distributed query execution).
+-   `initial_query_id` ([String](../sql-reference/data-types/string.md)) — ID of the initial query (for distributed query execution).
+-   `initial_address` ([IPv6](../sql-reference/data-types/domains/ipv6.md)) — IP address that the parent query was launched from.
+-   `initial_port` ([UInt16](../sql-reference/data-types/int-uint.md#uint-ranges)) — The client port that was used to make the parent query.
+-   `interface` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [clickhouse-client](../interfaces/cli.md).
--   `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
--   `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
--   `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
--   `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
+-   `os_user` ([String](../sql-reference/data-types/string.md)) — OS’s username who runs [clickhouse-client](../interfaces/cli.md).
+-   `client_hostname` ([String](../sql-reference/data-types/string.md)) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
+-   `client_name` ([String](../sql-reference/data-types/string.md)) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
+-   `client_revision` ([UInt32](../sql-reference/data-types/int-uint.md)) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+-   `client_version_major` ([UInt32](../sql-reference/data-types/int-uint.md)) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+-   `client_version_minor` ([UInt32](../sql-reference/data-types/int-uint.md)) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+-   `client_version_patch` ([UInt32](../sql-reference/data-types/int-uint.md)) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
+-   `http_method` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — HTTP method that initiated the query. Possible values:
     -   0 — The query was launched from the TCP interface.
     -   1 — `GET` method was used.
     -   2 — `POST` method was used.
--   `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
--   `quota_key` (String) — The “quota key” specified in the [quotas](quotas.md) setting (see `keyed`).
--   `revision` (UInt32) — ClickHouse revision.
--   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
+-   `http_user_agent` ([String](../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP request.
+-   `quota_key` ([String](../sql-reference/data-types/string.md)) — The “quota key” specified in the [quotas](quotas.md) setting (see `keyed`).
+-   `revision` ([UInt32](../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
+-   `ProfileEvents.Names` ([Array(String)](../sql-reference/data-types/array.md)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events).
+-   `ProfileEvents.Values` ([Array(UInt64)](../sql-reference/data-types/array.md)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
 
-By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+**Example**
 
-When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
+``` sql
+ SELECT * FROM system.query_thread_log LIMIT 1 FORMAT Vertical
+```
 
-!!! note "Note"
-    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
+``` text
+Row 1:
+──────
+event_date:           2020-05-13
+event_time:           2020-05-13 14:02:28
+query_start_time:     2020-05-13 14:02:28
+query_duration_ms:    0
+read_rows:            1
+read_bytes:           1
+written_rows:         0
+written_bytes:        0
+memory_usage:         0
+peak_memory_usage:    0
+thread_name:          QueryPipelineEx
+thread_id:            28952
+master_thread_id:     28924
+query:                SELECT 1
+is_initial_query:     1
+user:                 default
+query_id:             5e834082-6f6d-4e34-b47b-cd1934f4002a
+address:              ::ffff:127.0.0.1
+port:                 57720
+initial_user:         default
+initial_query_id:     5e834082-6f6d-4e34-b47b-cd1934f4002a
+initial_address:      ::ffff:127.0.0.1
+initial_port:         57720
+interface:            1
+os_user:              bayonet
+client_hostname:      clickhouse.ru-central1.internal
+client_name:          ClickHouse client
+client_revision:      54434
+client_version_major: 20
+client_version_minor: 4
+client_version_patch: 1
+http_method:          0
+http_user_agent:
+quota_key:
+revision:             54434
+ProfileEvents.Names:  ['ContextLock','RealTimeMicroseconds','UserTimeMicroseconds','OSCPUWaitMicroseconds','OSCPUVirtualTimeMicroseconds']
+ProfileEvents.Values: [1,97,81,5,81]
+...
+```
 
-You can specify an arbitrary partitioning key for the `system.query_thread_log` table in the [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server setting (see the `partition_by` parameter).
+**See Also**
+
+- [system.query_log](#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
 
 ## system.trace\_log {#system_tables-trace_log}
 

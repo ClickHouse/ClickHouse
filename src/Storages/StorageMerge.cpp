@@ -1,11 +1,6 @@
-#include <DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DataStreams/narrowBlockInputStreams.h>
-#include <DataStreams/LazyBlockInputStream.h>
-#include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -79,7 +74,7 @@ StoragePtr StorageMerge::getFirstTable(F && predicate) const
 
 bool StorageMerge::isRemote() const
 {
-    auto first_remote_table = getFirstTable([](const StoragePtr & table) { return table->isRemote(); });
+    auto first_remote_table = getFirstTable([](const StoragePtr & table) { return table && table->isRemote(); });
     return first_remote_table != nullptr;
 }
 
@@ -117,7 +112,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
     while (iterator->isValid())
     {
         const auto & table = iterator->table();
-        if (table.get() != this)
+        if (table && table.get() != this)
         {
             ++selected_table_size;
             stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context, to_stage, query_ptr));
@@ -177,12 +172,12 @@ Pipes StorageMerge::read(
     num_streams *= num_streams_multiplier;
     size_t remaining_streams = num_streams;
 
-    InputSortingInfoPtr input_sorting_info;
-    if (query_info.order_by_optimizer)
+    InputOrderInfoPtr input_sorting_info;
+    if (query_info.order_optimizer)
     {
         for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
         {
-            auto current_info = query_info.order_by_optimizer->getInputOrder(std::get<0>(*it));
+            auto current_info = query_info.order_optimizer->getInputOrder(std::get<0>(*it));
             if (it == selected_tables.begin())
                 input_sorting_info = current_info;
             else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
@@ -192,7 +187,7 @@ Pipes StorageMerge::read(
                 break;
         }
 
-        query_info.input_sorting_info = input_sorting_info;
+        query_info.input_order_info = input_sorting_info;
     }
 
     for (const auto & table : selected_tables)
@@ -316,7 +311,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
     while (iterator->isValid())
     {
         const auto & table = iterator->table();
-        if (table.get() != this)
+        if (table && table.get() != this)
             selected_tables.emplace_back(
                     table, table->lockStructureForShare(false, query_id, settings.lock_acquire_timeout), iterator->name());
 
@@ -338,6 +333,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
     while (iterator->isValid())
     {
         StoragePtr storage = iterator->table();
+        if (!storage)
+            continue;
 
         if (query && query->as<ASTSelectQuery>()->prewhere() && !storage->supportsPrewhere())
             throw Exception("Storage " + storage->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
@@ -394,7 +391,7 @@ void StorageMerge::alter(
     auto table_id = getStorageID();
 
     StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
-    params.apply(storage_metadata);
+    params.apply(storage_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, storage_metadata);
     setColumns(storage_metadata.columns);
 }
@@ -495,7 +492,7 @@ NamesAndTypesList StorageMerge::getVirtuals() const
 {
     NamesAndTypesList virtuals{{"_table", std::make_shared<DataTypeString>()}};
 
-    auto first_table = getFirstTable([](auto &&) { return true; });
+    auto first_table = getFirstTable([](auto && table) { return table; });
     if (first_table)
     {
         auto table_virtuals = first_table->getVirtuals();

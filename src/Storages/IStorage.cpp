@@ -37,9 +37,15 @@ const ColumnsDescription & IStorage::getColumns() const
     return columns;
 }
 
-const IndicesDescription & IStorage::getIndices() const
+const IndicesDescription & IStorage::getSecondaryIndices() const
 {
-    return indices;
+    return secondary_indices;
+}
+
+
+bool IStorage::hasSecondaryIndices() const
+{
+    return !secondary_indices.empty();
 }
 
 const ConstraintsDescription & IStorage::getConstraints() const
@@ -289,9 +295,9 @@ void IStorage::setColumns(ColumnsDescription columns_)
     columns = std::move(columns_);
 }
 
-void IStorage::setIndices(IndicesDescription indices_)
+void IStorage::setSecondaryIndices(IndicesDescription secondary_indices_)
 {
-    indices = std::move(indices_);
+    secondary_indices = std::move(secondary_indices_);
 }
 
 void IStorage::setConstraints(ConstraintsDescription constraints_)
@@ -369,7 +375,7 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id,
 
 StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
 {
-    return StorageInMemoryMetadata(getColumns(), getIndices(), getConstraints());
+    return StorageInMemoryMetadata(getColumns(), getSecondaryIndices(), getConstraints());
 }
 
 void IStorage::alter(
@@ -380,7 +386,7 @@ void IStorage::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata);
+    params.apply(metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     setColumns(std::move(metadata.columns));
 }
@@ -586,6 +592,66 @@ const TTLDescriptions & IStorage::getMoveTTLs() const
 bool IStorage::hasAnyMoveTTL() const
 {
     return !table_ttl.move_ttl.empty();
+}
+
+
+ColumnDependencies IStorage::getColumnDependencies(const NameSet & updated_columns) const
+{
+    if (updated_columns.empty())
+        return {};
+
+    ColumnDependencies res;
+
+    NameSet indices_columns;
+    NameSet required_ttl_columns;
+    NameSet updated_ttl_columns;
+
+    auto add_dependent_columns = [&updated_columns](const auto & expression, auto & to_set)
+    {
+        auto requiered_columns = expression->getRequiredColumns();
+        for (const auto & dependency : requiered_columns)
+        {
+            if (updated_columns.count(dependency))
+            {
+                to_set.insert(requiered_columns.begin(), requiered_columns.end());
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    for (const auto & index : getSecondaryIndices())
+        add_dependent_columns(index.expression, indices_columns);
+
+    if (hasRowsTTL())
+    {
+        if (add_dependent_columns(getRowsTTL().expression, required_ttl_columns))
+        {
+            /// Filter all columns, if rows TTL expression have to be recalculated.
+            for (const auto & column : getColumns().getAllPhysical())
+                updated_ttl_columns.insert(column.name);
+        }
+    }
+
+    for (const auto & [name, entry] : getColumnTTLs())
+    {
+        if (add_dependent_columns(entry.expression, required_ttl_columns))
+            updated_ttl_columns.insert(name);
+    }
+
+    for (const auto & entry : getMoveTTLs())
+        add_dependent_columns(entry.expression, required_ttl_columns);
+
+    for (const auto & column : indices_columns)
+        res.emplace(column, ColumnDependency::SKIP_INDEX);
+    for (const auto & column : required_ttl_columns)
+        res.emplace(column, ColumnDependency::TTL_EXPRESSION);
+    for (const auto & column : updated_ttl_columns)
+        res.emplace(column, ColumnDependency::TTL_TARGET);
+
+    return res;
+
 }
 
 }

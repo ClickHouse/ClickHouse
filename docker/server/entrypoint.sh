@@ -94,7 +94,7 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
 
     # check if clickhouse is ready to accept connections
     # will try to send ping clickhouse via http_port (max 12 retries, with 1 sec delay)
-    if ! wget --spider --quiet --tries=12 --waitretry=1 --retry-connrefused "http://localhost:$HTTP_PORT/ping" ; then
+    if ! wget --spider --quiet --prefer-family=IPv6 --tries=12 --waitretry=1 --retry-connrefused "http://localhost:$HTTP_PORT/ping" ; then
         echo >&2 'ClickHouse init process failed.'
         exit 1
     fi
