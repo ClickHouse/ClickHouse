@@ -42,7 +42,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 
 ## greatCircleAngle {#greatcircleangle}
 
-Calculates the central angle between two points on the Earth’s surface using [the great-circle formula]
+Calculates the central angle between two points on the Earth’s surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
 ``` sql
 greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
