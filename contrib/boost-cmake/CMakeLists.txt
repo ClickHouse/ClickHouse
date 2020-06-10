@@ -98,7 +98,8 @@ if (USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (_boost_system PRIVATE ${LIBRARY_DIR})
 else ()
     # 1.70 like in contrib/boost
-    set(BOOST_VERSION 1.70)
+    # 1.67 on CI
+    set(BOOST_VERSION 1.67)
 
     find_package(Boost ${BOOST_VERSION} COMPONENTS
         system
