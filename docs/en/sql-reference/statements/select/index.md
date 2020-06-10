@@ -7,7 +7,7 @@ title: SELECT Query
 
 # SELECT Query {#select-queries-syntax}
 
-`SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../insert-into.md) it can be forwarded to a different table.
+`SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../../../sql-reference/statements/insert-into.md) it can be forwarded to a different table.
 
 ``` sql
 [WITH expr_list|(subquery)]
