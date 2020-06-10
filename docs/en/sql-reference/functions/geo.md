@@ -40,6 +40,37 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 └───────────────────────────────────────────────────────────────────┘
 ```
 
+## greatCircleAngle {#greatcircleangle}
+
+Calculate the central angle between two points on the Earth’s surface using [the great-circle formula]
+
+``` sql
+greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**Input parameters**
+
+-   `lon1Deg` — Longitude of the first point in degrees.
+-   `lat1Deg` — Latitude of the first point in degrees.
+-   `lon2Deg` — Longitude of the second point in degrees.
+-   `lat2Deg` — Latitude of the second point in degrees.
+
+**Returned value**
+
+The central angle between two points in degrees.
+
+**Example**
+
+``` sql
+SELECT greatCircleAngle(0, 0, 45, 0) AS arc
+```
+
+``` text
+┌─arc─┐
+│  45 │
+└─────┘
+```
+
 ## pointInEllipses {#pointinellipses}
 
 Checks whether the point belongs to at least one of the ellipses.
