@@ -164,6 +164,10 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     if official:
         cmake_flags.append('-DYANDEX_OFFICIAL_BUILD=1')
 
+    # XXX: temporary quirk to checkout tcmalloc-cpp
+    cmake_flags.append('-DENABLE_JEMALLOC=OFF')
+    cmake_flags.append('-DENABLE_TCMALLOC_CPP=ON')
+
     result.append('CMAKE_FLAGS="' + ' '.join(cmake_flags) + '"')
 
     return result
