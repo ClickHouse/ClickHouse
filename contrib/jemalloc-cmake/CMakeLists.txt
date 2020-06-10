@@ -165,3 +165,5 @@ else ()
 
     message (STATUS "Not using jemalloc")
 endif ()
+
+target_link_libraries (allocator INTERFACE jemalloc)

@@ -405,6 +405,9 @@ if (TARGET global-group)
     install (EXPORT global DESTINATION cmake)
 endif ()
 
+# jemalloc/tcmalloc-cpp/no
+add_library (allocator INTERFACE)
+
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
 if (NOT ENABLE_JEMALLOC)

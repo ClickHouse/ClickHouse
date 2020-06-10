@@ -174,3 +174,9 @@
 [submodule "contrib/sentry-native"]
 	path = contrib/sentry-native
 	url = https://github.com/getsentry/sentry-native.git
+[submodule "contrib/abseil-cpp"]
+	path = contrib/abseil-cpp
+	url = https://github.com/abseil/abseil-cpp.git
+[submodule "contrib/tcmalloc-cpp"]
+	path = contrib/tcmalloc-cpp
+	url = https://github.com/azat-archive/tcmalloc.git
