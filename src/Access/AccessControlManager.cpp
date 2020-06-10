@@ -99,9 +99,14 @@ void AccessControlManager::setLocalDirectory(const String & directory_path)
 }
 
 
+void AccessControlManager::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    external_authenticators = std::make_unique<ExternalAuthenticators>(config, getLogger());
+}
+
+
 void AccessControlManager::setUsersConfig(const Poco::Util::AbstractConfiguration & users_config)
 {
-    external_authenticators = std::make_unique<ExternalAuthenticators>(users_config, getLogger());
     auto & users_config_access_storage = dynamic_cast<UsersConfigAccessStorage &>(getStorageByIndex(USERS_CONFIG_ACCESS_STORAGE_INDEX));
     users_config_access_storage.setConfiguration(users_config);
 }

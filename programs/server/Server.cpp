@@ -528,6 +528,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (!access_control_local_path.empty())
         global_context->getAccessControlManager().setLocalDirectory(access_control_local_path);
 
+    /// Sets external authenticators config (LDAP).
+    global_context->setExternalAuthenticatorsConfig(config());
+
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
 
