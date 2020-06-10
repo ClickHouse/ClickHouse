@@ -347,9 +347,11 @@ create table query_metric_stats engine File(TSVWithNamesAndTypes,
 create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     as select
         -- FIXME Comparison mode doesn't make sense for queries that complete
-        -- immediately, so for now we pretend they don't exist. We don't want to
-        -- remove them altogether because we want to be able to detect regressions,
-        -- but the right way to do this is not yet clear.
+        -- immediately (on the same order of time as noise). We compute average
+        -- run time between old and new version, and if it is below a threshold,
+        -- we just skip the query. If there is a significant regression, the
+        -- average will be above threshold, we'll process it normally and will
+        -- detect the regression.
         (left + right) / 2 < 0.02 as short,
 
         not short and abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
@@ -409,11 +411,11 @@ create table all_query_runs_json engine File(JSON, 'report/all-query-runs.json')
     ;
 
 create table changed_perf_tsv engine File(TSV, 'report/changed-perf.tsv') as
-    select left, right, diff, stat_threshold, changed_fail, test, query_display_name
+    select left, right, diff, stat_threshold, changed_fail, test, query_index, query_display_name
     from queries where changed_show order by abs(diff) desc;
 
 create table unstable_queries_tsv engine File(TSV, 'report/unstable-queries.tsv') as
-    select left, right, diff, stat_threshold, unstable_fail, test, query_display_name
+    select left, right, diff, stat_threshold, unstable_fail, test, query_index, query_display_name
     from queries where unstable_show order by stat_threshold desc;
 
 create table queries_for_flamegraph engine File(TSVWithNamesAndTypes,
@@ -421,9 +423,39 @@ create table queries_for_flamegraph engine File(TSVWithNamesAndTypes,
     select test, query_index from queries where unstable_show or changed_show
     ;
 
-create table unstable_tests_tsv engine File(TSV, 'report/bad-tests.tsv') as
-    select test, sum(unstable_fail) u, sum(changed_fail) c, u + c s from queries
-    group by test having s > 0 order by s desc;
+create table test_time_changes_tsv engine File(TSV, 'report/test-time-changes.tsv') as
+    select test, queries, average_time_change from (
+        select test, count(*) queries,
+            sum(left) as left, sum(right) as right,
+            (right - left) / right average_time_change
+        from queries
+        group by test
+        order by abs(average_time_change) desc
+    )
+    ;
+
+create table unstable_tests_tsv engine File(TSV, 'report/unstable-tests.tsv') as
+    select test, sum(unstable_show) total_unstable, sum(changed_show) total_changed
+    from queries
+    group by test
+    order by total_unstable + total_changed desc
+    ;
+
+create table test_perf_changes_tsv engine File(TSV, 'report/test-perf-changes.tsv') as
+    select test,
+        queries,
+        coalesce(total_unstable, 0) total_unstable,
+        coalesce(total_changed, 0) total_changed,
+        total_unstable + total_changed total_bad,
+        coalesce(toString(floor(average_time_change, 3)), '??') average_time_change_str
+    from test_time_changes_tsv
+    full join unstable_tests_tsv
+    using test
+    where (abs(average_time_change) > 0.05 and queries > 5)
+        or (total_bad > 0)
+    order by total_bad desc, average_time_change desc
+    settings join_use_nulls = 1
+    ;
 
 create table query_time engine Memory as select *
     from file('analyze/client-times.tsv', TSV,
@@ -464,8 +496,8 @@ create table all_tests_tsv engine File(TSV, 'report/all-queries.tsv') as
     select changed_fail, unstable_fail,
         left, right, diff,
         floor(left > right ? left / right : right / left, 3),
-        stat_threshold, test, query_display_name
-    from queries order by test, query_display_name;
+        stat_threshold, test, query_index, query_display_name
+    from queries order by test, query_index;
 
 -- new report for all queries with all metrics (no page yet)
 create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.tsv') as
@@ -582,7 +614,7 @@ create table metric_devation engine File(TSVWithNamesAndTypes,
             union all select * from unstable_run_traces
             union all select * from unstable_run_metrics_2) mm
         group by test, query_index, metric
-        having d > 0.5
+        having d > 0.5 and q[3] > 5
     ) metrics
     left join query_display_names using (test, query_index)
     order by test, query_index, d desc
