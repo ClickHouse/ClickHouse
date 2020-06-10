@@ -172,12 +172,12 @@ Pipes StorageMerge::read(
     num_streams *= num_streams_multiplier;
     size_t remaining_streams = num_streams;
 
-    InputSortingInfoPtr input_sorting_info;
-    if (query_info.order_by_optimizer)
+    InputOrderInfoPtr input_sorting_info;
+    if (query_info.order_optimizer)
     {
         for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
         {
-            auto current_info = query_info.order_by_optimizer->getInputOrder(std::get<0>(*it));
+            auto current_info = query_info.order_optimizer->getInputOrder(std::get<0>(*it));
             if (it == selected_tables.begin())
                 input_sorting_info = current_info;
             else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
@@ -187,7 +187,7 @@ Pipes StorageMerge::read(
                 break;
         }
 
-        query_info.input_sorting_info = input_sorting_info;
+        query_info.input_order_info = input_sorting_info;
     }
 
     for (const auto & table : selected_tables)
@@ -391,7 +391,7 @@ void StorageMerge::alter(
     auto table_id = getStorageID();
 
     StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
-    params.apply(storage_metadata);
+    params.apply(storage_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, storage_metadata);
     setColumns(storage_metadata.columns);
 }

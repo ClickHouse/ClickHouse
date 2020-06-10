@@ -1,28 +1,29 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/extractKeyExpressionList.h>
 
 namespace DB
 {
 
-
 StorageInMemoryMetadata::StorageInMemoryMetadata(
     const ColumnsDescription & columns_,
-    const IndicesDescription & indices_,
+    const IndicesDescription & secondary_indices_,
     const ConstraintsDescription & constraints_)
     : columns(columns_)
-    , indices(indices_)
+    , secondary_indices(secondary_indices_)
     , constraints(constraints_)
 {
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
-    , indices(other.indices)
+    , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
 {
     if (other.partition_by_ast)
@@ -47,7 +48,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         return *this;
 
     columns = other.columns;
-    indices = other.indices;
+    secondary_indices = other.secondary_indices;
     constraints = other.constraints;
 
     if (other.partition_by_ast)
@@ -88,30 +89,6 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     return *this;
 }
 
-namespace
-{
-    ASTPtr extractKeyExpressionList(const ASTPtr & node)
-    {
-        if (!node)
-            return std::make_shared<ASTExpressionList>();
-
-        const auto * expr_func = node->as<ASTFunction>();
-
-        if (expr_func && expr_func->name == "tuple")
-        {
-            /// Primary key is specified in tuple, extract its arguments.
-            return expr_func->arguments->clone();
-        }
-        else
-        {
-            /// Primary key consists of one column.
-            auto res = std::make_shared<ASTExpressionList>();
-            res->children.push_back(node);
-            return res;
-        }
-    }
-}
-
 StorageMetadataKeyField StorageMetadataKeyField::getKeyFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context)
 {
     StorageMetadataKeyField result;
@@ -137,6 +114,5 @@ StorageMetadataKeyField StorageMetadataKeyField::getKeyFromAST(const ASTPtr & de
 
     return result;
 }
-
 
 }

@@ -158,7 +158,7 @@ StorageMaterializedView::StorageMaterializedView(
 
 StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
 {
-    StorageInMemoryMetadata result(getColumns(), getIndices(), getConstraints());
+    StorageInMemoryMetadata result(getColumns(), getSecondaryIndices(), getConstraints());
     result.select = getSelectQuery();
     return result;
 }
@@ -180,8 +180,8 @@ Pipes StorageMaterializedView::read(
     auto lock = storage->lockStructureForShare(
             false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-    if (query_info.order_by_optimizer)
-        query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
+    if (query_info.order_optimizer)
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage);
 
     Pipes pipes = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 
@@ -257,7 +257,7 @@ void StorageMaterializedView::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata);
+    params.apply(metadata, context);
 
     /// start modify query
     if (context.getSettingsRef().allow_experimental_alter_materialized_view_structure)
