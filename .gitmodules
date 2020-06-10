@@ -163,6 +163,14 @@
 [submodule "contrib/libevent"]
 	path = contrib/libevent
 	url = https://github.com/libevent/libevent.git
+[submodule "contrib/cassandra"]
+	path = contrib/cassandra
+	url = https://github.com/ClickHouse-Extras/cpp-driver.git
+	branch = clickhouse
+[submodule "contrib/libuv"]
+	path = contrib/libuv
+	url = https://github.com/ClickHouse-Extras/libuv.git
+	branch = clickhouse
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
 	url = https://github.com/fmtlib/fmt.git

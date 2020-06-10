@@ -60,4 +60,43 @@ Result:
 └────────────┴────────────┴──────────────┴────────────────┴─────────────────┴──────────────────────┘
 ```
 
+# Random functions for working with strings  {#random-functions-for-working-with-strings}
+
+## randomString {#random-string}
+
+## randomFixedString {#random-fixed-string}
+
+## randomPrintableASCII {#random-printable-ascii}
+
+## randomStringUTF8 {#random-string-utf8}
+
+## fuzzBits {#fuzzbits}
+
+**Syntax**
+
+``` sql
+fuzzBits([s], [prob])
+```
+Inverts bits of `s`, each with probability `prob`.
+
+**Parameters**
+- `s` - `String` or `FixedString`
+- `prob` - constant `Float32/64`
+
+**Returned value**
+Fuzzed string with same as s type.
+
+**Example**
+
+``` sql
+SELECT fuzzBits(materialize('abacaba'), 0.1)
+FROM numbers(3)
+```
+``` text
+┌─fuzzBits(materialize('abacaba'), 0.1)─┐
+│ abaaaja                               │
+│ a*cjab+                               │
+│ aeca2A                                │
+└───────────────────────────────────────┘
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/random_functions/) <!--hide-->

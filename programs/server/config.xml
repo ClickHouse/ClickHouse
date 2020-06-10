@@ -1,6 +1,9 @@
 <?xml version="1.0"?>
 <!--
   NOTE: User and query level settings are set up in "users.xml" file.
+  If you have accidentially specified user-level settings here, server won't start.
+  You can either move the settings to the right place inside "users.xml" file
+   or add <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings> here.
 -->
 <yandex>
     <logger>
