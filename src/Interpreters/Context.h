@@ -81,6 +81,7 @@ class TextLog;
 class TraceLog;
 class MetricLog;
 struct MergeTreeSettings;
+class StorageS3Settings;
 class IDatabase;
 class DDLWorker;
 class ITableFunction;
@@ -534,6 +535,7 @@ public:
     std::shared_ptr<PartLog> getPartLog(const String & part_database);
 
     const MergeTreeSettings & getMergeTreeSettings() const;
+    const StorageS3Settings & getStorageS3Settings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
