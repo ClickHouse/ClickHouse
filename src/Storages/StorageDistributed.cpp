@@ -538,7 +538,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
 }
 
 
-void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
 {
     for (const auto & command : commands)
     {

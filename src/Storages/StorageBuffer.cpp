@@ -723,7 +723,7 @@ void StorageBuffer::reschedule()
     flush_handle->scheduleAfter(std::min(min, max) * 1000);
 }
 
-void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
 {
     for (const auto & command : commands)
     {

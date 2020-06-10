@@ -492,7 +492,7 @@ public:
     /// - all type conversions can be done.
     /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
 
     /// Change MergeTreeSettings
     void changeSettings(
@@ -507,12 +507,6 @@ public:
     {
         broken_part_callback(name);
     }
-
-    /** Get the key expression AST as an ASTExpressionList. It can be specified
-     *  in the tuple: (CounterID, Date), or as one column: CounterID.
-     */
-    static ASTPtr extractKeyExpressionList(const ASTPtr & node);
-
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const;
@@ -780,11 +774,14 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void setProperties(const StorageInMemoryMetadata & new_metadata, bool only_check = false, bool attach = false);
+    void checkProperties(const StorageInMemoryMetadata & new_metadata, bool attach = false) const;
+
+    void setProperties(const StorageInMemoryMetadata & new_metadata, bool attach = false);
 
     void initPartitionKey(const KeyDescription & new_partition_key);
 
-    void setTTLExpressions(const StorageInMemoryMetadata & new_metadata, bool only_check = false);
+    void checkTTLExpressios(const StorageInMemoryMetadata & new_metadata) const;
+    void setTTLExpressions(const StorageInMemoryMetadata & new_metadata);
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 

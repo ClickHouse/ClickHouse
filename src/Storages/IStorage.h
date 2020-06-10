@@ -359,7 +359,7 @@ public:
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
       */
-    virtual void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings);
+    virtual void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const;
 
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.
