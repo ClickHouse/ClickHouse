@@ -201,6 +201,7 @@ namespace
                 return false;
 
             default_roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
+            default_roles->can_contain_users = false;
             return true;
         });
     }

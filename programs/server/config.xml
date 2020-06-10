@@ -1,6 +1,9 @@
 <?xml version="1.0"?>
 <!--
   NOTE: User and query level settings are set up in "users.xml" file.
+  If you have accidentially specified user-level settings here, server won't start.
+  You can either move the settings to the right place inside "users.xml" file
+   or add <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings> here.
 -->
 <yandex>
     <logger>
@@ -191,7 +194,7 @@
 
     <!-- Path to folder where users and roles created by SQL commands are stored. -->
     <access_control_path>/var/lib/clickhouse/access/</access_control_path>
-    
+
     <!-- Path to configuration file with users, access rights, profiles of settings, quotas. -->
     <users_config>users.xml</users_config>
 
@@ -404,9 +407,6 @@
         <status_info>true</status_info>
     </prometheus>
     -->
-
-    <!-- Lazy system.*_log table creation -->
-    <!-- <system_tables_lazy_load>false</system_tables_lazy_load> -->
 
     <!-- Query log. Used only for queries with setting log_queries = 1. -->
     <query_log>

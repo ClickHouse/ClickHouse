@@ -289,13 +289,6 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
     equal_range = std::move(new_ranges);
 }
 
-
-template <typename T>
-const char * ColumnVector<T>::getFamilyName() const
-{
-    return TypeName<T>::get();
-}
-
 template <typename T>
 MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 {

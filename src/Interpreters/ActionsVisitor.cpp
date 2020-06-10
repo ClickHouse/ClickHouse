@@ -512,7 +512,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 if (data.only_consts)
                     arguments_present = false;
                 else
-                    throw Exception("Unknown identifier: " + child_column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+                    throw Exception("Unknown identifier: " + child_column_name + " there are columns: " + data.getSampleBlock().dumpNames(),
+                                    ErrorCodes::UNKNOWN_IDENTIFIER);
             }
         }
     }
@@ -670,7 +671,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         if (identifier)
         {
             auto table_id = data.context.resolveStorageID(right_in_operand);
-            StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id);
+            StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, data.context);
 
             if (table)
             {
@@ -706,7 +707,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         {
             auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
             subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
-                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().in; });
+                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().getInputStream(); });
 
             /** Why is LazyBlockInputStream used?
               *

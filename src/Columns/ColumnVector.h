@@ -199,7 +199,8 @@ public:
         data.reserve(n);
     }
 
-    const char * getFamilyName() const override;
+    const char * getFamilyName() const override { return TypeName<T>::get(); }
+    TypeIndex getDataType() const override { return TypeId<T>::value; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 

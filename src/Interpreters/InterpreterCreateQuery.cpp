@@ -24,6 +24,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
@@ -70,6 +71,7 @@ namespace ErrorCodes
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
     extern const int DICTIONARY_ALREADY_EXISTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -251,8 +253,8 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
 {
     auto res = std::make_shared<ASTExpressionList>();
 
-    for (const auto & index : indices.indices)
-        res->children.push_back(index->clone());
+    for (const auto & index : indices)
+        res->children.push_back(index.definition_ast->clone());
 
     return res;
 }
@@ -398,15 +400,15 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
 
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
-                properties.indices.indices.push_back(
-                    std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
+                properties.indices.push_back(
+                    IndexDescription::getIndexFromAST(index->clone(), properties.columns, context));
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints);
     }
     else if (!create.as_table.empty())
     {
         String as_database_name = context.resolveDatabase(create.as_database);
-        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table});
+        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, context);
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockStructureForShare(
@@ -416,7 +418,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         /// Secondary indices make sense only for MergeTree family of storage engines.
         /// We should not copy them for other storages.
         if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
-            properties.indices = as_storage->getIndices();
+            properties.indices = as_storage->getSecondaryIndices();
 
         properties.constraints = as_storage->getConstraints();
     }
@@ -475,6 +477,21 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             }
         }
     }
+
+    if (!create.attach && !context.getSettingsRef().allow_experimental_geo_types)
+    {
+        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
+        {
+            const auto& type = name_and_type_pair.type->getName();
+            if (type == "MultiPolygon" || type == "Polygon" || type == "Ring" || type == "Point")
+            {
+                String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
+                                 + type + "' because experimental geo types are not allowed. "
+                                 + "Set setting allow_experimental_geo_types = 1 in order to allow it.";
+                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+    }
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
@@ -504,7 +521,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = context.resolveDatabase(create.as_database);
         String as_table_name = create.as_table;
 
-        ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name);
+        ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, context);
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
@@ -546,7 +563,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         bool if_not_exists = create.if_not_exists;
 
         // Table SQL definition is available even if the table is detached
-        auto query = database->getCreateTableQuery(create.table);
+        auto query = database->getCreateTableQuery(create.table, context);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;
         create.attach_short_syntax = true;
@@ -608,7 +625,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         guard = DatabaseCatalog::instance().getDDLGuard(create.database, table_name);
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
-        if (database->isTableExist(table_name))
+        if (database->isTableExist(table_name, context))
         {
             /// TODO Check structure of table
             if (create.if_not_exists)
@@ -637,7 +654,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (create.if_not_exists && context.tryResolveStorageID({"", table_name}, Context::ResolveExternal))
             return false;
 
-        auto temporary_table = TemporaryTableHolder(context, properties.columns, query_ptr);
+        auto temporary_table = TemporaryTableHolder(context, properties.columns, properties.constraints, query_ptr);
         context.getSessionContext().addExternalTable(table_name, std::move(temporary_table));
         return true;
     }
@@ -672,6 +689,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// But if "shutdown" is called before "startup", it will exit early, because there are no background tasks to wait.
     /// Then background task is created by "startup" method. And when destructor of a table object is called, background task is still active,
     /// and the task will use references to freed data.
+
+    /// Also note that "startup" method is exception-safe. If exception is thrown from "startup",
+    /// we can safely destroy the object without a call to "shutdown", because there is guarantee
+    /// that no background threads/similar resources remain after exception from "startup".
 
     res->startup();
     return true;

@@ -12,8 +12,11 @@ from helpers.network import PartitionManager
 import json
 import subprocess
 import kafka.errors
-from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer
+from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnection
 from kafka.admin import NewTopic
+from kafka.protocol.admin import DescribeGroupsResponse_v1, DescribeGroupsRequest_v1
+from kafka.protocol.group import MemberAssignment
+import socket
 from google.protobuf.internal.encoder import _VarintBytes
 
 """
@@ -110,6 +113,32 @@ def  kafka_check_result(result, check=False, ref_file='test_kafka_json.reference
         else:
             return TSV(result) == TSV(reference)
 
+# https://stackoverflow.com/a/57692111/1555175
+def describe_consumer_group(name):
+    client = BrokerConnection('localhost', 9092, socket.AF_INET)
+    client.connect_blocking()
+
+    list_members_in_groups = DescribeGroupsRequest_v1(groups=[name])
+    future = client.send(list_members_in_groups)
+    while not future.is_done:
+        for resp, f in client.recv():
+            f.success(resp)
+
+    (error_code, group_id, state, protocol_type, protocol, members) = future.value.groups[0]
+
+    res = []
+    for member in members:
+        (member_id, client_id, client_host, member_metadata, member_assignment) = member
+        member_info = {}
+        member_info['member_id'] = member_id
+        member_info['client_id'] = client_id
+        member_info['client_host'] = client_host
+        member_topics_assignment = []
+        for (topic, partitions) in MemberAssignment.decode(member_assignment).assignment:
+            member_topics_assignment.append({'topic':topic, 'partitions':partitions})
+        member_info['assignment'] = member_topics_assignment
+        res.append(member_info)
+    return res
 
 # Fixtures
 
@@ -161,6 +190,9 @@ def test_kafka_settings_old_syntax(kafka_cluster):
 
     kafka_check_result(result, True)
 
+    members = describe_consumer_group('old')
+    assert members[0]['client_id'] == u'ClickHouse-instance-test-kafka'
+    # text_desc = kafka_cluster.exec_in_container(kafka_cluster.get_container_id('kafka1'),"kafka-consumer-groups --bootstrap-server localhost:9092 --describe --members --group old --verbose"))
 
 @pytest.mark.timeout(180)
 def test_kafka_settings_new_syntax(kafka_cluster):
@@ -172,6 +204,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
                      kafka_group_name = 'new',
                      kafka_format = 'JSONEachRow',
                      kafka_row_delimiter = '\\n',
+                     kafka_client_id = '{instance} test 1234',
                      kafka_skip_broken_messages = 1;
         ''')
 
@@ -196,6 +229,85 @@ def test_kafka_settings_new_syntax(kafka_cluster):
             break
 
     kafka_check_result(result, True)
+
+    members = describe_consumer_group('new')
+    assert members[0]['client_id'] == u'instance test 1234'
+
+
+@pytest.mark.timeout(180)
+def test_kafka_issue11308(kafka_cluster):
+    # Check that matview does respect Kafka SETTINGS
+    kafka_produce('issue11308', ['{"t": 123, "e": {"x": "woof"} }', '{"t": 123, "e": {"x": "woof"} }', '{"t": 124, "e": {"x": "test"} }'])
+
+    instance.query('''
+        CREATE TABLE test.persistent_kafka (
+            time UInt64,
+            some_string String
+        )
+        ENGINE = MergeTree()
+        ORDER BY time;
+
+        CREATE TABLE test.kafka (t UInt64, `e.x` String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'issue11308',
+                     kafka_group_name = 'issue11308',
+                     kafka_format = 'JSONEachRow',
+                     kafka_row_delimiter = '\\n',
+                     kafka_flush_interval_ms=1000,
+                     input_format_import_nested_json = 1;
+
+        CREATE MATERIALIZED VIEW test.persistent_kafka_mv TO test.persistent_kafka AS
+        SELECT
+            `t` AS `time`,
+            `e.x` AS `some_string`
+        FROM test.kafka;
+        ''')
+
+    time.sleep(9)
+
+    result = instance.query('SELECT * FROM test.persistent_kafka ORDER BY time;')
+
+    instance.query('''
+        DROP TABLE test.persistent_kafka;
+        DROP TABLE test.persistent_kafka_mv;
+    ''')
+
+    expected = '''\
+123	woof
+123	woof
+124	test
+'''
+    assert TSV(result) == TSV(expected)
+
+
+@pytest.mark.timeout(180)
+def test_kafka_issue4116(kafka_cluster):
+    # Check that format_csv_delimiter parameter works now - as part of all available format settings.
+    kafka_produce('issue4116', ['1|foo', '2|bar', '42|answer','100|multi\n101|row\n103|message'])
+
+    instance.query('''
+        CREATE TABLE test.kafka (a UInt64, b String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'issue4116',
+                     kafka_group_name = 'issue4116',
+                     kafka_format = 'CSV',
+                     kafka_row_delimiter = '\\n',
+                     format_csv_delimiter = '|';
+        ''')
+
+    result = instance.query('SELECT * FROM test.kafka ORDER BY a;')
+
+    expected = '''\
+1	foo
+2	bar
+42	answer
+100	multi
+101	row
+103	message
+'''
+    assert TSV(result) == TSV(expected)
 
 
 @pytest.mark.timeout(180)
@@ -837,46 +949,52 @@ def test_kafka_virtual_columns2(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'virt2_0,virt2_1',
                      kafka_group_name = 'virt2',
+                     kafka_num_consumers = 2,
                      kafka_format = 'JSONEachRow';
 
         CREATE MATERIALIZED VIEW test.view Engine=Log AS
-        SELECT value, _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp) FROM test.kafka;
+        SELECT value, _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp), toUnixTimestamp64Milli(_timestamp_ms), _headers.name, _headers.value FROM test.kafka;
         ''')
 
     producer = KafkaProducer(bootstrap_servers="localhost:9092")
 
-    producer.send(topic='virt2_0', value=json.dumps({'value': 1}), partition=0, key='k1', timestamp_ms=1577836801000)
-    producer.send(topic='virt2_0', value=json.dumps({'value': 2}), partition=0, key='k2', timestamp_ms=1577836802000)
+    producer.send(topic='virt2_0', value=json.dumps({'value': 1}), partition=0, key='k1', timestamp_ms=1577836801001, headers=[('content-encoding', b'base64')])
+    producer.send(topic='virt2_0', value=json.dumps({'value': 2}), partition=0, key='k2', timestamp_ms=1577836802002, headers=[('empty_value', ''),('', 'empty name'), ('',''), ('repetition', '1'), ('repetition', '2')])
     producer.flush()
     time.sleep(1)
 
-    producer.send(topic='virt2_0', value=json.dumps({'value': 3}), partition=1, key='k3', timestamp_ms=1577836803000)
-    producer.send(topic='virt2_0', value=json.dumps({'value': 4}), partition=1, key='k4', timestamp_ms=1577836804000)
+    producer.send(topic='virt2_0', value=json.dumps({'value': 3}), partition=1, key='k3', timestamp_ms=1577836803003, headers=[('b', 'b'),('a', 'a')])
+    producer.send(topic='virt2_0', value=json.dumps({'value': 4}), partition=1, key='k4', timestamp_ms=1577836804004, headers=[('a', 'a'),('b', 'b')])
     producer.flush()
     time.sleep(1)
 
-    producer.send(topic='virt2_1', value=json.dumps({'value': 5}), partition=0, key='k5', timestamp_ms=1577836805000)
-    producer.send(topic='virt2_1', value=json.dumps({'value': 6}), partition=0, key='k6', timestamp_ms=1577836806000)
+    producer.send(topic='virt2_1', value=json.dumps({'value': 5}), partition=0, key='k5', timestamp_ms=1577836805005)
+    producer.send(topic='virt2_1', value=json.dumps({'value': 6}), partition=0, key='k6', timestamp_ms=1577836806006)
     producer.flush()
     time.sleep(1)
 
-    producer.send(topic='virt2_1', value=json.dumps({'value': 7}), partition=1, key='k7', timestamp_ms=1577836807000)
-    producer.send(topic='virt2_1', value=json.dumps({'value': 8}), partition=1, key='k8', timestamp_ms=1577836808000)
+    producer.send(topic='virt2_1', value=json.dumps({'value': 7}), partition=1, key='k7', timestamp_ms=1577836807007)
+    producer.send(topic='virt2_1', value=json.dumps({'value': 8}), partition=1, key='k8', timestamp_ms=1577836808008)
     producer.flush()
 
     time.sleep(10)
 
+    members = describe_consumer_group('virt2')
+    #pprint.pprint(members)
+    members[0]['client_id'] = u'ClickHouse-instance-test-kafka-0'
+    members[1]['client_id'] = u'ClickHouse-instance-test-kafka-1'
+
     result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
 
     expected = '''\
-1	k1	virt2_0	0	0	1577836801
-2	k2	virt2_0	0	1	1577836802
-3	k3	virt2_0	1	0	1577836803
-4	k4	virt2_0	1	1	1577836804
-5	k5	virt2_1	0	0	1577836805
-6	k6	virt2_1	0	1	1577836806
-7	k7	virt2_1	1	0	1577836807
-8	k8	virt2_1	1	1	1577836808
+1	k1	virt2_0	0	0	1577836801	1577836801001	['content-encoding']	['base64']
+2	k2	virt2_0	0	1	1577836802	1577836802002	['empty_value','','','repetition','repetition']	['','empty name','','1','2']
+3	k3	virt2_0	1	0	1577836803	1577836803003	['b','a']	['b','a']
+4	k4	virt2_0	1	1	1577836804	1577836804004	['a','b']	['a','b']
+5	k5	virt2_1	0	0	1577836805	1577836805005	[]	[]
+6	k6	virt2_1	0	1	1577836806	1577836806006	[]	[]
+7	k7	virt2_1	1	0	1577836807	1577836807007	[]	[]
+8	k8	virt2_1	1	1	1577836808	1577836808008	[]	[]
 '''
 
     assert TSV(result) == TSV(expected)
@@ -1475,6 +1593,7 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
 
     # as it's a bit tricky to hit the proper moment - let's check in logs if we did it correctly
     assert instance.contains_in_log("Local: Waiting for coordinator")
+    assert instance.contains_in_log("All commit attempts failed")
 
     result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.view')
     print(result)
@@ -1484,7 +1603,10 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
         DROP TABLE test.view;
     ''')
 
-    assert TSV(result) == TSV('22\t22\t22')
+    # After https://github.com/edenhill/librdkafka/issues/2631
+    # timeout triggers rebalance, making further commits to the topic after getting back online
+    # impossible. So we have a duplicate in that scenario, but we report that situation properly.
+    assert TSV(result) == TSV('42\t22\t22')
 
 
 
