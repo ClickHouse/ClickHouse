@@ -2,8 +2,37 @@
 #include <DataTypes/DataTypeFactory.h>
 
 
+#include <Parsers/IAST.h>
+#include <Parsers/ASTLiteral.h>
+
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+template <typename T>
+static DataTypePtr createNumericDataType(const ASTPtr & arguments)
+{
+    if (arguments)
+    {
+        if (std::is_integral_v<T>)
+        {
+            if (arguments->children.size() > 1)
+                throw Exception(String(TypeName<T>::get()) + " data type family must not have more than one argument - display width", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        }
+        else
+        {
+            if (arguments->children.size() > 2)
+                throw Exception(String(TypeName<T>::get()) + " data type family must not have more than two arguments - total number of digits and number of digits following the decimal point", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        }
+    }
+    return std::make_shared<DataTypeNumber<T>>();
+}
+
 
 void registerDataTypeNumbers(DataTypeFactory & factory)
 {
@@ -12,13 +41,12 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerSimpleDataType("UInt32", [] { return DataTypePtr(std::make_shared<DataTypeUInt32>()); });
     factory.registerSimpleDataType("UInt64", [] { return DataTypePtr(std::make_shared<DataTypeUInt64>()); });
 
-    factory.registerSimpleDataType("Int8", [] { return DataTypePtr(std::make_shared<DataTypeInt8>()); });
-    factory.registerSimpleDataType("Int16", [] { return DataTypePtr(std::make_shared<DataTypeInt16>()); });
-    factory.registerSimpleDataType("Int32", [] { return DataTypePtr(std::make_shared<DataTypeInt32>()); });
-    factory.registerSimpleDataType("Int64", [] { return DataTypePtr(std::make_shared<DataTypeInt64>()); });
-
-    factory.registerSimpleDataType("Float32", [] { return DataTypePtr(std::make_shared<DataTypeFloat32>()); });
-    factory.registerSimpleDataType("Float64", [] { return DataTypePtr(std::make_shared<DataTypeFloat64>()); });
+    factory.registerDataType("Int8", createNumericDataType<Int8>);
+    factory.registerDataType("Int16", createNumericDataType<Int16>);
+    factory.registerDataType("Int32", createNumericDataType<Int32>);
+    factory.registerDataType("Int64", createNumericDataType<Int64>);
+    factory.registerDataType("Float32", createNumericDataType<Float32>);
+    factory.registerDataType("Float64", createNumericDataType<Float64>);
 
     /// These synonyms are added for compatibility.
 
