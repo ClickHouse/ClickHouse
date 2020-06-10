@@ -23,12 +23,14 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
+#include <Interpreters/DuplicateDistinct.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/queryToString.h>
 
@@ -96,6 +98,103 @@ using CustomizeGlobalInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunc
 
 char globalNotIn[] = "globalnotin";
 using CustomizeGlobalNotInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<globalNotIn>>, true>;
+
+
+/// Checks if SELECT has stateful functions
+class ASTFunctionStatefulData
+{
+public:
+    using TypeToVisit = ASTFunction;
+
+    const Context & context;
+    bool & is_stateful;
+    void visit(ASTFunction & ast_function, ASTPtr &)
+    {
+        if (ast_function.name == "any" || ast_function.name == "groupArray")
+        {
+            is_stateful = true;
+            return;
+        }
+
+        const auto & function = FunctionFactory::instance().tryGet(ast_function.name, context);
+
+        if (function && function->isStateful())
+        {
+            is_stateful = true;
+            return;
+        }
+    }
+};
+
+using ASTFunctionStatefulMatcher = OneTypeMatcher<ASTFunctionStatefulData>;
+using ASTFunctionStatefulVisitor = InDepthNodeVisitor<ASTFunctionStatefulMatcher, true>;
+
+
+/// Erases unnecessary ORDER BY from subquery
+class DuplicateOrderByFromSubqueriesData
+{
+public:
+    using TypeToVisit = ASTSelectQuery;
+
+    bool done = false;
+
+    void visit(ASTSelectQuery & select_query, ASTPtr &)
+    {
+        if (done)
+            return;
+
+        if (select_query.orderBy() && !select_query.limitBy() && !select_query.limitByOffset() &&
+            !select_query.limitByLength() && !select_query.limitLength() && !select_query.limitOffset())
+        {
+            select_query.setExpression(ASTSelectQuery::Expression::ORDER_BY, nullptr);
+        }
+        done = true;
+    }
+};
+
+using DuplicateOrderByFromSubqueriesMatcher = OneTypeMatcher<DuplicateOrderByFromSubqueriesData>;
+using DuplicateOrderByFromSubqueriesVisitor = InDepthNodeVisitor<DuplicateOrderByFromSubqueriesMatcher, true>;
+
+
+/// Finds SELECTs that can be optimized
+class DuplicateOrderByData
+{
+public:
+    using TypeToVisit = ASTSelectQuery;
+
+    const Context & context;
+    bool done = false;
+
+    void visit(ASTSelectQuery & select_query, ASTPtr &)
+    {
+        if (done)
+            return;
+
+        for (const auto & elem : select_query.children)
+        {
+            if (elem->as<ASTSetQuery>() && !elem->as<ASTSetQuery>()->is_standalone)
+                return;
+        }
+
+        if (select_query.orderBy() || select_query.groupBy())
+        {
+            for (auto & elem : select_query.children)
+            {
+                bool is_stateful = false;
+                ASTFunctionStatefulVisitor::Data data{context, is_stateful};
+                ASTFunctionStatefulVisitor(data).visit(elem);
+                if (is_stateful)
+                    return;
+            }
+
+            DuplicateOrderByFromSubqueriesVisitor::Data data{false};
+            DuplicateOrderByFromSubqueriesVisitor(data).visit(select_query.refTables());
+        }
+    }
+};
+
+using DuplicateOrderByMatcher = OneTypeMatcher<DuplicateOrderByData>;
+using DuplicateOrderByVisitor = InDepthNodeVisitor<DuplicateOrderByMatcher, true>;
 
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
@@ -368,6 +467,18 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
 
     if (unique_elems.size() < elems.size())
         elems = std::move(unique_elems);
+}
+
+/// Optimize duplicate ORDER BY and DISTINCT
+void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, bool optimize_duplicate_order_by_and_distinct, const Context & context)
+{
+    if (optimize_duplicate_order_by_and_distinct)
+    {
+        DuplicateOrderByVisitor::Data order_by_data{context, false};
+        DuplicateOrderByVisitor(order_by_data).visit(query);
+        DuplicateDistinctVisitor::Data distinct_data{};
+        DuplicateDistinctVisitor(distinct_data).visit(query);
+    }
 }
 
 /// Remove duplicate items from LIMIT BY.
@@ -830,6 +941,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         /// Remove duplicate items from ORDER BY.
         optimizeOrderBy(select_query);
+
+        /// Remove duplicate ORDER BY and DISTINCT from subqueries.
+        optimizeDuplicateOrderByAndDistinct(query, settings.optimize_duplicate_order_by_and_distinct, context);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
