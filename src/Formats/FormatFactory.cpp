@@ -150,6 +150,7 @@ InputFormatPtr FormatFactory::getInput(
     if (!getCreators(name).input_processor_creator)
     {
 
+
 //        const auto & input_getter = getCreators(name).input_creator;
 //        if (!input_getter)
 //            throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
@@ -194,26 +195,14 @@ InputFormatPtr FormatFactory::getInput(
         row_input_format_params.max_execution_time = settings.max_execution_time;
         row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
+        /// Const reference is copied to lambda.
+        auto parser_creator = [input_getter, sample, row_input_format_params, format_settings]
+            (ReadBuffer & input) -> InputFormatPtr
+            { return input_getter(input, sample, row_input_format_params, format_settings); };
 
-        auto parser_creator = std::bind(
-            input_getter.target<InputProcessorCreatorFunc>(),
-            std::placeholders::_1, sample, row_input_format_params, format_settings);
 
-//        auto anime = parser_creator(buf)
-        auto boruto = input_getter(buf, sample, row_input_format_params, format_settings);
-//        auto naruto = input_getter.target<InputProcessorCreatorFunc>()(buf, sample, row_input_format_params, format_settings);
-
-        auto naruto =
-            [sample, row_input_format_params, format_settings, input_getter]
-            (ReadBuffer & input)
-            {return input_getter(input, sample, row_input_format_params, format_settings);};
-
-        auto aaa = naruto(buf);
-
-        ParallelParsingBlockInputFormat::Params params{buf, sample,
-            naruto, file_segmentation_engine,
-            settings.max_threads,
-            settings.min_chunk_bytes_for_parallel_parsing};
+        ParallelParsingBlockInputFormat::Params params{
+            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing};
         return std::make_shared<ParallelParsingBlockInputFormat>(params);
     }
 

@@ -60,7 +60,7 @@
 #include <typeinfo>
 #include <typeindex>
 #include <unordered_set>
-
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 
 namespace ProfileEvents
 {
@@ -2904,8 +2904,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
-        auto format = FormatFactory::instance().getInput("Values", buf, partition_key_sample, context, context.getSettingsRef().max_block_size);
-        auto input_stream = std::make_shared<InputStreamFromInputFormat>(format);
+        auto input_format = FormatFactory::instance().getInput("Values", buf, getPartitionKey().sample_block, context, context.getSettingsRef().max_block_size);
+        auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
 
         auto block = input_stream->read();
         if (!block || !block.rows())

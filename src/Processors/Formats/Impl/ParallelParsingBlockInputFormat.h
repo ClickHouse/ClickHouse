@@ -10,6 +10,7 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Interpreters/Context.h>
+#include "IReadBufferPrepareAndEndUp.h"
 
 namespace DB
 {
@@ -61,6 +62,7 @@ public:
         Block header;
         InternalParserCreator internal_parser_creator;
         FormatFactory::FileSegmentationEngine file_segmentation_engine;
+        String format_name;
         size_t max_threads;
         size_t min_chunk_bytes;
     };
@@ -69,6 +71,7 @@ public:
         : IInputFormat(std::move(params.header), params.in)
         , internal_parser_creator(params.internal_parser_creator)
         , file_segmentation_engine(params.file_segmentation_engine)
+        , format_name(params.format_name)
         , min_chunk_bytes(params.min_chunk_bytes)
         // Subtract one thread that we use for segmentation and one for
         // reading. After that, must have at least two threads left for
@@ -79,6 +82,10 @@ public:
         // couple more units so that the segmentation thread doesn't spuriously
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
+
+        /// To skip '[' and ']'.
+        if (format_name == "JSONEachRow")
+            prepare_and_end_up_ptr = std::make_shared<JSONEachRowPrepareAndEndUp>();
 
         segmentator_thread = ThreadFromGlobalPool([this] { segmentatorThreadFunction(); });
     }
@@ -165,6 +172,7 @@ private:
     const InternalParserCreator internal_parser_creator;
     // Function to segment the file. Then "parsers" will parse that segments.
     FormatFactory::FileSegmentationEngine file_segmentation_engine;
+    const String format_name;
     const size_t min_chunk_bytes;
 
     BlockMissingValues last_block_missing_values;
@@ -178,7 +186,7 @@ private:
     std::condition_variable reader_condvar;
     std::condition_variable segmentator_condvar;
 
-    std::atomic<bool> parsing_finished;
+    std::atomic<bool> parsing_finished{false};
 
     // There are multiple "parsers", that's why we use thread pool.
     ThreadPool pool;
@@ -254,6 +262,12 @@ private:
     // readImpl() is called from the main thread, so the exception handling
     // is different.
     void onBackgroundException();
+
+    IReadBufferPrepareAndEndUpPtr prepare_and_end_up_ptr;
+
+    void prepareReadBuffer(ReadBuffer & buffer);
+
+    void endUpReadBuffer(ReadBuffer & buffer);
 };
 
 }

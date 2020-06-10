@@ -303,31 +303,12 @@ void JSONEachRowRowInputFormat::resetParser()
 
 void JSONEachRowRowInputFormat::readPrefix()
 {
-    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(in);
-
-    skipWhitespaceIfAny(in);
-    if (!in.eof() && *in.position() == '[')
-    {
-        ++in.position();
-        data_in_square_brackets = true;
-    }
+    prepare_and_end_up.prepareReadBuffer(in);
 }
 
 void JSONEachRowRowInputFormat::readSuffix()
 {
-    skipWhitespaceIfAny(in);
-    if (data_in_square_brackets)
-    {
-        assertChar(']', in);
-        skipWhitespaceIfAny(in);
-    }
-    if (!in.eof() && *in.position() == ';')
-    {
-        ++in.position();
-        skipWhitespaceIfAny(in);
-    }
-    assertEOF(in);
+    prepare_and_end_up.endUpReadBuffer(in);
 }
 
 

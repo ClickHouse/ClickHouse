@@ -464,9 +464,6 @@ void PipelineExecutor::finalizeExecution()
 
     if (!all_processors_finished)
         throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
-
-    WriteBufferFromOStream out(std::cout);
-    printPipeline(processors, out);
 }
 
 void PipelineExecutor::wakeUpExecutor(size_t thread_num)
