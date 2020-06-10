@@ -44,77 +44,37 @@ public:
         return std::make_shared<DataTypeTuple>(DataTypes{element, element});
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
         const ColumnPtr & column = block.getByPosition(arguments[0]).column;
-        const ColumnConst * col_const = typeid_cast<const ColumnConst *>(&*column);
         using ResultType = typename Impl::ResultType;
         if constexpr (is_simhash)
         {
-            if (col_const)
-            {
-                ResultType res{};
-                const String & str_data = col_const->getValue<String>();
-                if (str_data.size() > Impl::max_string_size)
-                {
-                    throw Exception(
-                        "String size is too big for function " + getName() + ". Should be at most " + std::to_string(Impl::max_string_size),
-                        ErrorCodes::TOO_LARGE_STRING_SIZE);
-                }
-                Impl::constant(str_data, res);
-                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(1, toField(res));
-            }
-            else
-            {
-                // non const string
-                auto col_res = ColumnVector<ResultType>::create();
-                typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
-                vec_res.resize(column->size());
-                const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
-                Impl::vector(col_str_vector->getChars(), col_str_vector->getOffsets(), vec_res);
-                block.getByPosition(result).column = std::move(col_res);
-            }
+            // non const string, const case is handled by useDefaultImplementationForConstants.
+            auto col_res = ColumnVector<ResultType>::create();
+            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
+            vec_res.resize(column->size());
+            const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
+            Impl::apply(col_str_vector->getChars(), col_str_vector->getOffsets(), vec_res);
+            block.getByPosition(result).column = std::move(col_res);
         }
         else // Min hash
         {
-            if (col_const)
-            {
-                ResultType h1, h2;
-                const String & str_data = col_const->getValue<String>();
-                if (str_data.size() > Impl::max_string_size)
-                {
-                    throw Exception(
-                        "String size is too big for function " + getName() + ". Should be at most " + std::to_string(Impl::max_string_size),
-                        ErrorCodes::TOO_LARGE_STRING_SIZE);
-                }
-                Impl::constant(str_data, h1, h2);
-                auto h1_col = ColumnVector<ResultType>::create(1);
-                auto h2_col = ColumnVector<ResultType>::create(1);
-                typename ColumnVector<ResultType>::Container & h1_data = h1_col->getData();
-                typename ColumnVector<ResultType>::Container & h2_data = h2_col->getData();
-                h1_data[0] = h1;
-                h2_data[0] = h2;
-                MutableColumns tuple_columns;
-                tuple_columns.emplace_back(std::move(h1_col));
-                tuple_columns.emplace_back(std::move(h2_col));
-                block.getByPosition(result).column = ColumnTuple::create(std::move(tuple_columns));
-            }
-            else
-            {
-                // non const string
-                auto col_h1 = ColumnVector<ResultType>::create();
-                auto col_h2 = ColumnVector<ResultType>::create();
-                typename ColumnVector<ResultType>::Container & vec_h1 = col_h1->getData();
-                typename ColumnVector<ResultType>::Container & vec_h2 = col_h2->getData();
-                vec_h1.resize(column->size());
-                vec_h2.resize(column->size());
-                const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
-                Impl::vector(col_str_vector->getChars(), col_str_vector->getOffsets(), vec_h1, vec_h2);
-                MutableColumns tuple_columns;
-                tuple_columns.emplace_back(std::move(col_h1));
-                tuple_columns.emplace_back(std::move(col_h2));
-                block.getByPosition(result).column = ColumnTuple::create(std::move(tuple_columns));
-            }
+            // non const string
+            auto col_h1 = ColumnVector<ResultType>::create();
+            auto col_h2 = ColumnVector<ResultType>::create();
+            typename ColumnVector<ResultType>::Container & vec_h1 = col_h1->getData();
+            typename ColumnVector<ResultType>::Container & vec_h2 = col_h2->getData();
+            vec_h1.resize(column->size());
+            vec_h2.resize(column->size());
+            const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
+            Impl::apply(col_str_vector->getChars(), col_str_vector->getOffsets(), vec_h1, vec_h2);
+            MutableColumns tuple_columns;
+            tuple_columns.emplace_back(std::move(col_h1));
+            tuple_columns.emplace_back(std::move(col_h2));
+            block.getByPosition(result).column = ColumnTuple::create(std::move(tuple_columns));
         }
     }
 };
