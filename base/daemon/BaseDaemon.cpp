@@ -223,7 +223,6 @@ public:
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
                 DB::readBinary(query_id, in);
-                stack_trace.resetFrames();
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
