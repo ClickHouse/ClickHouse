@@ -435,7 +435,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
-    std::unique_lock prepare_lock(prepare_mutex);
+    std::lock_guard prepare_lock(prepare_mutex);
 
     String description = table_id.getNameForLogs();
 
