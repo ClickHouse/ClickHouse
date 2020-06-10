@@ -344,91 +344,77 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
 }
 
 /// recursive traversal and check for optimizeGroupByFunctionKeys
-int optimizeGroupByFunctionKeysChecks(const ASTPtr& child, std::unordered_map<String, int> * checks)
+bool KeepFunction(const ASTPtr& node, std::unordered_set<String> * should_keep)
 {
     /// check if function has no arguments
-    if ((child->children).empty())
-    {
-        return 1;
-    }
-    for (auto & child_key : child->children)
+    if ((node->children).empty())
+        return true;
+
+    for (auto & child_key : node->children)
     {
         if (!child_key->as<ASTFunction>())
         {
-            if ((*checks).find(child_key->getColumnName()) == (*checks).end())
+            if ((*should_keep).find(child_key->getColumnName()) == (*should_keep).end())
             {
                 /// if variable of a function is not in GROUP BY keys, this function should not be deleted
-                return 1;
+                return true;
             }
         }
         else
         {
             /// if function is not in keys, check for its variables
-            if ((*checks).find(child_key->getColumnName()) == (*checks).end())
+            if ((*should_keep).find(child_key->getColumnName()) == (*should_keep).end())
             {
-                return optimizeGroupByFunctionKeysChecks(child_key->as<ASTFunction>()->arguments, checks);
+                return KeepFunction(child_key->as<ASTFunction>()->arguments, should_keep);
             }
         }
     }
-    return 0;
+    return false;
 }
 
 ///eliminate functions of other GROUP BY keys
 void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 {
     if (!select_query->groupBy())
-    {
         return;
-    }
 
-    auto & group_keys = select_query->groupBy()->children;
     auto grp_by = select_query->groupBy();
-
-    ///check if optimization is not needed
-    int opt = 0;
-    for (auto & group_key : group_keys)
-    {
-        if (group_key->as<ASTFunction>())
-        {
-            opt = 1;
-            break;
-        }
-    }
-    if (opt == 0)
-    {
-        return;
-    }
+    auto & group_keys = grp_by->children;
 
     ASTs modified; ///result
-    std::unordered_map<String, int> checks; ///map of pairs <structure of key (variable/function), int>
+    std::unordered_set<String> should_keep; ///map of pairs <structure of key (variable/function), int>
 
+    ///check if optimization is needed while building set
+    bool need_optimization = false;
     ///filling map with pairs <key name, 1>
     for (auto & group_key : group_keys)
     {
-        checks[group_key->getColumnName()] = 1;
+        if (!need_optimization && group_key->as<ASTFunction>())
+            need_optimization = true;
+
+        should_keep.insert(group_key->getColumnName());
     }
-    size_t modified_size = group_keys.size();
+    if (!need_optimization)
+        return;
+
     for (auto & group_key : group_keys)
     {
         if (group_key->as<ASTFunction>())
         {
-            if (optimizeGroupByFunctionKeysChecks(group_key->as<ASTFunction>()->arguments, &checks) == 0)
+            if (!KeepFunction(group_key->as<ASTFunction>()->arguments, &should_keep))
             {
                 ///if function of a key should be deleted, mark it as 0 in checks
-                checks[group_key->getColumnName()] = 0;
-                --modified_size;
+                should_keep.erase(group_key->getColumnName());
             }
         }
     }
 
-    modified.reserve(modified_size);
+    modified.reserve(group_keys.size());
     ///filling the result
     for (auto & group_key : group_keys)
     {
-        if (checks[group_key->getColumnName()] == 1)
-        {
+        if (should_keep.find(group_key->getColumnName()) != should_keep.end())
             modified.push_back(group_key);
-        }
     }
 
     ///modifying the input
