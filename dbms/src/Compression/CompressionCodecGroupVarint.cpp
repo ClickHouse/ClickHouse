@@ -172,7 +172,7 @@ namespace DB {
                 }
             }
         }
-    }g
+    }
     void registerCodecGroupVarint(CompressionCodecFactory & factory)
     {
         factory.registerSimpleCompressionCodec("GroupVarint", static_cast<char>(CompressionMethodByte::NONE), [&] ()
