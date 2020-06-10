@@ -48,6 +48,7 @@ public:
     ~AccessControlManager();
 
     void setLocalDirectory(const String & directory);
+    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
     void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config);
     void setDefaultProfileName(const String & default_profile_name);
 
