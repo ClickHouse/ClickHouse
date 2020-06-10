@@ -347,7 +347,7 @@ static std::string toStringImpl(const void * const * frame_pointers, size_t offs
 {
     std::stringstream out;
     StackTrace::Frames frames;
-    StackTrace::symbolize(frame_pointers.data(), offset, size, frames);
+    StackTrace::symbolize(frame_pointers, offset, size, frames);
     toStringEveryLineImpl(frames, offset, size, [&](const std::string & str) { out << str << '\n'; });
     return out.str();
 }
