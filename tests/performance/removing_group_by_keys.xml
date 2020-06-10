@@ -1,0 +1,22 @@
+<test>
+    <preconditions>
+        <table_exists>hits_10m_single</table_exists>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+    <substitutions>
+        <substitution>
+            <name>table</name>
+            <values>
+                <value>hits_10m_single</value>
+                <value>hits_100m_single</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT avg(length(URL)) as x from hits_100m_single GROUP BY URL, domain(URL)</query>
+    <query>SELECT avg(length(URL)) FROM hits_100m_single GROUP BY URL, domain(URL), WatchID, CounterID, WatchID - CounterID</query>
+    <query>SELECT avg(length(URL)) FROM {table} GROUP BY URL, domain(URL)</query>
+    <query>SELECT avg(length(URL)) FROM hits_10m_single GROUP BY URL, WatchID, CounterID</query>
+    <query>SELECT avg(length(URL)) FROM {table} GROUP BY URL, domain(URL), WatchID, CounterID</query>
+</test>
