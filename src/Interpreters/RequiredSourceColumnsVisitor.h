@@ -26,6 +26,8 @@ public:
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
     static void visit(const ASTPtr & ast, Data & data);
 
+    static std::vector<String> extractNamesFromLambda(const ASTFunction & node);
+
 private:
     static void visit(const ASTIdentifier & node, const ASTPtr &, Data & data);
     static void visit(const ASTFunction & node, const ASTPtr &, Data & data);
