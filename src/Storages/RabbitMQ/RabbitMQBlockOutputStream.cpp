@@ -37,17 +37,14 @@ void RabbitMQBlockOutputStream::writePrefix()
             {
                 buffer->countRow();
             });
+
+    buffer->startEventLoop();
 }
 
 
 void RabbitMQBlockOutputStream::write(const Block & block)
 {
     child->write(block);
-
-    if (buffer)
-        buffer->flush();
-
-    storage.pingConnection();
 }
 
 

@@ -35,12 +35,11 @@ public:
     ~WriteBufferToRabbitMQProducer() override;
 
     void countRow();
-    void flush();
+    void startEventLoop();
 
 private:
     void nextImpl() override;
     void checkExchange();
-    void startEventLoop();
 
     std::pair<String, String> & login_password;
     const String routing_key;
