@@ -291,7 +291,6 @@ public:
 
     Chunk generate() override
     {
-        std::cout << StackTrace().toString() << std::endl;
         while (!finished_generate)
         {
             /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
