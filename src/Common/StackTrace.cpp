@@ -190,7 +190,7 @@ static void * getCallerAddress(const ucontext_t & context)
 #endif
 }
 
-static void symbolize(const void * const * frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames)
+void StackTrace::symbolize(const void * const * frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames)
 {
 #if defined(__ELF__) && !defined(__FreeBSD__) && !defined(ARCADIA_BUILD)
 
@@ -347,7 +347,7 @@ static std::string toStringImpl(const void * const * frame_pointers, size_t offs
 {
     std::stringstream out;
     StackTrace::Frames frames;
-    symbolize(frame_pointers, offset, size, frames);
+    StackTrace::symbolize(frame_pointers.data(), offset, size, frames);
     toStringEveryLineImpl(frames, offset, size, [&](const std::string & str) { out << str << '\n'; });
     return out.str();
 }
@@ -355,7 +355,7 @@ static std::string toStringImpl(const void * const * frame_pointers, size_t offs
 void StackTrace::toStringEveryLine(std::function<void(const std::string &)> callback) const
 {
     Frames frames;
-    symbolize(frame_pointers.data(), offset, size, frames);
+    StackTrace::symbolize(frame_pointers.data(), offset, size, frames);
     toStringEveryLineImpl(frames, offset, size, std::move(callback));
 }
 

@@ -146,9 +146,11 @@ void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & c
                 offset = 1;
             }
             char instruction_addr[100];
+            StackTrace::Frames frames;
+            StackTrace::symbolize(stack_trace.getFramePointers().data(), offset, size, frames);
             for (size_t i = stack_size - 1; i >= offset; --i)
             {
-                const StackTrace::Frame & current_frame = stack_trace.getFrames().value()[i];
+                const StackTrace::Frame & current_frame = frames[i];
                 sentry_value_t frame = sentry_value_new_object();
                 UInt64 frame_ptr = reinterpret_cast<UInt64>(current_frame.virtual_addr);
                 std::snprintf(instruction_addr, sizeof(instruction_addr), "0x%" PRIu64 "x", frame_ptr);
