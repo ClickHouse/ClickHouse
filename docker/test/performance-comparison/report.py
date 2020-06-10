@@ -207,7 +207,8 @@ if args.report == 'main':
             'p&nbsp;<&nbsp;0.001 threshold',                   # 3
             # Failed                                           # 4
             'Test',                                            # 5
-            'Query',                                           # 6
+            '#',                                               # 6
+            'Query',                                           # 7
             ]
 
         print(tableHeader(columns))
@@ -248,7 +249,8 @@ if args.report == 'main':
             'p&nbsp;<&nbsp;0.001 threshold', #3
             # Failed #4
             'Test', #5
-            'Query' #6
+            '#',    #6
+            'Query' #7
         ]
 
         print(tableStart('Unstable queries'))
@@ -272,9 +274,9 @@ if args.report == 'main':
     skipped_tests_rows = tsvRows('analyze/skipped-tests.tsv')
     printSimpleTable('Skipped tests', ['Test', 'Reason'], skipped_tests_rows)
 
-    printSimpleTable('Tests with most unstable queries',
-        ['Test', 'Unstable', 'Changed perf', 'Total not OK'],
-        tsvRows('report/bad-tests.tsv'))
+    printSimpleTable('Test performance changes',
+        ['Test', 'Queries', 'Unstable', 'Changed perf', 'Total not OK', 'Avg relative time diff'],
+        tsvRows('report/test-perf-changes.tsv'))
 
     def print_test_times():
         global slow_average_tests
@@ -391,7 +393,8 @@ elif args.report == 'all-queries':
             'Times speedup / slowdown',                 #5
             'p&nbsp;<&nbsp;0.001 threshold',          #6
             'Test',                                   #7
-            'Query',                                  #8
+            '#',                                      #8
+            'Query',                                  #9
             ]
 
         print(tableStart('All query times'))
