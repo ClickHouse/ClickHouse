@@ -1,0 +1,29 @@
+<nav id="top-nav" class="navbar navbar-expand-md mb-3">
+    <div class="container justify-content-between">
+        <a class="d-block navbar-brand mr-3 text-reset" href="/">
+            <img id="docs-logo-icon" src="/images/logo.svg" alt="ClickHouse logo" title="ClickHouse logo"/>
+        </a>
+        <div class="w-100 navbar-text text-left d-none d-md-block">
+            <h1 class="h3 m-0 p-0 d-inline">
+                <a href="/blog/{{ language }}/" class="text-reset text-decoration-none">
+                    {{ config.site_name }}
+                </a>
+            </h1>
+        </div>
+
+        <div class="d-none d-md-block">
+            <ul class="navbar-nav ml-auto mt-2 mt-lg-0 justify-content-end">
+                <li class="nav-item">
+                     <a class="nav-link text-reset" href="/docs/{{ language }}/">
+                        {{ _('Documentation') }}
+                     </a>
+                </li>
+                <li class="nav-item">
+                     <a class="nav-link text-reset" href="https://github.com/ClickHouse/ClickHouse" rel="external nofollow noreferrer">
+                        GitHub
+                     </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
