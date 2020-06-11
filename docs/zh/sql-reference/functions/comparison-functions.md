@@ -1,3 +1,8 @@
+---
+toc_priority: 36
+toc_title: 比较函数
+---
+
 # 比较函数 {#bi-jiao-han-shu}
 
 比较函数始终返回0或1（UInt8）。
@@ -15,18 +20,16 @@
 
 字符串按字节进行比较。较短的字符串小于以其开头并且至少包含一个字符的所有字符串。
 
-注意。直到1.1.54134版本，有符号和无符号数字的比较方式与C++相同。换句话说，在SELECT 9223372036854775807 ＆gt; -1 等情况下，您可能会得到错误的结果。 此行为在版本1.1.54134中已更改，现在在数学上是正确的。
+## 等于，a=b和a==b 运算符 {#equals-a-b-and-a-b-operator}
 
-## 等于，a=b和a==b运算符 {#equals-a-b-and-a-b-operator}
+## 不等于，a!=b和a<>b 运算符 {#notequals-a-operator-b-and-a-b}
 
-## notEquals,a! 运算符=b和a `<>` b {#notequals-a-operator-b-and-a-b}
+## 少, < 运算符 {#less-operator}
 
-## 少, `< operator` {#less-operator}
+## 大于, > 运算符 {#greater-operator}
 
-## 更大, `> operator` {#greater-operator}
+## 小于等于, <= 运算符 {#lessorequals-operator}
 
-## 出租等级, `<= operator` {#lessorequals-operator}
-
-## 伟大的等级, `>= operator` {#greaterorequals-operator}
+## 大于等于, >= 运算符 {#greaterorequals-operator}
 
 [来源文章](https://clickhouse.tech/docs/en/query_language/functions/comparison_functions/) <!--hide-->

@@ -29,7 +29,7 @@ To reduce network traffic, we recommend running `clickhouse-copier` on the same 
 The utility should be run manually:
 
 ``` bash
-$ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
+$ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
 ```
 
 Parameters:
