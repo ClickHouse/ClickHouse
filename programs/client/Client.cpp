@@ -1925,7 +1925,6 @@ public:
                 if (exit_code == 0)
                     exit_code = 255;
                 exit(exit_code);
-
             }
         }
 
