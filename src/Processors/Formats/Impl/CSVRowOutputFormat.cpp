@@ -11,6 +11,7 @@ namespace DB
 CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_, params_), with_names(with_names_), format_settings(format_settings_)
 {
+    std::cout << StackTrace().toString() << std::endl;
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
     data_types.resize(columns);

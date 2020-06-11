@@ -8,7 +8,6 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Interpreters/Context.h>
 #include "IReadBufferPrepareAndEndUp.h"
 
@@ -50,7 +49,7 @@ class Context;
  *  4) repeat until it encounters unit that is marked as "past_the_end"
  * All threads must also check for cancel/eof/exception flags.
  */
-class ParallelParsingBlockInputFormat : public IInputFormat
+class ParallelParsingInputFormat : public IInputFormat
 {
 public:
   /* Used to recreate parser on every new data piece. */
@@ -67,7 +66,7 @@ public:
         size_t min_chunk_bytes;
     };
 
-    explicit ParallelParsingBlockInputFormat(Params params)
+    explicit ParallelParsingInputFormat(Params params)
         : IInputFormat(std::move(params.header), params.in)
         , internal_parser_creator(params.internal_parser_creator)
         , file_segmentation_engine(params.file_segmentation_engine)
@@ -83,11 +82,14 @@ public:
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
 
-        /// To skip '[' and ']'.
-        if (format_name == "JSONEachRow")
-            prepare_and_end_up_ptr = std::make_shared<JSONEachRowPrepareAndEndUp>();
+        initializePrepareEndUpMap();
 
         segmentator_thread = ThreadFromGlobalPool([this] { segmentatorThreadFunction(); });
+    }
+
+    ~ParallelParsingInputFormat() override
+    {
+        finishAndWait();
     }
 
     void resetParser() override final
@@ -263,7 +265,14 @@ private:
     // is different.
     void onBackgroundException();
 
-    IReadBufferPrepareAndEndUpPtr prepare_and_end_up_ptr;
+    /// To store objects which will prepare and end up ReadBuffer for each format.
+    std::unordered_map<String, IReadBufferPrepareAndEndUpPtr> prepare_and_end_up_map;
+
+    void initializePrepareEndUpMap()
+    {
+        /// To skip '[' and ']'.
+        prepare_and_end_up_map.insert({"JSONEachRow", std::make_shared<JSONEachRowPrepareAndEndUp>()});
+    }
 
     void prepareReadBuffer(ReadBuffer & buffer);
 

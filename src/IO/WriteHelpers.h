@@ -557,6 +557,7 @@ void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf);
 template <char quote = '"'>
 void writeCSVString(const char * begin, const char * end, WriteBuffer & buf)
 {
+    std::cout << StackTrace().toString() << std::endl;
     writeChar(quote, buf);
 
     const char * pos = begin;

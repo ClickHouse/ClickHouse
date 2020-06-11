@@ -35,7 +35,7 @@ private:
         /// tear down the entire WriteBuffer thing and implement it again,
         /// properly.
         size_t continuation_size = std::max(size_t(1),
-            std::max(count(), arena.remainingSpaceInCurrentChunk()));
+            std::max(count(), arena.remainingSpaceInCurrentMemoryChunk()));
 
         /// allocContinue method will possibly move memory region to new place and modify "begin" pointer.
 

@@ -16,7 +16,7 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
 #include <Processors/Formats/Impl/NativeFormat.cpp>
-#include <Processors/Formats/Impl/ParallelParsingBlockInputFormat.h>
+#include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <Poco/URI.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -201,9 +201,9 @@ InputFormatPtr FormatFactory::getInput(
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
 
-        ParallelParsingBlockInputFormat::Params params{
+        ParallelParsingInputFormat::Params params{
             buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing};
-        return std::make_shared<ParallelParsingBlockInputFormat>(params);
+        return std::make_shared<ParallelParsingInputFormat>(params);
     }
 
 

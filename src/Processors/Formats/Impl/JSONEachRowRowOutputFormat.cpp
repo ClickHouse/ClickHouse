@@ -16,6 +16,7 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
         : IRowOutputFormat(header_, out_, params_),
             settings(settings_)
 {
+    std::cout << StackTrace().toString() << std::endl;
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
     fields.resize(columns);
