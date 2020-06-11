@@ -18,7 +18,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
         RabbitMQHandler & eventHandler_,
         const String & exchange_name_,
-        const String & routing_key_,
+        const Names & routing_keys_,
         const size_t channel_id_,
         Poco::Logger * log_,
         char row_delimiter_,
@@ -31,7 +31,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , consumer_channel(std::move(consumer_channel_))
         , eventHandler(eventHandler_)
         , exchange_name(exchange_name_)
-        , routing_key(routing_key_)
+        , routing_keys(routing_keys_)
         , channel_id(channel_id_)
         , log(log_)
         , row_delimiter(row_delimiter_)
@@ -44,7 +44,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
     messages.clear();
     current = messages.begin();
 
-    exchange_type_set = exchange_type != "default" ? 1 : 0;
+    exchange_type_set = exchange_type != "default" ? true : false;
 
     /* One queue per consumer can handle up to 50000 messages. More queues per consumer can be added.
      * By default there is one queue per consumer.
@@ -69,8 +69,8 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 
 void ReadBufferFromRabbitMQConsumer::initExchange()
 {
-    /* If exchange_type is not set - then direct-exchange is used - this type of exchange is the fastest
-     * and it is also used for INSERT query.
+    /* If exchange_type is not set - then direct-exchange is used - this type of exchange is the fastest (also due to different
+     * binding algorithm this default behaviuor is much faster). It is also used in INSERT query.
      */
     String producer_exchange = exchange_type_set ? exchange_name + "_default" : exchange_name;
     consumer_channel->declareExchange(producer_exchange, AMQP::fanout).onError([&](const char * message)
@@ -86,7 +86,8 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
         LOG_ERROR(log, "Failed to declare exchange: {}", message);
     });
 
-    consumer_channel->bindExchange(producer_exchange, internal_exchange_name, routing_key).onError([&](const char * message)
+    /// With fanout exchange the binding key is ignored - a parameter might be arbitrary
+    consumer_channel->bindExchange(producer_exchange, internal_exchange_name, routing_keys[0]).onError([&](const char * message)
     {
         internal_exchange_declared = false;
         LOG_ERROR(log, "Failed to bind exchange: {}", message);
@@ -95,7 +96,7 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
     if (!exchange_type_set)
         return;
 
-    /// For special purposes to use the flexibility of routing provided by rabbitmq - choosing exchange types is also supported.
+    /// For special purposes to use the flexibility of routing provided by rabbitmq - choosing exchange types is supported.
 
     AMQP::ExchangeType type;
     if      (exchange_type == "fanout")             type = AMQP::ExchangeType::fanout;
@@ -131,11 +132,14 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
         LOG_ERROR(log, "Failed to declare {} exchange: {}", exchange_type, message);
     });
 
-    consumer_channel->bindExchange(exchange_name, local_exchange_name, routing_key).onError([&](const char * message)
+    for (auto & routing_key : routing_keys)
     {
-        local_exchange_declared = false;
-        LOG_ERROR(log, "Failed to bind {} exchange to {} exchange: {}", local_exchange_name, exchange_name, message);
-    });
+        consumer_channel->bindExchange(exchange_name, local_exchange_name, routing_key).onError([&](const char * message)
+        {
+            local_exchange_declared = false;
+            LOG_ERROR(log, "Failed to bind {} exchange to {} exchange: {}", local_exchange_name, exchange_name, message);
+        });
+    }
 }
 
 
@@ -158,7 +162,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
         queues.emplace_back(queue_name_);
         subscribed_queue[queue_name_] = false;
 
-        String binding_key = routing_key;
+        String binding_key = routing_keys[0];
 
         /* Every consumer has at least one unique queue. Bind the queues to exchange based on the consumer_channel_id
          * in case there is one queue per consumer and bind by queue_id in case there is more than 1 queue per consumer.
@@ -176,11 +180,6 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
             }
         }
 
-        /// Must be done here and not in readPrefix() because library might fail to handle async subscription on the same connection
-        subscribe(queues.back());
-
-        LOG_TRACE(log, "Queue " + queue_name_ + " is bound by key " + binding_key);
-
         consumer_channel->bindQueue(internal_exchange_name, queue_name_, binding_key)
         .onSuccess([&]
         {
@@ -189,21 +188,47 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
         .onError([&](const char * message)
         {
             internal_bindings_error = true;
-            LOG_ERROR(log, "Failed to create queue binding: {}", message);
+            LOG_ERROR(log, "Failed to bind to key {}, the reason is: {}", binding_key, message);
         });
+
+        /// Must be done here and not in readPrefix() because library might fail to handle async subscription on the same connection
+        subscribe(queues.back());
+
+        LOG_TRACE(log, "Queue " + queue_name_ + " is bound by key " + binding_key);
 
         if (exchange_type_set)
         {
-            consumer_channel->bindQueue(local_exchange_name, queue_name_, binding_key)
-            .onSuccess([&]
+            /// If hash-exchange is used for messages distribution, then the binding key is ignored - can be arbitrary
+            if (hash_exchange)
             {
-                local_bindings_created = true;
-            })
-            .onError([&](const char * message)
+                consumer_channel->bindQueue(local_exchange_name, queue_name_, binding_key)
+                .onSuccess([&]
+                {
+                    local_bindings_created = true;
+                })
+                .onError([&](const char * message)
+                {
+                    local_bindings_error = true;
+                    LOG_ERROR(log, "Failed to create queue binding: {}", message);
+                });
+            }
+            else
             {
-                local_bindings_error = true;
-                LOG_ERROR(log, "Failed to create queue binding: {}", message);
-            });
+                /// means there is only one queue with one consumer - no even distribution needed - no hash-exchange
+                for (auto & routing_key : routing_keys)
+                {
+                    consumer_channel->bindQueue(local_exchange_name, queue_name_, routing_key)
+                    .onSuccess([&]
+                    {
+                        local_bindings_created = true;
+                    })
+                    .onError([&](const char * message)
+                    {
+                        local_bindings_error = true;
+                        LOG_ERROR(log, "Failed to create queue binding: {}", message);
+                    });
+                }
+            }
         }
     })
     .onError([&](const char * message)
