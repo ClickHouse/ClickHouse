@@ -5,7 +5,6 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
-#include <DataStreams/ParallelParsingBlockInputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Formats/FormatSettings.h>
@@ -17,6 +16,7 @@
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
 #include <Processors/Formats/Impl/NativeFormat.cpp>
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
+#include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 #include <Poco/URI.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -233,10 +233,37 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
             sample);
     }
 
-    auto format = getOutputFormat(name, buf, sample, context, std::move(callback),
-        format_settings);
-    return std::make_shared<MaterializingBlockOutputStream>(
-        std::make_shared<OutputStreamToOutputFormat>(format), sample);
+
+    bool parallel_formatting = true;
+
+    if (parallel_formatting && name == "CSV")
+    {
+        const auto & output_getter = getCreators(name).output_processor_creator;
+        if (!output_getter)
+            throw Exception("Format " + name + " is not suitable for output", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
+
+        const Settings & settings = context.getSettingsRef();
+        FormatSettings format_settings = getOutputFormatSetting(settings, context);
+
+        /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
+          *  which only work with full columns.
+          */
+        auto formatter_creator = [output_getter, sample, callback, format_settings]
+            (WriteBuffer & output) -> OutputFormatPtr
+            { return output_getter(output, sample, std::move(callback), format_settings);};
+
+        /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
+//        if (format_settings.enable_streaming)
+//            format->setAutoFlush();
+
+        ParallelFormattingOutputFormat::Params params{buf, sample, formatter_creator};
+        auto format = std::make_shared<ParallelFormattingOutputFormat>(params);
+        return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
+    }
+
+
+    auto format = getOutputFormat(name, buf, sample, context, std::move(callback));
+    return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }
 
 

@@ -15,7 +15,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event ArenaAllocMemoryChunks;
+    extern const Event ArenaAllocChunks;
     extern const Event ArenaAllocBytes;
 }
 
@@ -45,18 +45,16 @@ private:
         char * end; /// does not include padding.
 
         MemoryChunk * prev;
-        MemoryChunk * next;
 
         MemoryChunk(size_t size_, MemoryChunk * prev_)
         {
-            ProfileEvents::increment(ProfileEvents::ArenaAllocMemoryChunks);
+            ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
             ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
 
             begin = reinterpret_cast<char *>(Allocator<false>::alloc(size_));
             pos = begin;
             end = begin + size_ - pad_right;
             prev = prev_;
-            prev->next = this;
 
             ASAN_POISON_MEMORY_REGION(begin, size_);
         }
