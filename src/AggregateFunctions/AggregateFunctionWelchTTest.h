@@ -46,16 +46,17 @@ Float64 CriticalValuesTable[SIGN_LVL_CNT][102] = {
 // our algorithm implementation via vectors:
 // https://gist.github.com/ltybc-coder/792748cfdb2f7cadef424ffb7b011c71
 // col, col, bool
-//template <typename X = Float64, typename Y = Float64, typename Ret = Float64>
+template <typename X = Float64, typename Y = Float64, typename Ret = UInt8>
+//template <typename X, typename Y, typename Ret = UInt8>
 struct AggregateFunctionWelchTTestData final
 {
 
     size_t size_x = 0;
     size_t size_y = 0;
-    Float64 sum_x = static_cast<Float64>(0);
-    Float64 sum_y = static_cast<Float64>(0);
-    Float64 square_sum_x = static_cast<Float64>(0);
-    Float64 square_sum_y = static_cast<Float64>(0);
+    X sum_x = static_cast<Float64>(0);
+    Y sum_y = static_cast<Float64>(0);
+    X square_sum_x = static_cast<Float64>(0);
+    Y square_sum_y = static_cast<Float64>(0);
     Float64 mean_x = 0;
     Float64 mean_y = 0;
 
@@ -78,7 +79,7 @@ struct AggregateFunctionWelchTTestData final
     }
     */
 
-    void add(Float64 x, Float64 y)
+    void add(X x, Y y)
     {
         sum_x += x;
         sum_y += y;
@@ -147,7 +148,7 @@ struct AggregateFunctionWelchTTestData final
                ((sx * sx / (size_x * size_x * (size_x - 1))) + (sy * sy / (size_y * size_y * (size_y - 1))));
     }
 
-    UInt8 get_result(Float64 t, Float64 dof, Float64 parametr) const
+    Ret get_result(Float64 t, Float64 dof, Float64 parametr) const
     {
         //find our table
         int table = 0;
@@ -169,28 +170,26 @@ struct AggregateFunctionWelchTTestData final
         t = abs(t);
         if (t > CriticalValuesTable[table][i_dof])
         {
-            return static_cast<UInt8>(1);
+            return static_cast<Ret>(1);
             //in this case we reject the null hypothesis
         }
         else
         {
-            return static_cast<UInt8>(0);
+            return static_cast<Ret>(0);
         }
     }
 };
 
-//template <typename X = Float64, typename Y = Float64, typename Ret = Float64>
+template <typename X = Float64, typename Y = Float64, typename Ret = UInt8>
 class AggregateFunctionWelchTTest : public
-                                          IAggregateFunctionDataHelper<
-                                              AggregateFunctionWelchTTestData,
-                                              AggregateFunctionWelchTTest
-                                          >
+                                    IAggregateFunctionDataHelper<
+                                        AggregateFunctionWelchTTestData<X, Y, Ret>,
+                                        AggregateFunctionWelchTTest<X, Y, Ret>
+                                    >
 {
-
 
 private:
     Float64 significance_level;
-
 
 public:
     AggregateFunctionWelchTTest(
@@ -213,7 +212,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeUInt8>();
+        return std::make_shared<DataTypeNumber<Ret>>();
     }
 
     void add(
@@ -223,11 +222,11 @@ public:
         Arena *
     ) const override
     {
-        auto col_x = assert_cast<const ColumnVector<Float64> *>(columns[0]);
-        auto col_y = assert_cast<const ColumnVector<Float64> *>(columns[1]);
+        auto col_x = assert_cast<const ColumnVector<X> *>(columns[0]);
+        auto col_y = assert_cast<const ColumnVector<Y> *>(columns[1]);
 
-        Float64 x = col_x->getData()[row_num];
-        Float64 y = col_y->getData()[row_num];
+        X x = col_x->getData()[row_num];
+        Y y = col_y->getData()[row_num];
 
         this->data(place).add(x, y);
     }
@@ -257,7 +256,7 @@ public:
     }
 
     void insertResultInto(
-        ConstAggregateDataPtr place,
+        AggregateDataPtr place,
         IColumn & to
     ) const override
     {
@@ -266,10 +265,9 @@ public:
         Float64 sy = this->data(place).get_sy();
         Float64 t_value = this->data(place).get_T(sx, sy);
         Float64 dof = this->data(place).get_degrees_of_freed(sx, sy);
-        UInt8 result = this->data(place).get_result(t_value, dof, significance_level);
+        Ret result = this->data(place).get_result(t_value, dof, significance_level);
 
-
-        auto & column = static_cast<ColumnVector<UInt8> &>(to);
+        auto & column = static_cast<ColumnVector<Ret> &>(to);
         column.getData().push_back(result);
     }
 
