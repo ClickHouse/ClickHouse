@@ -357,7 +357,6 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     , is_semi_join(table_join->strictness() == ASTTableJoin::Strictness::Semi)
     , is_inner(isInner(table_join->kind()))
     , is_left(isLeft(table_join->kind()))
-    , flush_left_blocks_on_disk(table_join->flushOnDisk())
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
     , max_files_to_merge(table_join->maxFilesToMerge())
@@ -537,66 +536,11 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         sortBlock(block, left_sort_description);
     }
 
-    if (!not_processed)
+    if (!not_processed && left_blocks_buffer)
     {
-        /// TODO: Not OK. Need rewrite with buckets.
-        if (flush_left_blocks_on_disk)
-        {
-            if (block)
-            {
-                /// Store new block on disk
-
-                if (block.rows())
-                {
-                    while (!disk_writer)
-                    {
-                        std::unique_lock lock(rwlock);
-
-                        if (!disk_writer)
-                            initLeftTableWriter(block.cloneEmpty());
-                    }
-
-                    Block out = block.cloneEmpty();
-                    disk_writer->insert(std::move(block)); /// lock inside: wait memory
-                    block = std::move(out); /// keep block structure, return 0 rows. We still need to add right columns.
-                }
-            }
-            else
-            {
-                /// Read block from disk
-
-                while (!disk_reader)
-                {
-                    std::unique_lock lock(rwlock);
-
-                    if (!disk_reader)
-                        disk_reader = std::make_unique<SortedBlocksReader>(left_sort_description, max_rows_in_right_block);
-                }
-
-                block = disk_reader->read();
-                if (!block)
-                {
-                    std::unique_lock lock(rwlock); /// premerge barier
-
-                    block = disk_reader->read();
-                    if (!block && disk_writer)
-                    {
-                        disk_reader->addFiles(disk_writer->premerge());
-                        block = disk_reader->read();
-                    }
-                }
-
-                /// No more data. Do not keep going. Return empty block.
-                if (!block)
-                    return;
-            }
-        }
-        else if (left_blocks_buffer)
-        {
-            block = left_blocks_buffer->exchange(std::move(block));
-            if (!block)
-                return;
-        }
+        block = left_blocks_buffer->exchange(std::move(block));
+        if (!block) /// (empty + exchange => empty) => exit
+            return;
     }
 
     if (is_in_memory)
@@ -614,10 +558,8 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
             joinSortedBlock<false, false>(block, not_processed);
     }
 
-    bool keep_going = flush_left_blocks_on_disk || left_blocks_buffer;
-
     /// Back thread even with no data. We have some unfinished data on disk.
-    if (keep_going)
+    if (left_blocks_buffer)
         setKeepGoing(not_processed);
 }
 

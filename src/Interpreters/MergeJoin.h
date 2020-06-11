@@ -63,7 +63,6 @@ private:
     std::unique_ptr<Cache> cached_right_blocks;
     std::vector<std::shared_ptr<Block>> loaded_right_blocks;
     std::unique_ptr<SortedBlocksWriter> disk_writer;
-    std::unique_ptr<SortedBlocksReader> disk_reader;
     SortedBlocksWriter::SortedFiles flushed_right_blocks;
     Block totals;
     std::atomic<bool> is_in_memory{true};
@@ -73,7 +72,6 @@ private:
     const bool is_semi_join;
     const bool is_inner;
     const bool is_left;
-    const bool flush_left_blocks_on_disk;
     static constexpr const bool skip_not_intersected = true; /// skip index for right blocks
     const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;

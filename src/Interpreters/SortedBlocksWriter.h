@@ -102,37 +102,6 @@ struct SortedBlocksWriter
 };
 
 
-class MergingSortedBlockInputStream;
-
-class SortedBlocksReader
-{
-public:
-    using PremergedFiles = SortedBlocksWriter::PremergedFiles;
-
-    SortedBlocksReader(const SortDescription & sort_description_, size_t max_rows_in_block_)
-        : sort_description(sort_description_)
-        , max_rows_in_block(max_rows_in_block_)
-    {}
-
-    void addFiles(PremergedFiles && premerged)
-    {
-        std::lock_guard lock{mutex};
-
-        if (!premerged.files.empty())
-            files_portion.emplace_back(std::move(premerged));
-    }
-
-    Block read();
-
-private:
-    std::mutex mutex;
-    std::list<PremergedFiles> files_portion;
-    const SortDescription & sort_description;
-    size_t max_rows_in_block;
-    std::shared_ptr<MergingSortedBlockInputStream> stream;
-};
-
-
 class SortedBlocksBuffer
 {
 public:
@@ -164,7 +133,7 @@ public:
             if (is_empty || current_bytes >= max_bytes)
             {
                 to_merge.swap(buffer);
-                buffer.reserve(to_merge.size() + size_t(0.1 * to_merge.size())); /// reserve 1.1 of prev size
+                buffer.reserve(to_merge.size() * reserve_coef);
                 current_bytes = 0;
             }
         }
@@ -180,6 +149,9 @@ public:
     }
 
 private:
+    /// Try avoid memory fluctuation: reserve a bit more than was used last time
+    static constexpr const float reserve_coef = 1.2;
+
     std::mutex mutex;
     size_t max_bytes;
     size_t current_bytes;

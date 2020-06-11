@@ -248,7 +248,6 @@ enum class JoinAlgorithm
     HASH,
     PARTIAL_MERGE,
     PREFER_PARTIAL_MERGE,
-    BUCKET_MERGE,
 };
 using SettingJoinAlgorithm = SettingEnum<JoinAlgorithm>;
 

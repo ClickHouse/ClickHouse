@@ -207,33 +207,6 @@ String SortedBlocksWriter::getPath() const
 }
 
 
-Block SortedBlocksReader::read()
-{
-    bool next_portion = false;
-
-    {
-        std::lock_guard lock{mutex};
-
-        if (files_portion.empty())
-            return {};
-
-        if (!stream)
-            stream = std::make_shared<MergingSortedBlockInputStream>(files_portion.front().streams, sort_description, max_rows_in_block);
-
-        if (Block block = stream->read())
-            return block;
-
-        stream.reset();
-        files_portion.pop_front();
-        next_portion = true;
-    }
-
-    if (next_portion)
-        return read();
-    return {};
-}
-
-
 Block SortedBlocksBuffer::mergeBlocks(const Blocks & blocks) const
 {
     BlockInputStreams inputs;
