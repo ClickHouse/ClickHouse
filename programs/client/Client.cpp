@@ -1920,7 +1920,11 @@ public:
                 std::string text = e.displayText();
                 std::cerr << "Code: " << e.code() << ". " << text << std::endl;
                 std::cerr << "Table №" << i << std::endl << std::endl;
-                exit(e.code());
+                auto exit_code = e.code() % 256;
+                if (exit_code == 0)
+                    exit_code = 255;
+                exit(exit_code);
+
             }
         }
 
