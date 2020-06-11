@@ -6,7 +6,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include "DictionaryStructure.h"
-
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/SettingsChanges.h>
 
 namespace DB
 {
@@ -48,6 +51,32 @@ void formatKeys(
     out->write(block);
     out->writeSuffix();
     out->flush();
+}
+
+Context copyContextAndApplySettings(
+    const std::string & config_prefix,
+    const Context & context,
+    const Poco::Util::AbstractConfiguration & config)
+{
+    Context local_context(context);
+    if (config.has(config_prefix + ".settings"))
+    {
+        const auto prefix = config_prefix + ".settings";
+
+        Poco::Util::AbstractConfiguration::Keys config_keys;
+        config.keys(prefix, config_keys);
+
+        SettingsChanges changes;
+
+        for (const std::string & key : config_keys)
+        {
+            const auto value = config.getString(prefix + "." + key);
+            changes.emplace_back(key, value);
+        }
+
+        local_context.applySettingsChanges(changes);
+    }
+    return local_context;
 }
 
 }

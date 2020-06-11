@@ -21,7 +21,7 @@ ${CLICKHOUSE_CLIENT} -n -q "
 timeout 10s ${CLICKHOUSE_CLIENT} -n -q "
     SET receive_timeout=1;
     SYSTEM SYNC REPLICA $R2
-" 2>&1 | fgrep -q "DB::Exception: SYNC REPLICA ${CLICKHOUSE_DATABASE}.$R2: command timed out!" && echo 'OK' || echo 'Failed!'
+" 2>&1 | fgrep -q "Code: 159. DB::Exception" && echo 'OK' || echo 'Failed!'
 
 # By dropping tables all related SYNC REPLICA queries would be terminated as well
 ${CLICKHOUSE_CLIENT} -n -q "

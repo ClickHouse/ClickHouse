@@ -15,9 +15,10 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
+#include <DataTypes/DataTypeUUID.h>
 
 
 namespace DB
@@ -36,6 +37,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
     {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
+        {"uuid", std::make_shared<DataTypeUUID>()},
         {"engine", std::make_shared<DataTypeString>()},
         {"is_temporary", std::make_shared<DataTypeUInt8>()},
         {"data_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
@@ -74,7 +76,7 @@ static bool needLockStructure(const DatabasePtr & database, const Block & header
     if (database->getEngineName() != "Lazy")
         return true;
 
-    static const std::set<std::string> columns_without_lock = { "database", "name", "metadata_modification_time" };
+    static const std::set<std::string> columns_without_lock = { "database", "name", "uuid", "metadata_modification_time" };
     for (const auto & column : header.getColumnsWithTypeAndName())
     {
         if (columns_without_lock.find(column.name) == columns_without_lock.end())
@@ -151,6 +153,10 @@ protected:
                         // name
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.first);
+
+                        // uuid
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert(table.second->getStorageID().uuid);
 
                         // engine
                         if (columns_mask[src_index++])
@@ -272,6 +278,9 @@ protected:
                     res_columns[res_index++]->insert(table_name);
 
                 if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(tables_it->uuid());
+
+                if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
                     res_columns[res_index++]->insert(table->getName());
@@ -322,7 +331,7 @@ protected:
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1])
                 {
-                    ASTPtr ast = database->tryGetCreateTableQuery(context, table_name);
+                    ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
 
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
@@ -363,7 +372,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    if ((expression_ptr = table->getSortingKeyAST()))
+                    if ((expression_ptr = table->getSortingKey().expression_list_ast))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -372,7 +381,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    if ((expression_ptr = table->getPrimaryKeyAST()))
+                    if ((expression_ptr = table->getPrimaryKey().expression_list_ast))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();

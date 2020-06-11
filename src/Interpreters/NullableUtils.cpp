@@ -12,7 +12,7 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
     if (key_columns.size() == 1)
     {
         auto & column = key_columns[0];
-        if (auto * column_nullable = checkAndGetColumn<ColumnNullable>(*column))
+        if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(*column))
         {
             null_map_holder = column_nullable->getNullMapColumnPtr();
             null_map = &column_nullable->getNullMapData();
@@ -23,7 +23,7 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
     {
         for (auto & column : key_columns)
         {
-            if (auto * column_nullable = checkAndGetColumn<ColumnNullable>(*column))
+            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(*column))
             {
                 column = &column_nullable->getNestedColumn();
 
@@ -33,7 +33,7 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
                 }
                 else
                 {
-                    MutableColumnPtr mutable_null_map_holder = (*std::move(null_map_holder)).mutate();
+                    MutableColumnPtr mutable_null_map_holder = IColumn::mutate(std::move(null_map_holder));
 
                     PaddedPODArray<UInt8> & mutable_null_map = assert_cast<ColumnUInt8 &>(*mutable_null_map_holder).getData();
                     const PaddedPODArray<UInt8> & other_null_map = column_nullable->getNullMapData();

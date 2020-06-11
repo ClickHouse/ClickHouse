@@ -135,7 +135,7 @@ DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & argument
 
     for (auto i : ext::range(0, arguments.size()))
     {
-        auto array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
         if (!array_type)
             throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
                             + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -161,9 +161,9 @@ DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & argument
 
 ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, const DataTypePtr & data_type) const
 {
-    if (auto column_nullable = checkAndGetColumn<ColumnNullable>(column.get()))
+    if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column.get()))
     {
-        auto nullable_type = checkAndGetDataType<DataTypeNullable>(data_type.get());
+        const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(data_type.get());
         const auto & nested = column_nullable->getNestedColumnPtr();
         if (nullable_type)
         {
@@ -172,9 +172,9 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
         }
         return castRemoveNullable(nested, data_type);
     }
-    else if (auto column_array = checkAndGetColumn<ColumnArray>(column.get()))
+    else if (const auto * column_array = checkAndGetColumn<ColumnArray>(column.get()))
     {
-        auto array_type = checkAndGetDataType<DataTypeArray>(data_type.get());
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(data_type.get());
         if (!array_type)
             throw Exception{"Cannot cast array column to column with type "
                             + data_type->getName() + " in function " + getName(), ErrorCodes::LOGICAL_ERROR};
@@ -182,9 +182,9 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
         auto casted_column = castRemoveNullable(column_array->getDataPtr(), array_type->getNestedType());
         return ColumnArray::create(casted_column, column_array->getOffsetsPtr());
     }
-    else if (auto column_tuple = checkAndGetColumn<ColumnTuple>(column.get()))
+    else if (const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get()))
     {
-        auto tuple_type = checkAndGetDataType<DataTypeTuple>(data_type.get());
+        const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(data_type.get());
 
         if (!tuple_type)
             throw Exception{"Cannot cast tuple column to type "
@@ -213,8 +213,8 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
     ColumnsWithTypeAndName initial_columns(num_args);
     ColumnsWithTypeAndName columns(num_args);
 
-    auto type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
-    auto & type_nested = type_array->getNestedType();
+    const auto * type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
+    const auto & type_nested = type_array->getNestedType();
     auto type_not_nullable_nested = removeNullable(type_nested);
 
     const bool is_numeric_or_string = isNativeNumber(type_not_nullable_nested)
@@ -313,17 +313,17 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
     for (auto i : ext::range(0, columns_number))
     {
         auto & arg = arrays.args[i];
-        auto argument_column = columns[i].column.get();
-        auto initial_column = initial_columns[i].column.get();
+        const auto * argument_column = columns[i].column.get();
+        const auto * initial_column = initial_columns[i].column.get();
 
-        if (auto argument_column_const = typeid_cast<const ColumnConst *>(argument_column))
+        if (const auto * argument_column_const = typeid_cast<const ColumnConst *>(argument_column))
         {
             arg.is_const = true;
             argument_column = argument_column_const->getDataColumnPtr().get();
             initial_column = typeid_cast<const ColumnConst *>(initial_column)->getDataColumnPtr().get();
         }
 
-        if (auto argument_column_array = typeid_cast<const ColumnArray *>(argument_column))
+        if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(argument_column))
         {
             if (!arg.is_const)
                 all_const = false;
@@ -333,7 +333,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
 
             initial_column = &typeid_cast<const ColumnArray *>(initial_column)->getData();
 
-            if (auto column_nullable = typeid_cast<const ColumnNullable *>(arg.nested_column))
+            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(arg.nested_column))
             {
                 arg.null_map = &column_nullable->getNullMapData();
                 arg.nested_column = &column_nullable->getNestedColumn();
@@ -343,8 +343,8 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
             /// In case column was casted need to create overflow mask for integer types.
             if (arg.nested_column != initial_column)
             {
-                auto & nested_init_type = typeid_cast<const DataTypeArray *>(removeNullable(initial_columns[i].type).get())->getNestedType();
-                auto & nested_cast_type = typeid_cast<const DataTypeArray *>(removeNullable(columns[i].type).get())->getNestedType();
+                const auto & nested_init_type = typeid_cast<const DataTypeArray *>(removeNullable(initial_columns[i].type).get())->getNestedType();
+                const auto & nested_cast_type = typeid_cast<const DataTypeArray *>(removeNullable(columns[i].type).get())->getNestedType();
 
                 if (isInteger(nested_init_type) || isDateOrDateTime(nested_init_type))
                 {
@@ -388,7 +388,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
 void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
     const auto & return_type = block.getByPosition(result).type;
-    auto return_type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
+    const auto * return_type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
 
     if (!return_type_array)
         throw Exception{"Return type for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
@@ -418,16 +418,15 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
     TypeListNativeNumbers::forEach(NumberExecutor(arrays, not_nullable_nested_return_type, result_column));
     TypeListDecimalNumbers::forEach(DecimalExecutor(arrays, not_nullable_nested_return_type, result_column));
 
-    using DateMap = ClearableHashMap<DataTypeDate::FieldType, size_t, DefaultHash<DataTypeDate::FieldType>,
-            HashTableGrower<INITIAL_SIZE_DEGREE>,
-            HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(DataTypeDate::FieldType)>>;
+    using DateMap = ClearableHashMapWithStackMemory<DataTypeDate::FieldType,
+        size_t, DefaultHash<DataTypeDate::FieldType>, INITIAL_SIZE_DEGREE>;
 
-    using DateTimeMap = ClearableHashMap<DataTypeDateTime::FieldType, size_t, DefaultHash<DataTypeDateTime::FieldType>,
-            HashTableGrower<INITIAL_SIZE_DEGREE>,
-            HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(DataTypeDateTime::FieldType)>>;
+    using DateTimeMap = ClearableHashMapWithStackMemory<
+        DataTypeDateTime::FieldType, size_t,
+        DefaultHash<DataTypeDateTime::FieldType>, INITIAL_SIZE_DEGREE>;
 
-    using StringMap = ClearableHashMap<StringRef, size_t, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-            HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
+    using StringMap = ClearableHashMapWithStackMemory<StringRef, size_t,
+        StringRefHash, INITIAL_SIZE_DEGREE>;
 
     if (!result_column)
     {
@@ -455,8 +454,8 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
 template <typename T, size_t>
 void FunctionArrayIntersect::NumberExecutor::operator()()
 {
-    using Map = ClearableHashMap<T, size_t, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
-            HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
+    using Map = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
+        INITIAL_SIZE_DEGREE>;
 
     if (!result && typeid_cast<const DataTypeNumber<T> *>(data_type.get()))
         result = execute<Map, ColumnVector<T>, true>(arrays, ColumnVector<T>::create());
@@ -465,8 +464,8 @@ void FunctionArrayIntersect::NumberExecutor::operator()()
 template <typename T, size_t>
 void FunctionArrayIntersect::DecimalExecutor::operator()()
 {
-    using Map = ClearableHashMap<T, size_t, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
-            HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
+    using Map = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
+        INITIAL_SIZE_DEGREE>;
 
     if (!result)
         if (auto * decimal = typeid_cast<const DataTypeDecimal<T> *>(data_type.get()))
@@ -483,7 +482,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
     std::vector<const ColumnType *> columns;
     columns.reserve(args);
-    for (auto & arg : arrays.args)
+    for (const auto & arg : arrays.args)
     {
         if constexpr (std::is_same<ColumnType, IColumn>::value)
             columns.push_back(arg.nested_column);
@@ -516,7 +515,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
         for (auto arg_num : ext::range(0, args))
         {
-            auto & arg = arrays.args[arg_num];
+            const auto & arg = arrays.args[arg_num];
             bool current_has_nullable = false;
 
             size_t off;

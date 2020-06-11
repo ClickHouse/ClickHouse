@@ -64,7 +64,8 @@ public:
         concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
         cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
         json_path(json_path_), confidence(confidence_), query_id(query_id_), settings(settings_),
-        global_context(Context::createGlobal()), pool(concurrency)
+        shared_context(Context::createShared()), global_context(Context::createGlobal(shared_context.get())),
+        pool(concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());
@@ -149,6 +150,7 @@ private:
     size_t confidence;
     std::string query_id;
     Settings settings;
+    SharedContextHolder shared_context;
     Context global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
@@ -287,7 +289,7 @@ private:
                     connection_entries.emplace_back(std::make_shared<Entry>(
                             connection->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
 
-                pool.scheduleOrThrowOnError(std::bind(&Benchmark::thread, this, connection_entries));
+                pool.scheduleOrThrowOnError([this, connection_entries]() mutable { thread(connection_entries); });
             }
         }
         catch (...)
@@ -422,7 +424,7 @@ private:
             std::cerr << percent << "%\t\t";
             for (const auto & info : infos)
             {
-                std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec." << "\t";
+                std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec.\t";
             }
             std::cerr << "\n";
         };
@@ -457,7 +459,7 @@ private:
 
         auto print_percentile = [&json_out](Stats & info, auto percent, bool with_comma = true)
         {
-            json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileNearest(percent / 100.0) << (with_comma ? ",\n" : "\n");
+            json_out << "\"" << percent << "\": " << info.sampler.quantileNearest(percent / 100.0) << (with_comma ? ",\n" : "\n");
         };
 
         json_out << "{\n";

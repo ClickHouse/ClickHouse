@@ -32,9 +32,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 
@@ -196,12 +196,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isInt64()) return convertNumericType<Int64>(src, type);
         if (which_type.isFloat32()) return convertNumericType<Float32>(src, type);
         if (which_type.isFloat64()) return convertNumericType<Float64>(src, type);
-        if (auto * ptype = typeid_cast<const DataTypeDecimal<Decimal32> *>(&type)) return convertDecimalType(src, *ptype);
-        if (auto * ptype = typeid_cast<const DataTypeDecimal<Decimal64> *>(&type)) return convertDecimalType(src, *ptype);
-        if (auto * ptype = typeid_cast<const DataTypeDecimal<Decimal128> *>(&type)) return convertDecimalType(src, *ptype);
+        if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal32> *>(&type)) return convertDecimalType(src, *ptype);
+        if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal64> *>(&type)) return convertDecimalType(src, *ptype);
+        if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal128> *>(&type)) return convertDecimalType(src, *ptype);
 
         if (!which_type.isDateOrDateTime() && !which_type.isUUID() && !which_type.isEnum())
-            throw Exception{"Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Cannot convert field to type " + type.getName(), ErrorCodes::CANNOT_CONVERT_TYPE};
 
         if (which_type.isEnum() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
@@ -230,7 +230,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             }
             else if (which_type.isDateTime64())
             {
-                const auto date_time64 = typeid_cast<const DataTypeDateTime64 *>(&type);
+                const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&type);
                 /// Convert 'YYYY-MM-DD hh:mm:ss.NNNNNNNNN' Strings to DateTime
                 return stringToDateTime64(src.get<const String &>(), date_time64->getScale());
             }
@@ -257,7 +257,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const Array & src_arr = src.get<Array>();
             size_t src_arr_size = src_arr.size();
 
-            auto & element_type = *(type_array->getNestedType());
+            const auto & element_type = *(type_array->getNestedType());
             bool have_unconvertible_element = false;
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
@@ -289,7 +289,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             bool have_unconvertible_element = false;
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
-                auto & element_type = *(type_tuple->getElements()[i]);
+                const auto & element_type = *(type_tuple->getElements()[i]);
                 res[i] = convertFieldToType(src_tuple[i], element_type);
                 if (!res[i].isNull() || element_type.isNullable())
                     continue;
@@ -321,7 +321,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             throw Exception(String("Cannot convert ") + src.getTypeName() + " to " + agg_func_type->getName(),
                     ErrorCodes::TYPE_MISMATCH);
 
-        auto & name = src.get<AggregateFunctionStateData>().name;
+        const auto & name = src.get<AggregateFunctionStateData>().name;
         if (agg_func_type->getName() != name)
             throw Exception("Cannot convert " + name + " to " + agg_func_type->getName(), ErrorCodes::TYPE_MISMATCH);
 
@@ -353,9 +353,9 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     if (from_type_hint && from_type_hint->equals(to_type))
         return from_value;
 
-    if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
         return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint);
-    else if (auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
+    else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
     {
         const IDataType & nested_type = *nullable_type->getNestedType();
         if (from_type_hint && from_type_hint->equals(nested_type))

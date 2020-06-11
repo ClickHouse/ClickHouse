@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IServer.h"
+#include <Server/IServer.h>
 
 #include <daemon/BaseDaemon.h>
 
@@ -35,7 +35,7 @@ public:
 
     Context & context() const override
     {
-        return *global_context;
+        return *global_context_ptr;
     }
 
     bool isCancelled() const override
@@ -56,7 +56,7 @@ protected:
     std::string getDefaultCorePath() const override;
 
 private:
-    std::unique_ptr<Context> global_context;
+    Context * global_context_ptr = nullptr;
 };
 
 }

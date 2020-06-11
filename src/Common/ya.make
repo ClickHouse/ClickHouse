@@ -13,21 +13,12 @@ PEERDIR(
     clickhouse/base/widechar_width
     contrib/libs/libcpuid/libcpuid
     contrib/libs/openssl
+    contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
     contrib/restricted/ryu
 )
 
-# TODO: stub for config_version.h
-CFLAGS (GLOBAL -DDBMS_NAME=\"ClickHouse\")
-CFLAGS (GLOBAL -DDBMS_VERSION_MAJOR=0)
-CFLAGS (GLOBAL -DDBMS_VERSION_MINOR=0)
-CFLAGS (GLOBAL -DDBMS_VERSION_PATCH=0)
-CFLAGS (GLOBAL -DVERSION_FULL=\"ClickHouse\")
-CFLAGS (GLOBAL -DVERSION_INTEGER=0)
-CFLAGS (GLOBAL -DVERSION_NAME=\"ClickHouse\")
-CFLAGS (GLOBAL -DVERSION_OFFICIAL=\"\\\(arcadia\\\)\")
-CFLAGS (GLOBAL -DVERSION_REVISION=0)
-CFLAGS (GLOBAL -DVERSION_STRING=\"Unknown\")
+INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
 
 SRCS(
     ActionLock.cpp
@@ -63,6 +54,7 @@ SRCS(
     isLocalAddress.cpp
     Macros.cpp
     malloc.cpp
+    MemoryStatisticsOS.cpp
     MemoryTracker.cpp
     new_delete.cpp
     OptimizedRegularExpression.cpp
@@ -71,11 +63,13 @@ SRCS(
     parseRemoteDescription.cpp
     PipeFDs.cpp
     PODArray.cpp
+    ProcfsMetricsProvider.cpp
     ProfileEvents.cpp
     QueryProfiler.cpp
     quoteString.cpp
     randomSeed.cpp
     RemoteHostFilter.cpp
+    renameat2.cpp
     RWLock.cpp
     SensitiveDataMasker.cpp
     setThreadName.cpp
@@ -92,6 +86,7 @@ SRCS(
     TerminalSize.cpp
     thread_local_rng.cpp
     ThreadFuzzer.cpp
+    ThreadProfileEvents.cpp
     ThreadPool.cpp
     ThreadStatus.cpp
     TraceCollector.cpp

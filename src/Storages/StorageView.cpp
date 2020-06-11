@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/getTableExpressions.h>
 
 #include <Parsers/ASTCreateQuery.h>
@@ -18,6 +19,8 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/ConvertingTransform.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
 
 
 namespace DB
@@ -61,30 +64,25 @@ Pipes StorageView::read(
     if (context.getSettings().enable_optimize_predicate_expression)
         current_inner_query = getRuntimeViewQuery(*query_info.query->as<const ASTSelectQuery>(), context);
 
-    QueryPipeline pipeline;
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
-    /// FIXME res may implicitly use some objects owned be pipeline, but them will be destructed after return
-    if (query_info.force_tree_shaped_pipeline)
-    {
-        BlockInputStreams streams = interpreter.executeWithMultipleStreams(pipeline);
-        for (auto & stream : streams)
-            pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
-    }
-    else
-        /// TODO: support multiple streams here. Need more general interface than pipes.
-        pipes.emplace_back(interpreter.executeWithProcessors().getPipe());
+
+    auto pipeline = interpreter.execute().pipeline;
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    for (auto & pipe : pipes)
+    pipeline.addSimpleTransform([](const Block & header)
     {
-        pipe.addSimpleTransform(std::make_shared<MaterializingTransform>(pipe.getHeader()));
+        return std::make_shared<MaterializingTransform>(header);
+    });
 
-        /// And also convert to expected structure.
-        pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
-            pipe.getHeader(), getSampleBlockForColumns(column_names),
-            ConvertingTransform::MatchColumnsMode::Name));
-    }
+    /// And also convert to expected structure.
+    pipeline.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<ConvertingTransform>(header, getSampleBlockForColumns(column_names),
+                                                     ConvertingTransform::MatchColumnsMode::Name);
+    });
+
+    pipes = std::move(pipeline).getPipes();
 
     return pipes;
 }
@@ -126,12 +124,12 @@ ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Cont
     /// TODO: remove getTableExpressions and getTablesWithColumns
     {
         const auto & table_expressions = getTableExpressions(*outer_query);
-        const auto & tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
+        const auto & tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
 
         replaceTableNameWithSubquery(outer_query, runtime_view_query);
         if (context.getSettingsRef().joined_subquery_requires_alias && tables_with_columns.size() > 1)
         {
-            for (auto & pr : tables_with_columns)
+            for (const auto & pr : tables_with_columns)
                 if (pr.table.table.empty() && pr.table.alias.empty())
                     throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
                                     ErrorCodes::ALIAS_REQUIRED);

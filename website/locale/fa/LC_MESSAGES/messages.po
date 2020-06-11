@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-04-15 13:19+0000\n"
+"POT-Creation-Date: 2020-05-20 15:32+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fa\n"
@@ -18,32 +18,47 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.8.0\n"
 
-#: templates/common_meta.html:5 templates/common_meta.html:9
-#: templates/common_meta.html:16
+#: templates/common_meta.html:1
+msgid ""
+"ClickHouse is a fast open-source column-oriented database management "
+"system that allows generating analytical data reports in real-time using "
+"SQL queries"
+msgstr ""
+"در تاتر یک منبع باز سیستم مدیریت پایگاه داده ستون گرا سریع است که اجازه "
+"می دهد تا تولید گزارش داده تحلیلی در زمان واقعی با استفاده از پرس و جو "
+"گذاشتن است"
+
+#: templates/common_meta.html:6
+msgid "ClickHouse - fast open-source OLAP DBMS"
+msgstr "ClickHouse - سریع باز-منبع OLAP DBMS"
+
+#: templates/common_meta.html:10
 msgid "ClickHouse DBMS"
 msgstr "خانه عروسکی"
 
-#: templates/common_meta.html:11
-msgid ""
-"ClickHouse is an open source column-oriented database management system "
-"that allows generating analytical data reports in real time using SQL "
-"queries."
-msgstr ""
-"در تاتر یک منبع ستون گرا سیستم مدیریت پایگاه داده باز است که اجازه می دهد"
-" تا تولید گزارش داده تحلیلی در زمان واقعی با استفاده از پرس و جو گذاشتن "
-"است."
+#: templates/common_meta.html:24
+msgid "open-source"
+msgstr "متن باز"
 
-#: templates/common_meta.html:19
-msgid ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
-msgstr ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
+#: templates/common_meta.html:24
+msgid "relational"
+msgstr "رابطه"
+
+#: templates/common_meta.html:24
+msgid "analytics"
+msgstr "تجزیه و تحلیل"
+
+#: templates/common_meta.html:24
+msgid "analytical"
+msgstr "تحلیلی"
+
+#: templates/common_meta.html:24
+msgid "Big Data"
+msgstr "داده های بزرگ"
+
+#: templates/common_meta.html:24
+msgid "web-analytics"
+msgstr "تجزیه و تحلیل وب سایت"
 
 #: templates/footer.html:8
 msgid "ClickHouse source code is published under the Apache 2.0 License."
@@ -61,11 +76,59 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr "Yandex, LLC"
 
-#: templates/docs/content.html:6
+#: templates/docs/footer.html:3
+msgid "Rating"
+msgstr "درجهبندی"
+
+#: templates/docs/footer.html:3
+msgid "votes"
+msgstr "رای"
+
+#: templates/docs/footer.html:4
+msgid "Article Rating"
+msgstr "رتبه مقاله"
+
+#: templates/docs/footer.html:4
+msgid "Was this content helpful?"
+msgstr "این مطالب مفید بود?"
+
+#: templates/docs/footer.html:7
+msgid "Unusable"
+msgstr "غیرقابل استفاده"
+
+#: templates/docs/footer.html:7
+msgid "Poor"
+msgstr "فقیر"
+
+#: templates/docs/footer.html:7
+msgid "Good"
+msgstr "خوبه"
+
+#: templates/docs/footer.html:7
+msgid "Excellent"
+msgstr "عالیه"
+
+#: templates/docs/footer.html:8
+msgid "documentation"
+msgstr "مستندات"
+
+#: templates/docs/footer.html:15
+msgid "Built from"
+msgstr "ساخته شده از"
+
+#: templates/docs/footer.html:15
+msgid "published on"
+msgstr "منتشر شده در"
+
+#: templates/docs/footer.html:15
+msgid "modified on"
+msgstr "تغییریافته"
+
+#: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
 msgstr "راهنما می خواستم!"
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
@@ -78,17 +141,13 @@ msgstr ""
 " کنار پایگاه داده اصلی خانه کلیک زندگی می کند و منتظر سخنرانان مادری "
 "همکار به انسان بیشتر قابل خواندن است."
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid "You can also use the original English version as a reference."
 msgstr "شما همچنین می توانید نسخه اصلی انگلیسی به عنوان یک مرجع استفاده کنید."
 
-#: templates/docs/content.html:10
+#: templates/docs/machine-translated.html:7
 msgid "Help ClickHouse documentation by editing this page"
 msgstr "راهنما مستندات تاتر با ویرایش این صفحه"
-
-#: templates/docs/content.html:27
-msgid "Built from"
-msgstr "ساخته شده از"
 
 #: templates/docs/sidebar.html:3
 msgid "Multi-page or single-page"
@@ -267,4 +326,39 @@ msgstr ""
 #: templates/index/community.html:213
 msgid "turn on JavaScript to see email address"
 msgstr "روشن کردن جاوا اسکریپت برای دیدن نشانی رایانامه"
+
+#~ msgid ""
+#~ "ClickHouse is an open source column-"
+#~ "oriented database management system that "
+#~ "allows generating analytical data reports "
+#~ "in real time using SQL queries."
+#~ msgstr ""
+#~ "در تاتر یک منبع ستون گرا سیستم "
+#~ "مدیریت پایگاه داده باز است که "
+#~ "اجازه می دهد تا تولید گزارش داده"
+#~ " تحلیلی در زمان واقعی با استفاده "
+#~ "از پرس و جو گذاشتن است."
+
+#~ msgid ""
+#~ "ClickHouse is an open source distributed"
+#~ " column-oriented database management system"
+#~ " that allows generating analytical data "
+#~ "reports in real time using SQL "
+#~ "queries. Сreated by Yandex ClickHouse "
+#~ "manages extremely large volumes of data"
+#~ " in a stable and sustainable manner."
+#~ msgstr ""
+#~ "ClickHouse is an open source distributed"
+#~ " column-oriented database management system"
+#~ " that allows generating analytical data "
+#~ "reports in real time using SQL "
+#~ "queries. Сreated by Yandex ClickHouse "
+#~ "manages extremely large volumes of data"
+#~ " in a stable and sustainable manner."
+
+#~ msgid "published at"
+#~ msgstr "منتشر شده در"
+
+#~ msgid "modified at"
+#~ msgstr "تغییریافته در"
 

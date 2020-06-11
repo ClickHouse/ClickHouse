@@ -39,7 +39,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/config_version.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
@@ -76,6 +75,11 @@
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
+#include <Common/UTF8Helpers.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
@@ -138,7 +142,8 @@ private:
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
-    Context context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    Context context = Context::createGlobal(shared_context.get());
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in {STDIN_FILENO};
@@ -353,6 +358,78 @@ private:
         return false;
     }
 
+#if USE_REPLXX
+    static void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors)
+    {
+        using namespace replxx;
+
+        static const std::unordered_map<TokenType, Replxx::Color> token_to_color =
+        {
+            { TokenType::Whitespace, Replxx::Color::DEFAULT },
+            { TokenType::Comment, Replxx::Color::GRAY },
+            { TokenType::BareWord, Replxx::Color::DEFAULT },
+            { TokenType::Number, Replxx::Color::GREEN },
+            { TokenType::StringLiteral, Replxx::Color::CYAN },
+            { TokenType::QuotedIdentifier, Replxx::Color::MAGENTA },
+            { TokenType::OpeningRoundBracket, Replxx::Color::BROWN },
+            { TokenType::ClosingRoundBracket, Replxx::Color::BROWN },
+            { TokenType::OpeningSquareBracket, Replxx::Color::BROWN },
+            { TokenType::ClosingSquareBracket, Replxx::Color::BROWN },
+            { TokenType::OpeningCurlyBrace, Replxx::Color::INTENSE },
+            { TokenType::ClosingCurlyBrace, Replxx::Color::INTENSE },
+
+            { TokenType::Comma, Replxx::Color::INTENSE },
+            { TokenType::Semicolon, Replxx::Color::INTENSE },
+            { TokenType::Dot, Replxx::Color::INTENSE },
+            { TokenType::Asterisk, Replxx::Color::INTENSE },
+            { TokenType::Plus, Replxx::Color::INTENSE },
+            { TokenType::Minus, Replxx::Color::INTENSE },
+            { TokenType::Slash, Replxx::Color::INTENSE },
+            { TokenType::Percent, Replxx::Color::INTENSE },
+            { TokenType::Arrow, Replxx::Color::INTENSE },
+            { TokenType::QuestionMark, Replxx::Color::INTENSE },
+            { TokenType::Colon, Replxx::Color::INTENSE },
+            { TokenType::Equals, Replxx::Color::INTENSE },
+            { TokenType::NotEquals, Replxx::Color::INTENSE },
+            { TokenType::Less, Replxx::Color::INTENSE },
+            { TokenType::Greater, Replxx::Color::INTENSE },
+            { TokenType::LessOrEquals, Replxx::Color::INTENSE },
+            { TokenType::GreaterOrEquals, Replxx::Color::INTENSE },
+            { TokenType::Concatenation, Replxx::Color::INTENSE },
+            { TokenType::At, Replxx::Color::INTENSE },
+
+            { TokenType::EndOfStream, Replxx::Color::DEFAULT },
+
+            { TokenType::Error, Replxx::Color::RED },
+            { TokenType::ErrorMultilineCommentIsNotClosed, Replxx::Color::RED },
+            { TokenType::ErrorSingleQuoteIsNotClosed, Replxx::Color::RED },
+            { TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED },
+            { TokenType::ErrorSinglePipeMark, Replxx::Color::RED },
+            { TokenType::ErrorWrongNumber, Replxx::Color::RED },
+            { TokenType::ErrorMaxQuerySizeExceeded, Replxx::Color::RED }
+        };
+
+        const Replxx::Color unknown_token_color = Replxx::Color::RED;
+
+        Lexer lexer(query.data(), query.data() + query.size());
+        size_t pos = 0;
+
+        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+        {
+            size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token.begin), token.size());
+            for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
+            {
+                if (token_to_color.find(token.type) != token_to_color.end())
+                    colors[pos + code_point_index] = token_to_color.at(token.type);
+                else
+                    colors[pos + code_point_index] = unknown_token_color;
+            }
+
+            pos += utf8_len;
+        }
+    }
+#endif
+
     int mainImpl()
     {
         UseSSL use_ssl;
@@ -396,6 +473,10 @@ private:
             echo_queries = config().getBool("echo", false);
             ignore_error = config().getBool("ignore-error", false);
         }
+
+        ClientInfo & client_info = context.getClientInfo();
+        client_info.setInitialQuery();
+        client_info.quota_key = config().getString("quota_key", "");
 
         connect();
 
@@ -480,7 +561,7 @@ private:
                 history_file = config().getString("history_file");
             else
             {
-                auto history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
+                auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
                 if (history_file_from_env)
                     history_file = history_file_from_env;
                 else if (!home_path.empty())
@@ -490,12 +571,26 @@ private:
             if (!history_file.empty() && !Poco::File(history_file).exists())
                 Poco::File(history_file).createFile();
 
+            LineReader::Patterns query_extenders = {"\\"};
+            LineReader::Patterns query_delimiters = {";", "\\G"};
+
 #if USE_REPLXX
-            ReplxxLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+            replxx::Replxx::highlighter_callback_t highlight_callback{};
+            if (config().getBool("highlight"))
+                highlight_callback = highlight;
+
+            ReplxxLineReader lr(
+                Suggest::instance(),
+                history_file,
+                config().has("multiline"),
+                query_extenders,
+                query_delimiters,
+                highlight_callback);
+
 #elif defined(USE_READLINE) && USE_READLINE
-            ReadlineLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+            ReadlineLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
-            LineReader lr(history_file, '\\', config().has("multiline") ? ';' : 0);
+            LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
 
             /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
@@ -605,9 +700,7 @@ private:
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
-        if (
-            server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
-            server_display_name.length() == 0)
+        if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         {
             server_display_name = config().getString("host", "localhost");
         }
@@ -619,11 +712,19 @@ private:
                 << " revision " << server_revision
                 << "." << std::endl << std::endl;
 
-            if (std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH)
-                < std::make_tuple(server_version_major, server_version_minor, server_version_patch))
+            auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+            auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
+
+            if (client_version_tuple < server_version_tuple)
             {
                 std::cout << "ClickHouse client version is older than ClickHouse server. "
                     << "It may lack support for new features."
+                    << std::endl << std::endl;
+            }
+            else if (client_version_tuple > server_version_tuple)
+            {
+                std::cout << "ClickHouse server version is older than ClickHouse client. "
+                    << "It may indicate that the server is out of date and can be upgraded."
                     << std::endl << std::endl;
             }
         }
@@ -812,7 +913,7 @@ private:
                 insert->tryFindInputFunction(input_function);
 
             /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-            if (insert && (!insert->select || input_function))
+            if (insert && (!insert->select || input_function) && !insert->watch)
             {
                 if (input_function && insert->format.empty())
                     throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
@@ -905,7 +1006,7 @@ private:
                     query_id,
                     QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
-                    nullptr,
+                    &context.getClientInfo(),
                     true);
 
                 sendExternalTables();
@@ -937,7 +1038,15 @@ private:
         if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-        connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query_without_data,
+            query_id,
+            QueryProcessingStage::Complete,
+            &context.getSettingsRef(),
+            &context.getClientInfo(),
+            true);
+
         sendExternalTables();
 
         /// Receive description of table structure.
@@ -1153,10 +1262,10 @@ private:
                 /// Poll for changes after a cancellation check, otherwise it never reached
                 /// because of progress updates from server.
                 if (connection->poll(poll_interval))
-                  break;
+                    break;
             }
 
-            if (!receiveAndProcessPacket())
+            if (!receiveAndProcessPacket(cancelled))
                 break;
         }
 
@@ -1167,14 +1276,16 @@ private:
 
     /// Receive a part of the result, or progress info or an exception and process it.
     /// Returns true if one should continue receiving packets.
-    bool receiveAndProcessPacket()
+    /// Output of result is suppressed if query was cancelled.
+    bool receiveAndProcessPacket(bool cancelled)
     {
         Packet packet = connection->receivePacket();
 
         switch (packet.type)
         {
             case Protocol::Server::Data:
-                onData(packet.block);
+                if (!cancelled)
+                    onData(packet.block);
                 return true;
 
             case Protocol::Server::Progress:
@@ -1186,11 +1297,13 @@ private:
                 return true;
 
             case Protocol::Server::Totals:
-                onTotals(packet.block);
+                if (!cancelled)
+                    onTotals(packet.block);
                 return true;
 
             case Protocol::Server::Extremes:
-                onExtremes(packet.block);
+                if (!cancelled)
+                    onExtremes(packet.block);
                 return true;
 
             case Protocol::Server::Exception:
@@ -1282,7 +1395,7 @@ private:
 
         while (packet_type && *packet_type == Protocol::Server::Log)
         {
-            receiveAndProcessPacket();
+            receiveAndProcessPacket(false);
             packet_type = connection->checkPacket();
         }
     }
@@ -1461,7 +1574,7 @@ private:
             "\033[1m↗\033[0m",
         };
 
-        auto indicator = indicators[increment % 8];
+        const char * indicator = indicators[increment % 8];
 
         if (!send_logs && written_progress_chars)
             message << '\r';
@@ -1560,6 +1673,11 @@ private:
         auto embedded_stack_trace_pos = text.find("Stack trace");
         if (std::string::npos != embedded_stack_trace_pos && !config().getBool("stacktrace", false))
             text.resize(embedded_stack_trace_pos);
+
+        /// If we probably have progress bar, we should add additional newline,
+        /// otherwise exception may display concatenated with the progress bar.
+        if (need_render_progress)
+            std::cerr << '\n';
 
         std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
             << "Code: " << e.code() << ". " << text << std::endl;
@@ -1710,6 +1828,7 @@ public:
               */
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
+            ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
@@ -1731,6 +1850,7 @@ public:
             ("echo", "in batch mode, print query before execution")
             ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", po::value<bool>(), "enable or disable compression")
+            ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
         ;
@@ -1800,7 +1920,11 @@ public:
                 std::string text = e.displayText();
                 std::cerr << "Code: " << e.code() << ". " << text << std::endl;
                 std::cerr << "Table №" << i << std::endl << std::endl;
-                exit(e.code());
+                /// Avoid the case when error exit code can possibly overflow to normal (zero).
+                auto exit_code = e.code() % 256;
+                if (exit_code == 0)
+                    exit_code = 255;
+                exit(exit_code);
             }
         }
 
@@ -1845,6 +1969,8 @@ public:
             config().setString("password", options["password"].as<std::string>());
         if (options.count("ask-password"))
             config().setBool("ask-password", true);
+        if (options.count("quota_key"))
+            config().setString("quota_key", options["quota_key"].as<std::string>());
         if (options.count("multiline"))
             config().setBool("multiline", true);
         if (options.count("multiquery"))
@@ -1875,6 +2001,8 @@ public:
             config().setBool("disable_suggestion", true);
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
+        if (options.count("highlight"))
+            config().setBool("highlight", options["highlight"].as<bool>());
 
         argsToConfig(common_arguments, config(), 100);
 

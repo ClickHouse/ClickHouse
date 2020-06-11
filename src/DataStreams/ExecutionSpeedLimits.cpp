@@ -30,7 +30,8 @@ static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_i
     {
         UInt64 sleep_microseconds = desired_microseconds - total_elapsed_microseconds;
 
-        /// Never sleep more than one second (it should be enough to limit speed for a reasonable amount, and otherwise it's too easy to make query hang).
+        /// Never sleep more than one second (it should be enough to limit speed for a reasonable amount,
+        /// and otherwise it's too easy to make query hang).
         sleep_microseconds = std::min(UInt64(1000000), sleep_microseconds);
 
         sleepForMicroseconds(sleep_microseconds);
@@ -41,18 +42,18 @@ static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_i
 
 void ExecutionSpeedLimits::throttle(
     size_t read_rows, size_t read_bytes,
-    size_t total_rows_to_read, UInt64 total_elapsed_microseconds)
+    size_t total_rows_to_read, UInt64 total_elapsed_microseconds) const
 {
     if ((min_execution_rps != 0 || max_execution_rps != 0
          || min_execution_bps != 0 || max_execution_bps != 0
-         || (total_rows_to_read != 0 && timeout_before_checking_execution_speed != 0)) &&
-        (static_cast<Int64>(total_elapsed_microseconds) > timeout_before_checking_execution_speed.totalMicroseconds()))
+         || (total_rows_to_read != 0 && timeout_before_checking_execution_speed != 0))
+        && (static_cast<Int64>(total_elapsed_microseconds) > timeout_before_checking_execution_speed.totalMicroseconds()))
     {
         /// Do not count sleeps in throttlers
         UInt64 throttler_sleep_microseconds = CurrentThread::getProfileEvents()[ProfileEvents::ThrottlerSleepMicroseconds];
 
         double elapsed_seconds = 0;
-        if (throttler_sleep_microseconds > total_elapsed_microseconds)
+        if (total_elapsed_microseconds > throttler_sleep_microseconds)
             elapsed_seconds = static_cast<double>(total_elapsed_microseconds - throttler_sleep_microseconds) / 1000000.0;
 
         if (elapsed_seconds > 0)
@@ -103,7 +104,7 @@ static bool handleOverflowMode(OverflowMode mode, const String & message, int co
     }
 }
 
-bool ExecutionSpeedLimits::checkTimeLimit(UInt64 elapsed_ns, OverflowMode overflow_mode)
+bool ExecutionSpeedLimits::checkTimeLimit(UInt64 elapsed_ns, OverflowMode overflow_mode) const
 {
     if (max_execution_time != 0
         && elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)

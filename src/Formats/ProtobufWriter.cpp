@@ -778,7 +778,7 @@ private:
         enum_value_always_equals_pbnumber = true;
         for (const auto & name_value_pair : name_value_pairs)
         {
-            Int16 value = name_value_pair.second;
+            Int16 value = name_value_pair.second; // NOLINT
             const auto * enum_descriptor = field->enum_type()->FindValueByName(name_value_pair.first);
             if (enum_descriptor)
             {

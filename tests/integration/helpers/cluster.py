@@ -11,6 +11,7 @@ import subprocess
 import time
 import urllib
 import httplib
+import requests
 import xml.dom.minidom
 import logging
 import docker
@@ -18,6 +19,7 @@ import pprint
 import psycopg2
 import pymongo
 import pymysql
+import cassandra.cluster
 from dicttoxml import dicttoxml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
@@ -28,6 +30,8 @@ from .client import Client
 from .hdfs_api import HDFSApi
 
 HELPERS_DIR = p.dirname(__file__)
+CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
+DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "docker/test/integration/compose/")
 DEFAULT_ENV_NAME = 'env_file'
 
 SANITIZER_SIGN = "=================="
@@ -105,6 +109,7 @@ class ClickHouseCluster:
         self.base_zookeeper_cmd = None
         self.base_mysql_cmd = []
         self.base_kafka_cmd = []
+        self.base_cassandra_cmd = []
         self.pre_zookeeper_commands = []
         self.instances = {}
         self.with_zookeeper = False
@@ -116,6 +121,7 @@ class ClickHouseCluster:
         self.with_mongo = False
         self.with_net_trics = False
         self.with_redis = False
+        self.with_cassandra = False
 
         self.with_minio = False
         self.minio_host = "minio1"
@@ -130,6 +136,8 @@ class ClickHouseCluster:
         self.schema_registry_host = "schema-registry"
         self.schema_registry_port = 8081
 
+        self.zookeeper_use_tmpfs = True
+
         self.docker_client = None
         self.is_up = False
 
@@ -142,10 +150,10 @@ class ClickHouseCluster:
     def add_instance(self, name, config_dir=None, main_configs=None, user_configs=None, macros=None,
                      with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
-                     with_redis=False, with_minio=False,
+                     with_redis=False, with_minio=False, with_cassandra=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test",
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
-                     zookeeper_docker_compose_path=None):
+                     zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -164,7 +172,7 @@ class ClickHouseCluster:
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs or [], user_configs or [], macros or {},
             with_zookeeper,
-            self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio,
+            self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio, with_cassandra,
             self.base_configs_dir, self.server_bin_path,
             self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
             env_variables=env_variables or {}, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address,
@@ -174,16 +182,17 @@ class ClickHouseCluster:
         self.instances[name] = instance
         if ipv4_address is not None or ipv6_address is not None:
             self.with_net_trics = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_net.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_net.yml')])
 
         self.base_cmd.extend(['--file', instance.docker_compose_path])
 
         cmds = []
         if with_zookeeper and not self.with_zookeeper:
             if not zookeeper_docker_compose_path:
-                zookeeper_docker_compose_path = p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')
+                zookeeper_docker_compose_path = p.join(DOCKER_COMPOSE_DIR, 'docker_compose_zookeeper.yml')
 
             self.with_zookeeper = True
+            self.zookeeper_use_tmpfs = zookeeper_use_tmpfs
             self.base_cmd.extend(['--file', zookeeper_docker_compose_path])
             self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', zookeeper_docker_compose_path]
@@ -191,73 +200,79 @@ class ClickHouseCluster:
 
         if with_mysql and not self.with_mysql:
             self.with_mysql = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')])
             self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')]
 
             cmds.append(self.base_mysql_cmd)
 
         if with_postgres and not self.with_postgres:
             self.with_postgres = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')])
             self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                      self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
+                                      self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')]
             cmds.append(self.base_postgres_cmd)
 
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
             if not self.with_mysql:
                 self.with_mysql = True
-                self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')])
+                self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')])
                 self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
+                                       self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')]
                 cmds.append(self.base_mysql_cmd)
 
             if not self.with_postgres:
                 self.with_postgres = True
-                self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')])
+                self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')])
                 self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                           self.project_name, '--file',
-                                          p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
+                                          p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')]
                 cmds.append(self.base_postgres_cmd)
 
         if with_kafka and not self.with_kafka:
             self.with_kafka = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_kafka.yml')])
             self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_kafka.yml')]
             cmds.append(self.base_kafka_cmd)
 
         if with_hdfs and not self.with_hdfs:
             self.with_hdfs = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_hdfs.yml')])
             self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                  self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')]
+                                  self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_hdfs.yml')]
             cmds.append(self.base_hdfs_cmd)
 
         if with_mongo and not self.with_mongo:
             self.with_mongo = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mongo.yml')])
             self.base_mongo_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mongo.yml')]
             cmds.append(self.base_mongo_cmd)
 
         if self.with_net_trics:
             for cmd in cmds:
-                cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_net.yml')])
+                cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_net.yml')])
 
         if with_redis and not self.with_redis:
             self.with_redis = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_redis.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_redis.yml')])
             self.base_redis_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_redis.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_redis.yml')]
 
         if with_minio and not self.with_minio:
             self.with_minio = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_minio.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_minio.yml')])
             self.base_minio_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_minio.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_minio.yml')]
             cmds.append(self.base_minio_cmd)
+
+        if with_cassandra and not self.with_cassandra:
+            self.with_cassandra = True
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_cassandra.yml')])
+            self.base_cassandra_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                       self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_cassandra.yml')]
 
         return instance
 
@@ -296,6 +311,41 @@ class ClickHouseCluster:
         docker_id = self.get_instance_docker_id(instance_name)
         handle = self.docker_client.containers.get(docker_id)
         return handle.attrs['NetworkSettings']['Networks'].values()[0]['IPAddress']
+
+    def get_container_id(self, instance_name):
+        docker_id = self.get_instance_docker_id(instance_name)
+        handle = self.docker_client.containers.get(docker_id)
+        return handle.attrs['Id']
+
+    def get_container_logs(self, instance_name):
+        container_id = self.get_container_id(instance_name)
+        return self.docker_client.api.logs(container_id)
+
+    def exec_in_container(self, container_id, cmd, detach=False, **kwargs):
+        exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
+        output = self.docker_client.api.exec_start(exec_id, detach=detach)
+
+        output = output.decode('utf8')
+        exit_code = self.docker_client.api.exec_inspect(exec_id)['ExitCode']
+        if exit_code:
+            container_info = self.docker_client.api.inspect_container(container_id)
+            image_id = container_info.get('Image')
+            image_info = self.docker_client.api.inspect_image(image_id)
+            print("Command failed in container {}: ".format(container_id))
+            pprint.pprint(container_info)
+            print("")
+            print("Container {} uses image {}: ".format(container_id, image_id))
+            pprint.pprint(image_info)
+            print("")
+            raise Exception('Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id, exit_code, output))
+        return output
+
+    def copy_file_to_container(self, container_id, local_path, dest_path):
+        with open(local_path, 'r') as fdata:
+            data = fdata.read()
+            encoded_data = base64.b64encode(data)
+            self.exec_in_container(container_id, ["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)],
+                                   user='root')
 
     def wait_mysql_to_start(self, timeout=60):
         start = time.time()
@@ -370,7 +420,7 @@ class ClickHouseCluster:
                 print "Can't connect to Mongo " + str(ex)
                 time.sleep(1)
 
-    def wait_minio_to_start(self, timeout=10):
+    def wait_minio_to_start(self, timeout=30):
         minio_client = Minio('localhost:9001',
                              access_key='minio',
                              secret_key='minio123',
@@ -378,13 +428,24 @@ class ClickHouseCluster:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                buckets = minio_client.list_buckets()
+                minio_client.list_buckets()
+
+                logging.info("Connected to Minio.")
+
+                if minio_client.bucket_exists(self.minio_bucket):
+                    minio_client.remove_bucket(self.minio_bucket)
+
+                minio_client.make_bucket(self.minio_bucket)
+
+                logging.info("S3 bucket '%s' created", self.minio_bucket)
+
                 self.minio_client = minio_client
-                logging.info("Connected to Minio %s", buckets)
                 return
             except Exception as ex:
                 logging.warning("Can't connect to Minio: %s", str(ex))
                 time.sleep(1)
+
+        raise Exception("Can't wait Minio to start")
 
     def wait_schema_registry_to_start(self, timeout=10):
         sr_client = CachedSchemaRegistryClient('http://localhost:8081')
@@ -397,6 +458,18 @@ class ClickHouseCluster:
                 return
             except Exception as ex:
                 logging.warning("Can't connect to SchemaRegistry: %s", str(ex))
+                time.sleep(1)
+
+    def wait_cassandra_to_start(self, timeout=30):
+        cass_client = cassandra.cluster.Cluster(["localhost"], port="9043")
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                cass_client.connect()
+                logging.info("Connected to Cassandra")
+                return
+            except Exception as ex:
+                logging.warning("Can't connect to Cassandra: %s", str(ex))
                 time.sleep(1)
 
     def start(self, destroy_dirs=True):
@@ -426,7 +499,19 @@ class ClickHouseCluster:
             common_opts = ['up', '-d', '--force-recreate']
 
             if self.with_zookeeper and self.base_zookeeper_cmd:
-                subprocess_check_call(self.base_zookeeper_cmd + common_opts)
+                env = os.environ.copy()
+                if not self.zookeeper_use_tmpfs:
+                    env['ZK_FS'] = 'bind'
+                    for i in range(1, 4):
+                        zk_data_path = self.instances_dir + '/zkdata' + str(i)
+                        zk_log_data_path = self.instances_dir + '/zklog' + str(i)
+                        if not os.path.exists(zk_data_path):
+                            os.mkdir(zk_data_path)
+                        if not os.path.exists(zk_log_data_path):
+                            os.mkdir(zk_log_data_path)
+                        env['ZK_DATA' + str(i)] = zk_data_path
+                        env['ZK_DATA_LOG' + str(i)] = zk_log_data_path
+                subprocess.check_call(self.base_zookeeper_cmd + common_opts, env=env)
                 for command in self.pre_zookeeper_commands:
                     self.run_kazoo_commands_with_retries(command, repeats=5)
                 self.wait_zookeeper_to_start(120)
@@ -462,6 +547,10 @@ class ClickHouseCluster:
                 subprocess_check_call(minio_start_cmd)
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start()
+
+            if self.with_cassandra and self.base_cassandra_cmd:
+                subprocess_check_call(self.base_cassandra_cmd + ['up', '-d', '--force-recreate'])
+                self.wait_cassandra_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
             logging.info("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd)))
@@ -509,6 +598,15 @@ class ClickHouseCluster:
             instance.ip_address = None
             instance.client = None
 
+        if not self.zookeeper_use_tmpfs:
+             for i in range(1, 4):
+                 zk_data_path = self.instances_dir + '/zkdata' + str(i)
+                 zk_log_data_path = self.instances_dir + '/zklog' + str(i)
+                 if os.path.exists(zk_data_path):
+                     shutil.rmtree(zk_data_path)
+                 if os.path.exists(zk_log_data_path):
+                     shutil.rmtree(zk_log_data_path)
+
         if sanitizer_assert_instance is not None:
             raise Exception("Sanitizer assert found in {} for instance {}".format(self.docker_logs_path, sanitizer_assert_instance))
 
@@ -548,7 +646,7 @@ CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-serv
 CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "{} --daemon; tail -f /dev/null"'.format(CLICKHOUSE_START_COMMAND)
 
 DOCKER_COMPOSE_TEMPLATE = '''
-version: '2.2'
+version: '2.3'
 services:
     {name}:
         image: {image}
@@ -583,7 +681,7 @@ class ClickHouseInstance:
 
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
-            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio,
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio, with_cassandra,
             base_configs_dir, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test",
@@ -613,6 +711,7 @@ class ClickHouseInstance:
         self.with_mongo = with_mongo
         self.with_redis = with_redis
         self.with_minio = with_minio
+        self.with_cassandra = with_cassandra
 
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
@@ -687,7 +786,7 @@ class ClickHouseInstance:
 
         def http_code_and_message():
             return str(open_result.getcode()) + " " + httplib.responses[open_result.getcode()] + ": " + open_result.read()
-            
+
         if expect_fail_and_get_error:
             if open_result.getcode() == 200:
                 raise Exception("ClickHouse HTTP server is expected to fail, but succeeded: " + open_result.read())
@@ -696,6 +795,11 @@ class ClickHouseInstance:
             if open_result.getcode() != 200:
                 raise Exception("ClickHouse HTTP server returned " + http_code_and_message())
             return open_result.read()
+
+    # Connects to the instance via HTTP interface, sends a query and returns the answer
+    def http_request(self, url, method='GET', params=None, data=None, headers=None):
+        url = "http://" + self.ip_address + ":8123/"+url
+        return requests.request(method=method, url=url, params=params, data=data, headers=headers)
 
     # Connects to the instance via HTTP interface, sends a query, expects an error and return the error message
     def http_query_and_get_error(self, sql, data=None, params=None, user=None, password=None):
@@ -729,24 +833,8 @@ class ClickHouseInstance:
         assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_start_wait_sec / 0.5), sleep_time=0.5)
 
     def exec_in_container(self, cmd, detach=False, **kwargs):
-        container = self.get_docker_handle()
-        exec_id = self.docker_client.api.exec_create(container.id, cmd, **kwargs)
-        output = self.docker_client.api.exec_start(exec_id, detach=detach)
-
-        output = output.decode('utf8')
-        exit_code = self.docker_client.api.exec_inspect(exec_id)['ExitCode']
-        if exit_code:
-            container_info = self.docker_client.api.inspect_container(container.id)
-            image_id = container_info.get('Image')
-            image_info = self.docker_client.api.inspect_image(image_id)
-            print("Command failed in container {}: ".format(container.id))
-            pprint.pprint(container_info)
-            print("")
-            print("Container {} uses image {}: ".format(container.id, image_id))
-            pprint.pprint(image_info)
-            print("")
-            raise Exception('Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container.id, exit_code, output))
-        return output
+        container_id = self.get_docker_handle().id
+        return self.cluster.exec_in_container(container_id, cmd, detach, **kwargs)
 
     def contains_in_log(self, substring):
         result = self.exec_in_container(
@@ -754,11 +842,8 @@ class ClickHouseInstance:
         return len(result) > 0
 
     def copy_file_to_container(self, local_path, dest_path):
-        with open(local_path, 'r') as fdata:
-            data = fdata.read()
-            encoded_data = base64.b64encode(data)
-            self.exec_in_container(["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)],
-                                   user='root')
+        container_id = self.get_docker_handle().id
+        return self.cluster.copy_file_to_container(container_id, local_path, dest_path)
 
     def get_process_pid(self, process_name):
         output = self.exec_in_container(["bash", "-c",

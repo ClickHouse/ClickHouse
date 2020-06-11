@@ -7,7 +7,7 @@ toc_title: clickhouse-local
 
 The `clickhouse-local` program enables you to perform fast processing on local files, without having to deploy and configure the ClickHouse server.
 
-Accepts data that represent tables and queries them using [ClickHouse SQL dialect](../../sql_reference/index.md).
+Accepts data that represent tables and queries them using [ClickHouse SQL dialect](../../sql-reference/index.md).
 
 `clickhouse-local` uses the same core as ClickHouse server, so it supports most of the features and the same set of formats and table engines.
 

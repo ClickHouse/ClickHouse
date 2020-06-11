@@ -81,8 +81,20 @@ if [ "$REF_PR" == "" ]; then echo Reference PR is not specified ; exit 1 ; fi
     fi
 ) | tee right-commit.txt
 
-# Prepare the list of changed tests for use by compare.sh
-git -C ch diff --name-only "$SHA_TO_TEST" "$(git -C ch merge-base "$SHA_TO_TEST"~ master)" -- tests/performance | tee changed-tests.txt
+if [ "$PR_TO_TEST" != "0" ]
+then
+    # If the PR only changes the tests and nothing else, prepare a list of these
+    # tests for use by compare.sh. Compare to merge base, because master might be
+    # far in the future and have unrelated test changes.
+    base=$(git -C ch merge-base "$SHA_TO_TEST" master)
+    git -C ch diff --name-only "$base" "$SHA_TO_TEST" | tee changed-tests.txt
+    if grep -vq '^tests/performance' changed-tests.txt
+    then
+        # Have some other changes besides the tests, so truncate the test list,
+        # meaning, run all tests.
+        : > changed-tests.txt
+    fi
+fi
 
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8
@@ -119,5 +131,5 @@ done
 
 dmesg -T > dmesg.log
 
-7z a /output/output.7z ./*.{log,tsv,html,txt,rep,svg} {right,left}/{performance,db/preprocessed_configs}
+7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} {right,left}/{performance,db/preprocessed_configs,scripts} report analyze benchmark
 cp compare.log /output

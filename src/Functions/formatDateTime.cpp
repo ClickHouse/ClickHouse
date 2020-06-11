@@ -356,8 +356,8 @@ public:
             }
         }
 
-        auto begin = reinterpret_cast<char *>(dst_data.data());
-        auto pos = begin;
+        auto * begin = reinterpret_cast<char *>(dst_data.data());
+        auto * pos = begin;
 
         for (size_t i = 0; i < vec.size(); ++i)
         {

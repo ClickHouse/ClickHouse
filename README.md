@@ -10,12 +10,12 @@ ClickHouse is an open-source column-oriented database management system that all
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
 * [Slack](https://join.slack.com/t/clickhousedb/shared_invite/zt-d2zxkf9e-XyxDa_ucfPxzuH4SJIm~Ng) and [Telegram](https://telegram.me/clickhouse_en) allow to chat with ClickHouse users in real-time.
 * [Blog](https://clickhouse.yandex/blog/en/) contains various ClickHouse-related articles, as well as announces and reports about events.
+* [Yandex.Messenger channel](https://yandex.ru/chat/#/join/20e380d9-c7be-4123-ab06-e95fb946975e) shares announcements and useful links in Russian.
 * [Contacts](https://clickhouse.tech/#contacts) can help to get your questions answered if there are any.
 * You can also [fill this form](https://clickhouse.tech/#meet) to meet Yandex ClickHouse team in person.
 
 ## Upcoming Events
 
-* [ClickHouse Online Meetup West (in English)](https://www.eventbrite.com/e/clickhouse-online-meetup-registration-102886791162) on April 24, 2020.
-* [ClickHouse Online Meetup East (in English)](https://www.eventbrite.com/e/clickhouse-online-meetup-east-registration-102989325846) on April 28, 2020.
+* [ClickHouse Online Meetup (in Russian)](https://events.yandex.ru/events/click-house-onlajn-vs-18-06-2020) on June 18, 2020.
 * [ClickHouse Workshop in Novosibirsk](https://2020.codefest.ru/lecture/1628) on TBD date.
 * [Yandex C++ Open-Source Sprints in Moscow](https://events.yandex.ru/events/otkrytyj-kod-v-yandek-28-03-2020) on TBD date.

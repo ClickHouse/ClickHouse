@@ -77,7 +77,7 @@ std::ostream & operator << (std::ostream & os, const RequiredSourceColumnsData &
     for (const auto & pr : cols.required_names)
     {
         os << "'" << pr.first << "'";
-        for (auto & alias : pr.second.aliases)
+        for (const auto & alias : pr.second.aliases)
             os << "/'" << alias << "'";
         os << ", ";
     }

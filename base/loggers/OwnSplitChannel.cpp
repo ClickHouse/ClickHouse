@@ -20,7 +20,7 @@ void OwnSplitChannel::log(const Poco::Message & msg)
     if (channels.empty() && (logs_queue == nullptr || msg.getPriority() > logs_queue->max_priority))
         return;
 
-    if (auto masker = SensitiveDataMasker::getInstance())
+    if (auto * masker = SensitiveDataMasker::getInstance())
     {
         auto message_text = msg.getText();
         auto matches = masker->wipeSensitiveData(message_text);
@@ -68,7 +68,6 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
 
         logs_queue->emplace(std::move(columns));
     }
-
 
     /// Also log to system.text_log table, if message is not too noisy
     auto text_log_max_priority_loaded = text_log_max_priority.load(std::memory_order_relaxed);

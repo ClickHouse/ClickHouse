@@ -264,7 +264,7 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
     for (size_t i = offset; i < size; ++i)
     {
         const void * virtual_addr = frames[i];
-        auto object = symbol_index.findObject(virtual_addr);
+        const auto * object = symbol_index.findObject(virtual_addr);
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
         const void * physical_addr = reinterpret_cast<const void *>(uintptr_t(virtual_addr) - virtual_offset);
 
@@ -282,7 +282,7 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
             }
         }
 
-        auto symbol = symbol_index.findSymbol(virtual_addr);
+        const auto * symbol = symbol_index.findSymbol(virtual_addr);
         if (symbol)
         {
             int status = 0;

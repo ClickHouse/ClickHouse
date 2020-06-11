@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/WriteHelpers.h>
@@ -116,7 +115,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
 
     if (src->onlyNull())
         return src;
-    else if (auto * nullable = checkAndGetColumn<ColumnNullable>(*src))
+    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*src))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
         result_null_map_column = nullable->getNullMapColumnPtr();
@@ -139,7 +138,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
         if (isColumnConst(*elem.column))
             continue;
 
-        if (auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
             if (!result_null_map_column)
@@ -148,7 +147,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
             }
             else
             {
-                MutableColumnPtr mutable_result_null_map_column = (*std::move(result_null_map_column)).mutate();
+                MutableColumnPtr mutable_result_null_map_column = IColumn::mutate(std::move(result_null_map_column));
 
                 NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
                 const NullMap & src_null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
@@ -333,7 +332,7 @@ static const ColumnLowCardinality * findLowCardinalityArgument(const Block & blo
     for (auto arg : args)
     {
         const ColumnWithTypeAndName & column = block.getByPosition(arg);
-        if (auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
+        if (const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
         {
             if (result_column)
                 throw Exception("Expected single dictionary argument for function.", ErrorCodes::LOGICAL_ERROR);
@@ -355,13 +354,13 @@ static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     for (auto arg : args)
     {
         ColumnWithTypeAndName & column = block.getByPosition(arg);
-        if (auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
+        if (const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
         {
             /// Single LowCardinality column is supported now.
             if (indexes)
                 throw Exception("Expected single dictionary argument for function.", ErrorCodes::LOGICAL_ERROR);
 
-            auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
+            const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
 
             if (!low_cardinality_type)
                 throw Exception("Incompatible type for low cardinality column: " + column.type->getName(),
@@ -391,7 +390,7 @@ static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     for (auto arg : args)
     {
         ColumnWithTypeAndName & column = block.getByPosition(arg);
-        if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
+        if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
         {
             column.column = column_const->removeLowCardinality()->cloneResized(num_rows);
             column.type = removeLowCardinality(column.type);
@@ -426,7 +425,7 @@ void ExecutableFunctionAdaptor::execute(Block & block, const ColumnNumbers & arg
         for (auto arg : arguments)
             block_without_low_cardinality.safeGetByPosition(arg).column = block.safeGetByPosition(arg).column;
 
-        if (auto * res_low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(res.type.get()))
+        if (const auto * res_low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(res.type.get()))
         {
             const auto * low_cardinality_column = findLowCardinalityArgument(block, arguments);
             bool can_be_executed_on_default_arguments = impl->canBeExecutedOnDefaultArguments();
@@ -611,7 +610,7 @@ DataTypePtr FunctionOverloadResolverAdaptor::getReturnType(const ColumnsWithType
             if (is_const)
                 arg.column = assert_cast<const ColumnConst &>(*arg.column).removeLowCardinality();
 
-            if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(arg.type.get()))
+            if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(arg.type.get()))
             {
                 arg.type = low_cardinality_type->getDictionaryType();
                 has_low_cardinality = true;

@@ -6,12 +6,16 @@
 #include <unordered_map>
 #include <string>
 #include <Common/ThreadPool.h>
+#include <Common/MemoryStatisticsOS.h>
 
 
 namespace DB
 {
 
 class Context;
+
+typedef double AsynchronousMetricValue;
+typedef std::unordered_map<std::string, AsynchronousMetricValue> AsynchronousMetricValues;
 
 
 /** Periodically (each minute, starting at 30 seconds offset)
@@ -28,28 +32,26 @@ public:
 
     ~AsynchronousMetrics();
 
-    using Value = double;
-    using Container = std::unordered_map<std::string, Value>;
 
     /// Returns copy of all values.
-    Container getValues() const;
+    AsynchronousMetricValues getValues() const;
 
 private:
     Context & context;
 
-    bool quit {false};
-    std::mutex wait_mutex;
+    mutable std::mutex mutex;
     std::condition_variable wait_cond;
+    bool quit {false};
+    AsynchronousMetricValues values;
 
-    Container container;
-    mutable std::mutex container_mutex;
+#if defined(OS_LINUX)
+    MemoryStatisticsOS memory_stat;
+#endif
 
     ThreadFromGlobalPool thread;
 
     void run();
     void update();
-
-    void set(const std::string & name, Value value);
 };
 
 }

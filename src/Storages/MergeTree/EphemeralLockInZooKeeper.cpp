@@ -107,8 +107,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
         int rc = zookeeper.tryMulti(lock_ops, lock_responses);
         if (rc == Coordination::ZBADVERSION)
         {
-            LOG_TRACE(&Logger::get("EphemeralLocksInAllPartitions"),
-                "Someone has inserted a block in a new partition while we were creating locks. Retry.");
+            LOG_TRACE(&Poco::Logger::get("EphemeralLocksInAllPartitions"), "Someone has inserted a block in a new partition while we were creating locks. Retry.");
             continue;
         }
         else if (rc != Coordination::ZOK)

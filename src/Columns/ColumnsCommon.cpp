@@ -65,7 +65,7 @@ bool memoryIsByte(const void * data, size_t size, uint8_t byte)
 {
     if (size == 0)
         return true;
-    auto ptr = reinterpret_cast<const uint8_t *>(data);
+    const auto * ptr = reinterpret_cast<const uint8_t *>(data);
     return *ptr == byte && memcmp(ptr, ptr + 1, size - 1) == 0;
 }
 
@@ -121,7 +121,7 @@ namespace
 
                 if (diff_offset > 0)
                 {
-                    const auto res_offsets_pos = &res_offsets[offsets_size_old];
+                    auto * res_offsets_pos = &res_offsets[offsets_size_old];
 
                     /// adjust offsets
                     for (size_t i = 0; i < SIMD_BYTES; ++i)
@@ -172,10 +172,10 @@ namespace
         }
 
         const UInt8 * filt_pos = filt.data();
-        const auto filt_end = filt_pos + size;
+        const auto * filt_end = filt_pos + size;
 
-        auto offsets_pos = src_offsets.data();
-        const auto offsets_begin = offsets_pos;
+        const auto * offsets_pos = src_offsets.data();
+        const auto * offsets_begin = offsets_pos;
 
         /// copy array ending at *end_offset_ptr
         const auto copy_array = [&] (const IColumn::Offset * offset_ptr)
@@ -193,7 +193,7 @@ namespace
     #ifdef __SSE2__
         const __m128i zero_vec = _mm_setzero_si128();
         static constexpr size_t SIMD_BYTES = 16;
-        const auto filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+        const auto * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
         while (filt_pos < filt_end_aligned)
         {

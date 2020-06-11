@@ -1,19 +1,4 @@
-<test>
-
-    <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}, '/dev/null') AS test.hits</create_query>
-
-    <stop_conditions>
-        <all_of>
-            <iterations>5</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>100</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
-
+<test max_ignored_relative_change="0.2">
     <settings>
         <output_format_pretty_max_rows>1000000</output_format_pretty_max_rows>
         <max_threads>1</max_threads>
@@ -21,7 +6,19 @@
 
     <substitutions>
         <substitution>
-            <name>format</name>
+            <name>format_slow</name>
+            <values>
+                <value>Pretty</value>
+                <value>PrettyCompact</value>
+                <value>PrettyCompactMonoBlock</value>
+                <value>PrettyNoEscapes</value>
+                <value>PrettySpace</value>
+                <value>MySQLWire</value>
+                <value>XML</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>format_fast</name>
             <values>
                 <value>TabSeparated</value>
                 <value>TabSeparatedRaw</value>
@@ -33,16 +30,9 @@
                 <value>JSONEachRow</value>
                 <value>JSONCompactEachRow</value>
                 <value>TSKV</value>
-                <value>Pretty</value>
-                <value>PrettyCompact</value>
-                <value>PrettyCompactMonoBlock</value>
-                <value>PrettyNoEscapes</value>
-                <value>PrettySpace</value>
                 <value>RowBinary</value>
                 <value>Native</value>
-                <value>XML</value>
                 <value>ODBCDriver2</value>
-                <value>MySQLWire</value>
                 <value>Avro</value>
                 <value>MsgPack</value>
             </values>
@@ -53,8 +43,12 @@
         <table_exists>test.hits</table_exists>
     </preconditions>
 
-    <query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 100000</query>
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format_slow} ENGINE = File({format_slow}, '/dev/null') AS test.hits</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format_fast} ENGINE = File({format_fast}, '/dev/null') AS test.hits</create_query>
 
-    <drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
+    <query>INSERT INTO table_{format_slow} SELECT * FROM test.hits LIMIT 10000</query>
+    <query>INSERT INTO table_{format_fast} SELECT * FROM test.hits LIMIT 100000</query>
 
+    <drop_query>DROP TABLE IF EXISTS table_{format_slow}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS table_{format_fast}</drop_query>
 </test>

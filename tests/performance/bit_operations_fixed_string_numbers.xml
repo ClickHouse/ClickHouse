@@ -1,16 +1,4 @@
 <test>
-
-    <stop_conditions>
-        <all_of>
-            <iterations>3</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>5</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
-    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(bitXor(reinterpretAsFixedString(number), reinterpretAsFixedString(number + 1)))</query>
-    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(bitXor(reinterpretAsFixedString(number), reinterpretAsFixedString(0xabcd0123cdef4567)))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(bitXor(reinterpretAsFixedString(number), reinterpretAsFixedString(number + 1)))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(bitXor(reinterpretAsFixedString(number), reinterpretAsFixedString(0xabcd0123cdef4567)))</query>
 </test>
