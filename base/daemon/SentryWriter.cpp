@@ -46,8 +46,10 @@ void sentry_logger(sentry_level_t level, const char * message, va_list args)
     auto * logger = &Poco::Logger::get("SentryWriter");
     size_t size = 1024;
     char buffer[size];
-    if (vsnprintf(buffer, size, message, args) >= 0) {
-        switch (level) {
+    if (vsnprintf(buffer, size, message, args) >= 0)
+    {
+        switch (level)
+        {
             case SENTRY_LEVEL_DEBUG:
                 logger->debug(buffer);
                 break;
@@ -65,7 +67,6 @@ void sentry_logger(sentry_level_t level, const char * message, va_list args)
                 break;
         }
     }
-}
 }
 }
 #endif
