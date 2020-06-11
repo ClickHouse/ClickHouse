@@ -562,16 +562,12 @@ void StorageReplicatedMergeTree::createReplica()
     do
     {
         Coordination::Stat replicas_stat;
+        String replicas_value;
 
-        try
-        {
-            zookeeper->get(zookeeper_path + "/replicas", &replicas_stat);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("because the last replica of the table was dropped right now");
-            throw;
-        }
+        code = zookeeper->tryGet(zookeeper_path + "/replicas", replicas_value, &replicas_stat);
+        if (code == Coordination::ZNONODE)
+            throw Exception(fmt::format("Cannot create a replica of the table {}, because the last replica of the table was dropped right now",
+                zookeeper_path), ErrorCodes::ALL_REPLICAS_LOST);
 
         /// It is not the first replica, we will mark it as "lost", to immediately repair (clone) from existing replica.
         /// By the way, it's possible that the replica will be first, if all previous replicas were removed concurrently.
