@@ -110,7 +110,7 @@ bool sanitizeBlock(Block & block)
                 return false;
             col.column = col.type->createColumn();
         }
-        else if (isColumnConst(*col.column) && !col.column->empty())
+        else if (!col.column->empty())
             col.column = col.column->cloneEmpty();
     }
     return true;
