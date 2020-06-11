@@ -59,7 +59,7 @@ wait
 
 echo "DROP TABLE concurrent_alter_column" | ${CLICKHOUSE_CLIENT}
 
-sleep 1
+sleep 7
 # Check for deadlocks
 echo "SELECT * FROM system.processes WHERE query_id LIKE 'alter%'" | ${CLICKHOUSE_CLIENT}
 
