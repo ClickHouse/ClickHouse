@@ -13,6 +13,7 @@
 
 #if USE_SENTRY
 #    include <sentry.h> // Y_IGNORE
+#    include <stdio.h>
 #endif
 
 
@@ -38,6 +39,33 @@ void setExtras()
     sentry_set_extra("version_major", sentry_value_new_int32(VERSION_MAJOR));
     sentry_set_extra("version_minor", sentry_value_new_int32(VERSION_MINOR));
     sentry_set_extra("version_patch", sentry_value_new_int32(VERSION_PATCH));
+}
+
+void sentry_logger(sentry_level_t level, const char * message, va_list args)
+{
+    auto * logger = &Poco::Logger::get("SentryWriter");
+    size_t size = 1024;
+    char buffer[size];
+    if (vsnprintf(buffer, size, message, args) >= 0) {
+        switch (level) {
+            case SENTRY_LEVEL_DEBUG:
+                logger->debug(buffer);
+                break;
+            case SENTRY_LEVEL_INFO:
+                logger->information(buffer);
+                break;
+            case SENTRY_LEVEL_WARNING:
+                logger->warning(buffer);
+                break;
+            case SENTRY_LEVEL_ERROR:
+                logger->error(buffer);
+                break;
+            case SENTRY_LEVEL_FATAL:
+                logger->fatal(buffer);
+                break;
+        }
+    }
+}
 }
 }
 #endif
@@ -65,6 +93,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 
         sentry_options_t * options = sentry_options_new();
         sentry_options_set_release(options, VERSION_STRING);
+        sentry_options_set_logger(options, &sentry_logger);
         if (debug)
         {
             sentry_options_set_debug(options, 1);
