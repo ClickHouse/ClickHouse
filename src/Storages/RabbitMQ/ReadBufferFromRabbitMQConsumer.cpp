@@ -13,6 +13,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace Exchange
 {
@@ -22,6 +26,7 @@ namespace Exchange
     static const String DIRECT = "direct";
     static const String TOPIC = "topic";
     static const String HASH = "consistent_hash";
+    static const String HEADERS = "headers";
 }
 
 
@@ -55,7 +60,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
     messages.clear();
     current = messages.begin();
 
-    exchange_type_set = exchange_type != Exchange::DEFAULT ? true : false;
+    exchange_type_set = exchange_type != Exchange::DEFAULT;
 
     /* One queue per consumer can handle up to 50000 messages. More queues per consumer can be added.
      * By default there is one queue per consumer.
@@ -81,7 +86,7 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 void ReadBufferFromRabbitMQConsumer::initExchange()
 {
     /* If exchange_type is not set - then direct-exchange is used - this type of exchange is the fastest (also due to different
-     * binding algorithm this default behaviuor is much faster). It is also used in INSERT query.
+     * binding algorithm this default behaviuor is much faster). It is also used in INSERT query (so it is always declared).
      */
     String producer_exchange = exchange_type_set ? exchange_name + "_" + Exchange::DEFAULT : exchange_name;
     consumer_channel->declareExchange(producer_exchange, AMQP::fanout).onError([&](const char * message)
@@ -114,10 +119,12 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
     else if (exchange_type == Exchange::DIRECT)         type = AMQP::ExchangeType::direct;
     else if (exchange_type == Exchange::TOPIC)          type = AMQP::ExchangeType::topic;
     else if (exchange_type == Exchange::HASH)           type = AMQP::ExchangeType::consistent_hash;
-    else                                                return;
+    else if (exchange_type == Exchange::HEADERS)
+            throw Exception("Headers exchange is not supported", ErrorCodes::BAD_ARGUMENTS);
+    else throw Exception("Invalid exchange type", ErrorCodes::BAD_ARGUMENTS);
 
     /* Declare exchange of the specified type and bind it to hash-exchange, which will evenly distribute messages
-     * between all consumers. (This enables better scaling as without hash-echange - the only oprion to avoid getting the same
+     * between all consumers. (This enables better scaling as without hash-exchange - the only option to avoid getting the same
      * messages more than once - is having only one consumer with one queue, which is not good.)
      */
     consumer_channel->declareExchange(exchange_name, type).onError([&](const char * message)
@@ -156,7 +163,7 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
 
 void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
 {
-    /// These variables might be updated later from a separate thread in onError callbacks
+    /// These variables might be updated later from a separate thread in onError callbacks.
     if (!internal_exchange_declared || (exchange_type_set && !local_exchange_declared))
     {
         initExchange();
@@ -206,7 +213,10 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
             LOG_ERROR(log, "Failed to bind to key {}. Reason: {}", binding_key, message);
         });
 
-        /// Must be done here and not in readPrefix() because library might fail to handle async subscription on the same connection
+        /* Subscription can probably be moved back to readPrefix(), but not sure whether it is better in regard to speed. Also note
+         * that if moved there, it must(!) be wrapped inside a channel->onReady callback or any other, otherwise consumer might fail
+         * to subscribe and no resubscription will help.
+         */
         subscribe(queues.back());
 
         LOG_TRACE(log, "Queue " + queue_name_ + " is bound by key " + binding_key);
@@ -229,7 +239,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
             }
             else
             {
-                /// Means there is only one queue with one consumer - no even distribution needed - no hash-exchange
+                /// Means there is only one queue with one consumer - no even distribution needed - no hash-exchange.
                 for (auto & routing_key : routing_keys)
                 {
                     /// Binding directly to exchange, specified by the client
@@ -274,6 +284,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
     .onSuccess([&](const std::string & /* consumer */)
     {
         subscribed_queue[queue_name] = true;
+        consumer_error = false;
         ++count_subscribed;
 
         LOG_TRACE(log, "Consumer {} is subscribed to queue {}", channel_id, queue_name);
@@ -290,24 +301,17 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
                 message_received += row_delimiter;
             }
 
-            bool stop_loop = false;
-
             /// Needed to avoid data race because this vector can be used at the same time by another thread in nextImpl().
             {
                 std::lock_guard lock(mutex);
                 received.push_back(message_received);
-
-                /* As event loop is blocking to the thread that started it and a single thread should not be blocked while
-                 * executing all callbacks on the connection (not only its own), then there should be some point to unblock.
-                 * loop_started == 1 if current consumer is started the loop and not another.
-                 */
-                if (!loop_started)
-                {
-                    stop_loop = true;
-                }
             }
 
-            if (stop_loop)
+            /* As event loop is blocking to the thread that started it and a single thread should not be blocked while
+             * executing all callbacks on the connection (not only its own), then there should be some point to unblock.
+             * loop_started == 1 if current consumer is started the loop and not another.
+             */
+            if (!loop_started.load() && !eventHandler.checkStopIsScheduled().load())
             {
                 stopEventLoopWithTimeout();
             }
@@ -323,7 +327,6 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
 
 void ReadBufferFromRabbitMQConsumer::checkSubscription()
 {
-    /// In general this condition will always be true and looping/resubscribing would not happen
     if (count_subscribed == num_queues)
         return;
 
@@ -337,7 +340,11 @@ void ReadBufferFromRabbitMQConsumer::checkSubscription()
 
     LOG_TRACE(log, "Consumer {} is subscribed to {} queues", channel_id, count_subscribed);
 
-    /// A case that would not normally happen
+    /// Updated in callbacks which are run by the loop
+    if (count_subscribed == num_queues)
+        return;
+
+    /// A case that should never normally happen
     for (auto & queue : queues)
     {
         subscribe(queue);
@@ -372,9 +379,9 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
     {
         if (received.empty())
         {
-            /// Run the onReceived callbacks to save the messages that have been received by now, blocks current thread
+            /// Run the onReceived callbacks to save the messages that have been received by now, blocks current thread.
             startEventLoop(loop_started);
-            loop_started = false;
+            loop_started.store(false);
         }
 
         if (received.empty())

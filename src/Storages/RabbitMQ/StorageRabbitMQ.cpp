@@ -450,8 +450,15 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             {
                 exchange_type = safeGet<String>(ast->value);
             }
-        }
 
+            if (exchange_type != "fanout" && exchange_type != "direct" && exchange_type != "topic" && exchange_type != "consistent_hash")
+            {
+                if (exchange_type == "headers")
+                    throw Exception("Headers exchange is not supported", ErrorCodes::BAD_ARGUMENTS);
+                else
+                    throw Exception("Invalid exchange type", ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
 
         UInt64 num_consumers = rabbitmq_settings.rabbitmq_num_consumers;
         if (args_count >= 7)

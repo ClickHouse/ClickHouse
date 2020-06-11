@@ -33,7 +33,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         : WriteBuffer(nullptr, 0)
         , login_password(login_password_)
         , routing_key(routing_key_)
-        , exchange_name(exchange_)
+        , exchange_name(exchange_ + "_direct")
         , log(log_)
         , num_queues(num_queues_)
         , bind_by_id(bind_by_id_)
@@ -126,7 +126,7 @@ void WriteBufferToRabbitMQProducer::checkExchange()
     /* The AMQP::passive flag indicates that it should only be checked if there is a valid exchange with the given name
      * and makes it visible from current producer_channel.
      */
-    producer_channel->declareExchange(exchange_name + "_direct", AMQP::direct, AMQP::passive)
+    producer_channel->declareExchange(exchange_name, AMQP::direct, AMQP::passive)
     .onSuccess([&]()
     {
         exchange_declared = true;
