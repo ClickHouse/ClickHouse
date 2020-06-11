@@ -1,10 +1,10 @@
-#include <Processors/Formats/Impl/ParallelParsingBlockInputFormat.h>
+#include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
 {
 
-void ParallelParsingBlockInputFormat::segmentatorThreadFunction()
+void ParallelParsingInputFormat::segmentatorThreadFunction()
 {
     setThreadName("Segmentator");
     try
@@ -49,7 +49,7 @@ void ParallelParsingBlockInputFormat::segmentatorThreadFunction()
     }
 }
 
-void ParallelParsingBlockInputFormat::parserThreadFunction(size_t current_ticket_number)
+void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_number)
 {
     try
     {
@@ -57,6 +57,8 @@ void ParallelParsingBlockInputFormat::parserThreadFunction(size_t current_ticket
 
         const auto current_unit_number = current_ticket_number % processing_units.size();
         auto & unit = processing_units[current_unit_number];
+
+        assert(unit.segment.size() > 0);
 
         /*
          * This is kind of suspicious -- the input_process_creator contract with
@@ -86,7 +88,7 @@ void ParallelParsingBlockInputFormat::parserThreadFunction(size_t current_ticket
 
         // We suppose we will get at least some blocks for a non-empty buffer,
         // except at the end of file. Also see a matching assert in readImpl().
-        assert(unit.is_last || !unit.chunk_ext.chunk.empty());
+        assert(unit.is_last || !unit.chunk_ext.chunk.empty() || parsing_finished);
 
         if (unit.is_last)
             endUpReadBuffer(read_buffer);
@@ -102,7 +104,7 @@ void ParallelParsingBlockInputFormat::parserThreadFunction(size_t current_ticket
 }
 
 
-void ParallelParsingBlockInputFormat::onBackgroundException()
+void ParallelParsingInputFormat::onBackgroundException()
 {
     tryLogCurrentException(__PRETTY_FUNCTION__);
 
@@ -116,7 +118,7 @@ void ParallelParsingBlockInputFormat::onBackgroundException()
     segmentator_condvar.notify_all();
 }
 
-Chunk ParallelParsingBlockInputFormat::generate()
+Chunk ParallelParsingInputFormat::generate()
 {
     if (isCancelled() || parsing_finished)
     {
@@ -206,17 +208,17 @@ Chunk ParallelParsingBlockInputFormat::generate()
     return res;
 }
 
-void ParallelParsingBlockInputFormat::prepareReadBuffer(ReadBuffer & buffer)
+void ParallelParsingInputFormat::prepareReadBuffer(ReadBuffer & buffer)
 {
-    if (prepare_and_end_up_ptr)
-        prepare_and_end_up_ptr->prepareReadBuffer(buffer);
+    if (prepare_and_end_up_map.count(format_name))
+        prepare_and_end_up_map[format_name]->prepareReadBuffer(buffer);
 }
 
 
-void ParallelParsingBlockInputFormat::endUpReadBuffer(ReadBuffer & buffer)
+void ParallelParsingInputFormat::endUpReadBuffer(ReadBuffer & buffer)
 {
-    if (prepare_and_end_up_ptr)
-        prepare_and_end_up_ptr->endUpReadBuffer(buffer);
+    if (prepare_and_end_up_map.count(format_name))
+        prepare_and_end_up_map[format_name]->endUpReadBuffer(buffer);
 }
 
 }
