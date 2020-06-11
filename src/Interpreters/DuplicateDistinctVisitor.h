@@ -26,26 +26,24 @@ public:
 
     static void visit(const ASTPtr & ast, Data & data)
     {
-        if (!ast)
-            return;
-
         auto * select_query = ast->as<ASTSelectQuery>();
-        if (!select_query)
+        if (select_query)
+            visit(*select_query, data);
+    }
+
+    static void visit(ASTSelectQuery & select_query, Data & data)
+    {
+        if (!select_query.distinct || !select_query.select())
             return;
 
         /// Optimize shouldn't work for distributed tables
-        for (const auto & elem : select_query->children)
+        for (const auto & elem : select_query.children)
         {
             if (elem->as<ASTSetQuery>() && !elem->as<ASTSetQuery>()->is_standalone)
                 return;
         }
-        if (select_query->distinct && select_query->select())
-            visit(select_query, data);
-    }
 
-    static void visit(ASTSelectQuery * select_query, Data & data)
-    {
-        auto expression_list = select_query->select();
+        auto expression_list = select_query.select();
         std::vector<String> current_ids;
 
         if (expression_list->children.empty())
@@ -56,7 +54,7 @@ public:
             current_ids.push_back(id->getColumnName());
 
         if (data.is_distinct && current_ids == data.last_ids)
-            select_query->distinct = false;
+            select_query.distinct = false;
 
         data.is_distinct = true;
         data.last_ids = std::move(current_ids);
