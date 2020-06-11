@@ -153,7 +153,7 @@ void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & c
                 const StackTrace::Frame & current_frame = frames[i];
                 sentry_value_t sentry_frame = sentry_value_new_object();
                 UInt64 frame_ptr = reinterpret_cast<UInt64>(current_frame.virtual_addr);
-                std::snprintf(instruction_addr, sizeof(instruction_addr), "0x%" PRIu64 "x", frame_ptr);
+                std::snprintf(instruction_addr, sizeof(instruction_addr), "0x%" PRIx64, frame_ptr);
                 sentry_value_set_by_key(sentry_frame, "instruction_addr", sentry_value_new_string(instruction_addr));
 
                 if (current_frame.symbol.has_value())
