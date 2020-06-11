@@ -465,7 +465,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists()
                 else if (code == Coordination::ZNOTEMPTY)
                 {
                     throw Exception(fmt::format(
-                        "The old table was not completely removed from ZooKeeper, {} still exists and may contain some garbage.", zookeeper_path), ErrorCodes::TABLE_WAS_NOT_DROPPED);
+                        "The old table was not completely removed from ZooKeeper, {} still exists and may contain some garbage. But it should never happen according to the logic of operations (it's a bug).", zookeeper_path), ErrorCodes::LOGICAL_ERROR);
                 }
                 else if (code != Coordination::ZOK)
                 {
