@@ -1993,6 +1993,8 @@ private:
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+
         /// Restore progress bar after data block.
         if (clear_progess)
             writeProgress();
