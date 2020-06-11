@@ -24,10 +24,10 @@
         <min_insert_block_size_rows>100</min_insert_block_size_rows>
     </settings>
 
-    <!-- 50 parts -->
-    <query>INSERT INTO hits_wide(UserID) SELECT rand() FROM numbers(5000)</query>
-    <query>INSERT INTO hits_compact(UserID) SELECT rand() FROM numbers(5000)</query>
-    <query>INSERT INTO hits_buffer(UserID) SELECT rand() FROM numbers(5000)</query>
+    <!-- 100 parts -->
+    <query>INSERT INTO hits_wide(UserID) SELECT rand() FROM numbers(10000)</query>
+    <query>INSERT INTO hits_compact(UserID) SELECT rand() FROM numbers(10000)</query>
+    <query>INSERT INTO hits_buffer(UserID) SELECT rand() FROM numbers(10000)</query>
 
     <drop_query>DROP TABLE IF EXISTS hits_wide</drop_query>
     <drop_query>DROP TABLE IF EXISTS hits_compact</drop_query>
