@@ -62,7 +62,7 @@ public:
         data.last_ids = std::move(current_ids);
     }
 
-    static bool needChildVisit(const ASTPtr & , const ASTPtr & )
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &)
     {
         return true;
     }

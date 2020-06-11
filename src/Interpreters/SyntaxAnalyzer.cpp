@@ -194,7 +194,7 @@ public:
 
             if (auto select_table_ptr = select_query.tables())
             {
-                if (auto select_table = select_table_ptr->as<ASTTablesInSelectQuery>())
+                if (auto * select_table = select_table_ptr->as<ASTTablesInSelectQuery>())
                 {
                     if (!select_table->children.empty())
                     {
