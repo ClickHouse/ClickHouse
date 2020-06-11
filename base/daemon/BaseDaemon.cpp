@@ -124,7 +124,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(signal_context);
 
-    StringRef query_id = CurrentThread::getQueryId();   /// This is signal safe.
+    StringRef query_id = DB::CurrentThread::getQueryId();   /// This is signal safe.
     query_id.size = std::min(query_id.size, max_query_id_size);
 
     DB::writeBinary(sig, out);
@@ -162,7 +162,7 @@ public:
     };
 
     explicit SignalListener(BaseDaemon & daemon_)
-        : log(&Logger::get("BaseDaemon"))
+        : log(&Poco::Logger::get("BaseDaemon"))
         , daemon(daemon_)
     {
     }
@@ -180,7 +180,7 @@ public:
             // levels and more info, but for completeness we log all signals
             // here at trace level.
             // Don't use strsignal here, because it's not thread-safe.
-            LOG_TRACE(log, "Received signal " << sig);
+            LOG_TRACE(log, "Received signal {}", sig);
 
             if (sig == Signals::StopThread)
             {
@@ -231,12 +231,12 @@ public:
     }
 
 private:
-    Logger * log;
+    Poco::Logger * log;
     BaseDaemon & daemon;
 
     void onTerminate(const std::string & message, UInt32 thread_num) const
     {
-        LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
+        LOG_FATAL(log, "(version {}{}) (from thread {}) {}", VERSION_STRING, VERSION_OFFICIAL, thread_num, message);
     }
 
     void onFault(
@@ -257,9 +257,9 @@ private:
                 message << " (no query)";
             else
                 message << " (query_id: " << query_id << ")";
-            message << " Received signal " << strsignal(sig) << " (" << sig << ")" << ".";
+            message << " Received signal " << strsignal(sig) << " (" << sig << ").";
 
-            LOG_FATAL(log, message.rdbuf());
+            LOG_FATAL(log, message.str());
         }
 
         LOG_FATAL(log, signalToErrorMessage(sig, info, context));
@@ -274,7 +274,7 @@ private:
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
                 bare_stacktrace << ' ' << stack_trace.getFrames()[i];
 
-            LOG_FATAL(log, bare_stacktrace.rdbuf());
+            LOG_FATAL(log, bare_stacktrace.str());
         }
 
         /// Write symbolized stack trace line by line for better grep-ability.
@@ -288,9 +288,9 @@ extern "C" void __sanitizer_set_death_callback(void (*)());
 
 static void sanitizerDeathCallback()
 {
-    Logger * log = &Logger::get("BaseDaemon");
+    Poco::Logger * log = &Poco::Logger::get("BaseDaemon");
 
-    StringRef query_id = CurrentThread::getQueryId();   /// This is signal safe.
+    StringRef query_id = DB::CurrentThread::getQueryId();   /// This is signal safe.
 
     {
         std::stringstream message;
@@ -302,7 +302,7 @@ static void sanitizerDeathCallback()
             message << " (query_id: " << query_id << ")";
         message << " Sanitizer trap.";
 
-        LOG_FATAL(log, message.rdbuf());
+        LOG_FATAL(log, message.str());
     }
 
     /// Just in case print our own stack trace. In case when llvm-symbolizer does not work.
@@ -314,7 +314,7 @@ static void sanitizerDeathCallback()
         for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
             bare_stacktrace << ' ' << stack_trace.getFrames()[i];
 
-        LOG_FATAL(log, bare_stacktrace.rdbuf());
+        LOG_FATAL(log, bare_stacktrace.str());
     }
 
     /// Write symbolized stack trace line by line for better grep-ability.
@@ -379,7 +379,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
     }
     catch (...)
     {
-        LOG_WARNING(logger, __PRETTY_FUNCTION__ << ": when creating " << path << ", " << DB::getCurrentExceptionMessage(true));
+        LOG_WARNING(logger, "{}: when creating {}, {}", __PRETTY_FUNCTION__, path, DB::getCurrentExceptionMessage(true));
     }
     return false;
 }
@@ -498,11 +498,10 @@ void debugIncreaseOOMScore()
     }
     catch (const Poco::Exception & e)
     {
-        LOG_WARNING(&Logger::root(), "Failed to adjust OOM score: '" +
-                    e.displayText() + "'.");
+        LOG_WARNING(&Poco::Logger::root(), "Failed to adjust OOM score: '{}'.", e.displayText());
         return;
     }
-    LOG_INFO(&Logger::root(), "Set OOM score adjustment to " + new_score);
+    LOG_INFO(&Poco::Logger::root(), "Set OOM score adjustment to {}", new_score);
 }
 #else
 void debugIncreaseOOMScore() {}
@@ -716,7 +715,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    Logger::root().information("Starting " + std::string{VERSION_FULL}
+    Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
         + " with revision " + std::to_string(ClickHouseRevision::get())
         + ", PID " + std::to_string(getpid()));
 }
@@ -733,8 +732,8 @@ void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
 {
     task_failed = true;
     Poco::AutoPtr<Poco::TaskFailedNotification> fn(_tfn);
-    Logger *lg = &(logger());
-    LOG_ERROR(lg, "Task '" << fn->task()->name() << "' failed. Daemon is shutting down. Reason - " << fn->reason().displayText());
+    Poco::Logger * lg = &(logger());
+    LOG_ERROR(lg, "Task '{}' failed. Daemon is shutting down. Reason - {}", fn->task()->name(), fn->reason().displayText());
     ServerApplication::terminate();
 }
 
@@ -850,7 +849,7 @@ void BaseDaemon::handleSignal(int signal_id)
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal (" << strsignal(signal_id) << ")");
+    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id));
 
     if (sigint_signals_counter >= 2)
     {

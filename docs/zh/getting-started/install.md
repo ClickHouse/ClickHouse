@@ -34,8 +34,8 @@ Yandex ClickHouse团队建议使用官方预编译的`rpm`软件包，用于Cent
 
 ``` bash
 sudo yum install yum-utils
-sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
-sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
+sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
 ```
 
 如果您想使用最新版本，请将`stable`替换为`testing`（建议您在测试环境中使用）。
@@ -46,7 +46,7 @@ sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-您也可以从此处手动下载和安装软件包：https://repo.yandex.ru/clickhouse/rpm/stable/x86\_64。
+您也可以从此处手动下载和安装软件包：https://repo.clickhouse.tech/rpm/stable/x86_64。
 
 ### 来自Docker {#from-docker-image}
 
