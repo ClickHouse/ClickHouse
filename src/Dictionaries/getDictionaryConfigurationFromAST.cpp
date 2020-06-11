@@ -56,16 +56,19 @@ void buildLifetimeConfiguration(
     const ASTDictionaryLifetime * lifetime)
 {
 
-    AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
-    AutoPtr<Element> min_element(doc->createElement("min"));
-    AutoPtr<Element> max_element(doc->createElement("max"));
-    AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
-    min_element->appendChild(min_sec);
-    AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
-    max_element->appendChild(max_sec);
-    lifetime_element->appendChild(min_element);
-    lifetime_element->appendChild(max_element);
-    root->appendChild(lifetime_element);
+    if (lifetime)
+    {
+        AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
+        AutoPtr<Element> min_element(doc->createElement("min"));
+        AutoPtr<Element> max_element(doc->createElement("max"));
+        AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
+        min_element->appendChild(min_sec);
+        AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
+        max_element->appendChild(max_sec);
+        lifetime_element->appendChild(min_element);
+        lifetime_element->appendChild(max_element);
+        root->appendChild(lifetime_element);
+    }
 }
 
 /*
@@ -338,17 +341,17 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 
-        if (auto identifier = pair->second->as<const ASTIdentifier>(); identifier)
+        if (const auto * identifier = pair->second->as<const ASTIdentifier>(); identifier)
         {
             AutoPtr<Text> value(doc->createTextNode(identifier->name));
             current_xml_element->appendChild(value);
         }
-        else if (auto literal = pair->second->as<const ASTLiteral>(); literal)
+        else if (const auto * literal = pair->second->as<const ASTLiteral>(); literal)
         {
             AutoPtr<Text> value(doc->createTextNode(getFieldAsString(literal->value)));
             current_xml_element->appendChild(value);
         }
-        else if (auto list = pair->second->as<const ASTExpressionList>(); list)
+        else if (const auto * list = pair->second->as<const ASTExpressionList>(); list)
         {
             buildConfigurationFromFunctionWithKeyValueArguments(doc, current_xml_element, list);
         }
@@ -375,13 +378,26 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
   *       </mysql>
   *   </source>
   */
-void buildSourceConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTFunctionWithKeyValueArguments * source)
+void buildSourceConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTFunctionWithKeyValueArguments * source, const ASTDictionarySettings * settings)
 {
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
     AutoPtr<Element> source_element(doc->createElement(source->name));
     outer_element->appendChild(source_element);
     buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>());
+
+    if (settings != nullptr)
+    {
+        AutoPtr<Element> settings_element(doc->createElement("settings"));
+        outer_element->appendChild(settings_element);
+        for (const auto & [name, value] : settings->changes)
+        {
+            AutoPtr<Element> setting_change_element(doc->createElement(name));
+            settings_element->appendChild(setting_change_element);
+            AutoPtr<Text> setting_value(doc->createTextNode(getFieldAsString(value)));
+            setting_change_element->appendChild(setting_value);
+        }
+    }
 }
 
 /** Check all AST fields are filled, throws exception
@@ -398,7 +414,9 @@ void checkAST(const ASTCreateQuery & query)
     if (query.dictionary->layout == nullptr)
         throw Exception("Cannot create dictionary with empty layout", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
-    if (query.dictionary->lifetime == nullptr)
+    const auto is_direct_layout = !strcasecmp(query.dictionary->layout->layout_type.data(), "direct") ||
+                                !strcasecmp(query.dictionary->layout->layout_type.data(), "complex_key_direct");
+    if (query.dictionary->lifetime == nullptr && !is_direct_layout)
         throw Exception("Cannot create dictionary with empty lifetime", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     if (query.dictionary->primary_key == nullptr)
@@ -420,7 +438,7 @@ void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs
 }
 
 
-DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuery & query)
+DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuery & query, const std::string & database_)
 {
     checkAST(query);
 
@@ -438,13 +456,13 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
 
     AutoPtr<Poco::XML::Element> database_element(xml_document->createElement("database"));
     current_dictionary->appendChild(database_element);
-    AutoPtr<Text> database(xml_document->createTextNode(query.database));
+    AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.database));
     database_element->appendChild(database);
 
     AutoPtr<Element> structure_element(xml_document->createElement("structure"));
     current_dictionary->appendChild(structure_element);
     Names pk_attrs = getPrimaryKeyColumns(query.dictionary->primary_key);
-    auto dictionary_layout = query.dictionary->layout;
+    auto * dictionary_layout = query.dictionary->layout;
 
     bool complex = DictionaryFactory::instance().isComplex(dictionary_layout->layout_type);
 
@@ -454,7 +472,7 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
     buildLayoutConfiguration(xml_document, current_dictionary, dictionary_layout);
-    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source);
+    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
     if (query.dictionary->range)

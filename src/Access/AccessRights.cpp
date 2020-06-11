@@ -251,12 +251,11 @@ public:
 
     void logTree(Poco::Logger * log) const
     {
-        LOG_TRACE(log, "Tree(" << level << "): name=" << (node_name ? *node_name : "NULL")
-                  << ", access=" << access.toString()
-                  << ", final_access=" << final_access.toString()
-                  << ", min_access=" << min_access.toString()
-                  << ", max_access=" << max_access.toString()
-                  << ", num_children=" << (children ? children->size() : 0));
+        LOG_TRACE(log, "Tree({}): name={}, access={}, final_access={}, min_access={}, max_access={}, num_children={}",
+            level, node_name ? *node_name : "NULL", access.toString(),
+            final_access.toString(), min_access.toString(), max_access.toString(),
+            (children ? children->size() : 0));
+
         if (children)
         {
             for (auto & child : *children | boost::adaptors::map_values)
@@ -265,17 +264,7 @@ public:
     }
 
 private:
-    Node * tryGetChild(const std::string_view & name)
-    {
-        if (!children)
-            return nullptr;
-        auto it = children->find(name);
-        if (it == children->end())
-            return nullptr;
-        return &it->second;
-    }
-
-    const Node * tryGetChild(const std::string_view & name) const
+    Node * tryGetChild(const std::string_view & name) const
     {
         if (!children)
             return nullptr;
@@ -616,69 +605,102 @@ void AccessRights::revoke(const AccessRightsElements & elements, std::string_vie
 }
 
 
-AccessRights::Elements AccessRights::getElements() const
+AccessRightsElements AccessRights::getGrants() const
+{
+    AccessRightsElements grants;
+    getGrantsAndPartialRevokesImpl(&grants, nullptr);
+    return grants;
+}
+
+AccessRightsElements AccessRights::getPartialRevokes() const
+{
+    AccessRightsElements partial_revokes;
+    getGrantsAndPartialRevokesImpl(nullptr, &partial_revokes);
+    return partial_revokes;
+}
+
+AccessRights::GrantsAndPartialRevokes AccessRights::getGrantsAndPartialRevokes() const
+{
+    GrantsAndPartialRevokes res;
+    getGrantsAndPartialRevokesImpl(&res.grants, &res.revokes);
+    return res;
+}
+
+
+void AccessRights::getGrantsAndPartialRevokesImpl(AccessRightsElements * out_grants, AccessRightsElements * out_partial_revokes) const
 {
     if (!root)
-        return {};
-    Elements res;
+        return;
     auto global_access = root->access;
-    if (global_access)
-        res.grants.push_back({global_access});
+    if (out_grants && global_access)
+        out_grants->push_back({global_access});
     if (root->children)
     {
         for (const auto & [db_name, db_node] : *root->children)
         {
-            auto db_grants = db_node.access - global_access;
-            auto db_partial_revokes = global_access - db_node.access;
-            if (db_partial_revokes)
-                res.partial_revokes.push_back({db_partial_revokes, db_name});
-            if (db_grants)
-                res.grants.push_back({db_grants, db_name});
+            if (out_grants)
+            {
+                if (auto db_grants = db_node.access - global_access)
+                    out_grants->push_back({db_grants, db_name});
+            }
+            if (out_partial_revokes)
+            {
+                if (auto db_partial_revokes = global_access - db_node.access)
+                    out_partial_revokes->push_back({db_partial_revokes, db_name});
+            }
             if (db_node.children)
             {
                 for (const auto & [table_name, table_node] : *db_node.children)
                 {
-                    auto table_grants = table_node.access - db_node.access;
-                    auto table_partial_revokes = db_node.access - table_node.access;
-                    if (table_partial_revokes)
-                        res.partial_revokes.push_back({table_partial_revokes, db_name, table_name});
-                    if (table_grants)
-                        res.grants.push_back({table_grants, db_name, table_name});
+                    if (out_grants)
+                    {
+                        if (auto table_grants = table_node.access - db_node.access)
+                            out_grants->push_back({table_grants, db_name, table_name});
+                    }
+                    if (out_partial_revokes)
+                    {
+                        if (auto table_partial_revokes = db_node.access - table_node.access)
+                            out_partial_revokes->push_back({table_partial_revokes, db_name, table_name});
+                    }
                     if (table_node.children)
                     {
                         for (const auto & [column_name, column_node] : *table_node.children)
                         {
-                            auto column_grants = column_node.access - table_node.access;
-                            auto column_partial_revokes = table_node.access - column_node.access;
-                            if (column_partial_revokes)
-                                res.partial_revokes.push_back({column_partial_revokes, db_name, table_name, column_name});
-                            if (column_grants)
-                                res.grants.push_back({column_grants, db_name, table_name, column_name});
+                            if (out_grants)
+                            {
+                                if (auto column_grants = column_node.access - table_node.access)
+                                    out_grants->push_back({column_grants, db_name, table_name, column_name});
+                            }
+                            if (out_partial_revokes)
+                            {
+                                if (auto column_partial_revokes = table_node.access - column_node.access)
+                                    out_partial_revokes->push_back({column_partial_revokes, db_name, table_name, column_name});
+                            }
                         }
+
                     }
                 }
             }
         }
     }
-    return res;
 }
 
 
 String AccessRights::toString() const
 {
-    auto elements = getElements();
     String res;
-    if (!elements.grants.empty())
+    auto gr = getGrantsAndPartialRevokes();
+    if (!gr.grants.empty())
     {
         res += "GRANT ";
-        res += elements.grants.toString();
+        res += gr.grants.toString();
     }
-    if (!elements.partial_revokes.empty())
+    if (!gr.revokes.empty())
     {
         if (!res.empty())
             res += ", ";
         res += "REVOKE ";
-        res += elements.partial_revokes.toString();
+        res += gr.revokes.toString();
     }
     if (res.empty())
         res = "GRANT USAGE ON *.*";

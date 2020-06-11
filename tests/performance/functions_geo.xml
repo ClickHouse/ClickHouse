@@ -1,10 +1,5 @@
 <test>
 
-    <stop_conditions>
-        <any_of>
-            <total_time_ms>5000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
     <!-- lat swings roughly from -90 to 90, lon swings from -180 to 180, and their tempo does not match. -->
     <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(geohashEncode((number % 150)*1.1 - 75, (number * 3.14 % 300)*1.1 - 150))</query>

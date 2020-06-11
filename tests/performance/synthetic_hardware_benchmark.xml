@@ -1,15 +1,7 @@
-<test>
-
-    <stop_conditions>
-        <any_of>
-            <total_time_ms>12000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
+<test max_ignored_relative_change="0.2">
     <settings>
         <max_memory_usage>30000000000</max_memory_usage>
     </settings>
-
 
 <!-- 9. Генератор случайных чисел.
 Функция rand представляет собой linear congruential generator (то есть, целочисленное умножение на константу и сложение с константой), возвращающий 32-битные целые случайные числа.

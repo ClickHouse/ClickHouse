@@ -139,8 +139,11 @@ String Cluster::Address::toFullString(bool use_compact_format) const
 {
     if (use_compact_format)
     {
-        return ((shard_index == 0) ? "" : "shard" + std::to_string(shard_index))
-            + ((replica_index == 0) ? "" : "_replica" + std::to_string(replica_index));
+        if (shard_index == 0 || replica_index == 0)
+            // shard_num/replica_num like in system.clusters table
+            throw Exception("shard_num/replica_num cannot be zero", ErrorCodes::LOGICAL_ERROR);
+
+        return "shard" + std::to_string(shard_index) + "_replica" + std::to_string(replica_index);
     }
     else
     {
@@ -284,7 +287,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
             const auto & prefix = config_prefix + key;
             const auto weight = config.getInt(prefix + ".weight", default_weight);
 
-            addresses.emplace_back(config, prefix);
+            addresses.emplace_back(config, prefix, current_shard_num, 1);
             const auto & address = addresses.back();
 
             ShardInfo info;
@@ -328,8 +331,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
 
             /// In case of internal_replication we will be appending names to dir_name_for_internal_replication
             std::string dir_name_for_internal_replication;
+            std::string dir_name_for_internal_replication_with_local;
 
-            auto first = true;
             for (const auto & replica_key : replica_keys)
             {
                 if (startsWith(replica_key, "weight") || startsWith(replica_key, "internal_replication"))
@@ -340,18 +343,20 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
                     replica_addresses.emplace_back(config, partial_prefix + replica_key, current_shard_num, current_replica_num);
                     ++current_replica_num;
 
-                    if (!replica_addresses.back().is_local)
+                    if (internal_replication)
                     {
-                        if (internal_replication)
+                        auto dir_name = replica_addresses.back().toFullString(settings.use_compact_format_in_distributed_parts_names);
+                        if (!replica_addresses.back().is_local)
                         {
-                            auto dir_name = replica_addresses.back().toFullString(settings.use_compact_format_in_distributed_parts_names);
-                            if (first)
+                            if (dir_name_for_internal_replication.empty())
                                 dir_name_for_internal_replication = dir_name;
                             else
                                 dir_name_for_internal_replication += "," + dir_name;
                         }
-
-                        if (first) first = false;
+                        if (dir_name_for_internal_replication_with_local.empty())
+                            dir_name_for_internal_replication_with_local = dir_name;
+                        else
+                            dir_name_for_internal_replication_with_local += "," + dir_name;
                     }
                 }
                 else
@@ -383,8 +388,16 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
             if (weight)
                 slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
 
-            shards_info.push_back({std::move(dir_name_for_internal_replication), current_shard_num, weight,
-                std::move(shard_local_addresses), std::move(shard_pool), std::move(all_replicas_pools), internal_replication});
+            shards_info.push_back({
+                std::move(dir_name_for_internal_replication),
+                std::move(dir_name_for_internal_replication_with_local),
+                current_shard_num,
+                weight,
+                std::move(shard_local_addresses),
+                std::move(shard_pool),
+                std::move(all_replicas_pools),
+                internal_replication
+            });
         }
         else
             throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
@@ -407,7 +420,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
     for (const auto & shard : names)
     {
         Addresses current;
-        for (auto & replica : shard)
+        for (const auto & replica : shard)
             current.emplace_back(replica, username, password, clickhouse_port, secure);
 
         addresses_with_failover.emplace_back(current);
@@ -433,8 +446,16 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
                 settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
 
         slot_to_shard.insert(std::end(slot_to_shard), default_weight, shards_info.size());
-        shards_info.push_back({{}, current_shard_num, default_weight, std::move(shard_local_addresses), std::move(shard_pool),
-                               std::move(all_replicas), false});
+        shards_info.push_back({
+            {}, // dir_name_for_internal_replication
+            {}, // dir_name_for_internal_replication_with_local
+            current_shard_num,
+            default_weight,
+            std::move(shard_local_addresses),
+            std::move(shard_pool),
+            std::move(all_replicas),
+            false
+        });
         ++current_shard_num;
     }
 
@@ -545,6 +566,20 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
     }
 
     initMisc();
+}
+
+const std::string & Cluster::ShardInfo::pathForInsert(bool prefer_localhost_replica) const
+{
+    if (!has_internal_replication)
+        throw Exception("internal_replication is not set", ErrorCodes::LOGICAL_ERROR);
+
+    if (dir_name_for_internal_replication.empty() || dir_name_for_internal_replication_with_local.empty())
+        throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
+
+    if (prefer_localhost_replica)
+        return dir_name_for_internal_replication;
+    else
+        return dir_name_for_internal_replication_with_local;
 }
 
 }

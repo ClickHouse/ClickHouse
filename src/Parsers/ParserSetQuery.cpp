@@ -13,7 +13,7 @@ namespace DB
 
 
 /// Parse `name = value`.
-static bool parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected)
+bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected)
 {
     ParserIdentifier name_p;
     ParserLiteral value_p;

@@ -31,8 +31,9 @@ class ThreadStatus;
 class QueryProfilerReal;
 class QueryProfilerCpu;
 class QueryThreadLog;
-struct TasksStatsCounters;
+class TasksStatsCounters;
 struct RUsageCounters;
+struct PerfEventsCounters;
 class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
@@ -88,15 +89,18 @@ public:
     ~ThreadStatus();
 
     /// Linux's PID (or TGID) (the same id is shown by ps util)
-    UInt64 thread_id = 0;
+    const UInt64 thread_id = 0;
     /// Also called "nice" value. If it was changed to non-zero (when attaching query) - will be reset to zero when query is detached.
     Int32 os_thread_priority = 0;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
     MemoryTracker memory_tracker{VariableContext::Thread};
+
     /// Small amount of untracked memory (per thread atomic-less counter)
     Int64 untracked_memory = 0;
+    /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
+    Int64 untracked_memory_limit = 4 * 1024 * 1024;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
@@ -163,7 +167,7 @@ protected:
 
     void logToQueryThreadLog(QueryThreadLog & thread_log);
 
-    void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr);
+    void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 
     ThreadGroupStatusPtr thread_group;
 
@@ -191,14 +195,10 @@ protected:
     Poco::Logger * log = nullptr;
 
     friend class CurrentThread;
-    friend struct TasksStatsCounters;
 
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
-    std::unique_ptr<TasksStatsCounters> last_taskstats;
-
-    /// Set to non-nullptr only if we have enough capabilities.
-    std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;
+    std::unique_ptr<TasksStatsCounters> taskstats;
 
 private:
     void setupState(const ThreadGroupStatusPtr & thread_group_);

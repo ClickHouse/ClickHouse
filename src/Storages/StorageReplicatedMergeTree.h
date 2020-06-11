@@ -113,11 +113,11 @@ public:
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
-    void drop(TableStructureWriteLockHolder &) override;
+    void drop() override;
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     bool supportsIndexForIn() const override { return true; }
 
@@ -291,9 +291,10 @@ private:
     template <class Func>
     void foreachCommittedParts(const Func & func) const;
 
-    /** Creates the minimum set of nodes in ZooKeeper.
+    /** Creates the minimum set of nodes in ZooKeeper and create first replica.
+      * Returns true if was created, false if exists.
       */
-    void createTableIfNotExists();
+    bool createTableIfNotExists();
 
     /** Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
       */
@@ -464,6 +465,9 @@ private:
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
 
+    /// Deletes info from quorum/last_part node for particular partition_id.
+    void cleanLastPartNode(const String & partition_id);
+
     /// Creates new block number if block with such block_id does not exist
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
@@ -481,7 +485,7 @@ private:
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
       */
-    void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
+    bool waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /// Choose leader replica, send requst to it and wait.
     void sendRequestToLeaderReplica(const ASTPtr & query, const Context & query_context);

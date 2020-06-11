@@ -56,7 +56,7 @@ private:
     String zookeeper_path;
     String replica_path;
     String logger_name;
-    Logger * log = nullptr;
+    Poco::Logger * log = nullptr;
 
     /// Protects the queue, future_parts and other queue state variables.
     mutable std::mutex state_mutex;
@@ -408,12 +408,22 @@ class ReplicatedMergeTreeMergePredicate
 public:
     ReplicatedMergeTreeMergePredicate(ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper);
 
+    /// Depending on the existence of left part checks a merge predicate for two parts or for single part.
+    bool operator()(const MergeTreeData::DataPartPtr & left,
+                    const MergeTreeData::DataPartPtr & right,
+                    String * out_reason = nullptr) const;
+
     /// Can we assign a merge with these two parts?
     /// (assuming that no merge was assigned after the predicate was constructed)
     /// If we can't and out_reason is not nullptr, set it to the reason why we can't merge.
-    bool operator()(
-        const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
-        String * out_reason = nullptr) const;
+    bool canMergeTwoParts(const MergeTreeData::DataPartPtr & left,
+                          const MergeTreeData::DataPartPtr & right,
+                          String * out_reason = nullptr) const;
+
+    /// Can we assign a merge this part and some other part?
+    /// For example a merge of a part and itself is needed for TTL.
+    /// This predicate is checked for the first part of each partitition.
+    bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
 
     /// Return nonempty optional of desired mutation version and alter version.
     /// If we have no alter (modify/drop) mutations in mutations queue, than we return biggest possible

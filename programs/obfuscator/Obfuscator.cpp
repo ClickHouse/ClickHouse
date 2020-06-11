@@ -858,7 +858,7 @@ public:
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
 
-        return ColumnArray::create((*std::move(new_nested_column)).mutate(), (*std::move(column_array.getOffsetsPtr())).mutate());
+        return ColumnArray::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(std::move(column_array.getOffsetsPtr())));
     }
 
     void updateSeed() override
@@ -896,7 +896,7 @@ public:
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
 
-        return ColumnNullable::create((*std::move(new_nested_column)).mutate(), (*std::move(column_nullable.getNullMapColumnPtr())).mutate());
+        return ColumnNullable::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(std::move(column_nullable.getNullMapColumnPtr())));
     }
 
     void updateSeed() override
@@ -937,10 +937,10 @@ public:
         if (typeid_cast<const DataTypeFixedString *>(&data_type))
             return std::make_unique<FixedStringModel>(seed);
 
-        if (auto type = typeid_cast<const DataTypeArray *>(&data_type))
+        if (const auto * type = typeid_cast<const DataTypeArray *>(&data_type))
             return std::make_unique<ArrayModel>(get(*type->getNestedType(), seed, markov_model_params));
 
-        if (auto type = typeid_cast<const DataTypeNullable *>(&data_type))
+        if (const auto * type = typeid_cast<const DataTypeNullable *>(&data_type))
             return std::make_unique<NullableModel>(get(*type->getNestedType(), seed, markov_model_params));
 
         throw Exception("Unsupported data type", ErrorCodes::NOT_IMPLEMENTED);
@@ -1080,7 +1080,8 @@ try
         header.insert(std::move(column));
     }
 
-    Context context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    Context context = Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);

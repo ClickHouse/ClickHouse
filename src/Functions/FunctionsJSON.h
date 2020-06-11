@@ -295,6 +295,7 @@ struct NameJSONExtract { static constexpr auto name{"JSONExtract"}; };
 struct NameJSONExtractKeysAndValues { static constexpr auto name{"JSONExtractKeysAndValues"}; };
 struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
 struct NameJSONExtractArrayRaw { static constexpr auto name{"JSONExtractArrayRaw"}; };
+struct NameJSONExtractKeysAndValuesRaw { static constexpr auto name{"JSONExtractKeysAndValuesRaw"}; };
 
 
 template <typename JSONParser>
@@ -699,8 +700,8 @@ struct JSONExtractTree
             if (!JSONParser::isArray(it))
                 return false;
 
-            Iterator it2 = it;
-            if (!JSONParser::firstArrayElement(it2))
+            Iterator array_it = it;
+            if (!JSONParser::firstArrayElement(array_it))
                 return false;
 
             ColumnArray & col_arr = assert_cast<ColumnArray &>(dest);
@@ -710,12 +711,12 @@ struct JSONExtractTree
 
             do
             {
-                if (nested->addValueToColumn(data, it2))
+                if (nested->addValueToColumn(data, array_it))
                     were_valid_elements = true;
                 else
                     data.insertDefault();
             }
-            while (JSONParser::nextArrayElement(it2));
+            while (JSONParser::nextArrayElement(array_it));
 
             if (!were_valid_elements)
             {
@@ -764,17 +765,17 @@ struct JSONExtractTree
 
             if (JSONParser::isArray(it))
             {
-                Iterator it2 = it;
-                if (!JSONParser::firstArrayElement(it2))
+                Iterator array_it = it;
+                if (!JSONParser::firstArrayElement(array_it))
                     return false;
 
                 for (size_t index = 0; index != nested.size(); ++index)
                 {
-                    if (nested[index]->addValueToColumn(tuple.getColumn(index), it2))
+                    if (nested[index]->addValueToColumn(tuple.getColumn(index), array_it))
                         were_valid_elements = true;
                     else
                         tuple.getColumn(index).insertDefault();
-                    if (!JSONParser::nextArrayElement(it2))
+                    if (!JSONParser::nextArrayElement(array_it))
                         break;
                 }
 
@@ -786,25 +787,25 @@ struct JSONExtractTree
             {
                 if (name_to_index_map.empty())
                 {
-                    Iterator it2 = it;
-                    if (!JSONParser::firstObjectMember(it2))
+                    Iterator object_it = it;
+                    if (!JSONParser::firstObjectMember(object_it))
                         return false;
 
                     for (size_t index = 0; index != nested.size(); ++index)
                     {
-                        if (nested[index]->addValueToColumn(tuple.getColumn(index), it2))
+                        if (nested[index]->addValueToColumn(tuple.getColumn(index), object_it))
                             were_valid_elements = true;
                         else
                             tuple.getColumn(index).insertDefault();
-                        if (!JSONParser::nextObjectMember(it2))
+                        if (!JSONParser::nextObjectMember(object_it))
                             break;
                     }
                 }
                 else
                 {
-                    Iterator it2 = it;
+                    Iterator object_it = it;
                     StringRef key;
-                    if (!JSONParser::firstObjectMember(it2, key))
+                    if (!JSONParser::firstObjectMember(object_it, key))
                         return false;
 
                     do
@@ -812,11 +813,11 @@ struct JSONExtractTree
                         auto index = name_to_index_map.find(key);
                         if (index != name_to_index_map.end())
                         {
-                            if (nested[index->second]->addValueToColumn(tuple.getColumn(index->second), it2))
+                            if (nested[index->second]->addValueToColumn(tuple.getColumn(index->second), object_it))
                                 were_valid_elements = true;
                         }
                     }
-                    while (JSONParser::nextObjectMember(it2, key));
+                    while (JSONParser::nextObjectMember(object_it, key));
                 }
 
                 set_size(old_size + static_cast<size_t>(were_valid_elements));
@@ -875,6 +876,7 @@ struct JSONExtractTree
     }
 };
 
+
 template <typename JSONParser>
 class JSONExtractImpl
 {
@@ -930,8 +932,8 @@ public:
                                 + " should be a constant string specifying the values' data type, illegal value: " + col.column->getName(),
                             ErrorCodes::ILLEGAL_COLUMN};
 
-        DataTypePtr value_type = DataTypeFactory::instance().get(col_type_const->getValue<String>());
         DataTypePtr key_type = std::make_unique<DataTypeString>();
+        DataTypePtr value_type = DataTypeFactory::instance().get(col_type_const->getValue<String>());
         DataTypePtr tuple_type = std::make_unique<DataTypeTuple>(DataTypes{key_type, value_type});
         return std::make_unique<DataTypeArray>(tuple_type);
     }
@@ -957,16 +959,16 @@ public:
         auto & col_value = col_tuple.getColumn(1);
 
         StringRef key;
-        Iterator it2 = it;
-        if (!JSONParser::firstObjectMember(it2, key))
+        Iterator object_it = it;
+        if (!JSONParser::firstObjectMember(object_it, key))
             return false;
 
         do
         {
-            if (extract_tree->addValueToColumn(col_value, it2))
+            if (extract_tree->addValueToColumn(col_value, object_it))
                 col_key.insertData(key.data, key.size);
         }
-        while (JSONParser::nextObjectMember(it2, key));
+        while (JSONParser::nextObjectMember(object_it, key));
 
         if (col_tuple.size() == old_size)
             return false;
@@ -1039,14 +1041,14 @@ private:
         if (JSONParser::isArray(it))
         {
             writeChar('[', buf);
-            Iterator it2 = it;
-            if (JSONParser::firstArrayElement(it2))
+            Iterator array_it = it;
+            if (JSONParser::firstArrayElement(array_it))
             {
-                traverse(it2, buf);
-                while (JSONParser::nextArrayElement(it2))
+                traverse(array_it, buf);
+                while (JSONParser::nextArrayElement(array_it))
                 {
                     writeChar(',', buf);
-                    traverse(it2, buf);
+                    traverse(array_it, buf);
                 }
             }
             writeChar(']', buf);
@@ -1055,19 +1057,19 @@ private:
         if (JSONParser::isObject(it))
         {
             writeChar('{', buf);
-            Iterator it2 = it;
+            Iterator object_it = it;
             StringRef key;
-            if (JSONParser::firstObjectMember(it2, key))
+            if (JSONParser::firstObjectMember(object_it, key))
             {
                 writeJSONString(key, buf, format_settings());
                 writeChar(':', buf);
-                traverse(it2, buf);
-                while (JSONParser::nextObjectMember(it2, key))
+                traverse(object_it, buf);
+                while (JSONParser::nextObjectMember(object_it, key))
                 {
                     writeChar(',', buf);
                     writeJSONString(key, buf, format_settings());
                     writeChar(':', buf);
-                    traverse(it2, buf);
+                    traverse(object_it, buf);
                 }
             }
             writeChar('}', buf);
@@ -1092,6 +1094,7 @@ private:
     }
 };
 
+
 template <typename JSONParser>
 class JSONExtractArrayRawImpl
 {
@@ -1105,9 +1108,8 @@ public:
     static bool addValueToColumn(IColumn & dest, const Iterator & it)
     {
         if (!JSONParser::isArray(it))
-        {
             return false;
-        }
+
         ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
         Iterator array_it = it;
         size_t size = 0;
@@ -1127,4 +1129,50 @@ public:
     static constexpr size_t num_extra_arguments = 0;
     static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
 };
+
+
+template <typename JSONParser>
+class JSONExtractKeysAndValuesRawImpl
+{
+public:
+
+    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &)
+    {
+        DataTypePtr string_type = std::make_unique<DataTypeString>();
+        DataTypePtr tuple_type = std::make_unique<DataTypeTuple>(DataTypes{string_type, string_type});
+        return std::make_unique<DataTypeArray>(tuple_type);
+    }
+
+    using Iterator = typename JSONParser::Iterator;
+    bool addValueToColumn(IColumn & dest, const Iterator & it)
+    {
+        if (!JSONParser::isObject(it))
+            return false;
+
+        auto & col_arr = assert_cast<ColumnArray &>(dest);
+        auto & col_tuple = assert_cast<ColumnTuple &>(col_arr.getData());
+        auto & col_key = assert_cast<ColumnString &>(col_tuple.getColumn(0));
+        auto & col_value = assert_cast<ColumnString &>(col_tuple.getColumn(1));
+
+        Iterator object_it = it;
+        StringRef key;
+        size_t size = 0;
+        if (JSONParser::firstObjectMember(object_it, key))
+        {
+            do
+            {
+                col_key.insertData(key.data, key.size);
+                JSONExtractRawImpl<JSONParser>::addValueToColumn(col_value, object_it);
+                ++size;
+            } while (JSONParser::nextObjectMember(object_it, key));
+        }
+
+        col_arr.getOffsets().push_back(col_arr.getOffsets().back() + size);
+        return true;
+    }
+
+    static constexpr size_t num_extra_arguments = 0;
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
+};
+
 }

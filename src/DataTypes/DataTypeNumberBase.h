@@ -19,12 +19,15 @@ class DataTypeNumberBase : public DataTypeWithSimpleSerialization
 
 public:
     static constexpr bool is_parametric = false;
+
     using FieldType = T;
+    static constexpr auto type_id = TypeId<T>::value;
+    static constexpr auto family_name = TypeName<T>::get();
 
     using ColumnType = ColumnVector<T>;
 
-    const char * getFamilyName() const override { return TypeName<T>::get(); }
-    TypeIndex getTypeId() const override { return TypeId<T>::value; }
+    const char * getFamilyName() const override { return family_name; }
+    TypeIndex getTypeId() const override { return type_id; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;

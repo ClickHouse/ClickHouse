@@ -21,7 +21,7 @@ CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
 
 # IP-address of this host accessible from outside world.
 HTTP_SERVER_HOST = subprocess.check_output(['hostname', '-i']).decode('utf-8').strip()
-HTTP_SERVER_PORT = int(os.environ.get('CLICKHOUSE_TEST_HOST_EXPOSED_PORT', 51234))
+HTTP_SERVER_PORT = 55123
 
 # IP address and port of the HTTP server started from this script.
 HTTP_SERVER_ADDRESS = (HTTP_SERVER_HOST, HTTP_SERVER_PORT)

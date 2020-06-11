@@ -58,7 +58,7 @@
 /// Minimum revision with exactly the same set of aggregation methods and rules to select them.
 /// Two-level (bucketed) aggregation is incompatible if servers are inconsistent in these rules
 /// (keys will be placed in different buckets and result will not be fully aggregated).
-#define DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD 54408
+#define DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD 54431
 #define DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA 54410
 
 #define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
@@ -98,3 +98,6 @@
 
 /// Default limit on recursion depth of recursive descend parser.
 #define DBMS_DEFAULT_MAX_PARSER_DEPTH 1000
+
+/// Max depth of hierarchical dictionary
+#define DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH 1000

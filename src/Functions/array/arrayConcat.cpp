@@ -40,7 +40,7 @@ public:
 
         for (auto i : ext::range(0, arguments.size()))
         {
-            auto array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
+            const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
             if (!array_type)
                 throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
                                 + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -83,13 +83,13 @@ public:
         {
             bool is_const = false;
 
-            if (auto argument_column_const = typeid_cast<const ColumnConst *>(argument_column.get()))
+            if (const auto * argument_column_const = typeid_cast<const ColumnConst *>(argument_column.get()))
             {
                 is_const = true;
                 argument_column = argument_column_const->getDataColumnPtr();
             }
 
-            if (auto argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
+            if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
                 sources.emplace_back(GatherUtils::createArraySource(*argument_column_array, is_const, rows));
             else
                 throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};

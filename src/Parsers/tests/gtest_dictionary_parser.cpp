@@ -76,24 +76,24 @@ TEST(ParserDictionaryDDL, SimpleDictionary)
     EXPECT_EQ(children[5]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "table_for_dict");
 
     /// layout test
-    auto layout = create->dictionary->layout;
+    auto * layout = create->dictionary->layout;
     EXPECT_EQ(layout->layout_type, "flat");
     EXPECT_EQ(layout->children.size(), 0);
 
     /// lifetime test
-    auto lifetime = create->dictionary->lifetime;
+    auto * lifetime = create->dictionary->lifetime;
 
     EXPECT_EQ(lifetime->min_sec, 1);
     EXPECT_EQ(lifetime->max_sec, 10);
 
     /// primary key test
-    auto primary_key = create->dictionary->primary_key;
+    auto * primary_key = create->dictionary->primary_key;
 
     EXPECT_EQ(primary_key->children.size(), 1);
     EXPECT_EQ(primary_key->children[0]->as<ASTIdentifier>()->name, "key_column");
 
     /// range test
-    auto range = create->dictionary->range;
+    auto * range = create->dictionary->range;
     EXPECT_EQ(range->min_attr_name, "second_column");
     EXPECT_EQ(range->max_attr_name, "third_column");
 
@@ -219,7 +219,7 @@ TEST(ParserDictionaryDDL, CustomAttributePropertiesOrder)
     EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
 
     /// lifetime test
-    auto lifetime = create->dictionary->lifetime;
+    auto * lifetime = create->dictionary->lifetime;
 
     EXPECT_EQ(lifetime->min_sec, 0);
     EXPECT_EQ(lifetime->max_sec, 300);

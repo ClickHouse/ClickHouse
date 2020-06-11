@@ -239,9 +239,13 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
     size_t num_array_join = 0;
     size_t num_using = 0;
 
-    for (auto & child : tables->children)
+    // For diagnostic messages.
+    std::vector<IAST *> tables_with_using;
+    tables_with_using.reserve(num_tables);
+
+    for (const auto & child : tables->children)
     {
-        auto table_element = child->as<ASTTablesInSelectQueryElement>();
+        auto * table_element = child->as<ASTTablesInSelectQueryElement>();
         if (!table_element)
             throw Exception("Logical error: TablesInSelectQueryElement expected", ErrorCodes::LOGICAL_ERROR);
 
@@ -257,10 +261,11 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
         if (t.hasUsing())
         {
             ++num_using;
+            tables_with_using.push_back(table_element);
             continue;
         }
 
-        if (auto * join = t.tableJoin())
+        if (const auto * join = t.tableJoin())
         {
             if (join->kind == ASTTableJoin::Kind::Cross ||
                 join->kind == ASTTableJoin::Kind::Comma)
@@ -275,7 +280,11 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
     }
 
     if (num_using && (num_tables - num_array_join) > 2)
-        throw Exception("Multiple CROSS/COMMA JOIN do not support USING", ErrorCodes::NOT_IMPLEMENTED);
+    {
+        throw Exception("Multiple CROSS/COMMA JOIN do not support USING (while "
+            "processing '" + IAST::formatForErrorMessage(tables_with_using) + "')",
+            ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     return !(num_array_join || num_using);
 }

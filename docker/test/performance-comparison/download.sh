@@ -5,6 +5,8 @@ trap "exit" INT TERM
 trap 'kill $(jobs -pr) ||:' EXIT
 
 mkdir db0 ||:
+mkdir left ||:
+mkdir right ||:
 
 left_pr=$1
 left_sha=$2
@@ -22,29 +24,35 @@ dataset_paths["values"]="https://clickhouse-datasets.s3.yandex.net/values_with_e
 
 function download
 {
-    rm -r left ||:
-    mkdir left ||:
-    rm -r right ||:
-    mkdir right ||:
-
     # might have the same version on left and right
     if ! [ "$left_sha" = "$right_sha" ]
     then
         wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv  &
         wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$right_pr/$right_sha/performance/performance.tgz" -O- | tar -C right --strip-components=1 -zxv &
     else
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv && cp -a left right &
+        mkdir right ||:
+        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv && cp -a left/* right &
     fi
 
     for dataset_name in $datasets
     do
         dataset_path="${dataset_paths[$dataset_name]}"
-        [ "$dataset_path" != "" ]
+        if [ "$dataset_path" = "" ]
+        then
+            >&2 echo "Unknown dataset '$dataset_name'"
+            exit 1
+        fi
         cd db0 && wget -nv -nd -c "$dataset_path" -O- | tar -xv &
     done
 
     mkdir ~/fg ||:
-    cd ~/fg && wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl" && chmod +x ~/fg/flamegraph.pl &
+    (
+        cd ~/fg
+        wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl"
+        wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/difffolded.pl"
+        chmod +x ~/fg/difffolded.pl
+        chmod +x ~/fg/flamegraph.pl
+    ) &
 
     wait
 }

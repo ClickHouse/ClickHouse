@@ -3,6 +3,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -17,10 +18,9 @@ namespace DB
 {
 
 class Context;
-class StorageDistributedDirectoryMonitor;
 
-class Volume;
-using VolumePtr = std::shared_ptr<Volume>;
+class VolumeJBOD;
+using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -62,12 +62,11 @@ public:
     bool supportsPrewhere() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
-    NameAndTypePair getColumn(const String & column_name) const override;
-    bool hasColumn(const String & column_name) const override;
-
     bool isRemote() const override { return true; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
+    /// Return true if distributed_group_by_no_merge may be applied.
+    bool canForceGroupByNoMerge(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const override;
 
     Pipes read(
         const Names & column_names,
@@ -79,12 +78,10 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void drop(TableStructureWriteLockHolder &) override {}
-
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
     void renameOnDisk(const String & new_path_to_table_data);
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
@@ -109,12 +106,16 @@ public:
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors(const std::string & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    void requireDirectoryMonitor(const std::string & disk, const std::string & name);
+    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & disk, const std::string & name);
+    /// Return list of metrics for all created monitors
+    /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
+    std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
 
     void flushClusterNodesAllData();
 
     ClusterPtr getCluster() const;
 
+    static IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result);
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
@@ -123,12 +124,14 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
+    NamesAndTypesList getVirtuals() const override;
+
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    Context global_context;
-    Logger * log = &Logger::get("StorageDistributed");
+    std::unique_ptr<Context> global_context;
+    Poco::Logger * log;
 
     /// Used to implement TableFunctionRemote.
     std::shared_ptr<Cluster> owned_cluster;
@@ -176,18 +179,18 @@ protected:
     String storage_policy;
     String relative_data_path;
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
-    VolumePtr volume;
+    VolumeJBODPtr volume;
 
     struct ClusterNodeData
     {
         std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
-        ConnectionPoolPtr conneciton_pool;
+        ConnectionPoolPtr connection_pool;
 
-        void flushAllData();
-        void shutdownAndDropAllData();
+        void flushAllData() const;
+        void shutdownAndDropAllData() const;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
-    std::mutex cluster_nodes_mutex;
+    mutable std::mutex cluster_nodes_mutex;
 
 };
 

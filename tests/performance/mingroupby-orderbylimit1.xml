@@ -1,11 +1,4 @@
-<test>
-
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>30000</total_time_ms>
-        </all_of>
-    </stop_conditions>
-
+<test max_ignored_relative_change="0.4">
     <settings>
         <max_threads>1</max_threads>
     </settings>
@@ -14,7 +7,8 @@
         <substitution>
            <name>aggregationscale_all</name>
            <values>
-               <value>1111111</value>
+               <value>5555555</value>
+               <value>555555</value>
                <value>111111</value>
                <value>11111</value>
            </values>
@@ -29,8 +23,8 @@
        <substitution>
            <name>aggregationscale_big</name>
            <values>
-               <value>1111111</value>
-               <value>111111</value>
+               <value>5555555</value>
+               <value>555555</value>
            </values>
        </substitution>
     </substitutions>

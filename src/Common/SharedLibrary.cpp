@@ -35,7 +35,7 @@ void * SharedLibrary::getImpl(const std::string & name, bool no_throw)
 {
     dlerror();
 
-    auto res = dlsym(handle, name.c_str());
+    auto * res = dlsym(handle, name.c_str());
 
     if (char * error = dlerror())
     {

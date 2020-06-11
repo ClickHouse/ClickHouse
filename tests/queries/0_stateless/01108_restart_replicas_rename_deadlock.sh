@@ -53,7 +53,7 @@ export -f rename_thread_2;
 export -f restart_thread_1;
 export -f restart_thread_2;
 
-TIMEOUT=30
+TIMEOUT=10
 
 timeout $TIMEOUT bash -c rename_thread_1 2> /dev/null &
 timeout $TIMEOUT bash -c rename_thread_2 2> /dev/null &
@@ -61,12 +61,22 @@ timeout $TIMEOUT bash -c restart_thread_1 2> /dev/null &
 timeout $TIMEOUT bash -c restart_thread_2 2> /dev/null &
 
 wait
-sleep 3
 
+for i in `seq 4`; do
+    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA replica_01108_$i" >/dev/null 2>&1
+    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA replica_01108_${i}_tmp" >/dev/null 2>&1
+done
+
+while [[ `$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query LIKE 'RENAME%'"` -gt 0 ]]; do
+    sleep 1
+done;
+
+$CLICKHOUSE_CLIENT -q "SELECT replaceOne(name, '_tmp', '') FROM system.tables WHERE database = currentDatabase() AND match(name, '^replica_01108_')"
 $CLICKHOUSE_CLIENT -q "SELECT sum(n), count(n) FROM merge(currentDatabase(), '^replica_01108_') GROUP BY position(_table, 'tmp')"
 
 
 for i in `seq 4`; do
-    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_$i"
-    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_${i}_tmp"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_$i NO DELAY"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_${i}_tmp NO DELAY"
 done
+sleep 2

@@ -3,7 +3,7 @@
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
 #include <Core/Block.h>
-
+#include <Interpreters/Context.h>
 
 namespace Poco { class Logger; }
 
@@ -56,7 +56,7 @@ private:
     const std::string update_field;
     const std::string format;
     Block sample_block;
-    const Context & context;
+    Context context;
 };
 
 }

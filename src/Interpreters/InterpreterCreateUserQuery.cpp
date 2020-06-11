@@ -48,7 +48,7 @@ namespace
         if (default_roles)
         {
             if (!query.alter && !default_roles->all)
-                boost::range::copy(default_roles->getMatchingIDs(), std::inserter(user.granted_roles, user.granted_roles.end()));
+                user.granted_roles.grant(default_roles->getMatchingIDs());
 
             InterpreterSetRoleQuery::updateUserSetDefaultRoles(user, *default_roles);
         }
@@ -68,7 +68,7 @@ namespace
 
 BlockIO InterpreterCreateUserQuery::execute()
 {
-    auto & query = query_ptr->as<const ASTCreateUserQuery &>();
+    const auto & query = query_ptr->as<const ASTCreateUserQuery &>();
     auto & access_control = context.getAccessControlManager();
     auto access = context.getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);

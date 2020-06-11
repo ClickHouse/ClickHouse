@@ -11,9 +11,12 @@
 #include <Poco/Exception.h>
 #include <Poco/Net/NetException.h>
 
-#include <Common/config.h>
-#if USE_POCO_NETSSL
-#include <Poco/Net/SecureStreamSocket.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
+#if USE_SSL
+#    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
 #include <array>
@@ -668,22 +671,22 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
 
         for (const auto & generic_request : generic_requests)
         {
-            if (auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
+            if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
             {
                 auto create = std::make_shared<ZooKeeperCreateRequest>(*concrete_request_create);
                 if (create->acls.empty())
                     create->acls = default_acls;
                 requests.push_back(create);
             }
-            else if (auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
+            else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<ZooKeeperRemoveRequest>(*concrete_request_remove));
             }
-            else if (auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
+            else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<ZooKeeperSetRequest>(*concrete_request_set));
             }
-            else if (auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
+            else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<ZooKeeperCheckRequest>(*concrete_request_check));
             }
@@ -895,7 +898,7 @@ void ZooKeeper::connect(
                 /// Reset the state of previous attempt.
                 if (node.secure)
                 {
-#if USE_POCO_NETSSL
+#if USE_SSL
                     socket = Poco::Net::SecureStreamSocket();
 #else
                     throw Exception{"Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};

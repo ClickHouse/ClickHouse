@@ -2,6 +2,8 @@ import time
 import pytest
 import random
 import string
+import os
+import struct
 
 from helpers.test_tools import TSV
 from helpers.test_tools import assert_eq_with_retry
@@ -168,7 +170,7 @@ def test_different_part_types_on_replicas(start_cluster, table, part_type):
         "WHERE table = '{}' AND active GROUP BY part_type ORDER BY part_type".format(table))) == TSV(expected)
 
 
-node7 = cluster.add_instance('node7', config_dir="configs", with_zookeeper=True, image='yandex/clickhouse-server:19.17.8.54', stay_alive=True, with_installed_binary=True)
+node7 = cluster.add_instance('node7', config_dir="configs_old", with_zookeeper=True, image='yandex/clickhouse-server:19.17.8.54', stay_alive=True, with_installed_binary=True)
 node8 = cluster.add_instance('node8', config_dir="configs", with_zookeeper=True)
 
 settings7 = {'index_granularity' : 64, 'index_granularity_bytes' : 10485760}
@@ -260,3 +262,24 @@ def test_polymorphic_parts_non_adaptive(start_cluster):
         "WHERE table = 'non_adaptive_table' AND active GROUP BY part_type ORDER BY part_type")) == TSV("Wide\t2\n")
 
     assert node1.contains_in_log("<Warning> default.non_adaptive_table: Table can't create parts with adaptive granularity")
+
+
+def test_polymorphic_parts_index(start_cluster):
+    node1.query('''
+        CREATE TABLE index_compact(a UInt32, s String) 
+        ENGINE = MergeTree ORDER BY a 
+        SETTINGS min_rows_for_wide_part = 1000, index_granularity = 128, merge_max_block_size = 100''')
+
+    node1.query("INSERT INTO index_compact SELECT number, toString(number) FROM numbers(100)")
+    node1.query("INSERT INTO index_compact SELECT number, toString(number) FROM numbers(30)")
+    node1.query("OPTIMIZE TABLE index_compact FINAL")
+
+    assert node1.query("SELECT part_type FROM system.parts WHERE table = 'index_compact' AND active") == "Compact\n"
+    assert node1.query("SELECT marks FROM system.parts WHERE table = 'index_compact' AND active") == "2\n"
+
+    index_path = os.path.join(node1.path, "database/data/default/index_compact/all_1_2_1/primary.idx")
+    f = open(index_path, 'rb')
+
+    assert os.path.getsize(index_path) == 8
+    assert struct.unpack('I', f.read(4))[0] == 0
+    assert struct.unpack('I', f.read(4))[0] == 99

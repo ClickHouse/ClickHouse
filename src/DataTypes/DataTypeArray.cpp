@@ -199,7 +199,7 @@ void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
 
     /// First serialize array sizes.
     settings.path.push_back(Substream::ArraySizes);
-    if (auto stream = settings.getter(settings.path))
+    if (auto * stream = settings.getter(settings.path))
     {
         if (settings.position_independent_encoding)
             serializeArraySizesPositionIndependent(column, *stream, offset, limit);
@@ -244,7 +244,7 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
     ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
 
     settings.path.push_back(Substream::ArraySizes);
-    if (auto stream = settings.getter(settings.path))
+    if (auto * stream = settings.getter(settings.path))
     {
         if (settings.position_independent_encoding)
             deserializeArraySizesPositionIndependent(column, *stream, limit);

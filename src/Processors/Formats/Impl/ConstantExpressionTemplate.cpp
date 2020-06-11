@@ -8,6 +8,8 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -17,7 +19,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Interpreters/convertFieldToType.h>
 #include <boost/functional/hash.hpp>
 
 
@@ -77,7 +78,7 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
     {
         /// It can be Array(Nullable(nested_type)) or Tuple(..., Nullable(nested_type), ...)
         bool is_nullable = false;
-        if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
+        if (const auto * nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
         {
             nested_type = nullable->getNestedType();
             is_nullable = true;
@@ -105,6 +106,14 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
         {
             field_type = Field::Types::String;
         }
+        else if (type_info.isArray())
+        {
+            field_type = Field::Types::Array;
+        }
+        else if (type_info.isTuple())
+        {
+            field_type = Field::Types::Tuple;
+        }
         else
             throw Exception("Unexpected literal type inside Array: " + nested_type->getName() + ". It's a bug",
                             ErrorCodes::LOGICAL_ERROR);
@@ -130,7 +139,7 @@ public:
     {
         if (visitIfLiteral(ast, force_nullable))
             return;
-        if (auto function = ast->as<ASTFunction>())
+        if (auto * function = ast->as<ASTFunction>())
             visit(*function, force_nullable);
         else if (ast->as<ASTQueryParameter>())
             return;
@@ -464,7 +473,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         {
             const auto & [nested_field_type, is_nullable] = type_info.nested_types[i];
             if (is_nullable)
-                if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_types[i].get()))
+                if (const auto * nullable = dynamic_cast<const DataTypeNullable *>(nested_types[i].get()))
                     nested_types[i] = nullable->getNestedType();
 
             WhichDataType nested_type_info(nested_types[i]);
@@ -560,10 +569,10 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
         return res;
 
     /// Extract column with evaluated expression and mask for NULLs
-    auto & tuple = assert_cast<const ColumnTuple &>(*res);
+    const auto & tuple = assert_cast<const ColumnTuple &>(*res);
     if (tuple.tupleSize() != 2)
         throw Exception("Invalid tuple size, it'a a bug", ErrorCodes::LOGICAL_ERROR);
-    auto & is_null = assert_cast<const ColumnUInt8 &>(tuple.getColumn(1));
+    const auto & is_null = assert_cast<const ColumnUInt8 &>(tuple.getColumn(1));
 
     for (size_t i = 0; i < is_null.size(); ++i)
         if (is_null.getUInt(i))

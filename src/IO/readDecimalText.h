@@ -33,17 +33,14 @@ inline bool readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exp
         return false;
     }
 
-    if (!buf.eof())
+    switch (*buf.position())
     {
-        switch (*buf.position())
-        {
-            case '-':
-                sign = -1;
-                [[fallthrough]];
-            case '+':
-                ++buf.position();
-                break;
-        }
+        case '-':
+            sign = -1;
+            [[fallthrough]];
+        case '+':
+            ++buf.position();
+            break;
     }
 
     bool stop = false;
