@@ -161,6 +161,20 @@ function run_tests
     wait
 }
 
+# Run some queries concurrently and report the resulting TPS. This additional
+# (relatively) short test helps detect concurrency-related effects, because the
+# main performance comparison testing is done query-by-query.
+function run_benchmark
+{
+    rm -rf benchmark ||:
+    mkdir bencmhark ||:
+
+    # TODO disable this when there is an explicit list of tests to run
+    "$script_dir/perf.py" --print right/performance/website.xml > benchmark/website-queries.tsv
+    clickhouse-benchmark --port 9001 --concurrency 6 --cumulative --iterations 1000 --randomize 1 --delay 0 --json benchmark/website-left.json < benchmark/website-queries.tsv
+    clickhouse-benchmark --port 9002 --concurrency 6 --cumulative --iterations 1000 --randomize 1 --delay 0 --json benchmark/website-right.json < benchmark/website-queries.tsv
+}
+
 function get_profiles_watchdog
 {
     sleep 6000
@@ -715,6 +729,9 @@ case "$stage" in
 "run_tests")
     # Ignore the errors to collect the log and build at least some report, anyway
     time run_tests ||:
+    ;&
+"run_benchmark")
+    time run_benchmark 2> >(tee -a run-errors.tsv 1>&2) ||:
     ;&
 "get_profiles")
     # Getting profiles inexplicably hangs sometimes, so try to save some logs if

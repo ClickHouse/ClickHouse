@@ -5,6 +5,7 @@ import ast
 import collections
 import csv
 import itertools
+import json
 import os
 import sys
 import traceback
@@ -320,6 +321,36 @@ if args.report == 'main':
         print(tableEnd())
 
     print_test_times()
+
+    def print_benchmark_results():
+        left_json = json.load(open('benchmark/website-left.json'));
+        right_json = json.load(open('benchmark/website-right.json'));
+        left_qps = left_json["statistics"]["QPS"]
+        right_qps = right_json["statistics"]["QPS"]
+        relative_diff = (right_qps - left_qps) / left_qps;
+        times_diff = max(right_qps, left_qps) / max(0.01, min(right_qps, left_qps))
+        print(tableStart('Concurrent benchmarks'))
+        print(tableHeader(['Benchmark', 'Old, queries/s', 'New, queries/s', 'Relative difference', 'Times difference']))
+        row = ['website', f'{left_qps:.3f}', f'{right_qps:.3f}', f'{relative_diff:.3f}', f'x{times_diff:.3f}']
+        attrs = ['' for r in row]
+        if abs(relative_diff) > 0.1:
+            # More queries per second is better.
+            if relative_diff > 0.:
+                attrs[3] = f'style="background: {color_good}"'
+            else:
+                attrs[3] = f'style="background: {color_bad}"'
+        else:
+            attrs[3] = ''
+        print(tableRow(row, attrs))
+        print(tableEnd())
+
+    try:
+        print_benchmark_results()
+    except:
+        report_errors.append(
+            traceback.format_exception_only(
+                *sys.exc_info()[:2])[-1])
+        pass
 
     print_report_errors()
 
