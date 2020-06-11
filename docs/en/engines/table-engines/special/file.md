@@ -3,12 +3,11 @@ toc_priority: 37
 toc_title: File
 ---
 
-# File {#table_engines-file}
+# File Table Engine {#table_engines-file}
 
-The File table engine keeps the data in a file in one of the supported [file
-formats](../../../interfaces/formats.md#formats) (TabSeparated, Native, etc.).
+The File table engine keeps the data in a file in one of the supported [file formats](../../../interfaces/formats.md#formats) (`TabSeparated`, `Native`, etc.).
 
-Usage examples:
+Usage scenarios:
 
 -   Data export from ClickHouse to file.
 -   Convert data from one format to another.
@@ -34,7 +33,7 @@ You may manually create this subfolder and file in server filesystem and then [A
 !!! warning "Warning"
     Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
 
-**Example:**
+## Example
 
 **1.** Set up the `file_engine_table` table:
 
