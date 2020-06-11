@@ -1,6 +1,8 @@
 #pragma once
 
+#include <functional>
 #include <type_traits>
+#include <utility>
 
 template <class T, class Tag>
 struct StrongTypedef

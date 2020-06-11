@@ -3,6 +3,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -17,7 +18,6 @@ namespace DB
 {
 
 class Context;
-class StorageDistributedDirectoryMonitor;
 
 class VolumeJBOD;
 using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
@@ -107,6 +107,9 @@ public:
     void createDirectoryMonitors(const std::string & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
     StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & disk, const std::string & name);
+    /// Return list of metrics for all created monitors
+    /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
+    std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
 
     void flushClusterNodesAllData();
 
@@ -128,7 +131,7 @@ public:
     ASTPtr remote_table_function_ptr;
 
     std::unique_ptr<Context> global_context;
-    Logger * log;
+    Poco::Logger * log;
 
     /// Used to implement TableFunctionRemote.
     std::shared_ptr<Cluster> owned_cluster;
@@ -181,13 +184,13 @@ protected:
     struct ClusterNodeData
     {
         std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
-        ConnectionPoolPtr conneciton_pool;
+        ConnectionPoolPtr connection_pool;
 
         void flushAllData() const;
         void shutdownAndDropAllData() const;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
-    std::mutex cluster_nodes_mutex;
+    mutable std::mutex cluster_nodes_mutex;
 
 };
 

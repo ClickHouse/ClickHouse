@@ -100,11 +100,20 @@ for c in connections:
 
 report_stage_end('drop1')
 
-# Apply settings
+# Apply settings.
+# If there are errors, report them and continue -- maybe a new test uses a setting
+# that is not in master, but the queries can still run. If we have multiple
+# settings and one of them throws an exception, all previous settings for this
+# connection will be reset, because the driver reconnects on error (not
+# configurable). So the end result is uncertain, but hopefully we'll be able to
+# run at least some queries.
 settings = root.findall('settings/*')
 for c in connections:
     for s in settings:
-        c.execute("set {} = '{}'".format(s.tag, s.text))
+        try:
+            c.execute("set {} = '{}'".format(s.tag, s.text))
+        except:
+            print(traceback.format_exc(), file=sys.stderr)
 
 report_stage_end('settings')
 
@@ -163,6 +172,8 @@ for query_index, q in enumerate(test_queries):
             prewarm_id = f'{query_prefix}.prewarm0'
             res = c.execute(q, query_id = prewarm_id)
             print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}')
+    except KeyboardInterrupt:
+        raise
     except:
         # If prewarm fails for some query -- skip it, and try to test the others.
         # This might happen if the new test introduces some function that the

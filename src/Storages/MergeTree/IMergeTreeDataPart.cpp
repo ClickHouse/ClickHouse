@@ -418,7 +418,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadIndexGranularity();
     calculateColumnsSizesOnDisk();
     loadIndex();     /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
-    loadRowsCount(); /// Must be called after loadIndex() as it uses the value of `index_granularity`.
+    loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
     loadPartitionAndMinMaxIndex();
     loadTTLInfos();
 
@@ -454,16 +454,18 @@ void IMergeTreeDataPart::loadIndex()
         String index_path = getFullRelativePath() + "primary.idx";
         auto index_file = openForReading(volume->getDisk(), index_path);
 
-        for (size_t i = 0; i < index_granularity.getMarksCount(); ++i) //-V756
+        size_t marks_count = index_granularity.getMarksCount();
+
+        for (size_t i = 0; i < marks_count; ++i) //-V756
             for (size_t j = 0; j < key_size; ++j)
                 primary_key.data_types[j]->deserializeBinary(*loaded_index[j], *index_file);
 
         for (size_t i = 0; i < key_size; ++i)
         {
             loaded_index[i]->protect();
-            if (loaded_index[i]->size() != index_granularity.getMarksCount())
+            if (loaded_index[i]->size() != marks_count)
                 throw Exception("Cannot read all data from index file " + index_path
-                    + "(expected size: " + toString(index_granularity.getMarksCount()) + ", read: " + toString(loaded_index[i]->size()) + ")",
+                    + "(expected size: " + toString(marks_count) + ", read: " + toString(loaded_index[i]->size()) + ")",
                     ErrorCodes::CANNOT_READ_ALL_DATA);
         }
 
@@ -773,6 +775,7 @@ void IMergeTreeDataPart::remove() const
     }
 }
 
+
 String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
 {
     /// Do not allow underscores in the prefix because they are used as separators.
@@ -837,9 +840,10 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 {
     String path = getFullRelativePath();
 
+    const auto & pk = storage.getPrimaryKey();
     if (!checksums.empty())
     {
-        if (storage.hasPrimaryKey() && !checksums.files.count("primary.idx"))
+        if (!pk.column_names.empty() && !checksums.files.count("primary.idx"))
             throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -873,7 +877,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
         };
 
         /// Check that the primary key index is not empty.
-        if (storage.hasPrimaryKey())
+        if (!pk.column_names.empty())
             check_file_not_empty(volume->getDisk(), path + "primary.idx");
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)

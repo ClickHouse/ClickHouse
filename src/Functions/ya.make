@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 CFLAGS(
@@ -5,7 +6,7 @@ CFLAGS(
 )
 
 ADDINCL(
-    library/consistent_hashing
+    library/cpp/consistent_hashing
     contrib/libs/farmhash
     contrib/libs/hyperscan/src
     contrib/libs/icu/common
@@ -25,7 +26,7 @@ PEERDIR(
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash
-    library/consistent_hashing
+    library/cpp/consistent_hashing
 )
 
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
@@ -151,6 +152,9 @@ SRCS(
     finalizeAggregation.cpp
     formatDateTime.cpp
     formatString.cpp
+    fromUnixTimestamp64Micro.cpp
+    fromUnixTimestamp64Milli.cpp
+    fromUnixTimestamp64Nano.cpp
     FunctionFactory.cpp
     FunctionFQDN.cpp
     FunctionHelpers.cpp
@@ -168,6 +172,7 @@ SRCS(
     FunctionsRound.cpp
     FunctionsStringArray.cpp
     FunctionsStringSimilarity.cpp
+    fuzzBits.cpp
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
@@ -281,10 +286,10 @@ SRCS(
     rand64.cpp
     randConstant.cpp
     rand.cpp
+    randomFixedString.cpp
     randomPrintableASCII.cpp
     randomString.cpp
     randomStringUTF8.cpp
-    randomFixedString.cpp
     regexpQuoteMeta.cpp
     registerFunctionsArithmetic.cpp
     registerFunctionsComparison.cpp
@@ -304,6 +309,7 @@ SRCS(
     registerFunctionsStringRegexp.cpp
     registerFunctionsStringSearch.cpp
     registerFunctionsTuple.cpp
+    registerFunctionsUnixTimestamp64.cpp
     registerFunctionsVisitParam.cpp
     reinterpretAsFixedString.cpp
     reinterpretAsString.cpp
@@ -385,6 +391,9 @@ SRCS(
     toTime.cpp
     toTimeZone.cpp
     toTypeName.cpp
+    toUnixTimestamp64Micro.cpp
+    toUnixTimestamp64Milli.cpp
+    toUnixTimestamp64Nano.cpp
     toValidUTF8.cpp
     toYear.cpp
     toYYYYMM.cpp
@@ -414,8 +423,10 @@ SRCS(
     URL/extractURLParameters.cpp
     URL/firstSignificantSubdomain.cpp
     URL/fragment.cpp
+    URL/netloc.cpp
     URL/path.cpp
     URL/pathFull.cpp
+    URL/port.cpp
     URL/protocol.cpp
     URL/queryStringAndFragment.cpp
     URL/queryString.cpp

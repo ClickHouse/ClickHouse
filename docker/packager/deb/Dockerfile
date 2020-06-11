@@ -80,8 +80,10 @@ RUN apt-get --allow-unauthenticated update -y \
             pigz \
             moreutils \
             libcctz-dev \
-            libldap2-dev
-
+            libldap2-dev \
+            libsasl2-dev \
+            heimdal-multidev \
+            libhyperscan-dev
 
 
 # This symlink required by gcc to find lld compiler

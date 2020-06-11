@@ -46,7 +46,7 @@ namespace
             throw Exception("Only HTTP/HTTPS schemas allowed in proxy resolver config: " + proxy_scheme, ErrorCodes::BAD_ARGUMENTS);
         auto proxy_port = proxy_resolver_config.getUInt(prefix + ".proxy_port");
 
-        LOG_DEBUG(&Logger::get("DiskS3"), "Configured proxy resolver: {}, Scheme: {}, Port: {}", endpoint.toString(), proxy_scheme, proxy_port);
+        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Configured proxy resolver: {}, Scheme: {}, Port: {}", endpoint.toString(), proxy_scheme, proxy_port);
 
         return std::make_shared<S3::ProxyResolverConfiguration>(endpoint, proxy_scheme, proxy_port);
     }
@@ -70,7 +70,7 @@ namespace
 
                 proxies.push_back(proxy_uri);
 
-                LOG_DEBUG(&Logger::get("DiskS3"), "Configured proxy: {}", proxy_uri.toString());
+                LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Configured proxy: {}", proxy_uri.toString());
             }
 
         if (!proxies.empty())

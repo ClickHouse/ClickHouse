@@ -288,8 +288,6 @@ private:
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
 
-    std::atomic_bool need_shutdown{false};
-
     template <class Func>
     void foreachCommittedParts(const Func & func) const;
 

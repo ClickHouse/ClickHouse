@@ -78,10 +78,12 @@ void buildScatterSelector(
 }
 
 /// Computes ttls and updates ttl infos
-void updateTTL(const MergeTreeData::TTLEntry & ttl_entry,
+void updateTTL(
+    const TTLDescription & ttl_entry,
     IMergeTreeDataPart::TTLInfos & ttl_infos,
     DB::MergeTreeDataPartTTLInfo & ttl_info,
-    Block & block, bool update_part_min_max_ttls)
+    Block & block,
+    bool update_part_min_max_ttls)
 {
     bool remove_column = false;
     if (!block.has(ttl_entry.result_column))
@@ -229,7 +231,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     size_t expected_size = block.bytes();
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
-    for (const auto & ttl_entry : data.move_ttl_entries)
+    const auto & move_ttl_entries = data.getMoveTTLs();
+    for (const auto & ttl_entry : move_ttl_entries)
         updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
     NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
@@ -260,8 +263,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     new_data_part->volume->getDisk()->createDirectories(full_path);
 
     /// If we need to calculate some columns to sort.
-    if (data.hasSortingKey() || data.hasSkipIndices())
-        data.sorting_key_and_skip_indices_expr->execute(block);
+    if (data.hasSortingKey() || data.hasSecondaryIndices())
+        data.getSortingKeyAndSkipIndicesExpression()->execute(block);
 
     Names sort_columns = data.getSortingKeyColumns();
     SortDescription sort_description;
@@ -288,9 +291,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     }
 
     if (data.hasRowsTTL())
-        updateTTL(data.rows_ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
+        updateTTL(data.getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
 
-    for (const auto & [name, ttl_entry] : data.column_ttl_entries_by_name)
+    for (const auto & [name, ttl_entry] : data.getColumnTTLs())
         updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);
 
     new_data_part->ttl_infos.update(move_ttl_infos);
@@ -299,7 +302,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
 
-    MergedBlockOutputStream out(new_data_part, columns, data.skip_indices, compression_codec);
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+    MergedBlockOutputStream out(new_data_part, columns, index_factory.getMany(data.getSecondaryIndices()), compression_codec);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);

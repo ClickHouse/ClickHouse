@@ -181,10 +181,13 @@ void AsynchronousMetrics::update()
             /// Lazy database can not contain MergeTree tables
             if (db.second->getEngineName() == "Lazy")
                 continue;
-            for (auto iterator = db.second->getTablesIterator(); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
                 const auto & table = iterator->table();
+                if (!table)
+                    continue;
+
                 StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
                 StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
 
