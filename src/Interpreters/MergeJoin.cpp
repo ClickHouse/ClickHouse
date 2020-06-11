@@ -30,7 +30,7 @@ namespace
 {
 
 template <bool has_left_nulls, bool has_right_nulls>
-int ALWAYS_INLINE nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
+int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
 {
     static constexpr int null_direction_hint = 1;
 
