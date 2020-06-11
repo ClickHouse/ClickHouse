@@ -1216,7 +1216,7 @@ randomString(length)
 
 **Returned value**
 
--   String with a random set of characters.
+-   String filled with random bytes.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
