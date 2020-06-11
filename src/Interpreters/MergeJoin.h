@@ -107,7 +107,6 @@ private:
     void mergeFlushedRightBlocks();
 
     void initRightTableWriter();
-    void initLeftTableWriter(Block && left_sample_block);
     static void setKeepGoing(ExtraBlockPtr & not_processed);
 };
 

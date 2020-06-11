@@ -859,13 +859,4 @@ void MergeJoin::initRightTableWriter()
     right_blocks.clear();
 }
 
-void MergeJoin::initLeftTableWriter(Block && left_sample_block)
-{
-    const size_t max_rows_in_left_block = 1000000000;
-
-    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTemporaryVolume(),
-                    left_sample_block, left_sort_description, max_rows_in_left_block, max_files_to_merge,
-                    table_join->temporaryFilesCodec());
-}
-
 }
