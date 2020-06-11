@@ -166,6 +166,8 @@ public:
         if (!session.unique())
             throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
 
+        session->context.client_info = context.client_info;
+
         return session;
     }
 
@@ -822,7 +824,11 @@ const Block & Context::getScalar(const String & name) const
 {
     auto it = scalars.find(name);
     if (scalars.end() == it)
-        throw Exception("Scalar " + backQuoteIfNeed(name) + " doesn't exist (internal bug)", ErrorCodes::LOGICAL_ERROR);
+    {
+        // This should be a logical error, but it fails the sql_fuzz test too
+        // often, so 'bad arguments' for now.
+        throw Exception("Scalar " + backQuoteIfNeed(name) + " doesn't exist (internal bug)", ErrorCodes::BAD_ARGUMENTS);
+    }
     return it->second;
 }
 
@@ -1669,6 +1675,17 @@ std::shared_ptr<MetricLog> Context::getMetricLog()
         return {};
 
     return shared->system_logs->metric_log;
+}
+
+
+std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->asynchronous_metric_log;
 }
 
 

@@ -45,34 +45,6 @@ struct DatabaseAndTableWithAlias
     }
 };
 
-struct TableWithColumnNames
-{
-    DatabaseAndTableWithAlias table;
-    Names columns;
-    Names hidden_columns; /// Not general columns like MATERIALIZED and ALIAS. They are omitted in * and t.* results.
-
-    TableWithColumnNames(const DatabaseAndTableWithAlias & table_, const Names & columns_)
-        : table(table_)
-        , columns(columns_)
-    {
-        columns_set.insert(columns.begin(), columns.end());
-    }
-
-    TableWithColumnNames(const DatabaseAndTableWithAlias table_, Names && columns_, Names && hidden_columns_)
-        : table(table_)
-        , columns(columns_)
-        , hidden_columns(hidden_columns_)
-    {
-        columns_set.insert(columns.begin(), columns.end());
-        columns_set.insert(hidden_columns.begin(), hidden_columns.end());
-    }
-
-    bool hasColumn(const String & name) const { return columns_set.count(name); }
-
-private:
-    NameSet columns_set;
-};
-
 struct TableWithColumnNamesAndTypes
 {
     DatabaseAndTableWithAlias table;
@@ -96,21 +68,6 @@ struct TableWithColumnNamesAndTypes
             names.insert(col.name);
     }
 
-    TableWithColumnNames removeTypes() const
-    {
-        Names out_columns;
-        out_columns.reserve(columns.size());
-        for (auto & col : columns)
-            out_columns.push_back(col.name);
-
-        Names out_hidden_columns;
-        out_hidden_columns.reserve(hidden_columns.size());
-        for (auto & col : hidden_columns)
-            out_hidden_columns.push_back(col.name);
-
-        return TableWithColumnNames(table, std::move(out_columns), std::move(out_hidden_columns));
-    }
-
 private:
     NameSet names;
 };
@@ -118,7 +75,6 @@ private:
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database);
 std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number);
 
-using TablesWithColumnNames = std::vector<TableWithColumnNames>;
-using TablesWithColumnNamesAndTypes = std::vector<TableWithColumnNames>;
+using TablesWithColumns = std::vector<TableWithColumnNamesAndTypes>;
 
 }
