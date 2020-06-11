@@ -1168,6 +1168,24 @@ void MergeTreeData::dropAllData()
     LOG_TRACE(log, "dropAllData: done.");
 }
 
+void MergeTreeData::dropIfEmpty()
+{
+    LOG_TRACE(log, "dropIfEmpty");
+
+    auto lock = lockParts();
+
+    if (!data_parts_by_info.empty())
+        return;
+
+    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+    {
+        /// Non recursive, exception is thrown if there are more files.
+        disk->remove(path + "format_version.txt");
+        disk->remove(path + "detached");
+        disk->remove(path);
+    }
+}
+
 namespace
 {
 
