@@ -55,7 +55,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         Context & context_,
         const ColumnsDescription & columns_,
         const String & host_port_,
-        const String & routing_key_,
+        const Names & routing_keys_,
         const String & exchange_name_,
         const String & format_name_,
         char row_delimiter_,
@@ -65,7 +65,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
         , rabbitmq_context(Context(global_context))
-        , routing_key(global_context.getMacros()->expand(routing_key_))
+        , routing_keys(global_context.getMacros()->expand(routing_keys_))
         , exchange_name(exchange_name_)
         , format_name(global_context.getMacros()->expand(format_name_))
         , row_delimiter(row_delimiter_)
@@ -215,7 +215,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     auto table_id = getStorageID();
     String table_name = table_id.getNameForLogs(); 
 
-    return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer_channel, eventHandler, exchange_name, routing_key,
+    return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer_channel, eventHandler, exchange_name, routing_keys,
             next_channel_id, log, row_delimiter, bind_by_id, num_queues, exchange_type, table_name, stream_cancelled);
 }
 
@@ -224,7 +224,7 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
     String producer_exchange = exchange_type == "default" ? exchange_name : exchange_name + "_default";
 
-    return std::make_shared<WriteBufferToRabbitMQProducer>(parsed_address, login_password, routing_key, producer_exchange,
+    return std::make_shared<WriteBufferToRabbitMQProducer>(parsed_address, login_password, routing_keys[0], producer_exchange,
             log, num_consumers * num_queues, bind_by_id, row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
@@ -369,18 +369,18 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
         }
 
-        String routing_key = rabbitmq_settings.rabbitmq_routing_key.value;
+        String routing_key_list = rabbitmq_settings.rabbitmq_routing_key_list.value;
         if (args_count >= 2)
         {
-            const auto * ast = engine_args[1]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::String)
-            {
-                routing_key = safeGet<String>(ast->value);
-            }
-            else
-            {
-                throw Exception(String("RabbitMQ routing key must be a string"), ErrorCodes::BAD_ARGUMENTS);
-            }
+            engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.local_context);
+            routing_key_list = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        }
+
+        Names routing_keys;
+        boost::split(routing_keys, routing_key_list, [](char c){ return c == ','; });
+        for (String & key : routing_keys)
+        {
+            boost::trim(key);
         }
 
         String exchange = rabbitmq_settings.rabbitmq_exchange_name.value;
@@ -483,7 +483,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         return StorageRabbitMQ::create(
                 args.table_id, args.context, args.columns,
-                host_port, routing_key, exchange, format, row_delimiter, exchange_type, num_consumers, num_queues);
+                host_port, routing_keys, exchange, format, row_delimiter, exchange_type, num_consumers, num_queues);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
@@ -494,8 +494,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 NamesAndTypesList StorageRabbitMQ::getVirtuals() const
 {
     return NamesAndTypesList{
-            {"_exchange", std::make_shared<DataTypeString>()},
-            {"_routingKey", std::make_shared<DataTypeString>()}
+            {"_exchange", std::make_shared<DataTypeString>()}
     };
 }
 

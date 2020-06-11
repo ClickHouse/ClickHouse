@@ -120,7 +120,7 @@ def test_rabbitmq_select_from_new_syntax_table(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_routing_key = 'new',
+                     rabbitmq_routing_key_list = 'new',
                      rabbitmq_exchange_name = 'clickhouse-exchange',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
@@ -193,7 +193,7 @@ def test_rabbitmq_select_empty(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_routing_key = 'empty',
+                     rabbitmq_routing_key_list = 'empty',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         ''')
@@ -207,7 +207,7 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_routing_key = 'json',
+                     rabbitmq_routing_key_list = 'json',
                      rabbitmq_exchange_name = 'clickhouse-exchange',
                      rabbitmq_format = 'JSONEachRow'
         ''')
@@ -249,7 +249,7 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_routing_key = 'csv',
+                     rabbitmq_routing_key_list = 'csv',
                      rabbitmq_exchange_name = 'clickhouse-exchange',
                      rabbitmq_format = 'CSV',
                      rabbitmq_row_delimiter = '\\n';
@@ -285,7 +285,7 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_routing_key = 'tsv',
+                     rabbitmq_routing_key_list = 'tsv',
                      rabbitmq_exchange_name = 'clickhouse-exchange',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
@@ -322,7 +322,7 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_routing_key = 'mv',
+                     rabbitmq_routing_key_list = 'mv',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -365,7 +365,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_routing_key = 'mvsq',
+                     rabbitmq_routing_key_list = 'mvsq',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -410,7 +410,7 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_routing_key = 'mmv',
+                     rabbitmq_routing_key_list = 'mmv',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view1 (key UInt64, value UInt64)
@@ -471,7 +471,7 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value String)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_routing_key = 'big',
+                     rabbitmq_routing_key_list = 'big',
                      rabbitmq_format = 'JSONEachRow';
         CREATE TABLE test.view (key UInt64, value String)
             ENGINE = MergeTree
@@ -774,7 +774,7 @@ def test_rabbitmq_insert(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_routing_key = 'insert1',
+                     rabbitmq_routing_key_list = 'insert1',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
     ''')
@@ -829,7 +829,7 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq_many (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_routing_key = 'insert2',
+                     rabbitmq_routing_key_list = 'insert2',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view_many (key UInt64, value UInt64)
@@ -1024,7 +1024,7 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
                          rabbitmq_num_consumers = 5,
                          rabbitmq_exchange_name = 'direct_exchange_testing',
                          rabbitmq_exchange_type = 'direct',
-                         rabbitmq_routing_key = 'direct_{0}',
+                         rabbitmq_routing_key_list = 'direct_{0}',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_row_delimiter = '\\n';
             CREATE MATERIALIZED VIEW test.direct_exchange_{0}_mv TO test.destination AS
@@ -1083,7 +1083,7 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
                 ENGINE = RabbitMQ
                 SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                          rabbitmq_num_consumers = 5,
-                         rabbitmq_routing_key = 'key_{0}',
+                         rabbitmq_routing_key_list = 'key_{0}',
                          rabbitmq_exchange_name = 'fanout_exchange_testing',
                          rabbitmq_exchange_type = 'fanout',
                          rabbitmq_format = 'JSONEachRow',
@@ -1143,7 +1143,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
                          rabbitmq_num_consumers = 5,
                          rabbitmq_exchange_name = 'topic_exchange_testing',
                          rabbitmq_exchange_type = 'topic',
-                         rabbitmq_routing_key = '*.{0}',
+                         rabbitmq_routing_key_list = '*.{0}',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_row_delimiter = '\\n';
             CREATE MATERIALIZED VIEW test.topic_exchange_{0}_mv TO test.destination AS
@@ -1161,7 +1161,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
                          rabbitmq_num_consumers = 4,
                          rabbitmq_exchange_name = 'topic_exchange_testing',
                          rabbitmq_exchange_type = 'topic',
-                         rabbitmq_routing_key = '*.logs',
+                         rabbitmq_routing_key_list = '*.logs',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_row_delimiter = '\\n';
             CREATE MATERIALIZED VIEW test.topic_exchange_{0}_mv TO test.destination AS
@@ -1283,6 +1283,76 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
         thread.join()
 
     assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
+
+
+@pytest.mark.timeout(420)
+def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.bindings;
+        DROP TABLE IF EXISTS test.bindings_mv;
+        CREATE TABLE test.bindings (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_num_consumers = 5,
+                     rabbitmq_num_queues = 2,
+                     rabbitmq_exchange_name = 'multiple_bindings_testing',
+                     rabbitmq_exchange_type = 'direct',
+                     rabbitmq_routing_key_list = 'key1,key2,key3,key4,key5',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+        CREATE TABLE test.view_bindings (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.bindings_mv TO test.view_bindings AS
+            SELECT * FROM test.bindings;
+    ''')
+
+
+    i = [0]
+    messages_num = 500
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+
+    def produce():
+        # init connection here because otherwise python rabbitmq client might fail
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        channel.exchange_declare(exchange='hash_exchange_testing', exchange_type='x-consistent-hash')
+
+        messages = []
+        for _ in range(messages_num):
+            messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+            i[0] += 1
+
+        keys = ['key1', 'key2', 'key3', 'key4', 'key5']
+
+        for key in keys:
+            for message in messages:
+                channel.basic_publish(exchange='multiple_bindings_testing', routing_key=key, body=message)
+
+        connection.close()
+
+    threads = []
+    threads_num = 10
+
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=produce))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    while True:
+        result = instance.query('SELECT count() FROM test.view_bindings')
+        time.sleep(1)
+        print result
+        if int(result) == messages_num * threads_num * 5:
+            break
+
+    for thread in threads:
+        thread.join()
+
+    assert int(result) == messages_num * threads_num * 5, 'ClickHouse lost some messages: {}'.format(result)
 
 
 if __name__ == '__main__':

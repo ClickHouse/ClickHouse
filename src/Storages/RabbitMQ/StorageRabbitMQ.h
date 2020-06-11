@@ -48,9 +48,6 @@ public:
 
     ProducerBufferPtr createWriteBuffer();
 
-    const String & getExchangeName() const { return exchange_name; }
-    const String & getRoutingKey() const { return routing_key; }
-
     const String & getFormatName() const { return format_name; }
     NamesAndTypesList getVirtuals() const override;
 
@@ -62,7 +59,7 @@ protected:
             Context & context_,
             const ColumnsDescription & columns_,
             const String & host_port_,
-            const String & routing_key_,
+            const Names & routing_keys_,
             const String & exchange_name_,
             const String & format_name_,
             char row_delimiter_,
@@ -74,7 +71,7 @@ private:
     Context global_context;
     Context rabbitmq_context;
 
-    String routing_key;
+    Names routing_keys;
     const String exchange_name;
 
     const String format_name;

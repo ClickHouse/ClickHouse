@@ -20,7 +20,7 @@ RabbitMQBlockInputStream::RabbitMQBlockInputStream(
         , column_names(columns)
         , log(log_)
         , non_virtual_header(storage.getSampleBlockNonMaterialized())
-        , virtual_header(storage.getSampleBlockForColumns({"_exchange", "_routingKey"}))
+        , virtual_header(storage.getSampleBlockForColumns({"_exchange"}))
 {
 }
 
@@ -122,13 +122,11 @@ Block RabbitMQBlockInputStream::readImpl()
 
         auto new_rows = read_rabbitmq_message();
 
-        auto exchange_name = storage.getExchangeName();
-        auto routing_key = storage.getRoutingKey();
+        auto exchange_name = buffer->getExchange();
 
         for (size_t i = 0; i < new_rows; ++i)
         {
             virtual_columns[0]->insert(exchange_name);
-            virtual_columns[1]->insert(routing_key);
         }
 
         total_rows = total_rows + new_rows;

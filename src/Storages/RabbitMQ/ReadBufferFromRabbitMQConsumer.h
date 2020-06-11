@@ -25,7 +25,7 @@ public:
             ChannelPtr consumer_channel_,
             RabbitMQHandler & eventHandler_,
             const String & exchange_name_,
-            const String & routing_key_,
+            const Names & routing_keys_,
             const size_t channel_id_,
             Poco::Logger * log_,
             char row_delimiter_,
@@ -40,6 +40,8 @@ public:
     void allowNext() { allowed = true; } // Allow to read next message.
     void checkSubscription();
 
+    auto getExchange() const { return exchange_name; }
+
 private:
     using Messages = std::vector<String>;
 
@@ -47,7 +49,7 @@ private:
     RabbitMQHandler & eventHandler;
 
     const String & exchange_name;
-    const String & routing_key;
+    const Names & routing_keys;
     const size_t channel_id;
     const bool bind_by_id;
     const size_t num_queues;
