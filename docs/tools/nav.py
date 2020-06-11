@@ -81,7 +81,7 @@ def build_blog_nav(lang, args):
         year_dir = os.path.join(blog_dir, year)
         posts = []
         for post in os.listdir(year_dir):
-            meta, post_content = util.read_md_file(os.path.join(year_dir, post))
+            meta, _ = util.read_md_file(os.path.join(year_dir, post))
             post_date = meta['date']
             post_title = meta['title']
             if datetime.date.fromisoformat(post_date) > datetime.date.today():
@@ -96,7 +96,6 @@ def build_blog_nav(lang, args):
                 'date': post_date,
                 'title': post_title,
                 'image': meta.get('image'),
-                'content': post_content,
                 'url': f'/blog/{lang}/{year}/{post_url_part}/'
             }
         for _, title, path in sorted(posts):
