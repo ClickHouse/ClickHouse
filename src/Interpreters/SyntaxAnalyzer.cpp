@@ -148,6 +148,7 @@ public:
         {
             select_query.setExpression(ASTSelectQuery::Expression::ORDER_BY, nullptr);
         }
+
         done = true;
     }
 };
@@ -156,7 +157,7 @@ using DuplicateOrderByFromSubqueriesMatcher = OneTypeMatcher<DuplicateOrderByFro
 using DuplicateOrderByFromSubqueriesVisitor = InDepthNodeVisitor<DuplicateOrderByFromSubqueriesMatcher, true>;
 
 
-/// Finds SELECTs that can be optimized
+/// Finds SELECT that can be optimized
 class DuplicateOrderByData
 {
 public:
@@ -170,6 +171,7 @@ public:
         if (done)
             return;
 
+        /// Disable optimization for distributed tables
         for (const auto & elem : select_query.children)
         {
             if (elem->as<ASTSetQuery>() && !elem->as<ASTSetQuery>()->is_standalone)
@@ -180,15 +182,27 @@ public:
         {
             for (auto & elem : select_query.children)
             {
-                bool is_stateful = false;
-                ASTFunctionStatefulVisitor::Data data{context, is_stateful};
-                ASTFunctionStatefulVisitor(data).visit(elem);
-                if (is_stateful)
-                    return;
+                if (elem->as<ASTExpressionList>())
+                {
+                    bool is_stateful = false;
+                    ASTFunctionStatefulVisitor::Data data{context, is_stateful};
+                    ASTFunctionStatefulVisitor(data).visit(elem);
+                    if (is_stateful)
+                        return;
+                }
             }
 
-            DuplicateOrderByFromSubqueriesVisitor::Data data{false};
-            DuplicateOrderByFromSubqueriesVisitor(data).visit(select_query.refTables());
+            if (auto select_table_ptr = select_query.tables())
+            {
+                if (auto select_table = select_table_ptr->as<ASTTablesInSelectQuery>())
+                {
+                    if (!select_table->children.empty())
+                    {
+                        DuplicateOrderByFromSubqueriesVisitor::Data data{false};
+                        DuplicateOrderByFromSubqueriesVisitor(data).visit(select_table->children[0]);
+                    }
+                }
+            }
         }
     }
 };
