@@ -564,8 +564,7 @@ void StorageReplicatedMergeTree::createReplica()
         Coordination::Stat replicas_stat;
         String replicas_value;
 
-        code = zookeeper->tryGet(zookeeper_path + "/replicas", replicas_value, &replicas_stat);
-        if (code == Coordination::ZNONODE)
+        if (!zookeeper->tryGet(zookeeper_path + "/replicas", replicas_value, &replicas_stat))
             throw Exception(fmt::format("Cannot create a replica of the table {}, because the last replica of the table was dropped right now",
                 zookeeper_path), ErrorCodes::ALL_REPLICAS_LOST);
 
