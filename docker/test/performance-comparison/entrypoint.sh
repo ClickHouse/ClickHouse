@@ -131,5 +131,5 @@ done
 
 dmesg -T > dmesg.log
 
-7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} {right,left}/{performance,db/preprocessed_configs,scripts} report analyze
+7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} {right,left}/{performance,db/preprocessed_configs,scripts} report analyze benchmark
 cp compare.log /output
