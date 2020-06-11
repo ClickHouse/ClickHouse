@@ -18,6 +18,7 @@ namespace DB
     M(SettingString, rabbitmq_exchange_type, "default", "The exchange type.", 0) \
     M(SettingUInt64, rabbitmq_num_consumers, 1, "The number of consumer channels per table.", 0) \
     M(SettingUInt64, rabbitmq_num_queues, 1, "The number of queues per consumer.", 0) \
+    M(SettingBool, rabbitmq_transactional_channel, false, "Use transactional channel for publishing.", 0) \
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_RABBITMQ_SETTINGS)
 

@@ -65,7 +65,8 @@ protected:
             char row_delimiter_,
             const String & exchange_type_,
             size_t num_consumers_,
-            size_t num_queues_);
+            size_t num_queues_,
+            const bool use_transactional_channel_);
 
 private:
     Context global_context;
@@ -81,6 +82,7 @@ private:
     bool bind_by_id;
     size_t num_queues;
     const String exchange_type;
+    const bool use_transactional_channel;
 
     Poco::Logger * log;
     std::pair<String, UInt16> parsed_address;

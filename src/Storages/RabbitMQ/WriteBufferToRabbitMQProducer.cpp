@@ -15,7 +15,8 @@ namespace DB
 enum
 {
     Connection_setup_sleep = 200,
-    Connection_setup_retries_max = 1000,
+    Loop_retries_max = 1000,
+    Loop_wait = 10,
     Batch = 10000
 };
 
@@ -27,6 +28,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         Poco::Logger * log_,
         const size_t num_queues_,
         const bool bind_by_id_,
+        const bool use_transactional_channel_,
         std::optional<char> delimiter,
         size_t rows_per_message,
         size_t chunk_size_)
@@ -37,6 +39,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , log(log_)
         , num_queues(num_queues_)
         , bind_by_id(bind_by_id_)
+        , use_transactional_channel(use_transactional_channel_)
         , delim(delimiter)
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
@@ -50,7 +53,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
      * different threads (as outputStreams are asynchronous) with the same connection leads to internal library errors.
      */
     size_t cnt_retries = 0;
-    while (!connection.ready() && ++cnt_retries != Connection_setup_retries_max)
+    while (!connection.ready() && ++cnt_retries != Loop_retries_max)
     {
         event_base_loop(producerEvbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(Connection_setup_sleep));
@@ -63,14 +66,19 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
 
     producer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
     checkExchange();
+
+    /// If publishing should be wrapped in transactions
+    if (use_transactional_channel)
+    {
+        producer_channel->startTransaction();
+    }
 }
 
 
 WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
-    checkExchange();
+    finilize();
     connection.close();
-
     assert(rows == 0 && chunks.empty());
 }
 
@@ -141,6 +149,36 @@ void WriteBufferToRabbitMQProducer::checkExchange()
     while (!exchange_declared && !exchange_error)
     {
         startEventLoop();
+    }
+}
+
+
+void WriteBufferToRabbitMQProducer::finilize()
+{
+    checkExchange();
+
+    if (use_transactional_channel)
+    {
+        std::atomic<bool> answer_received = false;
+        producer_channel->commitTransaction()
+        .onSuccess([&]()
+        {
+            answer_received = true;
+            LOG_TRACE(log, "All messages were successfully published");
+        })
+        .onError([&](const char * message)
+        {
+            answer_received = true;
+            LOG_TRACE(log, "None of messages were publishd: {}", message);
+            /// Probably should do something here
+        });
+
+        size_t count_retries = 0;
+        while (!answer_received && ++count_retries != Loop_retries_max)
+        {
+            startEventLoop();
+            std::this_thread::sleep_for(std::chrono::milliseconds(Loop_wait));
+        }
     }
 }
 

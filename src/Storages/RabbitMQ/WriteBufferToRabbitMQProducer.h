@@ -26,6 +26,7 @@ public:
             Poco::Logger * log_,
             const size_t num_queues_,
             const bool bind_by_id_,
+            const bool use_transactional_channel_,
             std::optional<char> delimiter,
             size_t rows_per_message,
             size_t chunk_size_
@@ -39,12 +40,14 @@ public:
 private:
     void nextImpl() override;
     void checkExchange();
+    void finilize();
 
     std::pair<String, String> & login_password;
     const String routing_key;
     const String exchange_name;
     const bool bind_by_id;
     const size_t num_queues;
+    const bool use_transactional_channel;
 
     event_base * producerEvbase;
     RabbitMQHandler eventHandler;

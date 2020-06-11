@@ -61,7 +61,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         char row_delimiter_,
         const String & exchange_type_,
         size_t num_consumers_,
-        size_t num_queues_)
+        size_t num_queues_,
+        const bool use_transactional_channel_)
         : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
         , rabbitmq_context(Context(global_context))
@@ -72,6 +73,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , num_consumers(num_consumers_)
         , num_queues(num_queues_)
         , exchange_type(exchange_type_)
+        , use_transactional_channel(use_transactional_channel_)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
         , login_password(std::make_pair(
@@ -225,7 +227,8 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
     String producer_exchange = exchange_type == "default" ? exchange_name : exchange_name + "_default";
 
     return std::make_shared<WriteBufferToRabbitMQProducer>(parsed_address, login_password, routing_keys[0], producer_exchange,
-            log, num_consumers * num_queues, bind_by_id, row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
+            log, num_consumers * num_queues, bind_by_id, use_transactional_channel,
+            row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
 
@@ -488,9 +491,24 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
         }
 
+        bool use_transactional_channel = static_cast<bool>(rabbitmq_settings.rabbitmq_transactional_channel);
+        if (args_count >= 9)
+        {
+            const auto * ast = engine_args[8]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::UInt64)
+            {
+                use_transactional_channel = static_cast<bool>(safeGet<UInt64>(ast->value));
+            }
+            else
+            {
+                throw Exception("Transactional channel parameter is a bool", ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
+
         return StorageRabbitMQ::create(
                 args.table_id, args.context, args.columns,
-                host_port, routing_keys, exchange, format, row_delimiter, exchange_type, num_consumers, num_queues);
+                host_port, routing_keys, exchange, format, row_delimiter, exchange_type, num_consumers,
+                num_queues, use_transactional_channel);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
