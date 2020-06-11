@@ -489,15 +489,12 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserStorage storage_p;
-    ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
 
     ASTPtr table;
     ASTPtr to_table;
     ASTPtr columns_list;
-    ASTPtr storage;
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;

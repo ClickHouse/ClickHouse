@@ -105,6 +105,7 @@ SRCS(
     MarkTableIdentifiersVisitor.cpp
     MergeJoin.cpp
     MetricLog.cpp
+    AsynchronousMetricLog.cpp
     MutationsInterpreter.cpp
     NullableUtils.cpp
     OptimizeIfChains.cpp
