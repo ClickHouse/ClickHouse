@@ -344,33 +344,98 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
 }
 
 /// recursive traversal and check for optimizeGroupByFunctionKeys
-bool KeepFunction(const ASTPtr& node, std::unordered_set<String> * should_keep)
+struct KeepFunctionMatcher
 {
-    /// check if function has no arguments
-    if ((node->children).empty())
-        return true;
-
-    for (auto & child_key : node->children)
+    struct Data
     {
-        if (!child_key->as<ASTFunction>())
+        std::unordered_set<String> & should_keep;
+        bool & keep;
+    };
+
+    using Visitor = InDepthNodeVisitor<KeepFunctionMatcher, true>;
+
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
+    {
+        return !(node->as<ASTFunction>());
+    }
+
+    static void visit(ASTFunction * function_node, Data & data)
+    {
+        if ((function_node->arguments->children).empty())
         {
-            if ((*should_keep).find(child_key->getColumnName()) == (*should_keep).end())
-            {
-                /// if variable of a function is not in GROUP BY keys, this function should not be deleted
-                return true;
-            }
+            data.keep = true;
+            return;
         }
-        else
+
+        if (data.should_keep.find(function_node->getColumnName()) == data.should_keep.end())
         {
-            /// if function is not in keys, check for its variables
-            if ((*should_keep).find(child_key->getColumnName()) == (*should_keep).end())
-            {
-                return KeepFunction(child_key->as<ASTFunction>()->arguments, should_keep);
-            }
+            Visitor(data).visit(function_node->arguments);
         }
     }
-    return false;
-}
+
+    static void visit(const ASTPtr & ast, Data & data)
+    {
+        if (data.keep)
+            return;
+
+        if (!ast)
+            return;
+
+        if (!(ast->as<ASTFunction>() || ast->as<ASTExpressionList>()))
+        {
+            if ((data.should_keep).find(ast->getColumnName()) == (data.should_keep).end())
+            {
+                /// if variable of a function is not in GROUP BY keys, this function should not be deleted
+                data.keep = true;
+            }
+        }
+
+        if (auto * function_node = ast->as<ASTFunction>())
+        {
+            visit(function_node, data);
+        }
+    }
+};
+
+using KeepFunctionVisitor = InDepthNodeVisitor<KeepFunctionMatcher, true>;
+
+class GroupByChildrenMatcher
+{
+public:
+    struct Data
+    {
+        std::unordered_set<String> & should_keep;
+    };
+
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
+    {
+        return !(node->as<ASTFunction>());
+    }
+
+    static void visit(ASTFunction * function_node, Data & data)
+    {
+        bool keep = false;
+        KeepFunctionVisitor::Data keep_data{data.should_keep, keep};
+        KeepFunctionVisitor(keep_data).visit(function_node->arguments);
+
+        if (!keep)
+            (data.should_keep).erase(function_node->getColumnName());
+    }
+
+    static void visit(const ASTPtr & ast, Data & data)
+    {
+        if (!ast)
+            return;
+
+        if (auto * function_node = ast->as<ASTFunction>())
+        {
+            if (!(function_node->arguments->children.empty()))
+                visit(function_node, data);
+        }
+    }
+};
+
+using GroupByChildrenVisitor = InDepthNodeVisitor<GroupByChildrenMatcher, true>;
 
 ///eliminate functions of other GROUP BY keys
 void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
@@ -397,17 +462,8 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     if (!need_optimization)
         return;
 
-    for (auto & group_key : group_keys)
-    {
-        if (group_key->as<ASTFunction>())
-        {
-            if (!KeepFunction(group_key->as<ASTFunction>()->arguments, &should_keep))
-            {
-                ///if function of a key should be deleted, mark it as 0 in checks
-                should_keep.erase(group_key->getColumnName());
-            }
-        }
-    }
+    GroupByChildrenVisitor::Data visitor_data{should_keep};
+    GroupByChildrenVisitor(visitor_data).visit(grp_by);
 
     modified.reserve(group_keys.size());
     ///filling the result
@@ -907,7 +963,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeGroupBy(select_query, source_columns_set, context);
 
         /// GROUP BY functions of other keys elimination.
-        optimizeGroupByFunctionKeys(select_query);
+        if (settings.optimize_group_by_function_keys)
+            optimizeGroupByFunctionKeys(select_query);
 
         /// Remove duplicate items from ORDER BY.
         optimizeOrderBy(select_query);
