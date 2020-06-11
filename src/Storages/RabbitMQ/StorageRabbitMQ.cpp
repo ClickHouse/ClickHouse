@@ -213,7 +213,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
 
     auto table_id = getStorageID();
-    String table_name = table_id.getNameForLogs(); 
+    String table_name = table_id.getNameForLogs();
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer_channel, eventHandler, exchange_name, routing_keys,
             next_channel_id, log, row_delimiter, bind_by_id, num_queues, exchange_type, table_name, stream_cancelled);
