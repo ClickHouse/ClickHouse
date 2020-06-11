@@ -23,15 +23,16 @@ public:
     void startProducerLoop();
     void stopWithTimeout();
     void stop();
+    std::atomic<bool> & checkStopIsScheduled() { return stop_scheduled; };
 
 private:
     event_base * evbase;
     Poco::Logger * log;
 
     timeval tv;
-    size_t count_passed = 0;
+    std::atomic<bool> stop_scheduled = false;
     std::timed_mutex mutex_before_event_loop;
-    std::timed_mutex mutex_before_loop_stop;
+    std::mutex mutex_before_loop_stop;
 };
 
 }

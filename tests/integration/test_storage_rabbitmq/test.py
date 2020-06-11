@@ -882,7 +882,7 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
 
 
 @pytest.mark.timeout(240)
-def test_rabbitmq_sharding_between_channels_insert(rabbitmq_cluster):
+def test_rabbitmq_sharding_between_channels_and_queues_insert(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view_sharding;
         DROP TABLE IF EXISTS test.consumer_sharding;
@@ -890,6 +890,7 @@ def test_rabbitmq_sharding_between_channels_insert(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_num_consumers = 5,
+                     rabbitmq_num_queues = 2,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view_sharding (key UInt64, value UInt64)
