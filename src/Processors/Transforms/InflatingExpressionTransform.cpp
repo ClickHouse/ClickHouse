@@ -52,17 +52,22 @@ void InflatingExpressionTransform::transform(Chunk & chunk)
 Block InflatingExpressionTransform::readExecute(Chunk & chunk)
 {
     Block res;
-    bool keep_going = not_processed && not_processed->empty(); /// There's data inside expression.
 
-    if (!not_processed || keep_going)
+    if (!not_processed)
     {
-        not_processed.reset();
-
         if (chunk.hasColumns())
             res = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-        if (res || keep_going)
+        if (res)
             expression->execute(res, not_processed, action_number);
+    }
+    else if (not_processed->empty()) /// There's not processed data inside expression.
+    {
+        if (chunk.hasColumns())
+            res = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+
+        not_processed.reset();
+        expression->execute(res, not_processed, action_number);
     }
     else
     {

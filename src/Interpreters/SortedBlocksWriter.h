@@ -111,54 +111,16 @@ public:
         , sort_description(sort_description_)
     {}
 
-    Block exchange(Block && block)
-    {
-        Blocks to_merge;
-
-        /// If we have src block return empty block with same structure
-        Block out;
-        if (block)
-            out = block.cloneEmpty();
-
-        {
-            std::lock_guard lock(mutex);
-
-            bool is_empty = !block;
-            if (block)
-            {
-                current_bytes += block.bytes();
-                buffer.emplace_back(std::move(block));
-            }
-
-            if (is_empty || current_bytes >= max_bytes)
-            {
-                to_merge.swap(buffer);
-                buffer.reserve(to_merge.size() * reserve_coef);
-                current_bytes = 0;
-            }
-        }
-
-        if (!to_merge.empty())
-        {
-            if (to_merge.size() == 1)
-                return to_merge[0];
-            return mergeBlocks(to_merge);
-        }
-
-        return out;
-    }
+    Block exchange(Block && block);
 
 private:
-    /// Try avoid memory fluctuation: reserve a bit more than was used last time
-    static constexpr const float reserve_coef = 1.2;
-
     std::mutex mutex;
     size_t max_bytes;
     size_t current_bytes;
     Blocks buffer;
     const SortDescription & sort_description;
 
-    Block mergeBlocks(const Blocks & blocks) const;
+    Block mergeBlocks(Blocks &&) const;
 };
 
 }

@@ -207,20 +207,85 @@ String SortedBlocksWriter::getPath() const
 }
 
 
-Block SortedBlocksBuffer::mergeBlocks(const Blocks & blocks) const
+Block SortedBlocksBuffer::exchange(Block && block)
 {
-    BlockInputStreams inputs;
-    inputs.reserve(blocks.size());
+    static constexpr const float reserve_coef = 1.2;
 
-    size_t num_rows = 0;
-    for (auto & block : blocks)
+    Blocks out_blocks;
+
     {
-        num_rows += block.rows();
-        inputs.emplace_back(std::make_shared<OneBlockInputStream>(block));
+        std::lock_guard lock(mutex);
+
+        if (block)
+        {
+            current_bytes += block.bytes();
+            buffer.emplace_back(std::move(block));
+
+            /// Saved. Return empty block with same structure.
+            if (current_bytes < max_bytes)
+                return buffer.back().cloneEmpty();
+        }
+
+        /// Not saved. Return buffered.
+        out_blocks.swap(buffer);
+        buffer.reserve(out_blocks.size() * reserve_coef);
+        current_bytes = 0;
     }
 
-    MergingSortedBlockInputStream stream(inputs, sort_description, num_rows);
-    return stream.read();
+    if (size_t size = out_blocks.size())
+    {
+        if (size == 1)
+            return out_blocks[0];
+        return mergeBlocks(std::move(out_blocks));
+    }
+
+    return {};
+}
+
+Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
+{
+    size_t num_rows = 0;
+
+    { /// Merge sort blocks
+        BlockInputStreams inputs;
+        inputs.reserve(blocks.size());
+
+        for (auto & block : blocks)
+        {
+            num_rows += block.rows();
+            inputs.emplace_back(std::make_shared<OneBlockInputStream>(block));
+        }
+
+        Blocks tmp_blocks;
+        MergingSortedBlockInputStream stream(inputs, sort_description, num_rows);
+        while (const auto & block = stream.read())
+            tmp_blocks.emplace_back(block);
+
+        blocks.swap(tmp_blocks);
+    }
+
+    if (blocks.size() == 1)
+        return blocks[0];
+
+    Block out = blocks[0].cloneEmpty();
+
+    { /// Concatenate blocks
+        MutableColumns columns = out.mutateColumns();
+
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            columns[i]->reserve(num_rows);
+            for (const auto & block : blocks)
+            {
+                const auto & tmp_column = *block.getByPosition(i).column;
+                columns[i]->insertRangeFrom(tmp_column, 0, block.rows());
+            }
+        }
+
+        out.setColumns(std::move(columns));
+    }
+
+    return out;
 }
 
 }
