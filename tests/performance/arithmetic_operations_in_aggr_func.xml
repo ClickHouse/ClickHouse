@@ -1,22 +1,14 @@
 <test>
+    <query>SELECT max(-1 * (((-2 * (number * -3)) * -4) * -5)) FROM numbers(500000000)</query>
 
-    <stop_conditions>
-        <all_of>
-            <iterations>10</iterations>
-        </all_of>
-    </stop_conditions>
+    <query>SELECT min(-1 * (((-2 * (number * -3)) * -4) * -5)) FROM numbers(500000000)</query>
 
+    <query>SELECT sum(-1 * (((-2 * (number * -3)) * -4) * -5)) FROM numbers(500000000)</query>
 
-    <query>SELECT max(-1 * (((-2 * (number * -3)) * -4) * -5)) FROM numbers(120000000)</query>
+    <query>SELECT min(-1 + (((-2 + (number + -3)) + -4) + -5)) FROM numbers(500000000)</query>
 
-    <query>SELECT min(-1 * (((-2 * (number * -3)) * -4) * -5)) FROM numbers(120000000)</query>
+    <query>SELECT max(-1 + (((-2 + (number + -3)) + -4) + -5)) FROM numbers(500000000)</query>
 
-    <query>SELECT sum(-1 * (((-2 * (number * -3)) * -4) * -5)) FROM numbers(120000000)</query>
-
-    <query>SELECT min(-1 + (((-2 + (number + -3)) + -4) + -5)) FROM numbers(120000000)</query>
-
-    <query>SELECT max(-1 + (((-2 + (number + -3)) + -4) + -5)) FROM numbers(120000000)</query>
-
-    <query>SELECT max(((((number) * 10) * -2) * 3) * 2) + min(((((number) * 10) * -2) * 3) * 2) FROM numbers(120000000)</query>
+    <query>SELECT max(((((number) * 10) * -2) * 3) * 2) + min(((((number) * 10) * -2) * 3) * 2) FROM numbers(500000000)</query>
 
 </test>

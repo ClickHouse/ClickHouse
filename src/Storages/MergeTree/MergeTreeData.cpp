@@ -1,5 +1,4 @@
 #include <Compression/CompressedReadBuffer.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -1866,7 +1865,7 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
             part->remove_time.store(remove_time, std::memory_order_relaxed);
 
         if (part->state != IMergeTreeDataPart::State::Outdated)
-            modifyPartState(part,IMergeTreeDataPart::State::Outdated);
+            modifyPartState(part, IMergeTreeDataPart::State::Outdated);
     }
 }
 
