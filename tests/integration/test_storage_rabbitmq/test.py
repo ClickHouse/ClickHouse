@@ -927,7 +927,6 @@ def test_rabbitmq_sharding_between_channels_insert(rabbitmq_cluster):
     while True:
         result = instance.query('SELECT count() FROM test.view_sharding')
         time.sleep(1)
-        print result
         if int(result) == messages_num * threads_num:
             break
 
@@ -1288,9 +1287,17 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
 @pytest.mark.timeout(420)
 def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
     instance.query('''
-        DROP TABLE IF EXISTS test.bindings;
-        DROP TABLE IF EXISTS test.bindings_mv;
-        CREATE TABLE test.bindings (key UInt64, value UInt64)
+        DROP TABLE IF EXISTS test.destination;
+        CREATE TABLE test.destination(key UInt64, value UInt64,
+            _consumed_by LowCardinality(String))
+        ENGINE = MergeTree()
+        ORDER BY key;
+    ''')
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.bindings_1;
+        DROP TABLE IF EXISTS test.bindings_1_mv;
+        CREATE TABLE test.bindings_1 (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_num_consumers = 5,
@@ -1300,13 +1307,25 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
                      rabbitmq_routing_key_list = 'key1,key2,key3,key4,key5',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
-        CREATE TABLE test.view_bindings (key UInt64, value UInt64)
-            ENGINE = MergeTree
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW test.bindings_mv TO test.view_bindings AS
-            SELECT * FROM test.bindings;
+        CREATE MATERIALIZED VIEW test.bindings_1_mv TO test.destination AS
+            SELECT * FROM test.bindings_1;
     ''')
 
+    # in case num_consumers and num_queues are not set - multiple bindings are implemented differently, so test them too
+    instance.query('''
+        DROP TABLE IF EXISTS test.bindings_2;
+        DROP TABLE IF EXISTS test.bindings_2_mv;
+        CREATE TABLE test.bindings_2 (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'multiple_bindings_testing',
+                     rabbitmq_exchange_type = 'direct',
+                     rabbitmq_routing_key_list = 'key1,key2,key3,key4,key5',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+        CREATE MATERIALIZED VIEW test.bindings_2_mv TO test.destination AS
+            SELECT * FROM test.bindings_2;
+    ''')
 
     i = [0]
     messages_num = 500
@@ -1318,7 +1337,7 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
         # init connection here because otherwise python rabbitmq client might fail
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()
-        channel.exchange_declare(exchange='hash_exchange_testing', exchange_type='x-consistent-hash')
+        channel.exchange_declare(exchange='multiple_bindings_testing', exchange_type='direct')
 
         messages = []
         for _ in range(messages_num):
@@ -1343,16 +1362,15 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
         thread.start()
 
     while True:
-        result = instance.query('SELECT count() FROM test.view_bindings')
+        result = instance.query('SELECT count() FROM test.destination')
         time.sleep(1)
-        print result
-        if int(result) == messages_num * threads_num * 5:
+        if int(result) == messages_num * threads_num * 5 * 2:
             break
 
     for thread in threads:
         thread.join()
 
-    assert int(result) == messages_num * threads_num * 5, 'ClickHouse lost some messages: {}'.format(result)
+    assert int(result) == messages_num * threads_num * 5 * 2, 'ClickHouse lost some messages: {}'.format(result)
 
 
 if __name__ == '__main__':
