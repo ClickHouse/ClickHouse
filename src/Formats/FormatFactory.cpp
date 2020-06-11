@@ -236,7 +236,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
 
     bool parallel_formatting = true;
 
-    if (parallel_formatting && name == "CSV")
+    if (parallel_formatting)
     {
         const auto & output_getter = getCreators(name).output_processor_creator;
         if (!output_getter)
