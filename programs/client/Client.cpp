@@ -1920,6 +1920,7 @@ public:
                 std::string text = e.displayText();
                 std::cerr << "Code: " << e.code() << ". " << text << std::endl;
                 std::cerr << "Table №" << i << std::endl << std::endl;
+                /// Avoid the case when error exit code can possibly overflow to normal (zero).
                 auto exit_code = e.code() % 256;
                 if (exit_code == 0)
                     exit_code = 255;
