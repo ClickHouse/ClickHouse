@@ -2569,8 +2569,8 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
         zookeeper_path + "/log/log-", entry.toString(),
         zkutil::CreateMode::PersistentSequential));
 
-    ops.emplace_back(zkutil::makeCheckRequest(
-        zookeeper_path + "/log", log_version));
+    ops.emplace_back(zkutil::makeSetRequest(
+        zookeeper_path + "/log", "", log_version)); /// Check and update version.
 
     Coordination::Error code = zookeeper->tryMulti(ops, responses);
 
@@ -2578,9 +2578,12 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     {
         String path_created = dynamic_cast<const Coordination::CreateResponse &>(*responses.front()).path_created;
         entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+
+        LOG_TRACE(log, "Created log entry {} for merge {}", path_created, merged_name);
     }
     else if (code == Coordination::Error::ZBADVERSION)
     {
+        LOG_TRACE(log, "Log entry is not created for merge {} because log was updated", merged_name);
         return CreateMergeEntryResult::LogUpdated;
     }
     else
@@ -2633,15 +2636,20 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
         zookeeper_path + "/log/log-", entry.toString(),
         zkutil::CreateMode::PersistentSequential));
 
-    ops.emplace_back(zkutil::makeCheckRequest(
-        zookeeper_path + "/log", log_version));
+    ops.emplace_back(zkutil::makeSetRequest(
+        zookeeper_path + "/log", "", log_version)); /// Check and update version.
 
     Coordination::Error code = zookeeper->tryMulti(ops, responses);
 
     if (code == Coordination::Error::ZBADVERSION)
+    {
+        LOG_TRACE(log, "Log entry is not created for mutation {} because log was updated", new_part_name);
         return CreateMergeEntryResult::LogUpdated;
+    }
 
     zkutil::KeeperMultiException::check(code, ops, responses);
+
+    LOG_TRACE(log, "Created log entry for mutation {}", new_part_name);
     return CreateMergeEntryResult::Ok;
 }
 
