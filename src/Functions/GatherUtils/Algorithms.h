@@ -6,6 +6,7 @@
 #include "Sinks.h"
 #include <Core/AccurateComparison.h>
 #include <ext/range.h>
+#include "GatherUtils.h"
 
 
 namespace DB::ErrorCodes
@@ -461,14 +462,13 @@ bool sliceHasImplSubStr(const FirstSliceType & first, const SecondSliceType & se
 
     while (firstCur < first.size && secondCur < second.size)
     {
-        auto cond_values_match = isEqual(first, second, firstCur, secondCur);
-
         const bool is_first_null = has_first_null_map && first_null_map[firstCur];
         const bool is_second_null = has_second_null_map && second_null_map[secondCur];
 
 
-        auto cond_null_match = is_first_null && is_second_null;
-        if (cond_values_match || cond_null_match)
+        auto cond_both_null_match = is_first_null && is_second_null;
+        auto cond_both_not_null = !is_first_null && !is_second_null;
+        if (cond_both_null_match ||( cond_both_not_null && isEqual(first, second, firstCur, secondCur)))
         {
             ++firstCur;
             ++secondCur;
@@ -512,9 +512,9 @@ std::unique_ptr<size_t[]> buildKMPFailureArray(const SliceType & pattern, const 
                 length = aux[length - 1];
             }
         }
-        auto cond_values_match = isEqual(pattern, i, 0);
         auto cond_null_map_match = (has_null_map && pattern_null_map[i] == pattern_null_map[0]);
-        if (length == 0 && (cond_values_match || cond_null_map_match))
+        auto cond_both_non_null = (!has_null_map || (pattern_null_map[i] == 0 && pattern_null_map[0] == 0));
+        if (length == 0 && (cond_null_map_match || ( cond_both_non_null &&  isEqual(pattern, i, 0))))
         {
             aux[i] = 1;
         }
