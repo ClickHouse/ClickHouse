@@ -7,8 +7,10 @@
 #include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>
 
+#include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Server/HTTPHandlerFactory.h>
 
 
 namespace DB
@@ -104,5 +106,11 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
     }
 }
 
+void addReplicasStatusHandlerFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server)
+{
+    auto replicas_status_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
+    replicas_status_handler->attachNonStrictPath("/replicas_status")->allowGetAndHeadRequest();
+    factory->addHandler(replicas_status_handler.release());
+}
 
 }

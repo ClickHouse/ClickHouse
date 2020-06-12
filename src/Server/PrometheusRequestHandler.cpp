@@ -12,6 +12,7 @@
 #include <Common/CurrentMetrics.h>
 
 #include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTPHandlerFactory.h>
 
 
 namespace DB
@@ -37,6 +38,19 @@ void PrometheusRequestHandler::handleRequest(
     catch (...)
     {
         tryLogCurrentException("PrometheusRequestHandler");
+    }
+}
+
+void addPrometheusHandlerFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics & async_metrics)
+{
+    /// We check that prometheus handler will be served on current (default) port.
+    /// Otherwise it will be created separately, see below.
+    if (server.config().has("prometheus") && server.config().getInt("prometheus.port", 0) == 0)
+    {
+        auto prometheus_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
+            server, PrometheusMetricsWriter(server.config(), "prometheus", async_metrics));
+        prometheus_handler->attachStrictPath(server.config().getString("prometheus.endpoint", "/metrics"))->allowGetAndHeadRequest();
+        factory.addHandler(prometheus_handler.release());
     }
 }
 
