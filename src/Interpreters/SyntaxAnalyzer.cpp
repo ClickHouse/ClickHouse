@@ -396,6 +396,10 @@ struct KeepFunctionMatcher
         {
             visit(ident, data);
         }
+        else
+        {
+            data.keep_key = true;
+        }
     }
 };
 
