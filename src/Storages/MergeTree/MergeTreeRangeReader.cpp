@@ -906,7 +906,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
                 result.columns.erase(result.columns.begin() + prewhere_column_pos);
             else
                 result.columns[prewhere_column_pos] =
-                        result.block_before_prewhere.getByPosition(prewhere_column_pos).type->
+                        getSampleBlock().getByName(prewhere->prewhere_column_name).type->
                                 createColumnConst(result.num_rows, 1u)->convertToFullColumnIfConst();
         }
     }
