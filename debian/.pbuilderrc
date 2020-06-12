@@ -3,14 +3,18 @@
 #
 # ubuntu:
 # prepare old (trusty or earlier) host system:
+
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/eoan
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/disco
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/cosmic
 # sudo ln -s gutsy /usr/share/debootstrap/scripts/artful
 # sudo ln -s gutsy /usr/share/debootstrap/scripts/bionic
+# sudo ln -s sid /usr/share/debootstrap/scripts/buster
 # build ubuntu:
-# sudo DIST=trusty pbuilder create --configfile debian/.pbuilderrc && DIST=trusty pdebuild --configfile debian/.pbuilderrc
-# sudo DIST=xenial pbuilder create --configfile debian/.pbuilderrc && DIST=xenial pdebuild --configfile debian/.pbuilderrc
-# sudo DIST=zesty  pbuilder create --configfile debian/.pbuilderrc && DIST=zesty  pdebuild --configfile debian/.pbuilderrc
-# sudo DIST=artful pbuilder create --configfile debian/.pbuilderrc && DIST=artful pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=bionic pbuilder create --configfile debian/.pbuilderrc && DIST=bionic pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=cosmic pbuilder create --configfile debian/.pbuilderrc && DIST=cosmic pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=disco  pbuilder create --configfile debian/.pbuilderrc && DIST=disco  pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=eoan   pbuilder create --configfile debian/.pbuilderrc && DIST=eoan   pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=devel  pbuilder create --configfile debian/.pbuilderrc && DIST=devel  pdebuild --configfile debian/.pbuilderrc
 # build debian:
 # sudo DIST=stable       pbuilder create --configfile debian/.pbuilderrc && DIST=stable       pdebuild --configfile debian/.pbuilderrc
@@ -26,8 +30,11 @@
 # sudo DIST=stable       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=stable       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=testing      ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=testing      ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=experimental ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=experimental ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# test gcc-9
+# env DEB_CC=gcc-9 DEB_CXX=g++-9 EXTRAPACKAGES="g++-9 gcc-9" DIST=disco pdebuild --configfile debian/.pbuilderrc
 # use only clang:
-# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES="clang-5.0" DIST=artful pdebuild --configfile debian/.pbuilderrc
+# env DEB_CC=clang-8 DEB_CXX=clang++-8 EXTRAPACKAGES=clang-8 DIST=disco pdebuild --configfile debian/.pbuilderrc
+# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES=clang-5.0 DIST=artful pdebuild --configfile debian/.pbuilderrc
 # clang+asan:
 # env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES="clang-5.0 libc++abi-dev libc++-dev" CMAKE_FLAGS="-DENABLE_TCMALLOC=0 -DENABLE_UNWIND=0 -DCMAKE_BUILD_TYPE=Asan" DIST=artful pdebuild --configfile debian/.pbuilderrc
 # clang+tsan:
@@ -53,7 +60,7 @@ DEBIAN_SUITES=($UNSTABLE_CODENAME $TESTING_CODENAME $STABLE_CODENAME $STABLE_BAC
     "experimental" "unstable" "testing" "stable")
 
 # List of Ubuntu suites. Update these when needed.
-UBUNTU_SUITES=("bionic" "artful" "zesty" "xenial" "trusty" "devel")
+UBUNTU_SUITES=("eoan" "disco" "cosmic" "bionic" "artful" "zesty" "xenial" "trusty" "devel")
 
 # Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
 HOST_DIST=`lsb_release --short --codename`
@@ -97,7 +104,8 @@ ALLOWUNTRUSTED=${SET_ALLOWUNTRUSTED:=${ALLOWUNTRUSTED}}
 if $(echo ${DEBIAN_SUITES[@]} | grep -q $DIST); then
     # Debian configuration
     OSNAME=debian
-    MIRRORSITE=${SET_MIRRORSITE="http://deb.debian.org/$OSNAME/"}
+    #MIRRORSITE=${SET_MIRRORSITE="http://deb.debian.org/$OSNAME/"}
+    MIRRORSITE=${SET_MIRRORSITE="http://mirror.yandex.ru/$OSNAME/"}
     COMPONENTS="main contrib non-free"
     if $(echo "$STABLE_CODENAME stable" | grep -q $DIST); then
         OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $STABLE_BACKPORTS_SUITE $COMPONENTS"
@@ -117,7 +125,8 @@ elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
     OSNAME=ubuntu
 
     if [[ "$ARCH" == "amd64" || "$ARCH" == "i386" ]]; then
-        MIRRORSITE=${SET_MIRRORSITE="http://archive.ubuntu.com/ubuntu/"}
+        #MIRRORSITE=${SET_MIRRORSITE="http://archive.ubuntu.com/$OSNAME/"}
+        MIRRORSITE=${SET_MIRRORSITE="http://mirror.yandex.ru/$OSNAME/"}
     else
         MIRRORSITE=${SET_MIRRORSITE="http://ports.ubuntu.com/ubuntu-ports/"}
     fi
@@ -126,6 +135,7 @@ elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
 
     OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-updates main restricted universe multiverse"
     OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-security main restricted universe multiverse"
+    OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-proposed main restricted universe multiverse"
 
     case "$DIST" in
        "trusty" | "xenial" )
@@ -160,15 +170,24 @@ case "$DIST" in
 esac
 
 if [ "$ARCH" != arm64 ]; then
-   case "$DIST" in
-    "bionic" | "experimental" | "unstable" | "testing")
+    case "$DIST" in
+# TODO: fix llvm-8 and use for "disco" and "eoan"
+    "experimental")
+        EXTRAPACKAGES+=" liblld-8-dev libclang-8-dev llvm-8-dev liblld-8 "
+        export CMAKE_FLAGS="-DLLVM_VERSION=8 $CMAKE_FLAGS"
+        ;;
+    "eoan" | "disco" | "cosmic" | "testing" | "unstable")
+        EXTRAPACKAGES+=" liblld-7-dev libclang-7-dev llvm-7-dev liblld-7 "
+        export CMAKE_FLAGS="-DLLVM_VERSION=7 $CMAKE_FLAGS"
+        ;;
+    "bionic")
         EXTRAPACKAGES+=" liblld-6.0-dev libclang-6.0-dev liblld-6.0 "
-        export CMAKE_FLAGS="-DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
+        export CMAKE_FLAGS="-DLLVM_VERSION=6 $CMAKE_FLAGS"
         ;;
     "artful" )
         EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
         ;;
-   esac
+    esac
 else
     export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=0 $CMAKE_FLAGS"
 fi
@@ -179,7 +198,9 @@ fi
 # For killall in pbuilder-hooks:
 EXTRAPACKAGES+=" psmisc "
 
-[[ $CCACHE_PREFIX == 'distcc' ]] && EXTRAPACKAGES+=" $CCACHE_PREFIX "
+[[ $CCACHE_PREFIX == 'distcc' ]] && EXTRAPACKAGES+=" $CCACHE_PREFIX " && USENETWORK=yes && export DISTCC_DIR=/var/cache/pbuilder/distcc
+
+[[ $ARCH == 'i386' ]] && EXTRAPACKAGES+=" libssl-dev "
 
 export DEB_BUILD_OPTIONS=parallel=`nproc`
 
@@ -189,12 +210,13 @@ export DEB_BUILD_OPTIONS=parallel=`nproc`
 # chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR
 
 
+# Do not create source package inside pbuilder (-b)
 # Use current dir to make package (by default should have src archive)
 # echo "3.0 (native)" > debian/source/format
 # OR
-# pdebuild --debbuildopts "--source-option=--format=\"3.0 (native)\""
+# pdebuild -b --debbuildopts "--source-option=--format=\"3.0 (native)\""
 # OR
-DEBBUILDOPTS="--source-option=--format=\"3.0 (native)\""
+DEBBUILDOPTS="-b --source-option=--format=\"3.0 (native)\""
 
 HOOKDIR="debian/pbuilder-hooks"
 

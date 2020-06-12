@@ -1,0 +1,106 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+# Note: should work with python 2 and 3
+from __future__ import print_function
+from github import Github
+import datetime
+import tabulate
+import argparse
+from termcolor import colored
+import sys
+
+COLORMAP = {
+    "success": colored("succes", 'green'),
+    "failure": colored("failure", 'red'),
+    "error": colored("error", 'red'),
+    "pending": colored("pending", 'yellow'),
+    "not run": colored("not run", 'white'),
+}
+
+def _filter_statuses(statuses):
+    """
+    Squash statuses to latest state
+    1. context="first", state="success", update_time=1
+    2. context="second", state="success", update_time=2
+    3. context="first", stat="failure", update_time=3
+    =========>
+    1. context="second", state="success"
+    2. context="first", stat="failure"
+    """
+    filt = {}
+    for status in sorted(statuses, key=lambda x: x.updated_at):
+        filt[status.context] = status
+    return filt.values()
+
+
+def get_filtered_statuses(commit):
+    return _filter_statuses(commit.get_statuses())
+
+
+def get_commits(repo, since):
+    return sorted(repo.get_commits(since=since), key=lambda x: x.commit.author.date)
+
+
+def process_one_commit(commit):
+    commit_statuses = get_filtered_statuses(commit)
+
+    # very dirty, but don't require additional dependencies
+    commit_modified = commit.commit.author.date + datetime.timedelta(hours=3)
+    commit_sha = commit.sha
+    checks_result = {}
+    for commit_status in commit_statuses:
+        state = commit_status.state
+        check_name = commit_status.context
+        checks_result[check_name] = state
+
+    return commit_sha, commit_modified, checks_result
+
+
+if __name__ == "__main__":
+    three_days_ago = datetime.datetime.now() - datetime.timedelta(days=3)
+    parser = argparse.ArgumentParser("ClickHouse commits history parser")
+    parser.add_argument("--token", required=True)
+    parser.add_argument("--since", default=three_days_ago.strftime("%Y-%m-%d %H:%M:%S"))
+    parser.add_argument("--substr", default="Functional stateful")
+
+    args = parser.parse_args()
+
+    date_since = datetime.datetime.strptime(args.since, "%Y-%m-%d %H:%M:%S")
+
+    gh = Github(args.token)
+    repo = gh.get_repo('ClickHouse/ClickHouse')
+    commits = get_commits(repo, date_since)
+
+    longest_header = []
+    all_data = []
+    for num, commit in enumerate(commits):
+        commit_sha, commit_modified, check_results = process_one_commit(commit)
+        mapped_keys = [key for key in check_results.keys() if args.substr in key]
+        if len(mapped_keys) > len(longest_header):
+            longest_header = mapped_keys
+        all_data.append((commit_modified, commit_sha, check_results))
+        if (num + 1) % 10 == 0:
+            print("Processed", num + 1, "commits")
+
+    longest_header = ["Date", "SHA"] + longest_header
+
+    result_data = []
+    for row in all_data:
+        current_result = [row[0].strftime("%Y-%m-%d %H:%M:%S"), row[1][0:7]]
+        for check_name in longest_header[2:]:
+            if check_name in row[2]:
+                check_result = row[2][check_name]
+            else:
+                check_result = "not run"
+
+            if sys.stdout.isatty():
+                current_result.append(COLORMAP[check_result])
+            else:
+                current_result.append(check_result)
+        result_data.append(current_result)
+
+    if sys.stdout.isatty():
+        longest_header = [colored(h, 'white', attrs=['bold']) for h in longest_header]
+
+    print(tabulate.tabulate(result_data, headers=longest_header, tablefmt="grid"))

@@ -1,0 +1,27 @@
+<test>
+
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+
+    <create_query>DROP TABLE IF EXISTS test_model</create_query>
+    <create_query>CREATE TABLE test_model engine = Memory as select stochasticLinearRegressionState(0.0001)(Age, Income, ParamPrice, Robotness, RefererHash) as state from test.hits</create_query>
+
+<!--    Check model fit -->
+    <query>SELECT stochasticLinearRegressionState(0.0001, 0, 15)(Age, Income, ParamPrice, Robotness, RefererHash) FROM test.hits FORMAT Null</query>
+    <query>SELECT stochasticLinearRegression(Age, Income, ParamPrice, Robotness, RefererHash) FROM test.hits FORMAT Null</query>
+
+<!--    Check model fit with Momentum -->
+    <query>SELECT stochasticLinearRegressionState(0.0001, 0, 15, 'Momentum')(Age, Income, ParamPrice, Robotness, RefererHash) FROM hits_100m_single FORMAT Null</query>
+
+<!--    Check model fit with Nesterov -->
+    <query>SELECT stochasticLinearRegressionState(0.0001, 0, 15, 'Nesterov')(Age, Income, ParamPrice, Robotness, RefererHash) FROM hits_100m_single FORMAT Null</query>
+
+<!--    Check model predict -->
+    <query>WITH (SELECT state FROM test_model) AS model SELECT evalMLMethod(model, Income, ParamPrice, Robotness, RefererHash) FROM hits_100m_single FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_model</drop_query>
+</test>

@@ -1,8 +1,0 @@
-https://github.com/gperftools/gperftools/commit/dde32f8bbc95312379f9f5a651799815bb6327c5
-
-Several modifications:
-1. Disabled TCMALLOC_AGGRESSIVE_DECOMMIT by default. It is important.
-2. Using only files for tcmalloc_minimal build (./configure --enable-minimal).
-3. Using some compiler flags from project.
-4. Removed warning about unused variable when build with NDEBUG (by default).
-5. Including config.h with relative path.

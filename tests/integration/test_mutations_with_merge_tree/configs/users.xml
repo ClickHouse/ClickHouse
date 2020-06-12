@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<yandex>
+    <profiles>
+        <default>
+            <max_expanded_ast_elements>500</max_expanded_ast_elements>
+        </default>
+    </profiles>
+</yandex>

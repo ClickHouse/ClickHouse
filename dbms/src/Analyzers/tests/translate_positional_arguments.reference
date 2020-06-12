@@ -1,8 +1,0 @@
-SELECT 
-    abc, 
-    def + 1, 
-    count()
-GROUP BY 
-    abc, 
-    def + 1
-ORDER BY abc DESC

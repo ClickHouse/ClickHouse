@@ -1,8 +1,0 @@
-a -> (array join) arr AS a
-b -> (array join) (arr1 AS z) + 1 AS b
-ghi -> (expression) def AS ghi
-t -> (table) d.t AS t
-u -> (table) (SELECT 1 AS xxx) AS u
-x -> (expression) 1 AS x
-y -> (expression) x + 2 AS y
-z -> (expression) arr1 AS z

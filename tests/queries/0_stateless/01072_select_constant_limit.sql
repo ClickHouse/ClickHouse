@@ -1,0 +1,1 @@
+SELECT 42 AS foo ORDER BY foo LIMIT 2

@@ -1,10 +1,5 @@
 User-agent: *
-Disallow: /docs/en/single/
-Disallow: /docs/ru/single/
-Disallow: /docs/en/search.html
-Disallow: /docs/ru/search.html
-Disallow: /deprecated/reference_en.html
-Disallow: /deprecated/reference_ru.html
+Disallow: /cdn-cgi/
 Allow: /
-Host: https://clickhouse.yandex
-Sitemap: https://clickhouse.yandex/docs/sitemap.xml
+Host: https://clickhouse.tech
+Sitemap: https://clickhouse.tech/sitemap-index.xml

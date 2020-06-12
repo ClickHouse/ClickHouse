@@ -15,7 +15,7 @@ while (my $line = <>)
     if ($line =~ '^#')
     {
         $line =~ s/^#\d+\s+//;
-        $line =~ s/ \([^\)]+=[^\)]+\) / /g;
+        $line =~ s/ \([^\)]+=.+\) at / at /g;
         push @current_stack, $line;
     }
 

@@ -1,11 +1,11 @@
 #!/bin/sh -x
 # Usages:
 # sh -x clickhouse-report > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
-# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/report/clickhouse-report | sh -x > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
+# curl https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/report/clickhouse-report | sh -x > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
 
 # Also dump some system info (can contain some private data) and get trace from running clickhouse-server process
 # sh -x clickhouse-report system gdb > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
-# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/report/clickhouse-report | sh -s -x system gdb > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
+# curl https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/report/clickhouse-report | sh -s -x system gdb > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
 
 
 for i in "$@" ; do
@@ -27,7 +27,7 @@ done
 
 tail -n200 /var/log/clickhouse-server/clickhouse-server.err.log
 tail -n200 /var/log/clickhouse-server/clickhouse-server.log
-tail -n100 /var/log/clickhouse-server/stderr
+tail -n100 /var/log/clickhouse-server/stderr.log
 
 clickhouse-client -q 'SELECT * FROM system.events FORMAT PrettyCompactNoEscapes'
 clickhouse-client -q 'SELECT * FROM system.metrics FORMAT PrettyCompactNoEscapes'

@@ -1,1 +1,0 @@
-SELECT name FROM (SELECT name FROM data2013 UNION ALL SELECT data_name AS name FROM data2015) ORDER BY name ASC;

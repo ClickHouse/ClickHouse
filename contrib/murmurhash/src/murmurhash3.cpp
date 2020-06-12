@@ -7,6 +7,7 @@
 // non-native version will be less than optimal.
 
 #include "murmurhash3.h"
+#include <cstring>
 
 //-----------------------------------------------------------------------------
 // Platform-specific functions and macros
@@ -53,7 +54,9 @@ inline uint64_t rotl64 ( uint64_t x, int8_t r )
 
 FORCE_INLINE uint32_t getblock32 ( const uint32_t * p, int i )
 {
-  return p[i];
+  uint32_t res;
+  memcpy(&res, p + i, sizeof(res));
+  return res;
 }
 
 FORCE_INLINE uint64_t getblock64 ( const uint64_t * p, int i )

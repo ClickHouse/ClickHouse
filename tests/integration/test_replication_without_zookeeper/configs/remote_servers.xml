@@ -1,0 +1,14 @@
+<yandex>
+    <remote_servers>
+        <test_cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <default_database>shard_0</default_database>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster>
+    </remote_servers>
+</yandex>

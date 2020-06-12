@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<yandex>
+   <quotas>
+        <myQuota>
+            <interval>
+                <!-- Length of interval = 1 year -->
+                <duration>31556952</duration>
+
+                <!-- No limits. Just calculate resource usage for time interval. -->
+                <queries>0</queries>
+                <errors>0</errors>
+                <read_rows>0</read_rows>
+                <result_rows>0</result_rows>
+            </interval>
+        </myQuota>
+    </quotas>
+</yandex>

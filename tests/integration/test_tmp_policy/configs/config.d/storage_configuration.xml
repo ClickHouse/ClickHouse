@@ -1,0 +1,25 @@
+<yandex>
+    <storage_configuration>
+        <disks>
+            <disk1>
+                <path>/disk1/</path>
+            </disk1>
+            <disk2>
+                <path>/disk2/</path>
+            </disk2>
+        </disks>
+
+        <policies>
+            <tmp>
+                <volumes>
+                    <main>
+                        <disk>disk1</disk>
+                        <disk>disk2</disk>
+                    </main>
+                </volumes>
+            </tmp>
+        </policies>
+    </storage_configuration>
+
+    <tmp_policy>tmp</tmp_policy>
+</yandex>

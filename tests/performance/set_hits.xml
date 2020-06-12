@@ -1,0 +1,16 @@
+<test>
+    <preconditions>
+        <!-- We use smaller or larger table based on the result set for a particular
+            query, so that it runs not too fast and not too slow. -->
+        <table_exists>hits_10m_single</table_exists>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+    <!-- UserID is in primary key, run in one thread so that it's not too fast. -->
+    <query>SELECT count() FROM hits_100m_single WHERE UserID IN (SELECT UserID FROM hits_100m_single WHERE AdvEngineID != 0) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM hits_10m_single WHERE UserID IN (SELECT UserID FROM hits_10m_single)</query>
+    <query>SELECT count() FROM hits_10m_single WHERE SearchPhrase IN (SELECT SearchPhrase FROM hits_10m_single)</query>
+    <query>SELECT count() FROM hits_100m_single WHERE URL IN (SELECT URL FROM hits_100m_single WHERE AdvEngineID != 0)</query>
+    <query>SELECT count() FROM hits_10m_single WHERE URL IN (SELECT URL FROM hits_10m_single WHERE SearchEngineID != 0)</query>
+    <query>SELECT count() FROM hits_100m_single WHERE RegionID IN (SELECT RegionID FROM hits_100m_single)</query>
+</test>

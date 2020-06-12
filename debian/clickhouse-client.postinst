@@ -5,5 +5,4 @@ CLICKHOUSE_USER=${CLICKHOUSE_USER=clickhouse}
 
 mkdir -p /etc/clickhouse-client/conf.d
 
-# user created by clickhouse-server package
-chown -R ${CLICKHOUSE_USER} /etc/clickhouse-client || true
+#DEBHELPER#

@@ -1,1 +1,0 @@
-1 UInt8 ColumnConst<UInt8> 1, plus(2, 3) UInt16 ColumnConst<UInt16> 1, x FixedString(20) ColumnConst<String> 1, y String ColumnConst<String> 1, z Int16 nullptr

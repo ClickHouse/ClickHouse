@@ -1,0 +1,8 @@
+version: '2.3'
+services:
+  mysqljs1:
+    build:
+      context: ./
+      network: host
+    # to keep container running
+    command: sleep infinity

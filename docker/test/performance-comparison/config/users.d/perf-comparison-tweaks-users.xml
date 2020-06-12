@@ -1,0 +1,11 @@
+<yandex>
+    <profiles>
+        <default>
+            <query_profiler_real_time_period_ns>10000000</query_profiler_real_time_period_ns>
+            <query_profiler_cpu_time_period_ns>0</query_profiler_cpu_time_period_ns>
+            <allow_introspection_functions>1</allow_introspection_functions>
+            <log_queries>1</log_queries>
+            <metrics_perf_events_enabled>1</metrics_perf_events_enabled>
+        </default>
+    </profiles>
+</yandex>
