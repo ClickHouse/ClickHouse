@@ -338,7 +338,7 @@ static void read(int32_t & x, ReadBuffer & in)
 static void read(Error & x, ReadBuffer & in)
 {
     int32_t code;
-    readBinary(code, in);
+    read(code, in);
     x = Error(code);
 }
 
