@@ -102,7 +102,11 @@ private:
             Coordination::Stat stat;
             zookeeper.get(path + "/" + child, &stat);
             if (!stat.ephemeralOwner)
+            {
+                ProfileEvents::increment(ProfileEvents::LeaderElectionAcquiredLeadership);
+                handler();
                 return;
+            }
         }
 
         zookeeper.create(path + "/leader_election-", identifier, CreateMode::PersistentSequential);
@@ -124,7 +128,7 @@ private:
 
             if (!stat.ephemeralOwner)
             {
-                /// It is sequential node - we can become leader.
+                /// It is persistent node - we can become leader.
                 ProfileEvents::increment(ProfileEvents::LeaderElectionAcquiredLeadership);
                 handler();
                 return;
