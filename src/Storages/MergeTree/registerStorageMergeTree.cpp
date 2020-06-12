@@ -417,7 +417,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         ++arg_num;
     }
 
-    ASTPtr merging_param_key_arg = nullptr;
+    /// This merging param maybe used as part of sorting key
+    std::optional<String> merging_param_key_arg;
 
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
     {
@@ -482,7 +483,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     ErrorCodes::BAD_ARGUMENTS);
 
         --arg_cnt;
-        merging_param_key_arg = std::make_shared<ASTIdentifier>(merging_params.version_column);
+        /// Version collapsing is the only engine which add additional column to
+        /// sorting key.
+        merging_param_key_arg = merging_params.version_column;
     }
 
     String date_column_name;
@@ -498,6 +501,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->partition_by)
             partition_by_key = args.storage_def->partition_by->ptr();
 
+        /// Partition key may be undefined, but despite this we store it's empty
+        /// value in partition_key structure. MergeTree checks this case and use
+        /// single default partition with name "all".
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, args.context);
 
         if (!args.storage_def->order_by)
@@ -505,15 +511,23 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 "If you don't want this table to be sorted, use ORDER BY tuple()",
                 ErrorCodes::BAD_ARGUMENTS);
 
-        metadata.sorting_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context, merging_param_key_arg);
+        /// Get sorting key from engine arguments.
+        ///
+        /// NOTE: store merging_param_key_arg as additional key column. We do it
+        /// before storage creation. After that storage will just copy this
+        /// column if sorting key will be changed.
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context, merging_param_key_arg);
 
+        /// If primary key explicitely defined, than get it from AST
         if (args.storage_def->primary_key)
         {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
         }
-        else
+        else /// Otherwise we copy it from primary key definition
         {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context);
+            /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
+            /// will return false but hasPrimaryKey() will return true.
             metadata.primary_key.definition_ast = nullptr;
         }
 
@@ -564,10 +578,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             ++arg_num;
         }
 
-        /// Now only two parameters remain - primary_key, index_granularity.
-        metadata.sorting_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context, merging_param_key_arg);
+        /// Get sorting key from engine arguments.
+        ///
+        /// NOTE: store merging_param_key_arg as additional key column. We do it
+        /// before storage creation. After that storage will just copy this
+        /// column if sorting key will be changed.
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, args.context, merging_param_key_arg);
 
+        /// In old syntax primary_key always equals to sorting key.
         metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context);
+        /// But it's not explicitely defined, so we evaluate definition to
+        /// nullptr
         metadata.primary_key.definition_ast = nullptr;
 
         ++arg_num;

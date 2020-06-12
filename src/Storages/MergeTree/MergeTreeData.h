@@ -783,7 +783,7 @@ protected:
 
     void initPartitionKey(const KeyDescription & new_partition_key);
 
-    void checkTTLExpressios(const StorageInMemoryMetadata & new_metadata) const;
+    void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata) const;
     void setTTLExpressions(const StorageInMemoryMetadata & new_metadata);
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;

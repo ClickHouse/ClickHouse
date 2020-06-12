@@ -317,14 +317,18 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
     }
     else if (type == MODIFY_ORDER_BY)
     {
-        if (metadata.primary_key.definition_ast == nullptr && metadata.sorting_key.definition_ast != nullptr)
+        auto & sorting_key = metadata.sorting_key;
+        auto & primary_key = metadata.primary_key;
+        if (primary_key.definition_ast == nullptr && sorting_key.definition_ast != nullptr)
         {
-            /// Primary and sorting key become independent after this ALTER so we have to
-            /// save the old ORDER BY expression as the new primary key.
-            metadata.primary_key = metadata.sorting_key;
+            /// Primary and sorting key become independent after this ALTER so
+            /// we have to save the old ORDER BY expression as the new primary
+            /// key.
+            primary_key = KeyDescription::getKeyFromAST(sorting_key.definition_ast, metadata.columns, context);
         }
 
-        metadata.sorting_key = KeyDescription::getKeyFromAST(order_by, metadata.columns, context, metadata.sorting_key.additional_key_column);
+        /// Recalculate key with new order_by expression
+        sorting_key.recalculateWithNewAST(order_by, metadata.columns, context);
     }
     else if (type == COMMENT_COLUMN)
     {
@@ -713,15 +717,10 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
             command.apply(metadata_copy, context);
 
     /// Changes in columns may lead to changes in keys expression
-    metadata_copy.sorting_key = KeyDescription::getKeyFromAST(
-        metadata_copy.sorting_key.definition_ast,
-        metadata_copy.columns,
-        context,
-        metadata_copy.sorting_key.additional_key_column);
-
+    metadata_copy.sorting_key.recalculateWithNewColumns(metadata_copy.columns, context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
-        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.primary_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.primary_key.recalculateWithNewColumns(metadata_copy.columns, context);
     }
     else
     {
