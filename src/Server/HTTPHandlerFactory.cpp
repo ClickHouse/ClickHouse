@@ -1,9 +1,5 @@
 #include "HTTPHandlerFactory.h"
 
-#include <re2/re2.h>
-#include <re2/stringpiece.h>
-#include <common/find_symbols.h>
-#include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include "HTTPHandler.h"
@@ -68,7 +64,8 @@ HTTPRequestHandlerFactoryMain::TThis * HTTPRequestHandlerFactoryMain::addHandler
     return this;
 }
 
-static inline auto createHandlersFactoryFromConfig(IServer & server, const std::string & name, const String & prefix)
+static inline auto createHandlersFactoryFromConfig(
+    IServer & server, const std::string & name, const String & prefix, AsynchronousMetrics & async_metrics)
 {
     auto main_handler_factory = std::make_unique<HTTPRequestHandlerFactoryMain>(name);
 
@@ -82,7 +79,17 @@ static inline auto createHandlersFactoryFromConfig(IServer & server, const std::
 
         const auto & handler_type = server.config().getString(prefix + "." + key + ".handler.type", "");
 
-        if (handler_type == "static")
+        if (handler_type == "root")
+            addRootHandlerFactory(*main_handler_factory, server);
+        else if (handler_type == "ping")
+            addPingHandlerFactory(*main_handler_factory, server);
+        else if (handler_type == "defaults")
+            addDefaultHandlersFactory(*main_handler_factory, server, async_metrics);
+        else if (handler_type == "prometheus")
+            addPrometheusHandlerFactory(*main_handler_factory, server, async_metrics);
+        else if (handler_type == "replicas_status")
+            addReplicasStatusHandlerFactory(*main_handler_factory, server);
+        else if (handler_type == "static")
             main_handler_factory->addHandler(createStaticHandlerFactory(server, prefix + "." + key));
         else if (handler_type == "dynamic_query_handler")
             main_handler_factory->addHandler(createDynamicHandlerFactory(server, prefix + "." + key));
@@ -99,44 +106,23 @@ static inline auto createHandlersFactoryFromConfig(IServer & server, const std::
     return main_handler_factory.release();
 }
 
-static const auto ping_response_expression = "Ok.\n";
-static const auto root_response_expression = "config://http_server_default_response";
-
 static inline Poco::Net::HTTPRequestHandlerFactory * createHTTPHandlerFactory(
     IServer & server, const std::string & name, AsynchronousMetrics & async_metrics)
 {
     if (server.config().has("http_handlers"))
-        return createHandlersFactoryFromConfig(server, name, "http_handlers");
+        return createHandlersFactoryFromConfig(server, name, "http_handlers", async_metrics);
     else
     {
         auto factory = std::make_unique<HTTPRequestHandlerFactoryMain>(name);
 
-        auto root_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, root_response_expression);
-        root_handler->attachStrictPath("/")->allowGetAndHeadRequest();
-        factory->addHandler(root_handler.release());
-
-        auto ping_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, ping_response_expression);
-        ping_handler->attachStrictPath("/ping")->allowGetAndHeadRequest();
-        factory->addHandler(ping_handler.release());
-
-        auto replicas_status_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
-        replicas_status_handler->attachNonStrictPath("/replicas_status")->allowGetAndHeadRequest();
-        factory->addHandler(replicas_status_handler.release());
+        addRootHandlerFactory(*factory, server);
+        addPingHandlerFactory(*factory, server);
+        addReplicasStatusHandlerFactory(*factory, server);
+        addPrometheusHandlerFactory(*factory, server, async_metrics);
 
         auto query_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, "query");
         query_handler->allowPostAndGetParamsRequest();
         factory->addHandler(query_handler.release());
-
-        /// We check that prometheus handler will be served on current (default) port.
-        /// Otherwise it will be created separately, see below.
-        if (server.config().has("prometheus") && server.config().getInt("prometheus.port", 0) == 0)
-        {
-            auto prometheus_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
-                server, PrometheusMetricsWriter(server.config(), "prometheus", async_metrics));
-            prometheus_handler->attachStrictPath(server.config().getString("prometheus.endpoint", "/metrics"))->allowGetAndHeadRequest();
-            factory->addHandler(prometheus_handler.release());
-        }
-
         return factory.release();
     }
 }
@@ -145,17 +131,9 @@ static inline Poco::Net::HTTPRequestHandlerFactory * createInterserverHTTPHandle
 {
     auto factory = std::make_unique<HTTPRequestHandlerFactoryMain>(name);
 
-    auto root_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, root_response_expression);
-    root_handler->attachStrictPath("/")->allowGetAndHeadRequest();
-    factory->addHandler(root_handler.release());
-
-    auto ping_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, ping_response_expression);
-    ping_handler->attachStrictPath("/ping")->allowGetAndHeadRequest();
-    factory->addHandler(ping_handler.release());
-
-    auto replicas_status_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
-    replicas_status_handler->attachNonStrictPath("/replicas_status")->allowGetAndHeadRequest();
-    factory->addHandler(replicas_status_handler.release());
+    addRootHandlerFactory(*factory, server);
+    addPingHandlerFactory(*factory, server);
+    addReplicasStatusHandlerFactory(*factory, server);
 
     auto main_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<InterserverIOHTTPHandler>>(server);
     main_handler->allowPostAndGetParamsRequest();
@@ -181,6 +159,14 @@ Poco::Net::HTTPRequestHandlerFactory * createHandlerFactory(IServer & server, As
     }
 
     throw Exception("LOGICAL ERROR: Unknown HTTP handler factory name.", ErrorCodes::LOGICAL_ERROR);
+}
+
+void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics & async_metrics)
+{
+    addRootHandlerFactory(factory, server);
+    addPingHandlerFactory(factory, server);
+    addReplicasStatusHandlerFactory(factory, server);
+    addPrometheusHandlerFactory(factory, server, async_metrics);
 }
 
 }
