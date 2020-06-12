@@ -6,6 +6,8 @@
             <allow_introspection_functions>1</allow_introspection_functions>
             <log_queries>1</log_queries>
             <metrics_perf_events_enabled>1</metrics_perf_events_enabled>
+            <!--FIXME support this setting in clickhouse-benchmark (see compare.sh, run-benchmark function)-->
+            <max_memory_usage>30000000000</max_memory_usage>
         </default>
     </profiles>
 </yandex>
