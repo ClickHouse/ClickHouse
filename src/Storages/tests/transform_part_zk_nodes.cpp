@@ -27,7 +27,7 @@ try
     boost::program_options::variables_map options;
     boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
 
-    if (options.count("help"))
+    if (0 != options.count("help"))
     {
         std::cout << "Transform contents of part nodes in ZooKeeper to more compact storage scheme." << std::endl;
         std::cout << "Usage: " << argv[0] << " [options]" << std::endl;

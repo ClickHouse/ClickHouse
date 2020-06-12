@@ -13,7 +13,7 @@ namespace
 /// Trim ending whitespace inplace
 void trim(String & s)
 {
-    s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return 0 == std::isspace(ch); }).base(), s.end());
 }
 
 }
@@ -39,7 +39,7 @@ ReplxxLineReader::ReplxxLineReader(
         }
         else
         {
-            if (flock(history_file_fd, LOCK_SH))
+            if (0 != flock(history_file_fd, LOCK_SH))
             {
                 rx.print("Shared lock of history file failed: %s\n", errnoToString(errno).c_str());
             }
@@ -47,7 +47,7 @@ ReplxxLineReader::ReplxxLineReader(
             {
                 rx.history_load(history_file_path);
 
-                if (flock(history_file_fd, LOCK_UN))
+                if (0 != flock(history_file_fd, LOCK_UN))
                 {
                     rx.print("Unlock of history file failed: %s\n", errnoToString(errno).c_str());
                 }

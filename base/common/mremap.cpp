@@ -13,7 +13,7 @@ void * mremap_fallback(
     if (new_size < old_size)
         return old_address;
 
-    if (!(flags & MREMAP_MAYMOVE))
+    if (0 == (flags & MREMAP_MAYMOVE))
     {
         errno = ENOMEM;
         return MAP_FAILED;
@@ -32,7 +32,7 @@ void * mremap_fallback(
 #if defined(_MSC_VER)
     delete old_address;
 #else
-    if (munmap(old_address, old_size))
+    if (0 != munmap(old_address, old_size))
         abort();
 #endif
 

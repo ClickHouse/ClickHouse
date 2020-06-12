@@ -15,7 +15,7 @@ Value Row::operator[] (const char * name) const
     MYSQL_FIELDS fields = res->getFields();
 
     for (unsigned i = 0; i < n; ++i)
-        if (!strcmp(name, fields[i].name))
+        if (0 == strcmp(name, fields[i].name))
             return operator[](i);
 
     throw Exception(std::string("Unknown column ") + name);

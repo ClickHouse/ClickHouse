@@ -116,7 +116,7 @@ void Connection::connect(const char* db,
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
     /// Enables auto-reconnect.
-    my_bool reconnect = true;
+    my_bool reconnect = 1;
     if (mysql_options(driver.get(), MYSQL_OPT_RECONNECT, reinterpret_cast<const char *>(&reconnect)))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
@@ -142,7 +142,7 @@ void Connection::disconnect()
 
 bool Connection::ping()
 {
-    return is_connected && !mysql_ping(driver.get());
+    return is_connected && 0 == mysql_ping(driver.get());
 }
 
 Query Connection::query(const std::string & str)

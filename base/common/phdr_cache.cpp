@@ -42,7 +42,7 @@ using DLIterateFunction = int (*) (int (*callback) (dl_phdr_info * info, size_t 
 DLIterateFunction getOriginalDLIteratePHDR()
 {
     void * func = dlsym(RTLD_NEXT, "dl_iterate_phdr");
-    if (!func)
+    if (nullptr == func)
         throw std::runtime_error("Cannot find dl_iterate_phdr function with dlsym");
     return reinterpret_cast<DLIterateFunction>(func);
 }
@@ -62,7 +62,7 @@ extern "C"
 int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data)
 {
     auto * current_phdr_cache = phdr_cache.load();
-    if (!current_phdr_cache)
+    if (nullptr == current_phdr_cache)
     {
         // Cache is not yet populated, pass through to the original function.
         return getOriginalDLIteratePHDR()(callback, data);

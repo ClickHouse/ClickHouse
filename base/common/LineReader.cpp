@@ -22,7 +22,7 @@ namespace
 /// Trim ending whitespace inplace
 void trim(String & s)
 {
-    s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return 0 == std::isspace(ch); }).base(), s.end());
 }
 
 /// Check if multi-line query is inserted from the paste buffer.
@@ -116,7 +116,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
             }
         }
 
-        need_next_line = has_extender || (multiline && !has_delimiter) || hasInputData();
+        need_next_line = (has_extender != nullptr) || (multiline && has_delimiter != nullptr) || hasInputData();
 
         if (has_extender)
         {
