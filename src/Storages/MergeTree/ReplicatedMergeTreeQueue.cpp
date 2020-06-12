@@ -419,7 +419,7 @@ bool ReplicatedMergeTreeQueue::removeFromVirtualParts(const MergeTreePartInfo & 
     return virtual_parts.remove(part_info);
 }
 
-void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
+int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
     if (pull_log_blocker.isCancelled())
@@ -427,6 +427,10 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
 
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
+
+    /// The version of "/log" is modified when new entries to merge/mutate/drop appear.
+    Coordination::Stat stat;
+    zookeeper->get(zookeeper_path + "/log", &stat);
 
     Strings log_entries = zookeeper->getChildrenWatch(zookeeper_path + "/log", nullptr, watch_callback);
 
@@ -561,6 +565,8 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
         if (storage.queue_task_handle)
             storage.queue_task_handle->signalReadyToRun();
     }
+
+    return stat.version;
 }
 
 
@@ -1630,7 +1636,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         }
     }
 
-    queue_.pullLogsToQueue(zookeeper);
+    merges_version = queue_.pullLogsToQueue(zookeeper);
 
     Coordination::GetResponse quorum_status_response = quorum_status_future.get();
     if (quorum_status_response.error == Coordination::Error::ZOK)
