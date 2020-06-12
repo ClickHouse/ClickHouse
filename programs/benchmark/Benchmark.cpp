@@ -59,11 +59,14 @@ public:
             bool cumulative_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
-            const String & json_path_, size_t confidence_, const String & query_id_, const Settings & settings_)
+            const String & json_path_, size_t confidence_,
+            const String & query_id_, bool continue_on_errors_,
+            const Settings & settings_)
         :
         concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
         cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
-        json_path(json_path_), confidence(confidence_), query_id(query_id_), settings(settings_),
+        json_path(json_path_), confidence(confidence_), query_id(query_id_),
+        continue_on_errors(continue_on_errors_), settings(settings_),
         shared_context(Context::createShared()), global_context(Context::createGlobal(shared_context.get())),
         pool(concurrency)
     {
@@ -149,6 +152,7 @@ private:
     String json_path;
     size_t confidence;
     std::string query_id;
+    bool continue_on_errors;
     Settings settings;
     SharedContextHolder shared_context;
     Context global_context;
@@ -332,35 +336,45 @@ private:
         pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, connection_entries.size() - 1);
 
-        try
+        /// In these threads we do not accept INT signal.
+        sigset_t sig_set;
+        if (sigemptyset(&sig_set)
+            || sigaddset(&sig_set, SIGINT)
+            || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         {
-            /// In these threads we do not accept INT signal.
-            sigset_t sig_set;
-            if (sigemptyset(&sig_set)
-                || sigaddset(&sig_set, SIGINT)
-                || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
-                throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
+            throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
+        }
 
-            while (true)
+        while (true)
+        {
+            bool extracted = false;
+
+            while (!extracted)
             {
-                bool extracted = false;
+                extracted = queue.tryPop(query, 100);
 
-                while (!extracted)
+                if (shutdown
+                    || (max_iterations && queries_executed == max_iterations))
                 {
-                    extracted = queue.tryPop(query, 100);
-
-                    if (shutdown || (max_iterations && queries_executed == max_iterations))
-                        return;
+                    return;
                 }
+            }
+
+            try
+            {
                 execute(connection_entries, query, distribution(generator));
                 ++queries_executed;
             }
-        }
-        catch (...)
-        {
-            shutdown = true;
-            std::cerr << "An error occurred while processing query:\n" << query << "\n";
-            throw;
+            catch (...)
+            {
+                std::cerr << "An error occurred while processing query:\n"
+                    << query << "\n";
+                if (!continue_on_errors)
+                {
+                    shutdown = true;
+                    throw;
+                }
+            }
         }
     }
 
@@ -541,6 +555,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("stacktrace",                                                      "print stack traces of exceptions")
             ("confidence",    value<size_t>()->default_value(5),                "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id",      value<std::string>()->default_value(""),         "")
+            ("continue_on_errors", "continue testing even if a query fails")
         ;
 
         Settings settings;
@@ -580,6 +595,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["json"].as<std::string>(),
             options["confidence"].as<size_t>(),
             options["query_id"].as<std::string>(),
+            options.count("continue_on_errors") > 0,
             settings);
         return benchmark.run();
     }
