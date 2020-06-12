@@ -29,8 +29,12 @@ namespace zkutil
   * But then we decided to get rid of leader election, so every replica can become leader.
   * For now, every replica can become leader if there is no leader among replicas with old version.
   *
+  * It's tempting to remove this class at all, but we have to maintain it,
+  *  to maintain compatibility when replicas with different versions work on the same cluster
+  *  (this is allowed for short time period during cluster update).
+  *
   * Replicas with old versions participate in leader election with ephemeral sequential nodes.
-  *  If the node is first, then replica is leader.
+  *  If the node is first, then replica is the leader.
   * Replicas with new versions creates persistent sequential nodes.
   *  If the first node is persistent, then all replicas with new versions become leaders.
   */
@@ -90,6 +94,17 @@ private:
     void createNode()
     {
         shutdown_called = false;
+
+        /// If there is at least one persistent node, we don't have to create another.
+        Strings children = zookeeper.getChildren(path);
+        for (const auto & child : children)
+        {
+            Coordination::Stat stat;
+            zookeeper.get(path + "/" + child, &stat);
+            if (!stat.ephemeralOwner)
+                return;
+        }
+
         zookeeper.create(path + "/leader_election-", identifier, CreateMode::PersistentSequential);
         task->activateAndSchedule();
     }
