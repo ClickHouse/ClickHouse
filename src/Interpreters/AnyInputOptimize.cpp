@@ -19,6 +19,7 @@ namespace ErrorCodes
 namespace
 {
     constexpr const char * any = "any";
+    constexpr const char * anyLast = "anyLast";
 }
 
 ASTPtr * getExactChild(const ASTPtr & ast, const size_t ind)
@@ -27,25 +28,25 @@ ASTPtr * getExactChild(const ASTPtr & ast, const size_t ind)
 }
 
 ///recursive searching of identifiers
-void changeAllIdentifiers(ASTPtr & ast, size_t ind)
+void changeAllIdentifiers(ASTPtr & ast, size_t ind, const char * mode)
 {
     ASTPtr * exact_child = getExactChild(ast, ind);
     ast->dumpTree(std::cerr);
     if ((*exact_child)->as<ASTIdentifier>())
     {
         ///put new any
-        ASTPtr oldAST = *exact_child;
-        *exact_child = makeASTFunction(any);
-        (*exact_child)->as<ASTFunction>()->arguments->children.push_back(oldAST);
+        ASTPtr old_ast = *exact_child;
+        *exact_child = makeASTFunction(mode);
+        (*exact_child)->as<ASTFunction>()->arguments->children.push_back(old_ast);
     }
     else if ((*exact_child)->as<ASTFunction>() &&
         !AggregateFunctionFactory::instance().isAggregateFunctionName((*exact_child)->as<ASTFunction>()->name))
         for (size_t i = 0; i < (*exact_child)->as<ASTFunction>()->arguments->children.size(); i++)
-            changeAllIdentifiers(*exact_child, i);
+            changeAllIdentifiers(*exact_child, i, mode);
     else if (ast->as<ASTFunction>()->arguments->children[ind]->as<ASTFunction>() &&
              AggregateFunctionFactory::instance().isAggregateFunctionName((*exact_child)->as<ASTFunction>()->name))
         throw Exception("Aggregate function " + (*exact_child)->as<ASTFunction>()->name +
-                            " is found inside aggregate function any in query", ErrorCodes::ILLEGAL_AGGREGATION);
+                            " is found inside aggregate function " + mode + " in query", ErrorCodes::ILLEGAL_AGGREGATION);
 }
 
 
@@ -57,12 +58,13 @@ void AnyInputMatcher::visit(ASTPtr & current_ast, Data data)
         return;
 
     auto * function_node = current_ast->as<ASTFunction>();
-    if (function_node && function_node->name == any && function_node->arguments->children[0]->as<ASTFunction>())
+    if (function_node && (function_node->name == any || function_node->name == anyLast)
+        && function_node->arguments->children[0]->as<ASTFunction>())
     {
-        ///cut any
+        ///cut any or anyLast
         current_ast = (function_node->arguments->children[0])->clone();
         for (size_t i = 0; i < current_ast->as<ASTFunction>()->arguments->children.size(); ++i)
-            changeAllIdentifiers(current_ast, i);
+            changeAllIdentifiers(current_ast, i, function_node->name.c_str());
     }
 }
 
@@ -72,7 +74,7 @@ bool AnyInputMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
         throw Exception("AST item should not have nullptr in children", ErrorCodes::LOGICAL_ERROR);
 
     if (node->as<ASTTableExpression>() || node->as<ASTArrayJoin>())
-        return false;
+        return false; // NOLINT
 
     return true;
 }
