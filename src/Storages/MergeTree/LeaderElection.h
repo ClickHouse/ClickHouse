@@ -1,11 +1,11 @@
 #pragma once
 
-#include "ZooKeeper.h"
-#include "KeeperException.h"
 #include <functional>
 #include <memory>
 #include <common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
 
 
