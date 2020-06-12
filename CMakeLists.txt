@@ -418,7 +418,7 @@ macro (add_executable target)
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
         # operator::new/delete for executables (MemoryTracker stuff)
-        target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+        target_link_libraries (${target} PRIVATE clickhouse_new_delete)
     endif()
 endmacro()
 
