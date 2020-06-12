@@ -561,7 +561,7 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 template <bool in_memory, bool is_all>
 void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 {
-    std::shared_lock lock(rwlock);
+    //std::shared_lock lock(rwlock);
 
     size_t rows_to_reserve = is_left ? block.rows() : 0;
     MutableColumns left_columns = makeMutableColumns(block, (is_all ? rows_to_reserve : 0));

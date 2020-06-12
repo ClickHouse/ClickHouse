@@ -212,6 +212,7 @@ Block SortedBlocksBuffer::exchange(Block && block)
     static constexpr const float reserve_coef = 1.2;
 
     Blocks out_blocks;
+    Block empty_out = block.cloneEmpty();
 
     {
         std::lock_guard lock(mutex);
@@ -223,7 +224,7 @@ Block SortedBlocksBuffer::exchange(Block && block)
 
             /// Saved. Return empty block with same structure.
             if (current_bytes < max_bytes)
-                return buffer.back().cloneEmpty();
+                return empty_out;
         }
 
         /// Not saved. Return buffered.
