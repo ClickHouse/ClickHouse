@@ -30,16 +30,38 @@ struct KeyDescription
     /// Types from sample block ordered in columns order.
     DataTypes data_types;
 
-    /// Additional key column added by storage type
-    ASTPtr additional_key_column;
+    /// Additional key column added by storage type. Never changes after
+    /// initialization with non empty value. Doesn't stored in definition_ast,
+    /// but added to expression_list_ast and all its derivatives.
+    std::optional<String> additional_column;
 
     /// Parse key structure from key definition. Requires all columns, available
     /// in storage.
     static KeyDescription getKeyFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
+        const Context & context);
+
+    /// Sorting key can contain additional column defined by storage type (like
+    /// Version column in VersionedCollapsingMergeTree).
+    static KeyDescription getSortingKeyFromAST(
+        const ASTPtr & definition_ast,
+        const ColumnsDescription & columns,
         const Context & context,
-        const ASTPtr & additional_key_column = nullptr);
+        const std::optional<String> & additional_column);
+
+    /// Recalculate all expressions and fields for key with new columns without
+    /// changes in constant fields. Just wrapper for static methods.
+    void recalculateWithNewColumns(
+        const ColumnsDescription & new_columns,
+        const Context & context);
+
+    /// Recalculate all expressions and fields for key with new ast without
+    /// changes in constant fields. Just wrapper for static methods.
+    void recalculateWithNewAST(
+        const ASTPtr & new_ast,
+        const ColumnsDescription & columns,
+        const Context & context);
 
     KeyDescription() = default;
 

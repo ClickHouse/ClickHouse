@@ -483,7 +483,7 @@ void MergeTreeData::initPartitionKey(const KeyDescription & new_partition_key)
 }
 
 
-void MergeTreeData::checkTTLExpressios(const StorageInMemoryMetadata & new_metadata) const
+void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_metadata) const
 {
     auto new_column_ttls = new_metadata.column_ttls_by_name;
 
@@ -527,7 +527,7 @@ void MergeTreeData::checkTTLExpressios(const StorageInMemoryMetadata & new_metad
 /// Todo replace columns with TTL for columns
 void MergeTreeData::setTTLExpressions(const StorageInMemoryMetadata & new_metadata)
 {
-    checkTTLExpressios(new_metadata);
+    checkTTLExpressions(new_metadata);
     setColumnTTLs(new_metadata.column_ttls_by_name);
     auto move_ttl_entries_lock = std::lock_guard<std::mutex>(move_ttl_entries_mutex);
     setTableTTLs(new_metadata.table_ttl);
@@ -1339,7 +1339,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 
     checkProperties(new_metadata);
 
-    checkTTLExpressios(new_metadata);
+    checkTTLExpressions(new_metadata);
 
     if (hasSettingsChanges())
     {

@@ -775,13 +775,18 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
                 tuple->arguments->children = new_sorting_key_expr_list->children;
                 order_by_ast = tuple;
             }
-            new_metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, new_metadata.columns, global_context, new_metadata.sorting_key.additional_key_column);
+            auto & sorting_key = new_metadata.sorting_key;
+            auto & primary_key = new_metadata.primary_key;
 
-            if (!isPrimaryKeyDefined())
+            sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, global_context);
+
+            if (primary_key.definition_ast == nullptr)
             {
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
-                new_metadata.primary_key = getSortingKey();
+                auto old_sorting_key_ast = getSortingKey().definition_ast;
+                primary_key = KeyDescription::getKeyFromAST(
+                    old_sorting_key_ast, new_metadata.columns, global_context);
             }
         }
 

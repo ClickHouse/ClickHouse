@@ -1,6 +1,7 @@
 #include <Storages/KeyDescription.h>
 
 #include <Functions/IFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
@@ -10,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 KeyDescription::KeyDescription(const KeyDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
@@ -17,7 +23,7 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , sample_block(other.sample_block)
     , column_names(other.column_names)
     , data_types(other.data_types)
-    , additional_key_column(other.additional_key_column ? other.additional_key_column->clone() : nullptr)
+    , additional_column(other.additional_column)
 {
 }
 
@@ -37,27 +43,54 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
     sample_block = other.sample_block;
     column_names = other.column_names;
     data_types = other.data_types;
-    if (other.additional_key_column)
-        additional_key_column = other.additional_key_column->clone();
-    else
-        additional_key_column.reset();
+
+    /// additional_column is constant property It should never be lost.
+    if (additional_column.has_value() && !other.additional_column.has_value())
+        throw Exception("Wrong key assignment, loosing additional_column", ErrorCodes::LOGICAL_ERROR);
+    additional_column = other.additional_column;
     return *this;
 }
 
 
+void KeyDescription::recalculateWithNewAST(
+    const ASTPtr & new_ast,
+    const ColumnsDescription & columns,
+    const Context & context)
+{
+    *this = getSortingKeyFromAST(new_ast, columns, context, additional_column);
+}
+
+void KeyDescription::recalculateWithNewColumns(
+    const ColumnsDescription & new_columns,
+    const Context & context)
+{
+    *this = getSortingKeyFromAST(definition_ast, new_columns, context, additional_column);
+}
+
 KeyDescription KeyDescription::getKeyFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
+    const Context & context)
+{
+    return getSortingKeyFromAST(definition_ast, columns, context, {});
+}
+
+KeyDescription KeyDescription::getSortingKeyFromAST(
+    const ASTPtr & definition_ast,
+    const ColumnsDescription & columns,
     const Context & context,
-    const ASTPtr & additional_key_column)
+    const std::optional<String> & additional_column)
 {
     KeyDescription result;
     result.definition_ast = definition_ast;
-    result.additional_key_column = additional_key_column;
     result.expression_list_ast = extractKeyExpressionList(definition_ast);
 
-    if (additional_key_column != nullptr)
-        result.expression_list_ast->children.push_back(additional_key_column);
+    if (additional_column)
+    {
+        result.additional_column = additional_column;
+        ASTPtr column_identifier = std::make_shared<ASTIdentifier>(*additional_column);
+        result.expression_list_ast->children.push_back(column_identifier);
+    }
 
     const auto & children = result.expression_list_ast->children;
     for (const auto & child : children)
