@@ -19,12 +19,13 @@ namespace ErrorCodes
 KeyDescription::KeyDescription(const KeyDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
-    , expression(other.expression)
     , sample_block(other.sample_block)
     , column_names(other.column_names)
     , data_types(other.data_types)
     , additional_column(other.additional_column)
 {
+    if (other.expression)
+        expression = std::make_shared<ExpressionActions>(*other.expression);
 }
 
 KeyDescription & KeyDescription::operator=(const KeyDescription & other)
@@ -39,7 +40,15 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 
     if (other.expression_list_ast)
         expression_list_ast = other.expression_list_ast->clone();
-    expression = other.expression;
+    else
+        expression_list_ast.reset();
+
+
+    if (other.expression)
+        expression = std::make_shared<ExpressionActions>(*other.expression);
+    else
+        expression.reset();
+
     sample_block = other.sample_block;
     column_names = other.column_names;
     data_types = other.data_types;
