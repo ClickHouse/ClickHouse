@@ -124,12 +124,24 @@ def test_defaults_http_handlers():
         assert 200 == cluster.instance.http_request('replicas_status', method='GET').status_code
         assert 'Ok\n' == cluster.instance.http_request('replicas_status', method='GET').content
 
-def test_custom_defaults_http_handlers():
-    with contextlib.closing(SimpleCluster(ClickHouseCluster(__file__), "custom_defaults_handlers", "test_custom_defaults_handlers")) as cluster:
-        assert 200 == cluster.instance.http_request('', method='GET').status_code
-        assert 'Default server response' == cluster.instance.http_request('', method='GET').content
+def test_prometheus_handler():
+    with contextlib.closing(SimpleCluster(ClickHouseCluster(__file__), "prometheus_handler", "test_prometheus_handler")) as cluster:
+        assert 404 == cluster.instance.http_request('', method='GET', headers={'XXX': 'xxx'}).status_code
 
-        assert 200 == cluster.instance.http_request('ping', method='GET').status_code
-        assert 'Ok\n' == cluster.instance.http_request('ping', method='GET').content
+        assert 404 == cluster.instance.http_request('test_prometheus', method='GET', headers={'XXX': 'bad'}).status_code
 
-        assert 404 == cluster.instance.http_request('replicas_status', method='GET').status_code
+        assert 404 == cluster.instance.http_request('test_prometheus', method='POST', headers={'XXX': 'xxx'}).status_code
+
+        assert 200 == cluster.instance.http_request('test_prometheus', method='GET', headers={'XXX': 'xxx'}).status_code
+        assert 'ClickHouseProfileEvents_Query' in cluster.instance.http_request('test_prometheus', method='GET', headers={'XXX': 'xxx'}).content
+
+def test_replicas_status_handler():
+    with contextlib.closing(SimpleCluster(ClickHouseCluster(__file__), "replicas_status_handler", "test_replicas_status_handler")) as cluster:
+        assert 404 == cluster.instance.http_request('', method='GET', headers={'XXX': 'xxx'}).status_code
+
+        assert 404 == cluster.instance.http_request('test_replicas_status', method='GET', headers={'XXX': 'bad'}).status_code
+
+        assert 404 == cluster.instance.http_request('test_replicas_status', method='POST', headers={'XXX': 'xxx'}).status_code
+
+        assert 200 == cluster.instance.http_request('test_replicas_status', method='GET', headers={'XXX': 'xxx'}).status_code
+        assert 'Ok\n' == cluster.instance.http_request('test_replicas_status', method='GET', headers={'XXX': 'xxx'}).content

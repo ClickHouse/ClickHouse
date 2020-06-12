@@ -103,21 +103,17 @@ private:
     std::function<Poco::Net::HTTPRequestHandler * ()> creator;
 };
 
-void addRootHandlerFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server);
-
-void addPingHandlerFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server);
-
-void addReplicasStatusHandlerFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server);
-
-void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics & async_metrics);
-
-void addPrometheusHandlerFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics & async_metrics);
+void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics * async_metrics);
 
 Poco::Net::HTTPRequestHandlerFactory * createStaticHandlerFactory(IServer & server, const std::string & config_prefix);
 
 Poco::Net::HTTPRequestHandlerFactory * createDynamicHandlerFactory(IServer & server, const std::string & config_prefix);
 
 Poco::Net::HTTPRequestHandlerFactory * createPredefinedHandlerFactory(IServer & server, const std::string & config_prefix);
+
+Poco::Net::HTTPRequestHandlerFactory * createReplicasStatusHandlerFactory(IServer & server, const std::string & config_prefix);
+
+Poco::Net::HTTPRequestHandlerFactory * createPrometheusHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & config_prefix);
 
 Poco::Net::HTTPRequestHandlerFactory * createHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & name);
 

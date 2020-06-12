@@ -155,22 +155,6 @@ StaticRequestHandler::StaticRequestHandler(IServer & server_, const String & exp
 {
 }
 
-void addRootHandlerFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server)
-{
-    static const auto root_response_expression = "config://http_server_default_response";
-
-    auto root_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, root_response_expression);
-    root_handler->attachStrictPath("/")->allowGetAndHeadRequest();
-    factory.addHandler(root_handler.release());
-}
-
-void addPingHandlerFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server)
-{
-    auto ping_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, "Ok.\n");
-    ping_handler->attachStrictPath("/ping")->allowGetAndHeadRequest();
-    factory.addHandler(ping_handler.release());
-}
-
 Poco::Net::HTTPRequestHandlerFactory * createStaticHandlerFactory(IServer & server, const std::string & config_prefix)
 {
     int status = server.config().getInt(config_prefix + ".handler.status", 200);

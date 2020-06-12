@@ -106,11 +106,9 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
     }
 }
 
-void addReplicasStatusHandlerFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server)
+Poco::Net::HTTPRequestHandlerFactory * createReplicasStatusHandlerFactory(IServer & server, const std::string & config_prefix)
 {
-    auto replicas_status_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
-    replicas_status_handler->attachNonStrictPath("/replicas_status")->allowGetAndHeadRequest();
-    factory.addHandler(replicas_status_handler.release());
+    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>(server), server.config(), config_prefix);
 }
 
 }

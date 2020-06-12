@@ -74,55 +74,51 @@ static inline auto createHandlersFactoryFromConfig(
 
     for (const auto & key : keys)
     {
-        if (!startsWith(key, "rule"))
-            throw Exception("Unknown element in config: " + prefix + "." + key + ", must be 'rule'", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        if (key == "defaults")
+            addDefaultHandlersFactory(*main_handler_factory, server, &async_metrics);
+        else if (startsWith(key, "rule"))
+        {
+            const auto & handler_type = server.config().getString(prefix + "." + key + ".handler.type", "");
 
-        const auto & handler_type = server.config().getString(prefix + "." + key + ".handler.type", "");
+            if (handler_type.empty())
+                throw Exception("Handler type in config is not specified here: " + prefix + "." + key + ".handler.type",
+                    ErrorCodes::INVALID_CONFIG_PARAMETER);
 
-        if (handler_type == "root")
-            addRootHandlerFactory(*main_handler_factory, server);
-        else if (handler_type == "ping")
-            addPingHandlerFactory(*main_handler_factory, server);
-        else if (handler_type == "defaults")
-            addDefaultHandlersFactory(*main_handler_factory, server, async_metrics);
-        else if (handler_type == "prometheus")
-            addPrometheusHandlerFactory(*main_handler_factory, server, async_metrics);
-        else if (handler_type == "replicas_status")
-            addReplicasStatusHandlerFactory(*main_handler_factory, server);
-        else if (handler_type == "static")
-            main_handler_factory->addHandler(createStaticHandlerFactory(server, prefix + "." + key));
-        else if (handler_type == "dynamic_query_handler")
-            main_handler_factory->addHandler(createDynamicHandlerFactory(server, prefix + "." + key));
-        else if (handler_type == "predefined_query_handler")
-            main_handler_factory->addHandler(createPredefinedHandlerFactory(server, prefix + "." + key));
-        else if (handler_type.empty())
-            throw Exception("Handler type in config is not specified here: " +
-                            prefix + "." + key + ".handler.type", ErrorCodes::INVALID_CONFIG_PARAMETER);
+            if (handler_type == "static")
+                main_handler_factory->addHandler(createStaticHandlerFactory(server, prefix + "." + key));
+            else if (handler_type == "dynamic_query_handler")
+                main_handler_factory->addHandler(createDynamicHandlerFactory(server, prefix + "." + key));
+            else if (handler_type == "predefined_query_handler")
+                main_handler_factory->addHandler(createPredefinedHandlerFactory(server, prefix + "." + key));
+            else if (handler_type == "prometheus")
+                main_handler_factory->addHandler(createPrometheusHandlerFactory(server, async_metrics, prefix + "." + key));
+            else if (handler_type == "replicas_status")
+                main_handler_factory->addHandler(createReplicasStatusHandlerFactory(server, prefix + "." + key));
+            else
+                throw Exception("Unknown handler type '" + handler_type + "' in config here: " + prefix + "." + key + ".handler.type",
+                    ErrorCodes::INVALID_CONFIG_PARAMETER);
+        }
         else
-            throw Exception("Unknown handler type '" + handler_type +"' in config here: " +
-                            prefix + "." + key + ".handler.type",ErrorCodes::INVALID_CONFIG_PARAMETER);
+            throw Exception("Unknown element in config: " + prefix + "." + key + ", must be 'rule' or 'defaults'",
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
     }
 
     return main_handler_factory.release();
 }
 
-static inline Poco::Net::HTTPRequestHandlerFactory * createHTTPHandlerFactory(
-    IServer & server, const std::string & name, AsynchronousMetrics & async_metrics)
+static inline Poco::Net::HTTPRequestHandlerFactory * createHTTPHandlerFactory(IServer & server, const std::string & name, AsynchronousMetrics & async_metrics)
 {
     if (server.config().has("http_handlers"))
         return createHandlersFactoryFromConfig(server, name, "http_handlers", async_metrics);
     else
     {
         auto factory = std::make_unique<HTTPRequestHandlerFactoryMain>(name);
-
-        addRootHandlerFactory(*factory, server);
-        addPingHandlerFactory(*factory, server);
-        addReplicasStatusHandlerFactory(*factory, server);
-        addPrometheusHandlerFactory(*factory, server, async_metrics);
+        addDefaultHandlersFactory(*factory, server, &async_metrics);
 
         auto query_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, "query");
         query_handler->allowPostAndGetParamsRequest();
         factory->addHandler(query_handler.release());
+
         return factory.release();
     }
 }
@@ -130,10 +126,7 @@ static inline Poco::Net::HTTPRequestHandlerFactory * createHTTPHandlerFactory(
 static inline Poco::Net::HTTPRequestHandlerFactory * createInterserverHTTPHandlerFactory(IServer & server, const std::string & name)
 {
     auto factory = std::make_unique<HTTPRequestHandlerFactoryMain>(name);
-
-    addRootHandlerFactory(*factory, server);
-    addPingHandlerFactory(*factory, server);
-    addReplicasStatusHandlerFactory(*factory, server);
+    addDefaultHandlersFactory(*factory, server, nullptr);
 
     auto main_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<InterserverIOHTTPHandler>>(server);
     main_handler->allowPostAndGetParamsRequest();
@@ -161,12 +154,32 @@ Poco::Net::HTTPRequestHandlerFactory * createHandlerFactory(IServer & server, As
     throw Exception("LOGICAL ERROR: Unknown HTTP handler factory name.", ErrorCodes::LOGICAL_ERROR);
 }
 
-void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics & async_metrics)
+static const auto ping_response_expression = "Ok.\n";
+static const auto root_response_expression = "config://http_server_default_response";
+
+void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics * async_metrics)
 {
-    addRootHandlerFactory(factory, server);
-    addPingHandlerFactory(factory, server);
-    addReplicasStatusHandlerFactory(factory, server);
-    addPrometheusHandlerFactory(factory, server, async_metrics);
+    auto root_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, root_response_expression);
+    root_handler->attachStrictPath("/")->allowGetAndHeadRequest();
+    factory.addHandler(root_handler.release());
+
+    auto ping_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, ping_response_expression);
+    ping_handler->attachStrictPath("/ping")->allowGetAndHeadRequest();
+    factory.addHandler(ping_handler.release());
+
+    auto replicas_status_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
+    replicas_status_handler->attachNonStrictPath("/replicas_status")->allowGetAndHeadRequest();
+    factory.addHandler(replicas_status_handler.release());
+
+    /// We check that prometheus handler will be served on current (default) port.
+    /// Otherwise it will be created separately, see below.
+    if (async_metrics && server.config().has("prometheus") && server.config().getInt("prometheus.port", 0) == 0)
+    {
+        auto prometheus_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
+            server, PrometheusMetricsWriter(server.config(), "prometheus", *async_metrics));
+        prometheus_handler->attachStrictPath(server.config().getString("prometheus.endpoint", "/metrics"))->allowGetAndHeadRequest();
+        factory.addHandler(prometheus_handler.release());
+    }
 }
 
 }
