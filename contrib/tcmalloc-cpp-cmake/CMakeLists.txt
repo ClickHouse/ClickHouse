@@ -70,7 +70,9 @@ if (${ENABLE_TCMALLOC_CPP})
     )
 
     add_library(tcmalloc-cpp ${SRCS})
-    target_link_libraries(tcmalloc-cpp PRIVATE
+    # use PUBLIC linkage to allow target that is linked with tcmalloc-cpp use
+    # tcmalloc functions.
+    target_link_libraries(tcmalloc-cpp PUBLIC
         # abseil
         absl_algorithm
         absl_container
