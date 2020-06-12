@@ -52,13 +52,6 @@ namespace CurrentMetrics
     extern const Metric ZooKeeperWatch;
 }
 
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int SUPPORT_IS_DISABLED;
-    }
-}
 
 /** ZooKeeper wire protocol.
 
@@ -908,7 +901,8 @@ void ZooKeeper::connect(
 #if USE_SSL
                     socket = Poco::Net::SecureStreamSocket();
 #else
-                    throw Exception{"Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+                    throw Poco::Exception{
+                        "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support."};
 #endif
                 }
                 else
