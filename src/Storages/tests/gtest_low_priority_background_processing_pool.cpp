@@ -11,11 +11,13 @@ DB::BackgroundProcessingPoolTaskResult checkLow()
 {
     int policy;
     sched_param param;
-    if (pthread_getschedparam(pthread_self(), &policy, &param)) {
+    if (pthread_getschedparam(pthread_self(), &policy, &param))
+    {
         return DB::BackgroundProcessingPoolTaskResult::ERROR;
     }
 
-    if (policy != SCHED_IDLE) {
+    if (policy != SCHED_IDLE)
+    {
         return DB::BackgroundProcessingPoolTaskResult::ERROR;
     }
     return DB::BackgroundProcessingPoolTaskResult::SUCCESS;
@@ -23,8 +25,10 @@ DB::BackgroundProcessingPoolTaskResult checkLow()
 
 DB::BackgroundProcessingPoolTaskResult odd(int *data)
 {
-    for (int i = 0; i < 10; ++i) {
-        if (i % 2) {
+    for (int i = 0; i < 10; ++i)
+    {
+        if (i % 2)
+        {
             data[i] = i;
         }
     }
@@ -33,8 +37,10 @@ DB::BackgroundProcessingPoolTaskResult odd(int *data)
 
 DB::BackgroundProcessingPoolTaskResult even(int *data)
 {
-    for (int i = 0; i < 10; ++i) {
-        if (!(i % 2)) {
+    for (int i = 0; i < 10; ++i)
+    {
+        if (!(i % 2))
+        {
             data[i] = i;
         }
     }
@@ -93,7 +99,8 @@ TEST(LowPriorityBackgroundProcessingPool, SimpleCase)
     pool.removeTask(check_low_handle);
     ctx.shutdown();
 
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 10; ++i)
+    {
         ASSERT_EQ(i, data[i]) << "failed on " << i << " step\n";
     }
 }
