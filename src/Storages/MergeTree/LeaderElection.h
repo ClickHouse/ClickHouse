@@ -70,7 +70,7 @@ public:
 
     ~LeaderElection()
     {
-        releaseNode();
+        shutdown();
     }
 
 private:
@@ -92,11 +92,6 @@ private:
         shutdown_called = false;
         zookeeper.create(path + "/leader_election-", identifier, CreateMode::PersistentSequential);
         task->activateAndSchedule();
-    }
-
-    void releaseNode()
-    {
-        shutdown();
     }
 
     void threadFunction()
