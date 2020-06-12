@@ -46,8 +46,15 @@ void sentry_logger(sentry_level_t level, const char * message, va_list args)
     auto * logger = &Poco::Logger::get("SentryWriter");
     size_t size = 1024;
     char buffer[size];
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
+#endif
     if (vsnprintf(buffer, size, message, args) >= 0)
     {
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
         switch (level)
         {
             case SENTRY_LEVEL_DEBUG:
