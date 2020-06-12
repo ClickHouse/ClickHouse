@@ -196,18 +196,17 @@ struct BloomFilterHash
             const ColumnString::Chars & data = index_column->getChars();
             const ColumnString::Offsets & offsets = index_column->getOffsets();
 
-            ColumnString::Offset current_offset = pos;
             for (size_t index = 0, size = vec.size(); index < size; ++index)
             {
+                ColumnString::Offset current_offset = offsets[index + pos - 1];
+                size_t length = offsets[index + pos] - current_offset - 1 /* terminating zero */;
                 UInt64 city_hash = CityHash_v1_0_2::CityHash64(
-                    reinterpret_cast<const char *>(&data[current_offset]), offsets[index + pos] - current_offset - 1);
+                    reinterpret_cast<const char *>(&data[current_offset]), length);
 
                 if constexpr (is_first)
                     vec[index] = city_hash;
                 else
                     vec[index] = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(vec[index], city_hash));
-
-                current_offset = offsets[index + pos];
             }
         }
         else if (const auto * fixed_string_index_column = typeid_cast<const ColumnFixedString *>(column))
