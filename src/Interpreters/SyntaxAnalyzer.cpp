@@ -348,8 +348,8 @@ struct KeepFunctionMatcher
 {
     struct Data
     {
-        std::unordered_set<String> & should_keep;
-        bool & keep;
+        std::unordered_set<String> & key_names_to_keep;
+        bool & keep_key;
     };
 
     using Visitor = InDepthNodeVisitor<KeepFunctionMatcher, true>;
@@ -363,36 +363,38 @@ struct KeepFunctionMatcher
     {
         if ((function_node->arguments->children).empty())
         {
-            data.keep = true;
+            data.keep_key = true;
             return;
         }
 
-        if (data.should_keep.find(function_node->getColumnName()) == data.should_keep.end())
+        if (!data.key_names_to_keep.contains(function_node->getColumnName()))
         {
             Visitor(data).visit(function_node->arguments);
         }
     }
 
+    static void visit(ASTIdentifier * ident, Data & data)
+    {
+        if (!data.key_names_to_keep.contains(ident->shortName()))
+        {
+            /// if variable of a function is not in GROUP BY keys, this function should not be deleted
+            data.keep_key = true;
+            return;
+        }
+    }
+
     static void visit(const ASTPtr & ast, Data & data)
     {
-        if (data.keep)
+        if (data.keep_key)
             return;
-
-        if (!ast)
-            return;
-
-        if (!(ast->as<ASTFunction>() || ast->as<ASTExpressionList>()))
-        {
-            if ((data.should_keep).find(ast->getColumnName()) == (data.should_keep).end())
-            {
-                /// if variable of a function is not in GROUP BY keys, this function should not be deleted
-                data.keep = true;
-            }
-        }
 
         if (auto * function_node = ast->as<ASTFunction>())
         {
             visit(function_node, data);
+        }
+        else if (auto * ident = ast->as<ASTIdentifier>())
+        {
+            visit(ident, data);
         }
     }
 };
@@ -404,7 +406,7 @@ class GroupByChildrenMatcher
 public:
     struct Data
     {
-        std::unordered_set<String> & should_keep;
+        std::unordered_set<String> & key_names_to_keep;
     };
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
@@ -414,19 +416,16 @@ public:
 
     static void visit(ASTFunction * function_node, Data & data)
     {
-        bool keep = false;
-        KeepFunctionVisitor::Data keep_data{data.should_keep, keep};
+        bool keep_key = false;
+        KeepFunctionVisitor::Data keep_data{data.key_names_to_keep, keep_key};
         KeepFunctionVisitor(keep_data).visit(function_node->arguments);
 
-        if (!keep)
-            (data.should_keep).erase(function_node->getColumnName());
+        if (!keep_key)
+            (data.key_names_to_keep).erase(function_node->getColumnName());
     }
 
     static void visit(const ASTPtr & ast, Data & data)
     {
-        if (!ast)
-            return;
-
         if (auto * function_node = ast->as<ASTFunction>())
         {
             if (!(function_node->arguments->children.empty()))
@@ -447,30 +446,57 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     auto & group_keys = grp_by->children;
 
     ASTs modified; ///result
-    std::unordered_set<String> should_keep; ///map of pairs <structure of key (variable/function), int>
+    std::unordered_set<String> key_names_to_keep; ///set of keys' short names
 
     ///check if optimization is needed while building set
     bool need_optimization = false;
-    ///filling map with pairs <key name, 1>
+    ///filling set with short names of keys
     for (auto & group_key : group_keys)
     {
         if (!need_optimization && group_key->as<ASTFunction>())
             need_optimization = true;
 
-        should_keep.insert(group_key->getColumnName());
+        if (auto * group_key_ident = group_key->as<ASTIdentifier>())
+        {
+            if (key_names_to_keep.contains(group_key_ident->shortName()))
+            {
+                ///There may be a collision between different tables having similar variables.
+                ///Due to the fact that we can't track these conflicts yet,
+                ///it's better to disable optimization to avoid elimination necessary keys.
+                need_optimization = false;
+                break;
+            }
+
+            key_names_to_keep.insert(group_key_ident->shortName());
+            continue;
+        }
+        if (auto * group_key_func = group_key->as<ASTFunction>())
+        {
+            key_names_to_keep.insert(group_key_func->getColumnName());
+            continue;
+        }
     }
     if (!need_optimization)
         return;
 
-    GroupByChildrenVisitor::Data visitor_data{should_keep};
+    GroupByChildrenVisitor::Data visitor_data{key_names_to_keep};
     GroupByChildrenVisitor(visitor_data).visit(grp_by);
 
     modified.reserve(group_keys.size());
+
     ///filling the result
     for (auto & group_key : group_keys)
     {
-        if (should_keep.find(group_key->getColumnName()) != should_keep.end())
-            modified.push_back(group_key);
+        if (auto * group_key_func = group_key->as<ASTFunction>())
+        {
+            if (key_names_to_keep.contains(group_key_func->getColumnName()))
+                modified.push_back(group_key);
+        }
+        if (auto * group_key_ident = group_key->as<ASTIdentifier>())
+        {
+            if (key_names_to_keep.contains(group_key_ident->shortName()))
+                modified.push_back(group_key);
+        }
     }
 
     ///modifying the input
