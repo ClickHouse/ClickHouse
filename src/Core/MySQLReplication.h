@@ -460,6 +460,7 @@ namespace MySQLReplication
         String binlog_name;
 
         Position() : binlog_pos(0), binlog_name("") { }
+        Position(UInt64 binlog_pos_, const String & binlog_name_) : binlog_pos(binlog_pos_), binlog_name(binlog_name_) { }
         void updateLogPos(UInt64 pos) { binlog_pos = pos; }
         void updateLogName(String binlog) { binlog_name = std::move(binlog); }
     };

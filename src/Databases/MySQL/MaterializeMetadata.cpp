@@ -1,16 +1,43 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Databases/MySQL/MasterStatusInfo.h>
+#include <Databases/MySQL/MaterializeMetadata.h>
 #include <Formats/MySQLBlockInputStream.h>
-#include <Common/quoteString.h>
-#include <Poco/File.h>
-#include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Poco/File.h>
+#include <Common/quoteString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
+
+static std::unordered_map<String, String> fetchTablesCreateQuery(
+    const mysqlxx::PoolWithFailover::Entry & connection, const String & database_name, const std::vector<String> & fetch_tables)
+{
+    std::unordered_map<String, String> tables_create_query;
+    for (size_t index = 0; index < fetch_tables.size(); ++index)
+    {
+        Block show_create_table_header{
+            {std::make_shared<DataTypeString>(), "Table"},
+            {std::make_shared<DataTypeString>(), "Create Table"},
+        };
+
+        MySQLBlockInputStream show_create_table(
+            connection, "SHOW CREATE TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(fetch_tables[index]),
+            show_create_table_header, DEFAULT_BLOCK_SIZE);
+
+        Block create_query_block = show_create_table.read();
+        if (!create_query_block || create_query_block.rows() != 1)
+            throw Exception("LOGICAL ERROR mysql show create return more rows.", ErrorCodes::LOGICAL_ERROR);
+
+        tables_create_query[fetch_tables[index]] = create_query_block.getByName("Create Table").column->getDataAt(0).toString();
+    }
+
+    return tables_create_query;
+}
+
 
 static std::vector<String> fetchTablesInDB(const mysqlxx::PoolWithFailover::Entry & connection, const std::string & database)
 {
@@ -29,7 +56,7 @@ static std::vector<String> fetchTablesInDB(const mysqlxx::PoolWithFailover::Entr
 
     return tables_in_db;
 }
-void MasterStatusInfo::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection)
+void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection)
 {
     Block header{
         {std::make_shared<DataTypeString>(), "File"},
@@ -45,6 +72,7 @@ void MasterStatusInfo::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & conn
     if (!master_status || master_status.rows() != 1)
         throw Exception("Unable to get master status from MySQL.", ErrorCodes::LOGICAL_ERROR);
 
+    version = 0;
     binlog_file = (*master_status.getByPosition(0).column)[0].safeGet<String>();
     binlog_position = (*master_status.getByPosition(1).column)[0].safeGet<UInt64>();
     binlog_do_db = (*master_status.getByPosition(2).column)[0].safeGet<String>();
@@ -52,7 +80,7 @@ void MasterStatusInfo::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & conn
     executed_gtid_set = (*master_status.getByPosition(4).column)[0].safeGet<String>();
 }
 
-bool MasterStatusInfo::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection)
+bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection)
 {
     Block header{
         {std::make_shared<DataTypeString>(), "Log_name"},
@@ -73,53 +101,65 @@ bool MasterStatusInfo::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & 
     }
     return false;
 }
-void MasterStatusInfo::finishDump()
-{
-    WriteBufferFromFile out(persistent_path);
-    out << "Version:\t1\n"
-        << "Binlog File:\t" << binlog_file << "\nBinlog Position:\t" << binlog_position << "\nBinlog Do DB:\t" << binlog_do_db
-        << "\nBinlog Ignore DB:\t" << binlog_ignore_db << "\nExecuted GTID SET:\t" << executed_gtid_set;
 
-    out.next();
-    out.sync();
+void commitMetadata(const std::function<void()> & function, const String & persistent_tmp_path, const String & persistent_path)
+{
+    try
+    {
+        function();
+
+        Poco::File(persistent_tmp_path).renameTo(persistent_path);
+    }
+    catch (...)
+    {
+        Poco::File(persistent_tmp_path).remove();
+        throw;
+    }
 }
 
-void MasterStatusInfo::transaction(const MySQLReplication::Position & position, const std::function<void()> & fun)
+void MaterializeMetadata::transaction(const MySQLReplication::Position & position, const std::function<void()> & fun)
 {
     binlog_file = position.binlog_name;
     binlog_position = position.binlog_pos;
 
+    String persistent_tmp_path = persistent_path + ".tmp";
+
     {
-        Poco::File temp_file(persistent_path + ".temp");
-        if (temp_file.exists())
-            temp_file.remove();
+        WriteBufferFromFile out(persistent_tmp_path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_TRUNC | O_CREAT | O_EXCL);
+
+        /// TSV format metadata file.
+        writeString("Version:\t1\n", out);
+        writeString("Binlog File:\t" + binlog_file + "\n", out);
+        writeString("Executed GTID:\t" + executed_gtid_set + "\n", out);
+        writeString("Binlog Position:\t" + toString(binlog_position) + "\n", out);
+        writeString("Data Version:\t" + toString(version) + "\n", out);
+
+        out.next();
+        out.sync();
+        out.close();
     }
 
-    WriteBufferFromFile out(persistent_path + ".temp");
-    out << "Version:\t1\n"
-        << "Binlog File:\t" << binlog_file << "\nBinlog Position:\t" << binlog_position << "\nBinlog Do DB:\t" << binlog_do_db
-        << "\nBinlog Ignore DB:\t" << binlog_ignore_db << "\nExecuted GTID SET:\t" << executed_gtid_set;
-    out.next();
-    out.sync();
-
-    fun();
-    Poco::File(persistent_path + ".temp").renameTo(persistent_path);
+    commitMetadata(fun, persistent_tmp_path, persistent_path);
 }
 
-MasterStatusInfo::MasterStatusInfo(mysqlxx::PoolWithFailover::Entry & connection, const String & path_, const String & database)
+MaterializeMetadata::MaterializeMetadata(mysqlxx::PoolWithFailover::Entry & connection, const String & path_, const String & database)
     : persistent_path(path_)
 {
     if (Poco::File(persistent_path).exists())
     {
-        ReadBufferFromFile in(persistent_path);
-        in >> "Version:\t1\n" >> "Binlog File:\t" >> binlog_file >> "\nBinlog Position:\t" >> binlog_position >> "\nBinlog Do DB:\t"
-            >> binlog_do_db >> "\nBinlog Ignore DB:\t" >> binlog_ignore_db >> "\nExecuted GTID SET:\t" >> executed_gtid_set;
+        ReadBufferFromFile in(persistent_path, DBMS_DEFAULT_BUFFER_SIZE);
+        assertString("Version:\t1\n", in);
+        assertString("Binlog File:\t", in);
+        readString(binlog_file, in);
+        assertString("Executed GTID:\t", in);
+        readString(executed_gtid_set, in);
+        assertString("Binlog Position:\t", in);
+        readIntText(binlog_position, in);
+        assertString("Data Version:\t", in);
+        readIntText(version, in);
 
         if (checkBinlogFileExists(connection))
-        {
-            std::cout << "Load From File \n";
             return;
-        }
     }
 
     bool locked_tables = false;
@@ -134,9 +174,8 @@ MasterStatusInfo::MasterStatusInfo(mysqlxx::PoolWithFailover::Entry & connection
         connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
         connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
 
-        need_dumping_tables = fetchTablesInDB(connection, database);
+        need_dumping_tables = fetchTablesCreateQuery(connection, database, fetchTablesInDB(connection, database));
         connection->query("UNLOCK TABLES;").execute();
-        /// TODO: 拉取建表语句, 解析并构建出表结构(列列表, 主键, 唯一索引, 分区键)
     }
     catch (...)
     {
