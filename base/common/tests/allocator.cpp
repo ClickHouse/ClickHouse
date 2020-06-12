@@ -4,7 +4,7 @@
 #include <thread>
 
 
-void thread_func()
+void alloc_loop()
 {
     for (size_t i = 0; i < 100; ++i)
     {
@@ -33,16 +33,21 @@ void thread_func()
     }
 }
 
+void thread_func()
+{
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        alloc_loop();
+    }
+}
+
 
 int main(int, char **)
 {
     std::vector<std::thread> threads(16);
-    for (size_t i = 0; i < 1000; ++i)
-    {
-        for (auto & thread : threads)
-            thread = std::thread(thread_func);
-        for (auto & thread : threads)
-            thread.join();
-    }
+    for (auto & thread : threads)
+        thread = std::thread(thread_func);
+    for (auto & thread : threads)
+        thread.join();
     return 0;
 }
