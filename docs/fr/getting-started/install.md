@@ -66,7 +66,7 @@ Vous pouvez également télécharger et installer des paquets manuellement à pa
 
 Il est recommandé d'utiliser officiel pré-compilé `tgz` archives pour toutes les distributions Linux, où l'installation de `deb` ou `rpm` les emballages n'est pas possible.
 
-La version requise peut être téléchargée avec `curl` ou `wget` depuis le référentiel https://repo.yandex.ru/clickhouse/tgz/.
+La version requise peut être téléchargée avec `curl` ou `wget` depuis le référentiel https://repo.clickhouse.tech/tgz/.
 Après cela, les archives téléchargées doivent être décompressées et installées avec des scripts d'installation. Exemple pour la dernière version:
 
 ``` bash

@@ -489,6 +489,20 @@
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
 
+    <!--
+        Asynchronous metric log contains values of metrics from
+        system.asynchronous_metrics.
+    -->
+    <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <!--
+            Asynchronous metrics are updated once a minute, so there is
+            no need to flush more often.
+        -->
+        <flush_interval_milliseconds>60000</flush_interval_milliseconds>
+    </asynchronous_metric_log>
+
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
          See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
     -->

@@ -291,9 +291,10 @@ private:
     template <class Func>
     void foreachCommittedParts(const Func & func) const;
 
-    /** Creates the minimum set of nodes in ZooKeeper.
+    /** Creates the minimum set of nodes in ZooKeeper and create first replica.
+      * Returns true if was created, false if exists.
       */
-    void createTableIfNotExists();
+    bool createTableIfNotExists();
 
     /** Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
       */
