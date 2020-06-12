@@ -22,6 +22,7 @@
 
 #if USE_ODBC
 #include <Poco/Data/ODBC/SessionImpl.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
 #endif
 
@@ -162,8 +163,9 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
             auto pool = getPool(connection_string);
             ReadBufferFromIStream read_buf(request.stream());
-            BlockInputStreamPtr input_stream = FormatFactory::instance().getInput(format, read_buf, *sample_block,
-                                                                                  context, max_block_size);
+            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block,
+                                                                   context, max_block_size);
+            auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
             ODBCBlockOutputStream output_stream(pool->get(), db_name, table_name, *sample_block, quoting_style);
             copyData(*input_stream, output_stream);
             writeStringBinary("Ok.", out);
