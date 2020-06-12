@@ -167,7 +167,7 @@ function run_tests
 function run_benchmark
 {
     rm -rf benchmark ||:
-    mkdir bencmhark ||:
+    mkdir benchmark ||:
 
     # TODO disable this when there is an explicit list of tests to run
     "$script_dir/perf.py" --print right/performance/website.xml > benchmark/website-queries.tsv
