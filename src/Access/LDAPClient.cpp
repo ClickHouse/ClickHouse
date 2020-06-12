@@ -182,6 +182,13 @@ int LDAPClient::openConnection(const bool graceful_bind_failure)
     if (!params.ca_cert_file.empty())
         diag(ldap_set_option(handle, LDAP_OPT_X_TLS_CACERTFILE, params.ca_cert_file.c_str()));
 
+#ifdef LDAP_OPT_X_TLS_NEWCTX
+    {
+        const int i_am_a_server = 0;
+        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_NEWCTX, &i_am_a_server));
+    }
+#endif
+
     if (params.enable_tls == LDAPServerParams::TLSEnable::YES_STARTTLS)
         diag(ldap_start_tls_s(handle, nullptr, nullptr));
 
