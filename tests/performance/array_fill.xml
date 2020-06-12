@@ -1,0 +1,8 @@
+<test>
+    <query>SELECT arraySlice(arrayFill(x -> ((x % 2) >= 0), range(100000000)), 1, 10) FORMAT Null</query>
+    <query>SELECT arraySlice(arrayFill(x -> (((x.1) % 2) >= 0), arrayMap(x -> (x, toString(x)), range(10000000))), 1, 10) FORMAT Null</query>
+    <query>SELECT arraySlice(arrayFill(x -> ((x % 2) >= 2), range(100000000)), 1, 10) FORMAT Null</query>
+    <query>SELECT arraySlice(arrayFill(x -> (((x.1) % 2) >= 2), arrayMap(x -> (x, toString(x)), range(10000000))), 1, 10) FORMAT Null</query>
+    <query>SELECT arraySlice(arrayFill(x -> ((x % 2) = 0), range(100000000)), 1, 10) FORMAT Null</query>
+    <query>SELECT arraySlice(arrayFill(x -> (((x.1) % 2) = 0), arrayMap(x -> (x, toString(x)), range(10000000))), 1, 10) FORMAT Null</query>
+</test>

@@ -1,12 +1,13 @@
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Poco/ConsoleChannel.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <common/LineReader.h>
+#include <common/logger_useful.h>
+
 #include <iostream>
 #include <sstream>
-#include <Poco/ConsoleChannel.h>
-#include <common/logger_useful.h>
-#include <common/readline_use.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
 
 
 void printStat(const Coordination::Stat & s)
@@ -65,16 +66,17 @@ int main(int argc, char ** argv)
         }
 
         Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
-        Logger::root().setChannel(channel);
-        Logger::root().setLevel("trace");
+        Poco::Logger::root().setChannel(channel);
+        Poco::Logger::root().setLevel("trace");
 
         zkutil::ZooKeeper zk(argv[1]);
+        LineReader lr({}, false, {"\\"}, {});
 
-        while (char * line_ = readline(":3 "))
+        do
         {
-            add_history(line_);
-            std::string line(line_);
-            free(line_);
+            const auto & line = lr.readLine(":3 ", ":3 ");
+            if (line.empty())
+                break;
 
             try
             {
@@ -95,10 +97,8 @@ int main(int argc, char ** argv)
                     bool watch = w == "w";
                     zkutil::EventPtr event = watch ? std::make_shared<Poco::Event>() : nullptr;
                     std::vector<std::string> v = zk.getChildren(path, nullptr, event);
-                    for (size_t i = 0; i < v.size(); ++i)
-                    {
-                        std::cout << v[i] << std::endl;
-                    }
+                    for (const auto & child : v)
+                        std::cout << child << std::endl;
                     if (watch)
                         waitForWatch(event);
                 }
@@ -106,13 +106,13 @@ int main(int argc, char ** argv)
                 {
                     DB::ReadBufferFromString in(line);
 
-                    std::string path;
+                    std::string path_ignored;
                     std::string data;
                     std::string mode;
 
                     DB::assertString("create", in);
                     DB::skipWhitespaceIfAny(in);
-                    readMaybeQuoted(path, in);
+                    readMaybeQuoted(path_ignored, in);
                     DB::skipWhitespaceIfAny(in);
                     readMaybeQuoted(data, in);
                     DB::skipWhitespaceIfAny(in);
@@ -191,7 +191,7 @@ int main(int argc, char ** argv)
                     zk.set(path, data, version, &stat);
                     printStat(stat);
                 }
-                else if (cmd != "")
+                else if (!cmd.empty())
                 {
                     std::cout << "commands:\n";
                     std::cout << "  q\n";
@@ -211,6 +211,7 @@ int main(int argc, char ** argv)
                 std::cerr << "KeeperException: " << e.displayText() << std::endl;
             }
         }
+        while (true);
     }
     catch (const Coordination::Exception & e)
     {

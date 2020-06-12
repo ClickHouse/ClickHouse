@@ -1,0 +1,29 @@
+--------read--------
+def	[1,2]	2
+abc	[0]	1
+def	[1,2]	2
+abc	[0]	1
+def	[1,2]	2
+abc	[0]	1
+def	[1,2]	2
+abc	[0]	1
+--------joinGet--------
+
+abc
+def
+
+\N
+abc
+def
+
+
+abc
+def
+
+\N
+abc
+def
+
+[0]	1
+0
+0

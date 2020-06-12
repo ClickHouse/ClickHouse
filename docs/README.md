@@ -1,61 +1,206 @@
-# How to Contribute to ClickHouse Documentation
+# Contributing to ClickHouse Documentation
 
-ClickHouse uses the "documentation as code" approach, so you can edit Markdown files in this folder from the GitHub web interface. Alternatively, fork the ClickHouse repository, edit, commit, push, and open a pull request.
+## Why Do You Need to Document ClickHouse
 
-At the moment documentation is bilingual in English and Russian. Try to keep all languages in sync if you can, but this is not strictly required. There are people who are responsible for monitoring language versions and syncing them. If you add a new article, you should also add it to `toc_{en,ru,zh,fa}.yaml` files with the pages index.
+The main reason is that ClickHouse is an open source project, and if you don't write the docs, nobody does. "Incomplete or Confusing Documentation" is the top complaint about open source software by the results of a [Github Open Source Survey](http://opensourcesurvey.org/2017/) of 2017. Documentation is highly valued but often overlooked. One of the most important contributions someone can make to an open source repository is a documentation update.
 
-The master branch is then asynchronously published to the ClickHouse official website:
+Many developers can say that the code is the best docs by itself, and they are right. But, ClickHouse is not a project for C++ developers. Most of its users don't know C++, and they can't understand the code quickly. ClickHouse is large enough to absorb almost any change without a noticeable trace. Nobody will find your very useful function, or an important setting, or a very informative new column in a system table if it is not referenced in the documentation.
 
-* In English: https://clickhouse.yandex/docs/en/
-* In Russian: https://clickhouse.yandex/docs/ru/
-* In Chinese: https://clickhouse.yandex/docs/zh/
-* In Farsi: https://clickhouse.yandex/docs/fa/
+If you want to help ClickHouse with documentation you can face, for example, the following questions:
 
-The infrastructure to build Markdown for publishing on the documentation website resides in the [tools](tools) folder. It has its own [README.md](tools/README.md) file with more details.
+- "I don't know how to write."
+    
+    We have prepared some [recommendations](#what-to-write) for you.
 
-# How to Write Content for ClickHouse Documentation
+- "I know what I want to write, but I don't know how to contribute to docs."
 
-## Target Audience
+    Here are some [tips](#how-to-contribute).
 
-When you write pretty much any text, the first thing you should think about is who will read it and which terms you should use for communicating with them.
+Writing the docs is extremely useful for project's users and developers, and grows your karma.
 
-ClickHouse can be directly used by all sorts of analysts and engineers. For generic parts of documentation (like the query language, tutorials or overviews), assume that the reader only has a basic technical background. For more technical sections (like articles that describe ClickHouse internals, guides for operating ClickHouse clusters, or rules for contributing to C++ code), you can use technical language and concepts.
+**Contents**
 
-## Specific Recommendations
+- [What is the ClickHouse Documentation](#clickhouse-docs)
+- [How to Contribute to ClickHouse Documentation](#how-to-contribute)
+    - [Markdown Dialect Cheatsheet](#markdown-cheatsheet)
+    - [Adding a New File](#adding-a-new-file)
+    - [Adding a New Language](#adding-a-new-language)
+-  [How to Write Content for ClickHouse Documentation](#what-to-write)
+    - [Documentation for Different Audience](#target-audience)
+    - [Common Recommendations](#common-recommendations)
+    - [Description Templates](#templates)
+- [How to Build Documentation](#how-to-build-docs)
 
-* Documentation should make sense when you read it through from beginning to end. If you add new content, try to place it where the necessary concepts have already been explained.
-* If a documentation section consists of many similar items, like functions or operators, try to order them from more generic (usable by a wide audience) to more specific (for specific use cases or application types). If several items are intended to be mostly used together, group them together in the documentation.
-* Try to avoid slang. Use the most common and specific terms possible for everything. If some terms are used as synonyms, state this explicitly.
-* All descriptions of functionality should be accompanied by examples. Basic examples are acceptable, but real world examples are welcome, too.
-* Sensitive topics like politics, religion, race, and so on are strictly prohibited in documentation, examples, comments, and code.
-* Proofread your text before publishing. Look for typos, missing punctuation, or repetitions that could be avoided.
-* Try to avoid addressing the reader directly, although this is not strictly prohibited.
 
-# How to Add a New Language
+<a name="clickhouse-docs"/>
+
+## What is the ClickHouse Documentation
+
+The documentation contains information about all the aspects of the ClickHouse lifecycle: developing, testing, installing, operating, and using. The base language of the documentation is English. The English version is the most actual. All other languages are supported as much as they can by contributors from different countries.
+
+At the moment, [documentation](https://clickhouse.tech/docs) exists in English, Russian, Chinese, Japanese, and Farsi. We store the documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs).
+
+Each language lays in the corresponding folder. Files that are not translated from English are the symbolic links to the English ones.
+
+<a name="how-to-contribute"/>
+
+## How to Contribute to ClickHouse Documentation
+
+You can contribute to the documentation in many ways, for example:
+
+- Fork the ClickHouse repository, edit, commit, push, and open a pull request.
+
+    Add the `documentation` label to this pull request for proper automatic checks applying. If you have no permissions for adding labels, the reviewer of your PR adds it.
+
+- Open a required file in the ClickHouse repository and edit it from the GitHub web interface.
+
+    You can do it on GitHub, or on the [ClickHouse Documentation](https://clickhouse.tech/docs/en/) site. Each page of ClickHouse Documentation site contains an "Edit this page" (🖋) element in the upper right corner. Clicking this symbol, you get to the ClickHouse docs file opened for editing.
+
+    When you are saving a file, GitHub opens a pull-request for your contribution. Add the `documentation` label to this pull request for proper automatic checks applying. If you have no permissions for adding labels, the reviewer of your PR adds it.
+
+Contribute all new information in English language. Other languages are translations from English.
+
+<a name="markdown-cheatsheet"/>
+
+### Markdown Dialect Cheatsheet
+
+- Headings: Place them on a separate line and start with `# `, `## ` or `### `. Use the [Title Case](https://titlecase.com/) for them. Example:
+
+    ```text
+    # The First Obligatory Title on a Page.
+    ```
+
+- Bold text: `**asterisks**` or `__underlines__`.
+- Links: `[link text](uri)`. Examples: 
+
+    - External link: `[ClickHouse repo](https://github.com/ClickHouse/ClickHouse)`
+    - Cross link: `[How to build docs](tools/README.md)`
+
+- Images: `![Exclamation sign](uri)`. You can refer to local images as well as remote in internet.
+- Lists: Lists can be of two types:
+    
+    - `- unordered`: Each item starts from the `-`.
+    - `1. ordered`: Each item starts from the number.
+    
+    A list must be separated from the text by an empty line. Nested lists must be indented with 4 spaces.
+
+- Inline code: `` `in backticks` ``.
+- Multiline code blocks:
+    <pre lang="no-highlight"><code>```lang_name
+    code
+    lines
+    ```</code></pre>
+- Note:
+
+    ```text
+    !!! info "Header"
+        4 spaces indented text.
+    ```
+
+- Warning:
+
+    ```text
+    !!! warning "Header"
+        4 spaces indented text.
+    ```
+
+- Text hidden behind a cut (single sting that opens on click):
+
+    ```text
+    <details markdown="1"> <summary>Visible text</summary> 
+        Hidden content.
+    </details>`.
+    ```
+- Colored text: `<span style="color: red;">text</span>`.
+- Heading anchor to be linked to: `# Title {#anchor-name}`.
+- Table:
+    ```
+    | Header    1 | Header    2 | Header    3 |
+    | ----------- | ----------- | ----------- |
+    | Cell     A1 | Cell     A2 | Cell     A3 |
+    | Cell     B1 | Cell     B2 | Cell     B3 |
+    | Cell     C1 | Cell     C2 | Cell     C3 |
+    ```
+
+<a name="adding-a-new-file"/>
+
+### Adding a New File
+
+When adding a new file:
+
+- Make symbolic links for all other languages. You can use the following commands:
+
+    ```bash
+    $ cd /ClickHouse/clone/directory/docs
+    $ ln -sr en/new/file.md lang/new/file.md
+    ```
+
+<a name="adding-a-new-language"/>
+
+### Adding a New Language
 
 1. Create a new docs subfolder named using the [ISO-639-1 language code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes).
 2. Add Markdown files with the translation, mirroring the folder structure of other languages.
-3. Commit and open a pull request with the new content.
+3. Commit and open a pull-request with the new content.
 
-Some additional configuration has to be done to actually make a new language live on the official website, but it's not automated or documented yet, so we'll do it on our own after the pull request with the content is merged.
+When everything is ready, we will add the new language to the website.
 
-# Markdown Dialect Cheatsheet
+<a name="what-to-write"/>
 
-* Headings are on a separate line starting with `# `, `## ` or `### `.
-* Bold is in `**asterisks**` or `__underlines__`.
-* Links `[anchor](http://...)`, images `![with exclamation sign](http://...jpeg)`.
-* Lists are on lines starting with `* unordered` or `1. ordered`, but there should be an empty line before the first list item. Sub-lists must be indented with 4 spaces.
-* Inline code fragments are <code>&#96;in backticks&#96;</code>.
-* Multiline code blocks are <code>&#96;&#96;&#96;in triple backtick quotes &#96;&#96;&#96;</code>.
-* Brightly highlighted text starts with  `!!! info "Header"`, followed by 4 spaces on the next line and content. For a warning, replace `info` with `warning`.
-* Hidden block that opens on click: `<details markdown="1"> <summary>Header</summary> hidden content</details>`.
-* Colored text: `<span style="color: red;">text</span>`.
-* Heading anchor to be linked to: `Title {#anchor-name}`.
-* Table:
-```
-| Header    1 | Header    2 | Header    3 |
-| ----------- | ----------- | ----------- |
-| Cell     A1 | Cell     A2 | Cell     A3 |
-| Cell     B1 | Cell     B2 | Cell     B3 |
-| Cell     C1 | Cell     C2 | Cell     C3 |
-```
+## How to Write Content for ClickHouse Documentation
+
+
+<a name="target-audience"/>
+
+### Documentation for Different Audience
+
+When writing documentation, think about people who read it. Each audience has specific requirements for terms they use in communications.
+
+ClickHouse documentation can be divided by the audience for the following parts:
+
+- Conceptual topics in [Introduction](https://clickhouse.tech/docs/en/), tutorials and overviews, changelog.
+
+    These topics are for the most common auditory. When editing text in them, use the most common terms that are comfortable for the audience with basic technical skills.
+
+- Query language reference and related topics.
+
+    These parts of the documentation are dedicated to those who use ClickHouse for data analysis. Carefully describe syntax, input, and output data for expressions. Don't forget the examples.
+
+- Description of table engines and operation details.
+
+    Operation engineers who help data analysts to solve their tasks should know how to install/update a ClickHouse server, maintain the ClickHouse cluster, how to integrate it with other tools and systems, how to get the maximum performance of their entire environment.
+
+- Developer's guides.
+
+    The documentation provides code writers with information about how to write code for ClickHouse and how to build it in different environments.
+
+<a name="common-recommendations"/>
+
+### Common Recommendations
+
+- When searching for a position for your text, try to place it in the most anticipated place.
+- Group entities. For example, if several functions solve similar tasks or belong to a specific group by use case or an application type, place them together.
+- Try to avoid slang. Use the most common and specific terms possible. If some terms are used as synonyms, state this explicitly.
+- Add examples for all the functionality. Add basic examples to show how the function works by itself. Add use case examples to show how the function participates in solving specific tasks.
+- Any text concerning politics, religion, or other social related themes are strictly prohibited in all the ClickHouse texts.
+- Proofread your text before publishing. Look for typos, missing punctuation, or repetitions that could be avoided.
+
+<a name="templates"/>
+
+### Description Templates
+
+When writing docs, you can use prepared templates. Copy the code of a template and use it in your contribution. Sometimes you just need to change level of headers.
+
+Templates:
+
+- [Function](_description_templates/template-function.md)
+- [Setting](_description_templates/template-setting.md)
+- [Table engine](_description_templates/template-table-engine.md)
+- [System table](_description_templates/template-system-table.md)
+
+
+<a name="how-to-build-docs"/>
+
+## How to Build Documentation
+
+You can build your documentation manually by following the instructions in [docs/tools/README.md](../docs/tools/README.md). Also, our CI runs the documentation build after the `documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.

@@ -1,0 +1,60 @@
+{% extends 'templates/base.html' %}
+
+{% set title = 'Performance comparison of database management systems' %}
+{% set extra_js = [
+    'queries.js?' + rev_short,
+    'results.js?' + rev_short,
+    '../benchmark.js?' + rev_short]
+%}
+{% set url = 'https://clickhouse.tech/benchmark/dbms/' %}
+{% set no_footer = True %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+<div class="row mb-3">
+    <div class="col">
+        <a href="/" title="Main page" class="float-left mr-3">
+            <img src="/images/logo.svg" alt="ClickHouse" />
+        </a>
+        <h1>Performance comparison of analytical DBMS</h1>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div id="selectors" class="col"></div>
+</div>
+
+<div class="row mb-3">
+    <div class="col">
+        <h3 class="my-3">Relative query processing time <span class="text-muted">(lower is better)</span></h3>
+        <div id="diagram"></div>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col">
+        <h3 class="my-3">Full results</h3>
+        <div id="comparison_table" class="table-responsive"></div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col">
+        <h3 class="my-3">Comments</h3>
+        <p>Most results are for single server setup with the following configuration: two socket Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz; 128 GiB RAM; md RAID-5 on 8 6TB SATA HDD; ext4.</p>
+
+        <p>Some additional results (marked as x2, x3, x6) are for clustered setup for comparison. These results are contributed from independent teams and hardware specification may differ.</p>
+
+        <p>
+            <strong>Disclaimer!</strong> Some results are significantly outdated:
+            <ul>
+                <li>Results for MonetDB were obtained in 2013 for version v11.15.11 (Feb2013-SP3)</li>
+                <li>Results for MemSQL were obtained in 2015 for version 3.2.</li>
+                <li>Results for Vertica were obtained in 2015 for version 7.1.1.</li>
+            </ul>
+        </p>
+        <p>See also: <a href="../hardware/">performance comparison of ClickHouse on various hardware</a>.</p>
+    </div>
+</div>
+{% endblock %}

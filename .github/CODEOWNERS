@@ -1,4 +1,3 @@
-dbms/* @ClickHouse/core-assigner
-utils/* @ClickHouse/core-assigner
 docs/* @ClickHouse/docs
 docs/zh/* @ClickHouse/docs-zh
+website/* @ClickHouse/docs

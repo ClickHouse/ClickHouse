@@ -28,7 +28,7 @@ Container exposes 8123 port for [HTTP interface](https://clickhouse.yandex/docs/
 
 ClickHouse configuration represented with a file "config.xml" ([documentation](https://clickhouse.yandex/docs/en/operations/configuration_files/))
 
-### start server instance with custom configuration
+### Start server instance with custom configuration
 ```bash
 $ docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 -v /path/to/your/config.xml:/etc/clickhouse-server/config.xml yandex/clickhouse-server
 ```
@@ -36,9 +36,22 @@ $ docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 -v /
 ### Start server as custom user
 ```
 # $(pwd)/data/clickhouse should exist and be owned by current user
-$ docker run --rm --user ${UID}:${GID} --name some-clickhouse-server --ulimit nofile=262144:262144 -v "$(pwd)/data/clickhouse:/var/log/clickhouse-server" -v "$(pwd)/data/clickhouse:/var/lib/clickhouse" yandex/clickhouse-server
+$ docker run --rm --user ${UID}:${GID} --name some-clickhouse-server --ulimit nofile=262144:262144 -v "$(pwd)/logs/clickhouse:/var/log/clickhouse-server" -v "$(pwd)/data/clickhouse:/var/lib/clickhouse" yandex/clickhouse-server
 ```
 When you use the image with mounting local directories inside you probably would like to not mess your directory tree with files owner and permissions. Then you could use `--user` argument. In this case, you should mount every necessary directory (`/var/lib/clickhouse` and `/var/log/clickhouse-server`) inside the container. Otherwise, image will complain and not start.
+
+### Start server from root (useful in case of userns enabled)
+```
+$ docker run --rm -e CLICKHOUSE_UID=0 -e CLICKHOUSE_GID=0 --name clickhouse-server-userns -v "$(pwd)/logs/clickhouse:/var/log/clickhouse-server" -v "$(pwd)/data/clickhouse:/var/lib/clickhouse" yandex/clickhouse-server
+```
+
+### How to create default database and user on starting
+
+Sometimes you may want to create user (user named `default` is used by default) and database on image starting. You can do it using environment variables `CLICKHOUSE_DB`, `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD`:
+
+```
+$ docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLICKHOUSE_PASSWORD=password -p 9000:9000/tcp yandex/clickhouse-server
+```
 
 ## How to extend this image
 

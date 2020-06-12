@@ -1,0 +1,14 @@
+<test max_ignored_relative_change="0.2">
+    <substitutions>
+        <substitution>
+           <name>param</name>
+           <values>
+               <value>'{"myparam":"test_string"}'</value>
+               <value>'{"myparam":{"nested_1":"test_string","nested_2":"test_2"}}'</value>
+               <value>'{"myparam":{"nested_1":"test_string","nested_2":"test_2","nested_1":"test_string","nested_2":"test_2","nested_1":"test_string","nested_2":"test_2"}}'</value>
+           </values>
+       </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM zeros(2000000) WHERE NOT ignore(visitParamExtractRaw(materialize({param}), 'myparam'))</query>
+</test>

@@ -1,0 +1,40 @@
+<test max_ignored_relative_change="0.4">
+    <substitutions>
+        <substitution>
+            <name>format</name>
+            <values>
+                <value>TabSeparated</value>
+                <value>CSV</value>
+                <value>Values</value>
+                <value>JSON</value>
+                <value>JSONCompact</value>
+                <value>JSONEachRow</value>
+                <value>TSKV</value>
+                <value>RowBinary</value>
+                <value>XML</value>
+                <value>Parquet</value>
+                <value>ODBCDriver2</value>
+                <value>MySQLWire</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <substitutions>
+        <substitution>
+            <name>format_fast</name>
+            <values>
+                <value>Native</value>
+                <value>Null</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format} (x UInt64) ENGINE = File(`{format}`)</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format_fast} (x UInt64) ENGINE = File(`{format}`)</create_query>
+
+    <query>INSERT INTO table_{format}      SELECT number FROM numbers(10000000)</query>
+    <query>INSERT INTO table_{format_fast} SELECT number FROM numbers(20000000)</query>
+
+    <drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS table_{format_fast}</drop_query>
+</test>

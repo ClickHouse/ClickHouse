@@ -1,21 +1,23 @@
-#include <fcntl.h>
-#include <port/unistd.h>
-#include <stdlib.h>
-#include <time.h>
-#include <iostream>
-#include <iomanip>
-#include <vector>
-#include <random>
-#include <pcg_random.hpp>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
+#include <pcg_random.hpp>
 #include <Poco/Exception.h>
 #include <Common/Exception.h>
-#include <Common/randomSeed.h>
-#include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <Common/ThreadPool.h>
+#include <Common/randomSeed.h>
+
 #include <cstdlib>
-#include <port/clock.h>
+#include <iomanip>
+#include <iostream>
+#include <random>
+#include <vector>
+
+#include <fcntl.h>
+#include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
+
 
 namespace DB
 {
@@ -57,9 +59,9 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
     for (size_t i = 0; i < count; ++i)
     {
-        long rand_result1 = rng();
-        long rand_result2 = rng();
-        long rand_result3 = rng();
+        uint64_t rand_result1 = rng();
+        uint64_t rand_result2 = rng();
+        uint64_t rand_result3 = rng();
 
         size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
         size_t offset;
@@ -86,7 +88,7 @@ int mainImpl(int argc, char ** argv)
 {
     using namespace DB;
 
-    const char * file_name = 0;
+    const char * file_name = nullptr;
     int mode = MODE_NONE;
     UInt64 min_offset = 0;
     UInt64 max_offset = 0;
@@ -111,7 +113,7 @@ int mainImpl(int argc, char ** argv)
     for (int i = 0; argv[2][i]; ++i)
     {
         char c = argv[2][i];
-        switch(c)
+        switch (c)
         {
             case 'r':
                 mode |= MODE_READ;
@@ -150,7 +152,7 @@ int mainImpl(int argc, char ** argv)
     Stopwatch watch;
 
     for (size_t i = 0; i < threads; ++i)
-        pool.scheduleOrThrowOnError(std::bind(thread, fd, mode, min_offset, max_offset, block_size, count));
+        pool.scheduleOrThrowOnError([=]{ thread(fd, mode, min_offset, max_offset, block_size, count); });
     pool.wait();
 
     fsync(fd);

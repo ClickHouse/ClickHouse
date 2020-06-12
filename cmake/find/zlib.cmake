@@ -1,6 +1,4 @@
-if (NOT OS_FREEBSD AND NOT ARCH_32)
-    option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
-endif ()
+option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT MSVC)
     set (INTERNAL_ZLIB_NAME "zlib-ng" CACHE INTERNAL "")
@@ -29,11 +27,7 @@ if (NOT ZLIB_FOUND AND NOT MISSING_INTERNAL_ZLIB_LIBRARY)
     set (ZLIB_INCLUDE_DIRS ${ZLIB_INCLUDE_DIR}) # for poco
     set (ZLIB_INCLUDE_DIRECTORIES ${ZLIB_INCLUDE_DIR}) # for protobuf
     set (ZLIB_FOUND 1) # for poco
-    if (USE_STATIC_LIBRARIES)
-        set (ZLIB_LIBRARIES zlibstatic CACHE INTERNAL "")
-    else ()
-        set (ZLIB_LIBRARIES zlib CACHE INTERNAL "")
-    endif ()
+    set (ZLIB_LIBRARIES zlib CACHE INTERNAL "")
 endif ()
 
 message (STATUS "Using ${INTERNAL_ZLIB_NAME}: ${ZLIB_INCLUDE_DIR} : ${ZLIB_LIBRARIES}")

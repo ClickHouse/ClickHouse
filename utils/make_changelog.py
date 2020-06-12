@@ -110,9 +110,38 @@ def get_commits_from_branch(repo, branch, base_sha, commits_info, max_pages, tok
     return commits
 
 
+# Get list of commits a specified commit is cherry-picked from. Can return an empty list.
+def parse_original_commits_from_cherry_pick_message(commit_message):
+    prefix = '(cherry picked from commits'
+    pos = commit_message.find(prefix)
+    if pos == -1:
+        prefix = '(cherry picked from commit'
+        pos = commit_message.find(prefix)
+        if pos == -1:
+            return []
+    pos += len(prefix)
+    endpos = commit_message.find(')', pos)
+    if endpos == -1:
+        return []
+    lst = [x.strip() for x in commit_message[pos:endpos].split(',')]
+    lst = [x for x in lst if x]
+    return lst
+
+
 # Use GitHub search api to check if commit from any pull request. Update pull_requests info.
-def find_pull_request_for_commit(commit_sha, pull_requests, token, max_retries, retry_timeout):
-    resp = github_api_get_json('search/issues?q={}+type:pr+repo:{}&sort=created&order=asc'.format(commit_sha, repo), token, max_retries, retry_timeout)
+def find_pull_request_for_commit(commit_info, pull_requests, token, max_retries, retry_timeout):
+    commits = [commit_info['sha']] + parse_original_commits_from_cherry_pick_message(commit_info['commit']['message'])
+
+    # Special case for cherry-picked merge commits without -x option. Parse pr number from commit message and search it.
+    if commit_info['commit']['message'].startswith('Merge pull request'):
+        tokens = commit_info['commit']['message'][len('Merge pull request'):].split()
+        if len(tokens) > 0 and tokens[0].startswith('#'):
+            pr_number = tokens[0][1:]
+            if len(pr_number) > 0 and pr_number.isdigit():
+                commits = [pr_number]
+
+    query = 'search/issues?q={}+type:pr+repo:{}&sort=created&order=asc'.format(' '.join(commits), repo)
+    resp = github_api_get_json(query, token, max_retries, retry_timeout)
 
     found = False
     for item in resp['items']:
@@ -130,14 +159,14 @@ def find_pull_request_for_commit(commit_sha, pull_requests, token, max_retries, 
 
 
 # Find pull requests from list of commits. If no pull request found, add commit to not_found_commits list.
-def find_pull_requests(commits, token, max_retries, retry_timeout):
+def find_pull_requests(commits, commits_info, token, max_retries, retry_timeout):
     not_found_commits = []
     pull_requests = {}
 
     for i, commit in enumerate(commits):
         if (i + 1) % 10 == 0:
             logging.info('Processed %d commits', i + 1)
-        if not find_pull_request_for_commit(commit, pull_requests, token, max_retries, retry_timeout):
+        if not find_pull_request_for_commit(commits_info[commit], pull_requests, token, max_retries, retry_timeout):
             not_found_commits.append(commit)
 
     return not_found_commits, pull_requests
@@ -176,7 +205,7 @@ def get_users_info(pull_requests, commits_info, token, max_retries, retry_timeou
         update_user(pull_request['user'])
 
     for commit_info in commits_info.values():
-        if 'author' in commit_info and commit_info['author'] is not None:
+        if 'committer' in commit_info and commit_info['committer'] is not None and 'login' in commit_info['committer']:
             update_user(commit_info['committer']['login'])
         else:
             logging.warning('Not found author for commit %s.', commit_info['html_url'])
@@ -187,7 +216,7 @@ def get_users_info(pull_requests, commits_info, token, max_retries, retry_timeou
 # List of unknown commits -> text description.
 def process_unknown_commits(commits, commits_info, users):
 
-    pattern = 'Commit: [{}]({})\nAuthor: {}\nMessage: {}'
+    pattern = u'Commit: [{}]({})\nAuthor: {}\nMessage: {}'
 
     texts = []
 
@@ -233,7 +262,7 @@ def process_unknown_commits(commits, commits_info, users):
 # Returns False if the PR should not be mentioned changelog.
 def parse_one_pull_request(item):
     description = item['description']
-    lines = [line for line in map(lambda x: x.strip(), description.split('\n')) if line]
+    lines = [line for line in map(lambda x: x.strip(), description.split('\n') if description else []) if line]
     lines = [re.sub(r'\s+', ' ', l) for l in lines]
 
     cat_pos = None
@@ -255,7 +284,7 @@ def parse_one_pull_request(item):
     cat = re.sub(r'^[-*\s]*', '', cat)
 
     # Filter out the PR categories that are not for changelog.
-    if re.match(r'(?i)doc|((non|in|not|un)[-\s]*significant)', cat):
+    if re.match(r'(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)', cat):
         return False
 
     short_descr = ''
@@ -410,7 +439,7 @@ def make_changelog(new_tag, prev_tag, pull_requests_nums, repo, repo_folder, sta
 
         if not is_pull_requests_loaded:
             logging.info('Searching for pull requests using github api.')
-            unknown_commits, pull_requests = find_pull_requests(commits, token, max_retries, retry_timeout)
+            unknown_commits, pull_requests = find_pull_requests(commits, commits_info, token, max_retries, retry_timeout)
             state['unknown_commits'] = unknown_commits
             state['pull_requests'] = pull_requests
     else:
@@ -435,7 +464,7 @@ def make_changelog(new_tag, prev_tag, pull_requests_nums, repo, repo_folder, sta
     # Remove double whitespaces and trailing whitespaces
     changelog = re.sub(r' {2,}| +$', r''.format(repo), changelog)
 
-    print(changelog)
+    print(changelog.encode('utf-8'))
 
 
 if __name__ == '__main__':

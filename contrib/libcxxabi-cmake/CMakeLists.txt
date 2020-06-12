@@ -24,6 +24,9 @@ ${LIBCXXABI_SOURCE_DIR}/src/stdlib_new_delete.cpp
 
 add_library(cxxabi ${SRCS})
 
+# Third party library may have substandard code.
+target_compile_options(cxxabi PRIVATE -w)
+
 target_include_directories(cxxabi SYSTEM BEFORE
     PUBLIC $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/include>
     PRIVATE $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/../libcxx/include>
@@ -31,6 +34,11 @@ target_include_directories(cxxabi SYSTEM BEFORE
 target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_BUILDING_LIBRARY)
 target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined -Wno-macro-redefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
 target_link_libraries(cxxabi PUBLIC ${EXCEPTION_HANDLING_LIBRARY})
+
+# Enable capturing stack traces for all exceptions.
+if (USE_UNWIND)
+    target_compile_definitions(cxxabi PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
+endif ()
 
 install(
     TARGETS cxxabi

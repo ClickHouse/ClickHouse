@@ -8,7 +8,7 @@
 # install compiler and libs
 sudo apt install -y git bash cmake ninja-build gcc-8 g++-8 libicu-dev libreadline-dev gperf
 # for -DUNBUNDLED=1 mode:
-#sudo apt install -y libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libzstd-dev libre2-dev librdkafka-dev libcapnp-dev libpoco-dev libgoogle-perftools-dev libunwind-dev googletest libcctz-dev
+#sudo apt install -y libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev libboost-regex-dev libboost-iostreams-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libzstd-dev libre2-dev librdkafka-dev libcapnp-dev libpoco-dev libgoogle-perftools-dev libunwind-dev googletest libcctz-dev
 
 # install testing only stuff if you want:
 sudo apt install -y expect python python-lxml python-termcolor python-requests curl perl sudo openssl netcat-openbsd telnet
@@ -29,7 +29,7 @@ cmake --build .
 cd ..
 
 #  Run server:
-# build/dbms/programs/clickhouse-server --config-file=ClickHouse/dbms/programs/server/config.xml &
+# build/programs/clickhouse-server --config-file=ClickHouse/programs/server/config.xml &
 
 #  Run client:
-# build/dbms/programs/clickhouse-client
+# build/programs/clickhouse-client

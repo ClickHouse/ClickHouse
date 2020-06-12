@@ -1,6 +1,10 @@
-# ODBC Driver
+---
+toc_priority: 23
+toc_title: ODBC Driver
+---
 
-- [Official driver](https://github.com/ClickHouse/clickhouse-odbc).
+# ODBC Driver {#odbc-driver}
 
+-   [Official driver](https://github.com/ClickHouse/clickhouse-odbc)
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/odbc/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/odbc/) <!--hide-->

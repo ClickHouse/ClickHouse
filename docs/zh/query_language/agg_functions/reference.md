@@ -1,1 +1,0 @@
-../../../en/query_language/agg_functions/reference.md

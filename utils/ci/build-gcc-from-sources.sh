@@ -32,8 +32,8 @@ $SUDO make install
 popd
 popd
 
-$SUDO ln -sf /usr/local/bin/gcc /usr/local/bin/gcc-${GCC_GCC_SOURCES_VERSION_SHORT}
-$SUDO ln -sf /usr/local/bin/g++ /usr/local/bin/g++-${GCC_GCC_SOURCES_VERSION_SHORT}
+$SUDO ln -sf /usr/local/bin/gcc /usr/local/bin/gcc-${GCC_VERSION_SHORT}
+$SUDO ln -sf /usr/local/bin/g++ /usr/local/bin/g++-${GCC_VERSION_SHORT}
 $SUDO ln -sf /usr/local/bin/gcc /usr/local/bin/cc
 $SUDO ln -sf /usr/local/bin/g++ /usr/local/bin/c++
 
@@ -43,5 +43,5 @@ $SUDO ldconfig
 hash gcc g++
 gcc --version
 
-export CC=gcc
-export CXX=g++
+export CC=gcc-${GCC_VERSION_SHORT}
+export CXX=g++-${GCC_VERSION_SHORT}
