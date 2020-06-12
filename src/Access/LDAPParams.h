@@ -23,7 +23,16 @@ struct LDAPServerParams
         YES
     };
 
-    enum class TLSCertVerify
+    enum class TLSProtocolVersion
+    {
+        SSL2,
+        SSL3,
+        TLS1_0,
+        TLS1_1,
+        TLS1_2
+    };
+
+    enum class TLSRequireCert
     {
         NEVER,
         ALLOW,
@@ -42,9 +51,13 @@ struct LDAPServerParams
     std::uint16_t port = 636;
 
     TLSEnable enable_tls = TLSEnable::YES;
-    TLSCertVerify tls_cert_verify = TLSCertVerify::DEMAND;
-    String ca_cert_dir;
-    String ca_cert_file;
+    TLSProtocolVersion tls_minimum_protocol_version = TLSProtocolVersion::TLS1_2;
+    TLSRequireCert tls_require_cert = TLSRequireCert::DEMAND;
+    String tls_cert_file;
+    String tls_key_file;
+    String tls_ca_cert_file;
+    String tls_ca_cert_dir;
+    String tls_cipher_suite;
 
     SASLMechanism sasl_mechanism = SASLMechanism::SIMPLE;
 

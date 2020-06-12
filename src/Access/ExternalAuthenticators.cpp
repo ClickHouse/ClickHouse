@@ -30,9 +30,13 @@ auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const Str
     const bool has_auth_dn_prefix = config.has(ldap_server_config + ".auth_dn_prefix");
     const bool has_auth_dn_suffix = config.has(ldap_server_config + ".auth_dn_suffix");
     const bool has_enable_tls = config.has(ldap_server_config + ".enable_tls");
-    const bool has_tls_cert_verify = config.has(ldap_server_config + ".tls_cert_verify");
-    const bool has_ca_cert_dir = config.has(ldap_server_config + ".ca_cert_dir");
-    const bool has_ca_cert_file = config.has(ldap_server_config + ".ca_cert_file");
+    const bool has_tls_minimum_protocol_version = config.has(ldap_server_config + ".tls_minimum_protocol_version");
+    const bool has_tls_require_cert = config.has(ldap_server_config + ".tls_require_cert");
+    const bool has_tls_cert_file = config.has(ldap_server_config + ".tls_cert_file");
+    const bool has_tls_key_file = config.has(ldap_server_config + ".tls_key_file");
+    const bool has_tls_ca_cert_file = config.has(ldap_server_config + ".tls_ca_cert_file");
+    const bool has_tls_ca_cert_dir = config.has(ldap_server_config + ".tls_ca_cert_dir");
+    const bool has_tls_cipher_suite = config.has(ldap_server_config + ".tls_cipher_suite");
 
     if (!has_host)
         throw Exception("Missing 'host' entry", ErrorCodes::BAD_ARGUMENTS);
@@ -61,28 +65,56 @@ auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const Str
             params.enable_tls = LDAPServerParams::TLSEnable::NO;
     }
 
-    if (has_tls_cert_verify)
+    if (has_tls_minimum_protocol_version)
     {
-        String tls_cert_verify_lc_str = config.getString(ldap_server_config + ".tls_cert_verify");
-        boost::to_lower(tls_cert_verify_lc_str);
+        String tls_minimum_protocol_version_lc_str = config.getString(ldap_server_config + ".tls_minimum_protocol_version");
+        boost::to_lower(tls_minimum_protocol_version_lc_str);
 
-        if (tls_cert_verify_lc_str == "never")
-            params.tls_cert_verify = LDAPServerParams::TLSCertVerify::NEVER;
-        else if (tls_cert_verify_lc_str == "allow")
-            params.tls_cert_verify = LDAPServerParams::TLSCertVerify::ALLOW;
-        else if (tls_cert_verify_lc_str == "try")
-            params.tls_cert_verify = LDAPServerParams::TLSCertVerify::TRY;
-        else if (tls_cert_verify_lc_str == "demand")
-            params.tls_cert_verify = LDAPServerParams::TLSCertVerify::DEMAND;
+        if (tls_minimum_protocol_version_lc_str == "ssl2")
+            params.tls_minimum_protocol_version = LDAPServerParams::TLSProtocolVersion::SSL2;
+        else if (tls_minimum_protocol_version_lc_str == "ssl3")
+            params.tls_minimum_protocol_version = LDAPServerParams::TLSProtocolVersion::SSL3;
+        else if (tls_minimum_protocol_version_lc_str == "tls1.0")
+            params.tls_minimum_protocol_version = LDAPServerParams::TLSProtocolVersion::TLS1_0;
+        else if (tls_minimum_protocol_version_lc_str == "tls1.1")
+            params.tls_minimum_protocol_version = LDAPServerParams::TLSProtocolVersion::TLS1_1;
+        else if (tls_minimum_protocol_version_lc_str == "tls1.2")
+            params.tls_minimum_protocol_version = LDAPServerParams::TLSProtocolVersion::TLS1_2;
         else
-            throw Exception("Bad value for 'tls_cert_verify' entry, allowed values are: 'never', 'allow', 'try', 'demand'", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Bad value for 'tls_minimum_protocol_version' entry, allowed values are: 'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2'", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    if (has_ca_cert_dir)
-        params.ca_cert_dir = config.getString(ldap_server_config + ".ca_cert_dir");
+    if (has_tls_require_cert)
+    {
+        String tls_require_cert_lc_str = config.getString(ldap_server_config + ".tls_require_cert");
+        boost::to_lower(tls_require_cert_lc_str);
 
-    if (has_ca_cert_file)
-        params.ca_cert_file = config.getString(ldap_server_config + ".ca_cert_file");
+        if (tls_require_cert_lc_str == "never")
+            params.tls_require_cert = LDAPServerParams::TLSRequireCert::NEVER;
+        else if (tls_require_cert_lc_str == "allow")
+            params.tls_require_cert = LDAPServerParams::TLSRequireCert::ALLOW;
+        else if (tls_require_cert_lc_str == "try")
+            params.tls_require_cert = LDAPServerParams::TLSRequireCert::TRY;
+        else if (tls_require_cert_lc_str == "demand")
+            params.tls_require_cert = LDAPServerParams::TLSRequireCert::DEMAND;
+        else
+            throw Exception("Bad value for 'tls_require_cert' entry, allowed values are: 'never', 'allow', 'try', 'demand'", ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    if (has_tls_cert_file)
+        params.tls_cert_file = config.getString(ldap_server_config + ".tls_cert_file");
+
+    if (has_tls_key_file)
+        params.tls_key_file = config.getString(ldap_server_config + ".tls_key_file");
+
+    if (has_tls_ca_cert_file)
+        params.tls_ca_cert_file = config.getString(ldap_server_config + ".tls_ca_cert_file");
+
+    if (has_tls_ca_cert_dir)
+        params.tls_ca_cert_dir = config.getString(ldap_server_config + ".tls_ca_cert_dir");
+
+    if (has_tls_cipher_suite)
+        params.tls_cipher_suite = config.getString(ldap_server_config + ".tls_cipher_suite");
 
     if (has_port)
     {
