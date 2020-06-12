@@ -209,20 +209,29 @@
                         Specify 'no' for plain text (ldap://) protocol (not recommended).
                         Specify 'yes' for LDAP over SSL/TLS (ldaps://) protocol (recommended, the default).
                         Specify 'starttls' for legacy StartTLS protocol (plain text (ldap://) protocol, upgraded to TLS).
-                tls_cert_verify - TLS peer certificate verification behavior.
-                        Accepted values are: never, allow, try, demand.
-                ca_cert_dir - path to CA certificates directory.
-                ca_cert_file - path to CA certificate file.
-             Example: 
+                tls_minimum_protocol_version - the minimum protocol version of SSL/TLS.
+                        Accepted values are: 'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2' (the default).
+                tls_require_cert - SSL/TLS peer certificate verification behavior.
+                        Accepted values are: 'never', 'allow', 'try', 'demand' (the default).
+                tls_cert_file - path to certificate file.
+                tls_key_file - path to certificate key file.
+                tls_ca_cert_file - path to CA certificate file.
+                tls_ca_cert_dir - path to the directory containing CA certificates.
+                tls_cipher_suite - allowed cipher suite.
+             Example:
                 <my_ldap_server>
                     <host>localhost</host>
                     <port>636</port>
                     <auth_dn_prefix>cn=</auth_dn_prefix>
                     <auth_dn_suffix>, ou=users, dc=example, dc=com</auth_dn_suffix>
                     <enable_tls>yes</enable_tls>
-                    <tls_cert_verify>demand</tls_cert_verify>
-                    <ca_cert_dir>/path/to/ca_cert_dir</ca_cert_dir>
-                    <ca_cert_file>/path/to/ca_cert_file</ca_cert_file>
+                    <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
+                    <tls_require_cert>demand</tls_require_cert>
+                    <tls_cert_file>/path/to/tls_cert_file</tls_cert_file>
+                    <tls_key_file>/path/to/tls_key_file</tls_key_file>
+                    <tls_ca_cert_file>/path/to/tls_ca_cert_file</tls_ca_cert_file>
+                    <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
+                    <tls_cipher_suite>SECURE256:+SECURE128:-VERS-TLS-ALL:+VERS-TLS1.2:-RSA:-DHE-DSS:-CAMELLIA-128-CBC:-CAMELLIA-256-CBC</tls_cipher_suite>
                 </my_ldap_server>
         -->
     </ldap_servers>

@@ -140,19 +140,23 @@ int LDAPClient::openConnection(const bool graceful_bind_failure)
     diag(ldap_set_option(handle, LDAP_OPT_KEEPCONN, LDAP_OPT_ON));
 #endif
 
+#ifdef LDAP_OPT_TIMEOUT
     {
         ::timeval operation_timeout;
         operation_timeout.tv_sec = params.operation_timeout.count();
         operation_timeout.tv_usec = 0;
         diag(ldap_set_option(handle, LDAP_OPT_TIMEOUT, &operation_timeout));
     }
+#endif
 
+#ifdef LDAP_OPT_NETWORK_TIMEOUT
     {
         ::timeval network_timeout;
         network_timeout.tv_sec = params.network_timeout.count();
         network_timeout.tv_usec = 0;
         diag(ldap_set_option(handle, LDAP_OPT_NETWORK_TIMEOUT, &network_timeout));
     }
+#endif
 
     {
         const int search_timeout = params.search_timeout.count();
@@ -164,23 +168,59 @@ int LDAPClient::openConnection(const bool graceful_bind_failure)
         diag(ldap_set_option(handle, LDAP_OPT_SIZELIMIT, &size_limit));
     }
 
+#ifdef LDAP_OPT_X_TLS_PROTOCOL_MIN
     {
         int value = 0;
-        switch (params.tls_cert_verify)
+        switch (params.tls_minimum_protocol_version)
         {
-            case LDAPServerParams::TLSCertVerify::NEVER:  value = LDAP_OPT_X_TLS_NEVER;  break;
-            case LDAPServerParams::TLSCertVerify::ALLOW:  value = LDAP_OPT_X_TLS_ALLOW;  break;
-            case LDAPServerParams::TLSCertVerify::TRY:    value = LDAP_OPT_X_TLS_TRY;    break;
-            case LDAPServerParams::TLSCertVerify::DEMAND: value = LDAP_OPT_X_TLS_DEMAND; break;
+            case LDAPServerParams::TLSProtocolVersion::SSL2:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL2;   break;
+            case LDAPServerParams::TLSProtocolVersion::SSL3:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL3;   break;
+            case LDAPServerParams::TLSProtocolVersion::TLS1_0: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_0; break;
+            case LDAPServerParams::TLSProtocolVersion::TLS1_1: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_1; break;
+            case LDAPServerParams::TLSProtocolVersion::TLS1_2: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2; break;
+        }
+        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_PROTOCOL_MIN, &value));
+    }
+#endif
+
+#ifdef LDAP_OPT_X_TLS_REQUIRE_CERT
+    {
+        int value = 0;
+        switch (params.tls_require_cert)
+        {
+            case LDAPServerParams::TLSRequireCert::NEVER:  value = LDAP_OPT_X_TLS_NEVER;  break;
+            case LDAPServerParams::TLSRequireCert::ALLOW:  value = LDAP_OPT_X_TLS_ALLOW;  break;
+            case LDAPServerParams::TLSRequireCert::TRY:    value = LDAP_OPT_X_TLS_TRY;    break;
+            case LDAPServerParams::TLSRequireCert::DEMAND: value = LDAP_OPT_X_TLS_DEMAND; break;
         }
         diag(ldap_set_option(handle, LDAP_OPT_X_TLS_REQUIRE_CERT, &value));
     }
+#endif
 
-    if (!params.ca_cert_dir.empty())
-        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_CACERTDIR, params.ca_cert_dir.c_str()));
+#ifdef LDAP_OPT_X_TLS_CERTFILE
+    if (!params.tls_cert_file.empty())
+        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_CERTFILE, params.tls_cert_file.c_str()));
+#endif
 
-    if (!params.ca_cert_file.empty())
-        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_CACERTFILE, params.ca_cert_file.c_str()));
+#ifdef LDAP_OPT_X_TLS_KEYFILE
+    if (!params.tls_key_file.empty())
+        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_KEYFILE, params.tls_key_file.c_str()));
+#endif
+
+#ifdef LDAP_OPT_X_TLS_CACERTFILE
+    if (!params.tls_ca_cert_file.empty())
+        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_CACERTFILE, params.tls_ca_cert_file.c_str()));
+#endif
+
+#ifdef LDAP_OPT_X_TLS_CACERTDIR
+    if (!params.tls_ca_cert_dir.empty())
+        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_CACERTDIR, params.tls_ca_cert_dir.c_str()));
+#endif
+
+#ifdef LDAP_OPT_X_TLS_CIPHER_SUITE
+    if (!params.tls_cipher_suite.empty())
+        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_CIPHER_SUITE, params.tls_cipher_suite.c_str()));
+#endif
 
 #ifdef LDAP_OPT_X_TLS_NEWCTX
     {
