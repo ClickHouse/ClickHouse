@@ -901,8 +901,8 @@ void ZooKeeper::connect(
 #if USE_SSL
                     socket = Poco::Net::SecureStreamSocket();
 #else
-                    throw Poco::Exception{
-                        "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support."};
+                    throw Poco::Exception(
+                        "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
 #endif
                 }
                 else
