@@ -19,7 +19,8 @@ void thread_func()
         {
             size_t next_size = size * 4;
 
-            void * new_buf = realloc(buf, next_size);
+            free(buf);
+            void * new_buf = malloc(next_size);
             if (!new_buf)
                 abort();
             buf = new_buf;
