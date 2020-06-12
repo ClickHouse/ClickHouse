@@ -8,7 +8,7 @@
 namespace DB
 {
 
-struct MasterStatusInfo
+struct MaterializeMetadata
 {
     const String persistent_path;
 
@@ -18,9 +18,8 @@ struct MasterStatusInfo
     String binlog_ignore_db;
     String executed_gtid_set;
 
-    std::vector<String> need_dumping_tables;
-
-    void finishDump();
+    size_t version = 0;
+    std::unordered_map<String, String> need_dumping_tables;
 
     void fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection);
 
@@ -28,9 +27,7 @@ struct MasterStatusInfo
 
     void transaction(const MySQLReplication::Position & position, const std::function<void()> & fun);
 
-    MasterStatusInfo(mysqlxx::PoolWithFailover::Entry & connection, const String & path, const String & database);
-
-
+    MaterializeMetadata(mysqlxx::PoolWithFailover::Entry & connection, const String & path, const String & database);
 };
 
 }

@@ -137,13 +137,16 @@ String getUniqueColumnName(NamesAndTypesList columns_name_and_type, const String
 String toCreateQuery(const MySQLTableStruct & table_struct, const Context & context)
 {
     /// TODO: settings
-    String create_version = getUniqueColumnName(table_struct.columns_name_and_type, "_create_version");
-    String delete_version = getUniqueColumnName(table_struct.columns_name_and_type, "_delete_version");
+    if (table_struct.primary_keys.empty())
+        throw Exception("", ErrorCodes::NOT_IMPLEMENTED);
+
     WriteBufferFromOwnString out;
+    String sign = getUniqueColumnName(table_struct.columns_name_and_type, "__sign");
+    String version = getUniqueColumnName(table_struct.columns_name_and_type, "__version");
     out << "CREATE TABLE " << (table_struct.if_not_exists ? "IF NOT EXISTS" : "")
-        << backQuoteIfNeed(table_struct.database_name) + "." << backQuoteIfNeed(table_struct.table_name) << "("
-        << queryToString(InterpreterCreateQuery::formatColumns(table_struct.columns_name_and_type))
-        << ", " << create_version << " UInt64, " << delete_version << " UInt64" << ") ENGINE = MergeTree()"
+        << backQuoteIfNeed(table_struct.database_name) + "." << backQuoteIfNeed(table_struct.table_name)
+        << "(" << queryToString(InterpreterCreateQuery::formatColumns(table_struct.columns_name_and_type))
+        << ", " << sign << " Int8, " << version << " UInt64" << ") ENGINE = ReplacingMergeTree(" + version + ")"
         << " PARTITION BY " << queryToString(getFormattedPartitionByExpression(table_struct, context, 1000, 50000))
         << " ORDER BY " << queryToString(getFormattedOrderByExpression(table_struct));
     return out.str();
