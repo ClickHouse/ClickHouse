@@ -20,7 +20,7 @@ namespace
 template <typename X = Float64, typename Y = Float64, typename Ret = UInt8>
 static IAggregateFunction * createWithExtraTypes(Float64 significance_level, const DataTypes & argument_types, const Array & parameters)
 {
-    return new AggregateFunctionWelchTTest(significance_level, argument_types, parameters);
+    return new AggregateFunctionWelchTTest<X, Y, Ret>(significance_level, argument_types, parameters);
 }
 
 template <typename X = Float64, typename Y = Float64, typename Ret = UInt8>

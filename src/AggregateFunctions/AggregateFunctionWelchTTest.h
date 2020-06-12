@@ -198,8 +198,8 @@ public:
         const  Array & params
     ):
         IAggregateFunctionDataHelper<
-            AggregateFunctionWelchTTestData,
-            AggregateFunctionWelchTTest
+            AggregateFunctionWelchTTestData<X, Y, Ret>,
+            AggregateFunctionWelchTTest<X, Y, Ret>
         > ({arguments}, params), significance_level(sglvl_)
     {
         // notice: arguments has been in factory
