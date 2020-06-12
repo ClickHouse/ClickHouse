@@ -110,7 +110,7 @@ void addReplicasStatusHandlerFactory(HTTPRequestHandlerFactoryMain & factory, IS
 {
     auto replicas_status_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
     replicas_status_handler->attachNonStrictPath("/replicas_status")->allowGetAndHeadRequest();
-    factory->addHandler(replicas_status_handler.release());
+    factory.addHandler(replicas_status_handler.release());
 }
 
 }
