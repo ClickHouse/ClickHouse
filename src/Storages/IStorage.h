@@ -137,29 +137,33 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
-public: /// thread-unsafe part. lockStructure must be acquired
-    const ColumnsDescription & getColumns() const; /// returns combined set of columns
+public:
+    /// NOTE: These methods are thread-safe now, but require additional
+    /// structure lock to get consistent metadata snapshot. This will be fixed
+    /// soon. TODO(alesap)
+
+    ColumnsDescription getColumns() const; /// returns combined set of columns
     void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
 
     void setSecondaryIndices(IndicesDescription secondary_indices_);
-    const IndicesDescription & getSecondaryIndices() const;
+    IndicesDescription getSecondaryIndices() const;
     /// Has at least one non primary index
     bool hasSecondaryIndices() const;
 
-    const ConstraintsDescription & getConstraints() const;
+    ConstraintsDescription getConstraints() const;
     void setConstraints(ConstraintsDescription constraints_);
 
     /// Storage settings
-    const ASTPtr & getSettingsChanges() const;
+    ASTPtr getSettingsChanges() const;
     void setSettingsChanges(const ASTPtr & settings_changes_);
     bool hasSettingsChanges() const { return metadata.settings_changes != nullptr; }
 
     /// Select query for *View storages.
-    const SelectQueryDescription & getSelectQuery() const;
+    SelectQueryDescription getSelectQuery() const;
     void setSelectQuery(const SelectQueryDescription & select_);
     bool hasSelectQuery() const;
 
-    const StorageInMemoryMetadata & getInMemoryMetadata() const { return metadata; }
+    StorageInMemoryMetadata getInMemoryMetadata() const { return metadata; }
 
     Block getSampleBlock() const; /// ordinary + materialized.
     Block getSampleBlockWithVirtuals() const; /// ordinary + materialized + virtuals.
@@ -204,7 +208,8 @@ private:
     StorageID storage_id;
     mutable std::mutex id_mutex;
 
-
+    /// TODO (alesap) just use multiversion for atomic metadata
+    mutable std::mutex metadata_mutex;
     StorageInMemoryMetadata metadata;
 private:
     RWLockImpl::LockHolder tryLockTimed(
@@ -438,7 +443,7 @@ public:
     virtual Strings getDataPaths() const { return {}; }
 
     /// Returns structure with partition key.
-    const KeyDescription & getPartitionKey() const;
+    KeyDescription getPartitionKey() const;
     /// Set partition key for storage (methods bellow, are just wrappers for this
     /// struct).
     void setPartitionKey(const KeyDescription & partition_key_);
@@ -453,7 +458,7 @@ public:
 
 
     /// Returns structure with sorting key.
-    const KeyDescription & getSortingKey() const;
+    KeyDescription getSortingKey() const;
     /// Set sorting key for storage (methods bellow, are just wrappers for this
     /// struct).
     void setSortingKey(const KeyDescription & sorting_key_);
@@ -470,7 +475,7 @@ public:
     Names getSortingKeyColumns() const;
 
     /// Returns structure with primary key.
-    const KeyDescription & getPrimaryKey() const;
+    KeyDescription getPrimaryKey() const;
     /// Set primary key for storage (methods bellow, are just wrappers for this
     /// struct).
     void setPrimaryKey(const KeyDescription & primary_key_);
@@ -488,7 +493,7 @@ public:
     Names getPrimaryKeyColumns() const;
 
     /// Returns structure with sampling key.
-    const KeyDescription & getSamplingKey() const;
+    KeyDescription getSamplingKey() const;
     /// Set sampling key for storage (methods bellow, are just wrappers for this
     /// struct).
     void setSamplingKey(const KeyDescription & sampling_key_);
@@ -512,22 +517,22 @@ public:
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
     /// Common tables TTLs (for rows and moves).
-    const TTLTableDescription & getTableTTLs() const;
+    TTLTableDescription getTableTTLs() const;
     void setTableTTLs(const TTLTableDescription & table_ttl_);
     bool hasAnyTableTTL() const;
 
     /// Separate TTLs for columns.
-    const TTLColumnsDescription & getColumnTTLs() const;
+    TTLColumnsDescription getColumnTTLs() const;
     void setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_);
     bool hasAnyColumnTTL() const;
 
     /// Just wrapper for table TTLs, return rows part of table TTLs.
-    const TTLDescription & getRowsTTL() const;
+    TTLDescription getRowsTTL() const;
     bool hasRowsTTL() const;
 
     /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
     /// table TTL.
-    const TTLDescriptions & getMoveTTLs() const;
+    TTLDescriptions getMoveTTLs() const;
     bool hasAnyMoveTTL() const;
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.

@@ -1344,7 +1344,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     if (hasSettingsChanges())
     {
 
-        const auto & current_changes = getSettingsChanges()->as<const ASTSetQuery &>().changes;
+        const auto current_changes = getSettingsChanges()->as<const ASTSetQuery &>().changes;
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
         for (const auto & changed_setting : new_changes)
         {

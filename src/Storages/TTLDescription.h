@@ -25,6 +25,10 @@ struct TTLAggregateDescription
 
     /// Expressions to calculate the value of assignment expression
     ExpressionActionsPtr expression;
+
+    TTLAggregateDescription() = default;
+    TTLAggregateDescription(const TTLAggregateDescription & other);
+    TTLAggregateDescription & operator=(const TTLAggregateDescription & other);
 };
 
 using TTLAggregateDescriptions = std::vector<TTLAggregateDescription>;

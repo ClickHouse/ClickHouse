@@ -24,13 +24,14 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
     , name(other.name)
     , type(other.type)
-    , expression(other.expression) /// actions never changed
     , arguments(other.arguments)
     , column_names(other.column_names)
     , data_types(other.data_types)
     , sample_block(other.sample_block)
     , granularity(other.granularity)
 {
+    if (other.expression)
+        expression = std::make_shared<ExpressionActions>(*other.expression);
 }
 
 
@@ -51,7 +52,12 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
 
     name = other.name;
     type = other.type;
-    expression = other.expression;
+
+    if (other.expression)
+        expression = std::make_shared<ExpressionActions>(*other.expression);
+    else
+        expression.reset();
+
     arguments = other.arguments;
     column_names = other.column_names;
     data_types = other.data_types;
