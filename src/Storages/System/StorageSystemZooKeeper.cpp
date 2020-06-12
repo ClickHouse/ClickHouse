@@ -131,7 +131,7 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, const Contex
     for (size_t i = 0, size = nodes.size(); i < size; ++i)
     {
         auto res = futures[i].get();
-        if (res.error == Coordination::ZNONODE)
+        if (res.error == Coordination::Error::ZNONODE)
             continue;   /// Node was deleted meanwhile.
 
         const Coordination::Stat & stat = res.stat;
