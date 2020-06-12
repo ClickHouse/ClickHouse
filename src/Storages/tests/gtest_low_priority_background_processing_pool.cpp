@@ -7,7 +7,22 @@
 #include <Poco/Util/Application.h>
 #include <daemon/BaseDaemon.h>
 
-DB::BackgroundProcessingPoolTaskResult odd(int *data) {
+DB::BackgroundProcessingPoolTaskResult checkLow()
+{
+    int policy;
+    sched_param param;
+    if (pthread_getschedparam(pthread_self(), &policy, &param)) {
+        return DB::BackgroundProcessingPoolTaskResult::ERROR;
+    }
+
+    if (policy != SCHED_IDLE) {
+        return DB::BackgroundProcessingPoolTaskResult::ERROR;
+    }
+    return DB::BackgroundProcessingPoolTaskResult::SUCCESS;
+}
+
+DB::BackgroundProcessingPoolTaskResult odd(int *data)
+{
     for (int i = 0; i < 10; ++i) {
         if (i % 2) {
             data[i] = i;
@@ -16,7 +31,8 @@ DB::BackgroundProcessingPoolTaskResult odd(int *data) {
     return DB::BackgroundProcessingPoolTaskResult::SUCCESS;
 }
 
-DB::BackgroundProcessingPoolTaskResult even(int *data) {
+DB::BackgroundProcessingPoolTaskResult even(int *data)
+{
     for (int i = 0; i < 10; ++i) {
         if (!(i % 2)) {
             data[i] = i;
@@ -52,7 +68,8 @@ static DB::ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
     return {new Poco::Util::XMLConfiguration{&input_source}};
 }
 
-TEST(LowPriorityBackgroundProcessingPool, SimpleCase) {
+TEST(LowPriorityBackgroundProcessingPool, SimpleCase)
+{
     using namespace DB;
     const auto & context_holder = getContext();
     Context ctx = context_holder.context;
@@ -67,10 +84,13 @@ TEST(LowPriorityBackgroundProcessingPool, SimpleCase) {
     pool.startTask(task_handle);
     auto even_handle = pool.createTask([&data] { return even(data); });
     pool.startTask(even_handle);
+    auto check_low_handle = pool.createTask([] { return checkLow(); });
+    pool.startTask(check_low_handle);
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
     pool.removeTask(task_handle);
     pool.removeTask(even_handle);
+    pool.removeTask(check_low_handle);
     ctx.shutdown();
 
     for (int i = 0; i < 10; ++i) {
@@ -78,7 +98,8 @@ TEST(LowPriorityBackgroundProcessingPool, SimpleCase) {
     }
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
