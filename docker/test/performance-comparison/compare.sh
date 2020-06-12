@@ -173,9 +173,8 @@ function run_benchmark
     "$script_dir/perf.py" --print right/performance/website.xml > benchmark/website-queries.tsv
     # TODO things to fix in clickhouse-benchmark:
     # - --max_memory_usage setting does nothing
-    # - no way to continue on error
-    clickhouse-benchmark --port 9001 --concurrency 6 --cumulative --iterations 1000 --randomize 1 --delay 0 --json benchmark/website-left.json -- --max_memory_usage 30000000000 < benchmark/website-queries.tsv
-    clickhouse-benchmark --port 9002 --concurrency 6 --cumulative --iterations 1000 --randomize 1 --delay 0 --json benchmark/website-right.json -- --max_memory_usage 30000000000 < benchmark/website-queries.tsv
+    clickhouse-benchmark --port 9001 --concurrency 6 --cumulative --iterations 1000 --randomize 1 --delay 0 --json benchmark/website-left.json --continue_on_errors -- --max_memory_usage 30000000000 < benchmark/website-queries.tsv
+    clickhouse-benchmark --port 9002 --concurrency 6 --cumulative --iterations 1000 --randomize 1 --delay 0 --json benchmark/website-right.json --continue_on_errors -- --max_memory_usage 30000000000 < benchmark/website-queries.tsv
 }
 
 function get_profiles_watchdog
