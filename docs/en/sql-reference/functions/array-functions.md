@@ -178,7 +178,7 @@ hasAny(array1, array2)
 
 ## hasSubStr {#hassubseq}
 
-Checks whether all the elements of array2 appear in array1 in the same exact order.
+Checks whether all the elements of array2 appear in array1 in the same exact order. Therefore, the function will return 1, if and only if `array1 = prefix + array2 + suffix`.
 
 ``` sql
 hasSubStr(array1, array2)
@@ -187,7 +187,9 @@ hasSubStr(array1, array2)
 In other words, the functions will check whether all the elements of `array2` are contained in `array1` like 
 the `hasAll` function. In addition, it will check that the elements are observed in the same order in both `array1` and `array2`.
 
-For Example, `hasSubStr([1,2,3,4], [2,3])` will return 1. However, `hasSubStr([1,2,3,4], [3,2])` will return `0`.
+For Example: 
+ - `hasSubStr([1,2,3,4], [2,3])` returns 1. However, `hasSubStr([1,2,3,4], [3,2])` will return `0`.
+ - `hasSubStr([1,2,3,4], [1,2,3])` returns 1. However, `hasSubStr([1,2,3,4], [1,2,4])` will return `0`.
 
 **Parameters**
 
