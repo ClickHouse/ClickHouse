@@ -113,3 +113,23 @@ def test_relative_path_static_handler():
         assert 'text/html; charset=UTF-8' == cluster.instance.http_request('test_get_relative_path_static_handler', method='GET', headers={'XXX': 'xxx'}).headers['Content-Type']
         assert '<html><body>Relative Path File</body></html>\n' == cluster.instance.http_request('test_get_relative_path_static_handler', method='GET', headers={'XXX': 'xxx'}).content
 
+def test_defaults_http_handlers():
+    with contextlib.closing(SimpleCluster(ClickHouseCluster(__file__), "defaults_handlers", "test_defaults_handlers")) as cluster:
+        assert 200 == cluster.instance.http_request('', method='GET').status_code
+        assert 'Default server response' == cluster.instance.http_request('', method='GET').content
+
+        assert 200 == cluster.instance.http_request('ping', method='GET').status_code
+        assert 'Ok\n' == cluster.instance.http_request('ping', method='GET').content
+
+        assert 200 == cluster.instance.http_request('replicas_status', method='GET').status_code
+        assert 'Ok\n' == cluster.instance.http_request('replicas_status', method='GET').content
+
+def test_custom_defaults_http_handlers():
+    with contextlib.closing(SimpleCluster(ClickHouseCluster(__file__), "custom_defaults_handlers", "test_custom_defaults_handlers")) as cluster:
+        assert 200 == cluster.instance.http_request('', method='GET').status_code
+        assert 'Default server response' == cluster.instance.http_request('', method='GET').content
+
+        assert 200 == cluster.instance.http_request('ping', method='GET').status_code
+        assert 'Ok\n' == cluster.instance.http_request('ping', method='GET').content
+
+        assert 404 == cluster.instance.http_request('replicas_status', method='GET').status_code
