@@ -23,7 +23,16 @@ namespace CurrentMetrics
 namespace zkutil
 {
 
-/** Implements leader election algorithm described here: http://zookeeper.apache.org/doc/r3.4.5/recipes.html#sc_leaderElection
+/** Initially was used to implement leader election algorithm described here:
+  * http://zookeeper.apache.org/doc/r3.4.5/recipes.html#sc_leaderElection
+  *
+  * But then we decided to get rid of leader election, so every replica can become leader.
+  * For now, every replica can become leader if there is no leader among replicas with old version.
+  *
+  * Replicas with old versions participate in leader election with ephemeral sequential nodes.
+  *  If the node is first, then replica is leader.
+  * Replicas with new versions creates persistent sequential nodes.
+  *  If the first node is persistent, then all replicas with new versions become leaders.
   */
 class LeaderElection
 {
@@ -67,15 +76,12 @@ public:
 private:
     DB::BackgroundSchedulePool & pool;
     DB::BackgroundSchedulePool::TaskHolder task;
-    std::string path;
+    const std::string path;
     ZooKeeper & zookeeper;
     LeadershipHandler handler;
     std::string identifier;
     std::string log_name;
     Poco::Logger * log;
-
-    EphemeralNodeHolderPtr node;
-    std::string node_name;
 
     std::atomic<bool> shutdown_called {false};
 
@@ -84,43 +90,35 @@ private:
     void createNode()
     {
         shutdown_called = false;
-        node = EphemeralNodeHolder::createSequential(path + "/leader_election-", zookeeper, identifier);
-
-        std::string node_path = node->getPath();
-        node_name = node_path.substr(node_path.find_last_of('/') + 1);
-
+        zookeeper.create(path + "/leader_election-", identifier, CreateMode::PersistentSequential);
         task->activateAndSchedule();
     }
 
     void releaseNode()
     {
         shutdown();
-        node = nullptr;
     }
 
     void threadFunction()
     {
-        bool success = false;
-
         try
         {
             Strings children = zookeeper.getChildren(path);
-            std::sort(children.begin(), children.end());
-            auto it = std::lower_bound(children.begin(), children.end(), node_name);
-            if (it == children.end() || *it != node_name)
+            if (children.empty())
                 throw Poco::Exception("Assertion failed in LeaderElection");
 
-            if (it == children.begin())
+            std::sort(children.begin(), children.end());
+
+            Coordination::Stat stat;
+            zookeeper.get(path + "/" + children.front(), &stat);
+
+            if (!stat.ephemeralOwner)
             {
+                /// It is sequential node - we can become leader.
                 ProfileEvents::increment(ProfileEvents::LeaderElectionAcquiredLeadership);
                 handler();
                 return;
             }
-
-            if (!zookeeper.existsWatch(path + "/" + *(it - 1), nullptr, task->getWatchCallback()))
-                task->schedule();
-
-            success = true;
         }
         catch (const KeeperException & e)
         {
@@ -134,8 +132,7 @@ private:
             DB::tryLogCurrentException(log);
         }
 
-        if (!success)
-            task->scheduleAfter(10 * 1000);
+        task->scheduleAfter(10 * 1000);
     }
 };
 
