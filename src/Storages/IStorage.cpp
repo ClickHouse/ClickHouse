@@ -415,160 +415,138 @@ NamesAndTypesList IStorage::getVirtuals() const
     return {};
 }
 
-KeyDescription IStorage::getPartitionKey() const
+const KeyDescription & IStorage::getPartitionKey() const
 {
-    std::lock_guard lock(metadata_mutex);
     return metadata.partition_key;
 }
 
 void IStorage::setPartitionKey(const KeyDescription & partition_key_)
 {
-    std::lock_guard lock(metadata_mutex);
     metadata.partition_key = partition_key_;
 }
 
 bool IStorage::isPartitionKeyDefined() const
 {
-    std::lock_guard lock(metadata_mutex);
     return metadata.partition_key.definition_ast != nullptr;
 }
 
 bool IStorage::hasPartitionKey() const
 {
-    std::lock_guard lock(metadata_mutex);
     return !metadata.partition_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForPartitionKey() const
 {
-    std::lock_guard lock(metadata_mutex);
-    if (!metadata.partition_key.column_names.empty())
+    if (hasPartitionKey())
         return metadata.partition_key.expression->getRequiredColumns();
     return {};
 }
 
-KeyDescription IStorage::getSortingKey() const
+const KeyDescription & IStorage::getSortingKey() const
 {
-    std::lock_guard lock(metadata_mutex);
     return metadata.sorting_key;
 }
 
 void IStorage::setSortingKey(const KeyDescription & sorting_key_)
 {
-    std::lock_guard lock(metadata_mutex);
     metadata.sorting_key = sorting_key_;
 }
 
 bool IStorage::isSortingKeyDefined() const
 {
-    std::lock_guard lock(metadata_mutex);
     return metadata.sorting_key.definition_ast != nullptr;
 }
 
 bool IStorage::hasSortingKey() const
 {
-    std::lock_guard lock(metadata_mutex);
     return !metadata.sorting_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForSortingKey() const
 {
-    std::lock_guard lock(metadata_mutex);
-    if (!metadata.sorting_key.column_names.empty())
+    if (hasSortingKey())
         return metadata.sorting_key.expression->getRequiredColumns();
     return {};
 }
 
 Names IStorage::getSortingKeyColumns() const
 {
-    std::lock_guard lock(metadata_mutex);
-    if (!metadata.sorting_key.column_names.empty())
+    if (hasSortingKey())
         return metadata.sorting_key.column_names;
     return {};
 }
 
-KeyDescription IStorage::getPrimaryKey() const
+const KeyDescription & IStorage::getPrimaryKey() const
 {
-    std::lock_guard lock(metadata_mutex);
     return metadata.primary_key;
 }
 
 void IStorage::setPrimaryKey(const KeyDescription & primary_key_)
 {
-    std::lock_guard lock(metadata_mutex);
     metadata.primary_key = primary_key_;
 }
 
 bool IStorage::isPrimaryKeyDefined() const
 {
-    std::lock_guard lock(metadata_mutex);
     return metadata.primary_key.definition_ast != nullptr;
 }
 
 bool IStorage::hasPrimaryKey() const
 {
-    std::lock_guard lock(metadata_mutex);
     return !metadata.primary_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForPrimaryKey() const
 {
-    std::lock_guard lock(metadata_mutex);
-    if (!metadata.primary_key.column_names.empty())
+    if (hasPrimaryKey())
         return metadata.primary_key.expression->getRequiredColumns();
     return {};
 }
 
 Names IStorage::getPrimaryKeyColumns() const
 {
-    std::lock_guard lock(metadata_mutex);
     if (!metadata.primary_key.column_names.empty())
         return metadata.primary_key.column_names;
     return {};
 }
 
-KeyDescription IStorage::getSamplingKey() const
+const KeyDescription & IStorage::getSamplingKey() const
 {
-    std::lock_guard lock(metadata_mutex);
     return metadata.sampling_key;
 }
 
 void IStorage::setSamplingKey(const KeyDescription & sampling_key_)
 {
-    std::lock_guard lock(metadata_mutex);
     metadata.sampling_key = sampling_key_;
 }
 
 
 bool IStorage::isSamplingKeyDefined() const
 {
-    std::lock_guard lock(metadata_mutex);
     return metadata.sampling_key.definition_ast != nullptr;
 }
 
 bool IStorage::hasSamplingKey() const
 {
-    std::lock_guard lock(metadata_mutex);
     return !metadata.sampling_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForSampling() const
 {
-    std::lock_guard lock(metadata_mutex);
-    if (!metadata.sampling_key.column_names.empty())
+    if (hasSamplingKey())
         return metadata.sampling_key.expression->getRequiredColumns();
     return {};
 }
 
 TTLTableDescription IStorage::getTableTTLs() const
 {
-    std::lock_guard lock(metadata_mutex);
+    std::lock_guard lock(ttl_mutex);
     return metadata.table_ttl;
 }
 
 void IStorage::setTableTTLs(const TTLTableDescription & table_ttl_)
 {
-    std::lock_guard lock(metadata_mutex);
+    std::lock_guard lock(ttl_mutex);
     metadata.table_ttl = table_ttl_;
 }
 
@@ -579,43 +557,43 @@ bool IStorage::hasAnyTableTTL() const
 
 TTLColumnsDescription IStorage::getColumnTTLs() const
 {
-    std::lock_guard lock(metadata_mutex);
+    std::lock_guard lock(ttl_mutex);
     return metadata.column_ttls_by_name;
 }
 
 void IStorage::setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_)
 {
-    std::lock_guard lock(metadata_mutex);
+    std::lock_guard lock(ttl_mutex);
     metadata.column_ttls_by_name = column_ttls_by_name_;
 }
 
 bool IStorage::hasAnyColumnTTL() const
 {
-    std::lock_guard lock(metadata_mutex);
+    std::lock_guard lock(ttl_mutex);
     return !metadata.column_ttls_by_name.empty();
 }
 
 TTLDescription IStorage::getRowsTTL() const
 {
-    std::lock_guard lock(metadata_mutex);
+    std::lock_guard lock(ttl_mutex);
     return metadata.table_ttl.rows_ttl;
 }
 
 bool IStorage::hasRowsTTL() const
 {
-    std::lock_guard lock(metadata_mutex);
+    std::lock_guard lock(ttl_mutex);
     return metadata.table_ttl.rows_ttl.expression != nullptr;
 }
 
 TTLDescriptions IStorage::getMoveTTLs() const
 {
-    std::lock_guard lock(metadata_mutex);
+    std::lock_guard lock(ttl_mutex);
     return metadata.table_ttl.move_ttl;
 }
 
 bool IStorage::hasAnyMoveTTL() const
 {
-    std::lock_guard lock(metadata_mutex);
+    std::lock_guard lock(ttl_mutex);
     return !metadata.table_ttl.move_ttl.empty();
 }
 
@@ -681,7 +659,6 @@ ColumnDependencies IStorage::getColumnDependencies(const NameSet & updated_colum
 
 ASTPtr IStorage::getSettingsChanges() const
 {
-    std::lock_guard lock(metadata_mutex);
     if (metadata.settings_changes)
         return metadata.settings_changes->clone();
     return nullptr;
@@ -689,28 +666,24 @@ ASTPtr IStorage::getSettingsChanges() const
 
 void IStorage::setSettingsChanges(const ASTPtr & settings_changes_)
 {
-    std::lock_guard lock(metadata_mutex);
     if (settings_changes_)
         metadata.settings_changes = settings_changes_->clone();
     else
         metadata.settings_changes = nullptr;
 }
 
-SelectQueryDescription IStorage::getSelectQuery() const
+const SelectQueryDescription & IStorage::getSelectQuery() const
 {
-    std::lock_guard lock(metadata_mutex);
     return metadata.select;
 }
 
 void IStorage::setSelectQuery(const SelectQueryDescription & select_)
 {
-    std::lock_guard lock(metadata_mutex);
     metadata.select = select_;
 }
 
 bool IStorage::hasSelectQuery() const
 {
-    std::lock_guard lock(metadata_mutex);
     return metadata.select.select_query != nullptr;
 }
 

@@ -529,7 +529,6 @@ void MergeTreeData::setTTLExpressions(const StorageInMemoryMetadata & new_metada
 {
     checkTTLExpressions(new_metadata);
     setColumnTTLs(new_metadata.column_ttls_by_name);
-    auto move_ttl_entries_lock = std::lock_guard<std::mutex>(move_ttl_entries_mutex);
     setTableTTLs(new_metadata.table_ttl);
 }
 
@@ -2807,7 +2806,6 @@ MergeTreeData::selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & tt
     time_t max_max_ttl = 0;
     TTLDescriptions::const_iterator best_entry_it;
 
-    auto lock = std::lock_guard(move_ttl_entries_mutex);
     const auto & move_ttl_entries = getMoveTTLs();
     for (auto ttl_entry_it = move_ttl_entries.begin(); ttl_entry_it != move_ttl_entries.end(); ++ttl_entry_it)
     {
