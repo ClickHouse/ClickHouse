@@ -640,11 +640,6 @@ public:
 
     std::optional<TTLDescription> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
-    /// This mutex is required for background move operations which do not
-    /// obtain global locks.
-    /// TODO (alesap) It will be removed after metadata became atomic
-    mutable std::mutex move_ttl_entries_mutex;
-
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
 

@@ -156,7 +156,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
     bool hasSettingsChanges() const { return metadata.settings_changes != nullptr; }
 
     /// Select query for *View storages.
-    SelectQueryDescription getSelectQuery() const;
+    const SelectQueryDescription & getSelectQuery() const;
     void setSelectQuery(const SelectQueryDescription & select_);
     bool hasSelectQuery() const;
 
@@ -206,7 +206,7 @@ private:
     mutable std::mutex id_mutex;
 
     /// TODO (alesap) just use multiversion for atomic metadata
-    mutable std::mutex metadata_mutex;
+    mutable std::mutex ttl_mutex;
     StorageInMemoryMetadata metadata;
 private:
     RWLockImpl::LockHolder tryLockTimed(
@@ -440,7 +440,7 @@ public:
     virtual Strings getDataPaths() const { return {}; }
 
     /// Returns structure with partition key.
-    KeyDescription getPartitionKey() const;
+    const KeyDescription & getPartitionKey() const;
     /// Set partition key for storage (methods bellow, are just wrappers for this
     /// struct).
     void setPartitionKey(const KeyDescription & partition_key_);
@@ -455,7 +455,7 @@ public:
 
 
     /// Returns structure with sorting key.
-    KeyDescription getSortingKey() const;
+    const KeyDescription & getSortingKey() const;
     /// Set sorting key for storage (methods bellow, are just wrappers for this
     /// struct).
     void setSortingKey(const KeyDescription & sorting_key_);
@@ -472,7 +472,7 @@ public:
     Names getSortingKeyColumns() const;
 
     /// Returns structure with primary key.
-    KeyDescription getPrimaryKey() const;
+    const KeyDescription & getPrimaryKey() const;
     /// Set primary key for storage (methods bellow, are just wrappers for this
     /// struct).
     void setPrimaryKey(const KeyDescription & primary_key_);
@@ -490,7 +490,7 @@ public:
     Names getPrimaryKeyColumns() const;
 
     /// Returns structure with sampling key.
-    KeyDescription getSamplingKey() const;
+    const KeyDescription & getSamplingKey() const;
     /// Set sampling key for storage (methods bellow, are just wrappers for this
     /// struct).
     void setSamplingKey(const KeyDescription & sampling_key_);
