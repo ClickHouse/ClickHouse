@@ -137,10 +137,7 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
-public:
-    /// NOTE: These methods are thread-safe now, but require additional
-    /// structure lock to get consistent metadata snapshot. This will be fixed
-    /// soon. TODO(alesap)
+public: /// thread-unsafe part. lockStructure must be acquired
 
     const ColumnsDescription & getColumns() const; /// returns combined set of columns
     void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
