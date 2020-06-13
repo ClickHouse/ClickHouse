@@ -2,7 +2,6 @@
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Common/quoteString.h>
 
-
 namespace DB
 {
 
@@ -19,6 +18,24 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
     if (databases)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW DATABASES" << (settings.hilite ? hilite_none : "");
+    }
+    else if (clusters)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CLUSTERS" << (settings.hilite ? hilite_none : "");
+        if (!like.empty())
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << (not_like ? " NOT" : "") << " LIKE " << (settings.hilite ? hilite_none : "")
+                << std::quoted(like, '\'');
+
+        if (limit_length)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " LIMIT " << (settings.hilite ? hilite_none : "");
+            limit_length->formatImpl(settings, state, frame);
+        }
+    }
+    else if (cluster)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CLUSTER" << (settings.hilite ? hilite_none : "");
+        settings.ostr << " " << backQuoteIfNeed(cluster_str);
     }
     else
     {

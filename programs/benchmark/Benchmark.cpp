@@ -469,7 +469,7 @@ private:
             const auto & info = infos[i];
 
             json_out << double_quote << connections[i]->getDescription() << ": {\n";
-            json_out << double_quote << "statistics: {\n";
+            json_out << double_quote << "statistics" << ": {\n";
 
             print_key_value("QPS", info->queries / info->work_time);
             print_key_value("RPS", info->read_rows / info->work_time);
@@ -479,7 +479,7 @@ private:
             print_key_value("num_queries", info->queries.load(), false);
 
             json_out << "},\n";
-            json_out << double_quote << "query_time_percentiles: {\n";
+            json_out << double_quote << "query_time_percentiles" << ": {\n";
 
             for (int percent = 0; percent <= 90; percent += 10)
                 print_percentile(*info, percent);

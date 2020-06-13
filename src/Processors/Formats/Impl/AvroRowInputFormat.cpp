@@ -638,7 +638,7 @@ private:
             }
             catch (const Poco::Exception & e)
             {
-                throw Exception(Exception::CreateFromPoco, e);
+                throw Exception(Exception::CreateFromPocoTag{}, e);
             }
             catch (const avro::Exception & e)
             {
