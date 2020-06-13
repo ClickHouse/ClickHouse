@@ -46,8 +46,8 @@ Float64 CriticalValuesTable[SIGN_LVL_CNT][102] = {
 // our algorithm implementation via vectors:
 // https://gist.github.com/ltybc-coder/792748cfdb2f7cadef424ffb7b011c71
 // col, col, bool
-template <typename X = Float64, typename Y = Float64, typename Ret = UInt8>
-//template <typename X, typename Y, typename Ret = UInt8>
+template <typename X = Float64, typename Y = Float64>
+//template <typename X, typename Y, typename UInt8 = UInt8>
 struct AggregateFunctionWelchTTestData final
 {
 
@@ -148,7 +148,7 @@ struct AggregateFunctionWelchTTestData final
                ((sx * sx / (size_x * size_x * (size_x - 1))) + (sy * sy / (size_y * size_y * (size_y - 1))));
     }
 
-    Ret get_result(Float64 t, Float64 dof, Float64 parametr) const
+    UInt8 get_result(Float64 t, Float64 dof, Float64 parametr) const
     {
         //find our table
         int table = 0;
@@ -170,21 +170,21 @@ struct AggregateFunctionWelchTTestData final
         t = abs(t);
         if (t > CriticalValuesTable[table][i_dof])
         {
-            return static_cast<Ret>(1);
+            return static_cast<UInt8>(1);
             //in this case we reject the null hypothesis
         }
         else
         {
-            return static_cast<Ret>(0);
+            return static_cast<UInt8>(0);
         }
     }
 };
 
-template <typename X = Float64, typename Y = Float64, typename Ret = UInt8>
+template <typename X = Float64, typename Y = Float64>
 class AggregateFunctionWelchTTest : public
                                     IAggregateFunctionDataHelper<
-                                        AggregateFunctionWelchTTestData<X, Y, Ret>,
-                                        AggregateFunctionWelchTTest<X, Y, Ret>
+                                        AggregateFunctionWelchTTestData<X, Y>,
+                                        AggregateFunctionWelchTTest<X, Y>
                                     >
 {
 
@@ -198,8 +198,8 @@ public:
         const  Array & params
     ):
         IAggregateFunctionDataHelper<
-            AggregateFunctionWelchTTestData<X, Y, Ret>,
-            AggregateFunctionWelchTTest<X, Y, Ret>
+            AggregateFunctionWelchTTestData<X, Y>,
+            AggregateFunctionWelchTTest<X, Y>
         > ({arguments}, params), significance_level(sglvl_)
     {
         // notice: arguments has been in factory
@@ -212,7 +212,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeNumber<Ret>>();
+        return std::make_shared<DataTypeNumber<UInt8>>();
     }
 
     void add(
@@ -265,11 +265,11 @@ public:
         Float64 sy = this->data(place).get_sy();
         Float64 t_value = this->data(place).get_T(sx, sy);
         Float64 dof = this->data(place).get_degrees_of_freed(sx, sy);
-        Ret result = this->data(place).get_result(t_value, dof, significance_level);
+        UInt8 result = this->data(place).get_result(t_value, dof, significance_level);
 
-        auto & column = static_cast<ColumnVector<Ret> &>(to);
+        auto & column = static_cast<ColumnVector<UInt8> &>(to);
         column.getData().push_back(result);
     }
 
 };
-};
+};  

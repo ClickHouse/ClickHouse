@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 
+// the return type is boolean (we use UInt8 as we do not have boolean in clickhouse)
+
 namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -17,13 +19,11 @@ namespace DB
 
 namespace
 {
-template <typename X = Float64, typename Y = Float64, typename Ret = UInt8>
-static IAggregateFunction * createWithExtraTypes(Float64 significance_level, const DataTypes & argument_types, const Array & parameters)
-{
-    return new AggregateFunctionWelchTTest<X, Y, Ret>(significance_level, argument_types, parameters);
-}
+//static IAggregateFunction * createWithExtraTypes(Float64 significance_level, const DataTypes & argument_types, const Array & parameters)
+//{
+//    return new AggregateFunctionWelchTTest<X, Y>(significance_level, argument_types, parameters);
+//}
 
-template <typename X = Float64, typename Y = Float64, typename Ret = UInt8>
 AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name,
                                                        const DataTypes & argument_types,
                                                        const Array & parameters)
@@ -38,17 +38,23 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name,
         significance_level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[0]);
     }
 
-    AggregateFunctionPtr res (createWithExtraTypes(significance_level, argument_types, parameters));
+    AggregateFunctionPtr res;
+    DataTypePtr data_type = argument_types[0];
+//    if (isDecimal(data_type))
+//        res.reset(createWithDecimalType<AggregateFunctionWelchTTest>(*data_type, significance_level, argument_types, parameters));
+//    else
+        res.reset(createWithNumericType<AggregateFunctionWelchTTest>(*data_type, significance_level, argument_types, parameters));
+
+    //AggregateFunctionPtr res (createWithExtraTypes(significance_level, argument_types, parameters));
     return res;
 }
 
 }
 
-template <typename X = Float64, typename Y = Float64, typename Ret = UInt8>
+
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory & factory)
 {
-
-    factory.registerFunction("WelchTTest", createAggregateFunctionWelchTTest<X, Y, Ret>);
+    factory.registerFunction("WelchTTest", createAggregateFunctionWelchTTest);
 }
 
 }
