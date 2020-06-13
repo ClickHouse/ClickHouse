@@ -12,6 +12,7 @@
 namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB
@@ -31,21 +32,24 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name,
     // default value
     Float64 significance_level = 0.1;
     if (parameters.size() > 1)
-        throw Exception("Aggregate function " + name + " requires one parameter or less.",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    {
+        throw Exception("Aggregate function " + name + " requires one parameter or less.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    }
+
     if (!parameters.empty())
     {
         significance_level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[0]);
     }
 
     AggregateFunctionPtr res;
-    DataTypePtr data_type = argument_types[0];
-//    if (isDecimal(data_type))
-//        res.reset(createWithDecimalType<AggregateFunctionWelchTTest>(*data_type, significance_level, argument_types, parameters));
-//    else
-        res.reset(createWithNumericType<AggregateFunctionWelchTTest>(*data_type, significance_level, argument_types, parameters));
 
-    //AggregateFunctionPtr res (createWithExtraTypes(significance_level, argument_types, parameters));
+    if (isDecimal(argument_types[0]) || isDecimal(argument_types[1]))
+    {
+        throw Exception("Aggregate function " + name + " does not support decimal types.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    res.reset(createWithTwoNumericTypes<AggregateFunctionWelchTTest>(*argument_types[0], *argument_types[1], significance_level, argument_types, parameters));
+
     return res;
 }
 
@@ -54,7 +58,7 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name,
 
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("WelchTTest", createAggregateFunctionWelchTTest);
+    factory.registerFunction("WelchTTest", createAggregateFunctionWelchTTest, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }
