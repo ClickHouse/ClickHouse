@@ -52,7 +52,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_LARGE_STRING_SIZE;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
