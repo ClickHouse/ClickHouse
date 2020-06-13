@@ -275,7 +275,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         const auto col = type_to_parse->createColumn();
         ReadBufferFromString in_buffer(src.get<String>());
-        type_to_parse->deserializeAsWholeText(*col, in_buffer, FormatSettings{});
+        try
+        {
+            type_to_parse->deserializeAsWholeText(*col, in_buffer, FormatSettings{});
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while converting '{}' to {}", src.get<String>(), type.getName()));
+            throw;
+        }
         if (!in_buffer.eof())
             throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String is too long for {}: {}", type.getName(), src.get<String>());
 
