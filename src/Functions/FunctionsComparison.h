@@ -817,6 +817,7 @@ private:
         const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count)
     {
         /// To compare something with const string, we cast constant to appropriate type and compare as usual.
+        /// It is ok to throw exception if value is not convertible.
         /// We should deal with possible overflows, e.g. toUInt8(1) = '257' should return false.
 
         const ColumnConst * left_const = checkAndGetColumnConstStringOrFixedString(col_left_untyped);
@@ -831,10 +832,11 @@ private:
         Field string_value = left_const ? left_const->getField() : right_const->getField();
         Field converted = convertFieldToType(string_value, *type_to_compare, type_string);
 
-        /// If not possible to convert, comparison yields to false.
+        /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
         if (converted.isNull())
         {
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 0);
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count,
+                std::is_same_v<Op<int, int>, NotEqualsOp<int, int>>);
         }
         else
         {
