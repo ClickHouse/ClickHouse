@@ -148,7 +148,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.get<UInt64>()));
     }
-    else if (type.isValueRepresentedByNumber())
+    else if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
         if (which_type.isUInt8()) return convertNumericType<UInt8>(src, type);
         if (which_type.isUInt16()) return convertNumericType<UInt16>(src, type);
@@ -163,9 +163,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal32> *>(&type)) return convertDecimalType(src, *ptype);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal64> *>(&type)) return convertDecimalType(src, *ptype);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal128> *>(&type)) return convertDecimalType(src, *ptype);
-
-        if (!which_type.isDateOrDateTime() && !which_type.isUUID() && !which_type.isEnum())
-            throw Exception{"Cannot convert field to type " + type.getName(), ErrorCodes::CANNOT_CONVERT_TYPE};
 
         if (which_type.isEnum() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
@@ -263,17 +260,29 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         return src;
     }
 
+    /// Conversion from string by parsing.
     if (src.getType() == Field::Types::String)
     {
-        const auto col = type.createColumn();
-        ReadBufferFromString buffer(src.get<String>());
-        type.deserializeAsTextEscaped(*col, buffer, FormatSettings{});
+        /// Promote data type to avoid overflows. Note that overflows in the largest data type are still possible.
+        const IDataType * type_to_parse = &type;
+        DataTypePtr holder;
 
-        return (*col)[0];
+        if (type.canBePromoted())
+        {
+            holder = type.promoteNumericType();
+            type_to_parse = holder.get();
+        }
+
+        const auto col = type_to_parse->createColumn();
+        ReadBufferFromString in_buffer(src.get<String>());
+        type_to_parse->deserializeAsWholeText(*col, in_buffer, FormatSettings{});
+        if (!in_buffer.eof())
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String is too long for {}: {}", type.getName(), src.get<String>());
+
+        Field parsed = (*col)[0];
+        return convertFieldToType(parsed, type, from_type_hint);
     }
 
-
-    // TODO (nemkov): should we attempt to parse value using or `type.deserializeAsTextEscaped()` type.deserializeAsTextEscaped() ?
     throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
         + Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
 }
