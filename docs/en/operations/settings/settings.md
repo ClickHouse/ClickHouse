@@ -821,6 +821,10 @@ ClickHouse supports the following algorithms of choosing replicas:
 -   [First or random](#load_balancing-first_or_random)
 -   [Round robin](#load_balancing-round_robin)
 
+See also:
+
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
+
 ### Random (by Default) {#load_balancing-random}
 
 ``` sql
@@ -1170,8 +1174,10 @@ Controls how fast errors in distributed tables are zeroed. If a replica is unava
 
 See also:
 
+-   [load\_balancing](#load_balancing-round_robin)
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
 
 ## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
 
@@ -1182,7 +1188,23 @@ Error count of each replica is capped at this value, preventing a single replica
 
 See also:
 
+-   [load\_balancing](#load_balancing-round_robin)
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
+
+## distributed\_replica\_max\_ignored\_errors {#settings-distributed_replica_max_ignored_errors}
+
+-   Type: unsigned int
+-   Default value: 0
+
+Number of errors that will be ignored while choosing replicas (according to `load_balancing` algorithm).
+
+See also:
+
+-   [load\_balancing](#load_balancing-round_robin)
+-   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
