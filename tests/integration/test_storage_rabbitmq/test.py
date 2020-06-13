@@ -33,7 +33,7 @@ def check_rabbitmq_is_available():
                           'exec',
                           '-i',
                           rabbitmq_id,
-                          'rabbitmqctl', 
+                          'rabbitmqctl',
                           'await_startup'),
                          stdout=subprocess.PIPE)
     p.communicate()
@@ -774,6 +774,7 @@ def test_rabbitmq_insert(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'insert',
                      rabbitmq_routing_key_list = 'insert1',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
@@ -784,10 +785,10 @@ def test_rabbitmq_insert(rabbitmq_cluster):
     consumer_connection = pika.BlockingConnection(parameters)
 
     consumer = consumer_connection.channel()
-    consumer.exchange_declare(exchange='clickhouse-exchange', exchange_type='fanout')
+    consumer.exchange_declare(exchange='insert_rabbitmq_direct', exchange_type='direct')
     result = consumer.queue_declare(queue='')
     queue_name = result.method.queue
-    consumer.queue_bind(exchange='clickhouse-exchange', queue=queue_name, routing_key='insert1')
+    consumer.queue_bind(exchange='insert_rabbitmq_direct', queue=queue_name, routing_key='insert1')
 
     values = []
     for i in range(50):
@@ -871,8 +872,9 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
             break
 
     instance.query('''
-        DROP TABLE test.consumer_many;
-        DROP TABLE test.view_many;
+        DROP TABLE IF EXISTS test.rabbitmq_many;
+        DROP TABLE IF EXISTS test.consumer_many;
+        DROP TABLE IF EXISTS test.view_many;
     ''')
 
     for thread in threads:
@@ -932,8 +934,9 @@ def test_rabbitmq_sharding_between_channels_and_queues_insert(rabbitmq_cluster):
             break
 
     instance.query('''
-        DROP TABLE test.consumer_sharding;
-        DROP TABLE test.view_sharding;
+        DROP TABLE IF EXISTS test.rabbitmq_sharding;
+        DROP TABLE IF EXISTS test.consumer_sharding;
+        DROP TABLE IF EXISTS test.view_sharding;
     ''')
 
     for thread in threads:
@@ -992,8 +995,9 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
             break
 
     instance.query('''
-        DROP TABLE test.consumer_overload;
-        DROP TABLE test.view_overload;
+        DROP TABLE IF EXISTS test.rabbitmq_overload;
+        DROP TABLE IF EXISTS test.consumer_overload;
+        DROP TABLE IF EXISTS test.view_overload;
     ''')
 
     for thread in threads:
@@ -1060,6 +1064,16 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
         if int(result) == messages_num * num_tables:
             break
 
+    for consumer_id in range(num_tables):
+        instance.query('''
+            DROP TABLE IF EXISTS test.direct_exchange_{0}_mv;
+            DROP TABLE IF EXISTS test.direct_exchange_{0};
+        '''.format(consumer_id))
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+    ''')
+
     assert int(result) == messages_num * num_tables, 'ClickHouse lost some messages: {}'.format(result)
 
 
@@ -1117,6 +1131,16 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
         time.sleep(1)
         if int(result) == messages_num * num_tables:
             break
+
+    for consumer_id in range(num_tables):
+        instance.query('''
+            DROP TABLE IF EXISTS test.fanout_exchange_{0};
+            DROP TABLE IF EXISTS test.fanout_exchange_{0}_mv;
+        '''.format(consumer_id))
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+    ''')
 
     assert int(result) == messages_num * num_tables, 'ClickHouse lost some messages: {}'.format(result)
 
@@ -1200,6 +1224,22 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
         time.sleep(1)
         if int(result) == messages_num * num_tables + messages_num * num_tables:
             break
+
+    for consumer_id in range(num_tables):
+        instance.query('''
+            DROP TABLE IF EXISTS test.topic_exchange_{0};
+            DROP TABLE IF EXISTS test.topic_exchange_{0}_mv;
+        '''.format(consumer_id))
+
+    for consumer_id in range(num_tables):
+        instance.query('''
+            DROP TABLE IF EXISTS test.topic_exchange_{0};
+            DROP TABLE IF EXISTS test.topic_exchange_{0}_mv;
+        '''.format(num_tables + consumer_id))
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+    ''')
 
     assert int(result) == messages_num * num_tables + messages_num * num_tables, 'ClickHouse lost some messages: {}'.format(result)
 
@@ -1370,6 +1410,12 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
 
     for thread in threads:
         thread.join()
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.bindings_1;
+        DROP TABLE IF EXISTS test.bindings_2;
+        DROP TABLE IF EXISTS test.destination;
+    ''')
 
     assert int(result) == messages_num * threads_num * 5 * 2, 'ClickHouse lost some messages: {}'.format(result)
 
