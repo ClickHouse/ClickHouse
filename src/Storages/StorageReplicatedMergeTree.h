@@ -425,16 +425,23 @@ private:
       * Call when merge_selecting_mutex is locked.
       * Returns false if any part is not in ZK.
       */
-    bool createLogEntryToMergeParts(
+    enum class CreateMergeEntryResult { Ok, MissingPart, LogUpdated, Other };
+
+    CreateMergeEntryResult createLogEntryToMergeParts(
         zkutil::ZooKeeperPtr & zookeeper,
         const DataPartsVector & parts,
         const String & merged_name,
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         bool force_ttl,
-        ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
+        ReplicatedMergeTreeLogEntryData * out_log_entry,
+        int32_t log_version);
 
-    bool createLogEntryToMutatePart(const IMergeTreeDataPart & part, Int64 mutation_version, int alter_version);
+    CreateMergeEntryResult createLogEntryToMutatePart(
+        const IMergeTreeDataPart & part,
+        Int64 mutation_version,
+        int32_t alter_version,
+        int32_t log_version);
 
     /// Exchange parts.
 
