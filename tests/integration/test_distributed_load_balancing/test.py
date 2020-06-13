@@ -112,3 +112,39 @@ def test_load_balancing_round_robin():
         unique_nodes.add(get_node(n1, settings={'load_balancing': 'round_robin'}))
     assert len(unique_nodes) == nodes, unique_nodes
     assert unique_nodes == set(['n1', 'n2', 'n3'])
+
+def test_distributed_replica_max_ignored_errors():
+    settings = {
+        'load_balancing': 'in_order',
+        'prefer_localhost_replica': 0,
+        'connect_timeout': 2,
+        'receive_timeout': 2,
+        'send_timeout': 2,
+        'idle_connection_timeout': 2,
+        'tcp_keep_alive_timeout': 2,
+
+        'distributed_replica_max_ignored_errors': 0,
+        'distributed_replica_error_half_life': 60,
+    }
+
+    # initiate connection (if started only this test)
+    n2.query('SELECT * FROM dist', settings=settings)
+    cluster.pause_container('n1')
+
+    # n1 paused -- skipping, and increment error_count for n1
+    # but the query succeeds, no need in query_and_get_error()
+    n2.query('SELECT * FROM dist', settings=settings)
+    # XXX: due to config reloading we need second time (sigh)
+    n2.query('SELECT * FROM dist', settings=settings)
+    # check error_count for n1
+    assert int(n2.query("""
+    SELECT errors_count FROM system.clusters
+    WHERE cluster = 'replicas_cluster' AND host_name = 'n1'
+    """, settings=settings)) == 1
+
+    cluster.unpause_container('n1')
+    # still n2
+    assert get_node(n2, settings=settings) == 'n2'
+    # now n1
+    settings['distributed_replica_max_ignored_errors'] = 1
+    assert get_node(n2, settings=settings) == 'n1'
