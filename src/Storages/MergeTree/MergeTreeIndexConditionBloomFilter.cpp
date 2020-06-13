@@ -56,10 +56,10 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
 
     if (const_column)
     {
-        for (size_t index = 0; index < hash_functions; ++index)
-            if (!bloom_filter->findHashWithSeed(const_column->getValue<UInt64>(), BloomFilterHash::bf_hash_seed[index]))
-                return false;
-        return true;
+        bool match_row = true;
+        for (size_t hash_index = 0; match_row && hash_index < hash_functions; ++hash_index)
+            match_row = bloom_filter->findHashWithSeed(const_column->getValue<UInt64>(), BloomFilterHash::bf_hash_seed[hash_index]);
+        return match_row;
     }
     else
     {
