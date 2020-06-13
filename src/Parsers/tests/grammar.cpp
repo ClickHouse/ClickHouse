@@ -139,7 +139,7 @@ int main(int, char **)
     expression              = lambda_op;
 
     auto paren_expr         = Sequence(lparen, expression_list, rparen);
-    auto function           = Tag(NodeType::Function, Sequence(identifier, paren_expr));
+    auto function           = Tag(NodeType::Function, Sequence(identifier, lparen, Optional(expression_list), rparen));
 
     simple_expression       = Alternative(literal, function, compound_identifier, asterisk, qualified_asterisk, paren_expr);
 
@@ -167,7 +167,7 @@ int main(int, char **)
             Optional(Sequence(limit, limit_expression))))
     ;
 
-    auto parser = select_query;
+    auto parser = expression_list;
 
     String query;
     ReadBufferFromFileDescriptor in(STDIN_FILENO);

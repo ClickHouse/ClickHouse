@@ -9,6 +9,13 @@ target_link_libraries(select_parser PRIVATE clickhouse_parsers)
 add_executable(create_parser create_parser.cpp ${SRCS})
 target_link_libraries(create_parser PRIVATE clickhouse_parsers)
 
+add_executable(grammar grammar.cpp ${SRCS})
+target_link_libraries(grammar PRIVATE clickhouse_parsers)
+
+add_executable(operator_parser operator_parser.cpp ${SRCS})
+target_link_libraries(operator_parser PRIVATE clickhouse_parsers)
+
+
 if (ENABLE_FUZZING)
     add_executable(lexer_fuzzer lexer_fuzzer.cpp ${SRCS})
     target_link_libraries(lexer_fuzzer PRIVATE clickhouse_parsers ${LIB_FUZZING_ENGINE})
