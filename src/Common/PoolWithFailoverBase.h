@@ -113,8 +113,6 @@ public:
             const GetPriorityFunc & get_priority = GetPriorityFunc(),
             bool fallback_to_stale_replicas = true);
 
-    void reportError(const Entry & entry);
-
 protected:
     struct PoolState;
 
@@ -293,22 +291,6 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 DB::ErrorCodes::ALL_REPLICAS_ARE_STALE);
 
     return try_results;
-}
-
-template <typename TNestedPool>
-void PoolWithFailoverBase<TNestedPool>::reportError(const Entry & entry)
-{
-    for (size_t i = 0; i < nested_pools.size(); ++i)
-    {
-        if (nested_pools[i]->contains(entry))
-        {
-            std::lock_guard lock(pool_states_mutex);
-            auto & pool_state = shared_pool_states[i];
-            pool_state.error_count = std::min(max_error_cap, pool_state.error_count + 1);
-            return;
-        }
-    }
-    throw DB::Exception("Can't find pool to report error", DB::ErrorCodes::LOGICAL_ERROR);
 }
 
 template <typename TNestedPool>
