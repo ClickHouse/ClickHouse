@@ -629,7 +629,8 @@ ColumnDependencies IStorage::getColumnDependencies(const NameSet & updated_colum
 
     if (hasRowsTTL())
     {
-        if (add_dependent_columns(getRowsTTL().expression, required_ttl_columns))
+        auto rows_expression = getRowsTTL().expression;
+        if (add_dependent_columns(rows_expression, required_ttl_columns))
         {
             /// Filter all columns, if rows TTL expression have to be recalculated.
             for (const auto & column : getColumns().getAllPhysical())
