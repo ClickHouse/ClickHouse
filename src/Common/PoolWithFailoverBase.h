@@ -111,7 +111,8 @@ public:
             size_t min_entries, size_t max_entries, size_t max_tries,
             const TryGetEntryFunc & try_get_entry,
             const GetPriorityFunc & get_priority = GetPriorityFunc(),
-            bool fallback_to_stale_replicas = true);
+            bool fallback_to_stale_replicas = true,
+            size_t max_ignored_errors = 0);
 
 protected:
     struct PoolState;
@@ -119,7 +120,7 @@ protected:
     using PoolStates = std::vector<PoolState>;
 
     /// This function returns a copy of pool states to avoid race conditions when modifying shared pool states.
-    PoolStates updatePoolStates();
+    PoolStates updatePoolStates(size_t max_ignored_errors);
     PoolStates getPoolStates() const;
 
     NestedPools nested_pools;
@@ -153,10 +154,11 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         size_t min_entries, size_t max_entries, size_t max_tries,
         const TryGetEntryFunc & try_get_entry,
         const GetPriorityFunc & get_priority,
-        bool fallback_to_stale_replicas)
+        bool fallback_to_stale_replicas,
+        size_t max_ignored_errors)
 {
     /// Update random numbers and error counts.
-    PoolStates pool_states = updatePoolStates();
+    PoolStates pool_states = updatePoolStates(max_ignored_errors);
     if (get_priority)
     {
         for (size_t i = 0; i < pool_states.size(); ++i)
@@ -317,7 +319,7 @@ private:
 
 template <typename TNestedPool>
 typename PoolWithFailoverBase<TNestedPool>::PoolStates
-PoolWithFailoverBase<TNestedPool>::updatePoolStates()
+PoolWithFailoverBase<TNestedPool>::updatePoolStates(size_t max_ignored_errors)
 {
     PoolStates result;
     result.reserve(nested_pools.size());
@@ -363,6 +365,11 @@ PoolWithFailoverBase<TNestedPool>::updatePoolStates()
 
         result.assign(shared_pool_states.begin(), shared_pool_states.end());
     }
+
+    /// distributed_replica_max_ignored_errors
+    for (auto & state : result)
+        state.error_count = std::max<UInt64>(0, state.error_count - max_ignored_errors);
+
     return result;
 }
 
