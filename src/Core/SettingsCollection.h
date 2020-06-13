@@ -231,6 +231,8 @@ enum class LoadBalancing
     /// if first replica one has higher number of errors,
     ///   pick a random one from replicas with minimum number of errors
     FIRST_OR_RANDOM,
+    // round robin across replicas with the same number of errors.
+    ROUND_ROBIN,
 };
 using SettingLoadBalancing = SettingEnum<LoadBalancing>;
 
