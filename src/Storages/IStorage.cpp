@@ -32,13 +32,13 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
 }
 
-ColumnsDescription IStorage::getColumns() const
+const ColumnsDescription & IStorage::getColumns() const
 {
     std::lock_guard lock(metadata_mutex);
     return metadata.columns;
 }
 
-IndicesDescription IStorage::getSecondaryIndices() const
+const IndicesDescription & IStorage::getSecondaryIndices() const
 {
     std::lock_guard lock(metadata_mutex);
     return metadata.secondary_indices;
@@ -51,7 +51,7 @@ bool IStorage::hasSecondaryIndices() const
     return !metadata.secondary_indices.empty();
 }
 
-ConstraintsDescription IStorage::getConstraints() const
+const ConstraintsDescription & IStorage::getConstraints() const
 {
     std::lock_guard lock(metadata_mutex);
     return metadata.constraints;

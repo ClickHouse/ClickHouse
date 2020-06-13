@@ -142,15 +142,15 @@ public:
     /// structure lock to get consistent metadata snapshot. This will be fixed
     /// soon. TODO(alesap)
 
-    ColumnsDescription getColumns() const; /// returns combined set of columns
+    const ColumnsDescription & getColumns() const; /// returns combined set of columns
     void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
 
     void setSecondaryIndices(IndicesDescription secondary_indices_);
-    IndicesDescription getSecondaryIndices() const;
+    const IndicesDescription & getSecondaryIndices() const;
     /// Has at least one non primary index
     bool hasSecondaryIndices() const;
 
-    ConstraintsDescription getConstraints() const;
+    const ConstraintsDescription & getConstraints() const;
     void setConstraints(ConstraintsDescription constraints_);
 
     /// Storage settings
