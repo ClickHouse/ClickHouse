@@ -34,26 +34,21 @@ namespace ErrorCodes
 
 const ColumnsDescription & IStorage::getColumns() const
 {
-    std::lock_guard lock(metadata_mutex);
     return metadata.columns;
 }
 
 const IndicesDescription & IStorage::getSecondaryIndices() const
 {
-    std::lock_guard lock(metadata_mutex);
     return metadata.secondary_indices;
 }
 
-
 bool IStorage::hasSecondaryIndices() const
 {
-    std::lock_guard lock(metadata_mutex);
     return !metadata.secondary_indices.empty();
 }
 
 const ConstraintsDescription & IStorage::getConstraints() const
 {
-    std::lock_guard lock(metadata_mutex);
     return metadata.constraints;
 }
 
@@ -294,7 +289,6 @@ void IStorage::check(const Block & block, bool need_all) const
 
 void IStorage::setColumns(ColumnsDescription columns_)
 {
-    std::lock_guard lock(metadata_mutex);
     if (columns_.getOrdinary().empty())
         throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
     metadata.columns = std::move(columns_);
@@ -302,13 +296,11 @@ void IStorage::setColumns(ColumnsDescription columns_)
 
 void IStorage::setSecondaryIndices(IndicesDescription secondary_indices_)
 {
-    std::lock_guard lock(metadata_mutex);
     metadata.secondary_indices = std::move(secondary_indices_);
 }
 
 void IStorage::setConstraints(ConstraintsDescription constraints_)
 {
-    std::lock_guard lock(metadata_mutex);
     metadata.constraints = std::move(constraints_);
 }
 
