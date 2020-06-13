@@ -41,7 +41,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         const bool bind_by_id_,
         const size_t num_queues_,
         const String & exchange_type_,
-        const String table_name_,
+        const String & local_exchange_name_,
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
         , consumer_channel(std::move(consumer_channel_))
@@ -54,7 +54,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , bind_by_id(bind_by_id_)
         , num_queues(num_queues_)
         , exchange_type(exchange_type_)
-        , table_name(table_name_)
+        , local_exchange_name(local_exchange_name_)
         , stopped(stopped_)
 {
     messages.clear();
@@ -85,28 +85,31 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 
 void ReadBufferFromRabbitMQConsumer::initExchange()
 {
-    /* If exchange_type is not set - then direct-exchange is used - this type of exchange is the fastest (also due to different
-     * binding algorithm this default behaviuor is much faster). It is also used in INSERT query (so it is always declared).
+    /* This direct-exchange is used for default implemenation and for INSERT query (so it is always declared). If exchange_type
+     * is not set, then there are only two exchanges - external, defined by the client, and local, unique for each table.
+     * This strict division to external and local exchanges is needed to avoid too much complexity with defining exchange_name
+     * for INSERT query producer and, in general, it is much better to distinguish them into separate ones.
      */
-    String producer_exchange = exchange_type_set ? exchange_name + "_" + Exchange::DEFAULT : exchange_name;
-    consumer_channel->declareExchange(producer_exchange, AMQP::fanout).onError([&](const char * message)
+    String default_exchange = exchange_type_set ? exchange_name + "_" + Exchange::DEFAULT : exchange_name;
+    consumer_channel->declareExchange(default_exchange, AMQP::fanout).onError([&](const char * message)
     {
-        internal_exchange_declared = false;
-        LOG_ERROR(log, "Failed to declare exchange: {}", message);
+        local_exchange_declared = false;
+        LOG_ERROR(log, "Failed to declare exchange {}. Reason: {}", default_exchange, message);
     });
 
-    internal_exchange_name = producer_exchange + "_" + Exchange::DIRECT;
-    consumer_channel->declareExchange(internal_exchange_name, AMQP::direct).onError([&](const char * message)
+    default_local_exchange = local_exchange_name;
+    default_local_exchange += exchange_type_set ? "_default_" + Exchange::DIRECT : "_" + Exchange::DIRECT;
+    consumer_channel->declareExchange(default_local_exchange, AMQP::direct).onError([&](const char * message)
     {
-        internal_exchange_declared = false;
-        LOG_ERROR(log, "Failed to declare exchange: {}", message);
+        local_exchange_declared = false;
+        LOG_ERROR(log, "Failed to declare exchange {}. Reason: {}", default_local_exchange, message);
     });
 
-    /// With fanout exchange the binding key is ignored - a parameter might be arbitrary
-    consumer_channel->bindExchange(producer_exchange, internal_exchange_name, routing_keys[0]).onError([&](const char * message)
+    /// With fanout exchange the binding key is ignored - a parameter might be arbitrary. All distribution lies on local_exchange.
+    consumer_channel->bindExchange(default_exchange, default_local_exchange, routing_keys[0]).onError([&](const char * message)
     {
-        internal_exchange_declared = false;
-        LOG_ERROR(log, "Failed to bind exchange: {}", message);
+        local_exchange_declared = false;
+        LOG_ERROR(log, "Failed to bind {} exchange to {} exchange. Reason: {}", default_exchange, default_local_exchange, message);
     });
 
     if (!exchange_type_set)
@@ -124,26 +127,29 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
     else throw Exception("Invalid exchange type", ErrorCodes::BAD_ARGUMENTS);
 
     /* Declare exchange of the specified type and bind it to hash-exchange, which will evenly distribute messages
-     * between all consumers. (This enables better scaling as without hash-exchange - the only option to avoid getting the same
-     * messages more than once - is having only one consumer with one queue, which is not good.)
+     * between all consumers. (This enables better scaling as without hash-exchange - the only option to avoid getting
+     * the same messages more than once - is having only one consumer with one queue, which is not good.)
      */
     consumer_channel->declareExchange(exchange_name, type).onError([&](const char * message)
     {
         local_exchange_declared = false;
-        LOG_ERROR(log, "Failed to declare {} exchange: {}", exchange_type, message);
+        LOG_ERROR(log, "Failed to declare client's {} exchange: {}", exchange_type, message);
     });
 
-    /// No need for declaring hash-exchange if there is only one consumer with one queue and exchange type is not hash
-    if (!bind_by_id && exchange_type != Exchange::HASH)
+    /// No need for declaring hash-exchange if there is only one consumer with one queue or exchange type is already hash
+    if (!bind_by_id)
         return;
 
     hash_exchange = true;
 
+    if (exchange_type == Exchange::HASH)
+        return;
+
     AMQP::Table exchange_arguments;
     exchange_arguments["hash-property"] = "message_id";
 
-    local_exchange_name = exchange_name + "_" + table_name;
-    consumer_channel->declareExchange(local_exchange_name, AMQP::consistent_hash, exchange_arguments)
+    String local_hash_exchange_name = local_exchange_name + "_hash";
+    consumer_channel->declareExchange(local_hash_exchange_name, AMQP::consistent_hash, exchange_arguments)
     .onError([&](const char * message)
     {
         local_exchange_declared = false;
@@ -152,7 +158,7 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
 
     for (auto & routing_key : routing_keys)
     {
-        consumer_channel->bindExchange(exchange_name, local_exchange_name, routing_key).onError([&](const char * message)
+        consumer_channel->bindExchange(exchange_name, local_hash_exchange_name, routing_key).onError([&](const char * message)
         {
             local_exchange_declared = false;
             LOG_ERROR(log, "Failed to bind {} exchange to {} exchange: {}", local_exchange_name, exchange_name, message);
@@ -164,19 +170,15 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
 void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
 {
     /// These variables might be updated later from a separate thread in onError callbacks.
-    if (!internal_exchange_declared || (exchange_type_set && !local_exchange_declared))
+    if (!local_exchange_declared || (exchange_type_set && !local_hash_exchange_declared))
     {
         initExchange();
         local_exchange_declared = true;
-        internal_exchange_declared = true;
+        local_hash_exchange_declared = true;
     }
 
-    /* Internal exchange is a default exchange (by implementstion, not by rabbitmq settings) and is used for INSERT query
-     * and if exchange_type is not set - there is no local exchange. If it is set - then local exchange is a distributor
-     * exchange, which is bound to the exchange specified by the client.
-     */
-    bool internal_bindings_created = false, internal_bindings_error = false;
-    bool local_bindings_created = false, local_bindings_error = false;
+    bool default_bindings_created = false, default_bindings_error = false;
+    bool bindings_created = false, bindings_error = false;
 
     consumer_channel->declareQueue(AMQP::exclusive)
     .onSuccess([&](const std::string &  queue_name_, int /* msgcount */, int /* consumercount */)
@@ -202,14 +204,14 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
             }
         }
 
-        consumer_channel->bindQueue(internal_exchange_name, queue_name_, binding_key)
+        consumer_channel->bindQueue(default_local_exchange, queue_name_, binding_key)
         .onSuccess([&]
         {
-            internal_bindings_created = true;
+            default_bindings_created = true;
         })
         .onError([&](const char * message)
         {
-            internal_bindings_error = true;
+            default_bindings_error = true;
             LOG_ERROR(log, "Failed to bind to key {}. Reason: {}", binding_key, message);
         });
 
@@ -223,17 +225,22 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
 
         if (exchange_type_set)
         {
-            /// If hash-exchange is used for messages distribution, then the binding key is ignored - can be arbitrary
             if (hash_exchange)
             {
-                consumer_channel->bindQueue(local_exchange_name, queue_name_, binding_key)
+                /* If exchange_type == hash, then bind directly to this client's exchange (because there is no need for a distributor
+                 * exchange as it is already hash-exchange), otherwise hash-exchange is a local distributor exchange.
+                 */
+                String hash_exchange_name = exchange_type == Exchange::HASH ? exchange_name : local_exchange_name + "_hash";
+
+                /// If hash-exchange is used for messages distribution, then the binding key is ignored - can be arbitrary
+                consumer_channel->bindQueue(hash_exchange_name, queue_name_, binding_key)
                 .onSuccess([&]
                 {
-                    local_bindings_created = true;
+                    bindings_created = true;
                 })
                 .onError([&](const char * message)
                 {
-                    local_bindings_error = true;
+                    bindings_error = true;
                     LOG_ERROR(log, "Failed to create queue binding to key {}. Reason: {}", binding_key, message);
                 });
             }
@@ -246,11 +253,11 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
                     consumer_channel->bindQueue(exchange_name, queue_name_, routing_key)
                     .onSuccess([&]
                     {
-                        local_bindings_created = true;
+                        bindings_created = true;
                     })
                     .onError([&](const char * message)
                     {
-                        local_bindings_error = true;
+                        bindings_error = true;
                         LOG_ERROR(log, "Failed to create queue binding to key {}. Reason: {}", routing_key, message);
                     });
                 }
@@ -259,7 +266,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
     })
     .onError([&](const char * message)
     {
-        internal_bindings_error = true;
+        default_bindings_error = true;
         LOG_ERROR(log, "Failed to declare queue on the channel: {}", message);
     });
 
@@ -267,8 +274,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
      * It is important at this moment to make sure that queue bindings are created before any publishing can happen because
      * otherwise messages will be routed nowhere.
      */
-    while (!internal_bindings_created && !internal_bindings_error
-            || (exchange_type_set && !local_bindings_created && !local_bindings_error))
+    while (!default_bindings_created && !default_bindings_error || (exchange_type_set && !bindings_created && !bindings_error))
     {
         startEventLoop(loop_started);
     }
