@@ -34,6 +34,9 @@ TTLAggregateDescription::TTLAggregateDescription(const TTLAggregateDescription &
 
 TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateDescription & other)
 {
+    if (&other == this)
+        return *this;
+
     column_name = other.column_name;
     expression_result_column_name = other.expression_result_column_name;
     if (other.expression)
