@@ -74,6 +74,7 @@ private:
 
     Names routing_keys;
     const String exchange_name;
+    String local_exchange_name;
 
     const String format_name;
     char row_delimiter;

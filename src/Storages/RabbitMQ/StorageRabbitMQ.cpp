@@ -104,6 +104,10 @@ StorageRabbitMQ::StorageRabbitMQ(
     task->deactivate();
 
     bind_by_id = num_consumers > 1 || num_queues > 1;
+
+    auto table_id = getStorageID();
+    String table_name = table_id.table_name;
+    local_exchange_name = exchange_name + "_" + table_name;
 }
 
 
@@ -214,17 +218,17 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 
     ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
 
-    auto table_id = getStorageID();
-    String table_name = table_id.getNameForLogs();
-
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer_channel, eventHandler, exchange_name, routing_keys,
-            next_channel_id, log, row_delimiter, bind_by_id, num_queues, exchange_type, table_name, stream_cancelled);
+            next_channel_id, log, row_delimiter, bind_by_id, num_queues, exchange_type, local_exchange_name, stream_cancelled);
 }
 
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
-    String producer_exchange = exchange_type == "default" ? exchange_name : exchange_name + "_default";
+    /* If exchange type is set, then there are different exchanges for external publishing and for INSERT query
+     * as in this case they are of different types.
+     */
+    String producer_exchange = exchange_type == "default" ? local_exchange_name : local_exchange_name + "_default";
 
     return std::make_shared<WriteBufferToRabbitMQProducer>(parsed_address, login_password, routing_keys[0], producer_exchange,
             log, num_consumers * num_queues, bind_by_id, use_transactional_channel,
