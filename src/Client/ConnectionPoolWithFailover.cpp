@@ -11,7 +11,6 @@
 
 #include <IO/ConnectionTimeouts.h>
 
-
 namespace ProfileEvents
 {
     extern const Event DistributedConnectionMissingTable;
@@ -70,6 +69,12 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
         break;
     case LoadBalancing::FIRST_OR_RANDOM:
         get_priority = [](size_t i) -> size_t { return i >= 1; };
+        break;
+    case LoadBalancing::ROUND_ROBIN:
+        if (last_used >= nested_pools.size())
+            last_used = 0;
+        ++last_used;
+        get_priority = [&](size_t i) { ++i; return i < last_used ? nested_pools.size() - i : i - last_used; };
         break;
     }
 
@@ -180,6 +185,12 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         break;
     case LoadBalancing::FIRST_OR_RANDOM:
         get_priority = [](size_t i) -> size_t { return i >= 1; };
+        break;
+    case LoadBalancing::ROUND_ROBIN:
+        if (last_used >= nested_pools.size())
+            last_used = 0;
+        ++last_used;
+        get_priority = [&](size_t i) { ++i; return i < last_used ? nested_pools.size() - i : i - last_used; };
         break;
     }
 
