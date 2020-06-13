@@ -1,0 +1,36 @@
+<yandex>
+    <remote_servers>
+        <replicas_cluster>
+            <shard>
+                <replica>
+                    <host>n1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </replicas_cluster>
+
+        <shards_cluster>
+            <node>
+                <host>n1</host>
+                <port>9000</port>
+            </node>
+            <node>
+                <host>n2</host>
+                <port>9000</port>
+            </node>
+            <node>
+                <host>n3</host>
+                <port>9000</port>
+            </node>
+        </shards_cluster>
+    </remote_servers>
+</yandex>
+
