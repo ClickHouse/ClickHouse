@@ -367,7 +367,7 @@ struct KeepFunctionMatcher
             return;
         }
 
-        if (!data.key_names_to_keep.contains(function_node->getColumnName()))
+        if (!data.key_names_to_keep.count(function_node->getColumnName()))
         {
             Visitor(data).visit(function_node->arguments);
         }
@@ -375,7 +375,7 @@ struct KeepFunctionMatcher
 
     static void visit(ASTIdentifier * ident, Data & data)
     {
-        if (!data.key_names_to_keep.contains(ident->shortName()))
+        if (!data.key_names_to_keep.count(ident->shortName()))
         {
             /// if variable of a function is not in GROUP BY keys, this function should not be deleted
             data.keep_key = true;
@@ -462,7 +462,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 
         if (auto * group_key_ident = group_key->as<ASTIdentifier>())
         {
-            if (key_names_to_keep.contains(group_key_ident->shortName()))
+            if (key_names_to_keep.count(group_key_ident->shortName()))
             {
                 ///There may be a collision between different tables having similar variables.
                 ///Due to the fact that we can't track these conflicts yet,
@@ -479,6 +479,10 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
             key_names_to_keep.insert(group_key_func->getColumnName());
             continue;
         }
+        else
+        {
+            key_names_to_keep.insert(group_key->getColumnName());
+        }
     }
     if (!need_optimization)
         return;
@@ -493,12 +497,21 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     {
         if (auto * group_key_func = group_key->as<ASTFunction>())
         {
-            if (key_names_to_keep.contains(group_key_func->getColumnName()))
+            if (key_names_to_keep.count(group_key_func->getColumnName()))
                 modified.push_back(group_key);
+
+            continue;
         }
         if (auto * group_key_ident = group_key->as<ASTIdentifier>())
         {
-            if (key_names_to_keep.contains(group_key_ident->shortName()))
+            if (key_names_to_keep.count(group_key_ident->shortName()))
+                modified.push_back(group_key);
+
+            continue;
+        }
+        else
+        {
+            if (key_names_to_keep.count(group_key->getColumnName()))
                 modified.push_back(group_key);
         }
     }
