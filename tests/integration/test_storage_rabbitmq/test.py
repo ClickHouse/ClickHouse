@@ -1420,6 +1420,103 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
     assert int(result) == messages_num * threads_num * 5 * 2, 'ClickHouse lost some messages: {}'.format(result)
 
 
+@pytest.mark.timeout(420)
+def test_rabbitmq_headers_exchange(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+        CREATE TABLE test.destination(key UInt64, value UInt64,
+            _consumed_by LowCardinality(String))
+        ENGINE = MergeTree()
+        ORDER BY key;
+    ''')
+
+    num_tables_to_receive = 3
+    for consumer_id in range(num_tables_to_receive):
+        print("Setting up table {}".format(consumer_id))
+        instance.query('''
+            DROP TABLE IF EXISTS test.headers_exchange_{0};
+            DROP TABLE IF EXISTS test.headers_exchange_{0}_mv;
+            CREATE TABLE test.headers_exchange_{0} (key UInt64, value UInt64)
+                ENGINE = RabbitMQ
+                SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_num_consumers = 4,
+                         rabbitmq_exchange_name = 'headers_exchange_testing',
+                         rabbitmq_exchange_type = 'headers',
+                         rabbitmq_routing_key_list = 'x-match=all,format=logs,type=report,year=2020',
+                         rabbitmq_format = 'JSONEachRow',
+                         rabbitmq_row_delimiter = '\\n';
+            CREATE MATERIALIZED VIEW test.headers_exchange_{0}_mv TO test.destination AS
+                SELECT key, value, '{0}' as _consumed_by FROM test.headers_exchange_{0};
+        '''.format(consumer_id))
+
+    num_tables_to_ignore = 2
+    for consumer_id in range(num_tables_to_ignore):
+        print("Setting up table {}".format(consumer_id + num_tables_to_receive))
+        instance.query('''
+            DROP TABLE IF EXISTS test.headers_exchange_{0};
+            DROP TABLE IF EXISTS test.headers_exchange_{0}_mv;
+            CREATE TABLE test.headers_exchange_{0} (key UInt64, value UInt64)
+                ENGINE = RabbitMQ
+                SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_exchange_name = 'headers_exchange_testing',
+                         rabbitmq_exchange_type = 'headers',
+                         rabbitmq_routing_key_list = 'x-match=all,format=logs,type=report,year=2019',
+                         rabbitmq_format = 'JSONEachRow',
+                         rabbitmq_row_delimiter = '\\n';
+            CREATE MATERIALIZED VIEW test.headers_exchange_{0}_mv TO test.destination AS
+                SELECT key, value, '{0}' as _consumed_by FROM test.headers_exchange_{0};
+        '''.format(consumer_id + num_tables_to_receive))
+
+    i = [0]
+    messages_num = 1000
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.exchange_declare(exchange='headers_exchange_testing', exchange_type='headers')
+
+    messages = []
+    for _ in range(messages_num):
+        messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+        i[0] += 1
+
+    fields={}
+    fields['format']='logs'
+    fields['type']='report'
+    fields['year']='2020'
+
+    key_num = 0
+    for message in messages:
+        channel.basic_publish(exchange='headers_exchange_testing', routing_key='',
+                properties=pika.BasicProperties(headers=fields), body=message)
+
+    connection.close()
+
+    while True:
+        result = instance.query('SELECT count() FROM test.destination')
+        time.sleep(1)
+        if int(result) == messages_num * num_tables_to_receive:
+            break
+
+    for consumer_id in range(num_tables_to_receive):
+        instance.query('''
+            DROP TABLE IF EXISTS test.direct_exchange_{0}_mv;
+            DROP TABLE IF EXISTS test.direct_exchange_{0};
+        '''.format(consumer_id))
+    for consumer_id in range(num_tables_to_ignore):
+        instance.query('''
+            DROP TABLE IF EXISTS test.direct_exchange_{0}_mv;
+            DROP TABLE IF EXISTS test.direct_exchange_{0};
+        '''.format(consumer_id + num_tables_to_receive))
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+    ''')
+
+    assert int(result) == messages_num * num_tables_to_receive, 'ClickHouse lost some messages: {}'.format(result)
+
+
 if __name__ == '__main__':
     cluster.start()
     raw_input("Cluster created, press any key to destroy...")

@@ -6,6 +6,7 @@
 #include <memory>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <boost/algorithm/string/split.hpp>
 #include <common/logger_useful.h>
 #include "Poco/Timer.h"
 #include <amqpcpp.h>
@@ -122,8 +123,7 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
     else if (exchange_type == Exchange::DIRECT)         type = AMQP::ExchangeType::direct;
     else if (exchange_type == Exchange::TOPIC)          type = AMQP::ExchangeType::topic;
     else if (exchange_type == Exchange::HASH)           type = AMQP::ExchangeType::consistent_hash;
-    else if (exchange_type == Exchange::HEADERS)
-            throw Exception("Headers exchange is not supported", ErrorCodes::BAD_ARGUMENTS);
+    else if (exchange_type == Exchange::HEADERS)        type = AMQP::ExchangeType::headers;
     else throw Exception("Invalid exchange type", ErrorCodes::BAD_ARGUMENTS);
 
     /* Declare exchange of the specified type and bind it to hash-exchange, which will evenly distribute messages
@@ -156,13 +156,36 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
         LOG_ERROR(log, "Failed to declare {} exchange: {}", exchange_type, message);
     });
 
-    for (auto & routing_key : routing_keys)
+    if (exchange_type == Exchange::HEADERS)
     {
-        consumer_channel->bindExchange(exchange_name, local_hash_exchange_name, routing_key).onError([&](const char * message)
+        AMQP::Table binding_arguments;
+        std::vector<String> matching;
+
+        for (auto & header : routing_keys)
+        {
+            boost::split(matching, header, [](char c){ return c == '='; });
+            binding_arguments[matching[0]] = matching[1];
+            matching.clear();
+        }
+
+        /// Routing key can be arbitrary here.
+        consumer_channel->bindExchange(exchange_name, local_hash_exchange_name, routing_keys[0], binding_arguments)
+        .onError([&](const char * message)
         {
             local_exchange_declared = false;
             LOG_ERROR(log, "Failed to bind {} exchange to {} exchange: {}", local_exchange_name, exchange_name, message);
         });
+    }
+    else
+    {
+        for (auto & routing_key : routing_keys)
+        {
+            consumer_channel->bindExchange(exchange_name, local_hash_exchange_name, routing_key).onError([&](const char * message)
+            {
+                local_exchange_declared = false;
+                LOG_ERROR(log, "Failed to bind {} exchange to {} exchange: {}", local_exchange_name, exchange_name, message);
+            });
+        }
     }
 }
 
@@ -232,7 +255,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
                  */
                 String hash_exchange_name = exchange_type == Exchange::HASH ? exchange_name : local_exchange_name + "_hash";
 
-                /// If hash-exchange is used for messages distribution, then the binding key is ignored - can be arbitrary
+                /// If hash-exchange is used for messages distribution, then the binding key is ignored - can be arbitrary.
                 consumer_channel->bindQueue(hash_exchange_name, queue_name_, binding_key)
                 .onSuccess([&]
                 {
@@ -242,6 +265,30 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
                 {
                     bindings_error = true;
                     LOG_ERROR(log, "Failed to create queue binding to key {}. Reason: {}", binding_key, message);
+                });
+            }
+            else if (exchange_type == Exchange::HEADERS)
+            {
+                AMQP::Table binding_arguments;
+                std::vector<String> matching;
+
+                /// It is not parsed for the second time - if it was parsed above, then it would go to the first if statement, not here.
+                for (auto & header : routing_keys)
+                {
+                    boost::split(matching, header, [](char c){ return c == '='; });
+                    binding_arguments[matching[0]] = matching[1];
+                    matching.clear();
+                }
+
+                consumer_channel->bindQueue(exchange_name, queue_name_, routing_keys[0], binding_arguments)
+                .onSuccess([&]
+                {
+                    bindings_created = true;
+                })
+                .onError([&](const char * message)
+                {
+                    bindings_error = true;
+                    LOG_ERROR(log, "Failed to create queue binding to key {}. Reason: {}", routing_keys[0], message);
                 });
             }
             else
