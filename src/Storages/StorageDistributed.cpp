@@ -33,6 +33,7 @@
 
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
@@ -46,6 +47,7 @@
 #include <Interpreters/getTableExpressions.h>
 
 #include <Core/Field.h>
+#include <Core/Settings.h>
 
 #include <IO/ReadHelpers.h>
 
