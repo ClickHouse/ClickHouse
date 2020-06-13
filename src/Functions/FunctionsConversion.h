@@ -145,6 +145,8 @@ struct ConvertImpl
                         vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
                     else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
                         vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
+                    else
+                        throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
                 }
                 else
                     vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
@@ -1110,6 +1112,8 @@ public:
         std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
         std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>;
 
+    static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
+
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertFromString>(); }
     static FunctionPtr create() { return std::make_shared<FunctionConvertFromString>(); }
 
@@ -1126,67 +1130,17 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if ((arguments.size() != 1 && arguments.size() != 2) || (to_decimal && arguments.size() != 2))
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size()) +
-                ", should be 1 or 2. Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (!isStringOrFixedString(arguments[0].type))
-        {
-            if (this->getName().find("OrZero") != std::string::npos ||
-                this->getName().find("OrNull") != std::string::npos)
-                throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() +
-                        ". Conversion functions with postfix 'OrZero' or 'OrNull'  should take String argument",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            else
-                throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        if (arguments.size() == 2)
-        {
-            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-            {
-                if (!isString(arguments[1].type))
-                    throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
-            else if constexpr (to_decimal)
-            {
-                if (!isInteger(arguments[1].type))
-                    throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-                if (!arguments[1].column)
-                    throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-            }
-            else
-            {
-                throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                    + toString(arguments.size()) + ", should be 1. Second argument makes sense only for DateTime and Decimal.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-            }
-        }
-
         DataTypePtr res;
-
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-            res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
-        else if constexpr (to_decimal)
+        if constexpr (to_datetime64)
         {
-            UInt64 scale = extractToDecimalScale(arguments[1]);
+            validateFunctionArgumentTypes(*this, arguments,
+                FunctionArgumentDescriptors{{"string", isStringOrFixedString, nullptr, "String or FixedString"}},
+                // optional
+                FunctionArgumentDescriptors{
+                    {"precision", isUInt8, isColumnConst, "const UInt8"},
+                    {"timezone", isStringOrFixedString, isColumnConst, "const String or FixedString"},
+                });
 
-            if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>>)
-                res = createDecimal<DataTypeDecimal>(9, scale);
-            else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>>)
-                res = createDecimal<DataTypeDecimal>(18, scale);
-            else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
-                res = createDecimal<DataTypeDecimal>(38, scale);
-
-            if (!res)
-                throw Exception("Someting wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);
-        }
-        else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-        {
             UInt64 scale = DataTypeDateTime64::default_scale;
             if (arguments.size() > 1)
                 scale = extractToDecimalScale(arguments[1]);
@@ -1194,7 +1148,67 @@ public:
             res = std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
         else
-            res = std::make_shared<ToDataType>();
+        {
+            if ((arguments.size() != 1 && arguments.size() != 2) || (to_decimal && arguments.size() != 2))
+                throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size()) +
+                    ", should be 1 or 2. Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+            if (!isStringOrFixedString(arguments[0].type))
+            {
+                if (this->getName().find("OrZero") != std::string::npos ||
+                    this->getName().find("OrNull") != std::string::npos)
+                    throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() +
+                            ". Conversion functions with postfix 'OrZero' or 'OrNull'  should take String argument",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                else
+                    throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
+
+            if (arguments.size() == 2)
+            {
+                if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+                {
+                    if (!isString(arguments[1].type))
+                        throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                }
+                else if constexpr (to_decimal)
+                {
+                    if (!isInteger(arguments[1].type))
+                        throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    if (!arguments[1].column)
+                        throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+                }
+                else
+                {
+                    throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                        + toString(arguments.size()) + ", should be 1. Second argument makes sense only for DateTime and Decimal.",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                }
+            }
+
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+                res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+            else if constexpr (to_decimal)
+            {
+                UInt64 scale = extractToDecimalScale(arguments[1]);
+
+                if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>>)
+                    res = createDecimal<DataTypeDecimal>(9, scale);
+                else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>>)
+                    res = createDecimal<DataTypeDecimal>(18, scale);
+                else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
+                    res = createDecimal<DataTypeDecimal>(38, scale);
+
+                if (!res)
+                    throw Exception("Someting wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);
+            }
+            else
+                res = std::make_shared<ToDataType>();
+        }
 
         if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
             res = std::make_shared<DataTypeNullable>(res);
@@ -1207,12 +1221,9 @@ public:
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         bool ok = true;
-        if constexpr (to_decimal || std::is_same_v<ToDataType, DataTypeDateTime64>)
+        if constexpr (to_decimal || to_datetime64)
         {
-            if (arguments.size() != 2)
-                throw Exception{"Function " + getName() + " expects 2 arguments for Decimal.", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
-
-            UInt32 scale = extractToDecimalScale(block.getByPosition(arguments[1]));
+            const UInt32 scale = assert_cast<const ToDataType &>(*removeNullable(block.getByPosition(result).type)).getScale();
 
             if (checkAndGetDataType<DataTypeString>(from_type))
             {
@@ -1241,7 +1252,6 @@ public:
             }
             else
                 ok = false;
-
         }
 
         if (!ok)
@@ -1251,7 +1261,6 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
-
 
 /** Conversion to fixed string is implemented only for strings.
   */

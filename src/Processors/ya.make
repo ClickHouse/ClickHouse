@@ -10,7 +10,9 @@ SRCS(
     Chunk.cpp
     ConcatProcessor.cpp
     DelayedPortsProcessor.cpp
+    Executors/PipelineExecutingBlockInputStream.cpp
     Executors/PipelineExecutor.cpp
+    Executors/PullingAsyncPipelineExecutor.cpp
     Executors/PullingPipelineExecutor.cpp
     Executors/TreeExecutorBlockInputStream.cpp
     ForkProcessor.cpp
@@ -57,6 +59,7 @@ SRCS(
     Formats/IRowOutputFormat.cpp
     Formats/LazyOutputFormat.cpp
     Formats/OutputStreamToOutputFormat.cpp
+    Formats/PullingOutputFormat.cpp
     Formats/RowInputFormatWithDiagnosticInfo.cpp
     IAccumulatingTransform.cpp
     IInflatingTransform.cpp
@@ -103,9 +106,11 @@ SRCS(
     Port.cpp
     QueryPipeline.cpp
     ResizeProcessor.cpp
+    Sources/DelayedSource.cpp
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
+    Sources/RemoteSource.cpp
     Transforms/AddingMissedTransform.cpp
     Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingTransform.cpp
@@ -131,6 +136,7 @@ SRCS(
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
+    Transforms/AggregatingInOrderTransform.cpp
 )
 
 END()

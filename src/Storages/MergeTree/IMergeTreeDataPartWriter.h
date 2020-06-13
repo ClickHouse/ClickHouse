@@ -136,7 +136,7 @@ protected:
     size_t next_mark = 0;
     size_t next_index_offset = 0;
 
-    /// Number of marsk in data from which skip indices have to start
+    /// Number of marks in data from which skip indices have to start
     /// aggregation. I.e. it's data mark number, not skip indices mark.
     size_t skip_index_data_mark = 0;
 

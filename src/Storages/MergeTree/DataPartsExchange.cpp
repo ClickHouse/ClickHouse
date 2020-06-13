@@ -82,13 +82,10 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     ++data.current_table_sends;
     SCOPE_EXIT({--data.current_table_sends;});
 
-    LOG_TRACE(log, "Sending part " << part_name);
+    LOG_TRACE(log, "Sending part {}", part_name);
 
     try
     {
-        auto storage_lock = data.lockStructureForShare(
-                false, RWLockImpl::NO_QUERY, data.getSettings()->lock_acquire_timeout_for_background_operations);
-
         MergeTreeData::DataPartPtr part = findPart(part_name);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};

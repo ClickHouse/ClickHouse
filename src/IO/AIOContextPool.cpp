@@ -98,7 +98,7 @@ void AIOContextPool::fulfillPromises(const io_event events[], const int num_even
         const auto it = promises.find(completed_id);
         if (it == std::end(promises))
         {
-            LOG_ERROR(&Poco::Logger::get("AIOcontextPool"), "Found io_event with unknown id " << completed_id);
+            LOG_ERROR(&Poco::Logger::get("AIOcontextPool"), "Found io_event with unknown id {}", completed_id);
             continue;
         }
 

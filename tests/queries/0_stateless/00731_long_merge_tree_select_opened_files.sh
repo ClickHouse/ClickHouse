@@ -14,9 +14,11 @@ $CLICKHOUSE_CLIENT $settings -n -q "
 DROP TABLE IF EXISTS merge_tree_table;
 CREATE TABLE merge_tree_table (id UInt64, date Date, uid UInt32) ENGINE = MergeTree(date, id, 8192);"
 
+
 $CLICKHOUSE_CLIENT $settings -q "INSERT INTO merge_tree_table SELECT (intHash64(number)) % 10000, toDate('2018-08-01'), rand() FROM system.numbers LIMIT 10000000;"
 
-$CLICKHOUSE_CLIENT $settings -q "OPTIMIZE TABLE merge_tree_table FINAL;"
+# If merge is already happening, OPTIMIZE will be noop. But we have to ensure that the data is merged.
+for i in {1..100}; do $CLICKHOUSE_CLIENT $settings --optimize_throw_if_noop=1 -q "OPTIMIZE TABLE merge_tree_table FINAL;" && break; sleep 1; done
 
 # The query may open more files if query log will be flushed during the query.
 # To lower this chance, we also flush logs before the query.

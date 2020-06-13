@@ -129,7 +129,7 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
 
 在Ubuntu上安装GCC，请执行：`sudo apt install gcc g++`
 
-请使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.tech/docs/en/development/build/\#install-gcc-9 。
+请使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.tech/docs/zh/development/build/#an-zhuang-gcc-9 。
 
 在Mac OS X上安装GCC，请执行：`brew install gcc`
 
@@ -234,7 +234,7 @@ ClickHouse的架构描述可以在此处查看：https://clickhouse.tech/docs/en
 
 编写测试用例：https://clickhouse.tech/docs/en/development/tests/
 
-任务列表：https://github.com/ClickHouse/ClickHouse/blob/master/tests/instructions/easy\_tasks\_sorted\_en.md
+任务列表：https://github.com/ClickHouse/ClickHouse/contribute
 
 # 测试数据 {#ce-shi-shu-ju}
 

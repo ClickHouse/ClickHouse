@@ -85,7 +85,7 @@ CacheDictionary::CacheDictionary(
     , update_queue_push_timeout_milliseconds(update_queue_push_timeout_milliseconds_)
     , query_wait_timeout_milliseconds(query_wait_timeout_milliseconds_)
     , max_threads_for_updates(max_threads_for_updates_)
-    , log(&Logger::get("ExternalDictionaries"))
+    , log(&Poco::Logger::get("ExternalDictionaries"))
     , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
     , cells{this->size}
@@ -768,8 +768,7 @@ void CacheDictionary::updateThreadFunction()
         const size_t current_queue_size = update_queue.size();
 
         if (current_queue_size > 0)
-            LOG_TRACE(log, "Performing bunch of keys update in cache dictionary with "
-                            << current_queue_size + 1 << " keys");
+            LOG_TRACE(log, "Performing bunch of keys update in cache dictionary with {} keys", current_queue_size + 1);
 
         std::vector<UpdateUnitPtr> update_request;
         update_request.reserve(current_queue_size + 1);
