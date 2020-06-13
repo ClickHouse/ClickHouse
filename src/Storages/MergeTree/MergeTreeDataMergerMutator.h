@@ -82,7 +82,6 @@ public:
         const AllowedMergingPredicate & can_merge,
         String * out_disable_reason = nullptr);
 
-
     /** Select all the parts in the specified partition for merge, if possible.
       * final - choose to merge even a single part - that is, allow to merge one part "with itself".
       */
