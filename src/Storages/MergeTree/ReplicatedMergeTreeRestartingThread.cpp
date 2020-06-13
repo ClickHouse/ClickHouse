@@ -234,7 +234,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
     auto zookeeper = storage.getZooKeeper();
 
     Strings failed_parts;
-    if (zookeeper->tryGetChildren(storage.zookeeper_path + "/quorum/failed_parts", failed_parts) != Coordination::ZOK)
+    if (zookeeper->tryGetChildren(storage.zookeeper_path + "/quorum/failed_parts", failed_parts) != Coordination::Error::ZOK)
         return;
 
     /// Firstly, remove parts from ZooKeeper
@@ -294,12 +294,12 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     {
         auto code = zookeeper->tryRemove(is_active_path, stat.version);
 
-        if (code == Coordination::ZBADVERSION)
+        if (code == Coordination::Error::ZBADVERSION)
             throw Exception("Another instance of replica " + storage.replica_path + " was created just now."
                 " You shouldn't run multiple instances of same replica. You need to check configuration files.",
                 ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
 
-        if (code && code != Coordination::ZNONODE)
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw Coordination::Exception(code, is_active_path);
     }
 
@@ -314,7 +314,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     }
     catch (const Coordination::Exception & e)
     {
-        if (e.code == Coordination::ZNODEEXISTS)
+        if (e.code == Coordination::Error::ZNODEEXISTS)
             throw Exception("Replica " + storage.replica_path + " appears to be already active. If you're sure it's not, "
                 "try again in a minute or remove znode " + storage.replica_path + "/is_active manually", ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
 

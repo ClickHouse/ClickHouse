@@ -121,7 +121,7 @@ private:
         {
             DB::tryLogCurrentException(log);
 
-            if (e.code == Coordination::ZSESSIONEXPIRED)
+            if (e.code == Coordination::Error::ZSESSIONEXPIRED)
                 return;
         }
         catch (...)
