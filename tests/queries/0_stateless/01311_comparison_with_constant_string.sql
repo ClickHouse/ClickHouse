@@ -14,6 +14,19 @@ SELECT '---';
 SELECT 1 = '1.0'; -- { serverError 131 }
 SELECT '---';
 
+SELECT 1 = '257';
+SELECT '---';
+SELECT 1 != '257';
+SELECT '---';
+SELECT 1 < '257'; -- this is wrong for now
+SELECT '---';
+SELECT 1 > '257';
+SELECT '---';
+SELECT 1 <= '257'; -- this is wrong for now
+SELECT '---';
+SELECT 1 >= '257';
+SELECT '---';
+
 SELECT toDateTime('2020-06-13 01:02:03') = '2020-06-13T01:02:03';
 SELECT '---';
 
