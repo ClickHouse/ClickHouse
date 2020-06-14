@@ -169,7 +169,7 @@ public:
     }
 
     void insertResultInto(
-        ConstAggregateDataPtr place,
+        AggregateDataPtr place,
         IColumn & to
     ) const override
     {

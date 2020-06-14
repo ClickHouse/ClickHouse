@@ -175,6 +175,41 @@ struct ToStartOfMinuteImpl
     using FactorTransform = ZeroTransform;
 };
 
+// Rounding towards negative infinity.
+// 1.01 => 1.00
+// -1.01 => -2
+struct ToStartOfSecondImpl
+{
+    static constexpr auto name = "toStartOfSecond";
+
+    static inline DateTime64 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl &)
+    {
+        auto fractional_with_sign = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(datetime64, scale_multiplier);
+
+        // given that scale is 3, scale_multiplier is 1000
+        // for DateTime64 value of 123.456:
+        // 123456 - 456 = 123000
+        // for DateTime64 value of -123.456:
+        // -123456 - (1000 + (-456)) = -124000
+
+        if (fractional_with_sign < 0)
+            fractional_with_sign += scale_multiplier;
+
+        return datetime64 - fractional_with_sign;
+    }
+
+    static inline UInt32 execute(UInt32, const DateLUTImpl &)
+    {
+        throw Exception("Illegal type DateTime of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToStartOfFiveMinuteImpl
 {
     static constexpr auto name = "toStartOfFiveMinute";

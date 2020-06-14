@@ -13,7 +13,7 @@
 namespace DB
 {
 
-TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
+TableJoin::TableJoin(const Settings & settings, VolumeJBODPtr tmp_volume_)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , default_max_bytes(settings.default_max_bytes_in_join)
     , join_use_nulls(settings.join_use_nulls)
@@ -27,6 +27,18 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
 {
     if (settings.partial_merge_join)
         join_algorithm = JoinAlgorithm::PREFER_PARTIAL_MERGE;
+}
+
+void TableJoin::resetCollected()
+{
+    key_names_left.clear();
+    key_names_right.clear();
+    key_asts_left.clear();
+    key_asts_right.clear();
+    columns_from_joined_table.clear();
+    columns_added_by_join.clear();
+    original_names.clear();
+    renames.clear();
 }
 
 void TableJoin::addUsingKey(const ASTPtr & ast)

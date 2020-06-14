@@ -166,6 +166,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
         throw Exception("Cannot compress, data size " + toString(source_size)
                         + " is not aligned to " + toString(sizeof(ValueType)), ErrorCodes::CANNOT_COMPRESS);
     const char * source_end = source + source_size;
+    const char * dest_start = dest;
 
     const UInt32 items_count = source_size / sizeof(ValueType);
     unalignedStore<UInt32>(dest, items_count);
@@ -229,7 +230,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     writer.flush();
 
-    return sizeof(items_count) + sizeof(prev_value) + sizeof(prev_delta) + writer.count() / 8;
+    return (dest - dest_start) + (writer.count() + 7) / 8;
 }
 
 template <typename ValueType>
@@ -237,7 +238,6 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;
-    using SignedDeltaType = typename std::make_signed<UnsignedDeltaType>::type;
 
     const char * source_end = source + source_size;
 
@@ -286,12 +286,13 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
         if (write_spec.data_bits != 0)
         {
             const UInt8 sign = reader.readBit();
-            SignedDeltaType signed_dd = static_cast<SignedDeltaType>(reader.readBits(write_spec.data_bits - 1) + 1);
+            double_delta = reader.readBits(write_spec.data_bits - 1) + 1;
             if (sign)
             {
-                signed_dd *= -1;
+                /// It's well defined for unsigned data types.
+                /// In constrast, it's undefined to do negation of the most negative signed number due to overflow.
+                double_delta = -double_delta;
             }
-            double_delta = static_cast<UnsignedDeltaType>(signed_dd);
         }
 
         const UnsignedDeltaType delta = double_delta + prev_delta;

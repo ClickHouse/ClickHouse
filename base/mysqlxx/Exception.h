@@ -48,6 +48,6 @@ std::string errorMessage(MYSQL * driver);
 
 /// For internal need of library.
 void checkError(MYSQL * driver);
-void onError(MYSQL * driver);
+[[noreturn]] void onError(MYSQL * driver);
 
 }

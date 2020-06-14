@@ -1,6 +1,4 @@
-<test>
-
-
+<test max_ignored_relative_change="0.3">
     <settings>
         <max_threads>1</max_threads>
     </settings>
@@ -9,7 +7,6 @@
         <substitution>
            <name>scale</name>
            <values>
-               <value>100000</value>
                <value>1000000</value>
            </values>
        </substitution>
@@ -31,4 +28,5 @@
     </create_query>
 
     <query>SELECT {func}(key, val) FROM sum_map_{scale} FORMAT Null</query>
+    <query>SELECT {func}((key, val)) FROM sum_map_{scale} FORMAT Null</query>
 </test>

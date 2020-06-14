@@ -1,14 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_folder_title: Ayarlar
 toc_priority: 55
 toc_title: "Giri\u015F"
 ---
 
-# Ayarlar {#settings}
+# Ayarlar {#session-settings-intro}
 
-Aşağıda açıklanan tüm ayarları yapmanın birden çok yolu vardır.
+Belgelerin bu bölümünde açıklanan tüm ayarları yapmanın birden çok yolu vardır.
+
 Ayarlar katmanlar halinde yapılandırılır, böylece sonraki her katman önceki ayarları yeniden tanımlar.
 
 Öncelik sırasına göre ayarları yapılandırma yolları:

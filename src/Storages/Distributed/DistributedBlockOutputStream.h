@@ -11,7 +11,6 @@
 #include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/Context.h>
 
 
 namespace Poco
@@ -22,6 +21,7 @@ namespace Poco
 namespace DB
 {
 
+class Context;
 class StorageDistributed;
 
 /** If insert_sync_ is true, the write is synchronous. Uses insert_timeout_ if it is not zero.
@@ -46,9 +46,7 @@ public:
     void writeSuffix() override;
 
 private:
-
-    IColumn::Selector createSelector(const Block & source_block);
-
+    IColumn::Selector createSelector(const Block & source_block) const;
 
     void writeAsync(const Block & block);
 

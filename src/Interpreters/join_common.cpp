@@ -16,8 +16,14 @@ namespace ErrorCodes
 namespace JoinCommon
 {
 
-void convertColumnToNullable(ColumnWithTypeAndName & column)
+void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability)
 {
+    if (low_card_nullability && column.type->lowCardinality())
+    {
+        column.column = recursiveRemoveLowCardinality(column.column);
+        column.type = recursiveRemoveLowCardinality(column.type);
+    }
+
     if (column.type->isNullable() || !column.type->canBeInsideNullable())
         return;
 
@@ -43,7 +49,7 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
     {
         const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column);
         ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
-        MutableColumnPtr mutable_column = (*std::move(nested_column)).mutate();
+        MutableColumnPtr mutable_column = IColumn::mutate(std::move(nested_column));
         column.column = std::move(mutable_column);
     }
 }

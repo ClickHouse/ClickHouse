@@ -11,9 +11,9 @@ CREATE TABLE IF NOT EXISTS decimal
     g Decimal(9, 3),
     h decimal(18, 9),
     i deciMAL(38, 18),
-    j dec(4,2),
-    k NumEriC(4, 23),
-    l numeric(3,9),
+    j dec(4, 2),
+    k NumEriC(23, 4),
+    l numeric(9, 3),
     m NUMEric(18, 9),
     n FixED(12, 6),
     o fixed(8, 6)

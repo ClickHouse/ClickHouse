@@ -23,9 +23,6 @@ public:
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     bool hasInnerTable() const { return has_inner_table; }
 
-    NameAndTypePair getColumn(const String & column_name) const override;
-    bool hasColumn(const String & column_name) const override;
-
     StorageInMemoryMetadata getInMemoryMetadata() const override;
 
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }

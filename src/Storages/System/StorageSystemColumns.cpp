@@ -12,6 +12,7 @@
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -132,9 +133,6 @@ protected:
 
             for (const auto & column : columns)
             {
-                if (column.is_virtual)
-                    continue;
-
                 if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 
@@ -303,14 +301,17 @@ Pipes StorageSystemColumns::read(
             const DatabasePtr database = databases.at(database_name);
             offsets[i] = i ? offsets[i - 1] : 0;
 
-            for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
+            for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
-                const String & table_name = iterator->name();
-                storages.emplace(std::piecewise_construct,
-                    std::forward_as_tuple(database_name, table_name),
-                    std::forward_as_tuple(iterator->table()));
-                table_column_mut->insert(table_name);
-                ++offsets[i];
+                if (const auto & table = iterator->table())
+                {
+                    const String & table_name = iterator->name();
+                    storages.emplace(std::piecewise_construct,
+                        std::forward_as_tuple(database_name, table_name),
+                        std::forward_as_tuple(table));
+                    table_column_mut->insert(table_name);
+                    ++offsets[i];
+                }
             }
         }
 
