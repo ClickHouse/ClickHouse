@@ -722,9 +722,9 @@ struct ConvertThroughParsing
                         parsed = ToDataType::tryReadText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
                     else
                         parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
-
-                    parsed = parsed && isAllRead(read_buffer);
                 }
+
+                parsed = parsed && isAllRead(read_buffer);
 
                 if (!parsed)
                     vec_to[i] = 0;
