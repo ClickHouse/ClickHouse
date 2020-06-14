@@ -34,7 +34,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TYPE_MISMATCH;
     extern const int TOO_LARGE_STRING_SIZE;
-    extern const int CANNOT_CONVERT_TYPE;
 }
 
 
