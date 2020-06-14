@@ -119,7 +119,8 @@ namespace ErrorCodes
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
-String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns) const
+String InterpreterSelectQuery::generateFilterActions(
+    ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns) const
 {
     const auto & db_name = table_id.getDatabaseName();
     const auto & table_name = table_id.getTableName();
@@ -511,8 +512,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             second_stage,
             options.only_analyze,
             filter_info,
-            source_header
-        );
+            source_header);
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
@@ -1073,7 +1073,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     {
         if (!settings.optimize_trivial_count_query || !syntax_analyzer_result->maybe_optimize_trivial_count || !storage
             || query.sampleSize() || query.sampleOffset() || query.final() || query.prewhere() || query.where() || query.groupBy()
-            || !query_analyzer->hasAggregation() || processing_stage != QueryProcessingStage::FetchColumns)
+            || filter_info || !query_analyzer->hasAggregation() || processing_stage != QueryProcessingStage::FetchColumns)
             return {};
 
         const AggregateDescriptions & aggregates = query_analyzer->aggregates();
