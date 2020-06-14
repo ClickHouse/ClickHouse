@@ -97,7 +97,7 @@ In the report you can find:
 
 -   Percentiles of queries execution time.
 
-## Comparison mode {#clickhouse-benchmark-comparison-mode}
+## Comparison Mode {#clickhouse-benchmark-comparison-mode}
 
 `clickhouse-benchmark` can compare performances for two running ClickHouse servers.
 

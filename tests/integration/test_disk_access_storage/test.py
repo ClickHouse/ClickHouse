@@ -39,7 +39,7 @@ def test_create():
 
     def check():
         assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1 SETTINGS PROFILE s1\n"
-        assert instance.query("SHOW CREATE USER u2") == "CREATE USER u2 HOST LOCAL DEFAULT ROLE rx\n"
+        assert instance.query("SHOW CREATE USER u2") == "CREATE USER u2 IDENTIFIED WITH sha256_password HOST LOCAL DEFAULT ROLE rx\n"
         assert instance.query("SHOW CREATE ROW POLICY p ON mydb.mytable") == "CREATE ROW POLICY p ON mydb.mytable FOR SELECT USING a < 1000 TO u1, u2\n"
         assert instance.query("SHOW CREATE QUOTA q") == "CREATE QUOTA q KEYED BY \\'none\\' FOR INTERVAL 1 HOUR MAX QUERIES 100 TO ALL EXCEPT rx\n"
         assert instance.query("SHOW GRANTS FOR u1") == ""
@@ -69,7 +69,7 @@ def test_alter():
 
     def check():
         assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1 SETTINGS PROFILE s1\n"
-        assert instance.query("SHOW CREATE USER u2") == "CREATE USER u2 HOST LOCAL DEFAULT ROLE ry\n"
+        assert instance.query("SHOW CREATE USER u2") == "CREATE USER u2 IDENTIFIED WITH sha256_password HOST LOCAL DEFAULT ROLE ry\n"
         assert instance.query("SHOW GRANTS FOR u1") == "GRANT SELECT ON mydb.mytable TO u1\n"
         assert instance.query("SHOW GRANTS FOR u2") == "GRANT rx, ry TO u2\n"
         assert instance.query("SHOW CREATE ROLE rx") == "CREATE ROLE rx SETTINGS PROFILE s2\n"
@@ -97,9 +97,9 @@ def test_drop():
     def check():
         assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1\n"
         assert instance.query("SHOW CREATE SETTINGS PROFILE s2") == "CREATE SETTINGS PROFILE s2\n"
-        assert "User `u2` not found" in instance.query_and_get_error("SHOW CREATE USER u2")
-        assert "Row policy `p ON mydb.mytable` not found" in instance.query_and_get_error("SHOW CREATE ROW POLICY p ON mydb.mytable")
-        assert "Quota `q` not found" in instance.query_and_get_error("SHOW CREATE QUOTA q")
+        assert "There is no user `u2`" in instance.query_and_get_error("SHOW CREATE USER u2")
+        assert "There is no row policy `p ON mydb.mytable`" in instance.query_and_get_error("SHOW CREATE ROW POLICY p ON mydb.mytable")
+        assert "There is no quota `q`" in instance.query_and_get_error("SHOW CREATE QUOTA q")
 
     check()
     instance.restart_clickhouse()  # Check persistency

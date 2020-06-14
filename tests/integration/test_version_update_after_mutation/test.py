@@ -6,9 +6,9 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', with_zookeeper=True, image='yandex/clickhouse-server:20.1.6.3', with_installed_binary=True, stay_alive=True)
-node2 = cluster.add_instance('node2', with_zookeeper=True, image='yandex/clickhouse-server:20.1.6.3', with_installed_binary=True, stay_alive=True)
-node3 = cluster.add_instance('node3', with_zookeeper=True, image='yandex/clickhouse-server:20.1.6.3', with_installed_binary=True, stay_alive=True)
+node1 = cluster.add_instance('node1', with_zookeeper=True, image='yandex/clickhouse-server:20.1.10.70', with_installed_binary=True, stay_alive=True)
+node2 = cluster.add_instance('node2', with_zookeeper=True, image='yandex/clickhouse-server:20.1.10.70', with_installed_binary=True, stay_alive=True)
+node3 = cluster.add_instance('node3', with_zookeeper=True, image='yandex/clickhouse-server:20.1.10.70', with_installed_binary=True, stay_alive=True)
 
 @pytest.fixture(scope="module")
 def start_cluster():

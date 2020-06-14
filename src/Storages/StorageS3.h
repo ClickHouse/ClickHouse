@@ -56,6 +56,8 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
+    NamesAndTypesList getVirtuals() const override;
+
 private:
     S3::URI uri;
     const Context & context_global;

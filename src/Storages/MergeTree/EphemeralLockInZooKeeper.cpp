@@ -104,14 +104,13 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
         lock_ops.push_back(zkutil::makeCheckRequest(block_numbers_path, partitions_stat.version));
 
         Coordination::Responses lock_responses;
-        int rc = zookeeper.tryMulti(lock_ops, lock_responses);
-        if (rc == Coordination::ZBADVERSION)
+        Coordination::Error rc = zookeeper.tryMulti(lock_ops, lock_responses);
+        if (rc == Coordination::Error::ZBADVERSION)
         {
-            LOG_TRACE(&Logger::get("EphemeralLocksInAllPartitions"),
-                "Someone has inserted a block in a new partition while we were creating locks. Retry.");
+            LOG_TRACE(&Poco::Logger::get("EphemeralLocksInAllPartitions"), "Someone has inserted a block in a new partition while we were creating locks. Retry.");
             continue;
         }
-        else if (rc != Coordination::ZOK)
+        else if (rc != Coordination::Error::ZOK)
             throw Coordination::Exception(rc);
 
         for (size_t i = 0; i < partitions.size(); ++i)

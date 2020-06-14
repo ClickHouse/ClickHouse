@@ -47,7 +47,8 @@ set(thriftcpp_threads_SOURCES
         )
 add_library(${THRIFT_LIBRARY} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
 set_target_properties(${THRIFT_LIBRARY} PROPERTIES CXX_STANDARD 14) # REMOVE after https://github.com/apache/thrift/pull/1641
-target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS})
+target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src)
+target_link_libraries (${THRIFT_LIBRARY} PRIVATE boost::headers_only)
 
 
 # === orc
@@ -83,7 +84,7 @@ add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
 set(FLATBUFFERS_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/flatbuffers)
 set(FLATBUFFERS_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/flatbuffers)
 set(FLATBUFFERS_INCLUDE_DIR ${FLATBUFFERS_SRC_DIR}/include)
-set(FLATBUFFERS_COMPILER "${FLATBUFFERS_BINARY_DIR}/flatc")
+set(FLATBUFFERS_COMPILER "$<TARGET_FILE:flatc>")
 
 # set flatbuffers CMake options
 if (${USE_STATIC_LIBRARIES})
@@ -146,7 +147,7 @@ add_custom_target(metadata_fbs DEPENDS ${FBS_OUTPUT_FILES})
 add_dependencies(metadata_fbs flatc)
 
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
-# Apple Clang compiler failed to compile this code without specifying c++11 standard. 
+# Apple Clang compiler failed to compile this code without specifying c++11 standard.
 # As result these compiler features detected as absent. In result it failed to compile orc itself.
 # In orc makefile there is code that sets flags, but arrow-cmake ignores these flags.
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
@@ -286,10 +287,6 @@ set(ARROW_SRCS ${ARROW_SRCS}
         ${LIBRARY_DIR}/compute/kernels/util_internal.cc
         )
 
-if (LZ4_INCLUDE_DIR AND LZ4_LIBRARY)
-    set(ARROW_WITH_LZ4 1)
-endif ()
-
 if (SNAPPY_INCLUDE_DIR AND SNAPPY_LIBRARY)
     set(ARROW_WITH_SNAPPY 1)
 endif ()
@@ -302,10 +299,8 @@ if (ZSTD_INCLUDE_DIR AND ZSTD_LIBRARY)
     set(ARROW_WITH_ZSTD 1)
 endif ()
 
-if (ARROW_WITH_LZ4)
-    add_definitions(-DARROW_WITH_LZ4)
-    SET(ARROW_SRCS ${LIBRARY_DIR}/util/compression_lz4.cc ${ARROW_SRCS})
-endif ()
+add_definitions(-DARROW_WITH_LZ4)
+SET(ARROW_SRCS ${LIBRARY_DIR}/util/compression_lz4.cc ${ARROW_SRCS})
 
 if (ARROW_WITH_SNAPPY)
     add_definitions(-DARROW_WITH_SNAPPY)
@@ -328,18 +323,15 @@ add_library(${ARROW_LIBRARY} ${ARROW_SRCS})
 # Arrow dependencies
 add_dependencies(${ARROW_LIBRARY} ${FLATBUFFERS_LIBRARY} metadata_fbs)
 
-target_link_libraries(${ARROW_LIBRARY} PRIVATE boost_system_internal boost_filesystem_internal boost_regex_internal)
-target_link_libraries(${ARROW_LIBRARY} PRIVATE ${FLATBUFFERS_LIBRARY})
+target_link_libraries(${ARROW_LIBRARY} PRIVATE ${FLATBUFFERS_LIBRARY} boost::filesystem)
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
     add_dependencies(${ARROW_LIBRARY} protoc)
 endif ()
 
-target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
+target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
 target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Protobuf_LIBRARY})
-if (ARROW_WITH_LZ4)
-    target_link_libraries(${ARROW_LIBRARY} PRIVATE ${LZ4_LIBRARY})
-endif ()
+target_link_libraries(${ARROW_LIBRARY} PRIVATE lz4)
 if (ARROW_WITH_SNAPPY)
     target_link_libraries(${ARROW_LIBRARY} PRIVATE ${SNAPPY_LIBRARY})
 endif ()
@@ -396,8 +388,7 @@ list(APPEND PARQUET_SRCS
 add_library(${PARQUET_LIBRARY} ${PARQUET_SRCS})
 target_include_directories(${PARQUET_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
 include(${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake) # makes config.h
-target_link_libraries(${PARQUET_LIBRARY} PUBLIC ${ARROW_LIBRARY} PRIVATE ${THRIFT_LIBRARY} ${Boost_REGEX_LIBRARY})
-target_include_directories(${PARQUET_LIBRARY} PRIVATE ${Boost_INCLUDE_DIRS})
+target_link_libraries(${PARQUET_LIBRARY} PUBLIC ${ARROW_LIBRARY} PRIVATE ${THRIFT_LIBRARY} boost::headers_only boost::regex)
 
 if (SANITIZE STREQUAL "undefined")
     target_compile_options(${PARQUET_LIBRARY} PRIVATE -fno-sanitize=undefined)

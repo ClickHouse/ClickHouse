@@ -1,10 +1,13 @@
+import concurrent.futures
 import hashlib
 import json
 import logging
 import os
 import shutil
 import subprocess
+import sys
 
+import bs4
 import closure
 import cssmin
 import htmlmin
@@ -12,6 +15,63 @@ import jinja2
 import jsmin
 
 import mdx_clickhouse
+
+
+def adjust_markdown_html(content):
+    soup = bs4.BeautifulSoup(
+        content,
+        features='html.parser'
+    )
+    for a in soup.find_all('a'):
+        a_class = a.attrs.get('class')
+        if a_class and 'headerlink' in a_class:
+            a.string = '\xa0'
+    for details in soup.find_all('details'):
+        for summary in details.find_all('summary'):
+            if summary.parent != details:
+                summary.extract()
+                details.insert(0, summary)
+    for div in soup.find_all('div'):
+        div_class = div.attrs.get('class')
+        is_admonition = div_class and 'admonition' in div.attrs.get('class')
+        if is_admonition:
+            for a in div.find_all('a'):
+                a_class = a.attrs.get('class')
+                if a_class:
+                    a.attrs['class'] = a_class + ['alert-link']
+                else:
+                    a.attrs['class'] = 'alert-link'
+        for p in div.find_all('p'):
+            p_class = p.attrs.get('class')
+            if is_admonition and p_class and ('admonition-title' in p_class):
+                p.attrs['class'] = p_class + ['alert-heading', 'display-6', 'mb-2']
+        if is_admonition:
+            div.attrs['role'] = 'alert'
+            if ('info' in div_class) or ('note' in div_class):
+                mode = 'alert-primary'
+            elif ('attention' in div_class) or ('warning' in div_class):
+                mode = 'alert-warning'
+            elif 'important' in div_class:
+                mode = 'alert-danger'
+            elif 'tip' in div_class:
+                mode = 'alert-info'
+            else:
+                mode = 'alert-secondary'
+            div.attrs['class'] = div_class + ['alert', 'pb-0', 'mb-4', mode]
+
+    return str(soup)
+
+
+def minify_html(content):
+    return htmlmin.minify(content,
+                          remove_comments=False,
+                          remove_empty_space=True,
+                          remove_all_empty_space=False,
+                          reduce_empty_attributes=True,
+                          reduce_boolean_attributes=False,
+                          remove_optional_attribute_quotes=True,
+                          convert_charrefs=False,
+                          keep_pre=True)
 
 
 def build_website(args):
@@ -40,6 +100,7 @@ def build_website(args):
             '*.md',
             '*.sh',
             '*.css',
+            '*.json',
             'js/*.js',
             'build',
             'docs',
@@ -82,14 +143,37 @@ def get_css_in(args):
 
 def get_js_in(args):
     return [
-        f"'{args.website_dir}/js/jquery-3.4.1.js'",
+        f"'{args.website_dir}/js/jquery.js'",
         f"'{args.website_dir}/js/popper.js'",
         f"'{args.website_dir}/js/bootstrap.js'",
+        f"'{args.website_dir}/js/sentry.js'",
         f"'{args.website_dir}/js/base.js'",
         f"'{args.website_dir}/js/index.js'",
         f"'{args.website_dir}/js/docsearch.js'",
         f"'{args.website_dir}/js/docs.js'"
     ]
+
+
+def minify_file(path, css_digest, js_digest):
+    if not (
+        path.endswith('.html') or
+        path.endswith('.css')
+    ):
+        return
+
+    logging.info('Minifying %s', path)
+    with open(path, 'rb') as f:
+        content = f.read().decode('utf-8')
+    if path.endswith('.html'):
+        content = minify_html(content)
+        content = content.replace('base.css?css_digest', f'base.css?{css_digest}')
+        content = content.replace('base.js?js_digest', f'base.js?{js_digest}')
+    elif path.endswith('.css'):
+        content = cssmin.cssmin(content)
+    elif path.endswith('.js'):
+        content = jsmin.jsmin(content)
+    with open(path, 'wb') as f:
+        f.write(content.encode('utf-8'))
 
 
 def minify_website(args):
@@ -120,6 +204,10 @@ def minify_website(args):
         logging.info(closure_args)
         if closure.run(*closure_args):
             raise RuntimeError('failed to run closure compiler')
+        with open(js_out, 'r') as f:
+            js_content = jsmin.jsmin(f.read())
+        with open(js_out, 'w') as f:
+            f.write(js_content)
 
     else:
         js_in = ' '.join(js_in)
@@ -133,28 +221,17 @@ def minify_website(args):
 
     if args.minify:
         logging.info('Minifying website')
-        for root, _, filenames in os.walk(args.output_dir):
-            for filename in filenames:
-                path = os.path.join(root, filename)
-                if not (
-                    filename.endswith('.html') or
-                    filename.endswith('.css')
-                ):
-                    continue
-
-                logging.info('Minifying %s', path)
-                with open(path, 'rb') as f:
-                    content = f.read().decode('utf-8')
-                if filename.endswith('.html'):
-                    content = htmlmin.minify(content, remove_empty_space=False)
-                    content = content.replace('base.css?css_digest', f'base.css?{css_digest}')
-                    content = content.replace('base.js?js_digest', f'base.js?{js_digest}')
-                elif filename.endswith('.css'):
-                    content = cssmin.cssmin(content)
-                elif filename.endswith('.js'):
-                    content = jsmin.jsmin(content)
-                with open(path, 'wb') as f:
-                    f.write(content.encode('utf-8'))
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = []
+            for root, _, filenames in os.walk(args.output_dir):
+                for filename in filenames:
+                    path = os.path.join(root, filename)
+                    futures.append(executor.submit(minify_file, path, css_digest, js_digest))
+            for future in futures:
+                exc = future.exception()
+                if exc:
+                    logging.error(exc)
+                    sys.exit(1)
 
 
 def process_benchmark_results(args):

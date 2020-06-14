@@ -17,6 +17,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
+#include <Interpreters/Context.h>
+
 
 namespace DB
 {
@@ -203,121 +205,32 @@ static void setGraphitePatternsFromConfig(const Context & context,
 }
 
 
-static String getMergeTreeVerboseHelp(bool is_extended_syntax)
+static String getMergeTreeVerboseHelp(bool)
 {
     using namespace std::string_literals;
 
     String help = R"(
 
-MergeTree is a family of storage engines.
+Syntax for the MergeTree table engine:
 
-MergeTrees are different in two ways:
-- they may be replicated and non-replicated;
-- they may do different actions on merge: nothing; sign collapse; sum; apply aggregete functions.
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    ...
+    INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
+    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2
+) ENGINE = MergeTree()
+ORDER BY expr
+[PARTITION BY expr]
+[PRIMARY KEY expr]
+[SAMPLE BY expr]
+[TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
+[SETTINGS name=value, ...]
 
-So we have 14 combinations:
-    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, GraphiteMergeTree, VersionedCollapsingMergeTree
-    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedGraphiteMergeTree, ReplicatedVersionedCollapsingMergeTree
+See details in documentation: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/. Other engines of the family support different syntax, see details in the corresponding documentation topics.
 
-In most of cases, you need MergeTree or ReplicatedMergeTree.
-
-For replicated merge trees, you need to supply a path in ZooKeeper and a replica name as the first two parameters.
-Path in ZooKeeper is like '/clickhouse/tables/01/' where /clickhouse/tables/ is a common prefix and 01 is a shard name.
-Replica name is like 'mtstat01-1' - it may be the hostname or any suitable string identifying replica.
-You may use macro substitutions for these parameters. It's like ReplicatedMergeTree('/clickhouse/tables/{shard}/', '{replica}'...
-Look at the <macros> section in server configuration file.
-)";
-
-    if (!is_extended_syntax)
-        help += R"(
-Next parameter (which is the first for unreplicated tables and the third for replicated tables) is the name of date column.
-Date column must exist in the table and have type Date (not DateTime).
-It is used for internal data partitioning and works like some kind of index.
-
-If your source data doesn't have a column of type Date, but has a DateTime column, you may add values for Date column while loading,
-    or you may INSERT your source data to a table of type Log and then transform it with INSERT INTO t SELECT toDate(time) AS date, * FROM ...
-If your source data doesn't have any date or time, you may just pass any constant for a date column while loading.
-
-Next parameter is optional sampling expression. Sampling expression is used to implement SAMPLE clause in query for approximate query execution.
-If you don't need approximate query execution, simply omit this parameter.
-Sample expression must be one of the elements of the primary key tuple. For example, if your primary key is (CounterID, EventDate, intHash64(UserID)), your sampling expression might be intHash64(UserID).
-
-Next parameter is the primary key tuple. It's like (CounterID, EventDate, intHash64(UserID)) - a list of column names or functional expressions in round brackets. If your primary key has just one element, you may omit round brackets.
-
-Careful choice of the primary key is extremely important for processing short-time queries.
-
-Next parameter is index (primary key) granularity. Good value is 8192. You have no reasons to use any other value.
-)";
-
-    help += R"(
-For the Collapsing mode, the )" + (is_extended_syntax ? "only"s : "last"s) + R"( parameter is the name of a sign column - a special column that is used to 'collapse' rows with the same primary key while merging.
-
-For the Summing mode, the optional )" + (is_extended_syntax ? ""s : "last "s) + R"(parameter is a list of columns to sum while merging. This list is passed in round brackets, like (PageViews, Cost).
-If this parameter is omitted, the storage will sum all numeric columns except columns participating in the primary key.
-
-For the Replacing mode, the optional )" + (is_extended_syntax ? ""s : "last "s) + R"(parameter is the name of a 'version' column. While merging, for all rows with the same primary key, only one row is selected: the last row, if the version column was not specified, or the last row with the maximum version value, if specified.
-
-For VersionedCollapsing mode, the )" + (is_extended_syntax ? ""s : "last "s) + R"(2 parameters are the name of a sign column and the name of a 'version' column. Version column must be in primary key. While merging, a pair of rows with the same primary key and different sign may collapse.
-)";
-
-    if (is_extended_syntax)
-        help += R"(
-You can specify a partitioning expression in the PARTITION BY clause. It is optional but highly recommended.
-A common partitioning expression is some function of the event date column e.g. PARTITION BY toYYYYMM(EventDate) will partition the table by month.
-Rows with different partition expression values are never merged together. That allows manipulating partitions with ALTER commands.
-Also it acts as a kind of index.
-
-Sorting key is specified in the ORDER BY clause. It is mandatory for all MergeTree types.
-It is like (CounterID, EventDate, intHash64(UserID)) - a list of column names or functional expressions
-in round brackets.
-If your sorting key has just one element, you may omit round brackets.
-
-By default primary key is equal to the sorting key. You can specify a primary key that is a prefix of the
-sorting key in the PRIMARY KEY clause.
-
-Careful choice of the primary key is extremely important for processing short-time queries.
-
-Optional sampling expression can be specified in the SAMPLE BY clause. It is used to implement the SAMPLE clause in a SELECT query for approximate query execution.
-Sampling expression must be one of the elements of the primary key tuple. For example, if your primary key is (CounterID, EventDate, intHash64(UserID)), your sampling expression might be intHash64(UserID).
-
-Engine settings can be specified in the SETTINGS clause. Full list is in the source code in the 'src/Storages/MergeTree/MergeTreeSettings.h' file.
-E.g. you can specify the index (primary key) granularity with SETTINGS index_granularity = 8192.
-
-Examples:
-
-MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate) SETTINGS index_granularity = 8192
-
-MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) SAMPLE BY intHash32(UserID)
-
-MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) PRIMARY KEY (CounterID, EventDate) SAMPLE BY intHash32(UserID)
-
-CollapsingMergeTree(Sign) PARTITION BY StartDate SAMPLE BY intHash32(UserID) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
-
-SummingMergeTree PARTITION BY toMonday(EventDate) ORDER BY (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo)
-
-SummingMergeTree((Shows, Clicks, Cost, CostCur, ShowsSumPosition, ClicksSumPosition, SessionNum, SessionLen, SessionCost, GoalsNum, SessionDepth)) PARTITION BY toYYYYMM(EventDate) ORDER BY (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo)
-
-ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}') PARTITION BY EventDate ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) SAMPLE BY intHash32(UserID)
-)";
-    else
-        help += R"(
-Examples:
-
-MergeTree(EventDate, (CounterID, EventDate), 8192)
-
-MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
-
-CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
-
-SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192)
-
-SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192, (Shows, Clicks, Cost, CostCur, ShowsSumPosition, ClicksSumPosition, SessionNum, SessionLen, SessionCost, GoalsNum, SessionDepth))
-
-ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
-)";
-
-    help += R"(
-For further info please read the documentation: https://clickhouse.yandex/
+If you use the Replicated version of engines, see https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/.
 )";
 
     return help;
@@ -604,9 +517,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
 
         if (args.query.columns_list && args.query.columns_list->indices)
-            for (const auto & index : args.query.columns_list->indices->children)
-                indices_description.indices.push_back(
-                    std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
+            for (auto & index : args.query.columns_list->indices->children)
+                indices_description.push_back(IndexDescription::getIndexFromAST(index, args.columns, args.context));
 
         storage_settings->loadFromQuery(*args.storage_def);
 

@@ -164,8 +164,9 @@ void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
 void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
 void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
 void registerInputFormatProcessorParquet(FormatFactory & factory);
-void registerInputFormatProcessorORC(FormatFactory & factory);
 void registerOutputFormatProcessorParquet(FormatFactory & factory);
+void registerInputFormatProcessorArrow(FormatFactory & factory);
+void registerOutputFormatProcessorArrow(FormatFactory & factory);
 void registerInputFormatProcessorProtobuf(FormatFactory & factory);
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
 void registerInputFormatProcessorAvro(FormatFactory & factory);
@@ -181,6 +182,7 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
 void registerFileSegmentationEngineCSV(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineRegexp(FormatFactory & factory);
+void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -203,5 +205,7 @@ void registerOutputFormatProcessorMarkdown(FormatFactory & factory);
 /// Input only formats.
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
 void registerInputFormatProcessorRegexp(FormatFactory & factory);
+void registerInputFormatProcessorJSONAsString(FormatFactory & factory);
+void registerInputFormatProcessorORC(FormatFactory & factory);
 
 }

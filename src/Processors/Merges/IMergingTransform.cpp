@@ -1,4 +1,5 @@
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/Transforms/SelectorInfo.h>
 
 namespace DB
 {
@@ -135,7 +136,6 @@ IProcessor::Status IMergingTransformBase::prepare()
 
     if (state.is_finished)
     {
-
         if (is_port_full)
             return Status::PortFull;
 
@@ -158,11 +158,11 @@ IProcessor::Status IMergingTransformBase::prepare()
             if (!input.hasData())
                 return Status::NeedData;
 
-            auto chunk = input.pull();
-            if (!chunk.hasRows() && !input.isFinished())
+            state.input_chunk = input.pull();
+            if (!state.input_chunk.hasRows() && !input.isFinished())
                 return Status::NeedData;
 
-            state.input_chunk = std::move(chunk);
+            state.has_input = true;
         }
 
         state.need_data = false;
@@ -173,5 +173,84 @@ IProcessor::Status IMergingTransformBase::prepare()
 
     return Status::Ready;
 }
+
+static void filterChunk(Chunk & chunk, size_t selector_position)
+{
+    if (!chunk.getChunkInfo())
+        throw Exception("IMergingTransformBase expected ChunkInfo for input chunk", ErrorCodes::LOGICAL_ERROR);
+
+    const auto * chunk_info = typeid_cast<const SelectorInfo *>(chunk.getChunkInfo().get());
+    if (!chunk_info)
+        throw Exception("IMergingTransformBase expected SelectorInfo for input chunk", ErrorCodes::LOGICAL_ERROR);
+
+    const auto & selector = chunk_info->selector;
+
+    IColumn::Filter filter;
+    filter.resize_fill(selector.size());
+
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+
+    size_t num_result_rows = 0;
+
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        if (selector[row] == selector_position)
+        {
+            ++num_result_rows;
+            filter[row] = 1;
+        }
+    }
+
+    for (auto & column : columns)
+        column = column->filter(filter, num_result_rows);
+
+    chunk.clear();
+    chunk.setColumns(std::move(columns), num_result_rows);
+}
+
+bool IMergingTransformBase::filterChunks()
+{
+    if (state.selector_position < 0)
+        return true;
+
+    bool has_empty_chunk = false;
+
+    if (!state.init_chunks.empty())
+    {
+        for (size_t i = 0; i < input_states.size(); ++i)
+        {
+            auto & chunk = state.init_chunks[i];
+            if (!chunk || input_states[i].is_filtered)
+                continue;
+
+            filterChunk(chunk, state.selector_position);
+
+            if (!chunk.hasRows())
+            {
+                chunk.clear();
+                has_empty_chunk = true;
+                input_states[i].is_initialized = false;
+                is_initialized = false;
+            }
+            else
+                input_states[i].is_filtered = true;
+        }
+    }
+
+    if (state.has_input)
+    {
+        filterChunk(state.input_chunk, state.selector_position);
+        if (!state.input_chunk.hasRows())
+        {
+            state.has_input = false;
+            state.need_data = true;
+            has_empty_chunk = true;
+        }
+    }
+
+    return !has_empty_chunk;
+}
+
 
 }

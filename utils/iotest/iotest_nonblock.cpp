@@ -47,7 +47,7 @@ int mainImpl(int argc, char ** argv)
 {
     using namespace DB;
 
-    const char * file_name = 0;
+    const char * file_name = nullptr;
     Mode mode = MODE_READ;
     UInt64 min_offset = 0;
     UInt64 max_offset = 0;
@@ -113,9 +113,9 @@ int mainImpl(int argc, char ** argv)
             polls[i].revents = 0;
             ++ops;
 
-            long rand_result1 = rng();
-            long rand_result2 = rng();
-            long rand_result3 = rng();
+            uint64_t rand_result1 = rng();
+            uint64_t rand_result2 = rng();
+            uint64_t rand_result3 = rng();
 
             size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
             size_t offset;

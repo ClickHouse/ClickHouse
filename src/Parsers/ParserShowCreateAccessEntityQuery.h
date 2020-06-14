@@ -6,7 +6,7 @@
 namespace DB
 {
 /** Parses queries like
-  * SHOW CREATE QUOTA [name | CURRENT]
+  * SHOW CREATE QUOTA [name]
   */
 class ParserShowCreateAccessEntityQuery : public IParserBase
 {
