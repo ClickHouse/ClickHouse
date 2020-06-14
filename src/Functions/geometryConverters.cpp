@@ -58,38 +58,6 @@ Parser makeParser(const ColumnWithTypeAndName & col)
     return Parser(std::move(casted));
 }
 
-class Float64RingSerializer {
-public:
-    Float64RingSerializer()
-        : offsets(ColumnUInt64::create())
-    {}
-
-    Float64RingSerializer(size_t n)
-        : offsets(ColumnUInt64::create(n))
-    {}
-
-    void add(const Float64Ring & ring)
-    {
-        size += ring.size();
-        offsets->insertValue(size);
-        for (const auto & point : ring)
-        {
-            pointSerializer.add(point);
-        }
-    }
-
-    ColumnPtr result()
-    {
-        return ColumnArray::create(pointSerializer.result(), std::move(offsets));
-    }
-
-private:
-    size_t size;
-    Float64PointSerializer pointSerializer;
-    ColumnUInt64::MutablePtr offsets;
-};
-
-
 }
 
 GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col)
