@@ -92,7 +92,8 @@ template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase
 {
 public:
-    explicit IParserColumnDeclaration(bool require_type_ = true) : require_type(require_type_)
+    explicit IParserColumnDeclaration(bool require_type_ = true, bool allow_null_modifiers_ = false)
+    : require_type(require_type_), allow_null_modifiers(allow_null_modifiers_)
     {
     }
 
@@ -104,6 +105,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     bool require_type = true;
+    bool allow_null_modifiers = false;
 };
 
 using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
@@ -126,8 +128,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserStringLiteral string_literal_parser;
     ParserCodec codec_parser;
     ParserExpression expression_parser;
-    ParserIdentifier null_parser;
-    ParserCompoundIdentifier not_null_parser;
 
     /// mandatory column name
     ASTPtr name;
@@ -139,8 +139,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
       */
     ASTPtr type;
     String default_specifier;
-    ASTPtr is_null;
-    ASTPtr is_not;
+    std::optional<bool> null_modifier;
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
@@ -169,19 +168,17 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
 
-    // Pos pos_before_null = pos;
-
-    if (s_not.check(pos, expected))
-        if (s_null.check(pos, expected))
+    if (type && allow_null_modifiers)
+    {
+        if (s_not.ignore(pos, expected))
         {
-            is_not = std::make_shared<ASTIdentifier>("NOT");
-            is_null = std::make_shared<ASTIdentifier>("NULL");
+            if (!s_null.ignore(pos, expected))
+                return false;
+            null_modifier.emplace(false);
         }
-        else
-            return false;
-    else
-        if (s_null.check(pos, expected))
-            is_null = std::make_shared<ASTIdentifier>("NULL");
+        else if (s_null.ignore(pos, expected))
+            null_modifier.emplace(true);
+    }
 
     if (s_comment.ignore(pos, expected))
     {
@@ -212,17 +209,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(type));
     }
 
-    if (is_null)
-    {
-        column_declaration->is_null = is_null;
-        column_declaration->children.push_back(std::move(is_null));
-    }
-
-    if (is_not)
-    {
-        column_declaration->is_not = is_not;
-        column_declaration->children.push_back(std::move(is_not));
-    }
+    column_declaration->null_modifier = null_modifier;
 
     if (default_expression)
     {
