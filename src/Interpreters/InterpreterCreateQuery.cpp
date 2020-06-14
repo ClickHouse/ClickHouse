@@ -287,28 +287,22 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
         DataTypePtr column_type = nullptr;
-        if (!col_decl.is_null && col_decl.is_not)
-            throw Exception{"Cant use NOT without NULL", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE};
 
         if (col_decl.type)
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
 
-            if (col_decl.is_not && col_decl.is_null)
+            if (col_decl.null_modifier)
             {
                 if (column_type->isNullable())
-                    throw Exception{"Cant use NOT NULL with Nullable", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE};
-            }
-            else if (col_decl.is_null && !col_decl.is_not)
-            {
-                if (column_type->isNullable())
-                    throw Exception{"Cant use NULL with Nullable", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE};
-                else
+                    throw Exception("Cant use [NOT] NULL modifier with Nullable type", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
+                if (*col_decl.null_modifier)
                     column_type = makeNullable(column_type);
             }
-
-            if (context.getSettingsRef().data_type_default_nullable && !column_type->isNullable() && !col_decl.is_not && !col_decl.is_null)
+            else if (context.getSettingsRef().data_type_default_nullable)
+            {
                 column_type = makeNullable(column_type);
+            }
 
             column_names_and_types.emplace_back(col_decl.name, column_type);
         }

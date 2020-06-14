@@ -18,18 +18,6 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->type);
     }
 
-    if (is_null)
-    {
-        res->is_null = is_null;
-        res->children.push_back(res->is_null);
-    }
-
-    if (is_not)
-    {
-        res->is_not = is_not;
-        res->children.push_back(res->is_not);
-    }
-
     if (default_expression)
     {
         res->default_expression = default_expression->clone();
@@ -73,16 +61,10 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
         type->formatImpl(settings, state, frame);
     }
 
-    if (is_not)
+    if (null_modifier)
     {
-        settings.ostr << ' ';
-        is_not->formatImpl(settings, state, frame);
-    }
-
-    if (is_null)
-    {
-        settings.ostr << ' ';
-        is_null->formatImpl(settings, state, frame);
+        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "")
+                      << (*null_modifier ? "" : "NOT ") << "NULL" << (settings.hilite ? hilite_none : "");
     }
 
     if (default_expression)
