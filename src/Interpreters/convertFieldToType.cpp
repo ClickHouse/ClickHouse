@@ -33,7 +33,6 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TYPE_MISMATCH;
-    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -284,7 +283,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             throw;
         }
         if (!in_buffer.eof())
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String is too long for {}: {}", type.getName(), src.get<String>());
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
 
         Field parsed = (*col)[0];
         return convertFieldToType(parsed, type, from_type_hint);
