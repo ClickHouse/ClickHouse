@@ -7,7 +7,7 @@
             <headers><XXX>xxx</XXX></headers>
             <url>/test_prometheus</url>
             <handler>
-                <type>replicas_status</type>
+                <type>prometheus</type>
                 <events>true</events>
                 <metrics>true</metrics>
                 <asynchronous_metrics>true</asynchronous_metrics>
