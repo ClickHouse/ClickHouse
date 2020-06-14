@@ -1,0 +1,37 @@
+<test>
+
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+
+
+    <substitutions>
+        <substitution>
+           <name>func</name>
+           <values>
+               <value>protocol</value>
+               <value>domain</value>
+               <value>domainWithoutWWW</value>
+               <value>topLevelDomain</value>
+               <value>firstSignificantSubdomain</value>
+               <value>cutToFirstSignificantSubdomain</value>
+               <value>path</value>
+               <value>pathFull</value>
+               <value>queryString</value>
+               <value>fragment</value>
+               <value>queryStringAndFragment</value>
+               <value>extractURLParameters</value>
+               <value>extractURLParameterNames</value>
+               <value>URLHierarchy</value>
+               <value>URLPathHierarchy</value>
+               <value>decodeURLComponent</value>
+               <value>cutWWW</value>
+               <value>cutQueryString</value>
+               <value>cutQueryStringAndFragment</value>
+           </values>
+       </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore({func}(URL))</query>
+</test>

@@ -1,7 +1,12 @@
-<div dir="rtl" markdown="1">
-# ODBC درایور
+---
+machine_translated: true
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_priority: 23
+toc_title: ODBC Driver
+---
 
-درایور رسمی ODBC برای ClickHouse وجود دارد. برای اطلاعات بیشتر [اینجا](https://github.com/ClickHouse/clickhouse-odbc) را ببینید.
+# ODBC Driver {#odbc-driver}
 
-</div>
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/odbc/) <!--hide-->
+-   [راننده رسمی](https://github.com/ClickHouse/clickhouse-odbc).
+
+[مقاله اصلی](https://clickhouse.tech/docs/en/interfaces/odbc/) <!--hide-->

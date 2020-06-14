@@ -1,40 +1,46 @@
-<div dir="rtl" markdown="1">
-# سرورهای پروکسی از توسعه دهندگان شخص ثالث
+---
+machine_translated: true
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_priority: 29
+toc_title: "\u067E\u0631\u0627\u06A9\u0633\u06CC \u0647\u0627"
+---
 
-[chproxy](https://github.com/Vertamedia/chproxy)، یک پراکسی HTTP و تعادل بار برای پایگاه داده ClickHouse است.
+# سرور های پروکسی از توسعه دهندگان شخص ثالث {#proxy-servers-from-third-party-developers}
 
-امکانات
+## لوسیون صورت {#chproxy}
 
-* مسیریابی و پاسخ دهی کاربر به کاربر.
-* محدودیت انعطاف پذیر
-* تمدید SSL cerificate به صورت خودکار.
+[لوسیون صورت](https://github.com/Vertamedia/chproxy), یک پروکسی قام است و متعادل کننده بار برای پایگاه داده کلیک.
 
-اجرا شده در برو
+ویژگی ها:
 
-## KittenHouse
+-   هر کاربر مسیریابی و ذخیره پاسخ.
+-   محدودیت های انعطاف پذیر.
+-   تمدید گواهی اس اس ال به صورت خودکار.
 
-[KittenHouse](https://github.com/VKCOM/kittenhouse) طراحی شده است که یک پروکسی محلی بین ClickHouse و سرور برنامه باشد در صورتی که غیر ممکن است یا ناخوشایند بافر کردن اطلاعات INSERT در قسمت درخواست شما.
+اجرا در بروید.
 
-امکانات:
+## خانه کوچک {#kittenhouse}
 
-* بافر حافظه در حافظه و درایو.
-* مسیریابی در جدول
-* تعادل بار و بررسی سلامت.
+[خانه کوچک](https://github.com/VKCOM/kittenhouse) طراحی شده است که یک پروکسی محلی بین کلاینت و سرور نرم افزار در صورتی که غیر ممکن است و یا ناخوشایند به بافر قرار دادن داده ها در سمت نرم افزار خود را.
 
-اجرا شده در برو
+ویژگی ها:
 
-## ClickHouse-Bulk
+-   در حافظه و بر روی دیسک بافر داده.
+-   در هر جدول مسیریابی.
+-   متعادل کننده بار و چک کردن سلامت.
 
-[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk) یک ClickHouse جمع کننده ساده است.
+اجرا در بروید.
 
-امکانات:
+## کلیک-فله {#clickhouse-bulk}
 
-* درخواست گروهی و ارسال توسط آستانه یا فاصله.
-* چند سرور از راه دور
-* احراز هویت پایه
+[کلیک-فله](https://github.com/nikepan/clickhouse-bulk) یک جمع درج کلیک ساده است.
 
-اجرا شده در برو
+ویژگی ها:
 
-</div>
+-   درخواست گروه و ارسال شده توسط حد و یا فاصله.
+-   چندین سرور از راه دور.
+-   احراز هویت عمومی.
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/third-party/proxy/) <!--hide-->
+اجرا در بروید.
+
+[مقاله اصلی](https://clickhouse.tech/docs/en/interfaces/third-party/proxy/) <!--hide-->

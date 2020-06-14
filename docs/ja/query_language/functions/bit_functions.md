@@ -1,1 +1,0 @@
-../../../en/query_language/functions/bit_functions.md

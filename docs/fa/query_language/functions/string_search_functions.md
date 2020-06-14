@@ -1,1 +1,0 @@
-../../../en/query_language/functions/string_search_functions.md

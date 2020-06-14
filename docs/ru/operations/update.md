@@ -1,8 +1,8 @@
-# Обновление ClickHouse
+# Обновление ClickHouse {#obnovlenie-clickhouse}
 
 Если ClickHouse установлен с помощью deb-пакетов, выполните следующие команды на сервере:
 
-```bash
+``` bash
 $ sudo apt-get update
 $ sudo apt-get install clickhouse-client clickhouse-server
 $ sudo service clickhouse-server restart

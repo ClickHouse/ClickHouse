@@ -1,0 +1,23 @@
+Columns:
+a
+Column types:
+a BIGINT
+Result:
+0
+1
+Columns:
+name
+a
+Column types:
+name CHAR
+a TINYINT
+Result:
+tables 1
+Columns:
+a
+b
+Column types:
+a CHAR
+b TINYINT
+Result:
+тест 1

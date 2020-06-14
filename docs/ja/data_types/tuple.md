@@ -1,1 +1,0 @@
-../../en/data_types/tuple.md

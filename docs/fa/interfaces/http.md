@@ -1,31 +1,40 @@
-<div dir="rtl" markdown="1">
+---
+machine_translated: true
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_priority: 19
+toc_title: "\u0631\u0627\u0628\u0637 \u0642\u0627\u0645"
+---
 
-# HTTP interface
+# رابط قام {#http-interface}
 
-HTTP interface به شما امکان استفاده از ClickHouse در هر پلتفرم با هر زمان برنامه نویسی را می دهد. ما از این Interface برای زبان های Java و Perl به مانند shell استفاده می کنیم. در دیگر دپارتمان ها، HTTP interface در Perl، Python، و Go استفاده می شود. HTTP Interface محدود تر از native interface می باشد، اما سازگاری بهتری دارد.
+رابط اچ تی پی به شما امکان استفاده از کلیک بر روی هر پلت فرم از هر زبان برنامه نویسی. ما برای کار از جاوا و پرل و همچنین اسکریپت های پوسته استفاده می کنیم. در بخش های دیگر, رابط قام است از پرل استفاده, پایتون, و رفتن. رابط قام محدود تر از رابط بومی است, اما سازگاری بهتر.
 
-به صورت پیش فرض، clickhouse-server به پرت 8123 در HTTP گوش می دهد. (میتونه در کانفیگ فایل تغییر پیدا کنه). اگر شما یک درخواست GET / بدون پارامتر بسازید، رشته ی "Ok." رو دریافت می کنید (به همراه line feed در انتها). شما می توانید از این درخواست برای اسکریپت های health-check استفاده کنید.
+به طور پیش فرض, کلیک سرور گوش برای اچ تی پی در بندر 8123 (این را می توان در پیکربندی تغییر).
 
-</div>
+اگر شما یک دریافت / درخواست بدون پارامتر, باز می گردد 200 کد پاسخ و رشته که در تعریف [نقلقولهای جدید از این نویسنده](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) مقدار پیشفرض “Ok.” (با خوراک خط در پایان)
 
-```bash
+``` bash
 $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-<div dir="rtl" markdown="1">
+استفاده از دریافت / درخواست پینگ در بهداشت و درمان چک اسکریپت. این کنترل همیشه باز می گردد “Ok.” (با یک خوراک خط در پایان). موجود از نسخه 18.12.13.
 
-درخواست های خود را پارامتر 'query'، یا با متد POST، یا ابتدای query را در پارامتر 'query' ارسال کنید، و بقیه را در POST (بعدا توضیح خواهیم داد که چرا این کار ضروری است). سایت URL محدود به 16 کیلوبایت است، پس هنگام ارسال query های بزرگ، اینو به خاطر داشته باشید
+``` bash
+$ curl 'http://localhost:8123/ping'
+Ok.
+```
 
-اگر درخواست موفق آمیز باشد، استاتوس کد 200 را دریافت می کنید و نتایج در بدنه response می باشد. اگر اروری رخ دهد، استاتوس کد 500 را دریافت می کنید و توضیحات ارور در بدنه ی reponse قرار می گیرد.
+ارسال درخواست به عنوان نشانی وب ‘query’ پارامتر, و یا به عنوان یک پست. و یا ارسال ابتدای پرس و جو در ‘query’ پارامتر, و بقیه در پست (بعدا توضیح خواهیم داد که چرا این لازم است). اندازه نشانی اینترنتی محدود به 16 کیلوبایت است بنابراین این را در نظر داشته باشید در هنگام ارسال نمایش داده شد بزرگ.
 
-در هنگام استفاده از متد GET، 'readonly' ست می شود. به عبارت دیگر، برای query هایی که قصد تغییر دیتا را دارند، شما فقط از طریق متد POST می توانید این تغییرات را انجام دهید. شما میتونید query رو در بدنه ی POST یه یا به عنوان پارامتر های URL ارسال کنید.
+اگر موفق, شما دریافت 200 کد پاسخ و در نتیجه در بدن پاسخ.
+اگر یک خطا رخ می دهد, شما در دریافت 500 کد پاسخ و یک متن شرح خطا در بدن پاسخ.
 
-مثال:
+هنگام استفاده از روش دریافت, ‘readonly’ قرار است. به عبارت دیگر برای نمایش داده شد که تغییر داده ها شما فقط می توانید با استفاده از روش پست. شما می توانید پرس و جو خود را در قسمت پست یا در پارامتر نشانی وب ارسال کنید.
 
-</div>
+مثالها:
 
-```bash
+``` bash
 $ curl 'http://localhost:8123/?query=SELECT%201'
 1
 
@@ -34,19 +43,20 @@ $ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
 
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
 HTTP/1.0 200 OK
+Date: Wed, 27 Nov 2019 10:30:18 GMT
 Connection: Close
-Date: Fri, 16 Nov 2012 19:21:50 GMT
+Content-Type: text/tab-separated-values; charset=UTF-8
+X-ClickHouse-Server-Display-Name: clickhouse.ru-central1.internal
+X-ClickHouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
 
 1
 ```
 
-<div dir="rtl" markdown="1">
+همانطور که می بینید, حلقه تا حدودی ناخوشایند است که در فضاهای باید نشانی اینترنتی فرار.
+اگر چه سازمان تجارت جهانی از همه چیز خود فرار می کند ما توصیه نمی کنیم از این استفاده کنیم زیرا هنگام استفاده از زنده ماندن و انتقال رمزگذاری به خوبی کار نمی کند 1.1.
 
-همانطور که می بینید،  curl is somewhat inconvenient in that spaces must be URL escaped. هر چند wget همه چیز را خودش escape می کنه، ما توصیه به استفاده از اون رو نمی کنیم، چون wget به خوبی با HTTP 1.1 در هنگام استفاده از هدر های keep-alive و Transfer-Encoding: chunked کار نمی کند.
-
-</div>
-
-```bash
+``` bash
 $ echo 'SELECT 1' | curl 'http://localhost:8123/' --data-binary @-
 1
 
@@ -57,26 +67,20 @@ $ echo '1' | curl 'http://localhost:8123/?query=SELECT' --data-binary @-
 1
 ```
 
-<div dir="rtl" markdown="1">
+اگر بخشی از پرس و جو در پارامتر ارسال, و بخشی در پست, خوراک خط بین این دو بخش داده قرار داده.
+مثال (این کار نخواهد کرد):
 
-اگر بخشی از query در پارامتر ارسال شود، و بخش دیگر در POST، یک line feed بین دو بخش وارد می شود. مثال (این کار نمی کند):
-
-</div>
-
-```bash
+``` bash
 $ echo 'ECT 1' | curl 'http://localhost:8123/?query=SEL' --data-binary @-
 Code: 59, e.displayText() = DB::Exception: Syntax error: failed at position 0: SEL
 ECT 1
 , expected One of: SHOW TABLES, SHOW DATABASES, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE., e.what() = DB::Exception
 ```
 
-<div dir="rtl" markdown="1">
+به طور پیش فرض, داده ها در قالب جدولبندی بازگشت (برای اطلاعات بیشتر, دیدن “Formats” بخش).
+شما با استفاده از بند فرمت پرس و جو به درخواست هر فرمت دیگر.
 
-به صورت پیش فرض، داده ها با فرمت TabSeparated بر میگردند. (برای اطلاعات بیشتر بخش "فرمت" را مشاهده کنید). شما میتوانید از دستور FORMAT در query خود برای ست کردن فرمتی دیگر استفاده کنید.
-
-</div>
-
-```bash
+``` bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
 ┏━━━┓
 ┃ 1 ┃
@@ -85,65 +89,41 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 └───┘
 ```
 
-<div dir="rtl" markdown="1">
+روش پست انتقال داده ها برای درج نمایش داده شد لازم است. در این مورد می توانید ابتدا پرس و جو را در پارامتر نشانی وب بنویسید و از پست برای انتقال داده ها برای وارد کردن استفاده کنید. داده ها برای وارد کردن می تواند, مثلا, تخلیه تب جدا از خروجی زیر. در این راه وارد کردن پرس و جو جایگزین بارگذاری داده های محلی INFILE از MySQL.
 
-برای query های INSERT متد POST ضروری است. در این مورد، شما می توانید ابتدای query خود را در URL parameter بنویسید، و از POST برای پاس داده داده ها برای درج استفاده کنید. داده ی برای درج می تواند، برای مثال یک دامپ tab-separated شده از MySQL باشد. به این ترتیب، query INSERT جایگزین LOAD DATA LOCAL INFILE از MySQL می شود.
+نمونه: ایجاد یک جدول:
 
-مثال: ساخت جدول
-
-</div>
-
-```bash
-echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
+``` bash
+$ echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-<div dir="rtl" markdown="1">
+با استفاده از قرار دادن پرس و جو برای درج داده ها:
 
-استفاده از query INSERT برای درج داده:
-
-</div>
-
-```bash
-echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
+``` bash
+$ echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-<div dir="rtl" markdown="1">
+داده ها را می توان به طور جداگانه از پرس و جو ارسال می شود:
 
-داده ها میتوانند جدا از پارامتر query ارسال شوند:
-
-</div>
-
-```bash
-echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
+``` bash
+$ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
-<div dir="rtl" markdown="1">
+شما می توانید هر فرمت داده را مشخص کنید. این ‘Values’ فرمت همان چیزی است که هنگام نوشتن به مقادیر تی استفاده می شود:
 
-شما می توانید هر نوع فرمت دیتایی مشخص کنید. فرمت 'Values' دقیقا مشابه زمانی است که شما INSERT INTO t VALUES را می نویسید:
-
-</div>
-
-```bash
-echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
+``` bash
+$ echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
 ```
 
-<div dir="rtl" markdown="1">
+برای وارد کردن داده ها از تخلیه زبانه جدا شده فرمت مربوطه را مشخص کنید:
 
-برای درج داده ها از یک دامپ tab-separate، فرمت مشخص زیر را وارد کنید:
-
-</div>
-
-```bash
-echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
+``` bash
+$ echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
-<div dir="rtl" markdown="1">
+خواندن محتویات جدول. داده ها خروجی به صورت تصادفی به دلیل پردازش پرس و جو موازی است:
 
-به دلیل پردازش موازی، نتایج query با ترتیب رندوم چاپ می شود:
-
-</div>
-
-```bash
+``` bash
 $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 7
 8
@@ -159,33 +139,39 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 6
 ```
 
-<div dir="rtl" markdown="1">
+حذف جدول.
 
-حدف جدول:
-
-</div>
-
-```bash
-echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
+``` bash
+$ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-<div dir="rtl" markdown="1">
+برای درخواست موفق است که یک جدول داده ها بازگشت نیست, بدن پاسخ خالی بازگشته است.
 
-برای درخواست هایی موفقی که داده ای از جدول بر نمیگردد، بدنه response خالی است.
+شما می توانید فرمت فشرده سازی کلیک داخلی در هنگام انتقال داده ها استفاده کنید. داده های فشرده دارای فرمت غیر استاندارد است و شما باید از ویژه استفاده کنید `clickhouse-compressor` برنامه ای برای کار با ان (با ان نصب شده است `clickhouse-client` بسته). برای افزایش بهره وری از درج داده, شما می توانید سرور سمت تایید کنترلی با استفاده از غیر فعال کردن [تغییر در حسابهای کاربری دستگاه](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) تنظیمات.
 
-شما می توانید از فرمت فشرده سازی داخلی ClickHouse در هنگان انتقال داده ها استفاده کنید. این فشرده سازی داده، یک فرمت غیراستاندارد است، و شما باید از برنامه مخصوص فشرده سازی ClickHouse برای استفاده از آن استفاده کنید. (این برنامه در هنگام نصب پکیج clickhouse-client نصب شده است)
+اگر شما مشخص `compress=1` در نشانی وب سرور دادههای ارسالی شما را فشرده میکند.
+اگر شما مشخص `decompress=1` در نشانی اینترنتی کارگزار دادههای مشابهی را که در `POST` روش.
 
-اگر شما در URL پارامتر 'compress=1' را قرار دهید، سرور داده های ارسالی به شما را فشرده سازی می کند. اگر شما پارامتر 'decompress=1' را در URL ست کنید، سرور داده های ارسالی توسط متد POST را decompress می کند.
+شما همچنین می توانید استفاده کنید را انتخاب کنید [فشردهسازی قام](https://en.wikipedia.org/wiki/HTTP_compression). برای ارسال یک فشرده `POST` درخواست, اضافه هدر درخواست `Content-Encoding: compression_method`. به منظور کلیک برای فشرده سازی پاسخ, شما باید اضافه `Accept-Encoding: compression_method`. پشتیبانی از کلیک `gzip`, `br` و `deflate` [روش های فشرده سازی](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). برای فعال کردن فشرده سازی قام, شما باید از خانه کلیک استفاده [نصب و راه اندازی](../operations/settings/settings.md#settings-enable_http_compression) تنظیمات. شما می توانید سطح فشرده سازی داده ها در پیکربندی [\_تنظیم مجدد به حالت اولیه](#settings-http_zlib_compression_level) تنظیم برای تمام روش های فشرده سازی.
 
-همچنین استفاده از فشرده سازی استاندارد gzip در HTTP ممکن است. برای ارسال درخواست POST و فشرده سازی آن به صورت gzip، هدر `Content-Encoding: gzip` را به request خود اضافه کنید. برای اینکه ClickHouse، response فشرده شده به صورت gzip برای شما ارسال کند، ابتدا باید `enable_http_compression` را در تنظیمات ClickHouse فعال کنید و در ادامه هدر `Accept-Encoding: gzip` را به درخواست خود اضافه کنید.
+شما می توانید این برای کاهش ترافیک شبکه در هنگام انتقال مقدار زیادی از داده ها و یا برای ایجاد افسردگی است که بلافاصله فشرده استفاده کنید.
 
-شما می توانید از این کار برای کاهش ترافیک شبکه هنگام ارسال مقدار زیادی از داده ها یا برای ایجاد dump هایی که بلافاصله فشرده می شوند، استفاده کنید.
+نمونه هایی از ارسال داده ها با فشرده سازی:
 
-شما می توانید از پارامتر 'database' در URL برای مشخص کردن دیتابیس پیش فرض استفاده کنید.
+``` bash
+#Sending data to the server:
+$ curl -vsS "http://localhost:8123/?enable_http_compression=1" -d 'SELECT number FROM system.numbers LIMIT 10' -H 'Accept-Encoding: gzip'
 
-</div>
+#Sending data to the client:
+$ echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
+```
 
-```bash
+!!! note "یادداشت"
+    برخی از مشتریان اچ تی پی ممکن است داده ها را از حالت فشرده خارج از سرور به طور پیش فرض (با `gzip` و `deflate`) و شما ممکن است داده ها از حالت فشرده خارج حتی اگر شما با استفاده از تنظیمات فشرده سازی به درستی.
+
+شما می توانید از ‘database’ پارامتر نشانی وب برای مشخص کردن پایگاه داده به طور پیش فرض.
+
+``` bash
 $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?database=system' --data-binary @-
 0
 1
@@ -199,39 +185,40 @@ $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?data
 9
 ```
 
-<div dir="rtl" markdown="1">
+به طور پیش فرض, پایگاه داده است که در تنظیمات سرور ثبت نام به عنوان پایگاه داده به طور پیش فرض استفاده. به طور پیش فرض, این پایگاه داده به نام است ‘default’. متناوبا, شما همیشه می توانید مشخص کردن پایگاه داده با استفاده از یک نقطه قبل از نام جدول.
 
-به صورت پیش فرض، دیتابیس ثبت شده در تنظیمات سرور به عنوان دیتابیس پیش فرض مورد استفاده قرار می گیرد، این دیتابیس 'default' نامیده می شود. از سوی دیگر، شما می توانید همیشه نام دیتابیس را با دات و قبل از اسم جدول مشخص کنید.
+نام کاربری و رمز عبور را می توان در یکی از سه راه نشان داد:
 
-نام کاربری و پسورد می توانند به یکی از دو روش زیر ست شوند:
+1.  با استفاده از احراز هویت اولیه. مثال:
 
-1. استفاده از HTTP Basic Authentication. مثال:
+<!-- -->
 
-</div>
-
-```bash
-echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
+``` bash
+$ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 ```
 
-<div dir="rtl" markdown="1">
+1.  در ‘user’ و ‘password’ پارامترهای نشانی وب. مثال:
 
-2. با دو پارامتر 'user' و 'password' در URL. مثال:
+<!-- -->
 
-</div>
-
-```bash
-echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
+``` bash
+$ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
-<div dir="rtl" markdown="1">
+1.  با استفاده از ‘X-ClickHouse-User’ و ‘X-ClickHouse-Key’ سرصفحهها. مثال:
 
-اگر نام کاربری مشخص نشود، نام کاربری 'default' استفاده می شود. اگر پسورد مشخص نشود، پسورد خالی استفاده می شود. شما همچنین می توانید از پارامتر های URL برای مشخص کردن هر تنظیمی برای اجرای یک query استفاده کنید. مثال: http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
+<!-- -->
 
-برای اطلاعات بیشتر بخش "تنظیمات" را مشاهده کنید.
+``` bash
+$ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: password' 'http://localhost:8123/' -d @-
+```
 
-</div>
+اگر نام کاربر مشخص نشده است `default` نام استفاده شده است. اگر رمز عبور مشخص نشده است, رمز عبور خالی استفاده شده است.
+شما همچنین می توانید از پارامترهای نشانی وب برای مشخص کردن هر گونه تنظیمات برای پردازش یک پرس و جو یا کل پروفایل های تنظیمات استفاده کنید. هشدار داده می شودمشخصات=وب و حداکثر\_نظیم = 1000000000 & پرس و جو = انتخاب+1
 
-```bash
+برای کسب اطلاعات بیشتر, دیدن [تنظیمات](../operations/settings/index.md) بخش.
+
+``` bash
 $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-
 0
 1
@@ -245,40 +232,386 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 9
 ```
 
-<div dir="rtl" markdown="1">
+برای اطلاعات در مورد پارامترهای دیگر, بخش را ببینید “SET”.
 
-برای اطلاعات بیشتر در مورد دیگر پارامترها، بخش "SET" را ببینید.
+به طور مشابه, شما می توانید جلسات کلیک در پروتکل قام استفاده. برای انجام این کار, شما نیاز به اضافه کردن `session_id` دریافت پارامتر به درخواست. شما می توانید هر رشته به عنوان شناسه جلسه استفاده کنید. به طور پیش فرض جلسه پس از 60 ثانیه عدم فعالیت خاتمه می یابد. برای تغییر این فاصله, تغییر `default_session_timeout` تنظیم در پیکربندی سرور یا اضافه کردن `session_timeout` دریافت پارامتر به درخواست. برای بررسی وضعیت جلسه از `session_check=1` پارامتر. فقط یک پرس و جو در یک زمان می تواند در یک جلسه اجرا شود.
 
-به طور مشابه، شما می توانید از ClickHouse Session در HTTP استفاده کنید. برای این کار، شما نیاز به ست کردن پارامتر`session_id` برای درخواست را دارید. شما میتوانید از هر رشته ای برای ست کردن Session ID استفاده کنید. به صورت پیش فرض، یک session بعد از 60 ثانیه از اجرای آخرین درخواست نابود می شود. برای تغییر زمان timeout، باید `default_session_timeout` را در تنظیمات سرور تغییر دهید و یا پارامتر `session_timeout` در هنگام درخواست ست کنید. برای بررسی وضعیت status از پارامتر `session_check=1` استفاده کنید. با یک session تنها یک query در لحظه می توان اجرا کرد.
+شما می توانید اطلاعات در مورد پیشرفت یک پرس و جو در دریافت `X-ClickHouse-Progress` هدر پاسخ. برای انجام این کار, فعال کردن [نمایش سایت](../operations/settings/settings.md#settings-send_progress_in_http_headers). مثال توالی هدر:
 
-گزینه ای برای دریافت اطلاعات progress اجرای query وجود دارد. این گزینه هدر X-ClickHouse-Progress می باشد. برای این کار تنظیم send_progress_in_http_headers در کانفیگ فایل فعال کنید.
+``` text
+X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128"}
+X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_rows_to_read":"8880128"}
+X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128"}
+```
 
-درخواست در حال اجرا، در صورت لاست شدن کانکشن HTTP به صورت اتوماتیک متوقف نمی شود. پارس کردن و فرمت کردن داده ها در سمت سرور صورت می گیرد، و استفاده از شبکه ممکن است ناکارآمد باشد. پارامتر 'query_id' می تونه به عنوان query id پاس داده شود (هر رشته ای قابل قبول است). برای اطلاعات بیشتر بخش "تنظیمات، replace_running_query" را مشاهده کنید.
+زمینه های سربرگ احتمالی:
 
-پارامتر 'quoto_key' می تواند به عنوان quoto key پاس داده شود (هر رشته ای قابل قبول است). برای اطلاعات بیشتر بخش "Quotas" را مشاهده کنید.
+-   `read_rows` — Number of rows read.
+-   `read_bytes` — Volume of data read in bytes.
+-   `total_rows_to_read` — Total number of rows to be read.
+-   `written_rows` — Number of rows written.
+-   `written_bytes` — Volume of data written in bytes.
 
-HTTP interface اجازه ی پاس دادن داده های external (جداول موقت external) به query را می دهد. برای اطلاعات بیشتر، بخش "داده های External برای پردازش query" را مشاهده کنید.
+درخواست های در حال اجرا به طور خودکار متوقف نمی شود اگر اتصال قام از دست داده است. تجزیه و قالب بندی داده ها در سمت سرور انجام, و با استفاده از شبکه ممکن است بی اثر.
+اختیاری ‘query\_id’ پارامتر را می توان به عنوان شناسه پرس و جو (هر رشته) منتقل می شود. برای کسب اطلاعات بیشتر به بخش مراجعه کنید “Settings, replace\_running\_query”.
 
-## بافرینگ Response
+اختیاری ‘quota\_key’ پارامتر را می توان به عنوان کلید سهمیه (هر رشته) منتقل می شود. برای کسب اطلاعات بیشتر به بخش مراجعه کنید “Quotas”.
 
-شما می توانید در سمت سرور قابلی بافرینگ response را فعال کنید. پارامترهای `buffer_size` و `wait_end_of_query` در URL برای این هدف ارائه شده اند.
+رابط اچ تی پی اجازه می دهد تا عبور داده های خارجی (جداول موقت خارجی) برای پرس و جو. برای کسب اطلاعات بیشتر به بخش مراجعه کنید “External data for query processing”.
 
-`buffer_size` تعیین کننده ی اندازه ی نتیجه (بایت) برای بافر شدن در حافظه سرور است. اگر بدنه ی نتیجه بیش بزرگتر از این threshold باشد، بافر بر روی HTTP channel نوشته می شود و باقی مانده ی دیتا به صورت مستقیم به HTTP Channel ارسال می شود.
+## بافر پاسخ {#response-buffering}
 
-برای اینکه مطمعن بشید که کل response بافر شده است، `wait_end_of_query=1` را ست کنید. در این مورد، داده های که در حافظه ذخیره نمی شوند، در یک فایل موقت سمت سرور بافر می شوند.
+شما می توانید پاسخ بافر در سمت سرور را فعال کنید. این `buffer_size` و `wait_end_of_query` پارامترهای نشانی وب برای این منظور فراهم شده است.
+
+`buffer_size` تعیین تعداد بایت در نتیجه به بافر در حافظه سرور. اگر یک بدن نتیجه بزرگتر از این حد است, بافر به کانال قام نوشته شده, و داده های باقی مانده به طور مستقیم به کانال قام ارسال.
+
+برای اطمینان از اینکه کل پاسخ بافر شده است, تنظیم `wait_end_of_query=1`. در این مورد داده هایی که در حافظه ذخیره نمی شوند در یک فایل سرور موقت بافر می شوند.
 
 مثال:
 
-</div>
-
-```bash
-curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wait_end_of_query=1' -d 'SELECT toUInt8(number) FROM system.numbers LIMIT 9000000 FORMAT RowBinary'
+``` bash
+$ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wait_end_of_query=1' -d 'SELECT toUInt8(number) FROM system.numbers LIMIT 9000000 FORMAT RowBinary'
 ```
 
-<div dir="rtl" markdown="1">
+استفاده از بافر برای جلوگیری از شرایطی که یک خطای پردازش پرس و جو رخ داده است پس از کد پاسخ و هدر قام به مشتری ارسال شد. در این وضعیت یک پیغام خطا نوشته شده است در پایان پاسخ بدن و در سمت سرویس گیرنده خطا تنها می تواند تشخیص داده شده در مرحله تجزیه.
 
-از بافرینگ به منظور اجتناب از شرایطی که یک خطای پردازش query رخ داده بعد از response کد و هدر های ارسال شده به کلاینت استفاده کنید. در این شرایط، پیغام خطا در انتهای بنده response نوشته می شود، و در سمت کلاینت، پیغام خطا فقط از طریق مرحله پارس کردن قابل شناسایی است.
+### نمایش داده شد با پارامترهای {#cli-queries-with-parameters}
 
-</div>
+شما می توانید پرس و جو را با پارامترها ایجاد کنید و مقادیر را از پارامترهای درخواست مربوط به اچ تی پی منتقل کنید. برای کسب اطلاعات بیشتر, دیدن [نمایش داده شد با پارامترهای کلی](cli.md#cli-queries-with-parameters).
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/http_interface/) <!--hide-->
+### مثال {#example}
+
+``` bash
+$ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
+```
+
+## حذف میانبر در صفحه خانه {#predefined_http_interface}
+
+تاتر پشتیبانی از نمایش داده شد خاص از طریق رابط قام. مثلا, شما می توانید داده ها را به یک جدول به شرح زیر ارسال:
+
+``` bash
+$ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
+```
+
+کلیک هاوس همچنین از رابط اچ تی پی از پیش تعریف شده پشتیبانی می کند که می تواند به شما در ادغام راحت تر با ابزارهای شخص ثالث مانند کمک کند [پرومته صادر کننده](https://github.com/percona-lab/clickhouse_exporter).
+
+مثال:
+
+-   اول از همه, اضافه کردن این بخش به فایل پیکربندی سرور:
+
+<!-- -->
+
+``` xml
+<http_handlers>
+    <rule>
+        <url>/predefined_query</url>
+        <methods>POST,GET</methods>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>SELECT * FROM system.metrics LIMIT 5 FORMAT Template SETTINGS format_template_resultset = 'prometheus_template_output_format_resultset', format_template_row = 'prometheus_template_output_format_row', format_template_rows_between_delimiter = '\n'</query>
+        </handler>
+    </rule>
+    <rule>...</rule>
+    <rule>...</rule>
+</http_handlers>
+```
+
+-   شما هم اکنون می توانید لینک را مستقیما برای داده ها در قالب پرومته درخواست کنید:
+
+<!-- -->
+
+``` bash
+$ curl -v 'http://localhost:8123/predefined_query'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /predefined_query HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+>
+< HTTP/1.1 200 OK
+< Date: Tue, 28 Apr 2020 08:52:56 GMT
+< Connection: Keep-Alive
+< Content-Type: text/plain; charset=UTF-8
+< X-ClickHouse-Server-Display-Name: i-mloy5trc
+< Transfer-Encoding: chunked
+< X-ClickHouse-Query-Id: 96fe0052-01e6-43ce-b12a-6b7370de6e8a
+< X-ClickHouse-Format: Template
+< X-ClickHouse-Timezone: Asia/Shanghai
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+# HELP "Query" "Number of executing queries"
+# TYPE "Query" counter
+"Query" 1
+
+# HELP "Merge" "Number of executing background merges"
+# TYPE "Merge" counter
+"Merge" 0
+
+# HELP "PartMutation" "Number of mutations (ALTER DELETE/UPDATE)"
+# TYPE "PartMutation" counter
+"PartMutation" 0
+
+# HELP "ReplicatedFetch" "Number of data parts being fetched from replica"
+# TYPE "ReplicatedFetch" counter
+"ReplicatedFetch" 0
+
+# HELP "ReplicatedSend" "Number of data parts being sent to replicas"
+# TYPE "ReplicatedSend" counter
+"ReplicatedSend" 0
+
+* Connection #0 to host localhost left intact
+
+
+* Connection #0 to host localhost left intact
+```
+
+همانطور که شما می توانید از مثال ببینید, اگر `<http_handlers>` در پیکربندی پیکربندی پیکربندی شده است.فایل و `<http_handlers>` می تواند شامل بسیاری از `<rule>s`. کلیک هاوس خواهد درخواست قام قام دریافت به نوع از پیش تعریف شده در مطابقت `<rule>` و اولین همسان اجرا می شود کنترل. سپس خانه را کلیک کنید پرس و جو از پیش تعریف شده مربوطه اجرا اگر بازی موفق است.
+
+> حالا `<rule>` می توانید پیکربندی کنید `<method>`, `<headers>`, `<url>`,`<handler>`:
+> `<method>` برای تطبیق روش بخشی از درخواست قام است. `<method>` به طور کامل مطابق با تعریف [روش](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) در پروتکل قام. این پیکربندی اختیاری است. اگر در فایل پیکربندی تعریف نشده, این کار بخش روش درخواست قام مطابقت ندارد.
+>
+> `<url>` وظیفه تطبیق بخشی نشانی وب از درخواست قام است. این سازگار با است [RE2](https://github.com/google/re2)عبارات منظم است. این پیکربندی اختیاری است. اگر در فایل پیکربندی تعریف نشده باشد با بخش نشانی وب درخواست قام مطابقت ندارد.
+>
+> `<headers>` برای تطبیق بخش هدر درخواست قام است. این است که سازگار با عبارات منظم را دوباره2 است. این پیکربندی اختیاری است. اگر در فایل پیکربندی تعریف نشده است, این کار بخش هدر درخواست قام مطابقت ندارد.
+>
+> `<handler>` شامل بخش پردازش اصلی. حالا `<handler>` می توانید پیکربندی کنید `<type>`, `<status>`, `<content_type>`, `<response_content>`, `<query>`, `<query_param_name>`.
+> \> `<type>` در حال حاضر پشتیبانی از سه نوع: **باز تعریف**, **هشدار داده می شود**, **ایستا**.
+> \>
+> \> `<query>` - استفاده از با نوع بازتعریف\_کرکی\_ هندلر, اجرا پرس و جو زمانی که کنترل نامیده می شود.
+> \>
+> \> `<query_param_name>` - استفاده با نوع داینامیک\_کرکی\_خندلر عصارهها و اجرا مقدار مربوط به `<query_param_name>` ارزش در پارامترهای درخواست قام.
+> \>
+> \> `<status>` - استفاده با نوع استاتیک, پاسخ کد وضعیت.
+> \>
+> \> `<content_type>` - استفاده با نوع استاتیک پاسخ [نوع محتوا](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+> \>
+> \> `<response_content>` - استفاده با نوع استاتیک, محتوای پاسخ ارسال شده به مشتری, هنگام استفاده از پیشوند ‘file://’ یا ‘config://’, پیدا کردن محتوا از فایل و یا پیکربندی ارسال به مشتری.
+
+بعد روش پیکربندی برای متفاوت هستند `<type>`.
+
+## باز تعریف {#predefined_query_handler}
+
+`<predefined_query_handler>` پشتیبانی از تنظیمات و مقادیر قوری\_پرم. شما می توانید پیکربندی کنید `<query>` در نوع `<predefined_query_handler>`.
+
+`<query>` مقدار پرس و جو از پیش تعریف شده است `<predefined_query_handler>`, است که توسط کلیکهاوس اجرا زمانی که یک درخواست قام همسان است و در نتیجه از پرس و جو بازگشته است. این پیکربندی باید است.
+
+مثال زیر مقادیر را تعریف می کند `max_threads` و `max_alter_threads` تنظیمات, سپس نمایش داده شد جدول سیستم برای بررسی اینکه این تنظیمات با موفقیت تعیین شد.
+
+مثال:
+
+``` xml
+<http_handlers>
+    <rule>
+        <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
+        <method>GET</method>
+        <headers>
+            <XXX>TEST_HEADER_VALUE</XXX>
+            <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
+        </headers>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>SELECT value FROM system.settings WHERE name = {name_1:String}</query>
+            <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+``` bash
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_alter_threads?max_threads=1&max_alter_threads=2'
+1
+max_alter_threads   2
+```
+
+!!! note "احتیاط"
+    در یک `<predefined_query_handler>` تنها پشتیبانی از یک `<query>` از یک نوع درج.
+
+## هشدار داده می شود {#dynamic_query_handler}
+
+داخل `<dynamic_query_handler>`, پرس و جو در قالب پرام از درخواست قام نوشته شده است. تفاوت این است که در `<predefined_query_handler>`, پرس و جو در فایل پیکربندی نوشت. شما می توانید پیکربندی کنید `<query_param_name>` داخل `<dynamic_query_handler>`.
+
+عصاره کلیک و اجرا ارزش مربوط به `<query_param_name>` مقدار در نشانی وب درخواست قام. مقدار پیش فرض `<query_param_name>` هست `/query` . این پیکربندی اختیاری است. در صورتی که هیچ تعریف در فایل پیکربندی وجود دارد, پرم در تصویب نشده است.
+
+برای آزمایش این قابلیت به عنوان مثال تعریف ارزش از max\_threads و max\_alter\_threads و پرس و جو که آیا تنظیمات راه اندازی شد با موفقیت.
+
+مثال:
+
+``` xml
+<http_handlers>
+    <rule>
+    <headers>
+        <XXX>TEST_HEADER_VALUE_DYNAMIC</XXX>    </headers>
+    <handler>
+        <type>dynamic_query_handler</type>
+        <query_param_name>query_param</query_param_name>
+    </handler>
+    </rule>
+</http_handlers>
+```
+
+``` bash
+$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_alter_threads=2&param_name_1=max_threads&param_name_2=max_alter_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
+max_threads 1
+max_alter_threads   2
+```
+
+## ایستا {#static}
+
+`<static>` می توانید بازگشت [\_نوع تماس](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [وضعیت](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) و پاسخ دهنده. پاسخ \_حرکتکننده می تواند محتوای مشخص شده را بازگرداند
+
+مثال:
+
+بازگشت یک پیام.
+
+``` xml
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/hi</url>
+            <handler>
+                <type>static</type>
+                <status>402</status>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>Say Hi!</response_content>
+            </handler>
+        </rule>
+<http_handlers>
+```
+
+``` bash
+$ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /hi HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 402 Payment Required
+< Date: Wed, 29 Apr 2020 03:51:26 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+* Connection #0 to host localhost left intact
+Say Hi!%
+```
+
+پیدا کردن محتوا از پیکربندی ارسال به مشتری.
+
+``` xml
+<get_config_static_handler><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></get_config_static_handler>
+
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_config_static_handler</url>
+            <handler>
+                <type>static</type>
+                <response_content>config://get_config_static_handler</response_content>
+            </handler>
+        </rule>
+</http_handlers>
+```
+
+``` bash
+$ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_config_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:01:24 GMT
+< Connection: Keep-Alive
+< Content-Type: text/plain; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+* Connection #0 to host localhost left intact
+<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
+```
+
+پیدا کردن محتوا از فایل ارسال به مشتری.
+
+``` xml
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_absolute_path_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>file:///absolute_path_file.html</response_content>
+            </handler>
+        </rule>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_relative_path_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>file://./relative_path_file.html</response_content>
+            </handler>
+        </rule>
+</http_handlers>
+```
+
+``` bash
+$ user_files_path='/var/lib/clickhouse/user_files'
+$ sudo echo "<html><body>Relative Path File</body></html>" > $user_files_path/relative_path_file.html
+$ sudo echo "<html><body>Absolute Path File</body></html>" > $user_files_path/absolute_path_file.html
+$ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_absolute_path_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:18:16 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+<html><body>Absolute Path File</body></html>
+* Connection #0 to host localhost left intact
+$ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_relative_path_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:18:31 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+<html><body>Relative Path File</body></html>
+* Connection #0 to host localhost left intact
+```
+
+[مقاله اصلی](https://clickhouse.tech/docs/en/interfaces/http_interface/) <!--hide-->

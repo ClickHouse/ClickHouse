@@ -1,6 +1,6 @@
 # Contributing to ClickHouse Documentation
 
-## Why You Need to Document ClickHouse
+## Why Do You Need to Document ClickHouse
 
 The main reason is that ClickHouse is an open source project, and if you don't write the docs, nobody does. "Incomplete or Confusing Documentation" is the top complaint about open source software by the results of a [Github Open Source Survey](http://opensourcesurvey.org/2017/) of 2017. Documentation is highly valued but often overlooked. One of the most important contributions someone can make to an open source repository is a documentation update.
 
@@ -38,7 +38,7 @@ Writing the docs is extremely useful for project's users and developers, and gro
 
 The documentation contains information about all the aspects of the ClickHouse lifecycle: developing, testing, installing, operating, and using. The base language of the documentation is English. The English version is the most actual. All other languages are supported as much as they can by contributors from different countries.
 
-At the moment, [documentation](https://clickhouse.yandex/docs) exists in English, Russian, Chinese, Japanese, and Farsi. We store the documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs).
+At the moment, [documentation](https://clickhouse.tech/docs) exists in English, Russian, Chinese, Japanese, and Farsi. We store the documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs).
 
 Each language lays in the corresponding folder. Files that are not translated from English are the symbolic links to the English ones.
 
@@ -54,7 +54,7 @@ You can contribute to the documentation in many ways, for example:
 
 - Open a required file in the ClickHouse repository and edit it from the GitHub web interface.
 
-    You can do it on GitHub, or on the [ClickHouse Documentation](https://clickhouse.yandex/docs/en/) site. Each page of ClickHouse Documentation site contains an "Edit this page" (🖋) element in the upper right corner. Clicking this symbol, you get to the ClickHouse docs file opened for editing.
+    You can do it on GitHub, or on the [ClickHouse Documentation](https://clickhouse.tech/docs/en/) site. Each page of ClickHouse Documentation site contains an "Edit this page" (🖋) element in the upper right corner. Clicking this symbol, you get to the ClickHouse docs file opened for editing.
 
     When you are saving a file, GitHub opens a pull-request for your contribution. Add the `documentation` label to this pull request for proper automatic checks applying. If you have no permissions for adding labels, the reviewer of your PR adds it.
 
@@ -135,16 +135,13 @@ When adding a new file:
     $ ln -sr en/new/file.md lang/new/file.md
     ```
 
-- Reference the file from `toc_{en,ru,zh,ja,fa}.yaml` files with the pages index.
-
-
 <a name="adding-a-new-language"/>
 
 ### Adding a New Language
 
 1. Create a new docs subfolder named using the [ISO-639-1 language code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes).
 2. Add Markdown files with the translation, mirroring the folder structure of other languages.
-3. Commit and open a pull request with the new content.
+3. Commit and open a pull-request with the new content.
 
 When everything is ready, we will add the new language to the website.
 
@@ -161,7 +158,7 @@ When writing documentation, think about people who read it. Each audience has sp
 
 ClickHouse documentation can be divided by the audience for the following parts:
 
-- Conceptual topics in [Introduction](https://clickhouse.yandex/docs/en/), tutorials and overviews, changelog.
+- Conceptual topics in [Introduction](https://clickhouse.tech/docs/en/), tutorials and overviews, changelog.
 
     These topics are for the most common auditory. When editing text in them, use the most common terms that are comfortable for the audience with basic technical skills.
 
@@ -196,14 +193,14 @@ When writing docs, you can use prepared templates. Copy the code of a template a
 
 Templates:
 
-- [Function](dscr-templates/template-function.md)
-- [Setting](dscr-templates/template-setting.md)
-- [Table engine](dscr-templates/template-table-engine.md)
-- [System table](dscr-templates/template-system-table.md)
+- [Function](_description_templates/template-function.md)
+- [Setting](_description_templates/template-setting.md)
+- [Table engine](_description_templates/template-table-engine.md)
+- [System table](_description_templates/template-system-table.md)
 
 
 <a name="how-to-build-docs"/>
 
 ## How to Build Documentation
 
-You can build your documentation manually by following the instructions in [docs/tools/README.md](docs/tools/README.md). Also, our CI runs the documentation build after the `documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.
+You can build your documentation manually by following the instructions in [docs/tools/README.md](../docs/tools/README.md). Also, our CI runs the documentation build after the `documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.

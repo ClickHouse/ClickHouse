@@ -13,7 +13,7 @@
 	url = https://github.com/edenhill/librdkafka.git
 [submodule "contrib/cctz"]
 	path = contrib/cctz
-	url = https://github.com/google/cctz.git
+	url = https://github.com/ClickHouse-Extras/cctz.git
 [submodule "contrib/zlib-ng"]
 	path = contrib/zlib-ng
 	url = https://github.com/ClickHouse-Extras/zlib-ng.git
@@ -104,18 +104,22 @@
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11.git
+[submodule "contrib/grpc"]
+	path = contrib/grpc
+	url = https://github.com/ClickHouse-Extras/grpc.git
+	branch = v1.25.0
 [submodule "contrib/aws"]
 	path = contrib/aws
-	url = https://github.com/aws/aws-sdk-cpp.git
+	url = https://github.com/ClickHouse-Extras/aws-sdk-cpp.git
 [submodule "aws-c-event-stream"]
 	path = contrib/aws-c-event-stream
-	url = https://github.com/awslabs/aws-c-event-stream.git
+	url = https://github.com/ClickHouse-Extras/aws-c-event-stream.git
 [submodule "aws-c-common"]
 	path = contrib/aws-c-common
-	url = https://github.com/awslabs/aws-c-common.git
+	url = https://github.com/ClickHouse-Extras/aws-c-common.git
 [submodule "aws-checksums"]
 	path = contrib/aws-checksums
-	url = https://github.com/awslabs/aws-checksums.git
+	url = https://github.com/ClickHouse-Extras/aws-checksums.git
 [submodule "contrib/curl"]
 	path = contrib/curl
 	url = https://github.com/curl/curl.git
@@ -136,7 +140,7 @@
 	url = https://github.com/ClickHouse-Extras/libc-headers.git
 [submodule "contrib/replxx"]
 	path = contrib/replxx
-	url = https://github.com/AmokHuginnsson/replxx.git
+	url = https://github.com/ClickHouse-Extras/replxx.git
 [submodule "contrib/ryu"]
 	path = contrib/ryu
 	url = https://github.com/ClickHouse-Extras/ryu.git
@@ -144,3 +148,23 @@
 	path = contrib/avro
 	url = https://github.com/ClickHouse-Extras/avro.git
 	ignore = untracked
+[submodule "contrib/msgpack-c"]
+	path = contrib/msgpack-c
+	url = https://github.com/msgpack/msgpack-c
+[submodule "contrib/libcpuid"]
+	path = contrib/libcpuid
+	url = https://github.com/ClickHouse-Extras/libcpuid.git
+[submodule "contrib/openldap"]
+	path = contrib/openldap
+	url = https://github.com/openldap/openldap.git
+[submodule "contrib/cassandra"]
+	path = contrib/cassandra
+	url = https://github.com/ClickHouse-Extras/cpp-driver.git
+	branch = clickhouse
+[submodule "contrib/libuv"]
+	path = contrib/libuv
+	url = https://github.com/ClickHouse-Extras/libuv.git
+	branch = clickhouse
+[submodule "contrib/fmtlib"]
+	path = contrib/fmtlib
+	url = https://github.com/fmtlib/fmt.git

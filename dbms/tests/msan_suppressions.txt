@@ -1,2 +1,0 @@
-# https://github.com/google/oss-fuzz/issues/1099
-fun:__gxx_personality_*

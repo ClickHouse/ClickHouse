@@ -1,1 +1,0 @@
-../../en/operations/system_tables.md

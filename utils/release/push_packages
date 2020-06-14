@@ -152,7 +152,7 @@ def transfer_packages_dupload(ssh_key, path, repo_user, repo_url, incoming_direc
     }
     with DebRelease(config, repo_user, ssh_key):
         logging.info("Duploading")
-        subprocess.check_call("dupload --nomail --to {repo} {path}".format(repo=repo_short_name, path=path), shell=True)
+        subprocess.check_call("dupload -f --nomail --to {repo} {path}".format(repo=repo_short_name, path=path), shell=True)
         logging.info("Dupload finished")
 
 
@@ -160,25 +160,16 @@ def clear_old_incoming_packages(ssh_connection, user):
     for pkg in ('deb', 'rpm', 'tgz'):
         for release_type in ('stable', 'testing', 'prestable', 'lts'):
             try:
-                if pkg != 'tgz':
-                    ssh_connection.execute("rm /home/{user}/incoming/clickhouse/{pkg}/{release_type}/*".format(
-                        user=user, pkg=pkg, release_type=release_type))
-                else:
-                    ssh_connection.execute("rm /home/{user}/incoming/clickhouse/{pkg}/*".format(
-                        user=user, pkg=pkg))
+                ssh_connection.execute("rm /home/{user}/incoming/clickhouse/{pkg}/{release_type}/*".format(
+                    user=user, pkg=pkg, release_type=release_type))
             except Exception:
                 logging.info("rm is not required")
 
 
 def _get_incoming_path(repo_url, user=None, pkg_type=None, release_type=None):
     if repo_url == 'repo.mirror.yandex.net':
-        if pkg_type != 'tgz':
-            return "/home/{user}/incoming/clickhouse/{pkg}/{release_type}".format(
-                user=user, pkg=pkg_type, release_type=release_type)
-        else:
-            return "/home/{user}/incoming/clickhouse/{pkg}".format(
-                user=user, pkg=pkg_type)
-
+        return "/home/{user}/incoming/clickhouse/{pkg}/{release_type}".format(
+            user=user, pkg=pkg_type, release_type=release_type)
     else:
         return "/repo/{0}/mini-dinstall/incoming/".format(repo_url.split('.')[0])
 

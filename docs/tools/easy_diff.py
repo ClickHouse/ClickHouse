@@ -26,30 +26,30 @@ SCRIPT_DESCRIPTION = '''
             --- a/docs/en/data_types/domains/ipv6.md
             +++ b/docs/en/data_types/domains/ipv6.md
             @@ -4,13 +4,13 @@
- 
+
              ### Basic Usage
- 
+
             -``` sql
             +```sql
              CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY url;
- 
+
              DESCRIBE TABLE hits;
              ```
- 
+
             -```
             +```text
              ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┐
              │ url  │ String │              │                    │         │                  │
              │ from │ IPv6   │              │                    │         │                  │
             @@ -19,19 +19,19 @@ DESCRIBE TABLE hits;
- 
+
              OR you can use `IPv6` domain as a key:
- 
+
             -``` sql
             +```sql
              CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY from;
             ... MORE
-    
+
     OPTIONS:
         -h, --help  show this help message and exit
         --no-pager  use stdout as difference result output

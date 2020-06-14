@@ -45,13 +45,12 @@ inc="-I. \
 -I./contrib/capnproto/c++/src \
 -I./contrib/unixodbc/include \
 -I./contrib/unixodbc-cmake/linux_x86_64 \
--I./libs/libmysqlxx/include \
--I./libs/libcommon/include \
--I${BUILD_DIR}/libs/libcommon/include \
--I./libs/libzkutil/include \
--I./libs/libdaemon/include \
--I./libs/consistent-hashing \
--I./libs/consistent-hashing-sumbur \
+-I./base/mysqlxx \
+-I./base \
+-I${BUILD_DIR}/base \
+-I./base/daemon \
+-I./base/consistent-hashing \
+-I./base/consistent-hashing-sumbur \
 -I./contrib/libhdfs3/include \
 -I./contrib/base64/include \
 -I./contrib/protobuf/src \
@@ -60,12 +59,12 @@ inc="-I. \
 -I./contrib/lz4/lib \
 -I./contrib/hyperscan/src \
 -I./contrib/simdjson/include \
--I./dbms/src \
--I${BUILD_DIR}/dbms/src"
+-I./src \
+-I${BUILD_DIR}/src"
 
 if [ -z $1 ]; then
     cd ${ROOT_DIR=${CUR_DIR}../..}
-    find dbms libs utils \( -name *.h -and -not -name *.inl.h \) -print0 | xargs -0 -n1 sh $CUR_DIR`basename $0`
+    find base dbms utils \( -name *.h -and -not -name *.inl.h \) -print0 | xargs -0 -n1 sh $CUR_DIR`basename $0`
 else
     echo -n "$1    "
     echo -n `grep "#include" $1| wc -l` "    "
