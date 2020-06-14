@@ -826,8 +826,8 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
             }
 
             bool cast_not_needed =
-                    is_set_const /// Set args are already casted inside Set::createFromAST
-                    || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
+                is_set_const /// Set args are already casted inside Set::createFromAST
+                || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
 
             if (!cast_not_needed)
                 castValueToType(key_expr_type, const_value, const_type, node);
