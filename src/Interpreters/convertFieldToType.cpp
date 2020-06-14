@@ -173,6 +173,13 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// We don't need any conversion UInt64 is under type of Date and DateTime
             return src;
         }
+
+        if (which_type.isUUID() && src.getType() == Field::Types::UInt128)
+        {
+            /// Already in needed type.
+            return src;
+        }
+
         // TODO (vnemkov): extra cases for DateTime64: converting from integer, converting from Decimal
     }
     else if (which_type.isStringOrFixedString())
