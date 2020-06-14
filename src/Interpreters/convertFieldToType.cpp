@@ -180,7 +180,13 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
-        // TODO (vnemkov): extra cases for DateTime64: converting from integer, converting from Decimal
+        if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
+        {
+            /// Already in needed type.
+            return src;
+        }
+
+        /// TODO Conversion from integers to DateTime64
     }
     else if (which_type.isStringOrFixedString())
     {
