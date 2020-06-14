@@ -289,7 +289,7 @@ private:
                     connection_entries.emplace_back(std::make_shared<Entry>(
                             connection->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
 
-                pool.scheduleOrThrowOnError(std::bind(&Benchmark::thread, this, connection_entries));
+                pool.scheduleOrThrowOnError([this, connection_entries]() mutable { thread(connection_entries); });
             }
         }
         catch (...)
@@ -424,7 +424,7 @@ private:
             std::cerr << percent << "%\t\t";
             for (const auto & info : infos)
             {
-                std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec." << "\t";
+                std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec.\t";
             }
             std::cerr << "\n";
         };
@@ -459,7 +459,7 @@ private:
 
         auto print_percentile = [&json_out](Stats & info, auto percent, bool with_comma = true)
         {
-            json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileNearest(percent / 100.0) << (with_comma ? ",\n" : "\n");
+            json_out << "\"" << percent << "\": " << info.sampler.quantileNearest(percent / 100.0) << (with_comma ? ",\n" : "\n");
         };
 
         json_out << "{\n";

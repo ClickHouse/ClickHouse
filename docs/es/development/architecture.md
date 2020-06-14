@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 62
 toc_title: "Descripci\xF3n general de la arquitectura ClickHouse"
 ---
@@ -122,7 +122,7 @@ Hay funciones ordinarias y funciones agregadas. Para las funciones agregadas, co
 
 Ordinary functions don't change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`de datos para implementar la ejecución de consultas vectorizadas.
 
-Hay algunas funciones diversas, como [BlockSize](../sql_reference/functions/other_functions.md#function-blocksize), [rowNumberInBlock](../sql_reference/functions/other_functions.md#function-rownumberinblock), y [runningAccumulate](../sql_reference/functions/other_functions.md#function-runningaccumulate), que explotan el procesamiento de bloques y violan la independencia de las filas.
+Hay algunas funciones diversas, como [BlockSize](../sql-reference/functions/other-functions.md#function-blocksize), [rowNumberInBlock](../sql-reference/functions/other-functions.md#function-rownumberinblock), y [runningAccumulate](../sql-reference/functions/other-functions.md#function-runningaccumulate), que explotan el procesamiento de bloques y violan la independencia de las filas.
 
 ClickHouse tiene una tipificación fuerte, por lo que no hay conversión de tipo implícita. Si una función no admite una combinación específica de tipos, produce una excepción. Pero las funciones pueden funcionar (estar sobrecargadas) para muchas combinaciones diferentes de tipos. Por ejemplo, el `plus` función (para implementar el `+` operador) funciona para cualquier combinación de tipos numéricos: `UInt8` + `Float32`, `UInt16` + `Int8` y así sucesivamente. Además, algunas funciones variadas pueden aceptar cualquier número de argumentos, como el `concat` función.
 

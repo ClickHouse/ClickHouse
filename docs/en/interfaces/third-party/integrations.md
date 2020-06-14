@@ -25,6 +25,7 @@ toc_title: Integrations
 -   Message queues
     -   [Kafka](https://kafka.apache.org)
         -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   Stream processing
     -   [Flink](https://flink.apache.org)
         -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
@@ -43,7 +44,7 @@ toc_title: Integrations
         -   [graphouse](https://github.com/yandex/graphouse)
         -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
         -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration) could be applied
+        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) could be applied
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometheus](https://prometheus.io/)
@@ -75,7 +76,7 @@ toc_title: Integrations
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [pandas](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
-- PHP
+-   PHP
     -   [Doctrine](https://www.doctrine-project.org/)
         -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
@@ -83,7 +84,7 @@ toc_title: Integrations
         -   [RClickHouse](https://github.com/IMSMWU/RClickHouse) (uses [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-        -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../../sql_reference/table_functions/jdbc.md))
+        -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../../sql-reference/table-functions/jdbc.md))
 -   Scala
     -   [Akka](https://akka.io)
         -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)

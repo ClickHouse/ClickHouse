@@ -353,9 +353,9 @@ public:
         this->data(place).read(buf, max_bins);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
-        auto & data = this->data(const_cast<AggregateDataPtr>(place));
+        auto & data = this->data(place);
 
         auto & to_array = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = to_array.getOffsets();

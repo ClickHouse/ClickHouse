@@ -29,7 +29,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
-#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -96,7 +95,7 @@ namespace
     {
         if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
-            LOG_INFO(log, std::fixed << std::setprecision(2) << processed * 100.0 / total << "%");
+            LOG_INFO(log, "{}%", processed * 100.0 / total);
             watch.restart();
         }
     }
@@ -151,7 +150,7 @@ void DatabaseOrdinary::loadStoredObjects(
 
     size_t total_tables = file_names.size() - total_dictionaries;
 
-    LOG_INFO(log, "Total " << total_tables << " tables and " << total_dictionaries << " dictionaries.");
+    LOG_INFO(log, "Total {} tables and {} dictionaries.", total_tables, total_dictionaries);
 
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed{0};
@@ -179,7 +178,6 @@ void DatabaseOrdinary::loadStoredObjects(
     startupTables(pool);
 
     /// Attach dictionaries.
-    attachToExternalDictionariesLoader(context);
     for (const auto & [name, query] : file_names)
     {
         auto create_query = query->as<const ASTCreateQuery &>();
@@ -248,7 +246,7 @@ void DatabaseOrdinary::alterTable(
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
-    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.indices);
+    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
     ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);

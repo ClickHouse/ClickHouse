@@ -1,4 +1,3 @@
-
 # 客户端 {#interfaces}
 
 ClickHouse提供了两个网络接口（两者都可以选择包装在TLS中以提高安全性）：
@@ -13,7 +12,7 @@ ClickHouse提供了两个网络接口（两者都可以选择包装在TLS中以�
 \* [C++客户端库](cpp.md)
 
 还有许多第三方库可供使用ClickHouse：
-\* [客户端库](third-party/client_libraries.md)
+\* [客户端库](third-party/client-libraries.md)
 \* [集成](third-party/integrations.md)
 \* [可视界面](third-party/gui.md)
 

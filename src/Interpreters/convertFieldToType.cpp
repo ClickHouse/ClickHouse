@@ -32,9 +32,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 
@@ -201,7 +201,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal128> *>(&type)) return convertDecimalType(src, *ptype);
 
         if (!which_type.isDateOrDateTime() && !which_type.isUUID() && !which_type.isEnum())
-            throw Exception{"Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Cannot convert field to type " + type.getName(), ErrorCodes::CANNOT_CONVERT_TYPE};
 
         if (which_type.isEnum() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {

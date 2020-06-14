@@ -585,7 +585,6 @@ bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext
     return false;
 }
 
-#if USE_POCO_JSON
 class AvroConfluentRowInputFormat::SchemaRegistry
 {
 public:
@@ -613,7 +612,7 @@ private:
             try
             {
                 Poco::URI url(base_url, "/schemas/ids/" + std::to_string(id));
-                LOG_TRACE((&Logger::get("AvroConfluentRowInputFormat")), "Fetching schema id = " << id);
+                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Fetching schema id = {}", id);
 
                 /// One second for connect/send/receive. Just in case.
                 ConnectionTimeouts timeouts({1, 0}, {1, 0}, {1, 0});
@@ -630,8 +629,7 @@ private:
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
                 auto schema = json_body->getValue<std::string>("schema");
-                LOG_TRACE((&Logger::get("AvroConfluentRowInputFormat")),
-                    "Succesfully fetched schema  id = " << id << "\n" << schema);
+                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Succesfully fetched schema id = {}\n{}", id, schema);
                 return avro::compileJsonSchemaFromString(schema);
             }
             catch (const Exception &)
@@ -640,7 +638,7 @@ private:
             }
             catch (const Poco::Exception & e)
             {
-                throw Exception(Exception::CreateFromPoco, e);
+                throw Exception(Exception::CreateFromPocoTag{}, e);
             }
             catch (const avro::Exception & e)
             {
@@ -728,7 +726,6 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     }
     return it->second;
 }
-#endif
 
 void registerInputFormatProcessorAvro(FormatFactory & factory)
 {
@@ -741,7 +738,6 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
         return std::make_shared<AvroRowInputFormat>(sample, buf, params);
     });
 
-#if USE_POCO_JSON
     factory.registerInputFormatProcessor("AvroConfluent",[](
         ReadBuffer & buf,
         const Block & sample,
@@ -750,8 +746,6 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
     {
         return std::make_shared<AvroConfluentRowInputFormat>(sample, buf, params, settings);
     });
-#endif
-
 }
 
 }

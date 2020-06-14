@@ -1,14 +1,14 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 51
 toc_title: Quota
 ---
 
 # Quota {#quotas}
 
-Les Quotas permettent de limiter l'utilisation des ressources au cours d'une période de temps, ou tout simplement suivre l'utilisation des ressources.
-Les Quotas sont configurés dans la configuration utilisateur. Ce n'est généralement ‘users.xml’.
+Les Quotas permettent de limiter l'utilisation des ressources au cours d'une période de temps ou de suivre l'utilisation des ressources.
+Les Quotas sont configurés dans la configuration utilisateur, qui est généralement ‘users.xml’.
 
 Le système dispose également d'une fonctionnalité pour limiter la complexité d'une seule requête. Voir la section “Restrictions on query complexity”).
 
@@ -39,7 +39,7 @@ Regardons la section de la ‘users.xml’ fichier qui définit les quotas.
     </default>
 ```
 
-Par défaut, le quota suit simplement la consommation de ressources pour chaque heure, sans limiter l'utilisation.
+Par défaut, le quota suit la consommation de ressources pour chaque heure, sans limiter l'utilisation.
 La consommation de ressources calculé pour chaque intervalle est sortie dans le journal du serveur après chaque demande.
 
 ``` xml
@@ -68,7 +68,7 @@ La consommation de ressources calculé pour chaque intervalle est sortie dans le
 </statbox>
 ```
 
-Pour l' ‘statbox’ quota, restrictions sont fixées pour toutes les heures et pour toutes les 24 heures (86 400 secondes). L'intervalle de temps est compté à partir d'un moment fixe défini par l'implémentation. En d'autres termes, l'intervalle de 24 heures ne commence pas nécessairement à minuit.
+Pour l' ‘statbox’ quota, restrictions sont fixées pour toutes les heures et pour toutes les 24 heures (86 400 secondes). L'intervalle de temps est compté, à partir d'un moment fixe défini par l'implémentation. En d'autres termes, l'intervalle de 24 heures ne commence pas nécessairement à minuit.
 
 Lorsque l'intervalle se termine, toutes les valeurs collectées sont effacées. Pour l'heure suivante, le calcul du quota recommence.
 
@@ -78,15 +78,15 @@ Voici les montants qui peuvent être restreint:
 
 `errors` – The number of queries that threw an exception.
 
-`result_rows` – The total number of rows given as the result.
+`result_rows` – The total number of rows given as a result.
 
-`read_rows` – The total number of source rows read from tables for running the query, on all remote servers.
+`read_rows` – The total number of source rows read from tables for running the query on all remote servers.
 
 `execution_time` – The total query execution time, in seconds (wall time).
 
 Si la limite est dépassée pendant au moins un intervalle de temps, une exception est levée avec un texte indiquant quelle restriction a été dépassée, pour quel intervalle et quand le nouvel intervalle commence (lorsque les requêtes peuvent être envoyées à nouveau).
 
-Les Quotas peuvent utiliser le “quota key” fonctionnalité afin de rendre compte des ressources pour plusieurs clés indépendamment. Voici un exemple de ce:
+Les Quotas peuvent utiliser le “quota key” fonctionnalité de rapport sur les ressources pour plusieurs clés indépendamment. Voici un exemple de ce:
 
 ``` xml
 <!-- For the global reports designer. -->
@@ -97,7 +97,7 @@ Les Quotas peuvent utiliser le “quota key” fonctionnalité afin de rendre co
             so the quota will be counted separately for each username.
         Using keys makes sense only if quota_key is transmitted by the program, not by a user.
 
-        You can also write <keyed_by_ip /> so the IP address is used as the quota key.
+        You can also write <keyed_by_ip />, so the IP address is used as the quota key.
         (But keep in mind that users can change the IPv6 address fairly easily.)
     -->
     <keyed />

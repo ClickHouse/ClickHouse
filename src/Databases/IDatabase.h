@@ -40,6 +40,10 @@ public:
     virtual bool isValid() const = 0;
 
     virtual const String & name() const = 0;
+
+    /// This method can return nullptr if it's Lazy database
+    /// (a database with support for lazy tables loading
+    /// - it maintains a list of tables but tables are loaded lazily).
     virtual const StoragePtr & table() const = 0;
 
     virtual ~IDatabaseTablesIterator() = default;
@@ -130,7 +134,7 @@ public:
     virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/) {}
 
     /// Check the existence of the table.
-    virtual bool isTableExist(const String & name) const = 0;
+    virtual bool isTableExist(const String & name, const Context & context) const = 0;
 
     /// Check the existence of the dictionary
     virtual bool isDictionaryExist(const String & /*name*/) const
@@ -139,7 +143,7 @@ public:
     }
 
     /// Get the table for work. Return nullptr if there is no table.
-    virtual StoragePtr tryGetTable(const String & name) const = 0;
+    virtual StoragePtr tryGetTable(const String & name, const Context & context) const = 0;
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
@@ -147,7 +151,7 @@ public:
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name = {}) = 0;
+    virtual DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
 
     /// Get an iterator to pass through all the dictionaries.
     virtual DatabaseDictionariesIteratorPtr getDictionariesIterator([[maybe_unused]] const FilterByNameFunction & filter_by_dictionary_name = {})
@@ -249,14 +253,14 @@ public:
     }
 
     /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
-    ASTPtr tryGetCreateTableQuery(const String & name) const noexcept
+    ASTPtr tryGetCreateTableQuery(const String & name, const Context & context) const noexcept
     {
-        return getCreateTableQueryImpl(name, false);
+        return getCreateTableQueryImpl(name, context, false);
     }
 
-    ASTPtr getCreateTableQuery(const String & name) const
+    ASTPtr getCreateTableQuery(const String & name, const Context & context) const
     {
-        return getCreateTableQueryImpl(name, true);
+        return getCreateTableQueryImpl(name, context, true);
     }
 
     /// Get the CREATE DICTIONARY query for the dictionary. Returns nullptr if dictionary doesn't exists.
@@ -304,7 +308,7 @@ public:
     virtual ~IDatabase() {}
 
 protected:
-    virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, bool throw_on_error) const
+    virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, const Context & /*context*/, bool throw_on_error) const
     {
         if (throw_on_error)
             throw Exception("There is no SHOW CREATE TABLE query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);

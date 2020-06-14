@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 59
 toc_title: "M\xE9todo de codificaci\xF3n de datos:"
 ---
@@ -26,7 +26,7 @@ Después de comenzar, `clickhouse-copier`:
 
 Para reducir el tráfico de red, recomendamos ejecutar `clickhouse-copier` en el mismo servidor donde se encuentran los datos de origen.
 
-## Ejecución de clickhouse-copiadora {#running-clickhouse-copier}
+## Ejecución de Clickhouse-copiadora {#running-clickhouse-copier}
 
 La utilidad debe ejecutarse manualmente:
 
@@ -43,7 +43,7 @@ Parámetros:
 -   `task-upload-force` — Force upload `task-file` incluso si el nodo ya existe.
 -   `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` crear `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectorios en `$base-dir`. Si se omite este parámetro, los directorios se crean en el directorio donde `clickhouse-copier` se puso en marcha.
 
-## Formato de zookeeper.XML {#format-of-zookeeper-xml}
+## Formato de Zookeeper.XML {#format-of-zookeeper-xml}
 
 ``` xml
 <yandex>

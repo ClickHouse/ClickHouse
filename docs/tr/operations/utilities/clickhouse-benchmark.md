@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: clickhouse-benchmark
 ---
@@ -91,15 +91,15 @@ Raporda bulabilirsiniz:
 
     -   ClickHouse sunucusunun bitiş noktası.
     -   İşlenen sorgu sayısı.
-    -   QPS: qps: kaç sorgu sunucusu saniyede belirtilen bir süre boyunca gerçekleştirilen `--delay` değişken.
-    -   RPS: kaç satır sunucu saniyede belirtilen bir süre boyunca okuma `--delay` değişken.
-    -   MıB / s: kaç mebibytes sunucu saniyede belirtilen bir süre boyunca okuma `--delay` değişken.
-    -   sonuç RPS: sunucu tarafından belirtilen bir süre boyunca saniyede bir sorgunun sonucuna kaç satır yerleştirilir `--delay` değişken.
-    -   sonuç MıB / s. kaç mebibytes sunucu tarafından belirtilen bir dönemde saniyede bir sorgu sonucu yerleştirilir `--delay` değişken.
+    -   QPS: qps: kaç sorgu sunucusu saniyede belirtilen bir süre boyunca gerçekleştirilen `--delay` tartışma.
+    -   RPS: kaç satır sunucu saniyede belirtilen bir süre boyunca okuma `--delay` tartışma.
+    -   MıB / s: kaç mebibytes sunucu saniyede belirtilen bir süre boyunca okuma `--delay` tartışma.
+    -   sonuç RPS: sunucu tarafından belirtilen bir süre boyunca saniyede bir sorgunun sonucuna kaç satır yerleştirilir `--delay` tartışma.
+    -   sonuç MıB / s. kaç mebibytes sunucu tarafından belirtilen bir dönemde saniyede bir sorgu sonucu yerleştirilir `--delay` tartışma.
 
 -   Sorgu yürütme süresi yüzdelik.
 
-## Karşılaştırma modu {#clickhouse-benchmark-comparison-mode}
+## Karşılaştırma Modu {#clickhouse-benchmark-comparison-mode}
 
 `clickhouse-benchmark` iki çalışan ClickHouse sunucuları için performansları karşılaştırabilirsiniz.
 
