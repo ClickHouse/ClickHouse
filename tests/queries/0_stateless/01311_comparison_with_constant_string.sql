@@ -11,7 +11,7 @@ SELECT 1 IN (1.23, '2', 2);
 SELECT '---';
 
 -- it should work but it doesn't.
-SELECT 1 = '1.0'; -- { serverError 131 }
+SELECT 1 = '1.0'; -- { serverError 53 }
 SELECT '---';
 
 SELECT 1 = '257';
