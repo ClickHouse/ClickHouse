@@ -166,6 +166,8 @@ public:
         if (!session.unique())
             throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
 
+        session->context.client_info = context.client_info;
+
         return session;
     }
 
@@ -1673,6 +1675,17 @@ std::shared_ptr<MetricLog> Context::getMetricLog()
         return {};
 
     return shared->system_logs->metric_log;
+}
+
+
+std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->asynchronous_metric_log;
 }
 
 
