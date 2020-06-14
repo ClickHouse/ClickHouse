@@ -142,8 +142,6 @@ Block RabbitMQBlockInputStream::readImpl()
     auto result_block  = non_virtual_header.cloneWithColumns(std::move(result_columns));
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
 
-    LOG_DEBUG(log, "Total amount of rows is " + std::to_string(result_block.rows()));
-
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
     {
         result_block.insert(column);

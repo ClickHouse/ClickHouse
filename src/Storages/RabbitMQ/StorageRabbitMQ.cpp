@@ -107,6 +107,8 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     auto table_id = getStorageID();
     String table_name = table_id.table_name;
+
+    /// Make sure that local exchange name is unique for each table and is not the same as client's exchange name
     local_exchange_name = exchange_name + "_" + table_name;
 }
 
@@ -132,6 +134,7 @@ Pipes StorageRabbitMQ::read(
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
+
     return pipes;
 }
 
@@ -225,12 +228,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
-    /* If exchange type is set, then there are different exchanges for external publishing and for INSERT query
-     * as in this case they are of different types.
-     */
-    String producer_exchange = exchange_type == "default" ? local_exchange_name : local_exchange_name + "_default";
-
-    return std::make_shared<WriteBufferToRabbitMQProducer>(parsed_address, login_password, routing_keys[0], producer_exchange,
+    return std::make_shared<WriteBufferToRabbitMQProducer>(parsed_address, login_password, routing_keys[0], local_exchange_name,
             log, num_consumers * num_queues, bind_by_id, use_transactional_channel,
             row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }

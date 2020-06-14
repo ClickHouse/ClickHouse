@@ -77,7 +77,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
 
 WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
-    finilize();
+    finilizeProducer();
     connection.close();
     assert(rows == 0 && chunks.empty());
 }
@@ -118,7 +118,9 @@ void WriteBufferToRabbitMQProducer::countRow()
 
         ++message_counter;
 
-        /// run event loop to actually publish, checking exchange is just a point to stop the event loop
+        /* Run event loop to actually publish, checking exchange is just a point to stop the event loop. Messages are not sent
+         * without looping and looping after every batch is much better than processing all the messages in one time.
+         */
         if ((message_counter %= Batch) == 0)
         {
             checkExchange();
@@ -132,7 +134,7 @@ void WriteBufferToRabbitMQProducer::checkExchange()
     std::atomic<bool> exchange_declared = false, exchange_error = false;
 
     /* The AMQP::passive flag indicates that it should only be checked if there is a valid exchange with the given name
-     * and makes it visible from current producer_channel.
+     * and makes it declared on the current producer_channel.
      */
     producer_channel->declareExchange(exchange_name, AMQP::direct, AMQP::passive)
     .onSuccess([&]()
@@ -142,7 +144,7 @@ void WriteBufferToRabbitMQProducer::checkExchange()
     .onError([&](const char * message)
     {
         exchange_error = true;
-        LOG_ERROR(log, "Exchange was not declared: {}", message);
+        LOG_ERROR(log, "Exchange for INSERT query was not declared. Reason: {}", message);
     });
 
     /// These variables are updated in a separate thread and starting the loop blocks current thread
@@ -153,7 +155,7 @@ void WriteBufferToRabbitMQProducer::checkExchange()
 }
 
 
-void WriteBufferToRabbitMQProducer::finilize()
+void WriteBufferToRabbitMQProducer::finilizeProducer()
 {
     checkExchange();
 

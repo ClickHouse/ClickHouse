@@ -41,8 +41,9 @@ void RabbitMQHandler::startConsumerLoop(std::atomic<bool> & loop_started)
      */
     if (mutex_before_event_loop.try_lock_for(std::chrono::milliseconds(Lock_timeout)))
     {
-        loop_started = true;
-        stop_scheduled.store(false);
+        loop_started.store(true);
+        stop_scheduled = false;
+
         event_base_loop(evbase, EVLOOP_NONBLOCK);
         mutex_before_event_loop.unlock();
     }
@@ -67,12 +68,8 @@ void RabbitMQHandler::stop()
 
 void RabbitMQHandler::stopWithTimeout()
 {
-    if (mutex_before_loop_stop.try_lock())
-    {
-        stop_scheduled.store(true);
-        event_base_loopexit(evbase, &tv);
-        mutex_before_loop_stop.unlock();
-    }
+    stop_scheduled = true;
+    event_base_loopexit(evbase, &tv);
 }
 
 }
