@@ -95,6 +95,7 @@ private:
     /// Mutex for parts currently processing in background
     /// merging (also with TTL), mutating or moving.
     mutable std::mutex currently_processing_in_background_mutex;
+    mutable std::condition_variable currently_processing_in_background_condition;
 
     /// Parts that currently participate in merge or mutation.
     /// This set have to be used with `currently_processing_in_background_mutex`.
@@ -133,7 +134,7 @@ private:
 
     Int64 getCurrentMutationVersion(
         const DataPartPtr & part,
-        std::lock_guard<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
+        std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     void clearOldMutations(bool truncate = false);
 

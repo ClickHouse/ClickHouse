@@ -1543,19 +1543,31 @@ It represents an unbiased estimate of the variance of a random variable if passe
 
 Returns `Float64`. When `n <= 1`, returns `+∞`.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varSampStable` function. It works slower but provides a lower computational error.
+
 ## varPop(x) {#varpopx}
 
 Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x̅`is the average value of `x`.
 
 In other words, dispersion for a set of values. Returns `Float64`.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varPopStable` function. It works slower but provides a lower computational error.
+
 ## stddevSamp(x) {#stddevsampx}
 
 The result is equal to the square root of `varSamp(x)`.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `stddevSampStable` function. It works slower but provides a lower computational error.
+
 ## stddevPop(x) {#stddevpopx}
 
 The result is equal to the square root of `varPop(x)`.
+
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `stddevPopStable` function. It works slower but provides a lower computational error.
 
 ## topK(N)(x) {#topknx}
 
@@ -1641,13 +1653,22 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / (n - 1)`.
 
 Returns Float64. When `n <= 1`, returns +∞.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `covarSampStable` function. It works slower but provides a lower computational error.
+
 ## covarPop(x, y) {#covarpopx-y}
 
 Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `covarPopStable` function. It works slower but provides a lower computational error.
+
 ## corr(x, y) {#corrx-y}
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `corrStable` function. It works slower but provides a lower computational error.
 
 ## categoricalInformationValue {#categoricalinformationvalue}
 
@@ -1784,7 +1805,7 @@ For more information see [parameters](#agg_functions-stochasticlinearregression-
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1.  Fitting
+**1.** Fitting
 
 <!-- -->
 
@@ -1792,7 +1813,7 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
     Predicted labels have to be in \[-1, 1\].
 
-1.  Predicting
+**2.** Predicting
 
 <!-- -->
 
