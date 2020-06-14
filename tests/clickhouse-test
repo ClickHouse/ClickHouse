@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 from __future__ import print_function
 import sys
 import os
@@ -30,6 +30,8 @@ from contextlib import closing
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
     "Coordination::Exception: Connection loss",
+    "Operation timed out",
+    "ConnectionPoolWithFailover: Connection failed at try",
 ]
 
 
@@ -51,8 +53,27 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
 
     # print(client_options)
 
+    if args.database:
+        database = args.database
+        os.environ.setdefault("CLICKHOUSE_DATABASE", database)
+
+    else:
+        # If --database is not specified, we will create temporary database with unique name
+        # And we will recreate and drop it for each test
+        def random_str(length=6):
+            import random
+            import string
+            alphabet = string.ascii_lowercase + string.digits
+            return ''.join(random.choice(alphabet) for _ in range(length))
+        database = 'test_{suffix}'.format(suffix=random_str())
+
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        clickhouse_proc_create.communicate("CREATE DATABASE " + database)
+
+        os.environ["CLICKHOUSE_DATABASE"] = database
+
     params = {
-        'client': args.client_with_database,
+        'client': args.client + ' --database=' + database,
         'logs_level': server_logs_level,
         'options': client_options,
         'test': case_file,
@@ -73,11 +94,15 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
 
+    if not args.database:
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        clickhouse_proc_create.communicate("DROP DATABASE " + database)
+
     total_time = (datetime.now() - start_time).total_seconds()
 
     # Normalize randomized database names in stdout, stderr files.
-    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stdout_file))
-    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stderr_file))
+    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
+    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
 
     stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
     stdout = unicode(stdout, errors='replace', encoding='utf-8')
@@ -108,6 +133,7 @@ def get_stacktraces_from_gdb(server_pid):
 
 
 # collect server stacktraces from system.stack_trace table
+# it does not work in Sandbox
 def get_stacktraces_from_clickhouse(client):
     try:
         return subprocess.check_output("{} --allow_introspection_functions=1 --query \"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace FROM system.stack_trace format Vertical\"".format(client), shell=True)
@@ -207,7 +233,7 @@ def run_tests_array(all_tests_with_params):
                 else:
 
                     if args.testname:
-                        clickhouse_proc = Popen(shlex.split(args.client_with_database), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+                        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
                         clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
 
                     reference_file = os.path.join(suite_dir, name) + '.reference'
@@ -307,6 +333,19 @@ def run_tests_array(all_tests_with_params):
 server_logs_level = "warning"
 
 
+def check_server_started(client, retry_count):
+    while retry_count > 0:
+        clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        (stdout, stderr) = clickhouse_proc.communicate("SELECT 1")
+        if clickhouse_proc.returncode != 0 or not stdout.startswith("1"):
+            retry_count -= 1
+            sleep(0.5)
+        else:
+            return True
+
+    return False
+
+
 def main(args):
     global SERVER_DIED
     global exit_code
@@ -320,6 +359,9 @@ def main(args):
 
         return stdout.startswith('1')
 
+    if not check_server_started(args.client, args.server_check_retries):
+        raise Exception("clickhouse-server is not responding. Cannot execute 'SELECT 1' query.")
+
     base_dir = os.path.abspath(args.queries)
     tmp_dir = os.path.abspath(args.tmp)
 
@@ -330,14 +372,13 @@ def main(args):
     if args.configclient:
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
-    os.environ.setdefault("CLICKHOUSE_DATABASE", args.database)
 
     # Force to print server warnings in stderr
     # Shell scripts could change logging level
     os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", server_logs_level)
 
     if args.zookeeper is None:
-        code, out = commands.getstatusoutput(args.extract_from_config +" --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
+        code, out = commands.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
         try:
             if int(out) > 0:
                 args.zookeeper = True
@@ -353,11 +394,12 @@ def main(args):
         else:
             args.shard = False
 
-    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
-    if args.database != "test":
+    if args.database and args.database != "test":
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
+        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
+
+    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
 
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)
@@ -460,7 +502,14 @@ def main(args):
             total_tests_run += tests_n
 
     if args.hung_check:
-        processlist = get_processlist(args.client_with_database)
+
+        # Some queries may execute in background for some time after test was finished. This is normal.
+        for n in range(1, 60):
+            processlist = get_processlist(args.client)
+            if not processlist:
+                break
+            sleep(1)
+
         if processlist:
             print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
             print(processlist)
@@ -469,8 +518,11 @@ def main(args):
             server_pid = get_server_pid(clickhouse_tcp_port)
             if server_pid:
                 print("\nLocated ClickHouse server process {} listening at TCP port {}".format(server_pid, clickhouse_tcp_port))
-                print("\nCollecting stacktraces from system.stacktraces table:")
-                print(get_stacktraces_from_clickhouse(args.client))
+
+                # It does not work in Sandbox
+                #print("\nCollecting stacktraces from system.stacktraces table:")
+                #print(get_stacktraces_from_clickhouse(args.client))
+
                 print("\nCollecting stacktraces from all running threads with gdb:")
                 print(get_stacktraces_from_gdb(server_pid))
             else:
@@ -543,6 +595,7 @@ if __name__ == '__main__':
     parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
     parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
     parser.add_argument('-U', '--unified', default=3, type=int, help='output NUM lines of unified context')
+    parser.add_argument('-r', '--server-check-retries', default=30, type=int, help='Num of tries to execute SELECT 1 before tests started')
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
@@ -608,17 +661,6 @@ if __name__ == '__main__':
            os.environ['CLICKHOUSE_URL_PARAMS'] = ''
 
         os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
-
-
-    args.client_with_database = args.client
-    if not args.database:
-        def random_str(length=6):
-            import random
-            import string
-            alphabet = string.ascii_lowercase + string.digits
-            return ''.join(random.choice(alphabet) for _ in range(length))
-        args.database = 'test_{suffix}'.format(suffix=random_str())
-    args.client_with_database += ' --database=' + args.database
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):

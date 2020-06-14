@@ -37,4 +37,6 @@ zooming
 ['s7w1z0gs3y0z','s7w1z0gs3y1p','s7w1z0gs3y1r','s7w1z0gs3y1x','s7w1z0gs3y2b','s7w1z0gs3y2c','s7w1z0gs3y2f','s7w1z0gs3y2g','s7w1z0gs3y2u','s7w1z0gs3y2v','s7w1z0gs3y30','s7w1z0gs3y31','s7w1z0gs3y32','s7w1z0gs3y33','s7w1z0gs3y34','s7w1z0gs3y35','s7w1z0gs3y36','s7w1z0gs3y37','s7w1z0gs3y38','s7w1z0gs3y39','s7w1z0gs3y3d','s7w1z0gs3y3e','s7w1z0gs3y3h','s7w1z0gs3y3j','s7w1z0gs3y3k','s7w1z0gs3y3m','s7w1z0gs3y3s','s7w1z0gs3y3t']
 ['s7w1z0gs3y0z','s7w1z0gs3y1p','s7w1z0gs3y1r','s7w1z0gs3y1x','s7w1z0gs3y2b','s7w1z0gs3y2c','s7w1z0gs3y2f','s7w1z0gs3y2g','s7w1z0gs3y2u','s7w1z0gs3y2v','s7w1z0gs3y30','s7w1z0gs3y31','s7w1z0gs3y32','s7w1z0gs3y33','s7w1z0gs3y34','s7w1z0gs3y35','s7w1z0gs3y36','s7w1z0gs3y37','s7w1z0gs3y38','s7w1z0gs3y39','s7w1z0gs3y3d','s7w1z0gs3y3e','s7w1z0gs3y3h','s7w1z0gs3y3j','s7w1z0gs3y3k','s7w1z0gs3y3m','s7w1z0gs3y3s','s7w1z0gs3y3t']
 ['s7w1z0gs3y0z','s7w1z0gs3y1p','s7w1z0gs3y1r','s7w1z0gs3y1x','s7w1z0gs3y2b','s7w1z0gs3y2c','s7w1z0gs3y2f','s7w1z0gs3y2g','s7w1z0gs3y2u','s7w1z0gs3y2v','s7w1z0gs3y30','s7w1z0gs3y31','s7w1z0gs3y32','s7w1z0gs3y33','s7w1z0gs3y34','s7w1z0gs3y35','s7w1z0gs3y36','s7w1z0gs3y37','s7w1z0gs3y38','s7w1z0gs3y39','s7w1z0gs3y3d','s7w1z0gs3y3e','s7w1z0gs3y3h','s7w1z0gs3y3j','s7w1z0gs3y3k','s7w1z0gs3y3m','s7w1z0gs3y3s','s7w1z0gs3y3t']
+input values are clamped to -90..90, -180..180 range
+32768
 errors

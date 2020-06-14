@@ -42,6 +42,7 @@ struct FormatSettings
     {
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
+        UInt64 max_value_width = 10000;
         bool color = true;
     };
 
@@ -89,6 +90,11 @@ struct FormatSettings
 
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
+
+    struct Arrow
+    {
+        UInt64 row_group_size = 1000000;
+    } arrow;
 
     struct Parquet
     {

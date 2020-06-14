@@ -50,9 +50,10 @@ struct DecimalComponents
   * If `scale` is to big (scale > maxPrecision<DecimalType::NativeType>), result is undefined.
   */
 template <typename DecimalType>
-DecimalType decimalFromComponentsWithMultiplier(const typename DecimalType::NativeType & whole,
-                                                const typename DecimalType::NativeType & fractional,
-                                                typename DecimalType::NativeType scale_multiplier)
+inline DecimalType decimalFromComponentsWithMultiplier(
+        const typename DecimalType::NativeType & whole,
+        const typename DecimalType::NativeType & fractional,
+        typename DecimalType::NativeType scale_multiplier)
 {
     using T = typename DecimalType::NativeType;
     const auto fractional_sign = whole < 0 ? -1 : 1;
@@ -70,8 +71,10 @@ DecimalType decimalFromComponentsWithMultiplier(const typename DecimalType::Nati
  * @see `decimalFromComponentsWithMultiplier` for details.
  */
 template <typename DecimalType>
-DecimalType decimalFromComponents(
-    const typename DecimalType::NativeType & whole, const typename DecimalType::NativeType & fractional, UInt32 scale)
+inline DecimalType decimalFromComponents(
+        const typename DecimalType::NativeType & whole,
+        const typename DecimalType::NativeType & fractional,
+        UInt32 scale)
 {
     using T = typename DecimalType::NativeType;
 
@@ -82,8 +85,9 @@ DecimalType decimalFromComponents(
  * @see `decimalFromComponentsWithMultiplier` for details.
  */
 template <typename DecimalType>
-DecimalType decimalFromComponents(
-    const DecimalComponents<typename DecimalType::NativeType> & components, UInt32 scale)
+inline DecimalType decimalFromComponents(
+        const DecimalComponents<typename DecimalType::NativeType> & components,
+        UInt32 scale)
 {
     return decimalFromComponents<DecimalType>(components.whole, components.fractional, scale);
 }
@@ -92,8 +96,9 @@ DecimalType decimalFromComponents(
  * This is an optimization to reduce number of calls to scaleMultiplier on known scale.
  */
 template <typename DecimalType>
-DecimalComponents<typename DecimalType::NativeType> splitWithScaleMultiplier(
-    const DecimalType & decimal, typename DecimalType::NativeType scale_multiplier)
+inline DecimalComponents<typename DecimalType::NativeType> splitWithScaleMultiplier(
+        const DecimalType & decimal,
+        typename DecimalType::NativeType scale_multiplier)
 {
     using T = typename DecimalType::NativeType;
     const auto whole = decimal.value / scale_multiplier;
@@ -106,7 +111,7 @@ DecimalComponents<typename DecimalType::NativeType> splitWithScaleMultiplier(
 
 /// Split decimal into components: whole and fractional part, @see `DecimalComponents` for details.
 template <typename DecimalType>
-DecimalComponents<typename DecimalType::NativeType> split(const DecimalType & decimal, UInt32 scale)
+inline DecimalComponents<typename DecimalType::NativeType> split(const DecimalType & decimal, UInt32 scale)
 {
     if (scale == 0)
     {
@@ -121,12 +126,28 @@ DecimalComponents<typename DecimalType::NativeType> split(const DecimalType & de
  * If scale is to big, result is undefined.
  */
 template <typename DecimalType>
-typename DecimalType::NativeType getWholePart(const DecimalType & decimal, size_t scale)
+inline typename DecimalType::NativeType getWholePart(const DecimalType & decimal, size_t scale)
 {
     if (scale == 0)
         return decimal.value;
 
     return decimal.value / scaleMultiplier<typename DecimalType::NativeType>(scale);
+}
+
+
+template <typename DecimalType, bool keep_sign = false>
+inline typename DecimalType::NativeType getFractionalPartWithScaleMultiplier(
+        const DecimalType & decimal,
+        typename DecimalType::NativeType scale_multiplier)
+{
+    using T = typename DecimalType::NativeType;
+
+    T result = decimal.value;
+    if constexpr (!keep_sign)
+        if (result < T(0))
+            result = -result;
+
+    return result % scale_multiplier;
 }
 
 /** Get fractional part from decimal
@@ -135,18 +156,12 @@ typename DecimalType::NativeType getWholePart(const DecimalType & decimal, size_
  * If scale is to big, result is undefined.
  */
 template <typename DecimalType>
-typename DecimalType::NativeType getFractionalPart(const DecimalType & decimal, size_t scale)
+inline typename DecimalType::NativeType getFractionalPart(const DecimalType & decimal, size_t scale)
 {
-    using T = typename DecimalType::NativeType;
-
     if (scale == 0)
         return 0;
 
-    T result = decimal.value;
-    if (result < T(0))
-        result *= T(-1);
-
-    return result % scaleMultiplier<T>(scale);
+    return getFractionalPartWithScaleMultiplier(decimal, scaleMultiplier<typename DecimalType::NativeType>(scale));
 }
 
 }

@@ -15,7 +15,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -232,7 +232,7 @@ protected:
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getTablesIterator();
+                tables_it = database->getTablesIterator(context);
 
             const bool need_lock_structure = needLockStructure(database, getPort().getHeader());
 
@@ -331,7 +331,7 @@ protected:
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1])
                 {
-                    ASTPtr ast = database->tryGetCreateTableQuery(table_name);
+                    ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
 
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
@@ -372,7 +372,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    if ((expression_ptr = table->getSortingKeyAST()))
+                    if ((expression_ptr = table->getSortingKey().expression_list_ast))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -381,7 +381,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    if ((expression_ptr = table->getPrimaryKeyAST()))
+                    if ((expression_ptr = table->getPrimaryKey().expression_list_ast))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();

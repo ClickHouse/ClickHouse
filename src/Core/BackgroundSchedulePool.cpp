@@ -41,11 +41,13 @@ bool BackgroundSchedulePoolTaskInfo::schedule()
     return true;
 }
 
-bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t ms)
+bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t ms, bool overwrite)
 {
     std::lock_guard lock(schedule_mutex);
 
     if (deactivated || scheduled)
+        return false;
+    if (delayed && !overwrite)
         return false;
 
     pool.scheduleDelayedTask(shared_from_this(), ms, lock);
@@ -109,7 +111,7 @@ void BackgroundSchedulePoolTaskInfo::execute()
     static const int32_t slow_execution_threshold_ms = 200;
 
     if (milliseconds >= slow_execution_threshold_ms)
-        LOG_TRACE(&Logger::get(log_name), "Execution took " << milliseconds << " ms.");
+        LOG_TRACE(&Poco::Logger::get(log_name), "Execution took {} ms.", milliseconds);
 
     {
         std::lock_guard lock_schedule(schedule_mutex);
@@ -154,7 +156,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Met
     , memory_metric(memory_metric_)
     , thread_name(thread_name_)
 {
-    LOG_INFO(&Logger::get("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with " << size << " threads");
+    LOG_INFO(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with {} threads", size);
 
     threads.resize(size);
     for (auto & thread : threads)
@@ -177,7 +179,7 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
         queue.wakeUpAll();
         delayed_thread.join();
 
-        LOG_TRACE(&Logger::get("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
+        LOG_TRACE(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
         for (auto & thread : threads)
             thread.join();
     }

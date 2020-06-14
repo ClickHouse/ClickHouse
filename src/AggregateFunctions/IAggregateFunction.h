@@ -104,7 +104,9 @@ public:
     }
 
     /// Inserts results into a column.
-    virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;
+    /// This method must be called once, from single thread.
+    /// After this method was called for state, you can't do anything with state but destroy.
+    virtual void insertResultInto(AggregateDataPtr place, IColumn & to) const = 0;
 
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
@@ -142,6 +144,13 @@ public:
     /** The same for single place.
       */
     virtual void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
+
+    /** The same for single place when need to aggregate only filtered data.
+      */
+    virtual void addBatchSinglePlaceNotNull(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena) const = 0;
+
+    virtual void addBatchSinglePlaceFromInterval(size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
 
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
       *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
@@ -196,6 +205,20 @@ public:
     void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
     {
         for (size_t i = 0; i < batch_size; ++i)
+            static_cast<const Derived *>(this)->add(place, columns, i, arena);
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena) const override
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+            if (!null_map[i])
+                static_cast<const Derived *>(this)->add(place, columns, i, arena);
+    }
+
+    void addBatchSinglePlaceFromInterval(size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
+    {
+        for (size_t i = batch_begin; i < batch_end; ++i)
             static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
