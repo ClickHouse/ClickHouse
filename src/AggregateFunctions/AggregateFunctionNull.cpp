@@ -33,6 +33,11 @@ public:
     AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params) const override
     {
+        /// Special case for 'count' function. It could be called with Nullable arguments
+        /// - that means - count number of calls, when all arguments are not NULL.
+        if (nested_function && nested_function->getName() == "count")
+            return std::make_shared<AggregateFunctionCountNotNullUnary>(arguments[0], params);
+
         bool has_nullable_types = false;
         bool has_null_types = false;
         for (const auto & arg_type : arguments)
@@ -59,11 +64,6 @@ public:
 
         if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params))
             return adapter;
-
-        /// Special case for 'count' function. It could be called with Nullable arguments
-        /// - that means - count number of calls, when all arguments are not NULL.
-        if (nested_function->getName() == "count")
-            return std::make_shared<AggregateFunctionCountNotNullUnary>(arguments[0], params);
 
         bool return_type_is_nullable = !nested_function->returnDefaultWhenOnlyNull() && nested_function->getReturnType()->canBeInsideNullable();
         bool serialize_flag = return_type_is_nullable || nested_function->returnDefaultWhenOnlyNull();
