@@ -25,6 +25,8 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name,
                                                        const DataTypes & argument_types,
                                                        const Array & parameters)
 {
+    assertBinary(name, argument_types);
+
     // default value
     Float64 significance_level = 0.1;
     if (parameters.size() > 1)
@@ -39,10 +41,10 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name,
 
     AggregateFunctionPtr res;
 
-//    if (isDecimal(argument_types[0]) || isDecimal(argument_types[1]))
-//    {
-//        throw Exception("Aggregate function " + name + " does not support decimal types.", ErrorCodes::NOT_IMPLEMENTED);
-//    }
+    if (isDecimal(argument_types[0]) || isDecimal(argument_types[1]))
+    {
+        throw Exception("Aggregate function " + name + " does not support decimal types.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     res.reset(createWithTwoNumericTypes<AggregateFunctionWelchTTest>(*argument_types[0], *argument_types[1], significance_level,
                                                                      argument_types, parameters));
