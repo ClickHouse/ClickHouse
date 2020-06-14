@@ -396,7 +396,7 @@ struct KeepFunctionMatcher
         {
             visit(ident, data);
         }
-        else
+        else if (!ast->as<ASTExpressionList>())
         {
             data.keep_key = true;
         }
