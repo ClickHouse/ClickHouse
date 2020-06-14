@@ -201,8 +201,9 @@ void get(const GeometryFromColumnParser & parser, Float64Geometry & container, s
 
 GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
-class Float64PointSerializerVisitor : publicc boost::static_visitor<void>
+class Float64PointSerializerVisitor : public boost::static_visitor<void>
 {
+public:
     Float64PointSerializerVisitor()
         : x(ColumnFloat64::create())
         , y(ColumnFloat64::create())
@@ -251,7 +252,175 @@ class Float64PointSerializerVisitor : publicc boost::static_visitor<void>
 
         return ColumnTuple::create(columns);
     }
-}
+
+private:
+    ColumnFloat64::MutablePtr x;
+    ColumnFloat64::MutablePtr y;
+};
+
+class Float64RingSerializerVisitor : public boost::static_visitor<void>
+{
+public:
+    Float64RingSerializerVisitor()
+        : offsets(ColumnUInt64::create())
+    {}
+
+    Float64RingSerializerVisitor(size_t n)
+        : offsets(ColumnUInt64::create(n))
+    {}
+
+    void operator()(const Float64Point & point)
+    {
+        size++;
+        offsets->insertValue(size);
+
+        pointSerializer(point);
+    }
+
+    void operator()(const Float64Ring & ring)
+    {
+        size += ring.size();
+        offsets->insertValue(size);
+        for (const auto & point : ring)
+        {
+            pointSerializer(point);
+        }
+    }
+
+    void operator()(const Float64Polygon & polygon)
+    {
+        if (polygon.inners().size() != 0) {
+            throw Exception("Unable to write polygon with holes to ring column", ErrorCodes::BAD_ARGUMENTS);
+        }
+        (*this)(polygon.outer());
+    }
+
+    void operator()(const Float64MultiPolygon & multi_polygon)
+    {
+        if (multi_polygon.size() != 1) {
+            throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to ring column", ErrorCodes::BAD_ARGUMENTS);
+        }
+        (*this)(multi_polygon[0]);
+    }
+
+    ColumnPtr finalize()
+    {
+        return ColumnArray::create(pointSerializer.finalize(), std::move(offsets));
+    }
+
+private:
+    size_t size;
+    Float64PointSerializerVisitor pointSerializer;
+    ColumnUInt64::MutablePtr offsets;
+};
+
+class Float64PolygonSerializerVisitor : public boost::static_visitor<void>
+{
+public:
+    Float64PolygonSerializerVisitor()
+        : offsets(ColumnUInt64::create())
+    {}
+
+    Float64PolygonSerializerVisitor(size_t n)
+        : offsets(ColumnUInt64::create(n))
+    {}
+
+    void operator()(const Float64Point & point)
+    {
+        size++;
+        offsets->insertValue(size);
+        ringSerializer(point);
+    }
+
+    void operator()(const Float64Ring & ring)
+    {
+        size++;
+        offsets->insertValue(size);
+        ringSerializer(ring);
+    }
+
+    void operator()(const Float64Polygon & polygon)
+    {
+        size += 1 + polygon.inners().size();
+        offsets->insertValue(size);
+        ringSerializer(polygon.outer());
+        for (const auto & ring : polygon.inners())
+        {
+            ringSerializer(ring);
+        }
+    }
+
+    void operator()(const Float64MultiPolygon & multi_polygon)
+    {
+        if (multi_polygon.size() != 1) {
+            throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to polygon column", ErrorCodes::BAD_ARGUMENTS);
+        }
+        (*this)(multi_polygon[0]);
+    }
+
+    ColumnPtr finalize()
+    {
+        return ColumnArray::create(ringSerializer.finalize(), std::move(offsets));
+    }
+
+private:
+    size_t size;
+    Float64RingSerializerVisitor ringSerializer;
+    ColumnUInt64::MutablePtr offsets;
+};
+
+class Float64MultiPolygonSerializerVisitor : public boost::static_visitor<void>
+{
+public:
+    Float64MultiPolygonSerializerVisitor()
+        : offsets(ColumnUInt64::create())
+    {}
+
+    Float64MultiPolygonSerializerVisitor(size_t n)
+        : offsets(ColumnUInt64::create(n))
+    {}
+
+    void operator()(const Float64Point & point)
+    {
+        size++;
+        offsets->insertValue(size);
+        polygonSerializer(point);
+    }
+
+    void operator()(const Float64Ring & ring)
+    {
+        size++;
+        offsets->insertValue(size);
+        polygonSerializer(ring);
+    }
+
+    void operator()(const Float64Polygon & polygon)
+    {
+        size++;
+        offsets->insertValue(size);
+        polygonSerializer(polygon);
+    }
+
+    void operator()(const Float64MultiPolygon & multi_polygon)
+    {
+        size += 1 + multi_polygon.size();
+        offsets->insertValue(size);
+        for (const auto & polygon : multi_polygon)
+        {
+            polygonSerializer(polygon);
+        }
+    }
+
+    ColumnPtr finalize()
+    {
+        return ColumnArray::create(polygonSerializer.finalize(), std::move(offsets));
+    }
+
+private:
+    size_t size;
+    Float64PolygonSerializerVisitor polygonSerializer;
+    ColumnUInt64::MutablePtr offsets;
+};
 
 template <class Geometry, class Visitor>
 class GeometrySerializer
@@ -268,8 +437,11 @@ public:
     }
 private:
     Visitor visitor;
-}
+};
 
 using Float64PointSerializer = GeometrySerializer<Float64Geometry, Float64PointSerializerVisitor>;
+using Float64RingSerializer = GeometrySerializer<Float64Geometry, Float64RingSerializerVisitor>;
+using Float64PolygonSerializer = GeometrySerializer<Float64Geometry, Float64PolygonSerializerVisitor>;
+using Float64MultiPolygonSerializer = GeometrySerializer<Float64Geometry, Float64MultiPolygonSerializerVisitor>;
 
 }
