@@ -40,7 +40,7 @@ public:
 private:
     void nextImpl() override;
     void checkExchange();
-    void finilize();
+    void finilizeProducer();
 
     std::pair<String, String> & login_password;
     const String routing_key;
@@ -56,9 +56,6 @@ private:
 
     size_t next_queue = 0;
     UInt64 message_counter = 0;
-    String channel_id;
-
-    Messages messages;
 
     Poco::Logger * log;
     const std::optional<char> delim;

@@ -32,7 +32,7 @@ public:
             const bool bind_by_id_,
             const size_t num_queues_,
             const String & exchange_type_,
-            const String & local_exchange_name_,
+            const String & local_exchange_,
             const std::atomic<bool> & stopped_);
 
     ~ReadBufferFromRabbitMQConsumer() override;
@@ -53,8 +53,11 @@ private:
     const size_t channel_id;
     const bool bind_by_id;
     const size_t num_queues;
+
     const String & exchange_type;
-    const String & local_exchange_name;
+    const String & local_exchange;
+    const String local_default_exchange;
+    const String local_hash_exchange;
 
     Poco::Logger * log;
     char row_delimiter;

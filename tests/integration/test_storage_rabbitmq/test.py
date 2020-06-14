@@ -497,7 +497,7 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
     assert int(result) == rabbitmq_messages*batch_messages, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(320)
+@pytest.mark.timeout(420)
 def test_rabbitmq_sharding_between_channels_publish(rabbitmq_cluster):
 
     NUM_CHANNELS = 5
@@ -560,7 +560,7 @@ def test_rabbitmq_sharding_between_channels_publish(rabbitmq_cluster):
     assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(320)
+@pytest.mark.timeout(420)
 def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
 
     NUM_QUEUES = 4
@@ -623,7 +623,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(320)
+@pytest.mark.timeout(420)
 def test_rabbitmq_sharding_between_channels_and_queues_publish(rabbitmq_cluster):
 
     NUM_CONSUMERS = 10
@@ -688,7 +688,7 @@ def test_rabbitmq_sharding_between_channels_and_queues_publish(rabbitmq_cluster)
     assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(320)
+@pytest.mark.timeout(420)
 def test_rabbitmq_read_only_combo(rabbitmq_cluster):
 
     NUM_MV = 5;
@@ -768,7 +768,7 @@ def test_rabbitmq_read_only_combo(rabbitmq_cluster):
     assert int(result) == messages_num * threads_num * NUM_MV, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
 def test_rabbitmq_insert(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -1054,7 +1054,10 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
         key = "direct_" + str(key_num)
         key_num += 1
         for message in messages:
-            channel.basic_publish(exchange='direct_exchange_testing', routing_key=key, body=message)
+            mes_id = str(randrange(10))
+            channel.basic_publish(
+                    exchange='direct_exchange_testing', routing_key=key,
+                    properties=pika.BasicProperties(message_id=mes_id), body=message)
 
     connection.close()
 
@@ -1066,8 +1069,8 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
 
     for consumer_id in range(num_tables):
         instance.query('''
-            DROP TABLE IF EXISTS test.direct_exchange_{0}_mv;
             DROP TABLE IF EXISTS test.direct_exchange_{0};
+            DROP TABLE IF EXISTS test.direct_exchange_{0}_mv;
         '''.format(consumer_id))
 
     instance.query('''
@@ -1122,7 +1125,10 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
 
     key_num = 0
     for message in messages:
-        channel.basic_publish(exchange='fanout_exchange_testing', routing_key='', body=message)
+        mes_id = str(randrange(10))
+        channel.basic_publish(
+                exchange='fanout_exchange_testing', routing_key='',
+                properties=pika.BasicProperties(message_id=mes_id), body=message)
 
     connection.close()
 
@@ -1215,7 +1221,10 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
 
     key = "random.logs"
     for message in messages:
-        channel.basic_publish(exchange='topic_exchange_testing', routing_key=key, body=message)
+        mes_id = str(randrange(10))
+        channel.basic_publish(
+                exchange='topic_exchange_testing', routing_key=key,
+                properties=pika.BasicProperties(message_id=mes_id), body=message)
 
     connection.close()
 
@@ -1225,17 +1234,11 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
         if int(result) == messages_num * num_tables + messages_num * num_tables:
             break
 
-    for consumer_id in range(num_tables):
+    for consumer_id in range(num_tables * 2):
         instance.query('''
             DROP TABLE IF EXISTS test.topic_exchange_{0};
             DROP TABLE IF EXISTS test.topic_exchange_{0}_mv;
         '''.format(consumer_id))
-
-    for consumer_id in range(num_tables):
-        instance.query('''
-            DROP TABLE IF EXISTS test.topic_exchange_{0};
-            DROP TABLE IF EXISTS test.topic_exchange_{0}_mv;
-        '''.format(num_tables + consumer_id))
 
     instance.query('''
         DROP TABLE IF EXISTS test.destination;
@@ -1244,7 +1247,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
     assert int(result) == messages_num * num_tables + messages_num * num_tables, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(320)
+@pytest.mark.timeout(420)
 def test_rabbitmq_hash_exchange(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.destination;
@@ -1288,8 +1291,8 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({'key': i[0], 'value': i[0]}))
             i[0] += 1
-        key = str(randrange(10))
         for message in messages:
+            key = str(randrange(10))
             channel.basic_publish(exchange='hash_exchange_testing', routing_key=key, body=message)
         connection.close()
 
@@ -1389,7 +1392,9 @@ def test_rabbitmq_multiple_bindings(rabbitmq_cluster):
 
         for key in keys:
             for message in messages:
-                channel.basic_publish(exchange='multiple_bindings_testing', routing_key=key, body=message)
+                mes_id = str(randrange(10))
+                channel.basic_publish(exchange='multiple_bindings_testing', routing_key=key,
+                    properties=pika.BasicProperties(message_id=mes_id), body=message)
 
         connection.close()
 
@@ -1488,8 +1493,9 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
     key_num = 0
     for message in messages:
+        mes_id = str(randrange(10))
         channel.basic_publish(exchange='headers_exchange_testing', routing_key='',
-                properties=pika.BasicProperties(headers=fields), body=message)
+                properties=pika.BasicProperties(headers=fields, message_id=mes_id), body=message)
 
     connection.close()
 
@@ -1499,16 +1505,11 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
         if int(result) == messages_num * num_tables_to_receive:
             break
 
-    for consumer_id in range(num_tables_to_receive):
+    for consumer_id in range(num_tables_to_receive + num_tables_to_ignore):
         instance.query('''
-            DROP TABLE IF EXISTS test.direct_exchange_{0}_mv;
             DROP TABLE IF EXISTS test.direct_exchange_{0};
+            DROP TABLE IF EXISTS test.direct_exchange_{0}_mv;
         '''.format(consumer_id))
-    for consumer_id in range(num_tables_to_ignore):
-        instance.query('''
-            DROP TABLE IF EXISTS test.direct_exchange_{0}_mv;
-            DROP TABLE IF EXISTS test.direct_exchange_{0};
-        '''.format(consumer_id + num_tables_to_receive))
 
     instance.query('''
         DROP TABLE IF EXISTS test.destination;
