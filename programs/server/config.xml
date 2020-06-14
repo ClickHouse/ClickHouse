@@ -136,6 +136,16 @@
       -->
     <max_server_memory_usage>0</max_server_memory_usage>
 
+    <!-- Maximum thread pool size -->
+    <!-- Maximum number of threads in the Global thread pool.
+    This will default to a maximum of 10000 threads if not specified.
+    This setting will be useful in scenarios where there are a large number
+    of distributed queries that are running concurrently but are idling most
+    of the time, in which case a higher number of threads might be required.
+    -->
+
+     <max_thread_pool_size>10000</max_thread_pool_size>
+
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
     <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>

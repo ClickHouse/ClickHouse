@@ -3,6 +3,10 @@
 
 #include <type_traits>
 
+#include <Poco/Util/Application.h>
+#include <Poco/Util/LayeredConfiguration.h>
+
+
 
 namespace DB
 {
@@ -264,6 +268,14 @@ template class ThreadPoolImpl<ThreadFromGlobalPool>;
 
 GlobalThreadPool & GlobalThreadPool::instance()
 {
-    static GlobalThreadPool ret;
+    const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
+
+    UInt64 max_threads = config.getUInt64("max_thread_pool_size", 10000);
+    size_t max_free_threads = 1000;
+    size_t max_queue_size = 10000;
+    const bool shutdown_on_exception = false;
+
+    static GlobalThreadPool ret(max_threads, max_free_threads, max_queue_size, shutdown_on_exception);
+
     return ret;
 }
