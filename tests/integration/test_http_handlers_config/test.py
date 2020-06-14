@@ -119,10 +119,10 @@ def test_defaults_http_handlers():
         assert 'Default server response' == cluster.instance.http_request('', method='GET').content
 
         assert 200 == cluster.instance.http_request('ping', method='GET').status_code
-        assert 'Ok\n' == cluster.instance.http_request('ping', method='GET').content
+        assert 'Ok.\n' == cluster.instance.http_request('ping', method='GET').content
 
         assert 200 == cluster.instance.http_request('replicas_status', method='GET').status_code
-        assert 'Ok\n' == cluster.instance.http_request('replicas_status', method='GET').content
+        assert 'Ok.\n' == cluster.instance.http_request('replicas_status', method='GET').content
 
 def test_prometheus_handler():
     with contextlib.closing(SimpleCluster(ClickHouseCluster(__file__), "prometheus_handler", "test_prometheus_handler")) as cluster:
@@ -144,4 +144,4 @@ def test_replicas_status_handler():
         assert 404 == cluster.instance.http_request('test_replicas_status', method='POST', headers={'XXX': 'xxx'}).status_code
 
         assert 200 == cluster.instance.http_request('test_replicas_status', method='GET', headers={'XXX': 'xxx'}).status_code
-        assert 'Ok\n' == cluster.instance.http_request('test_replicas_status', method='GET', headers={'XXX': 'xxx'}).content
+        assert 'Ok.\n' == cluster.instance.http_request('test_replicas_status', method='GET', headers={'XXX': 'xxx'}).content
