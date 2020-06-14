@@ -16,13 +16,12 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 
-#include <common/logger_useful.h>
-
 namespace DB {
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 using Float64Point = boost::geometry::model::d2::point_xy<Float64>;
@@ -34,42 +33,19 @@ using Float64Geometry = boost::variant<Float64Point, Float64Ring, Float64Polygon
 class Float64PointFromColumnParser
 {
 public:
-    Float64PointFromColumnParser(const IColumn & col)
+    Float64PointFromColumnParser(ColumnPtr col_)
+        : col(col_)
     {
-        const auto * tuple = checkAndGetColumn<ColumnTuple>(col);
-        if (!tuple)
-        {
-            throw Exception("not tuple ", ErrorCodes::ILLEGAL_COLUMN);
-        }
-        const auto & tuple_columns = tuple->getColumns();
+        const auto & tuple = static_cast<const ColumnTuple &>(*col_);
+        const auto & tuple_columns = tuple.getColumns();
 
-        if (tuple_columns.size() != 2)
-        {
-            throw Exception("tuple size is " + toString(tuple_columns.size()) + " != 2", ErrorCodes::ILLEGAL_COLUMN);
-        }
+        const auto & x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]);
+        x = x_data.getData().data();
 
-        const auto * x_data = checkAndGetColumn<ColumnFloat64>(*tuple_columns[0]);
-        if (!x_data)
-        {
-            throw Exception("not x ", ErrorCodes::ILLEGAL_COLUMN);
-        }
-        x = x_data->getData().data();
-        if (!x)
-        {
-            throw Exception("failed to get x column", ErrorCodes::ILLEGAL_COLUMN);
-        }
-
-        const auto * y_data = checkAndGetColumn<ColumnFloat64>(*tuple_columns[1]);
-        if (!y_data)
-        {
-            throw Exception("not y ", ErrorCodes::ILLEGAL_COLUMN);
-        }
-        y = y_data->getData().data();
-        if (!y)
-        {
-            throw Exception("failed to get y column", ErrorCodes::ILLEGAL_COLUMN);
-        }
+        const auto & y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]);
+        y = y_data.getData().data();
     }
+
 
     Float64Geometry createContainer() const
     {
@@ -87,6 +63,8 @@ public:
         boost::geometry::set<1>(container, y[i]);
     }
 private:
+    ColumnPtr col;
+
     const Float64 * x;
     const Float64 * y;
 };
@@ -95,9 +73,9 @@ template<class Geometry, class RingType, class PointParser>
 class RingFromColumnParser
 {
 public:
-    RingFromColumnParser(const IColumn & col)
-        : offsets(static_cast<const ColumnArray &>(col).getOffsets())
-        , pointParser(static_cast<const ColumnArray &>(col).getData())
+    RingFromColumnParser(ColumnPtr col_)
+        : offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
+        , pointParser(static_cast<const ColumnArray &>(*col_).getDataPtr())
     {
     }
 
@@ -121,7 +99,6 @@ public:
         container.resize(r - l);
 
         for (size_t j = l; j < r; j++) {
-            // LOG_FATAL
             pointParser.get(container[j - l], j);
         }
 
@@ -141,9 +118,9 @@ template<class Geometry, class PolygonType, class RingParser>
 class PolygonFromColumnParser
 {
 public:
-    PolygonFromColumnParser(const IColumn & col)
-        : offsets(static_cast<const ColumnArray &>(col).getOffsets())
-        , ringParser(static_cast<const ColumnArray &>(col).getData())
+    PolygonFromColumnParser(ColumnPtr col_)
+        : offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
+        , ringParser(static_cast<const ColumnArray &>(*col_).getDataPtr())
     {}
 
     Geometry createContainer() const
@@ -179,9 +156,9 @@ template<class Geometry, class MultiPolygonType, class PolygonParser>
 class MultiPolygonFromColumnParser
 {
 public:
-    MultiPolygonFromColumnParser(const IColumn & col)
-        : offsets(static_cast<const ColumnArray &>(col).getOffsets())
-        , polygonParser(static_cast<const ColumnArray &>(col).getData())
+    MultiPolygonFromColumnParser(ColumnPtr col_)
+        : offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
+        , polygonParser(static_cast<const ColumnArray &>(*col_).getDataPtr())
     {}
 
     Geometry createContainer() const
@@ -223,5 +200,76 @@ Float64Geometry createContainer(const GeometryFromColumnParser & parser);
 void get(const GeometryFromColumnParser & parser, Float64Geometry & container, size_t i);
 
 GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
+
+class Float64PointSerializerVisitor : publicc boost::static_visitor<void>
+{
+    Float64PointSerializerVisitor()
+        : x(ColumnFloat64::create())
+        , y(ColumnFloat64::create())
+    {}
+
+    Float64PointSerializerVisitor(size_t n)
+        : x(ColumnFloat64::create(n))
+        , y(ColumnFloat64::create(n))
+    {}
+
+    void operator()(const Float64Point & point)
+    {
+        x->insertValue(point.x());
+        y->insertValue(point.y());
+    }
+
+    void operator()(const Float64Ring & ring)
+    {
+        if (ring.size() != 1) {
+            throw Exception("Unable to write ring of size " + toString(ring.size()) + " != 1 to point column", ErrorCodes::BAD_ARGUMENTS);
+        }
+        (*this)(ring[0]);
+    }
+
+    void operator()(const Float64Polygon & polygon)
+    {
+        if (polygon.inners().size() != 0) {
+            throw Exception("Unable to write polygon with holes to point column", ErrorCodes::BAD_ARGUMENTS);
+        }
+        (*this)(polygon.outer());
+    }
+
+    void operator()(const Float64MultiPolygon & multi_polygon)
+    {
+        if (multi_polygon.size() != 1) {
+            throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to point column", ErrorCodes::BAD_ARGUMENTS);
+        }
+        (*this)(multi_polygon[0]);
+    }
+
+    ColumnPtr finalize()
+    {
+        Columns columns(2);
+        columns[0] = std::move(x);
+        columns[1] = std::move(y);
+
+        return ColumnTuple::create(columns);
+    }
+}
+
+template <class Geometry, class Visitor>
+class GeometrySerializer
+{
+public:
+    void add(const Geometry & geometry)
+    {
+        boost::apply_visitor(visitor, geometry);
+    }
+
+    ColumnPtr finalize()
+    {
+        return visitor.finalize();
+    }
+private:
+    Visitor visitor;
+}
+
+using Float64PointSerializer = GeometrySerializer<Float64Geometry, Float64PointSerializerVisitor>;
 
 }
