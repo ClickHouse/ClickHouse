@@ -31,7 +31,6 @@ ASTPtr * getExactChild(const ASTPtr & ast, const size_t ind)
 void changeAllIdentifiers(ASTPtr & ast, size_t ind, const char * mode)
 {
     ASTPtr * exact_child = getExactChild(ast, ind);
-    ast->dumpTree(std::cerr);
     if ((*exact_child)->as<ASTIdentifier>())
     {
         ///put new any
@@ -43,14 +42,14 @@ void changeAllIdentifiers(ASTPtr & ast, size_t ind, const char * mode)
         !AggregateFunctionFactory::instance().isAggregateFunctionName((*exact_child)->as<ASTFunction>()->name))
         for (size_t i = 0; i < (*exact_child)->as<ASTFunction>()->arguments->children.size(); i++)
             changeAllIdentifiers(*exact_child, i, mode);
-    else if (ast->as<ASTFunction>()->arguments->children[ind]->as<ASTFunction>() &&
+    else if ((*exact_child)->as<ASTFunction>() &&
              AggregateFunctionFactory::instance().isAggregateFunctionName((*exact_child)->as<ASTFunction>()->name))
         throw Exception("Aggregate function " + (*exact_child)->as<ASTFunction>()->name +
                             " is found inside aggregate function " + mode + " in query", ErrorCodes::ILLEGAL_AGGREGATION);
 }
 
 
-///cut old any, put any to identifiers. any(functions(x)) -> functions(any(x1))
+///cut old any, put any to identifiers. any(functions(x)) -> functions(any(x))
 void AnyInputMatcher::visit(ASTPtr & current_ast, Data data)
 {
     data = {};
