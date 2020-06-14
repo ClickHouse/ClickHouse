@@ -20,10 +20,6 @@ namespace DB
 
 namespace
 {
-//static IAggregateFunction * createWithExtraTypes(Float64 significance_level, const DataTypes & argument_types, const Array & parameters)
-//{
-//    return new AggregateFunctionWelchTTest<X, Y>(significance_level, argument_types, parameters);
-//}
 
 AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name,
                                                        const DataTypes & argument_types,
@@ -43,12 +39,13 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name,
 
     AggregateFunctionPtr res;
 
-    if (isDecimal(argument_types[0]) || isDecimal(argument_types[1]))
-    {
-        throw Exception("Aggregate function " + name + " does not support decimal types.", ErrorCodes::NOT_IMPLEMENTED);
-    }
+//    if (isDecimal(argument_types[0]) || isDecimal(argument_types[1]))
+//    {
+//        throw Exception("Aggregate function " + name + " does not support decimal types.", ErrorCodes::NOT_IMPLEMENTED);
+//    }
 
-    res.reset(createWithTwoNumericTypes<AggregateFunctionWelchTTest>(*argument_types[0], *argument_types[1], significance_level, argument_types, parameters));
+    res.reset(createWithTwoNumericTypes<AggregateFunctionWelchTTest>(*argument_types[0], *argument_types[1], significance_level,
+                                                                     argument_types, parameters));
 
     return res;
 }
