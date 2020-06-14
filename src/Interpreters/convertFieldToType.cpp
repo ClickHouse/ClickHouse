@@ -124,42 +124,6 @@ static Field convertDecimalType(const Field & from, const To & type)
 }
 
 
-DayNum stringToDate(const String & s)
-{
-    ReadBufferFromString in(s);
-    DayNum date{};
-
-    readDateText(date, in);
-    if (!in.eof())
-        throw Exception("String is too long for Date: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
-
-    return date;
-}
-
-UInt64 stringToDateTime(const String & s)
-{
-    ReadBufferFromString in(s);
-    time_t date_time{};
-
-    readDateTimeText(date_time, in);
-    if (!in.eof())
-        throw Exception("String is too long for DateTime: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
-
-    return UInt64(date_time);
-}
-
-DateTime64::NativeType stringToDateTime64(const String & s, UInt32 scale)
-{
-    ReadBufferFromString in(s);
-    DateTime64 datetime64 {0};
-
-    readDateTime64Text(datetime64, scale, in);
-    if (!in.eof())
-        throw Exception("String is too long for DateTime64: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
-
-    return datetime64.value;
-}
-
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)
 {
     WhichDataType which_type(type);
@@ -215,35 +179,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
         // TODO (vnemkov): extra cases for DateTime64: converting from integer, converting from Decimal
-
-        if (src.getType() == Field::Types::String)
-        {
-            if (which_type.isDate())
-            {
-                /// Convert 'YYYY-MM-DD' Strings to Date
-                return stringToDate(src.get<const String &>());
-            }
-            else if (which_type.isDateTime())
-            {
-                /// Convert 'YYYY-MM-DD hh:mm:ss' Strings to DateTime
-                return stringToDateTime(src.get<const String &>());
-            }
-            else if (which_type.isDateTime64())
-            {
-                const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&type);
-                /// Convert 'YYYY-MM-DD hh:mm:ss.NNNNNNNNN' Strings to DateTime
-                return stringToDateTime64(src.get<const String &>(), date_time64->getScale());
-            }
-            else if (which_type.isUUID())
-            {
-                return stringToUUID(src.get<const String &>());
-            }
-            else if (which_type.isEnum())
-            {
-                /// Convert String to Enum's value
-                return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
-            }
-        }
     }
     else if (which_type.isStringOrFixedString())
     {
