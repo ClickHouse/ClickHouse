@@ -132,7 +132,8 @@ private:
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
-    String generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
+    String generateFilterActions(
+        ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
 
     enum class Modificator
     {
@@ -159,6 +160,7 @@ private:
 
     /// Is calculated in getSampleBlock. Is used later in readImpl.
     ExpressionAnalysisResult analysis_result;
+    /// For row-level security.
     FilterInfoPtr filter_info;
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
