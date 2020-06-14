@@ -57,8 +57,6 @@ public:
 
         if (has_null_types)
         {
-            std::cerr << properties.returns_default_when_only_null << "\n";
-
             /// Currently the only functions that returns not-NULL on all NULL arguments are count and uniq, and they returns UInt64.
             if (properties.returns_default_when_only_null)
                 return std::make_shared<AggregateFunctionNothing>(DataTypes{std::make_shared<DataTypeUInt64>()}, params);

@@ -117,7 +117,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
         /// The case when aggregate function should return NULL on NULL arguments. This case is handled in "get" method.
         if (!out_properties.returns_default_when_only_null
-            && std::any_of(argument_types.begin(), argument_types.end(), [](const auto & type) { return type->onlyNull(); }))
+            && std::any_of(argument_types.begin(), argument_types.end(), [](const auto & type) { return WhichDataType(type).isNothing(); }))
         {
             return nullptr;
         }
