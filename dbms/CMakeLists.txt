@@ -210,7 +210,7 @@ endif ()
 add_subdirectory (src)
 
 set(dbms_headers)
-set(dbms_sources src/Compression/GroupVarint/Portability.h src/Compression/GroupVarint/CPortability.h src/Compression/GroupVarint/Config.h src/Compression/GroupVarint/Range.h src/Compression/CompressionCodecGroupVarint.h src/Compression/CompressionCodecGroupVarint.cpp)
+set(dbms_sources src/Compression/GroupVarint/Portability.h src/Compression/GroupVarint/CPortability.h src/Compression/GroupVarint/Config.h src/Compression/GroupVarint/Range.h src/Compression/CompressionCodecGroupVarint.h src/Compression/CompressionCodecGroupVarint.cpp src/Compression/CompressionCodecMaskedVByte.h)
 
 add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)

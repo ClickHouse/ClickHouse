@@ -75,7 +75,6 @@ size_t vbyte_encode(uint32_t *in, size_t length, uint8_t *bout) {
 size_t masked_vbyte_decode(const uint8_t *in, uint32_t *out, uint64_t length) {
 	size_t consumed = 0; // number of bytes read
 	uint64_t count = 0; // how many integers we have read so far
-
 	uint64_t sig = 0;
 	int availablebytes = 0;
 	if (96 < length) {
