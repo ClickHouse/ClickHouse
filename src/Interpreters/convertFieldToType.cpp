@@ -265,12 +265,22 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     if (src.getType() == Field::Types::String)
     {
         const auto col = type.createColumn();
-        ReadBufferFromString buffer(src.get<String>());
-        type.deserializeAsTextEscaped(*col, buffer, FormatSettings{});
+        ReadBufferFromString in_buffer(src.get<String>());
+
+        try
+        {
+            type.deserializeAsWholeText(*col, in_buffer, FormatSettings{});
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while converting '{}' to {}", src.get<String>(), type.getName()));
+            throw;
+        }
+        if (!in_buffer.eof())
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
 
         return (*col)[0];
     }
-
 
     // TODO (nemkov): should we attempt to parse value using or `type.deserializeAsTextEscaped()` type.deserializeAsTextEscaped() ?
     throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
