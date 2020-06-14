@@ -44,6 +44,7 @@ enum class CompressionMethodByte : uint8_t
     DoubleDelta = 0x94,
     Gorilla     = 0x95,
     GroupVarint = 0x96,
+    MaskedVByte = 0x97;
 };
 
 }

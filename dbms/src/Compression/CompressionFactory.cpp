@@ -138,6 +138,7 @@ void registerCodecT64(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
 void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecGroupVarint(CompressionCodecFactory & factory);
+void registerCodecMaskedVByte(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -152,6 +153,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
     registerCodecGroupVarint(*this);
+    registerCodecMaskedVByte(*this);
 }
 
 CompressionCodecFactory & CompressionCodecFactory::instance()
