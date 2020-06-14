@@ -26,34 +26,50 @@ using DataTypes = std::vector<DataTypePtr>;
  */
 using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &)>;
 
+struct AggregateFunctionWithProperties
+{
+    AggregateFunctionCreator creator;
+    AggregateFunctionProperties properties;
+
+    AggregateFunctionWithProperties() = default;
+    AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
+
+    template <typename Creator, std::enable_if_t<!std::is_same_v<Creator, AggregateFunctionWithProperties>> * = nullptr>
+    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {})
+        : creator(std::forward<Creator>(creator_)), properties(std::move(properties_))
+    {
+    }
+};
+
 
 /** Creates an aggregate function by name.
   */
-class AggregateFunctionFactory final : private boost::noncopyable, public IFactoryWithAliases<AggregateFunctionCreator>
+class AggregateFunctionFactory final : private boost::noncopyable, public IFactoryWithAliases<AggregateFunctionWithProperties>
 {
 public:
-
     static AggregateFunctionFactory & instance();
 
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.
     void registerFunction(
         const String & name,
-        Creator creator,
+        Value creator,
         CaseSensitiveness case_sensitiveness = CaseSensitive);
 
     /// Throws an exception if not found.
     AggregateFunctionPtr get(
         const String & name,
         const DataTypes & argument_types,
-        const Array & parameters = {},
+        const Array & parameters,
+        AggregateFunctionProperties & out_properties,
         int recursion_level = 0) const;
 
     /// Returns nullptr if not found.
     AggregateFunctionPtr tryGet(
         const String & name,
         const DataTypes & argument_types,
-        const Array & parameters = {}) const;
+        const Array & parameters,
+        AggregateFunctionProperties & out_properties) const;
 
     bool isAggregateFunctionName(const String & name, int recursion_level = 0) const;
 
@@ -62,19 +78,20 @@ private:
         const String & name,
         const DataTypes & argument_types,
         const Array & parameters,
+        AggregateFunctionProperties & out_properties,
         int recursion_level) const;
 
 private:
-    using AggregateFunctions = std::unordered_map<String, Creator>;
+    using AggregateFunctions = std::unordered_map<String, Value>;
 
     AggregateFunctions aggregate_functions;
 
     /// Case insensitive aggregate functions will be additionally added here with lowercased name.
     AggregateFunctions case_insensitive_aggregate_functions;
 
-    const AggregateFunctions & getCreatorMap() const override { return aggregate_functions; }
+    const AggregateFunctions & getMap() const override { return aggregate_functions; }
 
-    const AggregateFunctions & getCaseInsensitiveCreatorMap() const override { return case_insensitive_aggregate_functions; }
+    const AggregateFunctions & getCaseInsensitiveMap() const override { return case_insensitive_aggregate_functions; }
 
     String getFactoryName() const override { return "AggregateFunctionFactory"; }
 

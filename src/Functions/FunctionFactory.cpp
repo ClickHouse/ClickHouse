@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 void FunctionFactory::registerFunction(const
     std::string & name,
-    Creator creator,
+    Value creator,
     CaseSensitiveness case_sensitiveness)
 {
     if (!functions.emplace(name, creator).second)

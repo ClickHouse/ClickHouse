@@ -25,7 +25,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+        return argument_types.front();
     }
 
     void create(AggregateDataPtr) const override
