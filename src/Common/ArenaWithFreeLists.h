@@ -1,6 +1,6 @@
 #pragma once
 
-#if __has_include(<sanitizer/asan_interface.h>)
+#if __has_include(<sanitizer/asan_interface.h>) && defined(ADDRESS_SANITIZER)
 #   include <sanitizer/asan_interface.h>
 #endif
 #include <Core/Defines.h>
