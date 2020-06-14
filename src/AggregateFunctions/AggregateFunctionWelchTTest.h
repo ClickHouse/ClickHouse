@@ -53,12 +53,12 @@ struct AggregateFunctionWelchTTestData final
 
     size_t size_x = 0;
     size_t size_y = 0;
-    X sum_x = static_cast<Float64>(0);
-    Y sum_y = static_cast<Float64>(0);
-    X square_sum_x = static_cast<Float64>(0);
-    Y square_sum_y = static_cast<Float64>(0);
-    Float64 mean_x = 0;
-    Float64 mean_y = 0;
+    X sum_x = static_cast<X>(0);
+    Y sum_y = static_cast<Y>(0);
+    X square_sum_x = static_cast<X>(0);
+    Y square_sum_y = static_cast<Y>(0);
+    Float64 mean_x = static_cast<Float64>(0);
+    Float64 mean_y = static_cast<Float64>(0);
 
     /*
      not yet sure how to use them
