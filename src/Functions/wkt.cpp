@@ -1,6 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/geometryFromColumn.h>
+#include <Functions/geometryConverters.h>
 #include <Columns/ColumnString.h>
 
 #include <string>

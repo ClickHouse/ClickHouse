@@ -268,7 +268,7 @@ SRCS(
     geohashDecode.cpp
     geohashEncode.cpp
     geohashesInBox.cpp
-    geometryFromColumn.cpp
+    geometryConverters.cpp
     getMacro.cpp
     getScalar.cpp
     getSetting.cpp
