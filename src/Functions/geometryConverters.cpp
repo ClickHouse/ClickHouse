@@ -1,4 +1,4 @@
-#include <Functions/geometryFromColumn.h>
+#include <Functions/geometryConverters.h>
 #include <DataTypes/DataTypeCustomGeo.h>
 
 
@@ -8,15 +8,12 @@ namespace {
 
 size_t getArrayDepth(DataTypePtr data_type, size_t max_depth)
 {
-    LOG_FATAL(&Poco::Logger::get("geometryFromColumn"), "start get depth");
     size_t depth = 0;
     while (data_type && isArray(data_type) && depth != max_depth + 1)
     {
-        LOG_FATAL(&Poco::Logger::get("geometryFromColumn"), data_type->getName());
         depth++;
         data_type = static_cast<const DataTypeArray &>(*data_type).getNestedType();
     }
-    LOG_FATAL(&Poco::Logger::get("geometryFromColumn"), "End get depth");
     return depth;
 }
 
@@ -33,7 +30,7 @@ public:
 class Getter : public boost::static_visitor<void>
 {
 public:
-    Getter(Float64Geometry & container_, size_t i_)
+    constexpr Getter(Float64Geometry & container_, size_t i_)
         : container(container_)
         , i(i_)
     {}
@@ -53,18 +50,45 @@ template <class DataType, class Parser>
 Parser makeParser(const ColumnWithTypeAndName & col)
 {
     auto wanted_data_type = DataType::nestedDataType();
-    ColumnPtr casted = castColumn(col,
-        std::make_shared<DataTypeTuple>(DataTypes{
-            std::make_shared<DataTypeFloat64>(),
-            std::make_shared<DataTypeFloat64>()}));
-    LOG_FATAL(&Poco::Logger::get("geometryFromColumn"), col.type->getName() + " to " + wanted_data_type->getName());
+    ColumnPtr casted = castColumn(col, DataType::nestedDataType());
     if (!casted)
     {
         throw Exception("Failed to cast " + col.type->getName() + " to " + wanted_data_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
-
-    return Parser(*casted);
+    return Parser(std::move(casted));
 }
+
+class Float64RingSerializer {
+public:
+    Float64RingSerializer()
+        : offsets(ColumnUInt64::create())
+    {}
+
+    Float64RingSerializer(size_t n)
+        : offsets(ColumnUInt64::create(n))
+    {}
+
+    void add(const Float64Ring & ring)
+    {
+        size += ring.size();
+        offsets->insertValue(size);
+        for (const auto & point : ring)
+        {
+            pointSerializer.add(point);
+        }
+    }
+
+    ColumnPtr result()
+    {
+        return ColumnArray::create(pointSerializer.result(), std::move(offsets));
+    }
+
+private:
+    size_t size;
+    Float64PointSerializer pointSerializer;
+    ColumnUInt64::MutablePtr offsets;
+};
+
 
 }
 
