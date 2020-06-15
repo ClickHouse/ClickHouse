@@ -2,7 +2,7 @@ NOT_LOADED
 NOT_LOADED
 CREATE DICTIONARY dict_db_01224.dict
 (
-    `key` UInt64 DEFAULT 0, 
+    `key` UInt64 DEFAULT 0,
     `val` UInt64 DEFAULT 10
 )
 PRIMARY KEY key
