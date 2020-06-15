@@ -54,8 +54,8 @@ Modifies how matching by "join keys" is performed
 Algorithm requires the special column in tables. This column:
 
 - Must contain an ordered sequence.
-- Can be one of the types: [Int*, UInt*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Date](../../data-types/date.md), [DateTime](../../data-types/datetime.md), [Decimal*](../../data-types/decimal.md).
-- Mustn't be the single column in joining tables.
+- Can be one of the following types: [Int*, UInt*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Date](../../data-types/date.md), [DateTime](../../data-types/datetime.md), [Decimal*](../../data-types/decimal.md).
+- Can't be the only column in the `JOIN` clause.
 
 Syntax `ASOF JOIN ... ON`:
 
