@@ -63,14 +63,15 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 {
     auto type_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
 
-    /// If one of types is Nullable, we apply aggregate function combinator "Null".
+    /// If one of the types is Nullable, we apply aggregate function combinator "Null".
 
     if (std::any_of(type_without_low_cardinality.begin(), type_without_low_cardinality.end(),
         [](const auto & type) { return type->isNullable(); }))
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
         if (!combinator)
-            throw Exception("Logical error: cannot find aggregate function combinator to apply a function to Nullable arguments.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Logical error: cannot find aggregate function combinator to apply a function to Nullable arguments.",
+                ErrorCodes::LOGICAL_ERROR);
 
         DataTypes nested_types = combinator->transformArguments(type_without_low_cardinality);
         Array nested_parameters = combinator->transformParameters(parameters);
@@ -132,9 +133,10 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
     auto hints = this->getHints(name);
     if (!hints.empty())
-        throw Exception("Unknown aggregate function " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+        throw Exception(fmt::format("Unknown aggregate function {}. Maybe you meant: {}", name, toString(hints)),
+            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
     else
-        throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+        throw Exception(fmt::format("Unknown aggregate function {}", name), ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 }
 
 

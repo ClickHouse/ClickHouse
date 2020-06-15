@@ -33,6 +33,32 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.databases)
         return "SELECT name FROM system.databases";
 
+    /// SHOW CLUSTER/CLUSTERS 
+    if (query.clusters)
+    {
+        std::stringstream rewritten_query;
+        rewritten_query << "SELECT DISTINCT cluster FROM system.clusters";
+
+        if (!query.like.empty())
+        {
+            rewritten_query << " WHERE cluster " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');
+        }
+
+        if (query.limit_length)
+            rewritten_query << " LIMIT " << query.limit_length;
+
+        return rewritten_query.str();
+    }
+    else if (query.cluster)
+    {
+        std::stringstream rewritten_query;
+        rewritten_query << "SELECT * FROM system.clusters";
+
+        rewritten_query << " WHERE cluster = " << std::quoted(query.cluster_str, '\'');
+
+        return rewritten_query.str();
+    }
+
     if (query.temporary && !query.from.empty())
         throw Exception("The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`", ErrorCodes::SYNTAX_ERROR);
 

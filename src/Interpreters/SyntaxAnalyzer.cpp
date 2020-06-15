@@ -23,6 +23,8 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
+#include <Interpreters/DuplicateDistinctVisitor.h>
+#include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/AnyInputOptimize.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -30,6 +32,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/queryToString.h>
 
@@ -369,6 +372,18 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
 
     if (unique_elems.size() < elems.size())
         elems = std::move(unique_elems);
+}
+
+/// Optimize duplicate ORDER BY and DISTINCT
+void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, bool optimize_duplicate_order_by_and_distinct, const Context & context)
+{
+    if (optimize_duplicate_order_by_and_distinct)
+    {
+        DuplicateOrderByVisitor::Data order_by_data{context, false};
+        DuplicateOrderByVisitor(order_by_data).visit(query);
+        DuplicateDistinctVisitor::Data distinct_data{};
+        DuplicateDistinctVisitor(distinct_data).visit(query);
+    }
 }
 
 /// Remove duplicate items from LIMIT BY.
@@ -844,6 +859,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         /// Remove duplicate items from ORDER BY.
         optimizeOrderBy(select_query);
+
+        /// Remove duplicate ORDER BY and DISTINCT from subqueries.
+        optimizeDuplicateOrderByAndDistinct(query, settings.optimize_duplicate_order_by_and_distinct, context);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
