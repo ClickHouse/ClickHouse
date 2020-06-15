@@ -107,8 +107,13 @@ private:
 
         ReplicatedMergeTreeMutationEntryPtr entry;
 
-        /// Parts we have to mutate to complete mutation. We use ActiveDataPartSet structure
-        /// to be able to manage covering and covered parts.
+        /// Current parts we have to mutate to complete mutation.
+        ///
+        /// current_part_name =mutation> result_part_name
+        /// ^~~parts_to_do~~^            ^~virtual_parts~^
+        ///
+        /// We use ActiveDataPartSet structure to be able to manage covering and
+        /// covered parts.
         ActiveDataPartSet parts_to_do;
 
         /// Note that is_done is not equivalent to parts_to_do.size() == 0
@@ -204,7 +209,7 @@ private:
     /// Add part for mutations with block_number > part.getDataVersion()
     void addPartToMutations(const String & part_name);
 
-    /// Remove part from mutations which were assigned to mutate it
+    /// Remove part from mutations (parts_to_do) which were assigned to mutate it
     /// with block_number > part.getDataVersion()
     /// and block_number == part.getDataVersion()
     ///     ^ (this may happen if we downloaded mutated part from other replica)

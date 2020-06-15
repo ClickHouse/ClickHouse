@@ -201,21 +201,28 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
     if (is_successful)
     {
-
         if (!entry->actual_new_part_name.empty())
         {
             /// We don't add bigger fetched part to current_parts because we
             /// have an invariant `virtual_parts` = `current_parts` + `queue`.
-            /// But we can remove it from mutations, because we actually have it.
-            removePartFromMutations(entry->actual_new_part_name);
+            ///
+            /// But we remove covered parts from mutations, because we actually
+            /// have replacing part.
+            Strings covered_parts = current_parts.getPartsCoveredBy(MergeTreePartInfo::fromPartName(entry->actual_new_part_name, format_version));
+
+            for (const auto & covered_part : covered_parts)
+                removePartFromMutations(covered_part);
         }
 
         for (const String & virtual_part_name : entry->getVirtualPartNames())
         {
-            current_parts.add(virtual_part_name);
-            /// Each processed part may be already mutated, so we try to remove
-            /// all current parts from mutations.
-            removePartFromMutations(virtual_part_name);
+            Strings replaced_parts;
+            current_parts.add(virtual_part_name, &replaced_parts);
+
+            /// These parts are already covered by newer part, we don't have to
+            /// mutate it.
+            for (const auto & replaced_part : replaced_parts)
+                removePartFromMutations(replaced_part);
         }
 
         String drop_range_part_name;
@@ -240,11 +247,11 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
     {
         for (const String & virtual_part_name : entry->getVirtualPartNames())
         {
-            /// Because execution of the entry is unsuccessful, `virtual_part_name` will never appear
-            /// so we won't need to mutate it.
+            /// Because execution of the entry is unsuccessful,
+            /// `virtual_part_name` will never appear so we won't need to mutate
+            /// it.
             removePartFromMutations(virtual_part_name);
         }
-
     }
 }
 
@@ -678,6 +685,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                     const String & partition_id = pair.first;
                     Int64 block_num = pair.second;
                     mutations_by_partition[partition_id].emplace(block_num, &mutation);
+                    LOG_TRACE(log, "Adding mutation {} for partition {} for all block numbers less than {}", entry->znode_name, partition_id, block_num);
                 }
 
                 /// Initialize `mutation.parts_to_do`. First we need to mutate all parts in `current_parts`.
