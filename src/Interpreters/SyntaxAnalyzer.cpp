@@ -25,6 +25,7 @@
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 #include <Interpreters/DuplicateDistinctVisitor.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
+#include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -346,106 +347,12 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
         appendUnusedGroupByColumn(select_query, source_columns);
 }
 
-///recursive traversal and check for optimizeAggregateFunctionsOfGroupByKeys
-struct KeepAggregateFunctionMatcher
-{
-    struct Data
-    {
-        std::unordered_set<String> & group_by_keys;
-        bool & keep_aggregator;
-    };
-
-    using Visitor = InDepthNodeVisitor<KeepAggregateFunctionMatcher, true>;
-
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
-    {
-        return !(node->as<ASTFunction>());
-    }
-
-    static void visit(ASTFunction * function_node, Data & data)
-    {
-        if ((function_node->arguments->children).empty())
-        {
-            data.keep_aggregator = true;
-            return;
-        }
-
-        if (!data.group_by_keys.count(function_node->getColumnName()))
-        {
-            Visitor(data).visit(function_node->arguments);
-        }
-    }
-
-    static void visit(ASTIdentifier * ident, Data & data)
-    {
-        if (!data.group_by_keys.count(ident->shortName()))
-        {
-            /// if variable of a function is not in GROUP BY keys, this function should not be deleted
-            data.keep_aggregator = true;
-            return;
-        }
-    }
-
-    static void visit(const ASTPtr & ast, Data & data)
-    {
-        if (data.keep_aggregator)
-            return;
-
-        if (auto * function_node = ast->as<ASTFunction>())
-        {
-            visit(function_node, data);
-        }
-        else if (auto * ident = ast->as<ASTIdentifier>())
-        {
-            visit(ident, data);
-        }
-        else if (!ast->as<ASTExpressionList>())
-        {
-            data.keep_aggregator = true;
-        }
-    }
-};
-
-using KeepAggregateFunctionVisitor = InDepthNodeVisitor<KeepAggregateFunctionMatcher, true>;
-
-class SelectChildrenMatcher
-{
-public:
-    struct Data
-    {
-        std::unordered_set<String> & group_by_keys;
-    };
-
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
-    {
-        return !(node->as<ASTFunction>());
-    }
-
-    static void visit(ASTPtr & ast, Data & data)
-    {
-        ///check if function is min/max/any
-        auto * function_node = ast->as<ASTFunction>();
-        if (function_node && (function_node->name == "min" || function_node->name == "max" ||
-                              function_node->name == "any" || function_node->name == "anyLast"))
-        {
-            bool keep_aggregator = false;
-            KeepAggregateFunctionVisitor::Data keep_data{data.group_by_keys, keep_aggregator};
-            KeepAggregateFunctionVisitor(keep_data).visit(function_node->arguments);
-
-            if (!keep_aggregator)
-            {
-                ///place argument of an aggregate function instead of function
-                ast = (function_node->arguments->children[0])->clone();
-            }
-        }
-    }
-};
-
-using SelectChildrenVisitor = InDepthNodeVisitor<SelectChildrenMatcher, true>;
-
 /// Eliminates min/max/any-aggregators of functions of GROUP BY keys
-void optimizeAggregateFunctionsOfGroupByKeys (ASTSelectQuery * select_query)
+void optimizeAggregateFunctionsOfGroupByKeys (ASTSelectQuery * select_query, bool optimize_aggregators_of_group_by_keys)
 {
+    if (!optimize_aggregators_of_group_by_keys)
+        return;
+
     if (!select_query->groupBy())
         return;
 
@@ -475,8 +382,8 @@ void optimizeAggregateFunctionsOfGroupByKeys (ASTSelectQuery * select_query)
 
     auto select = select_query->select();
 
-    SelectChildrenVisitor::Data visitor_data{group_by_keys};
-    SelectChildrenVisitor(visitor_data).visit(select);
+    SelectAggregateFunctionOfGroupByKeysVisitor::Data visitor_data{group_by_keys};
+    SelectAggregateFunctionOfGroupByKeysVisitor(visitor_data).visit(select);
 }
 
 /// Remove duplicate items from ORDER BY.
@@ -977,7 +884,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeGroupBy(select_query, source_columns_set, context);
 
         /// Eliminate min/max/any aggregators of functions of GROUP BY keys
-        optimizeAggregateFunctionsOfGroupByKeys(select_query);
+        optimizeAggregateFunctionsOfGroupByKeys(select_query, settings.optimize_aggregators_of_group_by_keys);
 
         /// Remove duplicate items from ORDER BY.
         optimizeOrderBy(select_query);
