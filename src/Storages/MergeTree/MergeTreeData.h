@@ -465,6 +465,9 @@ public:
     /// If 'force' - don't wait for old_parts_lifetime.
     DataPartsVector grabOldParts(bool force = false);
 
+    /// Returns old commited parts that can be recompressed.
+    DataPartsVector grabOldModifiedParts();
+
     /// Reverts the changes made by grabOldParts(), parts should be in Deleting state.
     void rollbackDeletingParts(const DataPartsVector & parts);
 
@@ -851,6 +854,9 @@ protected:
     bool selectPartsAndMove();
 
     bool areBackgroundMovesNeeded() const;
+
+    /// Used to serialize calls to grabOldModifiedParts.
+    std::atomic_bool grab_old_modified_parts_called = false;
 
 private:
     /// RAII Wrapper for atomic work with currently moving parts

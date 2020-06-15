@@ -168,6 +168,7 @@ MergeTreeData::MergeTreeData(
     {
         try
         {
+            std::cerr << "In !date_column_name\n";
             auto partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
             initPartitionKey(partition_by_ast);
 
@@ -1159,6 +1160,47 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
     return res;
 }
 
+MergeTreeData::DataPartsVector MergeTreeData::grabOldModifiedParts()
+{
+    DataPartsVector parts;
+
+    if (grab_old_modified_parts_called.exchange(true))
+    {
+        return parts;
+    }
+
+    time_t now = time(nullptr);
+    std::vector<DataPartIteratorByStateAndInfo> parts_to_recompress;
+
+    {
+        auto parts_lock = lockParts();
+
+        auto parts_range = getDataPartsStateRange(DataPartState::Committed);
+        for (auto it = parts_range.begin(); it != parts_range.end(); ++it)
+        {
+            const DataPartPtr & part = *it;
+
+            if (part->modification_time < now - getSettings()->recompress_with_interval_timeout.totalSeconds())
+            {
+                parts_to_recompress.emplace_back(it);
+            }
+        }
+
+        parts.reserve(parts_to_recompress.size());
+        for (const auto & it : parts_to_recompress)
+        {
+            parts.emplace_back(*it);
+        }
+
+    }
+    if (!parts.empty())
+    {
+        LOG_TRACE(log, "Found {} old parts to recompress.", parts.size());
+    }
+
+    grab_old_modified_parts_called.store(false);
+    return parts;
+}
 
 void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector & parts)
 {

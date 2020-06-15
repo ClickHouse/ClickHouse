@@ -9,6 +9,8 @@
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/Context.h>
+#include <Poco/Util/Application.h>
+#include <Common/Config/ConfigProcessor.h>
 
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
@@ -23,17 +25,28 @@ DB::StoragePtr createStorage(DB::Context & context)
     ColumnsDescription desc = ColumnsDescription{names_and_types};
 
     StorageInMemoryMetadata meta = StorageInMemoryMetadata(desc, IndicesDescription{}, ConstraintsDescription{});
+    meta.order_by_ast = std::make_shared<ASTIdentifier>("a");
+    //meta.partition_by_ast = std::make_shared<ASTIdentifier>("date");
     //auto context_holder = getContext();
+    /*try
+    {
+        context.getMergeTreeSettings();
+    } catch (const Exception & e) {
+        std::cerr << e.getStackTraceString();
+    } catch (...) {
+        std::cerr << "Very bad\n";
+    }*/
+    std::unique_ptr<MergeTreeSettings> ptr = std::make_unique<MergeTreeSettings>(context.getMergeTreeSettings());
 
     StoragePtr table = StorageMergeTree::create(
-        StorageID("test", "test"), "table/", meta, false, context, "date", MergeTreeData::MergingParams{}, MergeTreeSettings{}, false);
+        StorageID("test", "test"), "table/", meta, false, context, "date", MergeTreeData::MergingParams{}, std::move(ptr), false);
 
     table->startup();
 
     return table;
 }
 
-std::string writeData(size_t rows, DB::StoragePtr & table, DB::Context & context)
+std::string writeData(/*size_t rows,*/ DB::StoragePtr & table/*, DB::Context & context*/)
 {
     using namespace DB;
 
@@ -42,18 +55,18 @@ std::string writeData(size_t rows, DB::StoragePtr & table, DB::Context & context
     Block block;
 
     {
-        const auto & storage_columns = table->getColumns();
-        ColumnWithTypeAndName column1;
+        /*const auto & storage_columns =*/ table->getColumns();
+        /*ColumnWithTypeAndName column1;
         column1.name = "a";
         column1.type = storage_columns.getPhysical("a").type;
         auto col1 = column1.type->createColumn();
         ColumnWithTypeAndName column2;
         column2.name = "date";
         column2.type = storage_columns.getPhysical("date").type;
-        auto col2 = column2.type->createColumn();
-        ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col1).getData();
+        auto col2 = column2.type->createColumn();*/
+        //ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col1).getData();
 
-        vec.resize(rows);
+        /*vec.resize(rows);
         for (size_t i = 0; i < rows; ++i)
         {
             vec[i] = i;
@@ -66,11 +79,11 @@ std::string writeData(size_t rows, DB::StoragePtr & table, DB::Context & context
         column1.column = std::move(col1);
         column2.column = std::move(col2);
         block.insert(column1);
-        block.insert(column2);
+        block.insert(column2);*/
     }
 
-    BlockOutputStreamPtr out = table->write({}, context);
-    out->write(block);
+    //BlockOutputStreamPtr out = table->write({}, context);
+    //out->write(block);
 
     return data;
 }
@@ -106,30 +119,55 @@ std::string readData(DB::StoragePtr & table, DB::Context & context) {
     return ss.str();
 }
 
-/*class StorageMergeTreeTest : public testing::Test
+static const char * minimal_default_user_xml =
+"<yandex>"
+"    <profiles>"
+"        <default></default>"
+"    </profiles>"
+"    <users>"
+"        <default>"
+"            <password></password>"
+"            <networks>"
+"                <ip>::/0</ip>"
+"            </networks>"
+"            <profile>default</profile>"
+"            <quota>default</quota>"
+"        </default>"
+"    </users>"
+"    <quotas>"
+"        <default></default>"
+"    </quotas>"
+"</yandex>";
+
+static DB::ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
-public:
-    void SetUp() override
-    {
-        table = createStorage(
-*/
+    std::stringstream ss{std::string{xml_data}};
+    Poco::XML::InputSource input_source{ss};
+    return {new Poco::Util::XMLConfiguration{&input_source}};
+}
 
 TEST(GrabOldModifiedParts, SimpleCase) {
     using namespace DB;
-    auto context_holder = getContext();
-    auto table = createStorage(context_holder.context);
+    const auto & context_holder = getContext();
+    Context ctx = context_holder.context;
+
+    ConfigurationPtr config = getConfigurationFromXMLString(minimal_default_user_xml);
+    ctx.setConfig(config);
+
+    auto table = createStorage(ctx);
 
     std::string data;
 
-    data += writeData(10, table, context_holder.context);
+    //data += writeData(/*10,*/ table/*, ctx*/);
+    /*data += ",";
+    data += writeData(20, table, ctx);
     data += ",";
-    data += writeData(20, table, context_holder.context);
-    data += ",";
-    data += writeData(10, table, context_holder.context);
+    data += writeData(10, table, ctx);*/
 
-    (*table).grabOldModifiedParts();
+    //StorageMergeTree *tree = dynamic_cast<StorageMergeTree *>(table.get());
+    //tree->grabOldModifiedParts();
 
-    ASSERT_EQ(data, readData(table, context_holder.context));
-
-
+    //ASSERT_EQ(data, readData(table, ctx));
+    ctx.shutdown();
 }
+
