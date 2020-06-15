@@ -60,10 +60,10 @@ void AnyInputMatcher::visit(ASTPtr & current_ast, Data data)
     if (function_node && (function_node->name == any || function_node->name == anyLast)
         && function_node->arguments->children[0]->as<ASTFunction>())
     {
-        size_t amount_of_children = current_ast->as<ASTFunction>()->arguments->children.size();
         const char * func_name = function_node->name.c_str();
         ///cut any or anyLast
         current_ast = (function_node->arguments->children[0])->clone();
+        size_t amount_of_children = current_ast->as<ASTFunction>()->arguments->children.size();
         for (size_t i = 0; i < amount_of_children; ++i)
             changeAllIdentifiers(current_ast, i, func_name);
     }
