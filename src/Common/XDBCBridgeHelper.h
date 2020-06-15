@@ -148,19 +148,25 @@ public:
     {
         if (!checkBridgeIsRunning())
         {
-            LOG_TRACE(log, BridgeHelperMixin::serviceAlias() + " is not running, will try to start it");
+            LOG_TRACE(log, "{} is not running, will try to start it", BridgeHelperMixin::serviceAlias());
             startBridge();
             bool started = false;
-            for (size_t counter : ext::range(1, 20))
+
+            uint64_t milliseconds_to_wait = 10; /// Exponential backoff
+            uint64_t counter = 0;
+            while (milliseconds_to_wait < 10000)
             {
-                LOG_TRACE(log, "Checking " + BridgeHelperMixin::serviceAlias() + " is running, try " << counter);
+                ++counter;
+                LOG_TRACE(log, "Checking {} is running, try {}", BridgeHelperMixin::serviceAlias(), counter);
                 if (checkBridgeIsRunning())
                 {
                     started = true;
                     break;
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds_to_wait));
+                milliseconds_to_wait *= 2;
             }
+
             if (!started)
                 throw Exception(BridgeHelperMixin::getName() + "BridgeHelper: " + BridgeHelperMixin::serviceAlias() + " is not responding",
                     ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
@@ -303,7 +309,7 @@ struct ODBCBridgeMixin
             cmd_args.push_back(config.getString("logger." + configPrefix() + "_level"));
         }
 
-        LOG_TRACE(log, "Starting " + serviceAlias());
+        LOG_TRACE(log, "Starting {}", serviceAlias());
 
         return ShellCommand::executeDirect(path.toString(), cmd_args, true);
     }

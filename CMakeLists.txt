@@ -327,20 +327,16 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 
 include (GNUInstallDirs)
 include (cmake/contrib_finder.cmake)
-include (cmake/lib_name.cmake)
 
 find_contrib_lib(double-conversion) # Must be before parquet
 include (cmake/find/ssl.cmake)
 include (cmake/find/ldap.cmake) # after ssl
 include (cmake/find/icu.cmake)
-include (cmake/find/boost.cmake)
 include (cmake/find/zlib.cmake)
 include (cmake/find/zstd.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
 include (cmake/find/termcap.cmake)
 # openssl, zlib before poco
-include (cmake/find/lz4.cmake)
-include (cmake/find/xxhash.cmake)
 include (cmake/find/sparsehash.cmake)
 include (cmake/find/re2.cmake)
 include (cmake/find/libgsasl.cmake)
@@ -358,17 +354,16 @@ include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/s3.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
-include (cmake/find/hyperscan.cmake)
 include (cmake/find/simdjson.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/orc.cmake)
 include (cmake/find/avro.cmake)
 include (cmake/find/msgpack.cmake)
+include (cmake/find/cassandra.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
-find_contrib_lib(metrohash)
 find_contrib_lib(btrie)
 
 if (ENABLE_TESTS)
@@ -385,9 +380,6 @@ if (OS_LINUX AND NOT ENABLE_JEMALLOC)
 endif ()
 
 if (USE_OPENCL)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUSE_OPENCL=1")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_OPENCL=1")
-
     if (OS_DARWIN)
         set(OPENCL_LINKER_FLAGS "-framework OpenCL")
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OPENCL_LINKER_FLAGS}")

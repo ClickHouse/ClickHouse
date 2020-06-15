@@ -314,7 +314,7 @@ private:
     const size_t query_wait_timeout_milliseconds;
     const size_t max_threads_for_updates;
 
-    Logger * const log;
+    Poco::Logger * log;
 
     mutable std::shared_mutex rw_lock;
 
@@ -356,7 +356,7 @@ private:
      * How the update goes: we basically have a method like get(keys)->values. Values are cached, so sometimes we
      * can return them from the cache. For values not in cache, we query them from the dictionary, and add to the
      * cache. The cache is lossy, so we can't expect it to store all the keys, and we store them separately. Normally,
-     * they would be passed as a return value of get(), but for Unknown Reasons the dictionaries use a baroque 
+     * they would be passed as a return value of get(), but for Unknown Reasons the dictionaries use a baroque
      * interface where get() accepts two callback, one that it calls for found values, and one for not found.
      *
      * Now we make it even uglier by doing this from multiple threads. The missing values are retreived from the

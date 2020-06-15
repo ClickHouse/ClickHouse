@@ -18,6 +18,7 @@ namespace
                 return false;
 
             roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
+            roles->can_contain_users = false;
             return true;
         });
     }
@@ -34,6 +35,7 @@ namespace
                 return false;
 
             to_users = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
+            to_users->can_contain_roles = false;
             return true;
         });
     }

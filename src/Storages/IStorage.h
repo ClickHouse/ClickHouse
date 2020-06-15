@@ -14,6 +14,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/TTLDescription.h>
 #include <Storages/ColumnDependency.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
@@ -82,7 +83,9 @@ class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromo
 {
 public:
     IStorage() = delete;
-    explicit IStorage(StorageID storage_id_) : storage_id(std::move(storage_id_)) {}
+    /// Storage fields should be initialized in separate methods like setColumns
+    /// or setTableTTLs.
+    explicit IStorage(StorageID storage_id_) : storage_id(std::move(storage_id_)) {} //-V730
 
     virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;
@@ -101,7 +104,7 @@ public:
     virtual bool isView() const { return false; }
 
     /// Returns true if the storage supports queries with the SAMPLE section.
-    virtual bool supportsSampling() const { return false; }
+    virtual bool supportsSampling() const { return hasSamplingKey(); }
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
@@ -130,10 +133,7 @@ public:
     virtual bool hasEvenlyDistributedRead() const { return false; }
 
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
-    virtual bool hasAnyTTL() const { return false; }
-
-    /// Returns true if there is set TTL for rows.
-    virtual bool hasRowsTTL() const { return false; }
+    virtual bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -141,9 +141,13 @@ public:
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
 public: /// thread-unsafe part. lockStructure must be acquired
-    virtual const ColumnsDescription & getColumns() const; /// returns combined set of columns
-    virtual void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
-    const IndicesDescription & getIndices() const;
+    const ColumnsDescription & getColumns() const; /// returns combined set of columns
+    void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
+
+    void setSecondaryIndices(IndicesDescription secondary_indices_);
+    const IndicesDescription & getSecondaryIndices() const;
+    /// Has at least one non primary index
+    bool hasSecondaryIndices() const;
 
     const ConstraintsDescription & getConstraints() const;
     void setConstraints(ConstraintsDescription constraints_);
@@ -184,8 +188,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// By default return empty list of columns.
     virtual NamesAndTypesList getVirtuals() const;
 
-protected: /// still thread-unsafe part.
-    void setIndices(IndicesDescription indices_);
+protected:
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
@@ -195,9 +198,18 @@ protected: /// still thread-unsafe part.
 private:
     StorageID storage_id;
     mutable std::mutex id_mutex;
+
     ColumnsDescription columns;
-    IndicesDescription indices;
+    IndicesDescription secondary_indices;
     ConstraintsDescription constraints;
+
+    StorageMetadataKeyField partition_key;
+    StorageMetadataKeyField primary_key;
+    StorageMetadataKeyField sorting_key;
+    StorageMetadataKeyField sampling_key;
+
+    TTLColumnsDescription column_ttls_by_name;
+    TTLTableDescription table_ttl;
 
 private:
     RWLockImpl::LockHolder tryLockTimed(
@@ -296,16 +308,6 @@ public:
     {
         throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
-
-    /** The same as read, but returns BlockInputStreams.
-     */
-    BlockInputStreams readStreams(
-            const Names & /*column_names*/,
-            const SelectQueryInfo & /*query_info*/,
-            const Context & /*context*/,
-            QueryProcessingStage::Enum /*processed_stage*/,
-            size_t /*max_block_size*/,
-            unsigned /*num_streams*/);
 
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
@@ -440,43 +442,98 @@ public:
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
+    /// Returns structure with partition key.
+    const StorageMetadataKeyField & getPartitionKey() const;
+    /// Set partition key for storage (methods bellow, are just wrappers for this
+    /// struct).
+    void setPartitionKey(const StorageMetadataKeyField & partition_key_);
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
-    virtual ASTPtr getPartitionKeyAST() const { return nullptr; }
-
-    /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
-    virtual ASTPtr getSortingKeyAST() const { return nullptr; }
-
-    /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
-    virtual ASTPtr getPrimaryKeyAST() const { return nullptr; }
-
-    /// Returns sampling expression AST for storage or nullptr if there is none.
-    virtual ASTPtr getSamplingKeyAST() const { return nullptr; }
-
+    ASTPtr getPartitionKeyAST() const { return partition_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) partition key.
+    bool isPartitionKeyDefined() const;
+    /// Storage has partition key.
+    bool hasPartitionKey() const;
     /// Returns column names that need to be read to calculate partition key.
-    virtual Names getColumnsRequiredForPartitionKey() const { return {}; }
+    Names getColumnsRequiredForPartitionKey() const;
 
+
+    /// Returns structure with sorting key.
+    const StorageMetadataKeyField & getSortingKey() const;
+    /// Set sorting key for storage (methods bellow, are just wrappers for this
+    /// struct).
+    void setSortingKey(const StorageMetadataKeyField & sorting_key_);
+    /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
+    ASTPtr getSortingKeyAST() const { return sorting_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) sorting key.
+    bool isSortingKeyDefined() const;
+    /// Storage has sorting key. It means, that it contains at least one column.
+    bool hasSortingKey() const;
     /// Returns column names that need to be read to calculate sorting key.
-    virtual Names getColumnsRequiredForSortingKey() const { return {}; }
-
-    /// Returns column names that need to be read to calculate primary key.
-    virtual Names getColumnsRequiredForPrimaryKey() const { return {}; }
-
-    /// Returns column names that need to be read to calculate sampling key.
-    virtual Names getColumnsRequiredForSampling() const { return {}; }
-
-    /// Returns column names that need to be read for FINAL to work.
-    virtual Names getColumnsRequiredForFinal() const { return {}; }
-
+    Names getColumnsRequiredForSortingKey() const;
     /// Returns columns names in sorting key specified by user in ORDER BY
     /// expression. For example: 'a', 'x * y', 'toStartOfMonth(date)', etc.
-    virtual Names getSortingKeyColumns() const { return {}; }
+    Names getSortingKeyColumns() const;
 
-    /// Returns columns, which will be needed to calculate dependencies
-    /// (skip indices, TTL expressions) if we update @updated_columns set of columns.
-    virtual ColumnDependencies getColumnDependencies(const NameSet & /* updated_columns */) const { return {}; }
+    /// Returns structure with primary key.
+    const StorageMetadataKeyField & getPrimaryKey() const;
+    /// Set primary key for storage (methods bellow, are just wrappers for this
+    /// struct).
+    void setPrimaryKey(const StorageMetadataKeyField & primary_key_);
+    /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
+    ASTPtr getPrimaryKeyAST() const { return primary_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) sorting key.
+    bool isPrimaryKeyDefined() const;
+    /// Storage has primary key (maybe part of some other key). It means, that
+    /// it contains at least one column.
+    bool hasPrimaryKey() const;
+    /// Returns column names that need to be read to calculate primary key.
+    Names getColumnsRequiredForPrimaryKey() const;
+    /// Returns columns names in sorting key specified by. For example: 'a', 'x
+    /// * y', 'toStartOfMonth(date)', etc.
+    Names getPrimaryKeyColumns() const;
 
-    /// Returns storage policy if storage supports it
+    /// Returns structure with sampling key.
+    const StorageMetadataKeyField & getSamplingKey() const;
+    /// Set sampling key for storage (methods bellow, are just wrappers for this
+    /// struct).
+    void setSamplingKey(const StorageMetadataKeyField & sampling_key_);
+    /// Returns sampling expression AST for storage or nullptr if there is none.
+    ASTPtr getSamplingKeyAST() const { return sampling_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) sampling key.
+    bool isSamplingKeyDefined() const;
+    /// Storage has sampling key.
+    bool hasSamplingKey() const;
+    /// Returns column names that need to be read to calculate sampling key.
+    Names getColumnsRequiredForSampling() const;
+
+    /// Returns column names that need to be read for FINAL to work.
+    Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }
+
+    /// Returns columns, which will be needed to calculate dependencies (skip
+    /// indices, TTL expressions) if we update @updated_columns set of columns.
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
+
+    /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
+
+    /// Common tables TTLs (for rows and moves).
+    const TTLTableDescription & getTableTTLs() const;
+    void setTableTTLs(const TTLTableDescription & table_ttl_);
+    bool hasAnyTableTTL() const;
+
+    /// Separate TTLs for columns.
+    const TTLColumnsDescription & getColumnTTLs() const;
+    void setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_);
+    bool hasAnyColumnTTL() const;
+
+    /// Just wrapper for table TTLs, return rows part of table TTLs.
+    const TTLDescription & getRowsTTL() const;
+    bool hasRowsTTL() const;
+
+    /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
+    /// table TTL.
+    const TTLDescriptions & getMoveTTLs() const;
+    bool hasAnyMoveTTL() const;
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
