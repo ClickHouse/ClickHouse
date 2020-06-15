@@ -136,6 +136,7 @@ def get_css_in(args):
         f"'{args.website_dir}/css/bootstrap.css'",
         f"'{args.website_dir}/css/docsearch.css'",
         f"'{args.website_dir}/css/base.css'",
+        f"'{args.website_dir}/css/blog.css'",
         f"'{args.website_dir}/css/docs.css'",
         f"'{args.website_dir}/css/highlight.css'"
     ]

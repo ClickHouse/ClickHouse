@@ -37,13 +37,16 @@
 {% if is_amp %}
     {% include "templates/docs/amp.html" %}
 {% else %}
-
+    {% if not is_blog %}
+        {% set extra_html_attrs = 'data-version="' + data_version + '" data-single-page="' + data_single_page + '"' %}
+        {% set extra_body_attrs = 'data-spy="scroll" data-target="#toc" data-offset="80"' %}
+    {% else %}
+        {% set extra_body_attrs = 'class="blog"' %}
+    {% endif %}
     {% extends "templates/base.html" %}
 
     {% block content %}
     {% if not is_blog %}
-        {% set extra_html_attrs = 'data-version="' + data_version + '" data-single-page="' + data_single_page + '"' %}
-        {% set extra_body_attrs = 'data-spy="scroll" data-target="#toc" data-offset="80"' %}
         {% include "templates/docs/nav.html" %}
         <div class="container-fluid{% if direction == 'rtl' %} text-right{% endif %}">
             <div class="row justify-content-end{% if not single_page %} justify-content-xl-center{% endif %}">
@@ -55,12 +58,16 @@
             </div>
         </div>
     {% else %}
-    {% include "templates/blog/nav.html" %}
-    <div class="container">
-        <div class="row">
-            {% include "templates/blog/content.html" %}
+        {% include "templates/blog/nav.html" %}
+        <div class="container">
+            <div class="row">
+                {% include "templates/blog/content.html" %}
+            </div>
         </div>
-    </div>
+        {% if page and page.meta.is_index %}
+            {% include "templates/index/community.html" %}
+            {% include "templates/blog/footer.html" %}
+        {% endif %}
     {% endif %}
 
     {% endblock %}

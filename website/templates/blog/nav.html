@@ -23,6 +23,22 @@
                         GitHub
                      </a>
                 </li>
+                <li id="languages-wrapper" class="nav-item dropdown">
+                    <div id="languages-dropdown">
+                        <a class="nav-link dropdown-toggle d-inline-block text-reset" href="#" id="lang-dropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                            <img src="/images/flags/{{ language }}.svg" alt="{{ config.extra.languages[language] }}" title="{{ config.extra.languages[language] }}" width="32" class="d-inline-block mt-n1" />
+                        </a>
+                        <div class="dropdown-menu" aria-labelledby="lang-dropdown">
+                            {% for code, name in config.extra.languages.items() %}
+                            <a class="dropdown-item text-reset {% if language == code %}disabled{% endif %}"
+                               href="/blog/{{ code }}/">
+                                <img src="/images/flags/{{ code }}.svg" alt="" title="" width="32" class="d-inline-block mr-2" />
+                                {{ name }}
+                            </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </li>
             </ul>
         </div>
     </div>
