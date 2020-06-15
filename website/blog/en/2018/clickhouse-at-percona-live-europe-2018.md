@@ -9,7 +9,6 @@ Open-source database management systems conference [Percona Live](https://www.pe
 
 There were three talks about ClickHouse in agenda, while only one of them was from Yandex. Also we had a lot of interesting conversations with conference attendees at ClickHouse booth sponsored by Altinity.
 
-
 Alexander Zaitsev, CTO and co-founder of Altinity, gives an overview of ClickHouse and then demonstrates case studies and best practices ([slides](https://presentations.clickhouse.tech/percona_europe_2018/Altinity.pdf)):
 ![](https://avatars.mds.yandex.net/get-yablogs/51778/file_1542787905415/orig)
 

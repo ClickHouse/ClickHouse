@@ -1,0 +1,10 @@
+---
+title: 'ClickHouse at Data@Scale 2017'
+image: 'https://avatars.mds.yandex.net/get-yablogs/61002/file_1498059872034/orig'
+date: '2018-06-15'
+tags: ['conference', 'Seattle', 'USA', 'America', 'events']
+---
+
+<iframe class="mx-auto" width="560" height="315" src="https://www.youtube.com/embed/bSyQahMVZ7w" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+[Slides](https://presentations.clickhouse.tech/data_at_scale/)

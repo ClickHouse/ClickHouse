@@ -12,7 +12,7 @@ Each post needs to have a `yaml` meta-header with the following fields:
 
 -   Required:
     -   `title`, main name of the article. In Title Case for English.
-    -   `date`, in ISO8601 format, like `YYYY-MM-DD`.
+    -   `date`, publication date in [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) format, like `YYYY-MM-DD` (can be in future to postpone publication).
 -   Optional:
     -   `image`, URL to main post image.
     -   `tags`, list of post tags.

@@ -1,0 +1,5 @@
+clickhouse-meetup-in-berlin-october-5-2017.md 2017/clickhouse-meetup-in-berlin-october-5-2017.md
+clickhouse-meetup-at-berlin-october-5-2017.md 2017/clickhouse-meetup-in-berlin-october-5-2017.md
+clickhouse-meetup-in-santa-clara-may-4-2017.md 2017/clickhouse-meetup-in-santa-clara-may-4-2017.md
+clickhouse-meetup-at-santa-clara-may-4-2017.md 2017/clickhouse-meetup-in-santa-clara-may-4-2017.md
+clickhouse-community-meetup-in-berlin-on-july-3.md 2018/announcing-clickhouse-community-meetup-in-berlin-on-july-3.md
