@@ -646,7 +646,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
         }
     }
 
-    if (some_active_mutations_were_killed)
+    if (some_active_mutations_were_killed && storage.queue_task_handle)
         storage.queue_task_handle->signalReadyToRun();
 
     if (!entries_to_load.empty())
@@ -759,7 +759,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
     }
 
-    if (mutation_was_active)
+    if (mutation_was_active && storage.queue_task_handle)
         storage.queue_task_handle->signalReadyToRun();
 
     return entry;
