@@ -6,7 +6,7 @@ The ClickHouse blog is published alongside documentation and the rest of officia
 
 ## How To Add a New Post?
 
-Basically you need to create a new Markdown file at the following location inside repository `/blog/<lang>/<year>/<post-slug>.md` and then [open a pull-request](https://github.com/ClickHouse/ClickHouse/compare) with it.
+Basically you need to create a new Markdown file at the following location inside repository `/website/blog/<lang>/<year>/<post-slug>.md` and then [open a pull-request](https://github.com/ClickHouse/ClickHouse/compare) with it.
 
 Each post needs to have a `yaml` meta-header with the following fields:
 
@@ -19,18 +19,27 @@ Each post needs to have a `yaml` meta-header with the following fields:
  
 Then after header goes post content in a normal markdown (with some optional extensions).
  
+The recommended place to store images is this GitHub repo: <https://github.com/ClickHouse/clickhouse-blog-images>. It's folder structure matches this folder with blog posts:
+
+-   `<lang>/<year>/<post-slug>/main.jpg` for main post image (linked in `image` header field).
+-   `<lang>/<year>/<post-slug>/whatever.jpg` for other images (`png` or `gif` are acceptable as well, if necessary).
+
 ### Example
  ```markdown
 ---
 title: 'ClickHouse Meetup in Beijing on June 8, 2019'
-image: 'https://blog-images.clickhouse.tech/README/main.jpg'
+image: 'https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-beijing-on-june-8-2019/main.jpg'
 date: '2019-06-13'
 tags: ['meetup','Beijing','China','events']
 ---
 
 24th ClickHouse Meetup globally and 3rd one in China took place in Beijing on Dragon Boat Festival weekend, which appeared to...
+
+![ClickHouse branded Beijing duck](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-beijing-on-june-8-2019/9.jpg)
 ```
 
 ## How To Add a New Blog Language?
 
-It's not so straightforward and won't be documented for now, but you can just create the language directory with the first post as described above and we'll configure the website infrastructure to include it during/after merging the pull-request.
+If you want to write a guest post, you are welcome to use your native language or make multiple posts in multiple languages.
+
+At the moment it's not so straightforward to set up a new language for blog and it won't be documented for now, but you can just create the language directory with the first post as described above and we'll configure the website infrastructure to include it during/after merging the pull-request.
