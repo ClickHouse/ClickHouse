@@ -368,7 +368,7 @@ void ReplicatedMergeTreePartCheckThread::run()
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-        if (e.code == Coordination::ZSESSIONEXPIRED)
+        if (e.code == Coordination::Error::ZSESSIONEXPIRED)
             return;
 
         task->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
