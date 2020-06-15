@@ -29,6 +29,18 @@ TableJoin::TableJoin(const Settings & settings, VolumeJBODPtr tmp_volume_)
         join_algorithm = JoinAlgorithm::PREFER_PARTIAL_MERGE;
 }
 
+void TableJoin::resetCollected()
+{
+    key_names_left.clear();
+    key_names_right.clear();
+    key_asts_left.clear();
+    key_asts_right.clear();
+    columns_from_joined_table.clear();
+    columns_added_by_join.clear();
+    original_names.clear();
+    renames.clear();
+}
+
 void TableJoin::addUsingKey(const ASTPtr & ast)
 {
     key_names_left.push_back(ast->getColumnName());

@@ -50,7 +50,7 @@ sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
 sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
 ```
 
-If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). The `prestable` tag is sometimes available too.
+If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). `prestable` is sometimes also available.
 
 Then run these commands to install packages:
 
@@ -64,7 +64,7 @@ You can also download and install packages manually from [here](https://repo.cli
 
 It is recommended to use official pre-compiled `tgz` archives for all Linux distributions, where installation of `deb` or `rpm` packages is not possible.
 
-The required version can be downloaded with `curl` or `wget` from repository https://repo.yandex.ru/clickhouse/tgz/.
+The required version can be downloaded with `curl` or `wget` from repository https://repo.clickhouse.tech/tgz/.
 After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest version:
 
 ``` bash

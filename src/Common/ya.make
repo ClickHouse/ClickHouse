@@ -18,17 +18,7 @@ PEERDIR(
     contrib/restricted/ryu
 )
 
-# TODO: stub for config_version.h
-CFLAGS (GLOBAL -DDBMS_NAME=\"ClickHouse\")
-CFLAGS (GLOBAL -DDBMS_VERSION_MAJOR=0)
-CFLAGS (GLOBAL -DDBMS_VERSION_MINOR=0)
-CFLAGS (GLOBAL -DDBMS_VERSION_PATCH=0)
-CFLAGS (GLOBAL -DVERSION_FULL=\"ClickHouse\")
-CFLAGS (GLOBAL -DVERSION_INTEGER=0)
-CFLAGS (GLOBAL -DVERSION_NAME=\"ClickHouse\")
-CFLAGS (GLOBAL -DVERSION_OFFICIAL=\"\\\(arcadia\\\)\")
-CFLAGS (GLOBAL -DVERSION_REVISION=0)
-CFLAGS (GLOBAL -DVERSION_STRING=\"Unknown\")
+INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
 
 SRCS(
     ActionLock.cpp
@@ -40,6 +30,7 @@ SRCS(
     Config/configReadClient.cpp
     Config/ConfigReloader.cpp
     createHardLink.cpp
+    clearPasswordFromCommandLine.cpp
     CurrentMetrics.cpp
     CurrentThread.cpp
     DNSResolver.cpp

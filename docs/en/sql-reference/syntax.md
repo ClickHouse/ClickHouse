@@ -28,9 +28,10 @@ There may be any number of space symbols between syntactical constructions (incl
 
 ## Comments {#comments}
 
-ClickHouse supports either SQL-style and C-style comments.
-SQL-style comments start with `--` and continue to the end of the line, a space after `--` can be omitted.
-C-style are from `/*` to `*/`and can be multiline, spaces are not required either.
+ClickHouse supports either SQL-style and C-style comments:
+
+-   SQL-style comments start with `--` and continue to the end of the line, a space after `--` can be omitted.
+-   C-style are from `/*` to `*/`and can be multiline, spaces are not required either.
 
 ## Keywords {#syntax-keywords}
 
@@ -39,7 +40,7 @@ Keywords are case-insensitive when they correspond to:
 -   SQL standard. For example, `SELECT`, `select` and `SeLeCt` are all valid.
 -   Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is the same as `datetime`.
 
-Whether data type name is case-sensitive can be checked in the `system.data_type_families` table.
+You can check whether a data type name is case-sensitive in the [system.data_type_families](../operations/system-tables.md#system_tables-data_type_families) table.
 
 In contrast to standard SQL, all other keywords (including functions names) are **case-sensitive**.
 

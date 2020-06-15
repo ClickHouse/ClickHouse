@@ -63,18 +63,16 @@ void IMergeTreeDataPartWriter::Stream::addToChecksums(MergeTreeData::DataPart::C
 
 
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
-    DiskPtr disk_,
-    const String & part_path_,
-    const MergeTreeData & storage_,
+    const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : disk(std::move(disk_))
-    , part_path(part_path_)
-    , storage(storage_)
+    : data_part(data_part_)
+    , part_path(data_part_->getFullRelativePath())
+    , storage(data_part_->storage)
     , columns_list(columns_list_)
     , marks_file_extension(marks_file_extension_)
     , index_granularity(index_granularity_)
@@ -87,6 +85,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
 
+    auto disk = data_part->volume->getDisk();
     if (!disk->exists(part_path))
         disk->createDirectories(part_path);
 }
@@ -165,7 +164,7 @@ void IMergeTreeDataPartWriter::initPrimaryIndex()
 {
     if (storage.hasPrimaryKey())
     {
-        index_file_stream = disk->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        index_file_stream = data_part->volume->getDisk()->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
 
@@ -174,18 +173,18 @@ void IMergeTreeDataPartWriter::initPrimaryIndex()
 
 void IMergeTreeDataPartWriter::initSkipIndices()
 {
-    for (const auto & index : skip_indices)
+    for (const auto & index_helper : skip_indices)
     {
-        String stream_name = index->getFileName();
+        String stream_name = index_helper->getFileName();
         skip_indices_streams.emplace_back(
                 std::make_unique<IMergeTreeDataPartWriter::Stream>(
                         stream_name,
-                        disk,
+                        data_part->volume->getDisk(),
                         part_path + stream_name, INDEX_FILE_EXTENSION,
                         part_path + stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size,
                         0, settings.aio_threshold));
-        skip_indices_aggregators.push_back(index->createIndexAggregator());
+        skip_indices_aggregators.push_back(index_helper->createIndexAggregator());
         skip_index_filling.push_back(0);
     }
 
@@ -254,7 +253,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
     /// Filling and writing skip indices like in MergeTreeDataPartWriterWide::writeColumn
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
-        const auto index = skip_indices[i];
+        const auto index_helper = skip_indices[i];
         auto & stream = *skip_indices_streams[i];
         size_t prev_pos = 0;
         skip_index_current_data_mark = skip_index_data_mark;
@@ -270,7 +269,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
                 limit = index_granularity.getMarkRows(skip_index_current_data_mark);
                 if (skip_indices_aggregators[i]->empty())
                 {
-                    skip_indices_aggregators[i] = index->createIndexAggregator();
+                    skip_indices_aggregators[i] = index_helper->createIndexAggregator();
                     skip_index_filling[i] = 0;
 
                     if (stream.compressed.offset() >= settings.min_compress_block_size)
@@ -295,7 +294,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
                 ++skip_index_filling[i];
 
                 /// write index if it is filled
-                if (skip_index_filling[i] == index->granularity)
+                if (skip_index_filling[i] == index_helper->index.granularity)
                 {
                     skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
                     skip_index_filling[i] = 0;

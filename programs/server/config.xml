@@ -1,6 +1,9 @@
 <?xml version="1.0"?>
 <!--
   NOTE: User and query level settings are set up in "users.xml" file.
+  If you have accidentially specified user-level settings here, server won't start.
+  You can either move the settings to the right place inside "users.xml" file
+   or add <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings> here.
 -->
 <yandex>
     <logger>
@@ -191,7 +194,7 @@
 
     <!-- Path to folder where users and roles created by SQL commands are stored. -->
     <access_control_path>/var/lib/clickhouse/access/</access_control_path>
-    
+
     <!-- Path to configuration file with users, access rights, profiles of settings, quotas. -->
     <users_config>users.xml</users_config>
 
@@ -227,7 +230,7 @@
           and to prevent clickhouse executable from being paged out under high IO load.
          Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
     -->
-    <mlock_executable>false</mlock_executable>
+    <mlock_executable>true</mlock_executable>
 
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.tech/docs/en/operations/table_engines/distributed/
@@ -477,6 +480,20 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
+
+    <!--
+        Asynchronous metric log contains values of metrics from
+        system.asynchronous_metrics.
+    -->
+    <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <!--
+            Asynchronous metrics are updated once a minute, so there is
+            no need to flush more often.
+        -->
+        <flush_interval_milliseconds>60000</flush_interval_milliseconds>
+    </asynchronous_metric_log>
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
          See https://clickhouse.yandex/docs/en/dicts/internal_dicts/

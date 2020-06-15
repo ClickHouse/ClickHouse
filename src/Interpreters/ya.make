@@ -19,6 +19,8 @@ SRCS(
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
     Aggregator.cpp
+    ArithmeticOperationsInAgrFuncOptimize.cpp
+    ArithmeticOperationsInAgrFuncOptimize.h
     ArrayJoinAction.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp
@@ -103,6 +105,7 @@ SRCS(
     MarkTableIdentifiersVisitor.cpp
     MergeJoin.cpp
     MetricLog.cpp
+    AsynchronousMetricLog.cpp
     MutationsInterpreter.cpp
     NullableUtils.cpp
     OptimizeIfChains.cpp

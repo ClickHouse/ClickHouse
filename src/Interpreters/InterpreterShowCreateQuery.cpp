@@ -50,7 +50,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
         auto resolve_table_type = show_query->temporary ? Context::ResolveExternal : Context::ResolveOrdinary;
         auto table_id = context.resolveStorageID(*show_query, resolve_table_type);
         context.checkAccess(AccessType::SHOW_COLUMNS, table_id);
-        create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name);
+        create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, context);
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
     {
@@ -69,7 +69,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
         create_query = DatabaseCatalog::instance().getDatabase(show_query->database)->getCreateDictionaryQuery(show_query->table);
     }
 
-    if (!create_query && show_query && show_query->temporary)
+    if (!create_query)
         throw Exception("Unable to show the create query of " + show_query->table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
 
     if (!context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)

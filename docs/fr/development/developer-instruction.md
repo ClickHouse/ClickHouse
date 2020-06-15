@@ -141,7 +141,7 @@ Les builds officiels de Yandex utilisent actuellement GCC car ils génèrent du 
 
 Pour installer GCC sur Ubuntu Exécutez: `sudo apt install gcc g++`
 
-Vérifiez la version de gcc: `gcc --version`. Si elle est inférieure à 9, suivez les instructions ici: https://clickhouse.tech/docs/fr/développement/construction/\#install-gcc-9.
+Vérifiez la version de gcc: `gcc --version`. Si elle est inférieure à 9, suivez les instructions ici: https://clickhouse.tech/docs/fr/development/build/#install-gcc-9.
 
 Mac OS X build est pris en charge uniquement pour Clang. Il suffit d'exécuter `brew install llvm`
 
@@ -249,7 +249,7 @@ Le code Style Guide: https://clickhouse.tech/docs/fr/développement/style/
 
 Rédaction de tests: https://clickhouse.tech/docs/fr/développement/tests/
 
-Liste des tâches: https://github.com/ClickHouse/ClickHouse/blob/master/testsructions/easy\_tasks\_sorted\_en.md
+Liste des tâches: https://github.com/ClickHouse/ClickHouse/contribute
 
 # Des Données De Test {#test-data}
 

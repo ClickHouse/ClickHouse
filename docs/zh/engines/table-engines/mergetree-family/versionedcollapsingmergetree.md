@@ -5,7 +5,7 @@ toc_priority: 37
 toc_title: "\u7248\u672C\u96C6\u5408\u5728\u65B0\u6811"
 ---
 
-# 版本集合在新树 {#versionedcollapsingmergetree}
+# 版本折叠合并树 {#versionedcollapsingmergetree}
 
 这个引擎:
 

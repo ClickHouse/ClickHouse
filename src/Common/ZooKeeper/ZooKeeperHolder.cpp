@@ -5,7 +5,7 @@ namespace DB
 {
     namespace ErrorCodes
     {
-        extern const int NULL_POINTER_DEREFERENCE;
+        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -57,7 +57,7 @@ ZooKeeperHolder::UnstorableZookeeperHandler::UnstorableZookeeperHandler(ZooKeepe
 ZooKeeper * ZooKeeperHolder::UnstorableZookeeperHandler::operator->()
 {
     if (zk_ptr == nullptr)
-        throw DB::Exception(nullptr_exception_message, DB::ErrorCodes::NULL_POINTER_DEREFERENCE);
+        throw DB::Exception(nullptr_exception_message, DB::ErrorCodes::LOGICAL_ERROR);
 
     return zk_ptr.get();
 }
@@ -65,20 +65,20 @@ ZooKeeper * ZooKeeperHolder::UnstorableZookeeperHandler::operator->()
 const ZooKeeper * ZooKeeperHolder::UnstorableZookeeperHandler::operator->() const
 {
     if (zk_ptr == nullptr)
-        throw DB::Exception(nullptr_exception_message, DB::ErrorCodes::NULL_POINTER_DEREFERENCE);
+        throw DB::Exception(nullptr_exception_message, DB::ErrorCodes::LOGICAL_ERROR);
     return zk_ptr.get();
 }
 
 ZooKeeper & ZooKeeperHolder::UnstorableZookeeperHandler::operator*()
 {
     if (zk_ptr == nullptr)
-        throw DB::Exception(nullptr_exception_message, DB::ErrorCodes::NULL_POINTER_DEREFERENCE);
+        throw DB::Exception(nullptr_exception_message, DB::ErrorCodes::LOGICAL_ERROR);
     return *zk_ptr;
 }
 
 const ZooKeeper & ZooKeeperHolder::UnstorableZookeeperHandler::operator*() const
 {
     if (zk_ptr == nullptr)
-        throw DB::Exception(nullptr_exception_message, DB::ErrorCodes::NULL_POINTER_DEREFERENCE);
+        throw DB::Exception(nullptr_exception_message, DB::ErrorCodes::LOGICAL_ERROR);
     return *zk_ptr;
 }
