@@ -1474,7 +1474,9 @@ void MergeTreeData::changeSettings(
         MergeTreeSettings copy = *getSettings();
         copy.applyChanges(new_changes);
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
-        setSettingsChanges(new_settings);
+        StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+        new_metadata.setSettingsChanges(new_settings);
+        setInMemoryMetadata(new_metadata);
     }
 }
 

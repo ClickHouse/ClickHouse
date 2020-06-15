@@ -73,6 +73,10 @@ struct StorageInMemoryMetadata
     void setTableTTLs(const TTLTableDescription & table_ttl_);
 
     void setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_);
+
+    void setSettingsChanges(const ASTPtr & settings_changes_);
+
+    void setSelectQuery(const SelectQueryDescription & select_);
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;

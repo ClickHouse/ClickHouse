@@ -3648,7 +3648,6 @@ void StorageReplicatedMergeTree::alter(
         StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
         params.apply(future_metadata, query_context);
 
-
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
