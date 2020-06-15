@@ -251,12 +251,11 @@ public:
 
     void logTree(Poco::Logger * log) const
     {
-        LOG_TRACE(log, "Tree(" << level << "): name=" << (node_name ? *node_name : "NULL")
-                  << ", access=" << access.toString()
-                  << ", final_access=" << final_access.toString()
-                  << ", min_access=" << min_access.toString()
-                  << ", max_access=" << max_access.toString()
-                  << ", num_children=" << (children ? children->size() : 0));
+        LOG_TRACE(log, "Tree({}): name={}, access={}, final_access={}, min_access={}, max_access={}, num_children={}",
+            level, node_name ? *node_name : "NULL", access.toString(),
+            final_access.toString(), min_access.toString(), max_access.toString(),
+            (children ? children->size() : 0));
+
         if (children)
         {
             for (auto & child : *children | boost::adaptors::map_values)

@@ -29,7 +29,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
 
     const auto data_settings = data.getSettings();
-    sampling_expression = formattedAST(data.sample_by_ast);
+    sampling_expression = formattedAST(data.getSamplingKeyAST());
     index_granularity = data_settings->index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
@@ -40,22 +40,22 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     /// So rules in zookeeper metadata is following:
     /// - When we have only ORDER BY, than store it in "primary key:" row of /metadata
     /// - When we have both, than store PRIMARY KEY in "primary key:" row and ORDER BY in "sorting key:" row of /metadata
-    if (!data.primary_key_ast)
-        primary_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.order_by_ast));
+    if (!data.isPrimaryKeyDefined())
+        primary_key = formattedAST(data.getSortingKey().expression_list_ast);
     else
     {
-        primary_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.primary_key_ast));
-        sorting_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.order_by_ast));
+        primary_key = formattedAST(data.getPrimaryKey().expression_list_ast);
+        sorting_key = formattedAST(data.getSortingKey().expression_list_ast);
     }
 
     data_format_version = data.format_version;
 
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        partition_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.partition_by_ast));
+        partition_key = formattedAST(data.getPartitionKey().expression_list_ast);
 
-    ttl_table = formattedAST(data.ttl_table_ast);
+    ttl_table = formattedAST(data.getTableTTLs().definition_ast);
 
-    skip_indices = data.getIndices().toString();
+    skip_indices = data.getSecondaryIndices().toString();
     if (data.canUseAdaptiveGranularity())
         index_granularity_bytes = data_settings->index_granularity_bytes;
     else
@@ -66,7 +66,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 {
-    out << "metadata format version: 1" << "\n"
+    out << "metadata format version: 1\n"
         << "date column: " << date_column << "\n"
         << "sampling expression: " << sampling_expression << "\n"
         << "index granularity: " << index_granularity << "\n"

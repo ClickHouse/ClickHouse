@@ -84,7 +84,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     else
     {
         if (shard_info.isLocal())
-            return DatabaseCatalog::instance().getTable(table_id)->getColumns();
+            return DatabaseCatalog::instance().getTable(table_id, context)->getColumns();
 
         /// Request for a table description
         query = "DESC TABLE " + table_id.getFullTableName();

@@ -44,6 +44,8 @@ Modifies how matching by "join keys" is performed
 !!! note "Note"
     The default strictness value can be overriden using [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) setting.
 
+    Also the behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys) setting.
+
 
 ### ASOF JOIN Usage
 

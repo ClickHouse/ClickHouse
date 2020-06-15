@@ -23,6 +23,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/NullableUtils.h>
 #include <Interpreters/sortBlock.h>
+#include <Interpreters/Context.h>
 
 #include <Storages/MergeTree/KeyCondition.h>
 

@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
@@ -36,9 +37,15 @@ const ColumnsDescription & IStorage::getColumns() const
     return columns;
 }
 
-const IndicesDescription & IStorage::getIndices() const
+const IndicesDescription & IStorage::getSecondaryIndices() const
 {
-    return indices;
+    return secondary_indices;
+}
+
+
+bool IStorage::hasSecondaryIndices() const
+{
+    return !secondary_indices.empty();
 }
 
 const ConstraintsDescription & IStorage::getConstraints() const
@@ -288,9 +295,9 @@ void IStorage::setColumns(ColumnsDescription columns_)
     columns = std::move(columns_);
 }
 
-void IStorage::setIndices(IndicesDescription indices_)
+void IStorage::setSecondaryIndices(IndicesDescription secondary_indices_)
 {
-    indices = std::move(indices_);
+    secondary_indices = std::move(secondary_indices_);
 }
 
 void IStorage::setConstraints(ConstraintsDescription constraints_)
@@ -368,7 +375,7 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id,
 
 StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
 {
-    return StorageInMemoryMetadata(getColumns(), getIndices(), getConstraints());
+    return StorageInMemoryMetadata(getColumns(), getSecondaryIndices(), getConstraints());
 }
 
 void IStorage::alter(
@@ -379,7 +386,7 @@ void IStorage::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata);
+    params.apply(metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     setColumns(std::move(metadata.columns));
 }
@@ -396,25 +403,6 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settin
     }
 }
 
-BlockInputStreams IStorage::readStreams(
-    const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
-    unsigned num_streams)
-{
-    ForceTreeShapedPipeline enable_tree_shape(query_info);
-    auto pipes = read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
-
-    BlockInputStreams res;
-    res.reserve(pipes.size());
-
-    for (auto & pipe : pipes)
-        res.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
-
-    return res;
-}
 
 StorageID IStorage::getStorageID() const
 {
@@ -431,6 +419,239 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
 NamesAndTypesList IStorage::getVirtuals() const
 {
     return {};
+}
+
+const StorageMetadataKeyField & IStorage::getPartitionKey() const
+{
+    return partition_key;
+}
+
+void IStorage::setPartitionKey(const StorageMetadataKeyField & partition_key_)
+{
+    partition_key = partition_key_;
+}
+
+bool IStorage::isPartitionKeyDefined() const
+{
+    return partition_key.definition_ast != nullptr;
+}
+
+bool IStorage::hasPartitionKey() const
+{
+    return !partition_key.column_names.empty();
+}
+
+Names IStorage::getColumnsRequiredForPartitionKey() const
+{
+    if (hasPartitionKey())
+        return partition_key.expression->getRequiredColumns();
+    return {};
+}
+
+const StorageMetadataKeyField & IStorage::getSortingKey() const
+{
+    return sorting_key;
+}
+
+void IStorage::setSortingKey(const StorageMetadataKeyField & sorting_key_)
+{
+    sorting_key = sorting_key_;
+}
+
+bool IStorage::isSortingKeyDefined() const
+{
+    return sorting_key.definition_ast != nullptr;
+}
+
+bool IStorage::hasSortingKey() const
+{
+    return !sorting_key.column_names.empty();
+}
+
+Names IStorage::getColumnsRequiredForSortingKey() const
+{
+    if (hasSortingKey())
+        return sorting_key.expression->getRequiredColumns();
+    return {};
+}
+
+Names IStorage::getSortingKeyColumns() const
+{
+    if (hasSortingKey())
+        return sorting_key.column_names;
+    return {};
+}
+
+const StorageMetadataKeyField & IStorage::getPrimaryKey() const
+{
+    return primary_key;
+}
+
+void IStorage::setPrimaryKey(const StorageMetadataKeyField & primary_key_)
+{
+    primary_key = primary_key_;
+}
+
+bool IStorage::isPrimaryKeyDefined() const
+{
+    return primary_key.definition_ast != nullptr;
+}
+
+bool IStorage::hasPrimaryKey() const
+{
+    return !primary_key.column_names.empty();
+}
+
+Names IStorage::getColumnsRequiredForPrimaryKey() const
+{
+    if (hasPrimaryKey())
+        return primary_key.expression->getRequiredColumns();
+    return {};
+}
+
+Names IStorage::getPrimaryKeyColumns() const
+{
+    if (hasSortingKey())
+        return primary_key.column_names;
+    return {};
+}
+
+const StorageMetadataKeyField & IStorage::getSamplingKey() const
+{
+    return sampling_key;
+}
+
+void IStorage::setSamplingKey(const StorageMetadataKeyField & sampling_key_)
+{
+    sampling_key = sampling_key_;
+}
+
+
+bool IStorage::isSamplingKeyDefined() const
+{
+    return sampling_key.definition_ast != nullptr;
+}
+
+bool IStorage::hasSamplingKey() const
+{
+    return !sampling_key.column_names.empty();
+}
+
+Names IStorage::getColumnsRequiredForSampling() const
+{
+    if (hasSamplingKey())
+        return sampling_key.expression->getRequiredColumns();
+    return {};
+}
+
+const TTLTableDescription & IStorage::getTableTTLs() const
+{
+    return table_ttl;
+}
+
+void IStorage::setTableTTLs(const TTLTableDescription & table_ttl_)
+{
+    table_ttl = table_ttl_;
+}
+
+bool IStorage::hasAnyTableTTL() const
+{
+    return hasAnyMoveTTL() || hasRowsTTL();
+}
+
+const TTLColumnsDescription & IStorage::getColumnTTLs() const
+{
+    return column_ttls_by_name;
+}
+
+void IStorage::setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_)
+{
+    column_ttls_by_name = column_ttls_by_name_;
+}
+
+bool IStorage::hasAnyColumnTTL() const
+{
+    return !column_ttls_by_name.empty();
+}
+
+const TTLDescription & IStorage::getRowsTTL() const
+{
+    return table_ttl.rows_ttl;
+}
+
+bool IStorage::hasRowsTTL() const
+{
+    return table_ttl.rows_ttl.expression != nullptr;
+}
+
+const TTLDescriptions & IStorage::getMoveTTLs() const
+{
+    return table_ttl.move_ttl;
+}
+
+bool IStorage::hasAnyMoveTTL() const
+{
+    return !table_ttl.move_ttl.empty();
+}
+
+
+ColumnDependencies IStorage::getColumnDependencies(const NameSet & updated_columns) const
+{
+    if (updated_columns.empty())
+        return {};
+
+    ColumnDependencies res;
+
+    NameSet indices_columns;
+    NameSet required_ttl_columns;
+    NameSet updated_ttl_columns;
+
+    auto add_dependent_columns = [&updated_columns](const auto & expression, auto & to_set)
+    {
+        auto requiered_columns = expression->getRequiredColumns();
+        for (const auto & dependency : requiered_columns)
+        {
+            if (updated_columns.count(dependency))
+            {
+                to_set.insert(requiered_columns.begin(), requiered_columns.end());
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    for (const auto & index : getSecondaryIndices())
+        add_dependent_columns(index.expression, indices_columns);
+
+    if (hasRowsTTL())
+    {
+        if (add_dependent_columns(getRowsTTL().expression, required_ttl_columns))
+        {
+            /// Filter all columns, if rows TTL expression have to be recalculated.
+            for (const auto & column : getColumns().getAllPhysical())
+                updated_ttl_columns.insert(column.name);
+        }
+    }
+
+    for (const auto & [name, entry] : getColumnTTLs())
+    {
+        if (add_dependent_columns(entry.expression, required_ttl_columns))
+            updated_ttl_columns.insert(name);
+    }
+
+    for (const auto & entry : getMoveTTLs())
+        add_dependent_columns(entry.expression, required_ttl_columns);
+
+    for (const auto & column : indices_columns)
+        res.emplace(column, ColumnDependency::SKIP_INDEX);
+    for (const auto & column : required_ttl_columns)
+        res.emplace(column, ColumnDependency::TTL_EXPRESSION);
+    for (const auto & column : updated_ttl_columns)
+        res.emplace(column, ColumnDependency::TTL_TARGET);
+
+    return res;
+
 }
 
 }

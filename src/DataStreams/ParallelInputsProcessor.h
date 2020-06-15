@@ -134,7 +134,7 @@ public:
                   * (for example, the connection is broken for distributed query processing)
                   * - then do not care.
                   */
-                LOG_ERROR(log, "Exception while cancelling " << input->getName());
+                LOG_ERROR(log, "Exception while cancelling {}", input->getName());
             }
         }
     }
@@ -359,7 +359,7 @@ private:
     /// Wait for the completion of all threads.
     std::atomic<bool> joined_threads { false };
 
-    Logger * log = &Logger::get("ParallelInputsProcessor");
+    Poco::Logger * log = &Poco::Logger::get("ParallelInputsProcessor");
 };
 
 
