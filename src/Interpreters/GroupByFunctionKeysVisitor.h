@@ -14,6 +14,7 @@
 namespace DB
 {
 
+
 /// recursive traversal and check for optimizeGroupByFunctionKeys
 struct KeepFunctionMatcher
 {
