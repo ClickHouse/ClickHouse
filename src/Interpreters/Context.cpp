@@ -660,6 +660,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
     auto lock = getLock();
 
     client_info.current_user = name;
+    client_info.current_password = password;
     client_info.current_address = address;
 
     auto new_user_id = getAccessControlManager().find<User>(name);
