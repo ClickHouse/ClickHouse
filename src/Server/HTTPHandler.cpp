@@ -410,6 +410,7 @@ void HTTPHandler::processQuery(
     /// But we want to parse all data by our own.
     /// Let's copy already read data into our buffer.
     /// TODO This is inconvenient, better to rewrite or remove Poco::HTTPServer completely.
+    /// Or: hide the details inside ReadBufferFromHTTPRequest.
 
     Memory already_read_bytes(16384);
     size_t already_read_bytes_offset = 0;
