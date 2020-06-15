@@ -144,7 +144,8 @@ SRCS(
     exp10.cpp
     exp2.cpp
     exp.cpp
-    extractAllGroups.cpp
+    extractAllGroupsHorizontal.cpp
+    extractAllGroupsVertical.cpp
     extract.cpp
     extractGroups.cpp
     extractTimeZoneFromFunctionArguments.cpp
@@ -423,6 +424,7 @@ SRCS(
     URL/extractURLParameters.cpp
     URL/firstSignificantSubdomain.cpp
     URL/fragment.cpp
+    URL/netloc.cpp
     URL/path.cpp
     URL/pathFull.cpp
     URL/port.cpp

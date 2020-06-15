@@ -24,7 +24,7 @@ XML-конфигурация словаря имеет следующую стр
 </dictionary>
 ```
 
-Соответствующий [DDL-запрос](../../../sql-reference/statements/create.md#create-dictionary-query) имеет следующий вид:
+Соответствующий [DDL-запрос](../../statements/create.md#create-dictionary-query) имеет следующий вид:
 
 ``` sql
 CREATE DICTIONARY dict_name

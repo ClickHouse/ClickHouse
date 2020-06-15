@@ -14,6 +14,7 @@ toc_title: "\u7D71\u5408"
 
 -   リレーショナルデータベース管理システム
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-データリーダー](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-レプリケーター](https://github.com/larsnovikov/horgh-replicator)
