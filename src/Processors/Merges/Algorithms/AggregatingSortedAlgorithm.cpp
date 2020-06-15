@@ -305,6 +305,8 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
 
         if (current->isLast() && skipLastRowFor(current->pos))
         {
+            /// If we skip this row, it's not equals with any key we process.
+            last_key.reset();
             /// Get the next block from the corresponding source, if there is one.
             queue.removeTop();
             return Status(current.impl->order);
