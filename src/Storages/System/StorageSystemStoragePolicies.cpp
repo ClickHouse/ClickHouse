@@ -31,12 +31,13 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & n
 }
 
 Pipes StorageSystemStoragePolicies::read(
-        const Names & column_names,
-        const SelectQueryInfo & /*query_info*/,
-        const Context & context,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        const size_t /*max_block_size*/,
-        const unsigned /*num_streams*/)
+    const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     check(column_names);
 

@@ -117,6 +117,7 @@ BlockIO InterpreterInsertQuery::execute()
     StoragePtr table = getTable(query);
     auto table_lock = table->lockStructureForShare(
             true, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     auto query_sample_block = getSampleBlock(query, table);
     if (!query.table_function)
@@ -226,7 +227,7 @@ BlockIO InterpreterInsertQuery::execute()
             /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
             ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
             if (table->noPushingToViews() && !no_destination)
-                out = table->write(query_ptr, context);
+                out = table->write(query_ptr, metadata_snapshot, context);
             else
                 out = std::make_shared<PushingToViewsBlockOutputStream>(table, context, query_ptr, no_destination);
 

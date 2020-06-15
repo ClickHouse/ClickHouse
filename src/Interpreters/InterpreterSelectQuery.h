@@ -184,6 +184,7 @@ private:
     StoragePtr storage;
     StorageID table_id = StorageID::createEmpty();  /// Will be initialized if storage is not nullptr
     TableStructureReadLockHolder table_lock;
+    StorageMetadataPtr metadata_snapshot;
 
     /// Used when we read from prepared input, not table or subquery.
     BlockInputStreamPtr input;

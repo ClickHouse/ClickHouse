@@ -255,6 +255,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         table_lock = storage->lockStructureForShare(
                 false, context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
+        metadata_snapshot = storage->getInMemoryMetadataPtr();
     }
 
     if (has_input || !joined_tables.resolveTables())
@@ -1293,7 +1294,6 @@ void InterpreterSelectQuery::executeFetchColumns(
     else if (storage)
     {
         /// Table.
-
         if (max_streams == 0)
             throw Exception("Logical error: zero number of streams requested", ErrorCodes::LOGICAL_ERROR);
 
@@ -1324,7 +1324,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage);
         }
 
-        Pipes pipes = storage->read(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
+        Pipes pipes = storage->read(required_columns, metadata_snapshot, query_info, *context, processing_stage, max_block_size, max_streams);
 
         if (pipes.empty())
         {

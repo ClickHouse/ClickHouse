@@ -82,7 +82,9 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(const N
     return [query](std::ostream & os) { os << "query=" << query; };
 }
 
-Pipes StorageXDBC::read(const Names & column_names,
+Pipes StorageXDBC::read(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -92,10 +94,10 @@ Pipes StorageXDBC::read(const Names & column_names,
     check(column_names);
 
     bridge_helper->startBridgeSync();
-    return IStorageURLBase::read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+    return IStorageURLBase::read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
-BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const Context & context)
+BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
 {
     bridge_helper->startBridgeSync();
 

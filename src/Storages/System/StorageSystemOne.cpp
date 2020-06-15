@@ -22,6 +22,7 @@ StorageSystemOne::StorageSystemOne(const std::string & name_)
 
 Pipes StorageSystemOne::read(
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo &,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,

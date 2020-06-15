@@ -155,6 +155,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
     bool hasSelectQuery() const;
 
     StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata; }
+    StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata; }
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_) { metadata = std::make_shared<StorageInMemoryMetadata>(metadata_); }
 
     Block getSampleBlock() const; /// ordinary + materialized.
@@ -292,6 +293,7 @@ public:
       */
     virtual Pipes read(
         const Names & /*column_names*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -309,6 +311,7 @@ public:
       */
     virtual BlockOutputStreamPtr write(
         const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const Context & /*context*/)
     {
         throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);

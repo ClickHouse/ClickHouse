@@ -59,6 +59,7 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
 
 Pipes StorageSystemReplicas::read(
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,

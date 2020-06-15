@@ -577,6 +577,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 
 Pipes StorageLog::read(
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -620,8 +621,7 @@ Pipes StorageLog::read(
     return pipes;
 }
 
-BlockOutputStreamPtr StorageLog::write(
-    const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & /*context*/)
 {
     loadMarks();
     return std::make_shared<LogBlockOutputStream>(*this);

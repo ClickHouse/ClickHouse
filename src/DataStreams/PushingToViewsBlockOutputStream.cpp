@@ -107,7 +107,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     /// Do not push to destination table if the flag is set
     if (!no_destination)
     {
-        output = storage->write(query_ptr, context);
+        output = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), context);
         replicated_output = dynamic_cast<ReplicatedMergeTreeBlockOutputStream *>(output.get());
     }
 }
