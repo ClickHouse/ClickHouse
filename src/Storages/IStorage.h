@@ -438,9 +438,6 @@ public:
 
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
-    /// Set partition key for storage (methods bellow, are just wrappers for this
-    /// struct).
-    void setPartitionKey(const KeyDescription & partition_key_);
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
     ASTPtr getPartitionKeyAST() const { return metadata->partition_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) partition key.
@@ -453,9 +450,6 @@ public:
 
     /// Returns structure with sorting key.
     const KeyDescription & getSortingKey() const;
-    /// Set sorting key for storage (methods bellow, are just wrappers for this
-    /// struct).
-    void setSortingKey(const KeyDescription & sorting_key_);
     /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
     ASTPtr getSortingKeyAST() const { return metadata->sorting_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sorting key.
@@ -470,9 +464,6 @@ public:
 
     /// Returns structure with primary key.
     const KeyDescription & getPrimaryKey() const;
-    /// Set primary key for storage (methods bellow, are just wrappers for this
-    /// struct).
-    void setPrimaryKey(const KeyDescription & primary_key_);
     /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
     ASTPtr getPrimaryKeyAST() const { return metadata->primary_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sorting key.
@@ -488,9 +479,6 @@ public:
 
     /// Returns structure with sampling key.
     const KeyDescription & getSamplingKey() const;
-    /// Set sampling key for storage (methods bellow, are just wrappers for this
-    /// struct).
-    void setSamplingKey(const KeyDescription & sampling_key_);
     /// Returns sampling expression AST for storage or nullptr if there is none.
     ASTPtr getSamplingKeyAST() const { return metadata->sampling_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sampling key.

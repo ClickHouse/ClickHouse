@@ -57,6 +57,18 @@ struct StorageInMemoryMetadata
 
     void setConstraints(ConstraintsDescription constraints_);
 
+    /// Set partition key for storage (methods bellow, are just wrappers for this
+    /// struct).
+    void setPartitionKey(const KeyDescription & partition_key_);
+    /// Set sorting key for storage (methods bellow, are just wrappers for this
+    /// struct).
+    void setSortingKey(const KeyDescription & sorting_key_);
+    /// Set primary key for storage (methods bellow, are just wrappers for this
+    /// struct).
+    void setPrimaryKey(const KeyDescription & primary_key_);
+    /// Set sampling key for storage (methods bellow, are just wrappers for this
+    /// struct).
+    void setSamplingKey(const KeyDescription & sampling_key_);
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;
