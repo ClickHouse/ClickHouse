@@ -19,8 +19,8 @@ public:
         const Block & header, size_t num_inputs,
         SortDescription description_, size_t max_block_size);
 
-    void initialize(Chunks chunks) override;
-    void consume(Chunk & chunk, size_t source_num) override;
+    void initialize(Inputs inputs) override;
+    void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
     struct SimpleAggregateDescription;
