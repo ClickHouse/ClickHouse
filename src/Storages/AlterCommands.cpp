@@ -327,7 +327,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
             primary_key = KeyDescription::getKeyFromAST(sorting_key.definition_ast, metadata.columns, context);
         }
 
-        /// Recalculate key with new order_by expression
+        /// Recalculate key with new order_by expression.
         sorting_key.recalculateWithNewAST(order_by, metadata.columns, context);
     }
     else if (type == COMMENT_COLUMN)
