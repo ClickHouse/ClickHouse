@@ -18,6 +18,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
+#include <Common/clearPasswordFromCommandLine.h>
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -559,7 +560,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("password",      value<std::string>()->default_value(""),          "")
             ("database",      value<std::string>()->default_value("default"),   "")
             ("stacktrace",                                                      "print stack traces of exceptions")
-            ("confidence",    value<size_t>()->default_value(5),                "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
+            ("confidence",    value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id",      value<std::string>()->default_value(""),         "")
             ("continue_on_errors", "continue testing even if a query fails")
         ;
@@ -570,6 +571,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         boost::program_options::notify(options);
+
+        clearPasswordFromCommandLine(argc, argv);
 
         if (options.count("help"))
         {
