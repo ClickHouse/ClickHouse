@@ -336,8 +336,6 @@ public:
     /// See comments about methods below in IStorage interface
     StorageInMemoryMetadata getInMemoryMetadata() const override;
 
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override;
-
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool supportsPrewhere() const override { return true; }
@@ -487,6 +485,9 @@ public:
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
 
+    /// Drop data directories if they are empty. It is safe to call this method if table creation was unsuccessful.
+    void dropIfEmpty();
+
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
@@ -518,7 +519,6 @@ public:
      */
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
-    bool hasSkipIndices() const { return !skip_indices.empty(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const;
@@ -644,12 +644,8 @@ public:
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
-    /// Secondary (data skipping) indices for MergeTree
-    MergeTreeIndices skip_indices;
-
-    ExpressionActionsPtr skip_indices_expr;
-    ExpressionActionsPtr primary_key_and_skip_indices_expr;
-    ExpressionActionsPtr sorting_key_and_skip_indices_expr;
+    ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression() const;
+    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression() const;
 
     std::optional<TTLDescription> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
