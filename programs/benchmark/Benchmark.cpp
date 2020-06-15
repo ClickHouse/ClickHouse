@@ -62,12 +62,13 @@ public:
             bool randomize_, size_t max_iterations_, double max_time_,
             const String & json_path_, size_t confidence_,
             const String & query_id_, bool continue_on_errors_,
-            const Settings & settings_)
+            bool print_stacktrace_, const Settings & settings_)
         :
         concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
         cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
         json_path(json_path_), confidence(confidence_), query_id(query_id_),
-        continue_on_errors(continue_on_errors_), settings(settings_),
+        continue_on_errors(continue_on_errors_),
+        print_stacktrace(print_stacktrace_), settings(settings_),
         shared_context(Context::createShared()), global_context(Context::createGlobal(shared_context.get())),
         pool(concurrency)
     {
@@ -154,6 +155,7 @@ private:
     size_t confidence;
     std::string query_id;
     bool continue_on_errors;
+    bool print_stacktrace;
     Settings settings;
     SharedContextHolder shared_context;
     Context global_context;
@@ -376,7 +378,8 @@ private:
                 }
                 else
                 {
-                    std::cerr << getCurrentExceptionMessage(print_stacktrace, true) ;
+                    std::cerr << getCurrentExceptionMessage(print_stacktrace,
+                        true /*check embedded stack trace*/) ;
                 }
             }
             // Count failed queries toward executed, so that we'd reach
@@ -605,6 +608,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["confidence"].as<size_t>(),
             options["query_id"].as<std::string>(),
             options.count("continue_on_errors") > 0,
+            print_stacktrace,
             settings);
         return benchmark.run();
     }
