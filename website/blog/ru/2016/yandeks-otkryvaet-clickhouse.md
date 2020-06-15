@@ -1,6 +1,6 @@
 ---
 title: 'Яндекс открывает ClickHouse'
-image: 'https://avatars.mds.yandex.net/get-yablogs/61002/file_1496832733820/orig'
+image: 'https://blog-images.clickhouse.tech/ru/2016/yandeks-otkryvaet-clickhouse/main.jpg'
 date: '2016-06-15'
 tags: ['анонс', 'GitHub', 'лицензия']
 ---

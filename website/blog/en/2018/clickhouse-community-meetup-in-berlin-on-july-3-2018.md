@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Community Meetup in Berlin on July 3, 2018'
-image: 'https://avatars.mds.yandex.net/get-yablogs/61002/file_1530785154873/orig'
+image: 'https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-berlin-on-july-3-2018/main.jpg'
 date: '2018-07-05'
 tags: ['meetup', 'Berlin', 'Germany', 'events']
 ---

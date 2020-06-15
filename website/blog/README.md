@@ -23,7 +23,7 @@ Then after header goes post content in a normal markdown (with some optional ext
  ```markdown
 ---
 title: 'ClickHouse Meetup in Beijing on June 8, 2019'
-image: 'https://avatars.mds.yandex.net/get-yablogs/41243/file_1560510043188/orig'
+image: 'https://blog-images.clickhouse.tech/README/main.jpg'
 date: '2019-06-13'
 tags: ['meetup','Beijing','China','events']
 ---

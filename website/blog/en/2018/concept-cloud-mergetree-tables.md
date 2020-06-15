@@ -1,6 +1,6 @@
 ---
 title: 'Concept: "Cloud" MergeTree Tables'
-image: 'https://avatars.mds.yandex.net/get-yablogs/38241/file_1542974447082/orig'
+image: 'https://blog-images.clickhouse.tech/en/2018/concept-cloud-mergetree-tables/main.jpg'
 date: '2018-11-23'
 tags: ['concept', 'MergeTree', 'future', 'sharding']
 ---

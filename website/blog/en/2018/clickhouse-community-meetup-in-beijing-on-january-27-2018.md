@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Community Meetup in Beijing on January 27, 2018'
-image: 'https://avatars.mds.yandex.net/get-yablogs/39006/file_1518083883760/orig'
+image: 'https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-january-27-2018/main.jpg'
 date: '2018-02-08'
 tags: ['meetup', 'Beijing', 'China', 'events', 'Asia']
 ---

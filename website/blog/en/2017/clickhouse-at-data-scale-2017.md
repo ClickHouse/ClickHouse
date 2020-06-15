@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse at Data@Scale 2017'
-image: 'https://avatars.mds.yandex.net/get-yablogs/61002/file_1498059872034/orig'
+image: 'https://blog-images.clickhouse.tech/en/2017/clickhouse-at-data-scale-2017/main.jpg'
 date: '2017-06-15'
 tags: ['conference', 'Seattle', 'USA', 'America', 'events']
 ---

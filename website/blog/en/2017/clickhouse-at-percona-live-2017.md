@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse at Percona Live 2017'
-image: 'https://avatars.mds.yandex.net/get-yablogs/51163/file_1496995835580/orig'
+image: 'https://blog-images.clickhouse.tech/en/2017/clickhouse-at-percona-live-2017/main.jpg'
 date: '2017-04-28'
 tags: ['meetup', 'Santa Clara', 'Bay Area', 'California', 'USA', 'America', 'events', 'Graphouse']
 ---

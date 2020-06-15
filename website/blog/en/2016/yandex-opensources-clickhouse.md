@@ -1,6 +1,6 @@
 ---
 title: 'Yandex Opensources ClickHouse'
-image: 'https://avatars.mds.yandex.net/get-yablogs/49865/file_1496921561349/orig'
+image: 'https://blog-images.clickhouse.tech/en/2016/yandex-opensources-clickhouse/main.jpg'
 date: '2016-06-15'
 tags: ['announcement', 'GitHub', 'license']
 ---

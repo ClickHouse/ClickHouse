@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse на UWDC 2017'
-image: 'https://avatars.mds.yandex.net/get-yablogs/61002/file_1496836789540/orig'
+image: 'https://blog-images.clickhouse.tech/ru/2017/clickhouse-na-uwdc-2017/main.jpg'
 date: '2017-05-20'
 tags: ['мероприятия', 'конференции', 'Челябинск']
 ---

@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse at Analysys A10 2018'
-image: 'https://avatars.mds.yandex.net/get-yablogs/28577/file_1541151727843/orig'
+image: 'https://blog-images.clickhouse.tech/en/2018/clickhouse-at-analysys-a10-2018/main.jpg'
 date: '2018-11-04'
 tags: ['conference', 'Beijing', 'China', 'events', 'Analysys', 'Asia']
 ---

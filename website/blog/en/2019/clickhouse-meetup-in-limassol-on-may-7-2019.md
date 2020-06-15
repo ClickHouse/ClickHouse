@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Meetup in Limassol on May 7, 2019'
-image: 'https://avatars.mds.yandex.net/get-yablogs/114306/file_1557763819784/orig'
+image: 'https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-limassol-on-may-7-2019/main.jpg'
 date: '2019-05-14'
 tags: ['meetup', 'Cyprus', 'Limassol', 'events']
 ---

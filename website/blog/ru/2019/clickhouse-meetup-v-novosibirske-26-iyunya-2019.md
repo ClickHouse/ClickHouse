@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Meetup в Новосибирске, 26 июня 2019'
-image: 'https://avatars.mds.yandex.net/get-yablogs/61002/file_1562326991180/orig'
+image: 'https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-novosibirske-26-iyunya-2019/main.jpg'
 date: '2019-06-05'
 tags: ['мероприятия', 'meetup', 'Новосибирск']
 ---

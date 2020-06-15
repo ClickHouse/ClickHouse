@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Meetup in Madrid on April 2, 2019'
-image: 'https://avatars.mds.yandex.net/get-yablogs/39006/file_1554967285302/orig'
+image: 'https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-madrid-on-april-2-2019/main.jpg'
 date: '2019-04-11'
 tags: ['meetup', 'Spain', 'Madrid', 'events']
 ---

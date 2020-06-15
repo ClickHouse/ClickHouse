@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Lecture at Institute of Computing Technology, Chinese Academy of Science on June 11, 2019'
-image: 'https://avatars.mds.yandex.net/get-yablogs/41243/file_1560517486181/orig'
+image: 'https://blog-images.clickhouse.tech/en/2019/clickhouse-lecture-at-institute-of-computing-technology-chinese-academy-of-science-on-june-11-2019/main.jpg'
 tags: ['lecture', 'events', 'China', 'Beijing', 'university', 'academy', 'institute']
 date: '2019-06-14'
 ---

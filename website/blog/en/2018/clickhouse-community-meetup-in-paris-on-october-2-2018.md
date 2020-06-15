@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Community Meetup in Paris on October 2, 2018'
-image: 'https://avatars.mds.yandex.net/get-yablogs/51778/file_1542722137661/orig'
+image: 'https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-paris-on-october-2-2018/main.jpg'
 date: '2018-10-09'
 tags: ['meetup', 'Paris', 'France', 'events']
 ---

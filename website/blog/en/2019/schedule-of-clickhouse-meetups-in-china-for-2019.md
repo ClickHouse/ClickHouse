@@ -1,6 +1,6 @@
 ---
 title: 'Schedule of ClickHouse Meetups in China for 2019'
-image: 'https://avatars.mds.yandex.net/get-yablogs/61002/file_1555580549090/orig'
+image: 'https://blog-images.clickhouse.tech/en/2019/schedule-of-clickhouse-meetups-in-china-for-2019/main.jpg'
 date: '2019-04-18'
 tags: ['China', 'Beijing', 'Shanghai', 'Shenzhen', 'announcement', 'meetup']
 ---

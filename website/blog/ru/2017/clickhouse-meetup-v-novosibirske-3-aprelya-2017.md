@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Meetup в Новосибирске, 3 апреля 2017'
-image: 'https://avatars.mds.yandex.net/get-yablogs/49865/file_1496833658756/orig'
+image: 'https://blog-images.clickhouse.tech/ru/2017/clickhouse-meetup-v-novosibirske-3-aprelya-2017/main.jpg'
 date: '2017-04-04'
 tags: ['мероприятия', 'meetup', 'Новосибирск']
 ---

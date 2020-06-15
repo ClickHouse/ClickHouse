@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Meetup в Лимассоле, 7 мая 2019'
-image: 'https://avatars.mds.yandex.net/get-yablogs/114306/file_1557763819784/orig'
+image: 'https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/main.jpg'
 date: '2019-05-14'
 tags: ['мероприятия', 'meetup', 'Лимассол', 'Кипр', 'Европа']
 ---

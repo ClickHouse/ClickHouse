@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Meetup in Beijing on June 8, 2019'
-image: 'https://avatars.mds.yandex.net/get-yablogs/41243/file_1560510043188/orig'
+image: 'https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-beijing-on-june-8-2019/main.jpg'
 date: '2019-06-13'
 tags: ['meetup','Beijing','China','events']
 ---

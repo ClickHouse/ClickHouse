@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse MeetUp в Минске: итоги'
-image: 'https://avatars.mds.yandex.net/get-yablogs/51778/file_1500572398810/orig'
+image: 'https://blog-images.clickhouse.tech/ru/2017/clickhouse-meetup-v-minske-itogi/main.jpg'
 date: '2017-06-19'
 tags: ['мероприятия', 'meetup', 'Минск', 'Беларусь']
 ---

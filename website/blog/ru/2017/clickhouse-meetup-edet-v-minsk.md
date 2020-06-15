@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse MeetUp едет в Минск!'
-image: 'https://avatars.mds.yandex.net/get-yablogs/51163/file_1497355691784/orig'
+image: 'https://blog-images.clickhouse.tech/ru/2017/clickhouse-meetup-edet-v-minsk/main.jpg'
 date: '2017-06-13'
 tags: ['мероприятия', 'meetup', 'Минск', 'Беларусь', 'анонс']
 ---

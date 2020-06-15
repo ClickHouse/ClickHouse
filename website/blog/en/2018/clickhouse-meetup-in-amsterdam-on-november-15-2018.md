@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Meetup in Amsterdam on November 15, 2018'
-image: 'https://avatars.mds.yandex.net/get-yablogs/38241/file_1542885627521/orig'
+image: 'https://blog-images.clickhouse.tech/en/2018/clickhouse-meetup-in-amsterdam-on-november-15-2018/main.jpg'
 date: '2018-11-22'
 tags: ['meetup', 'Amsterdam', 'Netherlands', 'events']
 ---

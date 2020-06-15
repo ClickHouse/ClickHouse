@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Meetup в Минске, 11 июля 2019'
-image: 'https://avatars.mds.yandex.net/get-yablogs/28577/file_1562937712321/orig'
+image: 'https://blog-images.clickhouse.tech/ru/2019/clickrouse-meetup-v-minske-11-iyulya-2019/main.jpg'
 date: '2019-07-12'
 tags: ['мероприятия', 'meetup', 'Минск', 'Беларусь']
 ---

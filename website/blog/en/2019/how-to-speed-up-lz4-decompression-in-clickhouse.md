@@ -1,6 +1,6 @@
 ---
 title: 'How to speed up LZ4 decompression in ClickHouse?'
-image: 'https://avatars.mds.yandex.net/get-yablogs/38241/file_1561390681698/orig'
+image: 'https://blog-images.clickhouse.tech/en/2019/how-to-speed-up-lz4-decompression-in-clickhouse/main.jpg'
 date: '2019-06-25'
 tags: ['performance', 'lz4', 'article', 'decompression']
 ---

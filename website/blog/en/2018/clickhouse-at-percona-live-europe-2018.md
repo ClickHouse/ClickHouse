@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse at Percona Live Europe 2018'
-image: 'https://avatars.mds.yandex.net/get-yablogs/49865/file_1542891630993/orig'
+image: 'https://blog-images.clickhouse.tech/en/2018/clickhouse-at-percona-live-europe-2018/main.jpg'
 date: '2018-11-21'
 tags: ['conference', 'Frankfurt', 'Germany', 'events', 'Percona Live', 'Europe']
 ---

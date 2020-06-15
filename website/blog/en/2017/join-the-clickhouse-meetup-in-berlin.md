@@ -1,6 +1,6 @@
 ---
 title: 'Join the ClickHouse Meetup in Berlin'
-image: 'https://avatars.mds.yandex.net/get-yablogs/39006/file_1504707877064/orig'
+image: 'https://blog-images.clickhouse.tech/en/2017/join-the-clickhouse-meetup-in-berlin/main.jpg'
 date: '2017-10-19'
 tags: ['announcement', 'meetup', 'Berlin', 'Germany', 'events']
 ---

@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Meetup в Москве, 5 сентября 2019'
-image: 'https://avatars.mds.yandex.net/get-yablogs/41243/file_1567764452215/orig'
+image: 'https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-moskve-5-sentyabrya-2019/main.jpg'
 date: '2019-09-06'
 tags: ['мероприятия', 'meetup', 'Москва']
 ---

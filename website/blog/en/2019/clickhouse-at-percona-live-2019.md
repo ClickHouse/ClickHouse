@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse at Percona Live 2019'
-image: 'https://avatars.mds.yandex.net/get-yablogs/47421/file_1559643180778/orig'
+image: 'https://blog-images.clickhouse.tech/en/2019/clickhouse-at-percona-live-2019/main.jpg'
 date: '2019-06-04'
 tags: ['Percona Live','USA','Texas','Austin', 'events', 'conference']
 ---

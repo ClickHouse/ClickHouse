@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Meetup в Санкт-Петербурге, 27 июля 2019'
-image: 'https://avatars.mds.yandex.net/get-yablogs/28577/file_1564653904049/orig'
+image: 'https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-sankt-peterburge-27-iyulya-2019/main.jpg'
 date: '2019-08-01'
 tags: ['мероприятия', 'meetup', 'Санкт-Петербург']
 ---

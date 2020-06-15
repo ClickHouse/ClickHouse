@@ -1,6 +1,6 @@
 ---
 title: 'Evolution of Data Structures in Yandex.Metrica'
-image: 'https://avatars.mds.yandex.net/get-yablogs/38241/file_1499246965576/orig'
+image: 'https://blog-images.clickhouse.tech/en/2016/evolution-of-data-structures-in-yandex-metrica/main.jpg'
 date: '2016-12-13'
 tags: ['Yandex.Metrica', 'data structures', 'LSM tree', 'columnar storage']
 ---
