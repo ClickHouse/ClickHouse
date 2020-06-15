@@ -6,8 +6,6 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
-
-
 namespace DB
 {
     namespace ErrorCodes
