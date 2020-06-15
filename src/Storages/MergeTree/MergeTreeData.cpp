@@ -520,8 +520,8 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
 void MergeTreeData::setTTLExpressions(const StorageInMemoryMetadata & new_metadata)
 {
     checkTTLExpressions(new_metadata);
-    setColumnTTLs(new_metadata.column_ttls_by_name);
-    setTableTTLs(new_metadata.table_ttl);
+    //setColumnTTLs(new_metadata.column_ttls_by_name);
+    //setTableTTLs(new_metadata.table_ttl);
 }
 
 

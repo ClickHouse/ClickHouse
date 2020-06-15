@@ -500,12 +500,10 @@ public:
 
     /// Common tables TTLs (for rows and moves).
     TTLTableDescription getTableTTLs() const;
-    void setTableTTLs(const TTLTableDescription & table_ttl_);
     bool hasAnyTableTTL() const;
 
     /// Separate TTLs for columns.
     TTLColumnsDescription getColumnTTLs() const;
-    void setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_);
     bool hasAnyColumnTTL() const;
 
     /// Just wrapper for table TTLs, return rows part of table TTLs.

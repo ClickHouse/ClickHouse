@@ -69,6 +69,10 @@ struct StorageInMemoryMetadata
     /// Set sampling key for storage (methods bellow, are just wrappers for this
     /// struct).
     void setSamplingKey(const KeyDescription & sampling_key_);
+
+    void setTableTTLs(const TTLTableDescription & table_ttl_);
+
+    void setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_);
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;
