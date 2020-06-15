@@ -1754,16 +1754,27 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
 }
 
 
-void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction)
+bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction)
 {
-    auto removed = renameTempPartAndReplace(part, increment, out_transaction);
-    if (!removed.empty())
-        throw Exception("Added part " + part->name + " covers " + toString(removed.size())
-            + " existing part(s) (including " + removed[0]->name + ")", ErrorCodes::LOGICAL_ERROR);
+    if (out_transaction && &out_transaction->data != this)
+        throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
+            ErrorCodes::LOGICAL_ERROR);
+
+    DataPartsVector covered_parts;
+    {
+        auto lock = lockParts();
+        if (!renameTempPartAndReplace(part, increment, out_transaction, lock, &covered_parts))
+            return false;
+    }
+    if (!covered_parts.empty())
+        throw Exception("Added part " + part->name + " covers " + toString(covered_parts.size())
+            + " existing part(s) (including " + covered_parts[0]->name + ")", ErrorCodes::LOGICAL_ERROR);
+
+    return true;
 }
 
 
-void MergeTreeData::renameTempPartAndReplace(
+bool MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction,
     std::unique_lock<std::mutex> & lock, DataPartsVector * out_covered_parts)
 {
@@ -1816,7 +1827,7 @@ void MergeTreeData::renameTempPartAndReplace(
     if (covering_part)
     {
         LOG_WARNING(log, "Tried to add obsolete part {} covered by {}", part_name, covering_part->getNameWithState());
-        return;
+        return false;
     }
 
     /// All checks are passed. Now we can rename the part on disk.
@@ -1854,6 +1865,8 @@ void MergeTreeData::renameTempPartAndReplace(
         for (DataPartPtr & covered_part : covered_parts)
             out_covered_parts->emplace_back(std::move(covered_part));
     }
+
+    return true;
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(

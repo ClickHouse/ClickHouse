@@ -423,7 +423,8 @@ public:
     /// If out_transaction != nullptr, adds the part in the PreCommitted state (the part will be added to the
     /// active set later with out_transaction->commit()).
     /// Else, commits the part immediately.
-    void renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
+    /// Returns true if part was added. Returns false if part is covered by bigger part.
+    bool renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
@@ -432,7 +433,7 @@ public:
         MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
     /// Low-level version of previous one, doesn't lock mutex
-    void renameTempPartAndReplace(
+    bool renameTempPartAndReplace(
             MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
             DataPartsVector * out_covered_parts = nullptr);
 
