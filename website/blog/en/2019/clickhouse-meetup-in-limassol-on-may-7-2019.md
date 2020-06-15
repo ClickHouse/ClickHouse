@@ -13,7 +13,7 @@ The first open-air ClickHouse Meetup took place in the heart of Limassol, the se
 
 ![](https://avatars.mds.yandex.net/get-yablogs/51163/file_1557763909511/orig)
 
-Kirill is well known for his top-notch ClickHouse Go Driver running over native protocol, but his opening talk was about his experience optimizing ClickHouse queries and solving real-world tasks at Integros and Wisebits. Slides. Full query listings.
+Kirill is well known for his top-notch [ClickHouse Go Driver](https://github.com/clickhouse/clickhouse-go) running over native protocol, but his opening talk was about his experience optimizing ClickHouse queries and solving real-world tasks at Integros and Wisebits. [Slides](https://presentations.clickhouse.tech/meetup22/strategies.pdf). [Full query listings](https://github.com/kshvakov/ClickHouse-Meetup-Exness).
 
 The event has begun in the early evening...
 ![](https://avatars.mds.yandex.net/get-yablogs/28577/file_1557763993973/orig)
@@ -27,10 +27,10 @@ Sergey Tomilov with his colleagues from the Exness Platform Team has shared deta
 Alexey Milovidov from the Yandex ClickHouse team has demonstrated features from recent ClickHouse releases and gave an update on what's coming soon ([slides](https://presentations.clickhouse.tech/meetup22/new_features/)):
 ![](https://avatars.mds.yandex.net/get-yablogs/28577/file_1557764097210/orig)
 
-Alexander Zaitsev, CTO of Altinity, have shown an overview of how to integrate ClickHouse into environments running on Kubernetes ([slides]()):
+Alexander Zaitsev, CTO of Altinity, have shown an overview of how to integrate ClickHouse into environments running on Kubernetes ([slides](https://presentations.clickhouse.tech/meetup22/kubernetes.pdf)):
 ![](https://avatars.mds.yandex.net/get-yablogs/38241/file_1557764111337/orig)
 
-Vladimir Goncharov, a backend engineer from Aloha Browser, has closed the ClickHouse Limassol Meetup by demonstrating few projects that allow integrating other opensource tools for logs processing with ClickHouse ([slides](https://github.com/yandex/clickhouse-presentations/blob/master/meetup22/aloha.pdf)):
+Vladimir Goncharov, a backend engineer from Aloha Browser, has closed the ClickHouse Limassol Meetup by demonstrating few projects that allow integrating other opensource tools for logs processing with ClickHouse ([slides](https://presentations.clickhouse.tech/meetup22/aloha.pdf)):
 ![](https://avatars.mds.yandex.net/get-yablogs/114306/file_1557764131513/orig)
 
 Unfortunately, midnight was closing in and only the most weather-proof ClickHouse fans have managed to stay the whole event as it started getting pretty chilly.

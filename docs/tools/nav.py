@@ -91,6 +91,8 @@ def build_blog_nav(lang, args):
             )
             if post_title in post_meta:
                 raise RuntimeError(f'Duplicate post title: {post_title}')
+            if not post_date.startswith(f'{year}-'):
+                raise RuntimeError(f'Post date {post_date} doesn\'t match the folder year {year}: {post_title}')
             post_url_part = post.replace('.md', '')
             post_meta[post_title] = {
                 'date': post_date,
