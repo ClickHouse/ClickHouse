@@ -13,6 +13,8 @@
         <substitution>
            <name>func</name>
            <values>
+               <value>minMap</value>
+               <value>maxMap</value>
                <value>sumMap</value>
                <value>sumMapWithOverflow</value>
            </values>
