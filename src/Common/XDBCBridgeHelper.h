@@ -272,7 +272,8 @@ struct ODBCBridgeMixin
         return AccessType::ODBC;
     }
 
-    static std::unique_ptr<ShellCommand> startBridge(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
+    static std::unique_ptr<ShellCommand> startBridge(
+        const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
     {
         /// Path to executable folder
         Poco::Path path{config.getString("application.dir", "/usr/bin")};
