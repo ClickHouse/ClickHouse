@@ -61,6 +61,12 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
         type->formatImpl(settings, state, frame);
     }
 
+    if (null_modifier)
+    {
+        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "")
+                      << (*null_modifier ? "" : "NOT ") << "NULL" << (settings.hilite ? hilite_none : "");
+    }
+
     if (default_expression)
     {
         settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << default_specifier << (settings.hilite ? hilite_none : "") << ' ';

@@ -87,7 +87,7 @@ then
     # tests for use by compare.sh. Compare to merge base, because master might be
     # far in the future and have unrelated test changes.
     base=$(git -C ch merge-base "$SHA_TO_TEST" master)
-    git -C ch diff --name-only "$SHA_TO_TEST" "$base" | tee changed-tests.txt
+    git -C ch diff --name-only "$base" "$SHA_TO_TEST" | tee changed-tests.txt
     if grep -vq '^tests/performance' changed-tests.txt
     then
         # Have some other changes besides the tests, so truncate the test list,
@@ -131,5 +131,5 @@ done
 
 dmesg -T > dmesg.log
 
-7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} {right,left}/{performance,db/preprocessed_configs,scripts} report analyze
+7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} {right,left}/{performance,db/preprocessed_configs,scripts} report analyze benchmark
 cp compare.log /output
