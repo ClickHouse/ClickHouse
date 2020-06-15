@@ -121,6 +121,7 @@ SRCS(
     System/StorageSystemQuotasUsage.cpp
     System/StorageSystemReplicas.cpp
     System/StorageSystemReplicationQueue.cpp
+    System/StorageSystemDistributionQueue.cpp
     System/StorageSystemRoleGrants.cpp
     System/StorageSystemRoles.cpp
     System/StorageSystemRowPolicies.cpp

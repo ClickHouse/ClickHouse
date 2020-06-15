@@ -3,6 +3,7 @@
 #include <Common/formatReadable.h>
 
 #include <common/logger_useful.h>
+#include <common/errnoToString.h>
 
 #include <unistd.h>
 #include <fcntl.h>
