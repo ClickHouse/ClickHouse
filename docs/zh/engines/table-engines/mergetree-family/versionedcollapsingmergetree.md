@@ -33,7 +33,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 有关查询参数的说明，请参阅 [查询说明](../../../sql-reference/statements/create.md).
 
-**发动机参数**
+**引擎参数**
 
 ``` sql
 VersionedCollapsingMergeTree(sign, version)
@@ -79,7 +79,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 </details>
 
-## 崩溃 {#table_engines_versionedcollapsingmergetree}
+## 折叠 {#table_engines_versionedcollapsingmergetree}
 
 ### 数据 {#data}
 
