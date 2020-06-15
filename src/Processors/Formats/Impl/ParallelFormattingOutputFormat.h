@@ -250,9 +250,9 @@ private:
             unit.segment.resize(10 * DBMS_DEFAULT_BUFFER_SIZE);
 
             /// TODO: Implement proper nextImpl
-            BufferWithOutsideMemory<WriteBuffer> out(unit.segment);
+            BufferWithOutsideMemory<WriteBuffer> out_buffer(unit.segment);
 
-            auto formatter = internal_formatter_creator(out);
+            auto formatter = internal_formatter_creator(out_buffer);
 
             formatter->consume(std::move(unit.chunk));
 
