@@ -31,7 +31,7 @@ public:
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
-        : log(&Logger::get("Set")),
+        : log(&Poco::Logger::get("Set")),
         limits(limits_), fill_set_elements(fill_set_elements_), transform_null_in(transform_null_in_)
     {
     }
@@ -105,7 +105,7 @@ private:
     /// Types for set_elements.
     DataTypes set_elements_types;
 
-    Logger * log;
+    Poco::Logger * log;
 
     /// Limitations on the maximum size of the set
     SizeLimits limits;

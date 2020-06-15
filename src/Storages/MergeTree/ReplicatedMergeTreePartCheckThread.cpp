@@ -26,7 +26,7 @@ static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
 ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreePartCheckThread)")
-    , log(&Logger::get(log_name))
+    , log(&Poco::Logger::get(log_name))
 {
     task = storage.global_context.getSchedulePool().createTask(log_name, [this] { run(); });
     task->schedule();
@@ -368,7 +368,7 @@ void ReplicatedMergeTreePartCheckThread::run()
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-        if (e.code == Coordination::ZSESSIONEXPIRED)
+        if (e.code == Coordination::Error::ZSESSIONEXPIRED)
             return;
 
         task->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);

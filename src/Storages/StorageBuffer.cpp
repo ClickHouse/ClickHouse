@@ -74,7 +74,7 @@ StorageBuffer::StorageBuffer(
     , max_thresholds(max_thresholds_)
     , destination_id(destination_id_)
     , allow_materialized(allow_materialized_)
-    , log(&Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
+    , log(&Poco::Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
     , bg_pool(global_context.getBufferFlushSchedulePool())
 {
     setColumns(columns_);
@@ -171,8 +171,8 @@ Pipes StorageBuffer::read(
 
         if (dst_has_same_structure)
         {
-            if (query_info.order_by_optimizer)
-                query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(destination);
+            if (query_info.order_optimizer)
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             pipes_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
@@ -234,7 +234,7 @@ Pipes StorageBuffer::read(
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
         for (auto & pipe : pipes_from_buffers)
-            pipe = InterpreterSelectQuery(query_info.query, context, std::move(pipe), SelectQueryOptions(processed_stage)).executeWithProcessors().getPipe();
+            pipe = InterpreterSelectQuery(query_info.query, context, std::move(pipe), SelectQueryOptions(processed_stage)).execute().pipeline.getPipe();
 
     if (query_info.prewhere_info)
     {
@@ -449,7 +449,6 @@ void StorageBuffer::startup()
     {
         LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate system_profile to fix this.", getName());
     }
-
 
     flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ flushBack(); });
     flush_handle->activateAndSchedule();
@@ -777,7 +776,7 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata);
+    params.apply(metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     setColumns(std::move(metadata.columns));
 }

@@ -87,7 +87,7 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
         bool insert_sync_, UInt64 insert_timeout_)
         : context(context_), storage(storage_), query_ast(query_ast_), query_string(queryToString(query_ast_)),
         cluster(cluster_), insert_sync(insert_sync_),
-        insert_timeout(insert_timeout_), log(&Logger::get("DistributedBlockOutputStream"))
+        insert_timeout(insert_timeout_), log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
 }
 
@@ -518,7 +518,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
     }
     else
     {
-        if (shard_info.isLocal())
+        if (shard_info.isLocal() && settings.prefer_localhost_replica)
             writeToLocal(block, shard_info.getLocalNodeCount());
 
         std::vector<std::string> dir_names;

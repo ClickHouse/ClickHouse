@@ -145,6 +145,8 @@ struct ConvertImpl
                         vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
                     else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
                         vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
+                    else
+                        throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
                 }
                 else
                     vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
@@ -720,9 +722,9 @@ struct ConvertThroughParsing
                         parsed = ToDataType::tryReadText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
                     else
                         parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
-
-                    parsed = parsed && isAllRead(read_buffer);
                 }
+
+                parsed = parsed && isAllRead(read_buffer);
 
                 if (!parsed)
                     vec_to[i] = 0;

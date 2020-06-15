@@ -229,7 +229,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
 HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
     : server(server_)
-    , log(&Logger::get(name))
+    , log(&Poco::Logger::get(name))
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -443,6 +443,10 @@ void HTTPHandler::processQuery(
 
     auto param_could_be_skipped = [&] (const String & name)
     {
+        /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
+        if (name.empty())
+            return true;
+
         if (reserved_param_names.count(name))
             return true;
 

@@ -260,10 +260,10 @@ void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * lo
     *latitude = decodeCoordinate(lat_encoded, LAT_MIN, LAT_MAX, singleCoordBitsPrecision(precision, LATITUDE));
 }
 
-GeohashesInBoxPreparedArgs geohashesInBoxPrepare(const Float64 longitude_min,
-                                              const Float64 latitude_min,
-                                              const Float64 longitude_max,
-                                              const Float64 latitude_max,
+GeohashesInBoxPreparedArgs geohashesInBoxPrepare(Float64 longitude_min,
+                                              Float64 latitude_min,
+                                              Float64 longitude_max,
+                                              Float64 latitude_max,
                                               uint8_t precision)
 {
     precision = geohashPrecision(precision);
@@ -272,6 +272,11 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(const Float64 longitude_min,
     {
         return {};
     }
+
+    longitude_min = std::max(longitude_min, LON_MIN);
+    longitude_max = std::min(longitude_max, LON_MAX);
+    latitude_min = std::max(latitude_min, LAT_MIN);
+    latitude_max = std::min(latitude_max, LAT_MAX);
 
     const auto lon_step = getSpan(precision, LONGITUDE);
     const auto lat_step = getSpan(precision, LATITUDE);

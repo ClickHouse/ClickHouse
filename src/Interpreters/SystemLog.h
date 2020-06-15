@@ -69,6 +69,7 @@ class PartLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
+class AsynchronousMetricLog;
 
 
 class ISystemLog
@@ -99,6 +100,8 @@ struct SystemLogs
     std::shared_ptr<TraceLog> trace_log;                /// Used to log traces from query profiler
     std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
+    /// Metrics from system.asynchronous_metrics.
+    std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
 
     std::vector<ISystemLog *> logs;
 };
@@ -152,7 +155,7 @@ public:
     ASTPtr getCreateTableQuery() override;
 
 protected:
-    Logger * log;
+    Poco::Logger * log;
 
 private:
     /* Saving thread data */
@@ -207,7 +210,7 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
-    log = &Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
+    log = &Poco::Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
 }
 
 
