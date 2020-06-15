@@ -10,28 +10,28 @@ Interest in ClickHouse among Chinese experts is growing rapidly. It was second C
 See the **[video recording of all talks](http://play.yunxi.tv/livestream/flash?id=05527cf6e260448b9d880b99d2cf4d40)** and **[all slides](https://github.com/yandex/clickhouse-presentations/tree/master/meetup19)**.
 
 Welcome word by William Kwok (郭炜), CTO of Analysys, who played a key role in organizing this event:
-![William Kwok](https://avatars.mds.yandex.net/get-yablogs/47421/file_1542029773424/orig)
+![William Kwok](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/1.jpg)
 
 Nikolay Kochetov from Yandex demonstrating recent advancements in string processing optimization using LowCardinality feature:
-![Nikolay Kochetov from Yandex](https://avatars.mds.yandex.net/get-yablogs/38241/file_1542029913523/orig)
+![Nikolay Kochetov from Yandex](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/2.jpg)
 
 Shang Shujie (尚书杰) from Kuaishou gives an overview of ClickHouse and it's usage scenarios:
-![Shang Shujie](https://avatars.mds.yandex.net/get-yablogs/51778/file_1542030107580/orig)
+![Shang Shujie](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/3.jpg)
 
 Winter Zhang (张健) from QingCloud explains their services based on ClickHouse:
-![Winter Zhang](https://avatars.mds.yandex.net/get-yablogs/61002/file_1542030213575/orig)
+![Winter Zhang](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/4.jpg)
 
 Audience listening to Zhang's talk:
-![Audience listening to Zhang's talk](https://avatars.mds.yandex.net/get-yablogs/51778/file_1542030551688/orig)
+![Audience listening to Zhang's talk](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/5.jpg)
 
 Li Junfei (李俊飞) from Tencent explains how ClickHouse fits their data processing infrastructure:
-![Li Junfei](https://avatars.mds.yandex.net/get-yablogs/49865/file_1542030630447/orig)
+![Li Junfei](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/6.jpg)
 
 Questions&Answers session:
-![Q&A](https://avatars.mds.yandex.net/get-yablogs/47421/file_1542031644593/orig)
+![Q&A](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/7.jpg)
 
 Jack Gao (高鹏) from Sina explains their ClickHouse use case and gives some advice based on their extensive experience with ClickHouse:
-![Jack Gao](https://avatars.mds.yandex.net/get-yablogs/114306/file_1542030825804/orig)
+![Jack Gao](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/8.jpg)
 
 Chinese developers are also one of the most active worldwide in contributing to ClickHouse source code compared to other countries. Chinese ClickHouse Contributors Awards 2018 ceremony was also part of the meetup agenda with the following:
 
@@ -42,13 +42,13 @@ Chinese developers are also one of the most active worldwide in contributing to 
 A special award went to William Kwok (郭炜) for his active role in developing the Chinese ClickHouse Community.
 
 Sundy Li (李本旺) receives ClickHouse Contributor Award from Alexey Milovidov:
-![Sundy Li](https://avatars.mds.yandex.net/get-yablogs/47421/file_1542031212304/orig)
+![Sundy Li](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/9.jpg)
 
 William Kwok (郭炜) receives special award for organizing Chinese ClickHouse community and meetups:
-![William Kwok](https://avatars.mds.yandex.net/get-yablogs/51778/file_1542031554450/orig)
+![William Kwok](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/10.jpg)
 
 Pre-meetup at the Analysys office:
-![Pre-meetup](https://avatars.mds.yandex.net/get-yablogs/49865/file_1542029689914/orig)
+![Pre-meetup](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/11.jpg)
 
 
 

@@ -13,5 +13,5 @@ Alexey Milovidov, head of ClickHouse development group at Yandex, have given an 
 The event has been organised by [Amos Bird](https://github.com/amosbird), who is one of the most active ClickHouse community members and contributors, at the same time being a last year PhD student at this institution.
 
 Alexey with the event announcement:
-![Alexey with the event announcement](https://avatars.mds.yandex.net/get-yablogs/51163/file_1560518339876/orig)
+![Alexey with the event announcement](https://blog-images.clickhouse.tech/en/2019/clickhouse-lecture-at-institute-of-computing-technology-chinese-academy-of-science-on-june-11-2019/1.jpg)
 

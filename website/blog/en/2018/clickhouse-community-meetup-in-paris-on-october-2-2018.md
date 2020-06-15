@@ -8,13 +8,13 @@ tags: ['meetup', 'Paris', 'France', 'events']
 Agenda of Paris ClickHouse Meetup was full of use cases, mostly from France-based companies which are actively using ClickHouse. Slides for all talks are [available on the GitHub](https://github.com/clickhouse/clickhouse-presentations/tree/master/meetup18).
 
 Christophe Kalenzaga and Vianney Foucault, engineers from ContentSquare, company that provided the meetup venue:
-![Christophe Kalenzaga and Vianney Foucault](https://avatars.mds.yandex.net/get-yablogs/51778/file_1542722137661/orig)
+![Christophe Kalenzaga and Vianney Foucault](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-paris-on-october-2-2018/1.jpg)
 
 Matthieu Jacquet from Storetail (Criteo):
-![Matthieu Jacquet](https://avatars.mds.yandex.net/get-yablogs/49865/file_1542721920976/orig)
+![Matthieu Jacquet](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-paris-on-october-2-2018/2.jpg)
 
 The audience:
-![Audience](https://avatars.mds.yandex.net/get-yablogs/47421/file_1542722195979/orig)
+![Audience](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-paris-on-october-2-2018/3.jpg)
 
 Networking after the meetup:
-![Networking](https://avatars.mds.yandex.net/get-yablogs/39006/file_1542722223070/orig)
+![Networking](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-paris-on-october-2-2018/4.jpg)

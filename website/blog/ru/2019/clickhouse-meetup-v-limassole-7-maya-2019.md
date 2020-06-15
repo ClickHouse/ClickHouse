@@ -9,30 +9,30 @@ tags: ['мероприятия', 'meetup', 'Лимассол', 'Кипр', 'Ев
 
 [Кирилл Шваков](https://github.com/kshvakov) сыграл ключевую роль в том, чтобы данное мероприятие стало возможным: наладил коммуникацию с ClickHouse сообществом на Кипре, нашел отличную площадку и докладчиков. Большинство ClickHouse митапов по всему миру происходят благодаря активным участникам сообщества таким как Кирилл. Если вы хотите помочь нам организовать ClickHouse митап в своём регионе, пожалуйста свяжитесь с командой ClickHouse в Яндексе через [эту форму](https://clickhouse.tech/#meet) или любым другим удобным способом.
 
-![Кирилл Шваков](https://avatars.mds.yandex.net/get-yablogs/28577/file_1557763892345/orig)
+![Кирилл Шваков](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/1.jpg)
 
 Кирилл широко известен благодаря его замечательногму [ClickHouse Go Driver](https://github.com/clickhouse/clickhouse-go), работающему по нативному протоколу, а его открывающий доклад был о его опыте оптимизации ClickHouse запросов и решению реальных прикладных задач в Integros и Wisebits. [Слайды](https://presentations.clickhouse.tech/meetup22/strategies.pdf). [Полные тексты запросов](https://github.com/kshvakov/ClickHouse-Meetup-Exness).
 
 Мероприятие началось ранним вечером…
-![Вечер в Лимассоле](https://avatars.mds.yandex.net/get-yablogs/28577/file_1557763993973/orig)
+![Вечер в Лимассоле](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/2.jpg)
 
 …но природе потребовалось всего около часа, чтобы включить «ночной режим». Зато проецируемые слайды стало заметно легче читать.
-![Ночь в Лимассоле](https://avatars.mds.yandex.net/get-yablogs/28577/file_1557764004668/orig)
+![Ночь в Лимассоле](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/3.jpg)
 
 Сергей Томилов с его коллегами из Exness Platform Team поделились деталями об эволюции их систем для анализа логов и метрик, а также как они в итоге стали использовать ClickHouse для долгосрочного хранения и анализа данных([слайды](https://presentations.clickhouse.tech/meetup22/exness.pdf)):
-![Сергей Томилов](https://avatars.mds.yandex.net/get-yablogs/38241/file_1557764051601/orig)
+![Сергей Томилов](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/4.jpg)
 
 Алексей Миловидов из команды ClickHouse в Яндексе продемонстрировал функциональность из недавних релизов ClickHouse, а также рассказал о том, что стоит ждать в ближайшем будущем([слайды](https://presentations.clickhouse.tech/meetup22/new_features/)):
-![Алексей Миловидов](https://avatars.mds.yandex.net/get-yablogs/28577/file_1557764097210/orig)
+![Алексей Миловидов](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/5.jpg)
 
 Александр Зайцев, технический директор Altinity, показал обзор того, как можно интегрировать ClickHouse в окружения, работающие на Kubernetes([слайды](https://presentations.clickhouse.tech/meetup22/kubernetes.pdf)):
-![Александр Зайцев](https://avatars.mds.yandex.net/get-yablogs/38241/file_1557764111337/orig)
+![Александр Зайцев](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/6.jpg)
 
 Владимир Гончаров, бекенд разработчик из Aloha Browser, закрывал ClickHouse Limassol Meetup демонстрацией нескольких проектов для интеграции других opensource продуктов для анализа логов с ClickHouse ([слайды](https://presentations.clickhouse.tech/meetup22/aloha.pdf)):
-![Владимир Гончаров](https://avatars.mds.yandex.net/get-yablogs/114306/file_1557764131513/orig)
+![Владимир Гончаров](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/7.jpg)
 
 К сожалению, приближалась полнось и только самые «морозостойкие» любители ClickHouse продержались всё мероприятие, так стало заметно холодать.
 
-![Лимассол](https://avatars.mds.yandex.net/get-yablogs/28577/file_1557764142362/orig)
+![Лимассол](https://blog-images.clickhouse.tech/ru/2019/clickhouse-meetup-v-limassole-7-maya-2019/8.jpg)
 
 Больше фотографий с мероприятия доступно в [коротком послесловии от Exness](https://www.facebook.com/events/386638262181785/permalink/402167077295570/).

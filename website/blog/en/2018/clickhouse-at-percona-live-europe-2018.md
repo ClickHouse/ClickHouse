@@ -10,16 +10,16 @@ Open-source database management systems conference [Percona Live](https://www.pe
 There were three talks about ClickHouse in agenda, while only one of them was from Yandex. Also we had a lot of interesting conversations with conference attendees at ClickHouse booth sponsored by Altinity.
 
 Alexander Zaitsev, CTO and co-founder of Altinity, gives an overview of ClickHouse and then demonstrates case studies and best practices ([slides](https://presentations.clickhouse.tech/percona_europe_2018/Altinity.pdf)):
-![](https://avatars.mds.yandex.net/get-yablogs/51778/file_1542787905415/orig)
+![](https://blog-images.clickhouse.tech/en/2018/clickhouse-at-percona-live-europe-2018/1.jpg)
 
 Fast! Flexible! Free! Fun!
-![Fast! Flexible! Free! Fun!](https://avatars.mds.yandex.net/get-yablogs/47421/file_1542788072019/orig)
+![Fast! Flexible! Free! Fun!](https://blog-images.clickhouse.tech/en/2018/clickhouse-at-percona-live-europe-2018/2.jpg)
 
 Aleksey Milovidov, lead ClickHouse developer from Yandex, talks about unusual and unique ClickHouse features ([slides](https://presentations.clickhouse.tech/percona_europe_2018)):
-![Aleksey Milovidov](https://avatars.mds.yandex.net/get-yablogs/39006/file_1542788110181/orig)
+![Aleksey Milovidov](https://blog-images.clickhouse.tech/en/2018/clickhouse-at-percona-live-europe-2018/3.jpg)
 
 Aleksandar Aleksandrov and Felix Mattrat, data engineers from MessageBird, show how they use ClickHouse to analyze process of delivery of SMS and other kinds of messages ([slides](http://presentations.clickhouse.tech/percona_europe_2018/MessageBird.pdf)):
-![Aleksandar Aleksandrov and Felix Mattrat](https://avatars.mds.yandex.net/get-yablogs/61002/file_1542788193167/orig)
+![Aleksandar Aleksandrov and Felix Mattrat](https://blog-images.clickhouse.tech/en/2018/clickhouse-at-percona-live-europe-2018/4.jpg)
 
 Live demo at ClickHouse booth by Alexey Milovidov:
-![Demo at ClickHouse booth by Alexey Milovidov](https://avatars.mds.yandex.net/get-yablogs/61002/file_1542788374712/orig)
+![Demo at ClickHouse booth by Alexey Milovidov](https://blog-images.clickhouse.tech/en/2018/clickhouse-at-percona-live-europe-2018/5.jpg)

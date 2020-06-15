@@ -10,9 +10,9 @@ Just a few months ago Brenno Oliveira from Delivery Hero has dropped us an email
 To get started Alexander Zaitsev from Altinity gave an overview of ClickHouse for those who are not that familiar with the technology yet. He was using use cases from his personal experience and their clients as examples. Here are [the slides](https://presentations.clickhouse.tech/meetup16/introduction.pdf), unfortunately, no video this time.
 
 Gleb Kanterov talking about the usage of ClickHouse for experimentation metrics at Spotify:
-![Gleb Kanterov Spotify](https://avatars.mds.yandex.net/get-yablogs/51163/file_1530785214867/orig)
+![Gleb Kanterov Spotify](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-berlin-on-july-3-2018/1.jpg)
 
-![Gleb Kanterov Spotify](https://avatars.mds.yandex.net/get-yablogs/47421/file_1530785280757/orig)
+![Gleb Kanterov Spotify](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-berlin-on-july-3-2018/2.jpg)
 
 Spotify relies heavily on what Google Cloud Platform provides, but nevertheless found a spot in their infrastructure where only ClickHouse appeared to satisfy the requirements. Gleb Kanterov has demonstrated their approach to conducting experiments and measuring if they are worth being promoted to production solutions. Using ClickHouse has allowed them to build a framework scalable to thousands of metrics, which in the end makes them move even faster and break fewer things. Checking out [full slides](https://presentations.clickhouse.tech/meetup16/spotify.pdf) is highly recommended and here are a few quotes:
 

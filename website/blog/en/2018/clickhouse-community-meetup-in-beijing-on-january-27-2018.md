@@ -8,27 +8,27 @@ tags: ['meetup', 'Beijing', 'China', 'events', 'Asia']
 Last year there has been an OLAP algorithm contest in China organized by Analysys. The team who have shown the top results and won the competition has been using ClickHouse as the core of their solution. Other teams were mostly using different technologies and didn't really know much about ClickHouse at a time. When the final results were published, many people in China who participated in or were aware of this competition became really eager to learn more about ClickHouse. This spike of interest about ClickHouse in China has eventually lead to the first Chinese ClickHouse Community Meetup that has taken place in Beijing.
 
 Welcome word by William Kwok, CTO of Analysys, who personally played a huge role in making this event possible:
-![William Kwok, CTO of Analysys](https://avatars.mds.yandex.net/get-yablogs/39006/file_1518087712899/orig)
+![William Kwok, CTO of Analysys](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-january-27-2018/1.jpg)
 
 It was probably the most intense ClickHouse Meetup compared to all previous ones worldwide. The main part of the event took over 6 hours non-stop and there were also either pre-meetup and after-party on the same day. Well over 150 people have shown up on Saturday to participate.
 
 Audience listening for ClickHouse introduction by Alexey Milovidov:
-![ClickHouse introduction by Alexey Milovidov](https://avatars.mds.yandex.net/get-yablogs/51163/file_1518087929569/orig)
+![ClickHouse introduction by Alexey Milovidov](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-january-27-2018/2.jpg)
 
 Alexey Milovidov has started the main meetup session with an introductory talk about ClickHouse, it's usage inside Yandex and history that lead to becoming an open-source analytical DBMS ([slides](https://presentations.clickhouse.tech/meetup12/introduction/)).
 
 Alexander Zaitsev's practical talk about migrating to ClickHouse:
-![Alexander Zaitsev](https://avatars.mds.yandex.net/get-yablogs/51778/file_1518089647366/orig)
+![Alexander Zaitsev](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-january-27-2018/3.jpg)
 
 Alexander Zaitsev has shared his vast experience in migrating to ClickHouse. LifeStreet, advertisement company where he works, was one of the first companies outside of Yandex which switched to ClickHouse from other analytical DBMS in production. Later on, Alexander also co-founded Altinity, a company that specializes in helping others to migrate to ClickHouse and then effectively use it to achieve their business goals. The talk has covered many specific topics that are important for those who are in the middle of such migration or just considering it ([Slides](https://presentations.clickhouse.tech/meetup12/migration.pptx)).
 
 Alexey Zatelepin explaining how ClickHouse sparse index works and other implementation details:
-![Alexey Zatelepin](https://avatars.mds.yandex.net/get-yablogs/39006/file_1518091293239/orig)
+![Alexey Zatelepin](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-january-27-2018/4.jpg)
 
 Alexey Zatelepin's technical talk was focused on providing engineers some insights on why ClickHouse is that fast in OLAP workloads and how to leverage its design and core features as a primary index, replication, and distributed tables to achieve great performance and reliability ([slides](https://presentations.clickhouse.tech/meetup12/internals.pdf)).
 
 Jack Gao gives an extensive overview of ClickHouse and it's use cases in Chinese:
-![Jack Gao](https://avatars.mds.yandex.net/get-yablogs/51778/file_1518098041474/orig)
+![Jack Gao](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-january-27-2018/5.jpg)
 
 As we have learned during meet up and the rest of our business trip, actually there are many companies in China that are already using or seriously evaluating ClickHouse to use either part of their products or for internal analytics. Three of them are doing this long and extensively enough to give a full talk about their progress and experience.
 
@@ -61,7 +61,7 @@ ClickHouse Community Meetup afterparty.
 ##}
 
 Pre-meetup meeting of speakers and most active ClickHouse users in China:
-![Pre-meetup meeting](https://avatars.mds.yandex.net/get-yablogs/49865/file_1518108626227/orig)
+![Pre-meetup meeting](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-january-27-2018/6.jpg)
 
 ClickHouse Community Meetup afterparty:
-![ClickHouse Community Meetup afterparty](https://avatars.mds.yandex.net/get-yablogs/39006/file_1518108666796/orig)
+![ClickHouse Community Meetup afterparty](https://blog-images.clickhouse.tech/en/2018/clickhouse-community-meetup-in-beijing-on-january-27-2018/7.jpg)

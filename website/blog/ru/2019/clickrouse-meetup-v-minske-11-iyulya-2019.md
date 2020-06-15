@@ -9,4 +9,4 @@ tags: ['мероприятия', 'meetup', 'Минск', 'Беларусь']
 
 [Все слайды опубликованы на GitHub](https://github.com/yandex/clickhouse-presentations/tree/master/meetup26).
 
-![Минск](https://avatars.mds.yandex.net/get-yablogs/114306/file_1562937773736/orig)
+![Минск](https://blog-images.clickhouse.tech/ru/2019/clickrouse-meetup-v-minske-11-iyulya-2019/1.jpg)
