@@ -75,7 +75,7 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 static String joinLines(const String & query)
 {
     /// Care should be taken. We don't join lines inside non-whitespace tokens (e.g. multiline string literals)
-    ///  and we don't join line after single-line comment.
+    ///  and we don't join line after comment (because it can be single-line comment).
     /// All other whitespaces replaced to a single whitespace.
 
     String res;
