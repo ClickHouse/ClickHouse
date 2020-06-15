@@ -65,13 +65,6 @@ ReadFromStorageStep::ReadFromStorageStep(
         pipes.emplace_back(std::move(pipe));
     }
 
-    if (!blocksHaveEqualStructure(pipes.front().getHeader(), input_streams.front().header))
-    {
-        for (auto & pipe : pipes)
-            pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
-                    pipe.getHeader(), input_streams.front().header, ConvertingTransform::MatchColumnsMode::Name));
-    }
-
     pipeline = std::make_unique<QueryPipeline>();
 
     /// Table lock is stored inside pipeline here.
