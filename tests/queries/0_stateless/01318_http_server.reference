@@ -1,0 +1,43 @@
+HTTP/1.1 200 OK
+Date: 
+Connection: Keep-Alive
+Content-Type: text/tab-separated-values; charset=UTF-8
+X-ClickHouse-Server-Display-Name: 
+Transfer-Encoding: chunked
+X-ClickHouse-Query-Id: 
+X-ClickHouse-Format: TabSeparated
+X-ClickHouse-Timezone: 
+Keep-Alive: timeout=3
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+
+2
+1
+
+0
+HTTP/1.1 200 OK
+Date: 
+Connection: Keep-Alive
+Content-Type: text/tab-separated-values; charset=UTF-8
+X-ClickHouse-Server-Display-Name: 
+Transfer-Encoding: chunked
+X-ClickHouse-Query-Id: 
+X-ClickHouse-Format: TabSeparated
+X-ClickHouse-Timezone: 
+Keep-Alive: timeout=3
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+
+2
+1
+
+0
+HTTP/1.0 200 OK
+Date: 
+Connection: Close
+Content-Type: text/tab-separated-values; charset=UTF-8
+X-ClickHouse-Server-Display-Name: 
+X-ClickHouse-Query-Id: 
+X-ClickHouse-Format: TabSeparated
+X-ClickHouse-Timezone: 
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+
+1
