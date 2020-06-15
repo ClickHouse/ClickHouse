@@ -28,14 +28,17 @@ ASTPtr * getExactChild(const ASTPtr & ast, const size_t ind)
 }
 
 ///recursive searching of identifiers
-void changeAllIdentifiers(ASTPtr & ast, size_t ind, const char * mode)
+void changeAllIdentifiers(ASTPtr & ast, size_t ind, int mode)
 {
+    const char * name = any;
+    if (mode)
+        name = anyLast;
     ASTPtr * exact_child = getExactChild(ast, ind);
     if ((*exact_child)->as<ASTIdentifier>())
     {
         ///put new any
         ASTPtr old_ast = *exact_child;
-        *exact_child = makeASTFunction(mode);
+        *exact_child = makeASTFunction(name);
         (*exact_child)->as<ASTFunction>()->arguments->children.push_back(old_ast);
     }
     else if ((*exact_child)->as<ASTFunction>() &&
@@ -45,7 +48,7 @@ void changeAllIdentifiers(ASTPtr & ast, size_t ind, const char * mode)
     else if ((*exact_child)->as<ASTFunction>() &&
              AggregateFunctionFactory::instance().isAggregateFunctionName((*exact_child)->as<ASTFunction>()->name))
         throw Exception("Aggregate function " + (*exact_child)->as<ASTFunction>()->name +
-                            " is found inside aggregate function " + mode + " in query", ErrorCodes::ILLEGAL_AGGREGATION);
+                            " is found inside aggregate function " + name + " in query", ErrorCodes::ILLEGAL_AGGREGATION);
 }
 
 
@@ -60,12 +63,14 @@ void AnyInputMatcher::visit(ASTPtr & current_ast, Data data)
     if (function_node && (function_node->name == any || function_node->name == anyLast)
         && function_node->arguments->children[0]->as<ASTFunction>())
     {
-        const char * func_name = function_node->name.c_str();
+        int mode = 0;
+        if (function_node->name.c_str() == anyLast)
+            mode = 1;
         ///cut any or anyLast
         current_ast = (function_node->arguments->children[0])->clone();
         size_t amount_of_children = current_ast->as<ASTFunction>()->arguments->children.size();
         for (size_t i = 0; i < amount_of_children; ++i)
-            changeAllIdentifiers(current_ast, i, func_name);
+            changeAllIdentifiers(current_ast, i, mode);
     }
 }
 
