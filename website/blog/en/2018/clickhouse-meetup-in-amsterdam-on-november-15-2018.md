@@ -20,7 +20,7 @@ Aurimas Jacikevicius from Altinity demonstrates benchmark of ClickHouse against 
 ![Aurimas Jacikevicius from Altinity](https://avatars.mds.yandex.net/get-yablogs/28577/file_1542885324387/orig)
 
 Roy Brondgeest from Crobox showcases [ClickHouse Scala reactive client](https://github.com/crobox/clickhouse-scala-client) and it's bundled [DSL for query building](https://github.com/crobox/clickhouse-scala-client/wiki):
-![](https://avatars.mds.yandex.net/get-yablogs/51778/file_1542885436930/orig)
+![Roy Brondgeest from Crobox](https://avatars.mds.yandex.net/get-yablogs/51778/file_1542885436930/orig)
 
 Alexey Milovidov from Yandex closes the meetup with talk about performance analysis of ClickHouse queries:
 ![Alexey Milovidov from Yandex](https://avatars.mds.yandex.net/get-yablogs/51778/file_1542885588243/orig)
