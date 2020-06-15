@@ -37,7 +37,7 @@
 #include <Core/Field.h>
 #include <Core/Types.h>
 #include <Columns/Collator.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <ext/map.h>
@@ -94,7 +94,8 @@ namespace ErrorCodes
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
-String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns) const
+String InterpreterSelectQuery::generateFilterActions(
+    ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns) const
 {
     const auto & db_name = table_id.getDatabaseName();
     const auto & table_name = table_id.getTableName();
@@ -474,8 +475,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             second_stage,
             options.only_analyze,
             filter_info,
-            source_header
-        );
+            source_header);
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
@@ -979,10 +979,13 @@ void InterpreterSelectQuery::executeFetchColumns(
 
     /// Optimization for trivial query like SELECT count() FROM table.
     bool optimize_trivial_count =
-        syntax_analyzer_result->optimize_trivial_count && storage &&
-        processing_stage == QueryProcessingStage::FetchColumns &&
-        query_analyzer->hasAggregation() && (query_analyzer->aggregates().size() == 1) &&
-        typeid_cast<AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
+        syntax_analyzer_result->optimize_trivial_count
+        && storage
+        && !filter_info
+        && processing_stage == QueryProcessingStage::FetchColumns
+        && query_analyzer->hasAggregation()
+        && (query_analyzer->aggregates().size() == 1)
+        && typeid_cast<AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
 
     if (optimize_trivial_count)
     {

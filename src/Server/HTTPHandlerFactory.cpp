@@ -1,9 +1,6 @@
 #include "HTTPHandlerFactory.h"
 
-#include <re2/re2.h>
 #include <re2/stringpiece.h>
-#include <common/find_symbols.h>
-#include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include "HTTPHandler.h"
