@@ -105,7 +105,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
 
         auto current = queue.current();
 
-        if (current->isLast() && current_inputs[current->pos].skip_last_row)
+        if (current.impl->isLast() && current_inputs[current.impl->order].skip_last_row)
         {
             /// Get the next block from the corresponding source, if there is one.
             queue.removeTop();
@@ -116,7 +116,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
             * Or is there only one data source left in the queue? Then you can take the entire block on current cursor.
             */
         if (current.impl->isFirst()
-            && !current_inputs[current->pos].skip_last_row /// Ignore optimization if last row should be skipped.
+            && !current_inputs[current.impl->order].skip_last_row /// Ignore optimization if last row should be skipped.
             && (queue.size() == 1
                 || (queue.size() >= 2 && current.totallyLessOrEquals(queue.nextChild()))))
         {
