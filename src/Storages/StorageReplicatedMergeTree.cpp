@@ -4416,7 +4416,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     const auto & query_settings = query_context.getSettingsRef();
     const auto & query_client_info = query_context.getClientInfo();
     String user = query_client_info.current_user;
-    String password = query_client_info.current_password;
+    String password;
 
     if (auto address = findClusterAddress(leader_address); address)
     {
