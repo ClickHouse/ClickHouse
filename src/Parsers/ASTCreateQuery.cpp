@@ -197,6 +197,7 @@ ASTPtr ASTCreateQuery::clone() const
 void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
+    frame.expression_list_always_start_on_new_line = true;
 
     if (!database.empty() && table.empty())
     {
