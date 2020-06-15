@@ -9,9 +9,9 @@ namespace DB
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 
-class SelectQueryInfo;
+struct SelectQueryInfo;
 
-class PrewhereInfo;
+struct PrewhereInfo;
 
 /// Reads from storage.
 class ReadFromStorageStep : public IQueryPlanStep
@@ -28,7 +28,7 @@ public:
         size_t max_block_size,
         size_t max_streams);
 
-    virtual ~ReadFromStorageStep();
+    ~ReadFromStorageStep() override;
 
     String getName() const override { return "ReadFromStorage"; }
 
