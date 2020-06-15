@@ -350,7 +350,6 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
 ///eliminate functions of other GROUP BY keys
 void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query, bool optimize_group_by_function_keys)
 {
-    std::cerr << "\n" << optimize_group_by_function_keys << "\n";
     if (!optimize_group_by_function_keys)
         return;
 
