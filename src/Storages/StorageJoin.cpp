@@ -435,6 +435,7 @@ private:
 // TODO: multiple stream read and index read
 Pipes StorageJoin::read(
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,

@@ -224,12 +224,13 @@ StoragesInfo StoragesInfoStream::next()
 }
 
 Pipes StorageSystemPartsBase::read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        const size_t /*max_block_size*/,
-        const unsigned /*num_streams*/)
+    const Names & column_names,
+    const StorageMetadataPtr & /*metadata_*/,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     bool has_state_column = hasStateColumn(column_names);
 

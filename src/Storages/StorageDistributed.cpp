@@ -464,6 +464,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
 
 Pipes StorageDistributed::read(
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -510,7 +511,7 @@ Pipes StorageDistributed::read(
 }
 
 
-BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & context)
+BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
 {
     auto cluster = getCluster();
     const auto & settings = context.getSettingsRef();

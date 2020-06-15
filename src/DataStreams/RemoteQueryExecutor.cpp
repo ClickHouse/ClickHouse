@@ -319,12 +319,15 @@ void RemoteQueryExecutor::sendExternalTables()
             for (const auto & table : external_tables)
             {
                 StoragePtr cur = table.second;
+                auto metadata_snapshot = cur->getInMemoryMetadataPtr();
                 QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(context);
 
                 Pipes pipes;
 
-                pipes = cur->read(cur->getColumns().getNamesOfPhysical(), {}, context,
-                                  read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
+                pipes = cur->read(
+                    cur->getColumns().getNamesOfPhysical(),
+                    metadata_snapshot, {}, context,
+                    read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;

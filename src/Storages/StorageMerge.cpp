@@ -129,6 +129,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 
 Pipes StorageMerge::read(
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -243,6 +244,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
         return pipes;
     }
 
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
     auto storage_stage = storage->getQueryProcessingStage(*modified_context, QueryProcessingStage::Complete, query_info.query);
     if (processed_stage <= storage_stage)
     {
@@ -250,7 +252,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage->getColumns().getAllPhysical()));
 
-        pipes = storage->read(real_column_names, modified_query_info, *modified_context, processed_stage, max_block_size, UInt32(streams_num));
+        pipes = storage->read(real_column_names, metadata_snapshot, modified_query_info, *modified_context, processed_stage, max_block_size, UInt32(streams_num));
     }
     else if (processed_stage > storage_stage)
     {

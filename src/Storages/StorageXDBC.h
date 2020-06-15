@@ -15,13 +15,14 @@ namespace DB
 class StorageXDBC : public IStorageURLBase
 {
 public:
-
-    Pipes read(const Names & column_names,
-                            const SelectQueryInfo & query_info,
-                            const Context & context,
-                            QueryProcessingStage::Enum processed_stage,
-                            size_t max_block_size,
-                            unsigned num_streams) override;
+    Pipes read(
+        const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
 
     StorageXDBC(const StorageID & table_id_,
                 const std::string & remote_database_name,
@@ -29,7 +30,7 @@ public:
                 const ColumnsDescription & columns_,
                 const Context & context_, BridgeHelperPtr bridge_helper_);
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
 private:
 

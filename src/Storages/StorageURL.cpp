@@ -155,7 +155,9 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(con
 }
 
 
-Pipes IStorageURLBase::read(const Names & column_names,
+Pipes IStorageURLBase::read(
+    const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -183,7 +185,7 @@ Pipes IStorageURLBase::read(const Names & column_names,
     return pipes;
 }
 
-BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & /*context*/)
 {
     return std::make_shared<StorageURLBlockOutputStream>(
         uri, format_name, getSampleBlock(), context_global,

@@ -24,6 +24,7 @@ public:
 
     Pipes read(
         const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo &,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processing_stage*/,
@@ -35,7 +36,7 @@ public:
         return pipes;
     }
 
-    BlockOutputStreamPtr write(const ASTPtr &, const Context &) override
+    BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr & /*metadata_snapshot*/, const Context &) override
     {
         return std::make_shared<NullBlockOutputStream>(getSampleBlock());
     }

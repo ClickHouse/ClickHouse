@@ -145,6 +145,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
 
 Pipes StorageBuffer::read(
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -157,6 +158,7 @@ Pipes StorageBuffer::read(
     {
         auto destination = DatabaseCatalog::instance().getTable(destination_id, context);
 
+        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
@@ -177,7 +179,9 @@ Pipes StorageBuffer::read(
                 query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
-            pipes_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+            pipes_from_dst = destination->read(
+                column_names, destination_metadata_snapshot, query_info,
+                context, processed_stage, max_block_size, num_streams);
         }
         else
         {
@@ -210,7 +214,10 @@ Pipes StorageBuffer::read(
             }
             else
             {
-                pipes_from_dst = destination->read(columns_intersection, query_info, context, processed_stage, max_block_size, num_streams);
+                pipes_from_dst = destination->read(
+                    columns_intersection, destination_metadata_snapshot, query_info,
+                    context, processed_stage, max_block_size, num_streams);
+
                 for (auto & pipe : pipes_from_dst)
                 {
                     pipe.addSimpleTransform(std::make_shared<AddingMissedTransform>(
@@ -425,7 +432,7 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & /*context*/)
 {
     return std::make_shared<BufferBlockOutputStream>(*this);
 }

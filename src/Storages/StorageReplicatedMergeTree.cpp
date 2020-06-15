@@ -3381,6 +3381,7 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
 
 Pipes StorageReplicatedMergeTree::read(
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -3442,7 +3443,7 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 }
 
 
-BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const Context & context)
+BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
 {
     const auto storage_settings_ptr = getSettings();
     assertNotReadonly();

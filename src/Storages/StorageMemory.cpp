@@ -87,6 +87,7 @@ StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription col
 
 Pipes StorageMemory::read(
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -119,8 +120,7 @@ Pipes StorageMemory::read(
 }
 
 
-BlockOutputStreamPtr StorageMemory::write(
-    const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & /*context*/)
 {
     return std::make_shared<MemoryBlockOutputStream>(*this);
 }
