@@ -23,6 +23,8 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
+#include <Interpreters/DuplicateDistinctVisitor.h>
+#include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/AnyInputOptimize.h>
 
 #include <Parsers/ASTExpressionList.h>
