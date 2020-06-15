@@ -11,7 +11,7 @@ IMergingAlgorithmWithSharedChunks::IMergingAlgorithmWithSharedChunks(
     : description(std::move(description_))
     , chunk_allocator(num_inputs + max_row_refs)
     , cursors(num_inputs)
-    , source_chunks(num_inputs)
+    , sources(num_inputs)
     , out_row_sources_buf(out_row_sources_buf_)
 {
 }
@@ -26,39 +26,39 @@ static void prepareChunk(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
-void IMergingAlgorithmWithSharedChunks::initialize(Chunks chunks)
+void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
 {
-    source_chunks.resize(chunks.size());
-
-    for (size_t source_num = 0; source_num < source_chunks.size(); ++source_num)
+    for (size_t source_num = 0; source_num < inputs.size(); ++source_num)
     {
-        if (!chunks[source_num])
+        if (!inputs[source_num].chunk)
             continue;
 
-        prepareChunk(chunks[source_num]);
+        prepareChunk(inputs[source_num].chunk);
 
-        auto & source_chunk = source_chunks[source_num];
+        auto & source = sources[source_num];
 
-        source_chunk = chunk_allocator.alloc(chunks[source_num]);
-        cursors[source_num] = SortCursorImpl(source_chunk->getColumns(), description, source_num);
+        source.skip_last_row = inputs[source_num].skip_last_row;
+        source.chunk = chunk_allocator.alloc(inputs[source_num].chunk);
+        cursors[source_num] = SortCursorImpl(source.chunk->getColumns(), description, source_num);
 
-        source_chunk->all_columns = cursors[source_num].all_columns;
-        source_chunk->sort_columns = cursors[source_num].sort_columns;
+        source.chunk->all_columns = cursors[source_num].all_columns;
+        source.chunk->sort_columns = cursors[source_num].sort_columns;
     }
 
     queue = SortingHeap<SortCursor>(cursors);
 }
 
-void IMergingAlgorithmWithSharedChunks::consume(Chunk & chunk, size_t source_num)
+void IMergingAlgorithmWithSharedChunks::consume(Input & input, size_t source_num)
 {
-    prepareChunk(chunk);
+    prepareChunk(input.chunk);
 
-    auto & source_chunk = source_chunks[source_num];
-    source_chunk = chunk_allocator.alloc(chunk);
-    cursors[source_num].reset(source_chunk->getColumns(), {});
+    auto & source = sources[source_num];
+    source.skip_last_row = input.skip_last_row;
+    source.chunk = chunk_allocator.alloc(input.chunk);
+    cursors[source_num].reset(source.chunk->getColumns(), {});
 
-    source_chunk->all_columns = cursors[source_num].all_columns;
-    source_chunk->sort_columns = cursors[source_num].sort_columns;
+    source.chunk->all_columns = cursors[source_num].all_columns;
+    source.chunk->sort_columns = cursors[source_num].sort_columns;
 
     queue.push(cursors[source_num]);
 }

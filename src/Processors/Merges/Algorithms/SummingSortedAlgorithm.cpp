@@ -623,19 +623,19 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
 {
 }
 
-void SummingSortedAlgorithm::initialize(Chunks chunks)
+void SummingSortedAlgorithm::initialize(Inputs inputs)
 {
-    for (auto & chunk : chunks)
-        if (chunk)
-            preprocessChunk(chunk);
+    for (auto & input : inputs)
+        if (input.chunk)
+            preprocessChunk(input.chunk);
 
-    initializeQueue(std::move(chunks));
+    initializeQueue(std::move(inputs));
 }
 
-void SummingSortedAlgorithm::consume(Chunk & chunk, size_t source_num)
+void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    preprocessChunk(chunk);
-    updateCursor(chunk, source_num);
+    preprocessChunk(input.chunk);
+    updateCursor(input, source_num);
 }
 
 IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
@@ -646,6 +646,13 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
         bool key_differs;
 
         SortCursor current = queue.current();
+
+        if (current->isLast() && skipLastRowFor(current->pos))
+        {
+            /// Get the next block from the corresponding source, if there is one.
+            queue.removeTop();
+            return Status(current.impl->order);
+        }
 
         {
             detail::RowRef current_key;

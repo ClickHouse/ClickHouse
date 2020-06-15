@@ -20,8 +20,32 @@ public:
         explicit Status(size_t source) : required_source(source) {}
     };
 
-    virtual void initialize(Chunks chunks) = 0;
-    virtual void consume(Chunk & chunk, size_t source_num) = 0;
+    struct Input
+    {
+        Chunk chunk;
+
+        /// It is a flag which says that last row from chunk should be ignored in result.
+        /// This row is not ignored in sorting and is needed to synchronize required source
+        /// between different algorithm objects in parallel FINAL.
+        bool skip_last_row = false;
+
+        void swap(Input & other)
+        {
+            chunk.swap(other.chunk);
+            std::swap(skip_last_row, other.skip_last_row);
+        }
+
+        void set(Chunk chunk_)
+        {
+            chunk = std::move(chunk_);
+            skip_last_row = false;
+        }
+    };
+
+    using Inputs = std::vector<Input>;
+
+    virtual void initialize(Inputs inputs) = 0;
+    virtual void consume(Input & input, size_t source_num) = 0;
     virtual Status merge() = 0;
 
     IMergingAlgorithm() = default;
