@@ -28,7 +28,7 @@ namespace ErrorCodes
 }
 
 template <typename T>
-struct AggregateFunctionXxxMapData
+struct AggregateFunctionMapData
 {
     // Map needs to be ordered to maintain function properties
     std::map<T, Array> merged_maps;
@@ -54,18 +54,18 @@ struct AggregateFunctionXxxMapData
   */
 
 template <typename T, typename Derived, typename Visitor, bool overflow, bool tuple_argument>
-class AggregateFunctionMapOpBase : public IAggregateFunctionDataHelper<
-    AggregateFunctionXxxMapData<NearestFieldType<T>>, Derived>
+class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
+    AggregateFunctionMapData<NearestFieldType<T>>, Derived>
 {
 private:
     DataTypePtr keys_type;
     DataTypes values_types;
 
 public:
-    AggregateFunctionMapOpBase(
+    AggregateFunctionMapBase(
         const DataTypePtr & keys_type_, const DataTypes & values_types_,
         const DataTypes & argument_types_, const Array & params_)
-        : IAggregateFunctionDataHelper<AggregateFunctionXxxMapData<NearestFieldType<T>>, Derived>(argument_types_, params_)
+        : IAggregateFunctionDataHelper<AggregateFunctionMapData<NearestFieldType<T>>, Derived>(argument_types_, params_)
         , keys_type(keys_type_), values_types(values_types_) {}
 
     DataTypePtr getReturnType() const override
@@ -305,11 +305,11 @@ public:
 
 template <typename T, bool overflow, bool tuple_argument>
 class AggregateFunctionSumMap final :
-    public AggregateFunctionMapOpBase<T, AggregateFunctionSumMap<T, overflow, tuple_argument>, FieldVisitorSum, overflow, tuple_argument>
+    public AggregateFunctionMapBase<T, AggregateFunctionSumMap<T, overflow, tuple_argument>, FieldVisitorSum, overflow, tuple_argument>
 {
 private:
     using Self = AggregateFunctionSumMap<T, overflow, tuple_argument>;
-    using Base = AggregateFunctionMapOpBase<T, Self, FieldVisitorSum, overflow, tuple_argument>;
+    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument>;
 
 public:
     AggregateFunctionSumMap(const DataTypePtr & keys_type_, DataTypes & values_types_, const DataTypes & argument_types_)
@@ -323,7 +323,7 @@ public:
 
 template <typename T, bool overflow, bool tuple_argument>
 class AggregateFunctionSumMapFiltered final :
-    public AggregateFunctionMapOpBase<T,
+    public AggregateFunctionMapBase<T,
         AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>,
         FieldVisitorSum,
         overflow,
@@ -331,7 +331,7 @@ class AggregateFunctionSumMapFiltered final :
 {
 private:
     using Self = AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>;
-    using Base = AggregateFunctionMapOpBase<T, Self, FieldVisitorSum, overflow, tuple_argument>;
+    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument>;
 
     std::unordered_set<T> keys_to_keep;
 
@@ -355,11 +355,11 @@ public:
 
 template <typename T, bool tuple_argument>
 class AggregateFunctionMinMap final :
-    public AggregateFunctionMapOpBase<T, AggregateFunctionMinMap<T, tuple_argument>, FieldVisitorMin, true, tuple_argument>
+    public AggregateFunctionMapBase<T, AggregateFunctionMinMap<T, tuple_argument>, FieldVisitorMin, true, tuple_argument>
 {
 private:
     using Self = AggregateFunctionMinMap<T, tuple_argument>;
-    using Base = AggregateFunctionMapOpBase<T, Self, FieldVisitorMin, true, tuple_argument>;
+    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorMin, true, tuple_argument>;
 
 public:
     AggregateFunctionMinMap(const DataTypePtr & keys_type_, DataTypes & values_types_, const DataTypes & argument_types_)
@@ -373,11 +373,11 @@ public:
 
 template <typename T, bool tuple_argument>
 class AggregateFunctionMaxMap final :
-    public AggregateFunctionMapOpBase<T, AggregateFunctionMaxMap<T, tuple_argument>, FieldVisitorMax, true, tuple_argument>
+    public AggregateFunctionMapBase<T, AggregateFunctionMaxMap<T, tuple_argument>, FieldVisitorMax, true, tuple_argument>
 {
 private:
     using Self = AggregateFunctionMaxMap<T, tuple_argument>;
-    using Base = AggregateFunctionMapOpBase<T, Self, FieldVisitorMax, true, tuple_argument>;
+    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorMax, true, tuple_argument>;
 
 public:
     AggregateFunctionMaxMap(const DataTypePtr & keys_type_, DataTypes & values_types_, const DataTypes & argument_types_)
