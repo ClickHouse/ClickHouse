@@ -33,15 +33,8 @@ void IMergingAlgorithmWithDelayedChunk::updateCursor(Input & input, size_t sourc
     auto & current_input = current_inputs[source_num];
 
     /// Extend lifetime of last chunk.
-    if (current_input.skip_last_row && current_input.chunk.getNumRows() <= 1)
-    {
-        /// But if chunk has only single skipped row, ignore it.
-    }
-    else
-    {
-        last_chunk.swap(current_input.chunk);
-        last_chunk_sort_columns = std::move(cursors[source_num].sort_columns);
-    }
+    last_chunk.swap(current_input.chunk);
+    last_chunk_sort_columns = std::move(cursors[source_num].sort_columns);
 
     current_input.swap(input);
     cursors[source_num].reset(current_input.chunk.getColumns(), {});
