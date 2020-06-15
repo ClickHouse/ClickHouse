@@ -796,7 +796,6 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserDictionaryAttributeDeclarationList attributes_p;
     ParserDictionary dictionary_p;
 
-
     bool if_not_exists = false;
 
     ASTPtr database;
