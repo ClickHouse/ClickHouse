@@ -154,8 +154,6 @@ MergeTreeData::MergeTreeData(
         if (!pk_sample_block.has(metadata_.sampling_key.column_names[0]) && !attach
             && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
-
-        setSamplingKey(metadata_.sampling_key);
     }
 
     MergeTreeDataFormatVersion min_format_version(0);
@@ -472,7 +470,6 @@ void MergeTreeData::initPartitionKey(const KeyDescription & new_partition_key)
             }
         }
     }
-    setPartitionKey(new_partition_key);
 }
 
 

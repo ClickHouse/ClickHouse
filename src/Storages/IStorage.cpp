@@ -403,11 +403,6 @@ const KeyDescription & IStorage::getPartitionKey() const
     return metadata->partition_key;
 }
 
-void IStorage::setPartitionKey(const KeyDescription & partition_key_)
-{
-    metadata->partition_key = partition_key_;
-}
-
 bool IStorage::isPartitionKeyDefined() const
 {
     return metadata->partition_key.definition_ast != nullptr;
@@ -428,11 +423,6 @@ Names IStorage::getColumnsRequiredForPartitionKey() const
 const KeyDescription & IStorage::getSortingKey() const
 {
     return metadata->sorting_key;
-}
-
-void IStorage::setSortingKey(const KeyDescription & sorting_key_)
-{
-    metadata->sorting_key = sorting_key_;
 }
 
 bool IStorage::isSortingKeyDefined() const
@@ -464,11 +454,6 @@ const KeyDescription & IStorage::getPrimaryKey() const
     return metadata->primary_key;
 }
 
-void IStorage::setPrimaryKey(const KeyDescription & primary_key_)
-{
-    metadata->primary_key = primary_key_;
-}
-
 bool IStorage::isPrimaryKeyDefined() const
 {
     return metadata->primary_key.definition_ast != nullptr;
@@ -497,12 +482,6 @@ const KeyDescription & IStorage::getSamplingKey() const
 {
     return metadata->sampling_key;
 }
-
-void IStorage::setSamplingKey(const KeyDescription & sampling_key_)
-{
-    metadata->sampling_key = sampling_key_;
-}
-
 
 bool IStorage::isSamplingKeyDefined() const
 {
