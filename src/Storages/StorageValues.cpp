@@ -16,7 +16,9 @@ StorageValues::StorageValues(
     const NamesAndTypesList & virtuals_)
     : IStorage(table_id_), res_block(res_block_), virtuals(virtuals_)
 {
-    setColumns(columns_);
+    StorageInMemoryMetadata metadata_;
+    metadata_.setColumns(columns_);
+    setInMemoryMetadata(metadata_);
 }
 
 Pipes StorageValues::read(

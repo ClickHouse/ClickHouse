@@ -26,7 +26,8 @@ namespace ErrorCodes
 StorageSystemColumns::StorageSystemColumns(const std::string & name_)
     : IStorage({"system", name_})
 {
-    setColumns(ColumnsDescription(
+    StorageInMemoryMetadata metadata_;
+    metadata_.setColumns(ColumnsDescription(
     {
         { "database",           std::make_shared<DataTypeString>() },
         { "table",              std::make_shared<DataTypeString>() },
@@ -45,6 +46,7 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "is_in_sampling_key",  std::make_shared<DataTypeUInt8>() },
         { "compression_codec",   std::make_shared<DataTypeString>() },
     }));
+    setInMemoryMetadata(metadata_);
 }
 
 

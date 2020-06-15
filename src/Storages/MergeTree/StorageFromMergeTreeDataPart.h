@@ -49,12 +49,7 @@ protected:
         : IStorage(getIDFromPart(part_))
         , part(part_)
     {
-        setColumns(part_->storage.getColumns());
-        setSecondaryIndices(part_->storage.getSecondaryIndices());
-        setPrimaryKey(part_->storage.getPrimaryKey());
-        setSortingKey(part_->storage.getSortingKey());
-        setColumnTTLs(part->storage.getColumnTTLs());
-        setTableTTLs(part->storage.getTableTTLs());
+        setInMemoryMetadata(part_->storage.getInMemoryMetadata());
     }
 
 private:

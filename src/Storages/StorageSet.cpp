@@ -96,8 +96,11 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const Context & context_)
     : IStorage(table_id_)
 {
-    setColumns(columns_);
-    setConstraints(constraints_);
+    StorageInMemoryMetadata metadata_;
+    metadata_.setColumns(columns_);
+    metadata_.setConstraints(constraints_);
+    setInMemoryMetadata(metadata_);
+
 
     if (relative_path_.empty())
         throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);

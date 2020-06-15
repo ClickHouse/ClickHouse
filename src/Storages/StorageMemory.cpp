@@ -78,8 +78,10 @@ private:
 StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
     : IStorage(table_id_)
 {
-    setColumns(std::move(columns_description_));
-    setConstraints(std::move(constraints_));
+    StorageInMemoryMetadata metadata_;
+    metadata_.setColumns(std::move(columns_description_));
+    metadata_.setConstraints(std::move(constraints_));
+    setInMemoryMetadata(metadata_);
 }
 
 

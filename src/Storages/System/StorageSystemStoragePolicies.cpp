@@ -17,7 +17,8 @@ namespace ErrorCodes
 StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & name_)
         : IStorage({"system", name_})
 {
-    setColumns(
+    StorageInMemoryMetadata metadata_;
+    metadata_.setColumns(
         ColumnsDescription({
              {"policy_name", std::make_shared<DataTypeString>()},
              {"volume_name", std::make_shared<DataTypeString>()},
@@ -26,6 +27,7 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & n
              {"max_data_part_size", std::make_shared<DataTypeUInt64>()},
              {"move_factor", std::make_shared<DataTypeFloat32>()}
     }));
+    setInMemoryMetadata(metadata_);
 }
 
 Pipes StorageSystemStoragePolicies::read(

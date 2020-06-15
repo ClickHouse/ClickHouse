@@ -100,7 +100,9 @@ StorageDictionary::StorageDictionary(
     : IStorage(table_id_)
     , dictionary_name(dictionary_name_)
 {
-    setColumns(ColumnsDescription{getNamesAndTypes(dictionary_structure_)});
+    StorageInMemoryMetadata metadata_;
+    metadata_.setColumns(ColumnsDescription{getNamesAndTypes(dictionary_structure_)});
+    setInMemoryMetadata(metadata_);
 }
 
 

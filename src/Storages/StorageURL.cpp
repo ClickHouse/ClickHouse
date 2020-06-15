@@ -43,8 +43,11 @@ IStorageURLBase::IStorageURLBase(
     , format_name(format_name_)
 {
     context_global.getRemoteHostFilter().checkURL(uri);
-    setColumns(columns_);
-    setConstraints(constraints_);
+
+    StorageInMemoryMetadata metadata_;
+    metadata_.setColumns(columns_);
+    metadata_.setConstraints(constraints_);
+    setInMemoryMetadata(metadata_);
 }
 
 namespace

@@ -431,8 +431,10 @@ StorageLog::StorageLog(
     , max_compress_block_size(max_compress_block_size_)
     , file_checker(disk, table_path + "sizes.json")
 {
-    setColumns(columns_);
-    setConstraints(constraints_);
+    StorageInMemoryMetadata metadata_;
+    metadata_.setColumns(columns_);
+    metadata_.setConstraints(constraints_);
+    setInMemoryMetadata(metadata_);
 
     if (relative_path_.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);

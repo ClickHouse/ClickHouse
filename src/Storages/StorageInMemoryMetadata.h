@@ -8,6 +8,7 @@
 #include <Storages/TTLDescription.h>
 #include <Storages/SelectQueryDescription.h>
 
+#include <Common/MultiVersion.h>
 
 namespace DB
 {
@@ -47,6 +48,18 @@ struct StorageInMemoryMetadata
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
+
+
+    ////////////////////////////////////////////////////////////////////////
+    void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
+
+    void setSecondaryIndices(IndicesDescription secondary_indices_);
+
+    void setConstraints(ConstraintsDescription constraints_);
+
 };
+
+using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;
+using MultiVersionStorageMetadataPtr = MultiVersion<StorageInMemoryMetadata>;
 
 }

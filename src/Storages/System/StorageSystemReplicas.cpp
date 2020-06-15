@@ -19,7 +19,8 @@ namespace DB
 StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
     : IStorage({"system", name_})
 {
-    setColumns(ColumnsDescription({
+    StorageInMemoryMetadata metadata_;
+    metadata_.setColumns(ColumnsDescription({
         { "database",                             std::make_shared<DataTypeString>()   },
         { "table",                                std::make_shared<DataTypeString>()   },
         { "engine",                               std::make_shared<DataTypeString>()   },
@@ -52,6 +53,7 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
         { "active_replicas",                      std::make_shared<DataTypeUInt8>()    },
         { "zookeeper_exception",                  std::make_shared<DataTypeString>()   },
     }));
+    setInMemoryMetadata(metadata_);
 }
 
 
