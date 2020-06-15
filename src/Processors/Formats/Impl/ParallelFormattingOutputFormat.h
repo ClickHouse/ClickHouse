@@ -55,7 +55,7 @@ protected:
     void consume(Chunk chunk) override final
     {
 
-        std::cout << StackTrace().toString() << std::endl;
+//        std::cout << StackTrace().toString() << std::endl;
 
         if (chunk.empty())
         {
