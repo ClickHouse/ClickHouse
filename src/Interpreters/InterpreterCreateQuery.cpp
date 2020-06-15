@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -71,6 +72,7 @@ namespace ErrorCodes
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
     extern const int DICTIONARY_ALREADY_EXISTS;
+    extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -276,6 +278,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     /** all default_expressions as a single expression list,
      *  mixed with conversion-columns for each explicitly specified type */
+
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     NamesAndTypesList column_names_and_types;
 
@@ -284,9 +287,23 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
         DataTypePtr column_type = nullptr;
+
         if (col_decl.type)
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
+
+            if (col_decl.null_modifier)
+            {
+                if (column_type->isNullable())
+                    throw Exception("Cant use [NOT] NULL modifier with Nullable type", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
+                if (*col_decl.null_modifier)
+                    column_type = makeNullable(column_type);
+            }
+            else if (context.getSettingsRef().data_type_default_nullable)
+            {
+                column_type = makeNullable(column_type);
+            }
+
             column_names_and_types.emplace_back(col_decl.name, column_type);
         }
         else
