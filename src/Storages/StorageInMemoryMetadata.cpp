@@ -66,4 +66,14 @@ void StorageInMemoryMetadata::setConstraints(ConstraintsDescription constraints_
     constraints = std::move(constraints_);
 }
 
+void StorageInMemoryMetadata::setTableTTLs(const TTLTableDescription & table_ttl_)
+{
+    table_ttl = table_ttl_;
+}
+
+void StorageInMemoryMetadata::setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_)
+{
+    column_ttls_by_name = column_ttls_by_name_;
+}
+
 }

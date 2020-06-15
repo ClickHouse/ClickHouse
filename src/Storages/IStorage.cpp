@@ -506,11 +506,6 @@ TTLTableDescription IStorage::getTableTTLs() const
     return metadata->table_ttl;
 }
 
-void IStorage::setTableTTLs(const TTLTableDescription & table_ttl_)
-{
-    std::lock_guard lock(ttl_mutex);
-    metadata->table_ttl = table_ttl_;
-}
 
 bool IStorage::hasAnyTableTTL() const
 {
@@ -521,12 +516,6 @@ TTLColumnsDescription IStorage::getColumnTTLs() const
 {
     std::lock_guard lock(ttl_mutex);
     return metadata->column_ttls_by_name;
-}
-
-void IStorage::setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_)
-{
-    std::lock_guard lock(ttl_mutex);
-    metadata->column_ttls_by_name = column_ttls_by_name_;
 }
 
 bool IStorage::hasAnyColumnTTL() const
