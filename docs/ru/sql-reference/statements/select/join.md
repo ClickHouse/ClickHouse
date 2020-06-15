@@ -49,7 +49,7 @@ FROM <left_table>
 
 - Должен содержать упорядоченную последовательность.
 - Может быть одного из следующих типов: [Int*, UInt*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Date](../../data-types/date.md), [DateTime](../../data-types/datetime.md), [Decimal*](../../data-types/decimal.md).
-- Не может быть единственным столбцом в таблице.
+- Не может быть единственным столбцом в секции `JOIN`.
 
 Синтаксис `ASOF JOIN ... ON`:
 
