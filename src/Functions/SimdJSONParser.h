@@ -5,11 +5,13 @@
 #endif
 
 #if USE_SIMDJSON
-#    include <Core/Types.h>
-#    include <Common/Exception.h>
-#    include <common/StringRef.h>
+#include <Core/Types.h>
+#include <Common/Exception.h>
+#include <common/StringRef.h>
 
-#    include <simdjson/jsonparser.h>
+#include <simdjson/dom/parser.h>
+#include <simdjson/dom/element.h>
+#include <simdjson/dom/array.h>
 
 
 namespace DB
@@ -32,100 +34,116 @@ struct SimdJSONParser
                             ErrorCodes::CANNOT_ALLOCATE_MEMORY};
     }
 
-    bool parse(const StringRef & json) { return !json_parse(json.data, json.size, pj); }
+    bool parse(const StringRef & json)
+    {
+        simdjson::dom::parser parser;
+        simdjson::error_code error;
+        parser.parse(json.data, json.size).tie(parsed_json, error);
+        return !error;
+    }
 
-    using Iterator = simdjson::ParsedJson::Iterator;
-    Iterator getRoot() { return Iterator{pj}; }
+    using Iterator = simdjson::dom::element;
+    Iterator getRoot() { return parsed_json; }
 
-    static bool isInt64(const Iterator & it) { return it.is_integer(); }
-    static bool isUInt64(const Iterator &) { return false; /* See https://github.com/lemire/simdjson/issues/68 */ }
-    static bool isDouble(const Iterator & it) { return it.is_double(); }
-    static bool isString(const Iterator & it) { return it.is_string(); }
-    static bool isArray(const Iterator & it) { return it.is_array(); }
-    static bool isObject(const Iterator & it) { return it.is_object(); }
-    static bool isBool(const Iterator & it) { return it.get_type() == 't' || it.get_type() == 'f'; }
-    static bool isNull(const Iterator & it) { return it.is_null(); }
+    static bool isInt64(const Iterator & it) { return it.type() == simdjson::dom::element_type::INT64; }
+    static bool isUInt64(const Iterator &) { return it.type() == simdjson::dom::element_type::UINT64; }
+    static bool isDouble(const Iterator & it) { return it.type() == simdjson::dom::element_type::DOUBLE; }
+    static bool isString(const Iterator & it) { return it.type() == simdjson::dom::element_type::STRING; }
+    static bool isArray(const Iterator & it) { return it.type() == simdjson::dom::element_type::ARRAY; }
+    static bool isObject(const Iterator & it) { return it.type() == simdjson::dom::element_type::OBJECT; }
+    static bool isBool(const Iterator & it) { return it.type() == simdjson::dom::element_type::BOOL; }
+    static bool isNull(const Iterator & it) { return it.type() == simdjson::dom::element_type::NULL; }
 
-    static Int64 getInt64(const Iterator & it) { return it.get_integer(); }
-    static UInt64 getUInt64(const Iterator &) { return 0; /* isUInt64() never returns true */ }
-    static double getDouble(const Iterator & it) { return it.get_double(); }
-    static bool getBool(const Iterator & it) { return it.get_type() == 't'; }
-    static StringRef getString(const Iterator & it) { return StringRef{it.get_string(), it.get_string_length()}; }
+    static Int64 getInt64(const Iterator & it) { return it; }
+    static UInt64 getUInt64(const Iterator & it) { return it; }
+    static double getDouble(const Iterator & it) { return it; }
+    static bool getBool(const Iterator & it) { return it; }
+    static StringRef getString(const Iterator & it)
+    {
+        std::string_view view = it;
+        return {view.data(), view.size()};
+    }
 
     static size_t sizeOfArray(const Iterator & it)
     {
-        size_t size = 0;
-        Iterator it2 = it;
-        if (it2.down())
-        {
-            do
-                ++size;
-            while (it2.next());
-        }
-        return size;
+        return it.get<simdjson::dom::array>().size();
     }
 
-    static bool firstArrayElement(Iterator & it) { return it.down(); }
+    static bool firstArrayElement(Iterator & it)
+    {
+        //it.get<simdjson::dom::array>()[0].tie(it, error);
+        return !error;
+    }
 
     static bool arrayElementByIndex(Iterator & it, size_t index)
     {
-        if (!it.down())
-            return false;
-        while (index--)
-            if (!it.next())
-                return false;
-        return true;
+        //it.get<simdjson::dom::array>()[index].tie(it, error);
+        return !error;
     }
 
-    static bool nextArrayElement(Iterator & it) { return it.next(); }
+    static bool nextArrayElement(Iterator & it)
+    {
+        return ++it;
+    }
 
     static size_t sizeOfObject(const Iterator & it)
     {
-        size_t size = 0;
-        Iterator it2 = it;
-        if (it2.down())
-        {
-            do
-                ++size;
-            while (it2.next() && it2.next()); //-V501
-        }
-        return size;
+        return it.get<simdjson::dom::object>().size();
     }
 
-    static bool firstObjectMember(Iterator & it) { return it.down() && it.next(); }
+    static bool firstObjectMember(Iterator & it)
+    {
+        //it.get<simdjson::dom::object>()[0].tie(it, error);
+        return !error;
+    }
 
     static bool firstObjectMember(Iterator & it, StringRef & first_key)
     {
-        if (!it.down())
+        //it.get<simdjson::dom::object>()[0].tie(it, error);
+        if (error)
             return false;
-        first_key.data = it.get_string();
-        first_key.size = it.get_string_length();
-        return it.next();
+        std::string_view view = it.key();
+        first_key = {it.data(), it.size()};
+        return true;
     }
 
     static bool objectMemberByIndex(Iterator & it, size_t index)
     {
-        if (!it.down())
+        //it.get<simdjson::dom::object>()[index].tie(it, error);
+        if (error)
             return false;
-        while (index--)
-            if (!it.next() || !it.next()) //-V501
-                return false;
-        return it.next();
+        std::string_view view = it.key();
+        first_key = {it.data(), it.size()};
+        return true;
     }
 
-    static bool objectMemberByName(Iterator & it, const StringRef & name) { return it.move_to_key(name.data); }
-    static bool nextObjectMember(Iterator & it) { return it.next() && it.next(); } //-V501
+    static bool objectMemberByName(Iterator & it, const StringRef & name)
+    {
+        //it.get<simdjson::dom::object>()[std::string_view{name.data(), name.size()}].tie(it, error);
+        return !error;
+    }
+
+    static bool nextObjectMember(Iterator & it)
+    {
+        return ++it;
+    }
 
     static bool nextObjectMember(Iterator & it, StringRef & next_key)
     {
-        if (!it.next())
+        ++it;
+
+        std::string_view view = it.key();
+        if (error)
             return false;
-        next_key.data = it.get_string();
-        next_key.size = it.get_string_length();
-        return it.next();
+        std::string_view view = it.key();
+        first_key = {it.data(), it.size()};
+        return true;
     }
 
-    static bool isObjectMember(const Iterator & it) { return it.get_scope_type() == '{'; }
+    static bool isObjectMember(const Iterator & it)
+    {
+        return it.get_scope_type() == '{';
+    }
 
     static StringRef getKey(const Iterator & it)
     {
@@ -135,7 +153,7 @@ struct SimdJSONParser
     }
 
 private:
-    simdjson::ParsedJson pj;
+    simdjson::dom::element parsed_json;
 };
 
 }
