@@ -137,7 +137,9 @@ StorageKafka::StorageKafka(
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
     , settings_adjustments(createSettingsAdjustments())
 {
-    setColumns(columns_);
+    StorageInMemoryMetadata metadata_;
+    metadata_.setColumns(columns_);
+    setInMemoryMetadata(metadata_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
 

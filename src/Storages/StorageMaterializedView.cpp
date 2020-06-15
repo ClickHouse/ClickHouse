@@ -50,7 +50,9 @@ StorageMaterializedView::StorageMaterializedView(
     bool attach_)
     : IStorage(table_id_), global_context(local_context.getGlobalContext())
 {
-    setColumns(columns_);
+    StorageInMemoryMetadata metadata_;
+    metadata_.setColumns(columns_);
+    setInMemoryMetadata(metadata_);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -209,7 +211,7 @@ void StorageMaterializedView::alter(
     /// end modify query
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
-    setColumns(std::move(new_metadata.columns));
+    setInMemoryMetadata(new_metadata);
 }
 
 

@@ -51,4 +51,19 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
 }
 
 
+void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
+{
+    columns = std::move(columns_);
+}
+
+void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_indices_)
+{
+    secondary_indices = std::move(secondary_indices_);
+}
+
+void StorageInMemoryMetadata::setConstraints(ConstraintsDescription constraints_)
+{
+    constraints = std::move(constraints_);
+}
+
 }

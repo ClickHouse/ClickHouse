@@ -140,27 +140,24 @@ public:
 public: /// thread-unsafe part. lockStructure must be acquired
 
     const ColumnsDescription & getColumns() const; /// returns combined set of columns
-    void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
-
-    void setSecondaryIndices(IndicesDescription secondary_indices_);
     const IndicesDescription & getSecondaryIndices() const;
     /// Has at least one non primary index
     bool hasSecondaryIndices() const;
 
     const ConstraintsDescription & getConstraints() const;
-    void setConstraints(ConstraintsDescription constraints_);
 
     /// Storage settings
     ASTPtr getSettingsChanges() const;
     void setSettingsChanges(const ASTPtr & settings_changes_);
-    bool hasSettingsChanges() const { return metadata.settings_changes != nullptr; }
+    bool hasSettingsChanges() const { return metadata->settings_changes != nullptr; }
 
     /// Select query for *View storages.
     const SelectQueryDescription & getSelectQuery() const;
     void setSelectQuery(const SelectQueryDescription & select_);
     bool hasSelectQuery() const;
 
-    StorageInMemoryMetadata getInMemoryMetadata() const { return metadata; }
+    StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata; }
+    void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_) { metadata = std::make_shared<StorageInMemoryMetadata>(metadata_); }
 
     Block getSampleBlock() const; /// ordinary + materialized.
     Block getSampleBlockWithVirtuals() const; /// ordinary + materialized + virtuals.
@@ -207,7 +204,7 @@ private:
 
     /// TODO (alesap) just use multiversion for atomic metadata
     mutable std::mutex ttl_mutex;
-    StorageInMemoryMetadata metadata;
+    StorageMetadataPtr metadata;
 private:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
@@ -354,7 +351,7 @@ public:
 
     /** ALTER tables in the form of column changes that do not affect the change to Storage or its parameters.
       * This method must fully execute the ALTER query, taking care of the locks itself.
-      * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata.
+      * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata->
       */
     virtual void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder);
 
@@ -445,7 +442,7 @@ public:
     /// struct).
     void setPartitionKey(const KeyDescription & partition_key_);
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
-    ASTPtr getPartitionKeyAST() const { return metadata.partition_key.definition_ast; }
+    ASTPtr getPartitionKeyAST() const { return metadata->partition_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) partition key.
     bool isPartitionKeyDefined() const;
     /// Storage has partition key.
@@ -460,7 +457,7 @@ public:
     /// struct).
     void setSortingKey(const KeyDescription & sorting_key_);
     /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
-    ASTPtr getSortingKeyAST() const { return metadata.sorting_key.definition_ast; }
+    ASTPtr getSortingKeyAST() const { return metadata->sorting_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sorting key.
     bool isSortingKeyDefined() const;
     /// Storage has sorting key. It means, that it contains at least one column.
@@ -477,7 +474,7 @@ public:
     /// struct).
     void setPrimaryKey(const KeyDescription & primary_key_);
     /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
-    ASTPtr getPrimaryKeyAST() const { return metadata.primary_key.definition_ast; }
+    ASTPtr getPrimaryKeyAST() const { return metadata->primary_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sorting key.
     bool isPrimaryKeyDefined() const;
     /// Storage has primary key (maybe part of some other key). It means, that
@@ -495,7 +492,7 @@ public:
     /// struct).
     void setSamplingKey(const KeyDescription & sampling_key_);
     /// Returns sampling expression AST for storage or nullptr if there is none.
-    ASTPtr getSamplingKeyAST() const { return metadata.sampling_key.definition_ast; }
+    ASTPtr getSamplingKeyAST() const { return metadata->sampling_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sampling key.
     bool isSamplingKeyDefined() const;
     /// Storage has sampling key.

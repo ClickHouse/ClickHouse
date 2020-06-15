@@ -23,7 +23,9 @@ protected:
 public:
     IStorageSystemOneBlock(const String & name_) : IStorage({"system", name_})
     {
-        setColumns(ColumnsDescription(Self::getNamesAndTypes()));
+        StorageInMemoryMetadata metadata_;
+        metadata_.setColumns(ColumnsDescription(Self::getNamesAndTypes()));
+        setInMemoryMetadata(metadata_);
     }
 
     Pipes read(const Names & column_names,

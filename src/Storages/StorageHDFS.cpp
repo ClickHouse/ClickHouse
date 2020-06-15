@@ -49,8 +49,11 @@ StorageHDFS::StorageHDFS(const String & uri_,
     , compression_method(compression_method_)
 {
     context.getRemoteHostFilter().checkURL(Poco::URI(uri));
-    setColumns(columns_);
-    setConstraints(constraints_);
+
+    StorageInMemoryMetadata metadata_;
+    metadata_.setColumns(columns_);
+    metadata_.setConstraints(constraints_);
+    setInMemoryMetadata(metadata_);
 }
 
 namespace
