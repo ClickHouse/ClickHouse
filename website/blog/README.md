@@ -40,6 +40,8 @@ tags: ['meetup','Beijing','China','events']
 
 ## How To Add a New Blog Language?
 
-If you want to write a guest post, you are welcome to use your native language or make multiple posts in multiple languages.
+If you want to write a guest post, you are welcome to use your native language or make multiple posts in multiple languages
+ 
+ Unlike documentation, blog languages are independent, i.e. they have partially overlapping sets of posts and it's ok. Most posts are written only in one language because they are not relevant to audiences of other languages.
 
-At the moment it's not so straightforward to set up a new language for blog and it won't be documented for now, but you can just create the language directory with the first post as described above and we'll configure the website infrastructure to include it during/after merging the pull-request.
+At the moment it's not so straightforward to set up a new language for blog and it won't be documented for now, but you can just create a language directory with the first post as described above and we'll configure the website infrastructure to include it during/after merging the pull-request.

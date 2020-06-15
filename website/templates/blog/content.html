@@ -1,21 +1,27 @@
 <div id="content-wrapper" class="col">
     {% if not page.meta.is_index %}
     <div id="content">
-        <span class="float-right text-muted">{{ page.meta.date }}</span>
+        <header>
         <h1 class="display-4 mb-3">{{ title }}</h1>
         {% if page.meta.image %}
             <img class="img-fluid mb-3" src="{{ page.meta.image }}" alt="{{ title }}" title="{{ title }}" />
         {% endif %}
-        {{ page.content|adjust_markdown_html }}
+        </header>
 
-        {% if page.meta.tags %}
-            <div class="bg-light p-3">
-                Tags:&nbsp;
+        <article>
+        {{ page.content|adjust_markdown_html }}
+        </article>
+
+        <section>
+            <span title="{{ _('Published date') }}" class="d-inline-block bg-dark text-white p-2 mr-2">{{ page.meta.date }}</span>
+            {% if page.meta.tags %}
                 {% for tag in page.meta.tags %}
-                    {{ tag }}{{ ', ' if not loop.last }}
+                    <div class="d-inline-block bg-light p-2 mr-2">
+                        {{ tag }}
+                    </div>
                 {% endfor %}
-            </div>
-        {% endif %}
+            {% endif %}
+        </section>
         {% include "templates/blog/footer.html" %}
     </div>
     {% else %}
