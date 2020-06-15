@@ -75,10 +75,10 @@ def build_blog_nav(lang, args):
     result_nav = [{'hidden': 'index.md'}]
     post_meta = collections.OrderedDict()
     for year in years:
-        if year == 'index.md':
+        year_dir = os.path.join(blog_dir, year)
+        if not os.path.isdir(year_dir):
             continue
         result_nav.append({year: collections.OrderedDict()})
-        year_dir = os.path.join(blog_dir, year)
         posts = []
         for post in os.listdir(year_dir):
             meta, _ = util.read_md_file(os.path.join(year_dir, post))

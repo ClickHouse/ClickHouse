@@ -11,6 +11,7 @@ from mkdocs import config
 from mkdocs import exceptions
 
 import mdx_clickhouse
+import redirects
 
 import util
 
@@ -85,6 +86,8 @@ def build_for_lang(lang, args):
 
         cfg = config.load_config(**raw_config)
         mkdocs.commands.build.build(cfg)
+
+        redirects.build_blogs_redirects(args)
 
         # TODO: AMP for blog
         # if not args.skip_amp:

@@ -38,11 +38,21 @@ def build_redirect_html(args, from_path, to_path):
         write_redirect_html(out_path, to_url)
 
 
-def build_redirects(args):
+def build_docs_redirects(args):
     with open(os.path.join(args.docs_dir, 'redirects.txt'), 'r') as f:
         for line in f:
             from_path, to_path = line.split(' ', 1)
             build_redirect_html(args, from_path, to_path)
+
+
+def build_blogs_redirects(args):
+    for lang in args.blog_lang.split(','):
+        redirects_path = os.path.join(args.blog_dir, lang, 'redirects.txt')
+        if os.path.exists(redirects_path):
+            with open(redirects_path, 'r') as f:
+                for line in f:
+                    from_path, to_path = line.split(' ', 1)
+                    build_redirect_html(args, from_path, to_path)
 
 
 def build_static_redirects(args):
