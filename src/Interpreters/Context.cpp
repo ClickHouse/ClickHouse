@@ -166,6 +166,8 @@ public:
         if (!session.unique())
             throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
 
+        session->context.client_info = context.client_info;
+
         return session;
     }
 
@@ -980,7 +982,16 @@ void Context::setSetting(const StringRef & name, const Field & value)
 
 void Context::applySettingChange(const SettingChange & change)
 {
-    setSetting(change.name, change.value);
+    try
+    {
+        setSetting(change.name, change.value);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("in attempt to set the value of setting '{}' to {}",
+                                 change.name, applyVisitor(FieldVisitorToString(), change.value)));
+        throw;
+    }
 }
 
 
@@ -1673,6 +1684,17 @@ std::shared_ptr<MetricLog> Context::getMetricLog()
         return {};
 
     return shared->system_logs->metric_log;
+}
+
+
+std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->asynchronous_metric_log;
 }
 
 

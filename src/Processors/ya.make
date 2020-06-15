@@ -106,9 +106,11 @@ SRCS(
     Port.cpp
     QueryPipeline.cpp
     ResizeProcessor.cpp
+    Sources/DelayedSource.cpp
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
+    Sources/RemoteSource.cpp
     Transforms/AddingMissedTransform.cpp
     Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingTransform.cpp

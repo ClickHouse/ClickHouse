@@ -20,6 +20,7 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/AsynchronousMetricLog.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -306,7 +307,8 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(); },
                     [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(); },
                     [&] () { if (auto text_log = context.getTextLog()) text_log->flush(); },
-                    [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(); }
+                    [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(); },
+                    [&] () { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:
