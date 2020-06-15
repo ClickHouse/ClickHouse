@@ -9,13 +9,13 @@ There is no UPDATE or DELETE commands in ClickHouse at the moment. And that's no
 
 But sometimes we have to modify data. And sometimes data should be updated in realtime. Don't worry, we have these cases covered.
 
-## Work with partitions
+## Work with Partitions
 
 Data in MergeTree engine family is partitioned by partition_key engine parameter. MergeTree split all the data by this partition key. Partition size is one month.
 
 That's very useful in many terms. Especially when we're talking about data modification.
 
-## Yandex.Metrica hits table
+## Yandex.Metrica "hits" Table
 
 Let's look at an example on Yandex.Metrica server mtlog02-01-1 which store some Yandex.Metrica data for year 2013. Table we are looking at contains user events we call “hits”. This is the engine description for hits table:
 
@@ -59,7 +59,7 @@ ORDER BY partition;
 ```
 There are 6 partitions with a few parts in each of them. Each partition is around 600 Gb of data. Partition is strictly one piece of data for partition key, here we can see that it is months. Part is one piece of data inside partition. Basically it's one node of LSMT structure, so there are not so many of them, especially for old data. If there are too many of them, they merge and form bigger ones.
 
-## Partition operations
+## Partition Operations
 
 There is a nice set of operations to work with partitions:
 
@@ -82,7 +82,7 @@ Here is the plan how to update data using partitions:
 
 Partition swap especially useful for huge data updates with low frequency. But they're not so handy when you need to update a lot of data in real time.
 
-## Update data on the fly
+## Update Data on the Fly
 
 In Yandex.Metrica we have user sessions table. Each row is one session on a website: some pages checked, some time spent, some banners clicked. This data is updated every second: user on a website view more pages, click more buttons, and do other things. Site owner can see that actions in Yandex.Metrica interface in real time.
 
@@ -160,7 +160,7 @@ For most cases 'delete' and 'deleted' rows will be removed in terms of days. Wha
 
 Also there is FINAL modifier available over Collapsing family. Using FINAL guarantees that user will see already collapsing data, thus using Sign field isn't required. FINAL usually make tremendous performance degradation because ClickHouse have to group data by key and delete rows during SELECT execution. But it's useful when you want to check your queries or if you want to see raw, unaggregated data in their final form.
 
-## Future plans
+## Future Plans
 
 We know that current feature set is not enough. There are some cases which do not fit to limitations. But we have huge plans, and here are some insights what we've preparing:
 

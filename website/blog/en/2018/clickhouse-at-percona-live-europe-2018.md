@@ -16,10 +16,10 @@ Fast! Flexible! Free! Fun!
 ![Fast! Flexible! Free! Fun!](https://avatars.mds.yandex.net/get-yablogs/47421/file_1542788072019/orig)
 
 Aleksey Milovidov, lead ClickHouse developer from Yandex, talks about unusual and unique ClickHouse features ([slides](https://presentations.clickhouse.tech/percona_europe_2018)):
-![](https://avatars.mds.yandex.net/get-yablogs/39006/file_1542788110181/orig)
+![Aleksey Milovidov](https://avatars.mds.yandex.net/get-yablogs/39006/file_1542788110181/orig)
 
 Aleksandar Aleksandrov and Felix Mattrat, data engineers from MessageBird, show how they use ClickHouse to analyze process of delivery of SMS and other kinds of messages ([slides](http://presentations.clickhouse.tech/percona_europe_2018/MessageBird.pdf)):
-![](https://avatars.mds.yandex.net/get-yablogs/61002/file_1542788193167/orig)
+![Aleksandar Aleksandrov and Felix Mattrat](https://avatars.mds.yandex.net/get-yablogs/61002/file_1542788193167/orig)
 
 Live demo at ClickHouse booth by Alexey Milovidov:
-![](https://avatars.mds.yandex.net/get-yablogs/61002/file_1542788374712/orig)
+![Demo at ClickHouse booth by Alexey Milovidov](https://avatars.mds.yandex.net/get-yablogs/61002/file_1542788374712/orig)

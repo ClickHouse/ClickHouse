@@ -29,7 +29,7 @@ ClickHouse core developer Nikolay Kochetov demonstrates upcoming query execution
 ![Nikolay Kochetov](https://avatars.mds.yandex.net/get-yablogs/28577/file_1560517030229/orig)
 
 Pre-meetup meeting with active ClickHouse community members in China:
-![](https://avatars.mds.yandex.net/get-yablogs/61002/file_1560517168102/orig)
+![Pre-meetup meeting](https://avatars.mds.yandex.net/get-yablogs/61002/file_1560517168102/orig)
 
 ClickHouse branded Beijing duck :)
-![](https://avatars.mds.yandex.net/get-yablogs/28577/file_1560517219599/orig)
+![ClickHouse branded Beijing duck](https://avatars.mds.yandex.net/get-yablogs/28577/file_1560517219599/orig)
