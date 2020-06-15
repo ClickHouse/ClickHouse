@@ -386,7 +386,7 @@ struct CollectColumnIdentifiersMatcher
         std::vector<ASTIdentifier *> & identifiers;
         std::vector<std::unordered_set<String>> ignored;
 
-        Data(std::vector<ASTIdentifier *> & identifiers_)
+        explicit Data(std::vector<ASTIdentifier *> & identifiers_)
             : identifiers(identifiers_)
         {}
 
