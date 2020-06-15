@@ -109,18 +109,22 @@ TEST(BackgroundLowPriorityProcessingPool, SimpleCase)
     std::mutex mut;
     std::vector<bool> checks(16, true);
     std::vector<BackgroundProcessingPool::TaskHandle> handles(16);
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 16; ++i)
+    {
         handles[i] = pool.createTask([&] { return checkLow(checks, i, mut); });
         pool.startTask(handles[i]);
     }
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 16; ++i)
+    {
         pool.removeTask(handles[i]);
     }
-    for (bool c : checks) {
-        ASSERT_TRUE(c) << "failed on low priority checks\n";
+    ctx.shutdown();
+
+    for (bool check_idle : checks)
+    {
+        ASSERT_TRUE(check_idle) << "failed on low priority checks\n";
     }
 
-    ctx.shutdown();
 }
 
