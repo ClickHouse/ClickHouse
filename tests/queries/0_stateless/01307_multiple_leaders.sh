@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 NUM_REPLICAS=2
-DATA_SIZE=1000
+DATA_SIZE=200
 
 SEQ=$(seq 0 $(($NUM_REPLICAS - 1)))
 
