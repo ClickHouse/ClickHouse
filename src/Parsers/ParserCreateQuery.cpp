@@ -157,7 +157,7 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
 
     ParserIndexDeclaration index_p;
     ParserConstraintDeclaration constraint_p;
-    ParserColumnDeclaration column_p;
+    ParserColumnDeclaration column_p{true, true};
 
     ASTPtr new_node = nullptr;
 
@@ -489,15 +489,12 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserStorage storage_p;
-    ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
 
     ASTPtr table;
     ASTPtr to_table;
     ASTPtr columns_list;
-    ASTPtr storage;
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;

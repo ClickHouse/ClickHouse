@@ -3,9 +3,9 @@ toc_priority: 33
 toc_title: Distributed
 ---
 
-# Distributed {#distributed}
+# Distributed Table Engine {#distributed}
 
-**Tables with Distributed engine do not store any data by themself**, but allow distributed query processing on multiple servers.
+Tables with Distributed engine do not store any data by their own, but allow distributed query processing on multiple servers.
 Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.
 
 The Distributed engine accepts parameters:
