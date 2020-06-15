@@ -45,11 +45,12 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(const std::string & name,
     {
         throw Exception("Aggregate function " + name + " only supports numerical types.", ErrorCodes::NOT_IMPLEMENTED);
     }
-    
+
     else{
         res.reset(createWithTwoNumericTypes<AggregateFunctionWelchTTest>(*argument_types[0], *argument_types[1], significance_level,
                                                                          argument_types, parameters));
     }
+
 
     if(!res){
         throw Exception("Aggregate function " + name + " only supports numerical types.", ErrorCodes::NOT_IMPLEMENTED);
