@@ -282,12 +282,9 @@ QueryPipeline InterpreterSelectWithUnionQuery::executeWithProcessors()
 bool InterpreterSelectWithUnionQuery::canExecuteWithProcessors() const
 {
     for (auto & interpreter : nested_interpreters)
-    {
         if (!interpreter->canExecuteWithProcessors())
-        {
             return false;
-        }
-    }
+    
     return true;
 }
 
