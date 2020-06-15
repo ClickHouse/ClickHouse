@@ -1,11 +1,3 @@
-6931470.419305092
-6931471.112452272
-6931467.646716369
-6931468.33986355
-6931469.0330107305
-6931469.726157911
-6931470.419305092
-6931471.112452272
 6931467.646716369
 6931468.33986355
 6931469.0330107305
@@ -30,14 +22,11 @@
 3465736.595946905
 3465735.2096525617
 3465735.9027997428
-6931470.419305092
-6931471.112452272
-6931467.646716369
-6931468.33986355
-6931469.0330107305
-6931469.726157911
-6931470.419305092
-6931471.112452272
+SELECT max(log(2) * number) AS k\nFROM numbers(10000000)\nGROUP BY \n    number % 2, \n    number % 3, \n    ((number % 2) + (number % 3)) % 2\nORDER BY k ASC
+SELECT avg(log(2) * number) AS k\nFROM numbers(10000000)\nGROUP BY number % 5\nORDER BY k ASC
+SELECT avg(log(2) * number) AS k\nFROM numbers(10000000)\nGROUP BY \n    (number % 2) * (number % 3), \n    number % 3\nORDER BY k ASC
+SELECT avg(log(2) * number) AS k\nFROM numbers(10000000)\nGROUP BY \n    number % 3, \n    number % 2\nORDER BY k ASC
+SELECT avg(log(2) * number) AS k\nFROM numbers(10000000)\nGROUP BY \n    (number % 2) % 3, \n    number % 2\nORDER BY k ASC
 6931467.646716369
 6931468.33986355
 6931469.0330107305
@@ -62,3 +51,8 @@
 3465736.595946905
 3465735.2096525617
 3465735.9027997428
+SELECT max(log(2) * number) AS k\nFROM numbers(10000000)\nGROUP BY \n    number % 2, \n    number % 3, \n    ((number % 2) + (number % 3)) % 2\nORDER BY k ASC
+SELECT avg(log(2) * number) AS k\nFROM numbers(10000000)\nGROUP BY \n    number % 5, \n    (number % 5) * (number % 5)\nORDER BY k ASC
+SELECT avg(log(2) * number) AS k\nFROM numbers(10000000)\nGROUP BY \n    (number % 2) * (number % 3), \n    number % 3\nORDER BY k ASC
+SELECT avg(log(2) * number) AS k\nFROM numbers(10000000)\nGROUP BY \n    (number % 2) * (number % 3), \n    number % 3, \n    number % 2\nORDER BY k ASC
+SELECT avg(log(2) * number) AS k\nFROM numbers(10000000)\nGROUP BY \n    (number % 2) % 3, \n    number % 2\nORDER BY k ASC

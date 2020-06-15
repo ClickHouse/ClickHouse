@@ -23,6 +23,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
+#include <Interpreters/GroupByFunctionKeysVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -343,106 +344,13 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
         appendUnusedGroupByColumn(select_query, source_columns);
 }
 
-/// recursive traversal and check for optimizeGroupByFunctionKeys
-struct KeepFunctionMatcher
-{
-    struct Data
-    {
-        std::unordered_set<String> & key_names_to_keep;
-        bool & keep_key;
-    };
-
-    using Visitor = InDepthNodeVisitor<KeepFunctionMatcher, true>;
-
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
-    {
-        return !(node->as<ASTFunction>());
-    }
-
-    static void visit(ASTFunction * function_node, Data & data)
-    {
-        if ((function_node->arguments->children).empty())
-        {
-            data.keep_key = true;
-            return;
-        }
-
-        if (!data.key_names_to_keep.count(function_node->getColumnName()))
-        {
-            Visitor(data).visit(function_node->arguments);
-        }
-    }
-
-    static void visit(ASTIdentifier * ident, Data & data)
-    {
-        if (!data.key_names_to_keep.count(ident->shortName()))
-        {
-            /// if variable of a function is not in GROUP BY keys, this function should not be deleted
-            data.keep_key = true;
-            return;
-        }
-    }
-
-    static void visit(const ASTPtr & ast, Data & data)
-    {
-        if (data.keep_key)
-            return;
-
-        if (auto * function_node = ast->as<ASTFunction>())
-        {
-            visit(function_node, data);
-        }
-        else if (auto * ident = ast->as<ASTIdentifier>())
-        {
-            visit(ident, data);
-        }
-        else if (!ast->as<ASTExpressionList>())
-        {
-            data.keep_key = true;
-        }
-    }
-};
-
-using KeepFunctionVisitor = InDepthNodeVisitor<KeepFunctionMatcher, true>;
-
-class GroupByChildrenMatcher
-{
-public:
-    struct Data
-    {
-        std::unordered_set<String> & key_names_to_keep;
-    };
-
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
-    {
-        return !(node->as<ASTFunction>());
-    }
-
-    static void visit(ASTFunction * function_node, Data & data)
-    {
-        bool keep_key = false;
-        KeepFunctionVisitor::Data keep_data{data.key_names_to_keep, keep_key};
-        KeepFunctionVisitor(keep_data).visit(function_node->arguments);
-
-        if (!keep_key)
-            (data.key_names_to_keep).erase(function_node->getColumnName());
-    }
-
-    static void visit(const ASTPtr & ast, Data & data)
-    {
-        if (auto * function_node = ast->as<ASTFunction>())
-        {
-            if (!(function_node->arguments->children.empty()))
-                visit(function_node, data);
-        }
-    }
-};
-
-using GroupByChildrenVisitor = InDepthNodeVisitor<GroupByChildrenMatcher, true>;
-
 ///eliminate functions of other GROUP BY keys
-void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
+void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query, bool optimize_group_by_function_keys)
 {
+    std::cerr << "\n" << optimize_group_by_function_keys << "\n";
+    if (!optimize_group_by_function_keys)
+        return;
+
     if (!select_query->groupBy())
         return;
 
@@ -487,8 +395,8 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     if (!need_optimization)
         return;
 
-    GroupByChildrenVisitor::Data visitor_data{key_names_to_keep};
-    GroupByChildrenVisitor(visitor_data).visit(grp_by);
+    GroupByFunctionKeysVisitor::Data visitor_data{key_names_to_keep};
+    GroupByFunctionKeysVisitor(visitor_data).visit(grp_by);
 
     modified.reserve(group_keys.size());
 
@@ -1006,8 +914,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeGroupBy(select_query, source_columns_set, context);
 
         /// GROUP BY functions of other keys elimination.
-        if (settings.optimize_group_by_function_keys)
-            optimizeGroupByFunctionKeys(select_query);
+        optimizeGroupByFunctionKeys(select_query, settings.optimize_group_by_function_keys);
 
         /// Remove duplicate items from ORDER BY.
         optimizeOrderBy(select_query);
