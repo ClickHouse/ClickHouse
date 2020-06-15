@@ -13,8 +13,6 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --query="SYSTEM STOP MERGES;"
-
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS string_test_table;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS fixed_string_test_table;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS signed_integer_test_table;"
@@ -29,6 +27,7 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE unsigned_integer_test_table (val UInt
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE enum_test_table (val Enum16('hello' = 1, 'world' = 2, 'yandex' = 256, 'clickhouse' = 257)) ENGINE = MergeTree ORDER BY val SETTINGS index_granularity = 1, index_granularity_bytes = 0;"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE date_test_table (val Date) ENGINE = MergeTree ORDER BY val SETTINGS index_granularity = 1, index_granularity_bytes = 0;"
 
+${CLICKHOUSE_CLIENT} --query="SYSTEM STOP MERGES;"
 
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO string_test_table VALUES ('0'), ('2'), ('2');"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO fixed_string_test_table VALUES ('0'), ('2'), ('2');"
