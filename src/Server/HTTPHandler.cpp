@@ -406,33 +406,81 @@ void HTTPHandler::processQuery(
         used_output.out_maybe_delayed_and_compressed = used_output.out_maybe_compressed;
     }
 
-    /// Request body can be compressed using algorithm specified in the Content-Encoding header.
+    /// Some data may be already read from socket into Poco buffers.
+    /// But we want to parse all data by our own.
+    /// Let's copy already read data into our buffer.
+    /// TODO This is inconvenient, better to rewrite or remove Poco::HTTPServer completely.
+
+    Memory already_read_bytes(16384);
+    size_t already_read_bytes_offset = 0;
+    std::unique_ptr<ReadBuffer> in_prefix;
+    request.stream().peek();
+    while (true)
+    {
+        size_t bytes_copied = request.stream().readsome(
+            already_read_bytes.data() + already_read_bytes_offset,
+            already_read_bytes.size() - already_read_bytes_offset);
+
+        already_read_bytes_offset += bytes_copied;
+        if (already_read_bytes_offset == already_read_bytes.size())
+            already_read_bytes.resize(already_read_bytes.size() * 2);
+        else
+            break;
+    }
+    already_read_bytes.resize(already_read_bytes_offset);
+    if (already_read_bytes_offset)
+        in_prefix = std::make_unique<ReadBufferFromMemory>(already_read_bytes.data(), already_read_bytes.size());
+
+    /// This buffer will read the remaining data directly from socket.
     std::unique_ptr<ReadBuffer> in_raw = std::make_unique<ReadBufferFromPocoSocket>(
         dynamic_cast<Poco::Net::HTTPServerRequestImpl &>(request).socket());
 
+    std::unique_ptr<ReadBuffer> in_raw_with_prefix;
+    if (in_prefix)
+        in_raw_with_prefix = std::make_unique<ConcatReadBuffer>(*in_prefix, *in_raw);
+    else
+        in_raw_with_prefix = std::move(in_raw);
+
     std::unique_ptr<ReadBuffer> in_decoded;
     if (request.getChunkedTransferEncoding())
-        in_decoded = std::make_unique<HTTPChunkedReadBuffer>(*in_raw);
+    {
+        in_decoded = std::make_unique<HTTPChunkedReadBuffer>(*in_raw_with_prefix);
+    }
     else if (request.hasContentLength())
-        in_decoded = std::make_unique<LimitReadBuffer>(*in_raw, request.getContentLength(), false);
-    else
-        in_decoded = std::move(in_raw);
+    {
+        in_decoded = std::make_unique<LimitReadBuffer>(*in_raw_with_prefix, request.getContentLength(), false);
+    }
+    else if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_GET
+        && request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD
+        && request.getMethod() != Poco::Net::HTTPRequest::HTTP_DELETE)
+    {
+        in_decoded = std::move(in_raw_with_prefix);
+    }
 
-    String http_request_compression_method_str = request.get("Content-Encoding", "");
-    std::unique_ptr<ReadBuffer> in_post = wrapReadBufferWithCompressionMethod(
-        std::move(in_decoded), chooseCompressionMethod({}, http_request_compression_method_str));
+    std::unique_ptr<ReadBuffer> in_post;
+    if (in_decoded)
+    {
+        /// Request body can be compressed using algorithm specified in the Content-Encoding header.
+        String http_request_compression_method_str = request.get("Content-Encoding", "");
+        in_post = wrapReadBufferWithCompressionMethod(
+            std::move(in_decoded), chooseCompressionMethod({}, http_request_compression_method_str));
+    }
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
     std::unique_ptr<ReadBuffer> in_post_maybe_compressed;
     bool in_post_compressed = false;
-    if (params.getParsed<bool>("decompress", false))
+
+    if (in_post)
     {
-        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post);
-        in_post_compressed = true;
+        if (params.getParsed<bool>("decompress", false))
+        {
+            in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post);
+            in_post_compressed = true;
+        }
+        else
+            in_post_maybe_compressed = std::move(in_post);
     }
-    else
-        in_post_maybe_compressed = std::move(in_post);
 
     std::unique_ptr<ReadBuffer> in;
 
@@ -519,7 +567,9 @@ void HTTPHandler::processQuery(
 
     const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
-    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
+    in = (has_external_data || !in_post_maybe_compressed)
+        ? std::move(in_param)
+        : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
     /// HTTP response compression is turned on only if the client signalled that they support it
     /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
