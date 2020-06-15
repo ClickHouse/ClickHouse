@@ -4,10 +4,10 @@
 #include <memory>
 #include <vector>
 #include <boost/noncopyable.hpp>
-#if __has_include(<sanitizer/asan_interface.h>)
+#include <Core/Defines.h>
+#if __has_include(<sanitizer/asan_interface.h>) && defined(ADDRESS_SANITIZER)
 #   include <sanitizer/asan_interface.h>
 #endif
-#include <Core/Defines.h>
 #include <Common/memcpySmall.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Allocator.h>
