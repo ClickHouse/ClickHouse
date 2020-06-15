@@ -248,6 +248,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         LOG_WARNING(log, "No metadata in ZooKeeper: table will be in readonly mode.");
         is_readonly = true;
+        has_metadata_in_zookeeper = false;
         return;
     }
 
@@ -624,9 +625,14 @@ void StorageReplicatedMergeTree::createReplica()
 
 void StorageReplicatedMergeTree::drop()
 {
+    /// There is also the case when user has configured ClickHouse to wrong ZooKeeper cluster,
+    /// in this case, has_metadata_in_zookeeper = false, and we also permit to drop the table.
+
+    if (has_metadata_in_zookeeper)
     {
         auto zookeeper = tryGetZooKeeper();
 
+        /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (is_readonly || !zookeeper)
             throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
@@ -4040,8 +4046,20 @@ void StorageReplicatedMergeTree::rename(const String & new_path_to_table_data, c
     MergeTreeData::rename(new_path_to_table_data, new_table_id);
 
     /// Update table name in zookeeper
-    auto zookeeper = getZooKeeper();
-    zookeeper->set(replica_path + "/host", getReplicatedMergeTreeAddress().toString());
+    if (!is_readonly)
+    {
+        /// We don't do it for readonly tables, because it will be updated on next table startup.
+        /// It is also Ok to skip ZK error for the same reason.
+        try
+        {
+            auto zookeeper = getZooKeeper();
+            zookeeper->set(replica_path + "/host", getReplicatedMergeTreeAddress().toString());
+        }
+        catch (Coordination::Exception & e)
+        {
+            LOG_WARNING(log, "Cannot update the value of 'host' node (replica address) in ZooKeeper: {}", e.displayText());
+        }
+    }
 
     /// TODO: You can update names of loggers.
 }
