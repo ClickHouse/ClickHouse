@@ -716,7 +716,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
         if (!command.ignore)
             command.apply(metadata_copy, context);
 
-    /// Changes in columns may lead to changes in keys expression
+    /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewColumns(metadata_copy.columns, context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
@@ -728,7 +728,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
         metadata_copy.primary_key.definition_ast = nullptr;
     }
 
-    /// Changes in columns may lead to changes in TTL expressions
+    /// Changes in columns may lead to changes in TTL expressions.
     auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
     for (const auto & [name, ast] : column_ttl_asts)
     {
