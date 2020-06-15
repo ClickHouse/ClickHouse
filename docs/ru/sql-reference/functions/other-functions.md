@@ -1153,4 +1153,52 @@ SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers 
 └────────┴────────────────────────────────┴──────────────────────────────────┘
 ```
 
+## randomString {#randomstring}
+
+Генерирует бинарную строку заданной длины, заполненную случайными байтами (в том числе нулевыми).
+
+**Синтаксис**
+
+``` sql
+randomString(length)
+```
+
+**Параметры** 
+
+-   `length` — длина строки. Положительное целое число.
+
+**Возвращаемое значение**
+
+-   Строка, заполненная случайными байтами.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT randomString(30) AS str, length(str) AS len FROM numbers(2) FORMAT Vertical;
+```
+
+Ответ:
+
+``` text
+Row 1:
+──────
+str: 3 G  :   pT ?w тi  k aV f6
+len: 30
+
+Row 2:
+──────
+str: 9 ,]    ^   )  ]??  8
+len: 30
+```
+
+**Смотрите также**
+
+-   [generateRandom](../../sql-reference/table-functions/generate.md#generaterandom)
+-   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
+
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->
