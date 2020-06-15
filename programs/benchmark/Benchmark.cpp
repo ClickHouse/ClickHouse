@@ -363,7 +363,6 @@ private:
             try
             {
                 execute(connection_entries, query, distribution(generator));
-                ++queries_executed;
             }
             catch (...)
             {
@@ -374,7 +373,14 @@ private:
                     shutdown = true;
                     throw;
                 }
+                else
+                {
+                    std::cerr << getCurrentExceptionMessage(print_stacktrace, true) ;
+                }
             }
+            // Count failed queries toward executed, so that we'd reach
+            // max_iterations even if every run fails.
+            ++queries_executed;
         }
     }
 
