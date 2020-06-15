@@ -485,6 +485,9 @@ public:
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
 
+    /// Drop data directories if they are empty. It is safe to call this method if table creation was unsuccessful.
+    void dropIfEmpty();
+
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().

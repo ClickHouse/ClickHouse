@@ -38,6 +38,7 @@
 #include <Common/Throttler.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/clearPasswordFromCommandLine.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
@@ -1920,7 +1921,11 @@ public:
                 std::string text = e.displayText();
                 std::cerr << "Code: " << e.code() << ". " << text << std::endl;
                 std::cerr << "Table №" << i << std::endl << std::endl;
-                exit(e.code());
+                /// Avoid the case when error exit code can possibly overflow to normal (zero).
+                auto exit_code = e.code() % 256;
+                if (exit_code == 0)
+                    exit_code = 255;
+                exit(exit_code);
             }
         }
 
@@ -2002,6 +2007,7 @@ public:
 
         argsToConfig(common_arguments, config(), 100);
 
+        clearPasswordFromCommandLine(argc, argv);
     }
 };
 
