@@ -9,6 +9,7 @@ from helpers.test_tools import TSV
 from helpers.test_tools import assert_eq_with_retry
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
 
@@ -90,6 +91,8 @@ def start_cluster():
         create_tables('in_memory_table', [node9, node10], [settings_in_memory, settings_in_memory], "shard4")
         create_tables('wal_table', [node11, node12], [settings_in_memory, settings_in_memory], "shard4")
         create_tables('restore_table', [node11, node12], [settings_in_memory, settings_in_memory], "shard5")
+        create_tables('deduplication_table', [node9, node10], [settings_in_memory, settings_in_memory], "shard5")
+        create_tables('sync_table', [node9, node10], [settings_in_memory, settings_in_memory], "shard5")
 
         yield cluster
 
@@ -421,6 +424,45 @@ def test_in_memory_wal_rotate(start_cluster):
     wal_file = os.path.join(node11.path, "database/data/default/restore_table/wal.bin")
     assert os.path.exists(wal_file)
     assert os.path.getsize(wal_file) == 0
+
+def test_in_memory_deduplication(start_cluster):
+    for i in range(3):
+        node9.query("INSERT INTO deduplication_table (date, id, s) VALUES (toDate('2020-03-03'), 1, 'foo')")
+        node10.query("INSERT INTO deduplication_table (date, id, s) VALUES (toDate('2020-03-03'), 1, 'foo')")
+
+    node9.query("SYSTEM SYNC REPLICA deduplication_table", timeout=20)
+    node10.query("SYSTEM SYNC REPLICA deduplication_table", timeout=20)
+
+    assert node9.query("SELECT date, id, s FROM deduplication_table") == "2020-03-03\t1\tfoo\n"
+    assert node10.query("SELECT date, id, s FROM deduplication_table") == "2020-03-03\t1\tfoo\n"
+
+def test_in_memory_sync_insert(start_cluster):
+    node9.query("ALTER TABLE sync_table MODIFY SETTING in_memory_parts_insert_sync = 1")
+    node10.query("ALTER TABLE sync_table MODIFY SETTING in_memory_parts_insert_sync = 1")
+    node9.query("SYSTEM STOP MERGES sync_table")
+    node10.query("SYSTEM STOP MERGES sync_table")
+
+    pool = Pool(5)
+    tasks = []
+    for i in range(5):
+        tasks.append(pool.apply_async(insert_random_data, ('sync_table', node9, 50)))
+
+    time.sleep(5)
+    assert node9.query("SELECT count() FROM sync_table") == "250\n"
+    assert node9.query("SELECT part_type, count() FROM system.parts WHERE table = 'sync_table' AND active GROUP BY part_type") == "InMemory\t5\n"
+
+    for task in tasks:
+        assert not task.ready()
+
+    node9.query("SYSTEM START MERGES sync_table")
+    node10.query("SYSTEM START MERGES sync_table")
+    assert_eq_with_retry(node9, "OPTIMIZE TABLE sync_table FINAL SETTINGS optimize_throw_if_noop = 1", "")
+
+    for task in tasks:
+        task.get()
+
+    assert node9.query("SELECT count() FROM sync_table") == "250\n"
+    assert node9.query("SELECT part_type, count() FROM system.parts WHERE table = 'sync_table' AND active GROUP BY part_type") == "Compact\t1\n"
 
 def test_polymorphic_parts_index(start_cluster):
     node1.query('''

@@ -45,7 +45,7 @@ public:
 
     void flushToDisk(const String & base_path, const String & new_relative_path) const;
 
-    bool waitUntilMerged(size_t timeout) const;
+    bool waitUntilMerged(size_t timeout_ms) const;
     void notifyMerged() const;
 
     mutable Block block;

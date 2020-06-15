@@ -245,7 +245,8 @@ MergeTreeData::MergeTreeData(
 
     String reason;
     if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
-        LOG_WARNING(log, "{} Settings 'min_bytes_for_wide_part' and 'min_bytes_for_wide_part' will be ignored.", reason);
+        LOG_WARNING(log, "{} Settings 'min_rows_for_wide_part', 'min_bytes_for_wide_part', "
+            "'min_rows_for_compact_part' and 'min_bytes_for_compact_part' will be ignored.", reason);
 }
 
 
@@ -1592,10 +1593,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 
 MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, size_t rows_count) const
 {
-    if (!canUseAdaptiveGranularity())
+    const auto settings = getSettings();
+    if (!canUsePolymorphicParts(*settings))
         return MergeTreeDataPartType::WIDE;
 
-    const auto settings = getSettings();
     if (bytes_uncompressed < settings->min_bytes_for_compact_part || rows_count < settings->min_rows_for_compact_part)
         return MergeTreeDataPartType::IN_MEMORY;
 
@@ -1607,10 +1608,10 @@ MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, s
 
 MergeTreeDataPartType MergeTreeData::choosePartTypeOnDisk(size_t bytes_uncompressed, size_t rows_count) const
 {
-    if (!canUseAdaptiveGranularity())
+    const auto settings = getSettings();
+    if (!canUsePolymorphicParts(*settings))
         return MergeTreeDataPartType::WIDE;
 
-    const auto settings = getSettings();
     if (bytes_uncompressed < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
         return MergeTreeDataPartType::COMPACT;
 
@@ -3605,11 +3606,15 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 {
     if (!canUseAdaptiveGranularity())
     {
-        if ((settings.min_rows_for_wide_part != 0 || settings.min_bytes_for_wide_part != 0) && out_reason)
+        if (out_reason && (settings.min_rows_for_wide_part != 0 || settings.min_bytes_for_wide_part != 0
+            || settings.min_rows_for_compact_part != 0 || settings.min_bytes_for_compact_part != 0))
         {
             std::ostringstream message;
-            message << "Table can't create parts with adaptive granularity, but settings min_rows_for_wide_part = "
-                    << settings.min_rows_for_wide_part << ", min_bytes_for_wide_part = " << settings.min_bytes_for_wide_part
+            message << "Table can't create parts with adaptive granularity, but settings"
+                    << "min_rows_for_wide_part = " << settings.min_rows_for_wide_part
+                    << ", min_bytes_for_wide_part = " << settings.min_bytes_for_wide_part
+                    << ", min_rows_for_compact_part = " << settings.min_rows_for_compact_part
+                    << ", min_bytes_for_compact_part = " << settings.min_bytes_for_compact_part
                     << ". Parts with non-adaptive granularity can be stored only in Wide (default) format.";
             *out_reason = message.str();
         }
