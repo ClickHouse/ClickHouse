@@ -278,7 +278,6 @@ struct ODBCBridgeMixin
         /// Path to executable folder
         Poco::Path path{config.getString("application.dir", "/usr/bin")};
 
-
         std::vector<std::string> cmd_args;
         path.setFileName("clickhouse-odbc-bridge");
 
