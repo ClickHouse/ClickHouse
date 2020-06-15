@@ -170,7 +170,9 @@ MergeTreeData::MergeTreeData(
         {
             std::cerr << "In !date_column_name\n";
             auto partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
+            std::cerr << "In !date_column_name\n";
             initPartitionKey(partition_by_ast);
+            std::cerr << "In !date_column_name\n";
 
             if (minmax_idx_date_column_pos == -1)
                 throw Exception("Could not find Date column", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -525,11 +527,14 @@ ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
 void MergeTreeData::initPartitionKey(ASTPtr partition_by_ast)
 {
     StorageMetadataKeyField new_partition_key = StorageMetadataKeyField::getKeyFromAST(partition_by_ast, getColumns(), global_context);
+    std::cerr << "DEBUG 1\n";
 
     if (new_partition_key.expression_list_ast->children.empty())
         return;
+    std::cerr << "DEBUG 2\n";
 
     checkKeyExpression(*new_partition_key.expression, new_partition_key.sample_block, "Partition");
+    std::cerr << "DEBUG 3\n";
 
     /// Add all columns used in the partition key to the min-max index.
     const NamesAndTypesList & minmax_idx_columns_with_types = new_partition_key.expression->getRequiredColumnsWithTypes();

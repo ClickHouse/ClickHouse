@@ -94,6 +94,7 @@ StorageMetadataKeyField StorageMetadataKeyField::getKeyFromAST(const ASTPtr & de
     StorageMetadataKeyField result;
     result.definition_ast = definition_ast;
     result.expression_list_ast = extractKeyExpressionList(definition_ast);
+    std::cerr << "DEBUG 1\n";
 
     if (result.expression_list_ast->children.empty())
         return result;
@@ -101,13 +102,19 @@ StorageMetadataKeyField StorageMetadataKeyField::getKeyFromAST(const ASTPtr & de
     const auto & children = result.expression_list_ast->children;
     for (const auto & child : children)
         result.column_names.emplace_back(child->getColumnName());
+    std::cerr << "DEBUG 2\n";
 
     {
         auto expr = result.expression_list_ast->clone();
+        std::cerr << "DEBUG getKeyFromAST 1\n";
         auto syntax_result = SyntaxAnalyzer(context).analyze(expr, columns.getAllPhysical());
+        std::cerr << "DEBUG getKeyFromAST 2\n";
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(true);
+        std::cerr << "DEBUG getKeyFromAST 3\n";
         result.sample_block = result.expression->getSampleBlock();
+        std::cerr << "DEBUG getKeyFromAST 4\n";
     }
+    std::cerr << "DEBUG 3\n";
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
         result.data_types.emplace_back(result.sample_block.getByPosition(i).type);
