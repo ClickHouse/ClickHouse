@@ -110,7 +110,6 @@ public:
     }
 };
 
-
 using GroupByFunctionKeysVisitor = InDepthNodeVisitor<GroupByFunctionKeysMatcher, true>;
 
 }
