@@ -829,7 +829,7 @@ using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants>;
 
 /** How are "total" values calculated with WITH TOTALS?
-  * (For more details, see TotalsHavingBlockInputStream.)
+  * (For more details, see TotalsHavingTransform.)
   *
   * In the absence of group_by_overflow_mode = 'any', the data is aggregated as usual, but the states of the aggregate functions are not finalized.
   * Later, the aggregate function states for all rows (passed through HAVING) are merged into one - this will be TOTALS.
@@ -1002,6 +1002,7 @@ protected:
     friend class MergingAndConvertingBlockInputStream;
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
+    friend class AggregatingInOrderTransform;
 
     Params params;
 
@@ -1033,12 +1034,13 @@ protected:
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
+    using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
 
     // add info to track alignment requirement
-    // If there are states whose alignmentment are v1, ..vn, align_aggregate_states will be max(v1, ... vn)
+    // If there are states whose alignment are v1, ..vn, align_aggregate_states will be max(v1, ... vn)
     size_t align_aggregate_states = 1;
 
     bool all_aggregates_has_trivial_destructor = false;
@@ -1105,6 +1107,13 @@ protected:
         AggregateFunctionInstruction * aggregate_instructions,
         Arena * arena);
 
+    static void executeOnIntervalWithoutKeyImpl(
+        AggregatedDataWithoutKey & res,
+        size_t row_begin,
+        size_t row_end,
+        AggregateFunctionInstruction * aggregate_instructions,
+        Arena * arena);
+
     template <typename Method>
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
@@ -1156,6 +1165,11 @@ protected:
         AggregateColumnsData & aggregate_columns,
         MutableColumns & final_aggregate_columns,
         bool final) const;
+
+    template <typename Mapped>
+    void insertAggregatesIntoColumns(
+        Mapped & mapped,
+        MutableColumns & final_aggregate_columns) const;
 
     template <typename Method, typename Table>
     void convertToBlockImplFinal(
@@ -1250,6 +1264,22 @@ protected:
       * - sets the variable no_more_keys to true.
       */
     bool checkLimits(size_t result_size, bool & no_more_keys) const;
+
+    void prepareAggregateInstructions(
+        Columns columns,
+        AggregateColumns & aggregate_columns,
+        Columns & materialized_columns,
+        AggregateFunctionInstructions & instructions,
+        NestedColumnsHolder & nested_columns_holder);
+
+    void fillAggregateColumnsWithSingleKey(
+        AggregatedDataVariants & data_variants,
+        MutableColumns & final_aggregate_columns);
+
+    void createStatesAndFillKeyColumnsWithSingleKey(
+        AggregatedDataVariants & data_variants,
+        Columns & key_columns, size_t key_row,
+        MutableColumns & final_key_columns);
 };
 
 

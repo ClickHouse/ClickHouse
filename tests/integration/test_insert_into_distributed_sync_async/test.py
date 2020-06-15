@@ -86,7 +86,7 @@ def test_insertion_sync_fails_with_timeout(started_cluster):
     with pytest.raises(QueryRuntimeException):
         node1.query('''
         SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
-        INSERT INTO distributed_table SELECT today() as date, number as val FROM system.numbers''', timeout=5)
+        INSERT INTO distributed_table SELECT today() as date, number as val FROM system.numbers''')
 
 
 def test_insertion_without_sync_ignores_timeout(started_cluster):
