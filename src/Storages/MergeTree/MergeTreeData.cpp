@@ -142,9 +142,8 @@ MergeTreeData::MergeTreeData(
     if (relative_data_path.empty())
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    setSettingsChanges(metadata_.settings_changes);
-    const auto settings = getSettings();
     setProperties(metadata_, attach);
+    const auto settings = getSettings();
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
@@ -385,8 +384,6 @@ void MergeTreeData::checkProperties(const StorageInMemoryMetadata & new_metadata
 void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, bool attach)
 {
     checkProperties(new_metadata, attach);
-
-    /// Other parts of metadata initialized is separate methods
     setInMemoryMetadata(new_metadata);
 }
 

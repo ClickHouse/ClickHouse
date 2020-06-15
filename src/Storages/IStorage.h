@@ -82,7 +82,7 @@ public:
     IStorage() = delete;
     /// Storage fields should be initialized in separate methods like setColumns
     /// or setTableTTLs.
-    explicit IStorage(StorageID storage_id_) : storage_id(std::move(storage_id_)) {} //-V730
+    explicit IStorage(StorageID storage_id_) : storage_id(std::move(storage_id_)), metadata(std::make_shared<StorageInMemoryMetadata>()) {} //-V730
 
     virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;
