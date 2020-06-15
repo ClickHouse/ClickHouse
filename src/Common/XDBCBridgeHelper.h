@@ -109,7 +109,8 @@ public:
             uri.setPath(IDENTIFIER_QUOTE_HANDLER);
             uri.addQueryParameter("connection_string", getConnectionString());
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, nullptr);
+            ReadWriteBufferFromHTTP buf(
+                uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts(http_timeout, http_timeout, http_timeout));
             std::string character;
             readStringBinary(character, buf);
             if (character.length() > 1)
@@ -208,7 +209,8 @@ private:
     {
         try
         {
-            ReadWriteBufferFromHTTP buf(ping_url, Poco::Net::HTTPRequest::HTTP_GET, nullptr);
+            ReadWriteBufferFromHTTP buf(
+                ping_url, Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts(http_timeout, http_timeout, http_timeout));
             return checkString(XDBCBridgeHelper::PING_OK_ANSWER, buf);
         }
         catch (...)

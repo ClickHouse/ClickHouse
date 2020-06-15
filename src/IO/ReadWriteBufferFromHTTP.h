@@ -156,7 +156,8 @@ namespace detail
     public:
         using OutStreamCallback = std::function<void(std::ostream &)>;
 
-        explicit ReadWriteBufferFromHTTPBase(UpdatableSessionPtr session_,
+        explicit ReadWriteBufferFromHTTPBase(
+            UpdatableSessionPtr session_,
             Poco::URI uri_,
             const std::string & method_ = {},
             OutStreamCallback out_stream_callback_ = {},
