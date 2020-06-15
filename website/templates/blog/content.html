@@ -1,18 +1,18 @@
 <div id="content-wrapper" class="col">
     {% if not page.meta.is_index %}
     <div id="content">
-        <header>
-        <h1 class="display-4 mb-3">{{ title }}</h1>
-        {% if page.meta.image %}
-            <img class="img-fluid mb-3" src="{{ page.meta.image }}" alt="{{ title }}" title="{{ title }}" />
-        {% endif %}
+        <header class="text-center">
+            {% if page.meta.image %}
+                <img class="img-fluid mb-3" src="{{ page.meta.image }}" alt="{{ title }}" title="{{ title }}" />
+            {% endif %}
+            <h1 class="display-4 mb-3">{{ title }}</h1>
         </header>
 
-        <article>
+        <article class="col-md-10 offset-md-1">
         {{ page.content|adjust_markdown_html }}
         </article>
 
-        <section>
+        <section class="col-md-10 offset-md-1 my-5">
             <span title="{{ _('Published date') }}" class="d-inline-block bg-dark text-white p-2 mr-2">{{ page.meta.date }}</span>
             {% if page.meta.tags %}
                 {% for tag in page.meta.tags %}

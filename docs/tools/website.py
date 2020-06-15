@@ -26,6 +26,12 @@ def adjust_markdown_html(content):
         a_class = a.attrs.get('class')
         if a_class and 'headerlink' in a_class:
             a.string = '\xa0'
+    for img in soup.find_all('img'):
+        img_class = img.attrs.get('class')
+        if img_class:
+            img.attrs['class'] = img_class + ['img-fluid']
+        else:
+            img.attrs['class'] = 'img-fluid'
     for details in soup.find_all('details'):
         for summary in details.find_all('summary'):
             if summary.parent != details:
