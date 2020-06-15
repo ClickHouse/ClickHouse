@@ -170,7 +170,6 @@ void ParallelParsingBlockInputStream::parserThreadFunction(ThreadGroupStatusPtr 
          */
         ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
         auto format = input_processor_creator(read_buffer, header, row_input_format_params, format_settings);
-        format->setCurrentUnitNumber(current_ticket_number);
         auto parser = std::make_unique<InputStreamFromInputFormat>(std::move(format));
 
         unit.block_ext.block.clear();

@@ -38,13 +38,6 @@ public:
         static const BlockMissingValues none;
         return none;
     }
-
-    size_t getCurrentUnitNumber() const { return current_unit_number; }
-    void setCurrentUnitNumber(size_t current_unit_number_) { current_unit_number = current_unit_number_; }
-
-private:
-    /// Number of currently parsed chunk (if parallel parsing is enabled)
-    size_t current_unit_number = 0;
 };
 
 }
