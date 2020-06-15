@@ -135,6 +135,7 @@ SRCS(
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
     QueryPlan/IQueryPlanStep.cpp
+    QueryPlan/ReadFromStorageStep.cpp
     QueryPlan/QueryPlan.cpp
 )
 
