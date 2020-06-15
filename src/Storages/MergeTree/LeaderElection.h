@@ -33,10 +33,8 @@ namespace zkutil
   *  to maintain compatibility when replicas with different versions work on the same cluster
   *  (this is allowed for short time period during cluster update).
   *
-  * Replicas with old versions participate in leader election with ephemeral sequential nodes.
-  *  If the node is first, then replica is the leader.
-  * Replicas with new versions creates persistent sequential nodes.
-  *  If the first node is persistent, then all replicas with new versions become leaders.
+  * Replicas with new versions creates ephemeral sequential nodes with values like "replica_name (multiple leaders Ok)".
+  * If the first node belongs to a replica with new version, then all replicas with new versions become leaders.
   */
 class LeaderElection
 {
@@ -55,7 +53,7 @@ public:
         ZooKeeper & zookeeper_,
         LeadershipHandler handler_,
         const std::string & identifier_)
-        : pool(pool_), path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
+        : pool(pool_), path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_ + suffix)
         , log_name("LeaderElection (" + path + ")")
         , log(&Poco::Logger::get(log_name))
     {
@@ -74,18 +72,22 @@ public:
 
     ~LeaderElection()
     {
-        shutdown();
+        releaseNode();
     }
 
 private:
+    static inline constexpr auto suffix = " (multiple leaders Ok)";
     DB::BackgroundSchedulePool & pool;
     DB::BackgroundSchedulePool::TaskHolder task;
-    const std::string path;
+    std::string path;
     ZooKeeper & zookeeper;
     LeadershipHandler handler;
     std::string identifier;
     std::string log_name;
     Poco::Logger * log;
+
+    EphemeralNodeHolderPtr node;
+    std::string node_name;
 
     std::atomic<bool> shutdown_called {false};
 
@@ -94,45 +96,52 @@ private:
     void createNode()
     {
         shutdown_called = false;
+        node = EphemeralNodeHolder::createSequential(path + "/leader_election-", zookeeper, identifier);
 
-        /// If there is at least one persistent node, we don't have to create another.
-        Strings children = zookeeper.getChildren(path);
-        for (const auto & child : children)
-        {
-            Coordination::Stat stat;
-            zookeeper.get(path + "/" + child, &stat);
-            if (!stat.ephemeralOwner)
-            {
-                ProfileEvents::increment(ProfileEvents::LeaderElectionAcquiredLeadership);
-                handler();
-                return;
-            }
-        }
+        std::string node_path = node->getPath();
+        node_name = node_path.substr(node_path.find_last_of('/') + 1);
 
-        zookeeper.create(path + "/leader_election-", identifier, CreateMode::PersistentSequential);
         task->activateAndSchedule();
+    }
+
+    void releaseNode()
+    {
+        shutdown();
+        node = nullptr;
     }
 
     void threadFunction()
     {
+        bool success = false;
+
         try
         {
             Strings children = zookeeper.getChildren(path);
-            if (children.empty())
-                throw Poco::Exception("Assertion failed in LeaderElection");
-
             std::sort(children.begin(), children.end());
 
-            Coordination::Stat stat;
-            zookeeper.get(path + "/" + children.front(), &stat);
+            auto my_node_it = std::lower_bound(children.begin(), children.end(), node_name);
+            if (my_node_it == children.end() || *my_node_it != node_name)
+                throw Poco::Exception("Assertion failed in LeaderElection");
 
-            if (!stat.ephemeralOwner)
+            String value = zookeeper.get(path + "/" + children.front());
+
+#if !defined(ARCADIA_BUILD) /// C++20; Replicated tables are unused in Arcadia.
+            if (value.ends_with(suffix))
             {
-                /// It is persistent node - we can become leader.
                 ProfileEvents::increment(ProfileEvents::LeaderElectionAcquiredLeadership);
                 handler();
                 return;
             }
+#endif
+            if (my_node_it == children.begin())
+                throw Poco::Exception("Assertion failed in LeaderElection");
+
+            /// Watch for the node in front of us.
+            --my_node_it;
+            if (!zookeeper.existsWatch(path + "/" + *my_node_it, nullptr, task->getWatchCallback()))
+                task->schedule();
+
+            success = true;
         }
         catch (const KeeperException & e)
         {
@@ -146,7 +155,8 @@ private:
             DB::tryLogCurrentException(log);
         }
 
-        task->scheduleAfter(10 * 1000);
+        if (!success)
+            task->scheduleAfter(10 * 1000);
     }
 };
 
