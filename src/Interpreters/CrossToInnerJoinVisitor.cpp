@@ -202,11 +202,11 @@ private:
     {
         std::optional<size_t> left_table_pos = IdentifierSemantic::getMembership(left);
         if (!left_table_pos)
-            left_table_pos = IdentifierSemantic::chooseTable(left, tables);
+            left_table_pos = IdentifierSemantic::chooseTableColumnMatch(left, tables);
 
         std::optional<size_t> right_table_pos = IdentifierSemantic::getMembership(right);
         if (!right_table_pos)
-            right_table_pos = IdentifierSemantic::chooseTable(right, tables);
+            right_table_pos = IdentifierSemantic::chooseTableColumnMatch(right, tables);
 
         if (left_table_pos && right_table_pos && (*left_table_pos != *right_table_pos))
         {
