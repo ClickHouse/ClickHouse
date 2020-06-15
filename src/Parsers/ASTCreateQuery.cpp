@@ -197,7 +197,6 @@ ASTPtr ASTCreateQuery::clone() const
 void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
-    frame.expression_list_always_start_on_new_line = true;
 
     if (!database.empty() && table.empty())
     {
@@ -271,6 +270,8 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
     }
 
+    frame.expression_list_always_start_on_new_line = true;
+
     if (columns_list)
     {
         settings.ostr << (settings.one_line ? " (" : "\n(");
@@ -289,6 +290,8 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             dictionary_attributes_list->formatImplMultiline(settings, state, frame_nested);
         settings.ostr << (settings.one_line ? ")" : "\n)");
     }
+
+    frame.expression_list_always_start_on_new_line = false;
 
     if (storage)
         storage->formatImpl(settings, state, frame);
