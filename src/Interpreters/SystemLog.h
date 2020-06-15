@@ -69,6 +69,7 @@ class PartLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
+class AsynchronousMetricLog;
 
 
 class ISystemLog
@@ -76,8 +77,7 @@ class ISystemLog
 public:
     virtual String getName() = 0;
     virtual ASTPtr getCreateTableQuery() = 0;
-    //// force -- force table creation (used for SYSTEM FLUSH LOGS)
-    virtual void flush(bool force = false) = 0;
+    virtual void flush() = 0;
     virtual void prepareTable() = 0;
     virtual void startup() = 0;
     virtual void shutdown() = 0;
@@ -100,6 +100,8 @@ struct SystemLogs
     std::shared_ptr<TraceLog> trace_log;                /// Used to log traces from query profiler
     std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
+    /// Metrics from system.asynchronous_metrics.
+    std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
 
     std::vector<ISystemLog *> logs;
 };
@@ -134,7 +136,7 @@ public:
     void stopFlushThread();
 
     /// Flush data in the buffer to disk
-    void flush(bool force = false) override;
+    void flush() override;
 
     /// Start the background thread.
     void startup() override;
@@ -167,8 +169,6 @@ private:
 
     /* Data shared between callers of add()/flush()/shutdown(), and the saving thread */
     std::mutex mutex;
-    /* prepareTable() guard */
-    std::mutex prepare_mutex;
     // Queue is bounded. But its size is quite large to not block in all normal cases.
     std::vector<LogElement> queue;
     // An always-incrementing index of the first message currently in the queue.
@@ -217,7 +217,7 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 template <typename LogElement>
 void SystemLog<LogElement>::startup()
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
     saving_thread = ThreadFromGlobalPool([this] { savingThreadFunction(); });
 }
 
@@ -231,7 +231,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
     auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
 
     if (is_shutdown)
         return;
@@ -275,15 +275,12 @@ void SystemLog<LogElement>::add(const LogElement & element)
 
 
 template <typename LogElement>
-void SystemLog<LogElement>::flush(bool force)
+void SystemLog<LogElement>::flush()
 {
     std::unique_lock lock(mutex);
 
     if (is_shutdown)
         return;
-
-    if (force)
-        prepareTable();
 
     const uint64_t queue_end = queue_front_index + queue.size();
 
@@ -310,7 +307,7 @@ template <typename LogElement>
 void SystemLog<LogElement>::stopFlushThread()
 {
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
 
         if (!saving_thread.joinable())
         {
@@ -423,7 +420,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
 
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
         flushed_before = to_flush_end;
         flush_event.notify_all();
     }
@@ -435,8 +432,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
-    std::lock_guard prepare_lock(prepare_mutex);
-
     String description = table_id.getNameForLogs();
 
     table = DatabaseCatalog::instance().tryGetTable(table_id, context);
