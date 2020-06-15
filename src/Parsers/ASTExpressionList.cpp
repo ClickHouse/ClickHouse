@@ -39,10 +39,12 @@ void ASTExpressionList::formatImplMultiline(const FormatSettings & settings, For
                 settings.ostr << separator;
         }
 
-        if (children.size() > 1)
+        if (children.size() > 1 || frame.expression_list_always_start_on_new_line)
             settings.ostr << indent_str;
 
-        (*it)->formatImpl(settings, state, frame);
+        FormatStateStacked frame_nested = frame;
+        frame_nested.expression_list_always_start_on_new_line = false;
+        (*it)->formatImpl(settings, state, frame_nested);
     }
 }
 
