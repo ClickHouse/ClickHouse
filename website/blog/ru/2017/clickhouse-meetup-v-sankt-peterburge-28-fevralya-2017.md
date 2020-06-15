@@ -5,4 +5,4 @@ date: '2017-03-01'
 tags: ['мероприятия', 'meetup', 'Санкт-Петербург']
 ---
 
-<iframe class="d-block mx-auto my-3" width="800" height="450" src="https://www.youtube.com/embed/CVrwp4Zoex4" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+![iframe](https://www.youtube.com/embed/CVrwp4Zoex4)

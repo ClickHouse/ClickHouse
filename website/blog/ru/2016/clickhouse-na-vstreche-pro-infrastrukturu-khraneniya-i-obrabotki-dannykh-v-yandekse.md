@@ -5,6 +5,6 @@ date: '2016-10-16'
 tags: ['мероприятия', 'инфраструктура']
 ---
 
-<iframe class="d-block mx-auto my-3" width="800" height="450" src="https://www.youtube.com/embed/Ho4_dQk7dAg" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+![iframe](https://www.youtube.com/embed/Ho4_dQk7dAg)
 
 [Страница мероприятия «Яндекс изнутри: инфраструктура хранения и обработки данных»](https://events.yandex.ru/events/meetings/15-oct-2016/), прошедшего 15 октября 2016 года.

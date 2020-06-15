@@ -80,6 +80,7 @@ def build_blog_nav(lang, args):
             continue
         result_nav.append({year: collections.OrderedDict()})
         posts = []
+        post_meta_items = []
         for post in os.listdir(year_dir):
             meta, _ = util.read_md_file(os.path.join(year_dir, post))
             post_date = meta['date']
@@ -94,14 +95,18 @@ def build_blog_nav(lang, args):
             if not post_date.startswith(f'{year}-'):
                 raise RuntimeError(f'Post date {post_date} doesn\'t match the folder year {year}: {post_title}')
             post_url_part = post.replace('.md', '')
-            post_meta[post_title] = {
+            post_meta_items.append((post_date, {
                 'date': post_date,
                 'title': post_title,
                 'image': meta.get('image'),
                 'url': f'/blog/{lang}/{year}/{post_url_part}/'
-            }
-        for _, title, path in sorted(posts):
+            },))
+        for _, title, path in sorted(posts, reverse=True):
             result_nav[-1][year][title] = path
+        for _, post_meta_item in sorted(post_meta_items,
+                                        reverse=True,
+                                        key=lambda item: item[0]):
+            post_meta[post_meta_item['title']] = post_meta_item
     return result_nav, post_meta
 
 

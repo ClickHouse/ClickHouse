@@ -5,7 +5,7 @@ date: '2019-07-12'
 tags: ['мероприятия', 'meetup', 'Минск', 'Беларусь']
 ---
 
-<iframe class="d-block mx-auto my-3" width="800" height="450" src="https://www.youtube.com/embed/videoseries?list=PL0Z2YDlm0b3hLz6dmyu6gM_X871FG9eCc" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+![iframe](https://www.youtube.com/embed/videoseries?list=PL0Z2YDlm0b3hLz6dmyu6gM_X871FG9eCc)
 
 [Все слайды опубликованы на GitHub](https://github.com/yandex/clickhouse-presentations/tree/master/meetup26).
 

@@ -5,6 +5,6 @@ date: '2017-06-15'
 tags: ['conference', 'Seattle', 'USA', 'America', 'events']
 ---
 
-<iframe class="d-block mx-auto my-3" width="800" height="450" src="https://www.youtube.com/embed/bSyQahMVZ7w" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+![iframe](https://www.youtube.com/embed/bSyQahMVZ7w)
 
 [Slides](https://presentations.clickhouse.tech/data_at_scale/)

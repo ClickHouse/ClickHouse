@@ -45,7 +45,8 @@ Kent Wang from Splunk Shanghai R&D center has demonstrated the current state of 
 The last talk was for the most tenacious ClickHouse users. Alexey Milovidov has announced some recently released features and improvements and shared what's coming next either in the short and long term [slides](https://presentations.clickhouse.tech/meetup12/news_and_plans/).
 
 Here is an over 5 hours long video recording of main meetup session:
-<iframe class="mx-auto" width="560" height="315" src="https://www.youtube.com/embed/UXw8izZGPGk" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+![iframe](https://www.youtube.com/embed/UXw8izZGPGk)
 
 If you are from China or at least can read Chinese, you might consider joining the **[Chinese ClickHouse User Group](http://www.clickhouse.com.cn/)**.
 
