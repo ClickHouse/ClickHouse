@@ -303,7 +303,7 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
         bool key_differs;
         SortCursor current = queue.current();
 
-        if (current->isLast() && skipLastRowFor(current->pos))
+        if (current->isLast() && skipLastRowFor(current->order))
         {
             /// If we skip this row, it's not equals with any key we process.
             last_key.reset();

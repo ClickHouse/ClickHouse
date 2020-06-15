@@ -40,7 +40,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
     {
         SortCursor current = queue.current();
 
-        if (current->isLast() && skipLastRowFor(current->pos))
+        if (current->isLast() && skipLastRowFor(current->order))
         {
             /// Get the next block from the corresponding source, if there is one.
             queue.removeTop();
