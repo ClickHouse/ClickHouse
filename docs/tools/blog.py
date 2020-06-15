@@ -87,7 +87,7 @@ def build_for_lang(lang, args):
         cfg = config.load_config(**raw_config)
         mkdocs.commands.build.build(cfg)
 
-        redirects.build_blogs_redirects(args)
+        redirects.build_blog_redirects(args)
 
         # TODO: AMP for blog
         # if not args.skip_amp:
