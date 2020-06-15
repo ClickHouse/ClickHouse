@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPipeline.h>
 #include <stack>
 
 namespace DB
