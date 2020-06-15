@@ -41,7 +41,7 @@ public:
 //        std::cout << "ParallelFormattingOutputFormat::constructor" << std::endl;
         processing_units.resize(max_threads_for_parallel_formatting_ + 2);
 
-        collector_thread = ThreadFromGlobalPool([this] { сollectorThreadFunction(); });
+        collector_thread = ThreadFromGlobalPool([this] { collectorThreadFunction(); });
     }
 
     ~ParallelFormattingOutputFormat() override
@@ -178,7 +178,7 @@ private:
         pool.scheduleOrThrowOnError([this, ticket_number] { formatterThreadFunction(ticket_number); });
     }
 
-    void сollectorThreadFunction()
+    void collectorThreadFunction()
     {
         setThreadName("Collector");
 
