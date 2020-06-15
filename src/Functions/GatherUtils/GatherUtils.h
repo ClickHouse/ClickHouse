@@ -30,8 +30,11 @@
 namespace DB::GatherUtils
 {
 
-enum class ArraySearchType {
-  Any, All, SubStr
+enum class ArraySearchType 
+{
+  Any, // Corresponds to the hasAny array function
+  All, // Corresponds to the hasAll array function
+  SubStr // Corresponds to the hasSubStr array function
 };
 
 std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is_const, size_t total_rows);

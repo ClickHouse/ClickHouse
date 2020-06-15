@@ -10,7 +10,8 @@ struct ArrayHasSelectArraySourcePair : public ArraySourcePairSelector<ArrayHasSe
     template <typename FirstSource, typename SecondSource>
     static void selectSourcePair(FirstSource && first, SecondSource && second, ArraySearchType & search_type, ColumnUInt8 & result)
     {
-        switch (search_type){
+        switch (search_type)
+        {
             case ArraySearchType::All:
                 arrayAllAny<ArraySearchType::All>(first, second, result);
                 break;

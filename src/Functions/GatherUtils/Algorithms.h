@@ -400,7 +400,7 @@ template <
     typename SecondSliceType,
     bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t),
     bool (*isEqualSecond)(const SecondSliceType &, size_t, size_t)>
-bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map) noexcept
+bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
     if constexpr (search_type == ArraySearchType::SubStr)
         return sliceHasImplSubStr<FirstSliceType, SecondSliceType, isEqual, isEqualSecond>(first, second, first_null_map, second_null_map);
@@ -414,7 +414,7 @@ template <
     typename FirstSliceType,
     typename SecondSliceType,
           bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t)>
-bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map) noexcept
+bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
     const bool has_first_null_map = first_null_map != nullptr;
     const bool has_second_null_map = second_null_map != nullptr;
@@ -447,7 +447,7 @@ template < typename FirstSliceType,
            typename SecondSliceType,
            bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t),
            bool (*isEqualUnary)(const SecondSliceType &, size_t, size_t)>
-bool sliceHasImplSubStr(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map) noexcept
+bool sliceHasImplSubStr(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
     const bool has_first_null_map = first_null_map != nullptr;
     const bool has_second_null_map = second_null_map != nullptr;
@@ -468,7 +468,7 @@ bool sliceHasImplSubStr(const FirstSliceType & first, const SecondSliceType & se
 
         auto cond_both_null_match = is_first_null && is_second_null;
         auto cond_both_not_null = !is_first_null && !is_second_null;
-        if (cond_both_null_match ||( cond_both_not_null && isEqual(first, second, firstCur, secondCur)))
+        if (cond_both_null_match || (cond_both_not_null && isEqual(first, second, firstCur, secondCur)))
         {
             ++firstCur;
             ++secondCur;
@@ -490,7 +490,7 @@ bool sliceHasImplSubStr(const FirstSliceType & first, const SecondSliceType & se
 }
 
 template <typename SliceType, bool (*isEqual)(const SliceType &, size_t, size_t)>
-std::unique_ptr<size_t[]> buildKMPFailureArray(const SliceType & pattern, const UInt8 * pattern_null_map) noexcept
+std::unique_ptr<size_t[]> buildKMPFailureArray(const SliceType & pattern, const UInt8 * pattern_null_map)
 {
     auto aux = std::make_unique<size_t[]>(pattern.size);
     auto has_null_map = pattern_null_map != nullptr;
@@ -500,9 +500,9 @@ std::unique_ptr<size_t[]> buildKMPFailureArray(const SliceType & pattern, const 
         auto length = aux[i - 1];
         while (length > 0)
         {
-            auto cond_values_match = isEqual(pattern, i, length);
             auto cond_null_map_match = (has_null_map && pattern_null_map[i] == pattern_null_map[length]);
-            if (cond_values_match || cond_null_map_match)
+            auto cond_both_non_null = (!has_null_map || (pattern_null_map[i] == 0 && pattern_null_map[length] == 0));
+            if (cond_null_map_match || ( cond_both_non_null && isEqual(pattern, i, length)))
             {
                 aux[i] = length + 1;
                 break;
@@ -514,9 +514,9 @@ std::unique_ptr<size_t[]> buildKMPFailureArray(const SliceType & pattern, const 
         }
         auto cond_null_map_match = (has_null_map && pattern_null_map[i] == pattern_null_map[0]);
         auto cond_both_non_null = (!has_null_map || (pattern_null_map[i] == 0 && pattern_null_map[0] == 0));
-        if (length == 0 && (cond_null_map_match || ( cond_both_non_null &&  isEqual(pattern, i, 0))))
+        if (length == 0)                                                           
         {
-            aux[i] = 1;
+            aux[i] = static_cast<size_t>(cond_null_map_match || (cond_both_non_null && isEqual(pattern, i, 0)));
         }
     }
     return aux;
