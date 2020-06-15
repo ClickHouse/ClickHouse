@@ -692,7 +692,7 @@ arrayDifference(array)
 
 **Параметры**
 
--   `array` – [Массив](https://clickhouse.yandex/docs/ru/data_types/array/).
+-   `array` – [Массив](https://clickhouse.tech/docs/ru/data_types/array/).
 
 **Возвращаемое значение**
 
@@ -742,7 +742,7 @@ arrayDistinct(array)
 
 **Параметры**
 
--   `array` – [Массив](https://clickhouse.yandex/docs/ru/data_types/array/).
+-   `array` – [Массив](https://clickhouse.tech/docs/ru/data_types/array/).
 
 **Возвращаемое значение**
 
