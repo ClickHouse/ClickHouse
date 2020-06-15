@@ -20,6 +20,9 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
+static void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server);
+static void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics & async_metrics);
+
 HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(const std::string & name_)
     : log(&Poco::Logger::get(name_)), name(name_)
 {
@@ -75,7 +78,7 @@ static inline auto createHandlersFactoryFromConfig(
     for (const auto & key : keys)
     {
         if (key == "defaults")
-            addDefaultHandlersFactory(*main_handler_factory, server, &async_metrics);
+            addDefaultHandlersFactory(*main_handler_factory, server, async_metrics);
         else if (startsWith(key, "rule"))
         {
             const auto & handler_type = server.config().getString(prefix + "." + key + ".handler.type", "");
@@ -113,12 +116,7 @@ static inline Poco::Net::HTTPRequestHandlerFactory * createHTTPHandlerFactory(IS
     else
     {
         auto factory = std::make_unique<HTTPRequestHandlerFactoryMain>(name);
-        addDefaultHandlersFactory(*factory, server, &async_metrics);
-
-        auto query_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, "query");
-        query_handler->allowPostAndGetParamsRequest();
-        factory->addHandler(query_handler.release());
-
+        addDefaultHandlersFactory(*factory, server, async_metrics);
         return factory.release();
     }
 }
@@ -126,7 +124,7 @@ static inline Poco::Net::HTTPRequestHandlerFactory * createHTTPHandlerFactory(IS
 static inline Poco::Net::HTTPRequestHandlerFactory * createInterserverHTTPHandlerFactory(IServer & server, const std::string & name)
 {
     auto factory = std::make_unique<HTTPRequestHandlerFactoryMain>(name);
-    addDefaultHandlersFactory(*factory, server, nullptr);
+    addCommonDefaultHandlersFactory(*factory, server);
 
     auto main_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<InterserverIOHTTPHandler>>(server);
     main_handler->allowPostAndGetParamsRequest();
@@ -157,7 +155,7 @@ Poco::Net::HTTPRequestHandlerFactory * createHandlerFactory(IServer & server, As
 static const auto ping_response_expression = "Ok.\n";
 static const auto root_response_expression = "config://http_server_default_response";
 
-void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics * async_metrics)
+void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server)
 {
     auto root_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, root_response_expression);
     root_handler->attachStrictPath("/")->allowGetAndHeadRequest();
@@ -170,13 +168,22 @@ void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer 
     auto replicas_status_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
     replicas_status_handler->attachNonStrictPath("/replicas_status")->allowGetAndHeadRequest();
     factory.addHandler(replicas_status_handler.release());
+}
+
+void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics & async_metrics)
+{
+    addCommonDefaultHandlersFactory(factory, server);
+
+    auto query_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, "query");
+    query_handler->allowPostAndGetParamsRequest();
+    factory.addHandler(query_handler.release());
 
     /// We check that prometheus handler will be served on current (default) port.
-    /// Otherwise it will be created separately, see below.
-    if (async_metrics && server.config().has("prometheus") && server.config().getInt("prometheus.port", 0) == 0)
+    /// Otherwise it will be created separately, see createHandlerFactory(...).
+    if (server.config().has("prometheus") && server.config().getInt("prometheus.port", 0) == 0)
     {
         auto prometheus_handler = std::make_unique<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
-            server, PrometheusMetricsWriter(server.config(), "prometheus", *async_metrics));
+            server, PrometheusMetricsWriter(server.config(), "prometheus", async_metrics));
         prometheus_handler->attachStrictPath(server.config().getString("prometheus.endpoint", "/metrics"))->allowGetAndHeadRequest();
         factory.addHandler(prometheus_handler.release());
     }
