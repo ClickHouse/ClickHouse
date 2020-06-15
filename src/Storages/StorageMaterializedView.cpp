@@ -52,7 +52,6 @@ StorageMaterializedView::StorageMaterializedView(
 {
     StorageInMemoryMetadata metadata_;
     metadata_.setColumns(columns_);
-    setInMemoryMetadata(metadata_);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -68,7 +67,8 @@ StorageMaterializedView::StorageMaterializedView(
         throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), local_context);
-    setSelectQuery(select);
+    metadata_.setSelectQuery(select);
+    setInMemoryMetadata(metadata_);
 
     if (!has_inner_table)
         target_table_id = query.to_table_id;
@@ -206,7 +206,7 @@ void StorageMaterializedView::alter(
 
         DatabaseCatalog::instance().updateDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
 
-        setSelectQuery(new_select);
+        new_metadata.setSelectQuery(new_select);
     }
     /// end modify query
 

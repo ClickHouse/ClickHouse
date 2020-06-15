@@ -616,22 +616,9 @@ ASTPtr IStorage::getSettingsChanges() const
     return nullptr;
 }
 
-void IStorage::setSettingsChanges(const ASTPtr & settings_changes_)
-{
-    if (settings_changes_)
-        metadata->settings_changes = settings_changes_->clone();
-    else
-        metadata->settings_changes = nullptr;
-}
-
 const SelectQueryDescription & IStorage::getSelectQuery() const
 {
     return metadata->select;
-}
-
-void IStorage::setSelectQuery(const SelectQueryDescription & select_)
-{
-    metadata->select = select_;
 }
 
 bool IStorage::hasSelectQuery() const

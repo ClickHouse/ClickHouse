@@ -148,12 +148,10 @@ public: /// thread-unsafe part. lockStructure must be acquired
 
     /// Storage settings
     ASTPtr getSettingsChanges() const;
-    void setSettingsChanges(const ASTPtr & settings_changes_);
     bool hasSettingsChanges() const { return metadata->settings_changes != nullptr; }
 
     /// Select query for *View storages.
     const SelectQueryDescription & getSelectQuery() const;
-    void setSelectQuery(const SelectQueryDescription & select_);
     bool hasSelectQuery() const;
 
     StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata; }

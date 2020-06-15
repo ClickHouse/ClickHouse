@@ -76,4 +76,17 @@ void StorageInMemoryMetadata::setColumnTTLs(const TTLColumnsDescription & column
     column_ttls_by_name = column_ttls_by_name_;
 }
 
+void StorageInMemoryMetadata::setSettingsChanges(const ASTPtr & settings_changes_)
+{
+    if (settings_changes_)
+        settings_changes = settings_changes_;
+    else
+        settings_changes = nullptr;
+}
+
+void StorageInMemoryMetadata::setSelectQuery(const SelectQueryDescription & select_)
+{
+    select = select_;
+}
+
 }
