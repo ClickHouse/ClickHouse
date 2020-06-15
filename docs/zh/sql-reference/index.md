@@ -13,6 +13,6 @@ ClickHouse支持以下形式的查询:
 -   [INSERT INTO](statements/insert-into.md)
 -   [CREATE](statements/create.md)
 -   [ALTER](statements/alter.md#query_language_queries_alter)
--   [Other types of queries](statements/misc.md)
+-   [其他类型的查询](statements/misc.md)
 
 [原始文档](https://clickhouse.tech/docs/en/sql-reference/) <!--hide-->
