@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-20 15:32+0300\n"
+"POT-Creation-Date: 2020-06-15 17:16+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ja\n"
@@ -70,6 +70,10 @@ msgstr "ソフトウェアは、明示または黙示を問わず、いかなる
 #: templates/footer.html:11
 msgid "Yandex LLC"
 msgstr "Yandex LLC"
+
+#: templates/blog/nav.html:18
+msgid "Documentation"
+msgstr "文書"
 
 #: templates/docs/footer.html:3
 msgid "Rating"
