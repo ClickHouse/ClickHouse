@@ -45,6 +45,8 @@ private:
     QueryProcessingStage::Enum processing_stage;
     size_t max_block_size;
     size_t max_streams;
+
+    QueryPipelinePtr pipeline;
 };
 
 }

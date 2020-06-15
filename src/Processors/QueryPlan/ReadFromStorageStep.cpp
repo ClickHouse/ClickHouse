@@ -32,32 +32,9 @@ ReadFromStorageStep::ReadFromStorageStep(
     , max_block_size(max_block_size_)
     , max_streams(max_streams_)
 {
-    Block header = storage->getSampleBlockForColumns(required_columns);
+    /// Note: we read from storage in constructor of step because we don't know real header before reading.
+    /// It will be fixed when storage return QueryPlanStep itself.
 
-    if (query_info.prewhere_info)
-    {
-        if (query_info.prewhere_info->alias_actions)
-            header = ExpressionTransform::transformHeader(std::move(header), query_info.prewhere_info->alias_actions);
-
-        header = FilterTransform::transformHeader(
-                std::move(header),
-                query_info.prewhere_info->prewhere_actions,
-                query_info.prewhere_info->prewhere_column_name,
-                query_info.prewhere_info->remove_prewhere_column);
-
-        if (query_info.prewhere_info->remove_columns_actions)
-            header = ExpressionTransform::transformHeader(
-                    std::move(header),
-                    query_info.prewhere_info->remove_columns_actions);
-    }
-
-    input_streams.emplace_back(DataStream{.header = std::move(header)});
-}
-
-ReadFromStorageStep::~ReadFromStorageStep() = default;
-
-QueryPipelinePtr ReadFromStorageStep::updatePipeline(QueryPipelines)
-{
     Pipes pipes = storage->read(required_columns, query_info, context, processing_stage, max_block_size, max_streams);
 
     if (pipes.empty())
@@ -95,7 +72,7 @@ QueryPipelinePtr ReadFromStorageStep::updatePipeline(QueryPipelines)
                     pipe.getHeader(), input_streams.front().header, ConvertingTransform::MatchColumnsMode::Name));
     }
 
-    auto pipeline = std::make_unique<QueryPipeline>();
+    pipeline = std::make_unique<QueryPipeline>();
 
     /// Table lock is stored inside pipeline here.
     pipeline->addTableLock(table_lock);
@@ -148,7 +125,15 @@ QueryPipelinePtr ReadFromStorageStep::updatePipeline(QueryPipelines)
         pipe.enableQuota();
 
     pipeline->init(std::move(pipes));
-    return pipeline;
+
+    input_streams.emplace_back(DataStream{.header = pipeline->getHeader()});
+}
+
+ReadFromStorageStep::~ReadFromStorageStep() = default;
+
+QueryPipelinePtr ReadFromStorageStep::updatePipeline(QueryPipelines)
+{
+    return std::move(pipeline);
 }
 
 }
