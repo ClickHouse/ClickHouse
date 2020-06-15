@@ -121,7 +121,8 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
 
     static bool isPartFormatSetting(const String & name)
     {
-        return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part";
+        return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part"
+            || name == "min_bytes_for_compact_part" || name == "min_rows_for_compact_part";
     }
 };
 
