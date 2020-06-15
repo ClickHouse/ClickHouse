@@ -84,6 +84,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, replace_running_query, false, "Whether the running request should be canceled with the same id as the new one.", 0) \
     M(SettingUInt64, background_buffer_flush_schedule_pool_size, 16, "Number of threads performing background flush for tables with Buffer engine. Only has meaning at server startup.", 0) \
     M(SettingUInt64, background_pool_size, 16, "Number of threads performing background work for tables (for example, merging in merge tree). Only has meaning at server startup.", 0) \
+    M(SettingUInt64, background_low_priority_pool_size, 16, "Number of threads with low cpu priority perfoming background work for tables (for example, recompressing old parts). Only has meaning at server startup.", 0) \
     M(SettingUInt64, background_move_pool_size, 8, "Number of threads performing background moves for tables. Only has meaning at server startup.", 0) \
     M(SettingUInt64, background_schedule_pool_size, 16, "Number of threads performing background tasks for replicated tables, kafka streaming, dns cache updates. Only has meaning at server startup.", 0) \
     M(SettingUInt64, background_distributed_schedule_pool_size, 16, "Number of threads performing background tasks for distributed sends. Only has meaning at server startup.", 0) \
