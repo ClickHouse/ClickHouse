@@ -16,7 +16,7 @@ endif ()
 
 if (NOT ZLIB_FOUND AND NOT MISSING_INTERNAL_ZLIB_LIBRARY)
     set (USE_INTERNAL_ZLIB_LIBRARY 1)
-    set (ZLIB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/zlib-ng" "${ClickHouse_BINARY_DIR}/contrib/zlib-ng" CACHE INTERNAL "") # generated zconf.h
+    set (ZLIB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/zlib-ng" "${ClickHouse_SOURCE_DIR}/contrib/zlib-ng-cmake" CACHE INTERNAL "")
     set (ZLIB_INCLUDE_DIRS ${ZLIB_INCLUDE_DIR}) # for poco
     set (ZLIB_INCLUDE_DIRECTORIES ${ZLIB_INCLUDE_DIR}) # for protobuf
     set (ZLIB_FOUND 1) # for poco
