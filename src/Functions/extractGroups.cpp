@@ -17,7 +17,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -49,7 +48,6 @@ public:
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
-        /// Two-dimensional array of strings, each `row` of top array represents matching groups.
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
@@ -61,7 +59,7 @@ public:
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
         if (needle.empty())
-            throw Exception(getName() + " length of 'needle' argument must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(getName() + " length of 'needle' argument must be greater than 0.", ErrorCodes::BAD_ARGUMENTS);
 
         const auto regexp = Regexps::get<false, false>(needle);
         const auto & re2 = regexp->getRE2();

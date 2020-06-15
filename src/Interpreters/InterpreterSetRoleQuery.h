@@ -6,6 +6,8 @@
 
 namespace DB
 {
+
+class Context;
 class ASTSetRoleQuery;
 struct ExtendedRoleSet;
 struct User;

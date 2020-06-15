@@ -66,7 +66,7 @@ sudo yum install clickhouse-server clickhouse-client
 
 公式の事前コンパイルを使用することをお勧めします `tgz` のインストール `deb` または `rpm` パッケージはできません。
 
-必要なバージョンは次のとおりです `curl` または `wget` リポジトリからhttps://repo.yandex.ru/clickhouse/tgz/.
+必要なバージョンは次のとおりです `curl` または `wget` リポジトリからhttps://repo.clickhouse.tech/tgz/.
 その後、アーカイブをダウンロードは開梱と設置と設置のためのイントロダクションです。 最新バージョンの例:
 
 ``` bash

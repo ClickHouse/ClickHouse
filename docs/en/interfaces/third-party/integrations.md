@@ -25,6 +25,7 @@ toc_title: Integrations
 -   Message queues
     -   [Kafka](https://kafka.apache.org)
         -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   Stream processing
     -   [Flink](https://flink.apache.org)
         -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)

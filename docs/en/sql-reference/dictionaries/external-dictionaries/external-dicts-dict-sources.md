@@ -625,4 +625,43 @@ Setting fields:
 -   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
 -   `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
+### Cassandra {#dicts-external_dicts_dict_sources-cassandra}
+
+Example of settings:
+
+```xml
+<source>
+    <cassandra>
+        <host>localhost</host>
+        <port>9042</port>
+        <user>username</user>
+        <password>qwerty123</password>
+        <keyspase>database_name</keyspase>
+        <column_family>table_name</column_family>
+        <allow_filering>1</allow_filering>
+        <partition_key_prefix>1</partition_key_prefix>
+        <consistency>One</consistency>
+        <where>"SomeColumn" = 42</where>
+        <max_threads>8</max_threads>
+    </cassandra>
+</source>
+```
+
+Setting fields:
+-   `host` – The Cassandra host or comma-separated list of hosts.
+-   `port` – The port on the Cassandra servers. If not specified, default port is used.
+-   `user` – Name of the Cassandra user.
+-   `password` – Password of the Cassandra user.
+-   `keyspace` – Name of the keyspace (database).
+-   `column_family` – Name of the column family (table).
+-   `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
+-   `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table.
+        Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra.
+        Default value is 1 (the first key column is a partition key and other key columns are clustering key).
+-   `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`,
+        `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default is `One`.
+-   `where` – Optional selection criteria.
+-   `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
+
+
 [Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

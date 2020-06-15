@@ -45,6 +45,7 @@ public:
 
     const char * getFamilyName() const override { return "Nullable"; }
     std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
+    TypeIndex getDataType() const override { return TypeIndex::Nullable; }
     MutableColumnPtr cloneResized(size_t size) const override;
     size_t size() const override { return nested_column->size(); }
     bool isNullAt(size_t n) const override { return assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
@@ -78,6 +79,7 @@ public:
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
     void getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
+    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;

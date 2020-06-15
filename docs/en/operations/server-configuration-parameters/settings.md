@@ -207,7 +207,7 @@ If `http_port` is specified, the OpenSSL configuration is ignored even if it is 
 **Example**
 
 ``` xml
-<https>0000</https>
+<https_port>9999</https_port>
 ```
 
 ## http\_server\_default\_response {#server_configuration_parameters-http_server_default_response}
@@ -586,11 +586,11 @@ If the table doesn’t exist, ClickHouse will create it. If the structure of the
 </query_log>
 ```
 
-## query\_thread\_log {#server_configuration_parameters-query-thread-log}
+## query\_thread\_log {#server_configuration_parameters-query_thread_log}
 
 Setting for logging threads of queries received with the [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads) setting.
 
-Queries are logged in the [system.query\_thread\_log](../../operations/system-tables.md#system_tables-query-thread-log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+Queries are logged in the [system.query\_thread\_log](../../operations/system-tables.md#system_tables-query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
@@ -733,7 +733,7 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
-## tmp\_path {#server-settings-tmp_path}
+## tmp_path {#tmp-path}
 
 Path to temporary data for processing large queries.
 
@@ -746,16 +746,17 @@ Path to temporary data for processing large queries.
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
-## tmp\_policy {#server-settings-tmp-policy}
+## tmp_policy {#tmp-policy}
 
-Policy from [`storage_configuration`](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
-If not set [`tmp_path`](#server-settings-tmp_path) is used, otherwise it is ignored.
+Policy from [storage_configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
+
+If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
 
 !!! note "Note"
-    - `move_factor` is ignored
-- `keep_free_space_bytes` is ignored
-- `max_data_part_size_bytes` is ignored
-- you must have exactly one volume in that policy
+    - `move_factor` is ignored.
+    - `keep_free_space_bytes` is ignored.
+    - `max_data_part_size_bytes` is ignored.
+    - Уou must have exactly one volume in that policy.
 
 ## uncompressed\_cache\_size {#server-settings-uncompressed_cache_size}
 
@@ -891,6 +892,9 @@ The update is performed asynchronously, in a separate system thread.
 
 **Default value**: 15.
 
+**See also**
+
+-   [background_schedule_pool_size](../settings/settings.md#background_schedule_pool_size)
 
 ## access_control_path {#access_control_path}
 

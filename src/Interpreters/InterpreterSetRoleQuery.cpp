@@ -62,7 +62,7 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
 
 void InterpreterSetRoleQuery::setDefaultRole(const ASTSetRoleQuery & query)
 {
-    context.checkAccess(AccessType::CREATE_USER | AccessType::DROP_USER);
+    context.checkAccess(AccessType::ALTER_USER);
 
     auto & access_control = context.getAccessControlManager();
     std::vector<UUID> to_users = ExtendedRoleSet{*query.to_users, access_control, context.getUserID()}.getMatchingIDs(access_control);

@@ -25,7 +25,7 @@ ODBCBlockInputStream::ODBCBlockInputStream(
     , result{statement}
     , iterator{result.begin()}
     , max_block_size{max_block_size_}
-    , log(&Logger::get("ODBCBlockInputStream"))
+    , log(&Poco::Logger::get("ODBCBlockInputStream"))
 {
     if (sample_block.columns() != result.columnCount())
         throw Exception{"RecordSet contains " + toString(result.columnCount()) + " columns while " + toString(sample_block.columns())
