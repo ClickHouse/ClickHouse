@@ -1,5 +1,6 @@
 #pragma once
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
@@ -16,6 +17,8 @@
 namespace DB
 {
 
+using Monotonicity = IFunctionBase::Monotonicity;
+
 class MonotonicityCheckMatcher
 {
 public:
@@ -24,17 +27,15 @@ public:
         const TablesWithColumns & tables;
         const Context & context;
         ASTPtr & identifier;
-        bool & is_monotonous;
-        bool & is_positive;
+        Monotonicity & monotonicity;
         DataTypePtr data_type = nullptr;
         bool first = true;
-        bool done = false;
     };
 
     static void visit(const ASTPtr & ast, Data & data)
     {
         auto * ast_function = ast->as<ASTFunction>();
-        if (!data.done && ast_function)
+        if (ast_function)
         {
             visit(*ast_function, data);
         }
@@ -43,23 +44,50 @@ public:
 
     static void visit(ASTFunction & ast_function, Data & data)
     {
-        if (!data.is_monotonous)
+        if (!data.monotonicity.is_always_monotonic)
             return;
 
         auto arguments = ast_function.arguments;
         if (arguments->children.size() != 1)
         {
-            data.is_monotonous = false;
-            data.done = true;
+            data.monotonicity.is_always_monotonic = false;
             return;
         }
 
         if (data.first)
+        {
             data.identifier = ast_function.arguments->children[0];
+            if (!data.identifier->as<ASTIdentifier>())
+            {
+                data.monotonicity.is_always_monotonic = false;
+                return;
+            }
+        }
+
+        auto * identifier_ptr = data.identifier->as<ASTIdentifier>();
+
+        if (AggregateFunctionFactory::instance().isAggregateFunctionName(ast_function.name))
+        {
+            data.monotonicity.is_always_monotonic = false;
+            return;
+        }
 
         const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
-        auto pos = IdentifierSemantic::chooseTable(*data.identifier->as<ASTIdentifier>(), data.tables, true);
-        auto data_type_and_name = data.tables[*pos].columns.tryGetByName(data.identifier->getAliasOrColumnName());
+        auto pos = IdentifierSemantic::getMembership(*identifier_ptr->as<ASTIdentifier>());
+        if (pos == NULL)
+        {
+            data.monotonicity.is_always_monotonic = false;
+            return;
+        }
+
+        auto data_type_and_name = data.tables[*pos].columns.tryGetByName(identifier_ptr->shortName());
+
+        if (!data_type_and_name)
+        {
+            data.monotonicity.is_always_monotonic = false;
+            return;
+        }
+
         if (data.first)
         {
             data.data_type = data_type_and_name->type;
@@ -76,20 +104,15 @@ public:
 
         if (!function_base->hasInformationAboutMonotonicity())
         {
-            data.is_monotonous = false;
-            data.done = true;
-            return;
-        }
-        auto monotonicity = function_base->getMonotonicityForRange(*cur_data, NULL, NULL);
-        if (!monotonicity.is_always_monotonic)
-        {
-            data.is_monotonous = false;
-            data.done = true;
+            data.monotonicity.is_always_monotonic = false;
             return;
         }
 
-        if (!monotonicity.is_positive)
-            data.is_positive = !data.is_positive;
+        bool is_positive = data.monotonicity.is_positive;
+        data.monotonicity = function_base->getMonotonicityForRange(*cur_data, Field(), Field());
+
+        if (!is_positive)
+            data.monotonicity.is_positive = !data.monotonicity.is_positive;
     }
 
     static bool needChildVisit(const ASTPtr &, const ASTPtr &)
@@ -100,53 +123,6 @@ public:
 };
 
 using MonotonicityCheckVisitor = InDepthNodeVisitor<MonotonicityCheckMatcher, false>;
-
-class FirstLevelASTFunctionMatcher
-{
-public:
-    struct Data
-    {
-        const TablesWithColumns & tables;
-        const Context & context;
-        ASTPtr & identifier;
-        bool & is_positive;
-    };
-
-    static void visit(const ASTPtr & ast, Data & data)
-    {
-        auto * ast_function = ast->as<ASTFunction>();
-        if (ast_function)
-        {
-            visit(*ast_function, data);
-        }
-    }
-
-
-    static void visit(ASTFunction & ast_function, Data & data)
-    {
-        if (ast_function.children.size() != 1)
-            return;
-
-        bool is_monotonous = true;
-        auto ptr = ast_function.ptr();
-
-        MonotonicityCheckVisitor::Data monotonicity_checker_data{data.tables, data.context, data.identifier, is_monotonous, data.is_positive};
-        MonotonicityCheckVisitor(monotonicity_checker_data).visit(ptr);
-
-        if (!is_monotonous)
-            data.identifier = nullptr;
-    }
-
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
-    {
-        if (node->as<ASTFunction>())
-            return false;
-
-        return true;
-    }
-};
-
-using FirstLevelASTFunctionVisitor = InDepthNodeVisitor<FirstLevelASTFunctionMatcher, true>;
 
 /// Finds SELECT that can be optimized
 class MonotonousOrderByData
@@ -171,15 +147,19 @@ public:
         for (size_t i = 0; i < order_by->children.size(); ++i)
         {
             auto child = order_by->children[i];
-            bool is_positive = true;
             ASTPtr identifier;
-            FirstLevelASTFunctionVisitor::Data data{tables, context, identifier, is_positive};
-            FirstLevelASTFunctionVisitor(data).visit(child);
-            if (identifier)
+            Monotonicity monotonicity;
+            monotonicity.is_always_monotonic = true;
+            monotonicity.is_positive = true;
+            monotonicity.is_monotonic = true;
+
+            MonotonicityCheckVisitor::Data monotonicity_checker_data{tables, context, identifier, monotonicity};
+            MonotonicityCheckVisitor(monotonicity_checker_data).visit(child);
+            if (monotonicity.is_always_monotonic)
             {
                 auto * order_by_element = child->as<ASTOrderByElement>();
                 order_by_element->children[0] = identifier;
-                if (!is_positive)
+                if (!monotonicity.is_positive)
                     order_by_element->direction *= -1;
             }
         }

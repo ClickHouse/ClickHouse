@@ -948,8 +948,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         /// Remove duplicate ORDER BY and DISTINCT from subqueries.
         optimizeDuplicateOrderByAndDistinct(query, settings.optimize_duplicate_order_by_and_distinct, context);
 
-	/// Replace monotonous functions with its argument
-	optimizeMonotonousFunctionsInOrderBy(query, settings.optimize_monotonous_functions_in_order_by, context, tables_with_columns);
+        /// Replace monotonous functions with its argument
+        optimizeMonotonousFunctionsInOrderBy(query, settings.optimize_monotonous_functions_in_order_by, context, tables_with_columns);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
