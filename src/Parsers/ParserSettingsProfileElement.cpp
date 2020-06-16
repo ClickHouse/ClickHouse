@@ -87,7 +87,7 @@ namespace
                 readonly = true;
                 return true;
             }
-            else if (ParserKeyword{"READONLY"}.ignore(pos, expected))
+            else if (ParserKeyword{"WRITABLE"}.ignore(pos, expected))
             {
                 readonly = false;
                 return true;

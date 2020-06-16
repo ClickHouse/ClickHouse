@@ -6,6 +6,7 @@
 #include <Dictionaries/IDictionary.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
+#include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
 #include <common/logger_useful.h>
@@ -371,9 +372,9 @@ namespace
             for (const String & constraint_type : constraint_types)
             {
                 if (constraint_type == "min")
-                    profile_element.min_value = config.getString(path_to_name + "." + constraint_type);
+                    profile_element.min_value = Settings::valueToCorrespondingType(name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
-                    profile_element.max_value = config.getString(path_to_name + "." + constraint_type);
+                    profile_element.max_value = Settings::valueToCorrespondingType(name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "readonly")
                     profile_element.readonly = true;
                 else
@@ -414,7 +415,7 @@ namespace
 
             SettingsProfileElement profile_element;
             profile_element.name = key;
-            profile_element.value = config.getString(profile_config + "." + key);
+            profile_element.value = Settings::valueToCorrespondingType(key, config.getString(profile_config + "." + key));
             profile->elements.emplace_back(std::move(profile_element));
         }
 
