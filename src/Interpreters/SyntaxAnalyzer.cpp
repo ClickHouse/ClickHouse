@@ -26,6 +26,7 @@
 #include <Interpreters/DuplicateDistinctVisitor.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
+#include <Interpreters/MonotonousOrderByVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -466,6 +467,17 @@ void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, bool optimize_duplicate
         DuplicateOrderByVisitor(order_by_data).visit(query);
         DuplicateDistinctVisitor::Data distinct_data{};
         DuplicateDistinctVisitor(distinct_data).visit(query);
+    }
+}
+
+/// Optimize monotonous functions in ORDER BY
+void optimizeMonotonousFunctionsInOrderBy(ASTPtr & query, bool optimize_monotonous_functions_in_order_by,
+                                          const Context & context, const TablesWithColumns & tables_with_columns)
+{
+    if (optimize_monotonous_functions_in_order_by)
+    {
+        MonotonousOrderByVisitor::Data data{tables_with_columns, context};
+        MonotonousOrderByVisitor(data).visit(query);
     }
 }
 
@@ -935,6 +947,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         /// Remove duplicate ORDER BY and DISTINCT from subqueries.
         optimizeDuplicateOrderByAndDistinct(query, settings.optimize_duplicate_order_by_and_distinct, context);
+
+	/// Replace monotonous functions with its argument
+	optimizeMonotonousFunctionsInOrderBy(query, settings.optimize_monotonous_functions_in_order_by, context, tables_with_columns);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
