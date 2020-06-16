@@ -6,7 +6,7 @@ The ClickHouse blog is published alongside documentation and the rest of officia
 
 ## How To Add a New Post?
 
-Basically you need to create a new Markdown file at the following location inside repository `/website/blog/<lang>/<year>/<post-slug>.md` and then [open a pull-request](https://github.com/ClickHouse/ClickHouse/compare) with it. Youu can do it even right from the GitHub web interface using the "Create new file" button.
+Basically you need to create a new Markdown file at the following location inside repository `/website/blog/<lang>/<year>/<post-slug>.md` and then [open a pull-request](https://github.com/ClickHouse/ClickHouse/compare) with it. You can do it even right from the GitHub web interface using the "Create new file" button.
 
 Each post needs to have a `yaml` meta-header with the following fields:
 
