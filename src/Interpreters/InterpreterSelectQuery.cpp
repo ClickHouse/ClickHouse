@@ -83,6 +83,7 @@
 #include <Processors/QueryPlan/MergeSortingStep.h>
 #include <Processors/QueryPlan/MergingSortedStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 
 
 namespace DB
@@ -1813,13 +1814,8 @@ void InterpreterSelectQuery::executeLimitBy(QueryPipeline & pipeline)
     UInt64 length = getLimitUIntValue(query.limitByLength(), *context, "LIMIT");
     UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), *context, "OFFSET") : 0);
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-    {
-        if (stream_type == QueryPipeline::StreamType::Totals)
-            return nullptr;
-
-        return std::make_shared<LimitByTransform>(header, length, offset, columns);
-    });
+    LimitByStep limit_by(DataStream{.header = pipeline.getHeader()}, length, offset, columns);
+    limit_by.transformPipeline(pipeline);
 }
 
 

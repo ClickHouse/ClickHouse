@@ -143,6 +143,7 @@ SRCS(
     QueryPlan/ISourceStep.cpp
     QueryPlan/ITransformingStep.cpp
     QueryPlan/IQueryPlanStep.cpp
+    QueryPlan/LimitByStep.cpp
     QueryPlan/MergeSortingStep.cpp
     QueryPlan/MergingSortedStep.cpp
     QueryPlan/PartialSortingStep.cpp
