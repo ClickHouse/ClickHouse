@@ -1121,7 +1121,8 @@ Enables or disables skipping of unused shards for [SELECT](../../sql-reference/s
 Possible values:
 
 -   0 — Disabled.
--   1 — Enabled.
+-   1 — Enabled, including nested `Distributed()` tables.
+-   2 — Enabled, excluding nested `Distributed()` tables.
 
 Default value: 0
 

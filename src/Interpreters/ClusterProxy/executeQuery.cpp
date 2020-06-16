@@ -17,6 +17,8 @@ namespace ClusterProxy
 
 Context removeUserRestrictionsFromSettings(const Context & context, const Settings & settings)
 {
+    static const UInt64 OPTIMIZE_SKIP_UNUSED_SHARDS_NO_NESTED = 2;
+
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
 
@@ -32,6 +34,12 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     {
         new_settings.force_optimize_skip_unused_shards = 0;
         new_settings.force_optimize_skip_unused_shards.changed = false;
+    }
+
+    if (settings.optimize_skip_unused_shards == OPTIMIZE_SKIP_UNUSED_SHARDS_NO_NESTED)
+    {
+        new_settings.optimize_skip_unused_shards = 0;
+        new_settings.optimize_skip_unused_shards.changed = false;
     }
 
     Context new_context(context);
