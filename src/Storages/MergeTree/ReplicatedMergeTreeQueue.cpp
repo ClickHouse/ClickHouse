@@ -201,21 +201,25 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
     if (is_successful)
     {
-
         if (!entry->actual_new_part_name.empty())
         {
             /// We don't add bigger fetched part to current_parts because we
             /// have an invariant `virtual_parts` = `current_parts` + `queue`.
-            /// But we can remove it from mutations, because we actually have it.
-            removePartFromMutations(entry->actual_new_part_name);
+            ///
+            /// But we remove covered parts from mutations, because we actually
+            /// have replacing part.
+            ///
+            /// NOTE actual_new_part_name is very confusing and error-prone. This approach must be fixed.
+            removeCoveredPartsFromMutations(entry->actual_new_part_name, /*remove_part = */ false, /*remove_covered_parts = */ true);
         }
 
         for (const String & virtual_part_name : entry->getVirtualPartNames())
         {
             current_parts.add(virtual_part_name);
-            /// Each processed part may be already mutated, so we try to remove
-            /// all current parts from mutations.
-            removePartFromMutations(virtual_part_name);
+
+            /// These parts are already covered by newer part, we don't have to
+            /// mutate it.
+            removeCoveredPartsFromMutations(virtual_part_name, /*remove_part = */ false, /*remove_covered_parts = */ true);
         }
 
         String drop_range_part_name;
@@ -240,16 +244,16 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
     {
         for (const String & virtual_part_name : entry->getVirtualPartNames())
         {
-            /// Because execution of the entry is unsuccessful, `virtual_part_name` will never appear
-            /// so we won't need to mutate it.
-            removePartFromMutations(virtual_part_name);
+            /// Because execution of the entry is unsuccessful,
+            /// `virtual_part_name` will never appear so we won't need to mutate
+            /// it.
+            removeCoveredPartsFromMutations(virtual_part_name, /*remove_part = */ true, /*remove_covered_parts = */ false);
         }
-
     }
 }
 
 
-void ReplicatedMergeTreeQueue::removePartFromMutations(const String & part_name)
+void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & part_name, bool remove_part, bool remove_covered_parts)
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
     auto in_partition = mutations_by_partition.find(part_info.partition_id);
@@ -263,7 +267,15 @@ void ReplicatedMergeTreeQueue::removePartFromMutations(const String & part_name)
     {
         MutationStatus & status = *it->second;
 
-        status.parts_to_do.removePartAndCoveredParts(part_name);
+        if (remove_part && remove_covered_parts)
+            status.parts_to_do.removePartAndCoveredParts(part_name);
+        else if (remove_covered_parts)
+            status.parts_to_do.removePartsCoveredBy(part_name);
+        else if (remove_part)
+            status.parts_to_do.remove(part_name);
+        else
+            throw Exception("Called remove part from mutations, but nothing removed", ErrorCodes::LOGICAL_ERROR);
+
         if (status.parts_to_do.size() == 0)
             some_mutations_are_probably_done = true;
 
@@ -678,6 +690,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                     const String & partition_id = pair.first;
                     Int64 block_num = pair.second;
                     mutations_by_partition[partition_id].emplace(block_num, &mutation);
+                    LOG_TRACE(log, "Adding mutation {} for partition {} for all block numbers less than {}", entry->znode_name, partition_id, block_num);
                 }
 
                 /// Initialize `mutation.parts_to_do`. First we need to mutate all parts in `current_parts`.
@@ -1961,6 +1974,7 @@ void ReplicatedMergeTreeQueue::removeCurrentPartsFromMutations()
 {
     std::lock_guard state_lock(state_mutex);
     for (const auto & part_name : current_parts.getParts())
-        removePartFromMutations(part_name);
+        removeCoveredPartsFromMutations(part_name, /*remove_part = */ true, /*remove_covered_parts = */ true);
 }
+
 }
