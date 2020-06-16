@@ -218,4 +218,26 @@ Block StorageInMemoryMetadata::getSampleBlockNonMaterialized() const
 
     return res;
 }
+
+Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const
+{
+    auto res = getSampleBlock();
+
+    /// Virtual columns must be appended after ordinary, because user can
+    /// override them.
+    for (const auto & column : virtuals)
+        res.insert({column.type->createColumn(), column.type, column.name});
+
+    return res;
+}
+
+Block StorageInMemoryMetadata::getSampleBlock() const
+{
+    Block res;
+
+    for (const auto & column : getColumns().getAllPhysical())
+        res.insert({column.type->createColumn(), column.type, column.name});
+
+    return res;
+}
 }

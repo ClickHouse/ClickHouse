@@ -107,7 +107,9 @@ struct StorageInMemoryMetadata
     /// indices, TTL expressions) if we update @updated_columns set of columns.
     ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
 
+    Block getSampleBlock() const; /// ordinary + materialized.
     Block getSampleBlockNonMaterialized() const; /// ordinary.
+    Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const; /// ordinary + materialized + virtuals.
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;
