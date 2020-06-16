@@ -789,7 +789,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
 
                 if (expressions.hasLimitBy())
                 {
-                    executeExpression(pipeline, expressions.before_limit_by);
+                    executeExpression(pipeline, expressions.before_limit_by, "Before LIMIT BY");
                     executeLimitBy(pipeline);
                 }
 
@@ -812,17 +812,14 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
         {
             if (expressions.hasFilter())
             {
-                pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-                {
-                    bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
-
-                    return std::make_shared<FilterTransform>(
-                        block,
+                FilterStep row_level_security_step(
+                        DataStream{.header = pipeline.getHeader()},
                         expressions.filter_info->actions,
                         expressions.filter_info->column_name,
-                        expressions.filter_info->do_remove_column,
-                        on_totals);
-                });
+                        expressions.filter_info->do_remove_column);
+
+                row_level_security_step.setStepDescription("Row-level security filter");
+                row_level_security_step.transformPipeline(pipeline);
             }
 
             if (expressions.hasJoin())
@@ -830,8 +827,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
                 Block join_result_sample;
                 JoinPtr join = expressions.before_join->getTableJoinAlgo();
 
-                join_result_sample = ExpressionBlockInputStream(
-                    std::make_shared<OneBlockInputStream>(pipeline.getHeader()), expressions.before_join).getHeader();
+                join_result_sample = ExpressionTransform::transformHeader(pipeline.getHeader(), expressions.before_join);
 
                 /// In case joined subquery has totals, and we don't, add default chunk to totals.
                 bool default_totals = false;
@@ -849,17 +845,26 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
                         inflating_join = isCross(hash_join->getKind());
                 }
 
-                pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType type)
+                if (inflating_join)
                 {
-                    bool on_totals = type == QueryPipeline::StreamType::Totals;
-                    std::shared_ptr<IProcessor> ret;
-                    if (inflating_join)
-                        ret = std::make_shared<InflatingExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
-                    else
-                        ret = std::make_shared<ExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
+                    InflatingExpressionStep before_join_step(
+                            DataStream{.header = pipeline.getHeader()},
+                            expressions.before_join,
+                            default_totals);
 
-                    return ret;
-                });
+                    before_join_step.setStepDescription("JOIN");
+                    before_join_step.transformPipeline(pipeline);
+                }
+                else
+                {
+                    ExpressionStep before_join_step(
+                            DataStream{.header = pipeline.getHeader()},
+                            expressions.before_join,
+                            default_totals);
+
+                    before_join_step.setStepDescription("JOIN");
+                    before_join_step.transformPipeline(pipeline);
+                }
 
                 if (join)
                 {
@@ -882,7 +887,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
             }
             else
             {
-                executeExpression(pipeline, expressions.before_order_and_select);
+                executeExpression(pipeline, expressions.before_order_and_select, "Before ORDER BY and SELECT");
                 executeDistinct(pipeline, true, expressions.selected_columns);
             }
 
@@ -926,7 +931,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
                 else if (expressions.hasHaving())
                     executeHaving(pipeline, expressions.before_having);
 
-                executeExpression(pipeline, expressions.before_order_and_select);
+                executeExpression(pipeline, expressions.before_order_and_select, "Before ORDER BY and SELECT");
                 executeDistinct(pipeline, true, expressions.selected_columns);
 
             }
@@ -972,7 +977,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
 
             if (expressions.hasLimitBy())
             {
-                executeExpression(pipeline, expressions.before_limit_by);
+                executeExpression(pipeline, expressions.before_limit_by, "Before LIMIT BY");
                 executeLimitBy(pipeline);
             }
 
@@ -1352,11 +1357,14 @@ void InterpreterSelectQuery::executeFetchColumns(
 
 void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter)
 {
-    pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type)
-    {
-        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
-        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_filter, on_totals);
-    });
+    FilterStep where_step(
+            DataStream{.header = pipeline.getHeader()},
+            expression,
+            getSelectQuery().where()->getColumnName(),
+            remove_filter);
+
+    where_step.setStepDescription("WHERE");
+    where_step.transformPipeline(pipeline);
 }
 
 
@@ -1607,12 +1615,14 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modif
 }
 
 
-void InterpreterSelectQuery::executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression)
+void InterpreterSelectQuery::executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, const std::string & description)
 {
-    pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
-    {
-        return std::make_shared<ExpressionTransform>(header, expression);
-    });
+    ExpressionStep expression_step(
+            DataStream{.header = pipeline.getHeader()},
+            expression);
+
+    expression_step.setStepDescription(description);
+    expression_step.transformPipeline(pipeline);
 }
 
 

@@ -119,7 +119,7 @@ private:
     void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
     void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
-    static void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    static void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, const std::string & description);
     void executeOrder(QueryPipeline & pipeline, InputOrderInfoPtr sorting_info);
     void executeOrderOptimized(QueryPipeline & pipeline, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
     void executeWithFill(QueryPipeline & pipeline);
