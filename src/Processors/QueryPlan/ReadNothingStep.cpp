@@ -12,7 +12,7 @@ ReadNothingStep::ReadNothingStep(DataStream output_stream_)
 
 void ReadNothingStep::initializePipeline(QueryPipeline & pipeline)
 {
-    pipeline.init(Pipe(std::make_shared<NullSource>(output_stream.header)));
+    pipeline.init(Pipe(std::make_shared<NullSource>(getOutputStream().header)));
 }
 
 }
