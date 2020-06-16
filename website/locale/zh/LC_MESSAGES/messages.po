@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-06-16 13:31+0300\n"
+"POT-Creation-Date: 2020-06-16 13:35+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: zh\n"
@@ -75,7 +75,11 @@ msgstr "Yandex LLC"
 msgid "Published date"
 msgstr "发布日期"
 
-#: templates/blog/nav.html:18
+#: templates/blog/nav.html:20
+msgid "New&nbsp;post"
+msgstr "新帖子"
+
+#: templates/blog/nav.html:25
 msgid "Documentation"
 msgstr "文件"
 
