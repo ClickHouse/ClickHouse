@@ -353,7 +353,7 @@ Keys:
 Settings for opt-in sending crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
 Enabling it, especially in pre-production environments, is greatly appreciated.
 
-The server will need an access to public Internet for this feature to be functioning properly.
+The server will need an access to public Internet via IPv4 (at the time of writing IPv6 is not supported by Sentry) for this feature to be functioning properly.
 
 Keys:
 

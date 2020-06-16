@@ -46,7 +46,8 @@
     </logger>
 
     <send_crash_reports>
-        <!-- Changing <enabled> to true allows sending crash reports to the ClickHouse core developers team -->
+        <!-- Changing <enabled> to true allows sending crash reports to -->
+        <!-- the ClickHouse core developers team via Sentry https://sentry.io -->
         <!-- Doing so at least in pre-production environments is highly appreciated -->
         <enabled>false</enabled>
         <!-- Change <anonymize> to true if you don't feel comfortable attaching the server hostname to the crash report -->
