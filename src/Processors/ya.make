@@ -137,6 +137,7 @@ SRCS(
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
     Transforms/AggregatingInOrderTransform.cpp
+    QueryPlan/DistinctTransform.cpp
     QueryPlan/ExpressionStep.cpp
     QueryPlan/FilterStep.cpp
     QueryPlan/ISourceStep.cpp

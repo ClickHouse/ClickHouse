@@ -11,7 +11,7 @@ class MergingSortedStep : public ITransformingStep
 {
 public:
     explicit MergingSortedStep(
-        DataStream input_stream,
+        const DataStream & input_stream,
         SortDescription sort_description_,
         size_t max_block_size_,
         UInt64 limit_ = 0);

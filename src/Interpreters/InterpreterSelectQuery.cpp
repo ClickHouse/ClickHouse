@@ -82,6 +82,7 @@
 #include <Processors/QueryPlan/PartialSortingStep.h>
 #include <Processors/QueryPlan/MergeSortingStep.h>
 #include <Processors/QueryPlan/MergingSortedStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 
 
 namespace DB
@@ -1769,13 +1770,11 @@ void InterpreterSelectQuery::executeDistinct(QueryPipeline & pipeline, bool befo
 
         SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
 
-        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type == QueryPipeline::StreamType::Totals)
-                return nullptr;
+        DistinctStep distinct_step(
+                DataStream{.header = pipeline.getHeader()},
+                limits, limit_for_distinct, columns);
 
-            return std::make_shared<DistinctTransform>(header, limits, limit_for_distinct, columns);
-        });
+        distinct_step.transformPipeline(pipeline);
     }
 }
 
