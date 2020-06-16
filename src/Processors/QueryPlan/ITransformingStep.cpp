@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPipeline.h>
 
 namespace DB
 {
