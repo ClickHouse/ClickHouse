@@ -80,6 +80,7 @@
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/PartialSortingStep.h>
+#include <Processors/QueryPlan/MergeSortingStep.h>
 
 
 namespace DB
@@ -1704,17 +1705,15 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputOrderIn
     partial_sorting.transformPipeline(pipeline);
 
     /// Merge the sorted blocks.
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-    {
-        if (stream_type == QueryPipeline::StreamType::Totals)
-            return nullptr;
+    MergeSortingStep merge_sorting_step(
+            DataStream{.header = pipeline.getHeader()},
+            output_order_descr, settings.max_block_size, limit,
+            settings.max_bytes_before_remerge_sort / pipeline.getNumStreams(),
+            settings.max_bytes_before_external_sort, context->getTemporaryVolume(),
+            settings.min_free_disk_space_for_temporary_data);
 
-        return std::make_shared<MergeSortingTransform>(
-                header, output_order_descr, settings.max_block_size, limit,
-                settings.max_bytes_before_remerge_sort / pipeline.getNumStreams(),
-                settings.max_bytes_before_external_sort, context->getTemporaryVolume(),
-                settings.min_free_disk_space_for_temporary_data);
-    });
+    merge_sorting_step.setStepDescription("Merge sorted blocks before ORDER BY");
+    merge_sorting_step.transformPipeline(pipeline);
 
     /// If there are several streams, we merge them into one
     executeMergeSorted(pipeline, output_order_descr, limit);
