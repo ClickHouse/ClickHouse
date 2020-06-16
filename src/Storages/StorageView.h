@@ -31,14 +31,11 @@ public:
 
     void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name) const
     {
-        replaceWithSubquery(select_query, inner_query->clone(), view_name);
+        replaceWithSubquery(select_query, getSelectQuery().inner_query->clone(), view_name);
     }
 
     static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name);
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
-
-private:
-    ASTPtr inner_query;
 
 protected:
     StorageView(
