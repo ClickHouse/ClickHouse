@@ -451,12 +451,10 @@ void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query, bool
         if (auto * group_key_ident = group_key->as<ASTIdentifier>())
         {
             group_by_keys.insert(group_key_ident->shortName());
-            continue;
         }
-        if (auto * group_key_func = group_key->as<ASTFunction>())
+        else if (auto * group_key_func = group_key->as<ASTFunction>())
         {
             group_by_keys.insert(group_key_func->getColumnName());
-            continue;
         }
         else
         {
