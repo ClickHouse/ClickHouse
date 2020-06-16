@@ -3,13 +3,14 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
 
 class ASTSelectQuery;
-class Context;
 class TableJoin;
 struct SelectQueryOptions;
 
@@ -33,7 +34,8 @@ public:
     void makeFakeTable(StoragePtr storage, const Block & source_header);
     std::shared_ptr<TableJoin> makeTableJoin(const ASTSelectQuery & select_query);
 
-    const std::vector<TableWithColumnNamesAndTypes> & tablesWithColumns() const { return tables_with_columns; }
+    const TablesWithColumns & tablesWithColumns() const { return tables_with_columns; }
+    TablesWithColumns moveTablesWithColumns() { return std::move(tables_with_columns); }
 
     bool isLeftTableSubquery() const;
     bool isLeftTableFunction() const;
@@ -48,7 +50,7 @@ public:
 private:
     Context context;
     std::vector<const ASTTableExpression *> table_expressions;
-    std::vector<TableWithColumnNamesAndTypes> tables_with_columns;
+    TablesWithColumns tables_with_columns;
 
     /// Legacy (duplicated left table values)
     ASTPtr left_table_expression;

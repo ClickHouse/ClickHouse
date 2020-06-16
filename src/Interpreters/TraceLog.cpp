@@ -35,10 +35,8 @@ Block TraceLogElement::createBlock()
     };
 }
 
-void TraceLogElement::appendToBlock(Block & block) const
+void TraceLogElement::appendToBlock(MutableColumns & columns) const
 {
-    MutableColumns columns = block.mutateColumns();
-
     size_t i = 0;
 
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
@@ -50,6 +48,4 @@ void TraceLogElement::appendToBlock(Block & block) const
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(trace);
     columns[i++]->insert(size);
-
-    block.setColumns(std::move(columns));
 }

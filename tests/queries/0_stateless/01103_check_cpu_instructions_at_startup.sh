@@ -9,8 +9,13 @@ ${CLICKHOUSE_LOCAL} --query "SELECT max(value LIKE '%sanitize%') FROM system.bui
 
 command=$(command -v ${CLICKHOUSE_LOCAL})
 
-qemu-x86_64-static -cpu qemu64                        $command --query "SELECT 1" 2>&1 | grep -v -F "warning: TCG doesn't support requested feature" ||:
-qemu-x86_64-static -cpu qemu64,+ssse3                 $command --query "SELECT 1" 2>&1 | grep -v -F "warning: TCG doesn't support requested feature" ||:
-qemu-x86_64-static -cpu qemu64,+ssse3,+sse4.1         $command --query "SELECT 1" 2>&1 | grep -v -F "warning: TCG doesn't support requested feature" ||:
-qemu-x86_64-static -cpu qemu64,+ssse3,+sse4.1,+sse4.2 $command --query "SELECT 1" 2>&1 | grep -v -F "warning: TCG doesn't support requested feature" ||:
+function run_with_cpu()
+{
+    qemu-x86_64-static -cpu "$@" $command --query "SELECT 1" 2>&1 | grep -v -F "warning: TCG doesn't support requested feature" ||:
+}
 
+run_with_cpu qemu64
+run_with_cpu qemu64,+ssse3
+run_with_cpu qemu64,+ssse3,+sse4.1
+run_with_cpu qemu64,+ssse3,+sse4.1,+sse4.2
+run_with_cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt

@@ -66,6 +66,7 @@ public:
     virtual UInt128 getHash() const = 0;
 
     const char * getFamilyName() const override { return "ColumnUnique"; }
+    TypeIndex getDataType() const override { return getNestedColumn()->getDataType(); }
 
     void insert(const Field &) override
     {

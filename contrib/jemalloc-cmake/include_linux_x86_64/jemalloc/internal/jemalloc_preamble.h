@@ -21,7 +21,7 @@
 #  include "jemalloc/jemalloc.h"
 #endif
 
-#if (defined(JEMALLOC_OSATOMIC) || defined(JEMALLOC_OSSPIN))
+#if defined(JEMALLOC_OSATOMIC)
 #include <libkern/OSAtomic.h>
 #endif
 
@@ -161,7 +161,26 @@ static const bool config_log =
     false
 #endif
     ;
-#ifdef JEMALLOC_HAVE_SCHED_GETCPU
+/*
+ * Are extra safety checks enabled; things like checking the size of sized
+ * deallocations, double-frees, etc.
+ */
+static const bool config_opt_safety_checks =
+#ifdef JEMALLOC_OPT_SAFETY_CHECKS
+    true
+#elif defined(JEMALLOC_DEBUG)
+    /*
+     * This lets us only guard safety checks by one flag instead of two; fast
+     * checks can guard solely by config_opt_safety_checks and run in debug mode
+     * too.
+     */
+    true
+#else
+    false
+#endif
+    ;
+
+#if defined(_WIN32) || defined(JEMALLOC_HAVE_SCHED_GETCPU)
 /* Currently percpu_arena depends on sched_getcpu. */
 #define JEMALLOC_PERCPU_ARENA
 #endif

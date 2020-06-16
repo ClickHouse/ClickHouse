@@ -67,7 +67,7 @@ private:
     String path;
     bool is_first_task = true;
 
-    Logger * log = &Logger::get("MergeTreeSelectProcessor");
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeSelectProcessor");
 };
 
 }

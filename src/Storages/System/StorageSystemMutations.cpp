@@ -9,6 +9,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -50,15 +51,19 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
 
-        for (auto iterator = db.second->getTablesIterator(); iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            if (!dynamic_cast<const MergeTreeData *>(iterator->table().get()))
+            const auto & table = iterator->table();
+            if (!table)
+                continue;
+
+            if (!dynamic_cast<const MergeTreeData *>(table.get()))
                 continue;
 
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
                 continue;
 
-            merge_tree_tables[db.first][iterator->name()] = iterator->table();
+            merge_tree_tables[db.first][iterator->name()] = table;
         }
     }
 

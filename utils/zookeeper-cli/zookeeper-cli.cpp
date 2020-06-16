@@ -66,11 +66,11 @@ int main(int argc, char ** argv)
         }
 
         Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
-        Logger::root().setChannel(channel);
-        Logger::root().setLevel("trace");
+        Poco::Logger::root().setChannel(channel);
+        Poco::Logger::root().setLevel("trace");
 
         zkutil::ZooKeeper zk(argv[1]);
-        LineReader lr({}, '\\');
+        LineReader lr({}, false, {"\\"}, {});
 
         do
         {
@@ -97,10 +97,8 @@ int main(int argc, char ** argv)
                     bool watch = w == "w";
                     zkutil::EventPtr event = watch ? std::make_shared<Poco::Event>() : nullptr;
                     std::vector<std::string> v = zk.getChildren(path, nullptr, event);
-                    for (size_t i = 0; i < v.size(); ++i)
-                    {
-                        std::cout << v[i] << std::endl;
-                    }
+                    for (const auto & child : v)
+                        std::cout << child << std::endl;
                     if (watch)
                         waitForWatch(event);
                 }
@@ -193,7 +191,7 @@ int main(int argc, char ** argv)
                     zk.set(path, data, version, &stat);
                     printStat(stat);
                 }
-                else if (cmd != "")
+                else if (!cmd.empty())
                 {
                     std::cout << "commands:\n";
                     std::cout << "  q\n";

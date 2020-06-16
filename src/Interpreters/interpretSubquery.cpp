@@ -12,6 +12,7 @@
 
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -95,7 +96,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         else
         {
             auto table_id = context.resolveStorageID(table_expression);
-            const auto & storage = DatabaseCatalog::instance().getTable(table_id);
+            const auto & storage = DatabaseCatalog::instance().getTable(table_id, context);
             columns = storage->getColumns().getOrdinary();
             select_query->replaceDatabaseAndTable(table_id);
         }

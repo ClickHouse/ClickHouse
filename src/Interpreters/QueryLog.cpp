@@ -85,10 +85,8 @@ Block QueryLogElement::createBlock()
 }
 
 
-void QueryLogElement::appendToBlock(Block & block) const
+void QueryLogElement::appendToBlock(MutableColumns & columns) const
 {
-    MutableColumns columns = block.mutateColumns();
-
     size_t i = 0;
 
     columns[i++]->insert(type);
@@ -146,8 +144,6 @@ void QueryLogElement::appendToBlock(Block & block) const
         columns[i++]->insertDefault();
         columns[i++]->insertDefault();
     }
-
-    block.setColumns(std::move(columns));
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)

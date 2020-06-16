@@ -1,15 +1,13 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 31
 toc_title: "\u61D2\u60F0"
 ---
 
-# 懒惰 {#lazy}
+# 延时引擎Lazy {#lazy}
 
-仅将表保留在RAM中 `expiration_time_in_seconds` 上次访问后几秒钟。 只能与\*日志表一起使用。
+在距最近一次访问间隔`expiration_time_in_seconds`时间段内，将表保存在内存中，仅适用于 \*Log引擎表
 
-它针对存储许多小\*日志表进行了优化，访问之间存在较长的时间间隔。
+由于针对这类表的访问间隔较长，对保存大量小的 \*Log引擎表进行了优化，
 
 ## 创建数据库 {#creating-a-database}
 

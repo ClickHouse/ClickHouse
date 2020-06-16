@@ -43,7 +43,7 @@ static auto getJoin(const ColumnsWithTypeAndName & arguments, const Context & co
         ++dot;
     }
     String table_name = join_name.substr(dot);
-    auto table = DatabaseCatalog::instance().getTable({database_name, table_name});
+    auto table = DatabaseCatalog::instance().getTable({database_name, table_name}, context);
     auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
     if (!storage_join)
         throw Exception{"Table " + join_name + " should have engine StorageJoin", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};

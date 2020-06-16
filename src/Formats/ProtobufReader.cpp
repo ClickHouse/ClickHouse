@@ -32,11 +32,12 @@ namespace
         BITS32 = 5,
     };
 
-    // The following condition must always be true:
-    // any_cursor_position < min(END_OF_VARINT, END_OF_GROUP)
-    // This inequation helps to check conditions in SimpleReader.
-    constexpr UInt64 END_OF_VARINT = static_cast<UInt64>(-1);
-    constexpr UInt64 END_OF_GROUP = static_cast<UInt64>(-2);
+    // The following conditions must always be true:
+    // any_cursor_position > END_OF_VARINT
+    // any_cursor_position > END_OF_GROUP
+    // Those inequations helps checking conditions in ProtobufReader::SimpleReader.
+    constexpr Int64 END_OF_VARINT = -1;
+    constexpr Int64 END_OF_GROUP = -2;
 
     Int64 decodeZigZag(UInt64 n) { return static_cast<Int64>((n >> 1) ^ (~(n & 1) + 1)); }
 
@@ -77,7 +78,7 @@ void ProtobufReader::SimpleReader::endMessage(bool ignore_errors)
     if (!current_message_level)
         return;
 
-    UInt64 root_message_end = (current_message_level == 1) ? current_message_end : parent_message_ends.front();
+    Int64 root_message_end = (current_message_level == 1) ? current_message_end : parent_message_ends.front();
     if (cursor != root_message_end)
     {
         if (cursor < root_message_end)
@@ -95,6 +96,9 @@ void ProtobufReader::SimpleReader::endMessage(bool ignore_errors)
 void ProtobufReader::SimpleReader::startNestedMessage()
 {
     assert(current_message_level >= 1);
+    if ((cursor > field_end) && (field_end != END_OF_GROUP))
+        throwUnknownFormat();
+
     // Start reading a nested message which is located inside a length-delimited field
     // of another message.
     parent_message_ends.emplace_back(current_message_end);
@@ -146,7 +150,7 @@ bool ProtobufReader::SimpleReader::readFieldNumber(UInt32 & field_number)
             throwUnknownFormat();
     }
 
-    if (cursor >= current_message_end)
+    if ((cursor >= current_message_end) && (current_message_end != END_OF_GROUP))
         return false;
 
     UInt64 varint = readVarint();
@@ -196,11 +200,17 @@ bool ProtobufReader::SimpleReader::readFieldNumber(UInt32 & field_number)
 
 bool ProtobufReader::SimpleReader::readUInt(UInt64 & value)
 {
+    if (field_end == END_OF_VARINT)
+    {
+        value = readVarint();
+        field_end = cursor;
+        return true;
+    }
+
     if (unlikely(cursor >= field_end))
         return false;
+
     value = readVarint();
-    if (field_end == END_OF_VARINT)
-        field_end = cursor;
     return true;
 }
 
@@ -227,6 +237,7 @@ bool ProtobufReader::SimpleReader::readFixed(T & value)
 {
     if (unlikely(cursor >= field_end))
         return false;
+
     readBinary(&value, sizeof(T));
     return true;
 }

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB

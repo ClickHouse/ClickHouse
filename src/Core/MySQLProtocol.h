@@ -994,7 +994,7 @@ private:
 class Sha256Password : public IPlugin
 {
 public:
-    Sha256Password(RSA & public_key_, RSA & private_key_, Logger * log_)
+    Sha256Password(RSA & public_key_, RSA & private_key_, Poco::Logger * log_)
         : public_key(public_key_)
         , private_key(private_key_)
         , log(log_)
@@ -1068,7 +1068,7 @@ public:
 #    pragma GCC diagnostic pop
             String pem(pem_buf, pem_size);
 
-            LOG_TRACE(log, "Key: " << pem);
+            LOG_TRACE(log, "Key: {}", pem);
 
             AuthMoreData data(pem);
             packet_sender->sendPacket(data, true);
@@ -1130,7 +1130,7 @@ public:
 private:
     RSA & public_key;
     RSA & private_key;
-    Logger * log;
+    Poco::Logger * log;
     String scramble;
 };
 #endif

@@ -1,6 +1,6 @@
 <yandex>
     <part_log>
-        <database>database_name</database>
-        <table>table_name</table>
+        <database>database_name</database> <!-- ignored -->
+        <table>own_part_log</table>
     </part_log>
 </yandex>

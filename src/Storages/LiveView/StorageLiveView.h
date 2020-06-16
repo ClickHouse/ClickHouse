@@ -53,7 +53,7 @@ public:
     {
         return getStorageID().table_name + "_blocks";
     }
-    StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id); }
+    StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id, global_context); }
 
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     ASTPtr getInnerSubQuery() const
@@ -165,6 +165,7 @@ public:
         const Context & context);
 
 private:
+    /// TODO move to common struct SelectQueryDescription
     StorageID select_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any

@@ -25,6 +25,8 @@ public:
     const Storage & getStorage(const UUID & id) const;
     Storage & getStorage(const UUID & id);
 
+    void addStorage(std::unique_ptr<Storage> nested_storage);
+
     Storage & getStorageByIndex(size_t i) { return *(nested_storages[i]); }
     const Storage & getStorageByIndex(size_t i) const { return *(nested_storages[i]); }
 

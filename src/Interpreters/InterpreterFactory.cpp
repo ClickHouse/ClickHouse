@@ -61,6 +61,7 @@
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/InterpreterGrantQuery.h>
+#include <Interpreters/Context.h>
 
 #include <Parsers/ASTSystemQuery.h>
 

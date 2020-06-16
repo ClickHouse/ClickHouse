@@ -61,11 +61,11 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         if (connected)
             disconnect();
 
-        LOG_TRACE(log_wrapper.get(), "Connecting. Database: "
-            << (default_database.empty() ? "(not specified)" : default_database)
-            << ". User: " << user
-            << (static_cast<bool>(secure) ? ". Secure" : "")
-            << (static_cast<bool>(compression) ? "" : ". Uncompressed"));
+        LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
+            default_database.empty() ? "(not specified)" : default_database,
+            user,
+            static_cast<bool>(secure) ? ". Secure" : "",
+            static_cast<bool>(compression) ? "" : ". Uncompressed");
 
         if (static_cast<bool>(secure))
         {
@@ -107,11 +107,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         sendHello();
         receiveHello();
 
-        LOG_TRACE(log_wrapper.get(), "Connected to " << server_name
-            << " server version " << server_version_major
-            << "." << server_version_minor
-            << "." << server_version_patch
-            << ".");
+        LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
+            server_name, server_version_major, server_version_minor, server_version_patch);
     }
     catch (Poco::Net::NetException & e)
     {
@@ -132,8 +129,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
 void Connection::disconnect()
 {
-    //LOG_TRACE(log_wrapper.get(), "Disconnecting");
-
     in = nullptr;
     last_input_packet_type.reset();
     out = nullptr; // can write to socket
@@ -186,8 +181,6 @@ void Connection::sendHello()
 
 void Connection::receiveHello()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving hello");
-
     /// Receive hello packet.
     UInt64 packet_type = 0;
 
@@ -391,8 +384,6 @@ void Connection::sendQuery(
 
     query_id = query_id_;
 
-    //LOG_TRACE(log_wrapper.get(), "Sending query");
-
     writeVarUInt(Protocol::Client::Query, *out);
     writeStringBinary(query_id, *out);
 
@@ -441,8 +432,6 @@ void Connection::sendCancel()
     if (!out)
         return;
 
-    //LOG_TRACE(log_wrapper.get(), "Sending cancel");
-
     writeVarUInt(Protocol::Client::Cancel, *out);
     out->next();
 }
@@ -450,8 +439,6 @@ void Connection::sendCancel()
 
 void Connection::sendData(const Block & block, const String & name, bool scalar)
 {
-    //LOG_TRACE(log_wrapper.get(), "Sending data");
-
     if (!block_out)
     {
         if (compression == Protocol::Compression::Enable)
@@ -516,19 +503,23 @@ void Connection::sendScalarsData(Scalars & data)
     maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
     double elapsed = watch.elapsedSeconds();
 
-    std::stringstream msg;
-    msg << std::fixed << std::setprecision(3);
-    msg << "Sent data for " << data.size() << " scalars, total " << rows << " rows in " << elapsed << " sec., "
-        << static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., "
-        << maybe_compressed_out_bytes / 1048576.0 << " MiB (" << maybe_compressed_out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
-
     if (compression == Protocol::Compression::Enable)
-        msg << ", compressed " << static_cast<double>(maybe_compressed_out_bytes) / out_bytes << " times to "
-            << out_bytes / 1048576.0 << " MiB (" << out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+        LOG_DEBUG(log_wrapper.get(),
+            "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
+            data.size(), rows, elapsed,
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            ReadableSize(maybe_compressed_out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
+            static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
+            ReadableSize(out_bytes),
+            ReadableSize(out_bytes / watch.elapsedSeconds()));
     else
-        msg << ", no compression.";
-
-    LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
+        LOG_DEBUG(log_wrapper.get(),
+            "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
+            data.size(), rows, elapsed,
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            ReadableSize(maybe_compressed_out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
 }
 
 namespace
@@ -616,19 +607,23 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
     double elapsed = watch.elapsedSeconds();
 
-    std::stringstream msg;
-    msg << std::fixed << std::setprecision(3);
-    msg << "Sent data for " << data.size() << " external tables, total " << rows << " rows in " << elapsed << " sec., "
-        << static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., "
-        << maybe_compressed_out_bytes / 1048576.0 << " MiB (" << maybe_compressed_out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
-
     if (compression == Protocol::Compression::Enable)
-        msg << ", compressed " << static_cast<double>(maybe_compressed_out_bytes) / out_bytes << " times to "
-            << out_bytes / 1048576.0 << " MiB (" << out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+        LOG_DEBUG(log_wrapper.get(),
+            "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
+            data.size(), rows, elapsed,
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            ReadableSize(maybe_compressed_out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
+            static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
+            ReadableSize(out_bytes),
+            ReadableSize(out_bytes / watch.elapsedSeconds()));
     else
-        msg << ", no compression.";
-
-    LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
+        LOG_DEBUG(log_wrapper.get(),
+            "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
+            data.size(), rows, elapsed,
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            ReadableSize(maybe_compressed_out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
 }
 
 std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
@@ -682,12 +677,9 @@ Packet Connection::receivePacket()
         }
         else
         {
-            //LOG_TRACE(log_wrapper.get(), "Receiving packet type");
             readVarUInt(res.type, *in);
         }
 
-        //LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
-        //std::cerr << "Client got packet: " << Protocol::Server::toString(res.type) << "\n";
         switch (res.type)
         {
             case Protocol::Server::Data: [[fallthrough]];
@@ -740,8 +732,6 @@ Packet Connection::receivePacket()
 
 Block Connection::receiveData()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving data");
-
     initBlockInput();
     return receiveDataImpl(block_in);
 }
@@ -820,8 +810,6 @@ void Connection::setDescription()
 
 std::unique_ptr<Exception> Connection::receiveException()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving exception");
-
     return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
 }
 
@@ -838,8 +826,6 @@ std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 
 Progress Connection::receiveProgress()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving progress");
-
     Progress progress;
     progress.read(*in, server_revision);
     return progress;

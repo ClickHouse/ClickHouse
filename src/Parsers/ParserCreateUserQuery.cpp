@@ -23,31 +23,14 @@ namespace ErrorCodes
 
 namespace
 {
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name, std::optional<String> & new_host_pattern)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
                 return false;
 
-            return parseUserName(pos, expected, new_name, new_host_pattern);
-        });
-    }
-
-
-    bool parseByPassword(IParserBase::Pos & pos, Expected & expected, String & password)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            if (!ParserKeyword{"BY"}.ignore(pos, expected))
-                return false;
-
-            ASTPtr ast;
-            if (!ParserStringLiteral{}.parse(pos, ast, expected))
-                return false;
-
-            password = ast->as<const ASTLiteral &>().value.safeGet<String>();
-            return true;
+            return parseUserName(pos, expected, new_name);
         });
     }
 
@@ -56,79 +39,70 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
+            if (ParserKeyword{"NOT IDENTIFIED"}.ignore(pos, expected))
+            {
+                authentication = Authentication{Authentication::NO_PASSWORD};
+                return true;
+            }
+
             if (!ParserKeyword{"IDENTIFIED"}.ignore(pos, expected))
                 return false;
 
-            if (!ParserKeyword{"WITH"}.ignore(pos, expected))
+            std::optional<Authentication::Type> type;
+            bool expect_password = false;
+            bool expect_hash = false;
+
+            if (ParserKeyword{"WITH"}.ignore(pos, expected))
             {
-                String password;
-                if (!parseByPassword(pos, expected, password))
+                for (auto check_type : ext::range(Authentication::MAX_TYPE))
+                {
+                    if (ParserKeyword{Authentication::TypeInfo::get(check_type).raw_name}.ignore(pos, expected))
+                    {
+                        type = check_type;
+                        expect_password = (check_type != Authentication::NO_PASSWORD);
+                        break;
+                    }
+                }
+
+                if (!type)
+                {
+                    if (ParserKeyword{"SHA256_HASH"}.ignore(pos, expected))
+                    {
+                        type = Authentication::SHA256_PASSWORD;
+                        expect_hash = true;
+                    }
+                    else if (ParserKeyword{"DOUBLE_SHA1_HASH"}.ignore(pos, expected))
+                    {
+                        type = Authentication::DOUBLE_SHA1_PASSWORD;
+                        expect_hash = true;
+                    }
+                    else
+                        return false;
+                }
+            }
+
+            if (!type)
+            {
+                type = Authentication::SHA256_PASSWORD;
+                expect_password = true;
+            }
+
+            String password;
+            if (expect_password || expect_hash)
+            {
+                ASTPtr ast;
+                if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
                     return false;
 
-                authentication = Authentication{Authentication::SHA256_PASSWORD};
+                password = ast->as<const ASTLiteral &>().value.safeGet<String>();
+            }
+
+            authentication = Authentication{*type};
+            if (expect_password)
                 authentication->setPassword(password);
-                return true;
-            }
+            else if (expect_hash)
+                authentication->setPasswordHashHex(password);
 
-            if (ParserKeyword{"PLAINTEXT_PASSWORD"}.ignore(pos, expected))
-            {
-                String password;
-                if (!parseByPassword(pos, expected, password))
-                    return false;
-
-                authentication = Authentication{Authentication::PLAINTEXT_PASSWORD};
-                authentication->setPassword(password);
-                return true;
-            }
-
-            if (ParserKeyword{"SHA256_PASSWORD"}.ignore(pos, expected))
-            {
-                String password;
-                if (!parseByPassword(pos, expected, password))
-                    return false;
-
-                authentication = Authentication{Authentication::SHA256_PASSWORD};
-                authentication->setPassword(password);
-                return true;
-            }
-
-            if (ParserKeyword{"SHA256_HASH"}.ignore(pos, expected))
-            {
-                String hash;
-                if (!parseByPassword(pos, expected, hash))
-                    return false;
-
-                authentication = Authentication{Authentication::SHA256_PASSWORD};
-                authentication->setPasswordHashHex(hash);
-                return true;
-            }
-
-            if (ParserKeyword{"DOUBLE_SHA1_PASSWORD"}.ignore(pos, expected))
-            {
-                String password;
-                if (!parseByPassword(pos, expected, password))
-                    return false;
-
-                authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
-                authentication->setPassword(password);
-                return true;
-            }
-
-            if (ParserKeyword{"DOUBLE_SHA1_HASH"}.ignore(pos, expected))
-            {
-                String hash;
-                if (!parseByPassword(pos, expected, hash))
-                    return false;
-
-                authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
-                authentication->setPasswordHashHex(hash);
-                return true;
-            }
-
-            if (!ParserKeyword{"NO_PASSWORD"}.ignore(pos, expected))
-                return false;
-
-            authentication = Authentication{Authentication::NO_PASSWORD};
             return true;
         });
     }
@@ -227,6 +201,7 @@ namespace
                 return false;
 
             default_roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
+            default_roles->can_contain_users = false;
             return true;
         });
     }
@@ -299,7 +274,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         return false;
 
     String new_name;
-    std::optional<String> new_host_pattern;
     std::optional<Authentication> authentication;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
@@ -327,7 +301,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (alter)
         {
-            if (new_name.empty() && parseRenameTo(pos, expected, new_name, new_host_pattern))
+            if (new_name.empty() && parseRenameTo(pos, expected, new_name))
                 continue;
 
             if (parseHosts(pos, expected, "ADD", add_hosts) || parseHosts(pos, expected, "DROP", remove_hosts))
@@ -337,13 +311,8 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         break;
     }
 
-    if (!hosts)
-    {
-        if (!alter && host_pattern)
-            hosts.emplace().addLikePattern(*host_pattern);
-        else if (alter && new_host_pattern)
-            hosts.emplace().addLikePattern(*new_host_pattern);
-    }
+    if (!alter && !hosts && host_pattern)
+        hosts.emplace().addLikePattern(*host_pattern);
 
     auto query = std::make_shared<ASTCreateUserQuery>();
     node = query;

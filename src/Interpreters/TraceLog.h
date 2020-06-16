@@ -24,7 +24,7 @@ struct TraceLogElement
 
     static std::string name() { return "TraceLog"; }
     static Block createBlock();
-    void appendToBlock(Block & block) const;
+    void appendToBlock(MutableColumns & columns) const;
 };
 
 class TraceLog : public SystemLog<TraceLogElement>
