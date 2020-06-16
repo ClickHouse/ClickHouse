@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-06-15 22:29+0300\n"
+"POT-Creation-Date: 2020-06-16 13:35+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fa\n"
@@ -36,27 +36,27 @@ msgstr "ClickHouse - سریع باز-منبع OLAP DBMS"
 msgid "ClickHouse DBMS"
 msgstr "خانه عروسکی"
 
-#: templates/common_meta.html:28
+#: templates/common_meta.html:32
 msgid "open-source"
 msgstr "متن باز"
 
-#: templates/common_meta.html:28
+#: templates/common_meta.html:32
 msgid "relational"
 msgstr "رابطه"
 
-#: templates/common_meta.html:28
+#: templates/common_meta.html:32
 msgid "analytics"
 msgstr "تجزیه و تحلیل"
 
-#: templates/common_meta.html:28
+#: templates/common_meta.html:32
 msgid "analytical"
 msgstr "تحلیلی"
 
-#: templates/common_meta.html:28
+#: templates/common_meta.html:32
 msgid "Big Data"
 msgstr "داده های بزرگ"
 
-#: templates/common_meta.html:28
+#: templates/common_meta.html:32
 msgid "web-analytics"
 msgstr "تجزیه و تحلیل وب سایت"
 
@@ -80,7 +80,11 @@ msgstr "Yandex, LLC"
 msgid "Published date"
 msgstr "تاریخ انتشار"
 
-#: templates/blog/nav.html:18
+#: templates/blog/nav.html:20
+msgid "New&nbsp;post"
+msgstr "جدید & nbsp;پست"
+
+#: templates/blog/nav.html:25
 msgid "Documentation"
 msgstr "مستندات"
 
