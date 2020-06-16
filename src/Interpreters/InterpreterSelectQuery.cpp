@@ -857,7 +857,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
             else
             {
                 executeExpression(pipeline, expressions.before_order_and_select);
-                executeDistinct(pipeline, true, expressions.selected_columns,  query_info.distinct_order_info);
+                executeDistinct(pipeline, true, expressions.selected_columns, query_info.distinct_order_info);
             }
 
             preliminary_sort();
@@ -901,7 +901,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
                     executeHaving(pipeline, expressions.before_having);
 
                 executeExpression(pipeline, expressions.before_order_and_select);
-                executeDistinct(pipeline, true, expressions.selected_columns, query_info.distinct_order_info);
+                executeDistinct(pipeline, true, expressions.selected_columns, nullptr);
 
             }
             else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube)

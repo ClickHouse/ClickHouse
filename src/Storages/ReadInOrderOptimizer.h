@@ -37,7 +37,6 @@ public:
 
 private:
     Names source_columns;
-    NameSet forbidden_columns;
 };
 
 }

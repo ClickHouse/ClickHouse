@@ -42,12 +42,10 @@ DistinctSortedTransform::DistinctSortedTransform(
         if (!sorted_column_descr.column_name.empty())
         {
             sorted_column_descr.column_number = header_.getPositionByName(sorted_column_descr.column_name);
-            std::cerr << sorted_column_descr.column_name << " ";
             sorted_column_descr.column_name.clear();
         }
         sorted_columns_pos.emplace_back(sorted_column_descr.column_number);
     }
-    std::cerr << "\n";
 
     /// Calculate not-sorted columns positions
     other_columns_pos.reserve(source_columns.size());
@@ -68,9 +66,8 @@ ColumnRawPtrs DistinctSortedTransform::getColumnsByPositions(const Columns & sou
 {
     ColumnRawPtrs other_columns;
     other_columns.reserve(positions.size());
-    for (size_t pos : positions) {
+    for (size_t pos : positions)
         other_columns.emplace_back(source_columns[pos].get());
-    }
     return other_columns;
 }
 
@@ -80,7 +77,8 @@ void DistinctSortedTransform::setCurrentKey(
 {
     current_key.clear();
     current_key.resize(sorted_columns.size());
-    for (size_t i = 0; i < sorted_columns.size(); ++i) {
+    for (size_t i = 0; i < sorted_columns.size(); ++i)
+    {
         current_key[i] = sorted_columns[i]->cloneEmpty();
         current_key[i]->insertFrom(*sorted_columns[i], key_pos);
     }

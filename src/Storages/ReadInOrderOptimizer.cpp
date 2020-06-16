@@ -12,7 +12,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static std::optional<Names> tryGetSortingKeyColumns(const StoragePtr & storage) {
+static std::optional<Names> tryGetSortingKeyColumns(const StoragePtr & storage)
+{
     Names sorting_key_columns;
     if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
     {
