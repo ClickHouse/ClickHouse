@@ -21,7 +21,6 @@ public:
     void transformPipeline(QueryPipeline & pipeline) override;
 
 private:
-    size_t num_inputs;
     SortDescription sort_description;
     size_t max_block_size;
     UInt64 limit;
