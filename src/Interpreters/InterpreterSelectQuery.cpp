@@ -1040,6 +1040,14 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
             executeWithFill(pipeline);
 
+            /// If we have 'WITH TIES', we need execute limit before projection,
+            /// because in that case columns from 'ORDER BY' are used.
+            if (query.limit_with_ties)
+            {
+                executeLimit(pipeline);
+                has_prelimit = true;
+            }
+
             /** We must do projection after DISTINCT because projection may remove some columns.
               */
             executeProjection(pipeline, expressions.final_projection);
