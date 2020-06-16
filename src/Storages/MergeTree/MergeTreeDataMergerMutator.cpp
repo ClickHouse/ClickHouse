@@ -578,8 +578,14 @@ public:
 
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
-    const FutureMergedMutatedPart & future_part, MergeList::Entry & merge_entry, TableStructureReadLockHolder &,
-    time_t time_of_merge, const ReservationPtr & space_reservation, bool deduplicate, bool force_ttl)
+    const FutureMergedMutatedPart & future_part,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    MergeList::Entry & merge_entry,
+    TableStructureReadLockHolder &,
+    time_t time_of_merge,
+    const ReservationPtr & space_reservation,
+    bool deduplicate,
+    bool force_ttl)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
@@ -975,6 +981,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     const FutureMergedMutatedPart & future_part,
+    const StorageMetadataPtr & metadata_snapshot,
     const MutationCommands & commands,
     MergeListEntry & merge_entry,
     time_t time_of_mutation,
@@ -1069,7 +1076,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     bool need_remove_expired_values = false;
 
-    if (in && shouldExecuteTTL(in->getHeader().getNamesAndTypesList().getNames(), commands_for_part))
+    if (in && shouldExecuteTTL(metadata_snapshot, in->getHeader().getNamesAndTypesList().getNames(), commands_for_part))
         need_remove_expired_values = true;
 
     /// All columns from part are changed and may be some more that were missing before in part
@@ -1556,7 +1563,7 @@ std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalculate(
     return indices_to_recalc;
 }
 
-bool MergeTreeDataMergerMutator::shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const
+bool MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const Names & columns, const MutationCommands & commands) const
 {
     if (!data.hasAnyTTL())
         return false;
@@ -1565,7 +1572,7 @@ bool MergeTreeDataMergerMutator::shouldExecuteTTL(const Names & columns, const M
         if (command.type == MutationCommand::MATERIALIZE_TTL)
             return true;
 
-    auto dependencies = data.getColumnDependencies(NameSet(columns.begin(), columns.end()));
+    auto dependencies = metadata_snapshot->getColumnDependencies(NameSet(columns.begin(), columns.end()));
     for (const auto & dependency : dependencies)
         if (dependency.kind == ColumnDependency::TTL_EXPRESSION || dependency.kind == ColumnDependency::TTL_TARGET)
             return true;

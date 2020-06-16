@@ -1304,6 +1304,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
     auto table_lock = lockStructureForShare(
             false, RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
+    StorageMetadataPtr metadata_snapshot = getInMemoryMetadataPtr();
 
     FutureMergedMutatedPart future_merged_part(parts, entry.new_part_type);
     if (future_merged_part.name != entry.new_part_name)
@@ -1331,7 +1332,9 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     try
     {
         part = merger_mutator.mergePartsToTemporaryPart(
-            future_merged_part, *merge_entry, table_lock, entry.create_time, reserved_space, entry.deduplicate, entry.force_ttl);
+            future_merged_part, metadata_snapshot, *merge_entry,
+            table_lock, entry.create_time, reserved_space, entry.deduplicate,
+            entry.force_ttl);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
 
@@ -1428,6 +1431,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     auto table_lock = lockStructureForShare(
             false, RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
+    StorageMetadataPtr metadata_snapshot = getInMemoryMetadataPtr();
 
     MutableDataPartPtr new_part;
     Transaction transaction(*this);
@@ -1454,7 +1458,9 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, entry.create_time, global_context, reserved_space, table_lock);
+        new_part = merger_mutator.mutatePartToTemporaryPart(
+            future_mutated_part, metadata_snapshot, commands, *merge_entry,
+            entry.create_time, global_context, reserved_space, table_lock);
         renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try

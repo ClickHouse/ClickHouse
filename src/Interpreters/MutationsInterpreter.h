@@ -47,6 +47,7 @@ private:
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
 
     StoragePtr storage;
+    StorageMetadataPtr metadata_snapshot;
     MutationCommands commands;
     Context context;
     bool can_execute;
