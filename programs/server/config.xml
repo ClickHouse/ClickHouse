@@ -231,7 +231,7 @@
                     <tls_key_file>/path/to/tls_key_file</tls_key_file>
                     <tls_ca_cert_file>/path/to/tls_ca_cert_file</tls_ca_cert_file>
                     <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
-                    <tls_cipher_suite>SECURE256:+SECURE128:-VERS-TLS-ALL:+VERS-TLS1.2:-RSA:-DHE-DSS:-CAMELLIA-128-CBC:-CAMELLIA-256-CBC</tls_cipher_suite>
+                    <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
                 </my_ldap_server>
         -->
     </ldap_servers>
