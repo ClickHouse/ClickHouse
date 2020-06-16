@@ -432,7 +432,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query, bool optimize_gr
 }
 
 /// Eliminates min/max/any-aggregators of functions of GROUP BY keys
-void optimizeAggregateFunctionsOfGroupByKeys (ASTSelectQuery * select_query, bool optimize_aggregators_of_group_by_keys)
+void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query, bool optimize_aggregators_of_group_by_keys)
 {
     if (!optimize_aggregators_of_group_by_keys)
         return;
