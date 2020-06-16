@@ -219,7 +219,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         String block_id_path = deduplicate_block ? storage.zookeeper_path + "/blocks/" + block_id : "";
         auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
 
-        Int64 block_number;
+        Int64 block_number = 0;
         String existing_part_name;
         if (block_number_lock)
         {
@@ -258,6 +258,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
             part->name = existing_part_name;
             part->info = MergeTreePartInfo::fromPartName(existing_part_name, storage.format_version);
+
+            block_number = part->info.min_block;
 
             /// Don't do subsequent duplicate check.
             block_id_path.clear();
