@@ -13,14 +13,21 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 KafkaBlockInputStream::KafkaBlockInputStream(
-    StorageKafka & storage_, const std::shared_ptr<Context> & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
+    StorageKafka & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    const std::shared_ptr<Context> & context_,
+    const Names & columns,
+    size_t max_block_size_,
+    bool commit_in_suffix_)
     : storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
-    , non_virtual_header(storage.getSampleBlockNonMaterialized())
-    , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp","_timestamp_ms","_headers.name","_headers.value"}))
+    , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
+    , virtual_header(storage.getSampleBlockForColumns(
+          {"_topic", "_key", "_offset", "_partition", "_timestamp", "_timestamp_ms", "_headers.name", "_headers.value"}))
 {
 }
 

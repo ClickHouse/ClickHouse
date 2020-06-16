@@ -73,9 +73,12 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     return DatabaseCatalog::instance().getTable(query.table_id, context);
 }
 
-Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table) const
+Block InterpreterInsertQuery::getSampleBlock(
+    const ASTInsertQuery & query,
+    const StoragePtr & table,
+    const StorageMetadataPtr & metadata_snapshot) const
 {
-    Block table_sample_non_materialized = table->getSampleBlockNonMaterialized();
+    Block table_sample_non_materialized = metadata_snapshot->getSampleBlockNonMaterialized();
     /// If the query does not include information about columns
     if (!query.columns)
     {
@@ -119,7 +122,7 @@ BlockIO InterpreterInsertQuery::execute()
             true, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    auto query_sample_block = getSampleBlock(query, table);
+    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot);
     if (!query.table_function)
         context.checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
