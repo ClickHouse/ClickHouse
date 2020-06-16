@@ -65,11 +65,9 @@ private:
         UInt64 max_block_size,
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,
-        const ExpressionActionsPtr & sorting_key_prefix_expr,
         const Names & virt_columns,
         const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings,
-        ExpressionActionsPtr & out_projection) const;
+        const MergeTreeReaderSettings & reader_settings) const;
 
     Pipes spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
