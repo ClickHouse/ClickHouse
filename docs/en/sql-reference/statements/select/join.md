@@ -51,7 +51,11 @@ Modifies how matching by "join keys" is performed
 
 `ASOF JOIN` is useful when you need to join records that have no exact match.
 
-Tables for `ASOF JOIN` must have an ordered sequence column. This column cannot be alone in a table, and should be one of the data types: `UInt32`, `UInt64`, `Float32`, `Float64`, `Date`, and `DateTime`.
+Algorithm requires the special column in tables. This column:
+
+- Must contain an ordered sequence.
+- Can be one of the following types: [Int*, UInt*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Date](../../data-types/date.md), [DateTime](../../data-types/datetime.md), [Decimal*](../../data-types/decimal.md).
+- Can't be the only column in the `JOIN` clause.
 
 Syntax `ASOF JOIN ... ON`:
 

@@ -1,6 +1,6 @@
 CREATE TABLE test.cast1
 (
-    `x` UInt8, 
+    `x` UInt8,
     `e` Enum8('hello' = 1, 'world' = 2) DEFAULT CAST(x, 'Enum8(\'hello\' = 1, \'world\' = 2)')
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_cast', 'r1')
