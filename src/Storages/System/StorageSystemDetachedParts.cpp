@@ -47,7 +47,7 @@ protected:
 
     Pipes read(
         const Names & /* column_names */,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -57,7 +57,7 @@ protected:
         StoragesInfoStream stream(query_info, context);
 
         /// Create the result.
-        Block block = getSampleBlock();
+        Block block = metadata_snapshot->getSampleBlock();
         MutableColumns new_columns = block.cloneEmptyColumns();
 
         while (StoragesInfo info = stream.next())

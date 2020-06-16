@@ -197,7 +197,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
     RangesInDataParts & parts, const bool check_columns)
 {
     std::vector<size_t> per_part_sum_marks;
-    Block sample_block = data.getSampleBlock();
+    Block sample_block = metadata_snapshot->getSampleBlock();
 
     for (const auto i : ext::range(0, parts.size()))
     {

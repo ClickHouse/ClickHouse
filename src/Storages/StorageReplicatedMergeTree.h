@@ -105,7 +105,11 @@ public:
 
     void alter(const AlterCommands & params, const Context & query_context, TableStructureWriteLockHolder & table_lock_holder) override;
 
-    void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
+    void alterPartition(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const PartitionCommands & commands,
+        const Context & query_context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
@@ -527,7 +531,7 @@ private:
 
     // Partition helpers
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
-    void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
+    void attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & query_context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & query_context);
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & query_context);

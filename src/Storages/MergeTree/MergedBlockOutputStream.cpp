@@ -15,12 +15,18 @@ namespace ErrorCodes
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part,
+    const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec,
     bool blocks_are_granules_size)
     : MergedBlockOutputStream(
-        data_part, columns_list_, skip_indices, default_codec, {},
+        data_part,
+        metadata_snapshot_,
+        columns_list_,
+        skip_indices,
+        default_codec,
+        {},
         data_part->storage.global_context.getSettings().min_bytes_to_use_direct_io,
         blocks_are_granules_size)
 {
@@ -28,13 +34,14 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part,
+    const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec,
     const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
     size_t aio_threshold,
     bool blocks_are_granules_size)
-    : IMergedBlockOutputStream(data_part)
+    : IMergedBlockOutputStream(data_part, metadata_snapshot_)
     , columns_list(columns_list_)
 {
     MergeTreeWriterSettings writer_settings(data_part->storage.global_context.getSettings(),

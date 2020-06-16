@@ -198,9 +198,9 @@ std::optional<UInt64> StorageMergeTree::totalBytes() const
     return getTotalActiveSizeInBytes();
 }
 
-BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
+BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
-    return std::make_shared<MergeTreeBlockOutputStream>(*this, context.getSettingsRef().max_partitions_per_insert_block);
+    return std::make_shared<MergeTreeBlockOutputStream>(*this, metadata_snapshot, context.getSettingsRef().max_partitions_per_insert_block);
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const
@@ -1017,7 +1017,8 @@ bool StorageMergeTree::optimize(
     return true;
 }
 
-void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
+void StorageMergeTree::alterPartition(
+    const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context)
 {
     for (const PartitionCommand & command : commands)
     {
@@ -1085,7 +1086,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             break;
 
             default:
-                IStorage::alterPartition(query, commands, context); // should throw an exception.
+                IStorage::alterPartition(query, metadata_snapshot, commands, context); // should throw an exception.
         }
     }
 }
@@ -1126,7 +1127,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
 }
 
 
-void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & context)
+void StorageMergeTree::attachPartition(
+    const ASTPtr & partition, bool attach_part, const Context & context)
 {
     // TODO: should get some locks to prevent race with 'alter … modify column'
 

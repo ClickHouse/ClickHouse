@@ -31,9 +31,19 @@ namespace ErrorCodes
 
 
 ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
-    StorageReplicatedMergeTree & storage_, size_t quorum_, size_t quorum_timeout_ms_, size_t max_parts_per_block_, bool deduplicate_)
-    : storage(storage_), quorum(quorum_), quorum_timeout_ms(quorum_timeout_ms_), max_parts_per_block(max_parts_per_block_), deduplicate(deduplicate_),
-    log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
+    StorageReplicatedMergeTree & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    size_t quorum_,
+    size_t quorum_timeout_ms_,
+    size_t max_parts_per_block_,
+    bool deduplicate_)
+    : storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+    , quorum(quorum_)
+    , quorum_timeout_ms(quorum_timeout_ms_)
+    , max_parts_per_block(max_parts_per_block_)
+    , deduplicate(deduplicate_)
+    , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (quorum == 1)
@@ -43,7 +53,7 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
 
 Block ReplicatedMergeTreeBlockOutputStream::getHeader() const
 {
-    return storage.getSampleBlock();
+    return metadata_snapshot->getSampleBlock();
 }
 
 
@@ -128,7 +138,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot);
 
         String block_id;
 

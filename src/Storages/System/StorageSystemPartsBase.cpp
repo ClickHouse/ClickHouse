@@ -225,7 +225,7 @@ StoragesInfo StoragesInfoStream::next()
 
 Pipes StorageSystemPartsBase::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -238,7 +238,7 @@ Pipes StorageSystemPartsBase::read(
 
     /// Create the result.
 
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
+    MutableColumns res_columns = metadata_snapshot->getSampleBlock().cloneEmptyColumns();
     if (has_state_column)
         res_columns.push_back(ColumnString::create());
 
@@ -247,7 +247,7 @@ Pipes StorageSystemPartsBase::read(
         processNextStorage(res_columns, info, has_state_column);
     }
 
-    Block header = getSampleBlock();
+    Block header = metadata_snapshot->getSampleBlock();
     if (has_state_column)
         header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 

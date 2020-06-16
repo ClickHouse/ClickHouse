@@ -32,15 +32,18 @@ namespace ErrorCodes
 class SetOrJoinBlockOutputStream : public IBlockOutputStream
 {
 public:
-    SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
-        const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_);
+    SetOrJoinBlockOutputStream(
+        StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
+        const String & backup_path_, const String & backup_tmp_path_,
+        const String & backup_file_name_);
 
-    Block getHeader() const override { return table.getSampleBlock(); }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
     void write(const Block & block) override;
     void writeSuffix() override;
 
 private:
     StorageSetOrJoinBase & table;
+    StorageMetadataPtr metadata_snapshot;
     String backup_path;
     String backup_tmp_path;
     String backup_file_name;
@@ -50,14 +53,20 @@ private:
 };
 
 
-SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
-    const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_)
-    : table(table_),
-    backup_path(backup_path_), backup_tmp_path(backup_tmp_path_),
-    backup_file_name(backup_file_name_),
-    backup_buf(backup_tmp_path + backup_file_name),
-    compressed_backup_buf(backup_buf),
-    backup_stream(compressed_backup_buf, 0, table.getSampleBlock())
+SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
+    StorageSetOrJoinBase & table_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    const String & backup_path_,
+    const String & backup_tmp_path_,
+    const String & backup_file_name_)
+    : table(table_)
+    , metadata_snapshot(metadata_snapshot_)
+    , backup_path(backup_path_)
+    , backup_tmp_path(backup_tmp_path_)
+    , backup_file_name(backup_file_name_)
+    , backup_buf(backup_tmp_path + backup_file_name)
+    , compressed_backup_buf(backup_buf)
+    , backup_stream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock())
 {
 }
 
@@ -81,10 +90,10 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 }
 
 
-BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     UInt64 id = ++increment;
-    return std::make_shared<SetOrJoinBlockOutputStream>(*this, path, path + "tmp/", toString(id) + ".bin");
+    return std::make_shared<SetOrJoinBlockOutputStream>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin");
 }
 
 
@@ -119,7 +128,8 @@ StorageSet::StorageSet(
     : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_},
     set(std::make_shared<Set>(SizeLimits(), false, true))
 {
-    Block header = getSampleBlock();
+
+    Block header = getInMemoryMetadataPtr()->getSampleBlock();
     header = header.sortColumns();
     set->setHeader(header);
 
@@ -134,11 +144,12 @@ size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
 void StorageSet::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
     Poco::File(path + "tmp/").createDirectories();
 
-    Block header = getSampleBlock();
+    Block header = metadata_snapshot->getSampleBlock();
     header = header.sortColumns();
 
     increment = 0;

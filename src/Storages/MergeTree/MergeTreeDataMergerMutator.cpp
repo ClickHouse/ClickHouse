@@ -808,6 +808,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream to{
         new_data_part,
+        metadata_snapshot,
         merging_columns,
         index_factory.getMany(data.getSecondaryIndices()),
         compression_codec,
@@ -912,6 +913,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
             MergedColumnOnlyOutputStream column_to(
                 new_data_part,
+                metadata_snapshot,
                 column_gathered_stream.getHeader(),
                 compression_codec,
                 /// we don't need to recalc indices here
@@ -1085,6 +1087,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         auto part_indices = getIndicesForNewDataPart(data.getSecondaryIndices(), for_file_renames);
         mutateAllPartColumns(
             new_data_part,
+            metadata_snapshot,
             part_indices,
             in,
             time_of_mutation,
@@ -1137,6 +1140,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         {
             mutateSomePartColumns(
                 source_part,
+                metadata_snapshot,
                 indices_to_recalc,
                 updated_header,
                 new_data_part,
@@ -1582,6 +1586,7 @@ bool MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadataPtr & met
 
 void MergeTreeDataMergerMutator::mutateAllPartColumns(
     MergeTreeData::MutableDataPartPtr new_data_part,
+    const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeIndices & skip_indices,
     BlockInputStreamPtr mutating_stream,
     time_t time_of_mutation,
@@ -1603,6 +1608,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
 
     MergedBlockOutputStream out{
         new_data_part,
+        metadata_snapshot,
         new_data_part->getColumns(),
         skip_indices,
         compression_codec};
@@ -1629,6 +1635,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
 
 void MergeTreeDataMergerMutator::mutateSomePartColumns(
     const MergeTreeDataPartPtr & source_part,
+    const StorageMetadataPtr & metadata_snapshot,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const Block & mutation_header,
     MergeTreeData::MutableDataPartPtr new_data_part,
@@ -1647,6 +1654,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
     MergedColumnOnlyOutputStream out(
         new_data_part,
+        metadata_snapshot,
         mutation_header,
         compression_codec,
         std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),

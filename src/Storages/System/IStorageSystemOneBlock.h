@@ -30,7 +30,7 @@ public:
 
     Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -39,7 +39,7 @@ public:
     {
         check(column_names);
 
-        Block sample_block = getSampleBlock();
+        Block sample_block = metadata_snapshot->getSampleBlock();
         MutableColumns res_columns = sample_block.cloneEmptyColumns();
         fillData(res_columns, context, query_info);
 

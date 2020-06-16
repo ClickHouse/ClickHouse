@@ -167,10 +167,10 @@ Pipes StorageBuffer::read(
         auto destination_lock = destination->lockStructureForShare(
                 false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-        const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
+        const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [metadata_snapshot, destination](const String& column_name)
         {
             const auto & dest_columns = destination->getColumns();
-            const auto & our_columns = getColumns();
+            const auto & our_columns = metadata_snapshot->getColumns();
             return dest_columns.hasPhysical(column_name) &&
                    dest_columns.get(column_name).type->equals(*our_columns.get(column_name).type);
         });
@@ -188,7 +188,7 @@ Pipes StorageBuffer::read(
         else
         {
             /// There is a struct mismatch and we need to convert read blocks from the destination table.
-            const Block header = getSampleBlock();
+            const Block header = metadata_snapshot->getSampleBlock();
             Names columns_intersection = column_names;
             Block header_after_adding_defaults = header;
             const auto & dest_columns = destination->getColumns();
@@ -326,9 +326,14 @@ static void appendBlock(const Block & from, Block & to)
 class BufferBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit BufferBlockOutputStream(StorageBuffer & storage_) : storage(storage_) {}
+    explicit BufferBlockOutputStream(
+        StorageBuffer & storage_,
+        const StorageMetadataPtr & metadata_snapshot_)
+        : storage(storage_)
+        , metadata_snapshot(metadata_snapshot_)
+    {}
 
-    Block getHeader() const override { return storage.getSampleBlock(); }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -404,6 +409,7 @@ public:
     }
 private:
     StorageBuffer & storage;
+    StorageMetadataPtr metadata_snapshot;
 
     void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer)
     {
@@ -434,9 +440,9 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
-    return std::make_shared<BufferBlockOutputStream>(*this);
+    return std::make_shared<BufferBlockOutputStream>(*this, metadata_snapshot);
 }
 
 
@@ -654,8 +660,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     /** We will insert columns that are the intersection set of columns of the buffer table and the subordinate table.
       * This will support some of the cases (but not all) when the table structure does not match.
       */
-    Block structure_of_destination_table
-        = allow_materialized ? table->getSampleBlock() : destination_metadata_snapshot->getSampleBlockNonMaterialized();
+    Block structure_of_destination_table = allow_materialized ? destination_metadata_snapshot->getSampleBlock()
+                                                              : destination_metadata_snapshot->getSampleBlockNonMaterialized();
     Block block_to_write;
     for (size_t i : ext::range(0, structure_of_destination_table.columns()))
     {
