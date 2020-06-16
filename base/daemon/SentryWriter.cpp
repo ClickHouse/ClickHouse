@@ -96,7 +96,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
     {
         const std::filesystem::path & default_tmp_path = std::filesystem::path(config.getString("tmp_path", Poco::Path::temp())) / "sentry";
         const std::string & endpoint
-            = config.getString("send_crash_reports.endpoint", "https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277");
+            = config.getString("send_crash_reports.endpoint");
         const std::string & temp_folder_path
             = config.getString("send_crash_reports.tmp_path", default_tmp_path);
         Poco::File(temp_folder_path).createDirectories();
