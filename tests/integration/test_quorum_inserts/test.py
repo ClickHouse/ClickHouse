@@ -284,11 +284,14 @@ def test_insert_quorum_with_ttl(started_cluster):
     zero.query("INSERT INTO test_insert_quorum_with_ttl(a,d) VALUES(1, '2011-01-01')",
                                               settings={'insert_quorum_timeout' : 5000})
 
-
-    assert TSV("1\t2011-01-01\n") == TSV(first.query("SELECT * FROM test_insert_quorum_with_ttl", settings={'select_sequential_consistency' : 0}))
-    assert TSV("1\t2011-01-01\n") == TSV(first.query("SELECT * FROM test_insert_quorum_with_ttl", settings={'select_sequential_consistency' : 1}))
-
     print("Inserts should resume.")
     zero.query("INSERT INTO test_insert_quorum_with_ttl(a, d) VALUES(2, '2012-02-02')")
+
+    first.query("OPTIMIZE TABLE test_insert_quorum_with_ttl")
+    first.query("SYSTEM SYNC REPLICA test_insert_quorum_with_ttl")
+    zero.query("SYSTEM SYNC REPLICA test_insert_quorum_with_ttl")
+
+    assert TSV("2\t2012-02-02\n") == TSV(first.query("SELECT * FROM test_insert_quorum_with_ttl", settings={'select_sequential_consistency' : 0}))
+    assert TSV("2\t2012-02-02\n") == TSV(first.query("SELECT * FROM test_insert_quorum_with_ttl", settings={'select_sequential_consistency' : 1}))
 
     execute_on_all_cluster("DROP TABLE IF EXISTS test_insert_quorum_with_ttl")
