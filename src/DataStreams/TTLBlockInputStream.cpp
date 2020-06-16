@@ -70,21 +70,22 @@ TTLBlockInputStream::TTLBlockInputStream(
         defaults_expression = ExpressionAnalyzer{default_expr_list, syntax_result, storage.global_context}.getActions(true);
     }
 
-    if (storage.hasRowsTTL() && storage.getRowsTTL().mode == TTLMode::GROUP_BY)
+    auto storage_rows_ttl = storage.getRowsTTL();
+    if (storage.hasRowsTTL() && storage_rows_ttl.mode == TTLMode::GROUP_BY)
     {
-        current_key_value.resize(storage.getRowsTTL().group_by_keys.size());
+        current_key_value.resize(storage_rows_ttl.group_by_keys.size());
 
         ColumnNumbers keys;
-        for (const auto & key : storage.getRowsTTL().group_by_keys)
+        for (const auto & key : storage_rows_ttl.group_by_keys)
             keys.push_back(header.getPositionByName(key));
-        agg_key_columns.resize(storage.getRowsTTL().group_by_keys.size());
+        agg_key_columns.resize(storage_rows_ttl.group_by_keys.size());
 
-        AggregateDescriptions aggregates = storage.getRowsTTL().aggregate_descriptions;
+        AggregateDescriptions aggregates = storage_rows_ttl.aggregate_descriptions;
         for (auto & descr : aggregates)
             if (descr.arguments.empty())
                 for (const auto & name : descr.argument_names)
                     descr.arguments.push_back(header.getPositionByName(name));
-        agg_aggregate_columns.resize(storage.getRowsTTL().aggregate_descriptions.size());
+        agg_aggregate_columns.resize(storage_rows_ttl.aggregate_descriptions.size());
 
         const Settings & settings = storage.global_context.getSettingsRef();
 
@@ -105,8 +106,9 @@ bool TTLBlockInputStream::isTTLExpired(time_t ttl) const
 Block TTLBlockInputStream::readImpl()
 {
     /// Skip all data if table ttl is expired for part
-    if (storage.hasRowsTTL() && !storage.getRowsTTL().where_expression &&
-        storage.getRowsTTL().mode != TTLMode::GROUP_BY && isTTLExpired(old_ttl_infos.table_ttl.max))
+    auto storage_rows_ttl = storage.getRowsTTL();
+    if (storage.hasRowsTTL() && !storage_rows_ttl.where_expression &&
+        storage_rows_ttl.mode != TTLMode::GROUP_BY && isTTLExpired(old_ttl_infos.table_ttl.max))
     {
         rows_removed = data_part->rows_count;
         return {};
@@ -151,7 +153,7 @@ void TTLBlockInputStream::readSuffixImpl()
 
 void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
 {
-    const auto & rows_ttl = storage.getRowsTTL();
+    auto rows_ttl = storage.getRowsTTL();
 
     rows_ttl.expression->execute(block);
     if (rows_ttl.where_expression)
@@ -160,8 +162,8 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
     const IColumn * ttl_column =
         block.getByName(rows_ttl.result_column).column.get();
 
-    const IColumn * where_result_column = storage.getRowsTTL().where_expression ?
-        block.getByName(storage.getRowsTTL().where_result_column).column.get() : nullptr;
+    const IColumn * where_result_column = rows_ttl.where_expression ?
+        block.getByName(rows_ttl.where_result_column).column.get() : nullptr;
 
     const auto & column_names = header.getNames();
 
@@ -199,6 +201,7 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
         size_t rows_aggregated = 0;
         size_t current_key_start = 0;
         size_t rows_with_current_key = 0;
+        auto storage_rows_ttl = storage.getRowsTTL();
         for (size_t i = 0; i < block.rows(); ++i)
         {
             UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
@@ -206,9 +209,9 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
             bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
 
             bool same_as_current = true;
-            for (size_t j = 0; j < storage.getRowsTTL().group_by_keys.size(); ++j)
+            for (size_t j = 0; j < storage_rows_ttl.group_by_keys.size(); ++j)
             {
-                const String & key_column = storage.getRowsTTL().group_by_keys[j];
+                const String & key_column = storage_rows_ttl.group_by_keys[j];
                 const IColumn * values_column = block.getByName(key_column).column.get();
                 if (!same_as_current || (*values_column)[i] != current_key_value[j])
                 {
@@ -275,17 +278,18 @@ void TTLBlockInputStream::finalizeAggregates(MutableColumns & result_columns)
     if (!agg_result.empty())
     {
         auto aggregated_res = aggregator->convertToBlocks(agg_result, true, 1);
+        auto storage_rows_ttl = storage.getRowsTTL();
         for (auto & agg_block : aggregated_res)
         {
-            for (const auto & it : storage.getRowsTTL().set_parts)
+            for (const auto & it : storage_rows_ttl.set_parts)
                 it.expression->execute(agg_block);
-            for (const auto & name : storage.getRowsTTL().group_by_keys)
+            for (const auto & name : storage_rows_ttl.group_by_keys)
             {
                 const IColumn * values_column = agg_block.getByName(name).column.get();
                 auto & result_column = result_columns[header.getPositionByName(name)];
                 result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
             }
-            for (const auto & it : storage.getRowsTTL().set_parts)
+            for (const auto & it : storage_rows_ttl.set_parts)
             {
                 const IColumn * values_column = agg_block.getByName(it.expression_result_column_name).column.get();
                 auto & result_column = result_columns[header.getPositionByName(it.column_name)];

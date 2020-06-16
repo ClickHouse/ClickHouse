@@ -26,9 +26,11 @@ SRCS(
     ASTFunctionWithKeyValueArguments.cpp
     ASTGrantQuery.cpp
     ASTIdentifier.cpp
+    ASTIndexDeclaration.cpp
     ASTInsertQuery.cpp
     ASTKillQueryQuery.cpp
     ASTLiteral.cpp
+    ASTNameTypePair.cpp
     ASTOptimizeQuery.cpp
     ASTOrderByElement.cpp
     ASTPartition.cpp

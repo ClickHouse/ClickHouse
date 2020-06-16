@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-20 15:32+0300\n"
+"POT-Creation-Date: 2020-06-15 22:29+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -32,27 +32,27 @@ msgstr ""
 msgid "ClickHouse DBMS"
 msgstr ""
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "open-source"
 msgstr ""
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "relational"
 msgstr ""
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "analytics"
 msgstr ""
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "analytical"
 msgstr ""
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "Big Data"
 msgstr ""
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "web-analytics"
 msgstr ""
 
@@ -68,6 +68,14 @@ msgstr ""
 
 #: templates/footer.html:11
 msgid "Yandex LLC"
+msgstr ""
+
+#: templates/blog/content.html:16
+msgid "Published date"
+msgstr ""
+
+#: templates/blog/nav.html:18
+msgid "Documentation"
 msgstr ""
 
 #: templates/docs/footer.html:3
