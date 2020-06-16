@@ -414,7 +414,8 @@ void checkAST(const ASTCreateQuery & query)
     if (query.dictionary->layout == nullptr)
         throw Exception("Cannot create dictionary with empty layout", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
-    const auto is_direct_layout = !strcasecmp(query.dictionary->layout->layout_type.data(), "direct");
+    const auto is_direct_layout = !strcasecmp(query.dictionary->layout->layout_type.data(), "direct") ||
+                                !strcasecmp(query.dictionary->layout->layout_type.data(), "complex_key_direct");
     if (query.dictionary->lifetime == nullptr && !is_direct_layout)
         throw Exception("Cannot create dictionary with empty lifetime", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 

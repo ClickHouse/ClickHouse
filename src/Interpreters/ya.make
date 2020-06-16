@@ -19,6 +19,8 @@ SRCS(
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
     Aggregator.cpp
+    ArithmeticOperationsInAgrFuncOptimize.cpp
+    ArithmeticOperationsInAgrFuncOptimize.h
     ArrayJoinAction.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp
@@ -83,12 +85,12 @@ SRCS(
     InterpreterSelectWithUnionQuery.cpp
     InterpreterSetQuery.cpp
     InterpreterSetRoleQuery.cpp
+    InterpreterShowAccessEntitiesQuery.cpp
     InterpreterShowCreateAccessEntityQuery.cpp
     InterpreterShowCreateQuery.cpp
     InterpreterShowGrantsQuery.cpp
+    InterpreterShowPrivilegesQuery.cpp
     InterpreterShowProcesslistQuery.cpp
-    InterpreterShowQuotasQuery.cpp
-    InterpreterShowRowPoliciesQuery.cpp
     InterpreterShowTablesQuery.cpp
     InterpreterSystemQuery.cpp
     InterpreterUseQuery.cpp
@@ -103,6 +105,7 @@ SRCS(
     MarkTableIdentifiersVisitor.cpp
     MergeJoin.cpp
     MetricLog.cpp
+    AsynchronousMetricLog.cpp
     MutationsInterpreter.cpp
     NullableUtils.cpp
     OptimizeIfChains.cpp

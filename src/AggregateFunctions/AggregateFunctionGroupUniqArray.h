@@ -28,12 +28,7 @@ template <typename T>
 struct AggregateFunctionGroupUniqArrayData
 {
     /// When creating, the hash table must be small.
-    using Set = HashSet<
-        T,
-        DefaultHash<T>,
-        HashTableGrower<4>,
-        HashTableAllocatorWithStackMemory<sizeof(T) * (1 << 4)>
-    >;
+    using Set = HashSetWithStackMemory<T, DefaultHash<T>, 4>;
 
     Set value;
 };
@@ -102,7 +97,7 @@ public:
         this->data(place).value.read(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
@@ -126,9 +121,10 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionGroupUniqArrayGenericData
 {
-    static constexpr size_t INIT_ELEMS = 2; /// adjustable
-    static constexpr size_t ELEM_SIZE = sizeof(HashSetCellWithSavedHash<StringRef, StringRefHash>);
-    using Set = HashSetWithSavedHash<StringRef, StringRefHash, HashTableGrower<INIT_ELEMS>, HashTableAllocatorWithStackMemory<INIT_ELEMS * ELEM_SIZE>>;
+    static constexpr size_t INITIAL_SIZE_DEGREE = 3; /// adjustable
+
+    using Set = HashSetWithSavedHashWithStackMemory<StringRef, StringRefHash,
+        INITIAL_SIZE_DEGREE>;
 
     Set value;
 };
@@ -241,7 +237,7 @@ public:
         }
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();

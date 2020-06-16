@@ -5,6 +5,7 @@ set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     IdentifierQuoteHandler.cpp
     MainHandler.cpp
     ODBCBlockInputStream.cpp
+    ODBCBlockOutputStream.cpp
     ODBCBridge.cpp
     PingHandler.cpp
     validateODBCConnectionString.cpp

@@ -1249,7 +1249,7 @@ quantileTiming(level)(expr)
 Тип: `Float32`.
 
 !!! note "Примечания"
-    Если в функцию `quantileTimingIf` не передать значений, то вернётся [NaN](../../sql-reference/aggregate-functions/reference.md#data_type-float-nan-inf). Это необходимо для отделения подобных случаев от случаев, когда результат 0. Подробности про сортировку `NaN` cмотрите в разделе [Секция ORDER BY](../../sql-reference/statements/select.md#select-order-by).
+    Если в функцию `quantileTimingIf` не передать значений, то вернётся [NaN](../../sql-reference/aggregate-functions/reference.md#data_type-float-nan-inf). Это необходимо для отделения подобных случаев от случаев, когда результат 0. Подробности про сортировку `NaN` cмотрите в разделе [Секция ORDER BY](../../sql-reference/statements/select/order-by.md#select-order-by).
 
 **Пример**
 
@@ -1334,7 +1334,7 @@ quantileTimingWeighted(level)(expr, weight)
 Тип: `Float32`.
 
 !!! note "Примечания"
-    Если в функцию `quantileTimingIf` не передать значений, то вернётся [NaN](../../sql-reference/aggregate-functions/reference.md#data_type-float-nan-inf). Это необходимо для отделения подобных случаев от случаев, когда результат 0. Подробности про сортировку `NaN` cмотрите в разделе [Секция ORDER BY](../../sql-reference/statements/select.md#select-order-by).
+    Если в функцию `quantileTimingIf` не передать значений, то вернётся [NaN](../../sql-reference/aggregate-functions/reference.md#data_type-float-nan-inf). Это необходимо для отделения подобных случаев от случаев, когда результат 0. Подробности про сортировку `NaN` cмотрите в разделе [Секция ORDER BY](../../sql-reference/statements/select/order-by.md#select-order-by).
 
 **Пример**
 

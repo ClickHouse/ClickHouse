@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 57
 toc_title: "D'Ordre Sup\xE9rieur"
 ---
 
-# Fonctions d’ordre supérieur {#higher-order-functions}
+# Fonctions d'ordre supérieur {#higher-order-functions}
 
 ## `->` opérateur, fonction lambda (params, expr) {#operator-lambdaparams-expr-function}
 
@@ -13,9 +13,9 @@ Allows describing a lambda function for passing to a higher-order function. The 
 
 Exemple: `x -> 2 * x, str -> str != Referer.`
 
-Les fonctions d’ordre supérieur ne peuvent accepter que les fonctions lambda comme argument fonctionnel.
+Les fonctions d'ordre supérieur ne peuvent accepter que les fonctions lambda comme argument fonctionnel.
 
-Une fonction lambda qui accepte plusieurs arguments peuvent être passés à une fonction d’ordre supérieur. Dans ce cas, la fonction d’ordre supérieur est passé plusieurs tableaux de longueur identique que ces arguments correspondent.
+Une fonction lambda qui accepte plusieurs arguments peuvent être passés à une fonction d'ordre supérieur. Dans ce cas, la fonction d'ordre supérieur est passé plusieurs tableaux de longueur identique que ces arguments correspondent.
 
 Pour certaines fonctions, telles que [arrayCount](#higher_order_functions-array-count) ou [arraySum](#higher_order_functions-array-count) le premier argument (la fonction lambda) peut être omis. Dans ce cas, un mappage identique est supposé.
 
@@ -32,7 +32,7 @@ Une fonction lambda ne peut pas être omise pour les fonctions suivantes:
 
 ### arrayMap(func, arr1, …) {#higher_order_functions-array-map}
 
-Renvoie un tableau obtenu à partir de l’application d’origine `func` fonction à chaque élément dans le `arr` tableau.
+Renvoie un tableau obtenu à partir de l'application d'origine `func` fonction à chaque élément dans le `arr` tableau.
 
 Exemple:
 
@@ -46,7 +46,7 @@ SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
 └─────────┘
 ```
 
-L’exemple suivant montre comment créer un n-uplet d’éléments de différents tableaux:
+L'exemple suivant montre comment créer un n-uplet d'éléments de différents tableaux:
 
 ``` sql
 SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
@@ -131,7 +131,7 @@ Notez que le premier argument (fonction lambda) ne peut pas être omis dans le `
 
 ### arraySplit(func, arr1, …) {#higher_order_functions-array-split}
 
-Split `arr1` en plusieurs tableaux. Lorsque `func` retourne autre chose que 0, la matrice sera de split sur le côté gauche de l’élément. Le tableau ne sera pas partagé avant le premier élément.
+Split `arr1` en plusieurs tableaux. Lorsque `func` retourne autre chose que 0, la matrice sera de split sur le côté gauche de l'élément. Le tableau ne sera pas partagé avant le premier élément.
 
 Exemple:
 
@@ -149,7 +149,7 @@ Notez que le premier argument (fonction lambda) ne peut pas être omis dans le `
 
 ### arrayReverseSplit(func, arr1, …) {#higher_order_functions-array-reverse-split}
 
-Split `arr1` en plusieurs tableaux. Lorsque `func` retourne autre chose que 0, la matrice sera de split sur le côté droit de l’élément. Le tableau ne sera pas divisé après le dernier élément.
+Split `arr1` en plusieurs tableaux. Lorsque `func` retourne autre chose que 0, la matrice sera de split sur le côté droit de l'élément. Le tableau ne sera pas divisé après le dernier élément.
 
 Exemple:
 
@@ -167,11 +167,11 @@ Notez que le premier argument (fonction lambda) ne peut pas être omis dans le `
 
 ### arrayCount(\[func,\] arr1, …) {#higher_order_functions-array-count}
 
-Renvoie le nombre d’éléments dans l’arr tableau pour lequel func renvoie autre chose que 0. Si ‘func’ n’est pas spécifié, il renvoie le nombre d’éléments non nuls dans le tableau.
+Renvoie le nombre d'éléments dans l'arr tableau pour lequel func renvoie autre chose que 0. Si ‘func’ n'est pas spécifié, il renvoie le nombre d'éléments non nuls dans le tableau.
 
 ### arrayExists(\[func,\] arr1, …) {#arrayexistsfunc-arr1}
 
-Renvoie 1 s’il existe au moins un élément ‘arr’ pour ce qui ‘func’ retourne autre chose que 0. Sinon, il renvoie 0.
+Renvoie 1 s'il existe au moins un élément ‘arr’ pour ce qui ‘func’ retourne autre chose que 0. Sinon, il renvoie 0.
 
 ### arrayAll(\[func,\] arr1, …) {#arrayallfunc-arr1}
 
@@ -189,13 +189,13 @@ Notez que le premier argument (fonction lambda) ne peut pas être omis dans le `
 
 ### arrayFirstIndex(func, arr1, …) {#higher_order_functions-array-first-index}
 
-Renvoie l’index du premier élément de la ‘arr1’ tableau pour lequel ‘func’ retourne autre chose que 0.
+Renvoie l'index du premier élément de la ‘arr1’ tableau pour lequel ‘func’ retourne autre chose que 0.
 
 Notez que le premier argument (fonction lambda) ne peut pas être omis dans le `arrayFirstIndex` fonction.
 
 ### arrayCumSum(\[func,\] arr1, …) {#arraycumsumfunc-arr1}
 
-Retourne un tableau des sommes partielles d’éléments dans le tableau source (une somme). Si l’ `func` la fonction est spécifiée, les valeurs des éléments du tableau sont convertis par cette fonction avant l’addition.
+Retourne un tableau des sommes partielles d'éléments dans le tableau source (une somme). Si l' `func` la fonction est spécifiée, les valeurs des éléments du tableau sont convertis par cette fonction avant l'addition.
 
 Exemple:
 
@@ -211,7 +211,7 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 
 ### arrayCumSumNonNegative (arr) {#arraycumsumnonnegativearr}
 
-Même que `arrayCumSum`, renvoie un tableau des sommes partielles d’éléments dans le tableau source (une somme). Différent `arrayCumSum`, lorsque la valeur renvoyée contient une valeur inférieure à zéro, la valeur est remplacée par zéro et le calcul ultérieur est effectué avec des paramètres zéro. Exemple:
+Même que `arrayCumSum`, renvoie un tableau des sommes partielles d'éléments dans le tableau source (une somme). Différent `arrayCumSum`, lorsque la valeur renvoyée contient une valeur inférieure à zéro, la valeur est remplacée par zéro et le calcul ultérieur est effectué avec des paramètres zéro. Exemple:
 
 ``` sql
 SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
@@ -225,9 +225,9 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 
 ### arraySort(\[func,\] arr1, …) {#arraysortfunc-arr1}
 
-Renvoie un tableau à la suite du tri des éléments de `arr1` dans l’ordre croissant. Si l’ `func` la fonction est spécifiée, l’ordre de classement est déterminé par le résultat de la fonction `func` appliquée aux éléments du tableau (tableaux)
+Renvoie un tableau à la suite du tri des éléments de `arr1` dans l'ordre croissant. Si l' `func` la fonction est spécifiée, l'ordre de classement est déterminé par le résultat de la fonction `func` appliquée aux éléments du tableau (tableaux)
 
-Le [Transformation schwartzienne](https://en.wikipedia.org/wiki/Schwartzian_transform) est utilisé pour améliorer l’efficacité du tri.
+Le [Transformation schwartzienne](https://en.wikipedia.org/wiki/Schwartzian_transform) est utilisé pour améliorer l'efficacité du tri.
 
 Exemple:
 
@@ -241,11 +241,11 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 └────────────────────┘
 ```
 
-Pour plus d’informations sur la `arraySort` la méthode, voir l’ [Fonctions pour travailler avec des tableaux](array-functions.md#array_functions-sort) section.
+Pour plus d'informations sur la `arraySort` la méthode, voir l' [Fonctions pour travailler avec des tableaux](array-functions.md#array_functions-sort) section.
 
 ### arrayReverseSort(\[func,\] arr1, …) {#arrayreversesortfunc-arr1}
 
-Renvoie un tableau à la suite du tri des éléments de `arr1` dans l’ordre décroissant. Si l’ `func` la fonction est spécifiée, l’ordre de classement est déterminé par le résultat de la fonction `func` appliquée aux éléments du tableau (tableaux).
+Renvoie un tableau à la suite du tri des éléments de `arr1` dans l'ordre décroissant. Si l' `func` la fonction est spécifiée, l'ordre de classement est déterminé par le résultat de la fonction `func` appliquée aux éléments du tableau (tableaux).
 
 Exemple:
 
@@ -259,6 +259,6 @@ SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 └───────────────────┘
 ```
 
-Pour plus d’informations sur la `arrayReverseSort` la méthode, voir l’ [Fonctions pour travailler avec des tableaux](array-functions.md#array_functions-reverse-sort) section.
+Pour plus d'informations sur la `arrayReverseSort` la méthode, voir l' [Fonctions pour travailler avec des tableaux](array-functions.md#array_functions-reverse-sort) section.
 
 [Article Original](https://clickhouse.tech/docs/en/query_language/functions/higher_order_functions/) <!--hide-->

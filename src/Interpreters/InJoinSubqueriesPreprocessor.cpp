@@ -27,7 +27,7 @@ namespace
 StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
 {
     auto table_id = context.resolveStorageID(database_and_table);
-    return DatabaseCatalog::instance().tryGetTable(table_id);
+    return DatabaseCatalog::instance().tryGetTable(table_id, context);
 }
 
 using CheckShardsAndTables = InJoinSubqueriesPreprocessor::CheckShardsAndTables;

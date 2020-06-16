@@ -69,7 +69,7 @@ private:
 
     Chunks chunks;
 
-    Logger * log = &Logger::get("MergeTreeReverseSelectProcessor");
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeReverseSelectProcessor");
 };
 
 }

@@ -2,11 +2,18 @@
 
 #include <Access/IAccessEntity.h>
 #include <Access/ExtendedRoleSet.h>
+#include <boost/lexical_cast.hpp>
 #include <chrono>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 /** Quota for resources consumption for specific interval.
   * Used to limit resource usage by user.
   * Quota is applied "softly" - could be slightly exceed, because it is checked usually only on each block of processed data.
@@ -17,6 +24,8 @@ namespace DB
   */
 struct Quota : public IAccessEntity
 {
+    using ResourceAmount = UInt64;
+
     enum ResourceType
     {
         QUERIES,        /// Number of queries.
@@ -26,22 +35,32 @@ struct Quota : public IAccessEntity
         READ_ROWS,      /// Number of rows read from tables.
         READ_BYTES,     /// Number of bytes read from tables.
         EXECUTION_TIME, /// Total amount of query execution time in nanoseconds.
-    };
-    static constexpr size_t MAX_RESOURCE_TYPE = 7;
 
-    using ResourceAmount = UInt64;
-    static constexpr ResourceAmount UNLIMITED = 0; /// 0 means unlimited.
+        MAX_RESOURCE_TYPE
+    };
+
+    struct ResourceTypeInfo
+    {
+        const char * const raw_name;
+        const String name;    /// Lowercased with underscores, e.g. "result_rows".
+        const String keyword; /// Uppercased with spaces, e.g. "RESULT ROWS".
+        const bool output_as_float = false;
+        const UInt64 output_denominator = 1;
+        String amountToString(ResourceAmount amount) const;
+        ResourceAmount amountFromString(const String & str) const;
+        String outputWithAmount(ResourceAmount amount) const;
+        static const ResourceTypeInfo & get(ResourceType type);
+    };
 
     /// Amount of resources available to consume for each duration.
     struct Limits
     {
-        ResourceAmount max[MAX_RESOURCE_TYPE];
+        std::optional<ResourceAmount> max[MAX_RESOURCE_TYPE];
         std::chrono::seconds duration = std::chrono::seconds::zero();
 
         /// Intervals can be randomized (to avoid DoS if intervals for many users end at one time).
         bool randomize_interval = false;
 
-        Limits();
         friend bool operator ==(const Limits & lhs, const Limits & rhs);
         friend bool operator !=(const Limits & lhs, const Limits & rhs) { return !(lhs == rhs); }
     };
@@ -58,8 +77,17 @@ struct Quota : public IAccessEntity
         CLIENT_KEY, /// Client should explicitly supply a key to use.
         CLIENT_KEY_OR_USER_NAME,  /// Same as CLIENT_KEY, but use USER_NAME if the client doesn't supply a key.
         CLIENT_KEY_OR_IP_ADDRESS, /// Same as CLIENT_KEY, but use IP_ADDRESS if the client doesn't supply a key.
+
+        MAX
     };
-    static constexpr size_t MAX_KEY_TYPE = 6;
+
+    struct KeyTypeInfo
+    {
+        const char * const raw_name;
+        const String name; /// Lowercased with spaces, e.g. "client key".
+        static const KeyTypeInfo & get(KeyType type);
+    };
+
     KeyType key_type = KeyType::NONE;
 
     /// Which roles or users should use this quota.
@@ -67,73 +95,146 @@ struct Quota : public IAccessEntity
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<Quota>(); }
-
-    static const char * getNameOfResourceType(ResourceType resource_type);
-    static const char * resourceTypeToKeyword(ResourceType resource_type);
-    static const char * resourceTypeToColumnName(ResourceType resource_type);
-    static const char * getNameOfKeyType(KeyType key_type);
-    static double executionTimeToSeconds(ResourceAmount ns);
-    static ResourceAmount secondsToExecutionTime(double s);
+    static constexpr const Type TYPE = Type::QUOTA;
+    Type getType() const override { return TYPE; }
 };
 
 
-inline const char * Quota::getNameOfResourceType(ResourceType resource_type)
+inline String Quota::ResourceTypeInfo::amountToString(ResourceAmount amount) const
 {
-    switch (resource_type)
+    if (!(amount % output_denominator))
+        return std::to_string(amount / output_denominator);
+    else
+        return boost::lexical_cast<std::string>(static_cast<double>(amount) / output_denominator);
+}
+
+inline Quota::ResourceAmount Quota::ResourceTypeInfo::amountFromString(const String & str) const
+{
+    if (output_denominator == 1)
+        return static_cast<ResourceAmount>(std::strtoul(str.c_str(), nullptr, 10));
+    else
+        return static_cast<ResourceAmount>(std::strtod(str.c_str(), nullptr) * output_denominator);
+}
+
+inline String Quota::ResourceTypeInfo::outputWithAmount(ResourceAmount amount) const
+{
+    String res = name;
+    res += " = ";
+    res += amountToString(amount);
+    return res;
+}
+
+inline String toString(Quota::ResourceType type)
+{
+    return Quota::ResourceTypeInfo::get(type).raw_name;
+}
+
+inline const Quota::ResourceTypeInfo & Quota::ResourceTypeInfo::get(ResourceType type)
+{
+    static constexpr auto make_info = [](const char * raw_name_, UInt64 output_denominator_)
     {
-        case Quota::QUERIES: return "queries";
-        case Quota::ERRORS: return "errors";
-        case Quota::RESULT_ROWS: return "result rows";
-        case Quota::RESULT_BYTES: return "result bytes";
-        case Quota::READ_ROWS: return "read rows";
-        case Quota::READ_BYTES: return "read bytes";
-        case Quota::EXECUTION_TIME: return "execution time";
-    }
-    __builtin_unreachable();
-}
+        String init_name = raw_name_;
+        boost::to_lower(init_name);
+        String init_keyword = raw_name_;
+        boost::replace_all(init_keyword, "_", " ");
+        bool init_output_as_float = (output_denominator_ != 1);
+        return ResourceTypeInfo{raw_name_, std::move(init_name), std::move(init_keyword), init_output_as_float, output_denominator_};
+    };
 
-
-inline const char * Quota::resourceTypeToKeyword(ResourceType resource_type)
-{
-    switch (resource_type)
+    switch (type)
     {
-        case Quota::QUERIES: return "QUERIES";
-        case Quota::ERRORS: return "ERRORS";
-        case Quota::RESULT_ROWS: return "RESULT ROWS";
-        case Quota::RESULT_BYTES: return "RESULT BYTES";
-        case Quota::READ_ROWS: return "READ ROWS";
-        case Quota::READ_BYTES: return "READ BYTES";
-        case Quota::EXECUTION_TIME: return "EXECUTION TIME";
+        case Quota::QUERIES:
+        {
+            static const auto info = make_info("QUERIES", 1);
+            return info;
+        }
+        case Quota::ERRORS:
+        {
+            static const auto info = make_info("ERRORS", 1);
+            return info;
+        }
+        case Quota::RESULT_ROWS:
+        {
+            static const auto info = make_info("RESULT_ROWS", 1);
+            return info;
+        }
+        case Quota::RESULT_BYTES:
+        {
+            static const auto info = make_info("RESULT_BYTES", 1);
+            return info;
+        }
+        case Quota::READ_ROWS:
+        {
+            static const auto info = make_info("READ_ROWS", 1);
+            return info;
+        }
+        case Quota::READ_BYTES:
+        {
+            static const auto info = make_info("READ_BYTES", 1);
+            return info;
+        }
+        case Quota::EXECUTION_TIME:
+        {
+            static const auto info = make_info("EXECUTION_TIME", 1000000000 /* execution_time is stored in nanoseconds */);
+            return info;
+        }
+        case Quota::MAX_RESOURCE_TYPE: break;
     }
-    __builtin_unreachable();
+    throw Exception("Unexpected resource type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
 }
 
 
-inline const char * Quota::getNameOfKeyType(KeyType key_type)
+inline String toString(Quota::KeyType type)
 {
-    switch (key_type)
+    return Quota::KeyTypeInfo::get(type).raw_name;
+}
+
+inline const Quota::KeyTypeInfo & Quota::KeyTypeInfo::get(KeyType type)
+{
+    static constexpr auto make_info = [](const char * raw_name_)
     {
-        case KeyType::NONE: return "none";
-        case KeyType::USER_NAME: return "user name";
-        case KeyType::IP_ADDRESS: return "ip address";
-        case KeyType::CLIENT_KEY: return "client key";
-        case KeyType::CLIENT_KEY_OR_USER_NAME: return "client key or user name";
-        case KeyType::CLIENT_KEY_OR_IP_ADDRESS: return "client key or ip address";
+        String init_name = raw_name_;
+        boost::to_lower(init_name);
+        boost::replace_all(init_name, "_", " ");
+        return KeyTypeInfo{raw_name_, std::move(init_name)};
+    };
+
+    switch (type)
+    {
+        case KeyType::NONE:
+        {
+            static const auto info = make_info("NONE");
+            return info;
+        }
+        case KeyType::USER_NAME:
+        {
+            static const auto info = make_info("USER_NAME");
+            return info;
+        }
+        case KeyType::IP_ADDRESS:
+        {
+            static const auto info = make_info("IP_ADDRESS");
+            return info;
+        }
+        case KeyType::CLIENT_KEY:
+        {
+            static const auto info = make_info("CLIENT_KEY");
+            return info;
+        }
+        case KeyType::CLIENT_KEY_OR_USER_NAME:
+        {
+            static const auto info = make_info("CLIENT_KEY_OR_USER_NAME");
+            return info;
+        }
+        case KeyType::CLIENT_KEY_OR_IP_ADDRESS:
+        {
+            static const auto info = make_info("CLIENT_KEY_OR_IP_ADDRESS");
+            return info;
+        }
+        case KeyType::MAX: break;
     }
-    __builtin_unreachable();
+    throw Exception("Unexpected quota key type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
 }
-
-
-inline double Quota::executionTimeToSeconds(ResourceAmount ns)
-{
-    return std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::nanoseconds{ns}).count();
-}
-
-inline Quota::ResourceAmount Quota::secondsToExecutionTime(double s)
-{
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(s)).count();
-}
-
 
 using QuotaPtr = std::shared_ptr<const Quota>;
 }

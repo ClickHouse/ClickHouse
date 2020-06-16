@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: HDFS
 ---
@@ -50,7 +50,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-## Detalles De implementación {#implementation-details}
+## Detalles de implementación {#implementation-details}
 
 -   Las lecturas y escrituras pueden ser paralelas
 -   No soportado:

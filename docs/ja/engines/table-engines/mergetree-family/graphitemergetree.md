@@ -1,18 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
-toc_title: "\u30B0\u30E9\u30D5\u30A3\u30C3\u30C8\u30E1\u30FC\u30EB\u30B0\u30C4\u30EA\
-  \u30FC"
+toc_title: GraphiteMergeTree
 ---
 
-# グラフィットメールグツリー {#graphitemergetree}
+# GraphiteMergeTree {#graphitemergetree}
 
-このエン) [黒鉛](http://graphite.readthedocs.io/en/latest/index.html) データ。 GraphiteのデータストアとしてClickHouseを使用したい開発者にとっては役に立つかもしれません。
+このエンジ) [黒鉛](http://graphite.readthedocs.io/en/latest/index.html) データ これは、GraphiteのデータストアとしてClickHouseを使用したい開発者にとって役立つかもしれません。
 
-ロールアップが必要ない場合は、任意のclickhouseテーブルエンジンを使用してグラファイトデータを保存できますが、ロールアップが必要な場合は使用します `GraphiteMergeTree`. エンジンはストレージの量を減らし、Graphiteからのクエリの効率を高めます。
+を利用できますClickHouseテーブルエンジンの黒鉛のデータが必要ない場rollupが必要な場合は、rollupを使用 `GraphiteMergeTree`. エンジンは貯蔵量を減らし、グラファイトからの照会の効率を高めます。
 
-エンジンを継承性から [MergeTree](mergetree.md).
+エンジンはプロパティを [メルゲツリー](mergetree.md).
 
 ## テーブルの作成 {#creating-table}
 
@@ -33,17 +32,17 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 の詳細な説明を参照してください [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) クエリ。
 
-グラファイトデータのテーブルには、次のデータの列が必要です:
+グラファイトデータのテーブルには、次のデータの次の列が必要です:
 
--   メトリック名（黒鉛センサ）。 データ型: `String`.
+-   ミリ規格名（グラファイトセンサ） データ型: `String`.
 
 -   メトリックを測定する時間。 データ型: `DateTime`.
 
 -   メトリックの値。 データ型:任意の数値。
 
--   メトリックのバージョン。 データ型:任意の数値。
+-   指標のバージョン。 データ型:任意の数値。
 
-    ClickHouseは、バージョンが同じであれば、最高のバージョンまたは最後に書かれた行を保存します。 その他の行は、データパーツのマージ中に削除されます。
+    ClickHouseは、バージョンが同じ場合は、最も高いバージョンまたは最後に書かれた行を保存します。 他の行は、データパーツのマージ中に削除されます。
 
 これらの列の名前は、ロールアップ構成で設定する必要があります。
 
@@ -53,11 +52,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **クエリ句**
 
-作成するとき `GraphiteMergeTree` テーブル、同じ [句](mergetree.md#table_engine-mergetree-creating-a-table) 作成するときと同じように、必須です。 `MergeTree` テーブル。
+を作成するとき `GraphiteMergeTree` テーブル、同じ [句](mergetree.md#table_engine-mergetree-creating-a-table) を作成するときのように必要です。 `MergeTree` テーブル。
 
 <details markdown="1">
 
-<summary>テーブルを作成する非推奨の方法</summary>
+<summary>推奨されていません法テーブルを作成する</summary>
 
 !!! attention "注意"
     可能であれば、古いプロジェクトを上記の方法に切り替えてください。
@@ -74,7 +73,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE [=] GraphiteMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, config_section)
 ```
 
-すべてのパラメーターを除く `config_section` と同じ意味を持つ `MergeTree`.
+以下を除くすべてのパラメータ `config_section` と同じ意味を持つ `MergeTree`.
 
 -   `config_section` — Name of the section in the configuration file, where are the rules of rollup set.
 
@@ -82,7 +81,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## ロールアップ構成 {#rollup-configuration}
 
-ロールアップの設定は、次のように定義されます。 [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) サーバー構成のパラメーター。 パラメータの名前は任意です。 複数の構成を作成し、それらを異なるテーブルに使用できます。
+ロールアップの設定は、 [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) サーバー構成のパラメータ。 パラメーターの名前は任意です。 複数の構成を作成し、異なるテーブルに使用できます。
 
 ロールアップ構成構造:
 
@@ -122,22 +121,22 @@ default
 ```
 
 !!! warning "注意"
-    パタ:
+    パターンは厳密に注文する必要が:
 
       1. Patterns without `function` or `retention`.
       1. Patterns with both `function` and `retention`.
       1. Pattern `default`.
 
-行を処理するときに、clickhouseは次のルールをチェックします。 `pattern` セクション。 それぞれの `pattern` （を含む `default`)セクションには `function` 集計のパラメータ, `retention` 変数または両方。 このメトリック名が `regexp`、からのルール `pattern` セクション(またはセクション)が適用されます。 `default` セクションを使用します。
+行を処理するとき、ClickHouseは `pattern` セクション それぞれの `pattern` （含む `default`)セクションには `function` 集計のパラメータ, `retention` 変数または両方。 メトリック名が `regexp`、からのルール `pattern` セクション(またはセクション)が適用されます。 `default` セクションを使用します。
 
-フィールドの `pattern` と `default` セクション:
+のフィールド `pattern` と `default` セクション:
 
 -   `regexp`– A pattern for the metric name.
 -   `age` – The minimum age of the data in seconds.
 -   `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).
 -   `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`.
 
-### 構成例 {#configuration-example}
+### 設定例 {#configuration-example}
 
 ``` xml
 <graphite_rollup>

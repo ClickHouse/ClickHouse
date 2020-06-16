@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 66
 toc_title: "\u305D\u306E\u4ED6"
 ---
@@ -9,7 +9,64 @@ toc_title: "\u305D\u306E\u4ED6"
 
 ## ホスト名() {#hostname}
 
-この関数が実行されたホストの名前を持つ文字列を返します。 分散処理の場合、機能がリモートサーバー上で実行される場合、これはリモートサーバーホストの名前です。
+この関数が実行されたホストの名前を持つ文字列を返します。 分散処理の場合、関数がリモートサーバーで実行される場合、これはリモートサーバーホストの名前です。
+
+## getMacro {#getmacro}
+
+から名前付きの値を取得します [マクロ](../../operations/server-configuration-parameters/settings.md#macros) サーバー構成のセクション。
+
+**構文**
+
+``` sql
+getMacro(name);
+```
+
+**パラメータ**
+
+-   `name` — Name to retrieve from the `macros` セクション [文字列](../../sql-reference/data-types/string.md#string).
+
+**戻り値**
+
+-   指定されたマクロの値。
+
+タイプ: [文字列](../../sql-reference/data-types/string.md).
+
+**例**
+
+例 `macros` サーバー設定ファイルのセクション:
+
+``` xml
+<macros>
+    <test>Value</test>
+</macros>
+```
+
+クエリ:
+
+``` sql
+SELECT getMacro('test');
+```
+
+結果:
+
+``` text
+┌─getMacro('test')─┐
+│ Value            │
+└──────────────────┘
+```
+
+同じ値を取得する別の方法:
+
+``` sql
+SELECT * FROM system.macros
+WHERE macro = 'test';
+```
+
+``` text
+┌─macro─┬─substitution─┐
+│ test  │ Value        │
+└───────┴──────────────┘
+```
 
 ## FQDN {#fqdn}
 
@@ -25,11 +82,11 @@ fqdn();
 
 **戻り値**
 
--   完全修飾ドメイン名の文字列。
+-   完全修飾ドメイン名を持つ文字列。
 
 タイプ: `String`.
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -55,7 +112,7 @@ basename( expr )
 
 **パラメータ**
 
--   `expr` — Expression resulting in a [文字列](../../sql-reference/data-types/string.md) タイプ値。 すべての円記号は、結果の値でエスケープする必要があります。
+-   `expr` — Expression resulting in a [文字列](../../sql-reference/data-types/string.md) タイプ値。 結果の値では、すべての円記号をエスケープする必要があります。
 
 **戻り値**
 
@@ -65,9 +122,9 @@ basename( expr )
 
         If the input string contains a path ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
 
--   スラッシュまたはバックスラッシュがない場合は、元の文字列。
+-   スラッシュまたは円記号がない場合の元の文字列。
 
-**例えば**
+**例**
 
 ``` sql
 SELECT 'some/long/path/to/file' AS a, basename(a)
@@ -102,7 +159,7 @@ SELECT 'some-file-name' AS a, basename(a)
 ## visibleWidth(x) {#visiblewidthx}
 
 テキスト形式（タブ区切り）でコンソールに値を出力するときのおおよその幅を計算します。
-この関数は、システムがpretty形式を実装するために使用します。
+この関数は、システムがPretty形式を実装するために使用されます。
 
 `NULL` に対応する文字列として表される。 `NULL` で `Pretty` フォーマット。
 
@@ -116,58 +173,58 @@ SELECT visibleWidth(NULL)
 └────────────────────┘
 ```
 
-## toTypeName(x) {#totypenamex}
+## トータイプ名(x) {#totypenamex}
 
 渡された引数の型名を含む文字列を返します。
 
-もし `NULL` 入力として関数に渡され、その後、それが返されます `Nullable(Nothing)` 内部に対応するタイプ `NULL` ClickHouseでの表現。
+もし `NULL` 関数に入力として渡されると、 `Nullable(Nothing)` 内部に対応する型 `NULL` ClickHouseでの表現。
 
 ## ブロックサイズ() {#function-blocksize}
 
 ブロックのサイズを取得します。
-ClickHouseでは、クエリは常にブロック(列部分のセット)で実行されます。 この関数は、それを呼び出したブロックのサイズを取得することができます。
+ClickHouseでは、クエリは常にブロック(列部分のセット)で実行されます。 この関数では、呼び出したブロックのサイズを取得できます。
 
 ## マテリアライズ(x) {#materializex}
 
-一つの値だけを含む完全な列に定数を変換します。
-ClickHouseでは、完全な列と定数はメモリ内で異なる方法で表されます。 関数は定数引数と通常の引数（異なるコードが実行される）では異なる動作をしますが、結果はほとんど常に同じです。 この関数は、この動作のデバッグ用です。
+定数を一つの値だけを含む完全な列に変換します。
+ClickHouseでは、完全な列と定数はメモリ内で異なって表されます。 関数は、定数引数と通常の引数（異なるコードが実行される）では異なる動作をしますが、結果はほとんど常に同じです。 この機能はデバッグするための
 
 ## ignore(…) {#ignore}
 
-以下を含む任意の引数を受け取る `NULL`. 常に0を返します。
-ただし、引数はまだ評価されます。 これはベンチマークに使用できます。
+受け入れる引数を含む `NULL`. 常に0を返します。
+しかし、引数はまだ評価されています。 これはベンチマークに使用できます。
 
 ## スリープ(秒) {#sleepseconds}
 
-眠る ‘seconds’ 各データブロックの秒。 整数または浮動小数点数を指定できます。
+眠る ‘seconds’ 各データブロックの秒数。 整数または浮動小数点数を指定できます。
 
 ## sleepEachRow(秒) {#sleepeachrowseconds}
 
-眠る ‘seconds’ 各行の秒。 整数または浮動小数点数を指定できます。
+眠る ‘seconds’ 各行の秒数。 整数または浮動小数点数を指定できます。
 
 ## currentDatabase() {#currentdatabase}
 
 現在のデータベースの名前を返します。
-この関数は、データベースを指定する必要があるcreate tableクエリのテーブルエンジンパラメーターで使用できます。
+この関数は、データベースを指定する必要があるCREATE TABLEクエリのテーブルエンジンパラメーターで使用できます。
 
 ## currentUser() {#other-function-currentuser}
 
-現在のユーザーのログインを返します。 ユーザのログインは、そのクエリを開始し、ケースdistibutedクエリで返されます。
+現在のユーザーのログインを返します。 ユーザーのログイン、その開始されたクエリは、distibutedクエリの場合に返されます。
 
 ``` sql
 SELECT currentUser();
 ```
 
-エイリアス: `user()`, `USER()`.
+別名: `user()`, `USER()`.
 
 **戻り値**
 
 -   現在のユーザーのログイン。
--   クエリを開始したユーザーのログイン。
+-   分割されたクエリの場合にクエリを開始したユーザーのログイン。
 
 タイプ: `String`.
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -183,13 +240,82 @@ SELECT currentUser();
 └───────────────┘
 ```
 
+## isConstant {#is-constant}
+
+引数が定数式かどうかを確認します。
+
+A constant expression means an expression whose resulting value is known at the query analysis (i.e. before execution). For example, expressions over [リテラル](../syntax.md#literals) は定数式です。
+
+この機能は開発のアプリケーションのデバッグおよびデモンストレーション
+
+**構文**
+
+``` sql
+isConstant(x)
+```
+
+**パラメータ**
+
+-   `x` — Expression to check.
+
+**戻り値**
+
+-   `1` — `x` 定数です。
+-   `0` — `x` は定数ではありません。
+
+タイプ: [UInt8](../data-types/int-uint.md).
+
+**例**
+
+クエリ:
+
+``` sql
+SELECT isConstant(x + 1) FROM (SELECT 43 AS x)
+```
+
+結果:
+
+``` text
+┌─isConstant(plus(x, 1))─┐
+│                      1 │
+└────────────────────────┘
+```
+
+クエリ:
+
+``` sql
+WITH 3.14 AS pi SELECT isConstant(cos(pi))
+```
+
+結果:
+
+``` text
+┌─isConstant(cos(pi))─┐
+│                   1 │
+└─────────────────────┘
+```
+
+クエリ:
+
+``` sql
+SELECT isConstant(number) FROM numbers(1)
+```
+
+結果:
+
+``` text
+┌─isConstant(number)─┐
+│                  0 │
+└────────────────────┘
+```
+
 ## isFinite(x) {#isfinitex}
 
-引数が無限でなくnanでない場合はfloat32とfloat64を受け取り、uint8を1に返します（それ以外の場合は0）。
+Float32とFloat64を受け入れ、引数が無限でなくNaNでない場合はUInt8を1、それ以外の場合は0を返します。
 
 ## イシンフィナイト(x) {#isinfinitex}
 
-引数が無限の場合はfloat32とfloat64を受け取り、uint8を1に戻し、それ以外の場合は0を返します。 nanの場合は0が返されることに注意してください。
+Float32とFloat64を受け入れ、引数が無限の場合はUInt8を1、それ以外の場合は0を返します。 NaNの場合は0が返されることに注意してください。
 
 ## ifNotFinite {#ifnotfinite}
 
@@ -206,10 +332,10 @@ SELECT currentUser();
 
 **戻り値**
 
--   `x` もし `x` 有限です。
+-   `x` もし `x` は有限である。
 -   `y` もし `x` 有限ではない。
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -223,21 +349,21 @@ SELECT currentUser();
 
 同様の結果を得るには、次のようにします [三項演算子](conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
 
-## isNaN(x) {#isnanx}
+## イスナン(x) {#isnanx}
 
-引数がnanの場合はfloat32とfloat64を受け取り、uint8を1に返します。
+Float32とFloat64を受け入れ、引数がNaNの場合はUInt8が1、それ以外の場合は0を返します。
 
 ## hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’) {#hascolumnintablehostname-username-password-database-table-column}
 
-データベース名、テーブル名、列名などの定数文字列を受け入れます。 列がある場合はuint8定数式を1に、それ以外の場合は0を返します。 hostnameパラメーターを設定すると、テストはリモートサーバーで実行されます。
-テーブルが存在しない場合、関数は例外をスローします。
-入れ子になったデータ構造内の要素の場合、この関数は列の存在をチェックします。 入れ子になったデータ構造自体の場合、関数は0を返します。
+データベース名、テーブル名、および列名の定数文字列を受け入れます。 列がある場合はUInt8定数式を1、それ以外の場合は0を返します。 Hostnameパラメータが設定されている場合、テストはリモートサーバーで実行されます。
+テーブルが存在しない場合、この関数は例外をスローします。
+入れ子になったデータ構造の要素の場合、関数は列の存在をチェックします。 入れ子になったデータ構造自体の場合、関数は0を返します。
 
 ## バー {#function-bar}
 
-ユニコードアート図を作成できます。
+Unicodeアート図を作成できます。
 
-`bar(x, min, max, width)` に比例する幅を持つバンドを描画します `(x - min)` とに等しい `width` 文字の場合 `x = max`.
+`bar(x, min, max, width)` 幅に比例したバンドを描画します `(x - min)` と等しい `width` ときの文字 `x = max`.
 
 パラメータ:
 
@@ -245,9 +371,9 @@ SELECT currentUser();
 -   `min, max` — Integer constants. The value must fit in `Int64`.
 -   `width` — Constant, positive integer, can be fractional.
 
-バンドは、シンボルの第八に精度で描かれています。
+バンドは、シンボルの第八に正確に描かれています。
 
-例えば:
+例:
 
 ``` sql
 SELECT
@@ -290,8 +416,8 @@ ORDER BY h ASC
 
 ## 変換 {#transform}
 
-いくつかの要素の明示的に定義されたマッピングに従って値を他の要素に変換します。
-この関数には二つの違いがあります:
+いくつかの要素と他の要素との明示的に定義されたマッピングに従って値を変換します。
+あーならではのバリエーション機能:
 
 ### transform(x,array\_from,array\_to,デフォルト) {#transformx-array-from-array-to-default}
 
@@ -301,7 +427,7 @@ ORDER BY h ASC
 
 `array_to` – Constant array of values to convert the values in ‘from’ に。
 
-`default` – Which value to use if ‘x’ 値のいずれにも等しくありません。 ‘from’.
+`default` – Which value to use if ‘x’ の値のいずれとも等しくない。 ‘from’.
 
 `array_from` と `array_to` – Arrays of the same size.
 
@@ -309,13 +435,13 @@ ORDER BY h ASC
 
 `transform(T, Array(T), Array(U), U) -> U`
 
-`T` と `U` 数値、文字列、または日付または日時の型を指定できます。
-同じ文字（tまたはu）が示されている場合、数値型の場合、これらは一致する型ではなく、共通の型を持つ型である可能性があります。
-たとえば、最初の引数はint64型を持つことができ、二番目の引数はarray(uint16)型を持つことができます。
+`T` と `U` 数値、文字列、または日付またはDateTime型を指定できます。
+同じ文字が示されている場合（TまたはU）、数値型の場合、これらは一致する型ではなく、共通の型を持つ型である可能性があります。
+たとえば、最初の引数はInt64型で、二番目の引数は配列(UInt16)型です。
 
-この ‘x’ 値は、次のいずれかの要素に等しくなります。 ‘array\_from’ 配列の場合は、既存の要素(同じ番号が付けられています)を返します。 ‘array\_to’ 配列だ それ以外の場合は、 ‘default’. 一致する要素が複数ある場合 ‘array\_from’、それはマッチのいずれかを返します。
+もし ‘x’ 値は、要素のいずれかに等しいです。 ‘array\_from’ これは、配列から既存の要素（つまり、同じ番号が付けられている）を返します。 ‘array\_to’ 配列 それ以外の場合は、 ‘default’. 複数の一致する要素がある場合 ‘array\_from’,一致するもののいずれかを返します。
 
-例えば:
+例:
 
 ``` sql
 SELECT
@@ -335,16 +461,16 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### トランスフォーム(x,array\_from,array\_to) {#transformx-array-from-array-to}
+### 変換(x,array\_from,array\_to) {#transformx-array-from-array-to}
 
-最初のバリエーションとは異なります ‘default’ 引数は省略する。
-この ‘x’ 値は、次のいずれかの要素に等しくなります。 ‘array\_from’ 配列の場合は、マッチする要素(同じ番号を付けられた要素)を返します。 ‘array\_to’ 配列だ それ以外の場合は、 ‘x’.
+最初のバリエーションとは異なり、 ‘default’ 引数は省略される。
+もし ‘x’ 値は、要素のいずれかに等しいです。 ‘array\_from’ これは、配列から一致する要素（つまり、同じ番号が付けられている）を返します。 ‘array\_to’ 配列 それ以外の場合は、 ‘x’.
 
 タイプ:
 
 `transform(T, Array(T), Array(T)) -> T`
 
-例えば:
+例:
 
 ``` sql
 SELECT
@@ -372,9 +498,9 @@ LIMIT 10
 
 ## formatReadableSize(x) {#formatreadablesizex}
 
-サイズ(バイト数)を受け入れます。 サフィックス(kib、mibなど)を含む丸められたサイズを返します。)文字列として。
+サイズ(バイト数)を受け入れます。 サフィックス(kib、MiBなど)を持つ丸められたサイズを返します。）文字列として。
 
-例えば:
+例:
 
 ``` sql
 SELECT
@@ -391,15 +517,15 @@ SELECT
 └────────────────┴────────────┘
 ```
 
-## 少なくとも(a,b) {#leasta-b}
+## 最小(a,b) {#leasta-b}
 
 Aとbの最小値を返します。
 
-## 最大(a,b) {#greatesta-b}
+## グレイテスト(a,b) {#greatesta-b}
 
 Aとbの最大値を返します。
 
-## アップタイム() {#uptime}
+## 稼働時間() {#uptime}
 
 サーバーの稼働時間を秒単位で返します。
 
@@ -411,7 +537,7 @@ Aとbの最大値を返します。
 
 サーバーのタイムゾーンを返します。
 
-## bloknumber {#blocknumber}
+## ブロックナンバー {#blocknumber}
 
 行があるデータブロックのシーケンス番号を返します。
 
@@ -419,13 +545,13 @@ Aとbの最大値を返します。
 
 データブロック内の行の序数を返します。 異なるデータブロックは常に再計算されます。
 
-## rowNumberInAllBlocks() {#rownumberinallblocks}
+## ローナンバリンブロック() {#rownumberinallblocks}
 
 データブロック内の行の序数を返します。 この機能のみを考慮した影響のデータブロックとなります。
 
 ## 隣人 {#neighbor}
 
-指定された列の現在の行の前または後に来る指定されたオフセットで行へのアクセスを提供するウィンドウ関数。
+指定された列の現在の行の前または後に来る指定されたオフセットの行へのアクセスを提供するウィンドウ関数。
 
 **構文**
 
@@ -433,8 +559,8 @@ Aとbの最大値を返します。
 neighbor(column, offset[, default_value])
 ```
 
-関数の結果は、影響を受けるデータブロックと、ブロック内のデータの順序によって異なります。
-ORDER BYを使用してサブクエリを作成し、サブクエリの外部から関数を呼び出すと、期待される結果を得ることができます。
+関数の結果は、影響を受けるデータブロックとブロック内のデータの順序によって異なります。
+ORDER BYを使用してサブクエリを作成し、サブクエリの外部から関数を呼び出すと、期待される結果が得られます。
 
 **パラメータ**
 
@@ -444,12 +570,12 @@ ORDER BYを使用してサブクエリを作成し、サブクエリの外部か
 
 **戻り値**
 
--   の値 `column` で `offset` 現在の行からの距離 `offset` 値はブロック境界の外側ではありません。
--   のデフォルト値 `column` もし `offset` 値はブロック境界の外側です。 もし `default_value` 与えられ、それが使用されます。
+-   の値 `column` で `offset` 現在の行からの距離if `offset` 値がブロック境界外ではありません。
+-   のデフォルト値 `column` もし `offset` 値はブロック境界外です。 もし `default_value` が与えられると、それが使用されます。
 
-型:影響を受けるデータブロックの種類または既定値の種類。
+タイプ:タイプのデータブロックの影響を受けまたはデフォルト値タイプです。
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -497,7 +623,7 @@ SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
 └────────┴──────────────────────────┘
 ```
 
-この関数は、年間指標の値を計算するために使用できます:
+この関数を使用して、前年比メトリック値を計算できます:
 
 クエリ:
 
@@ -534,15 +660,15 @@ FROM numbers(16)
 └────────────┴───────┴───────────┴────────────────┘
 ```
 
-## ランニングダイファレンス(x) {#other_functions-runningdifference}
+## runningDifference(x) {#other_functions-runningdifference}
 
 Calculates the difference between successive row values ​​in the data block.
-最初の行に対して0を返し、後続の各行に対して前の行との差を返します。
+最初の行には0を返し、後続の行ごとに前の行との差を返します。
 
-関数の結果は、影響を受けるデータブロックと、ブロック内のデータの順序によって異なります。
-ORDER BYを使用してサブクエリを作成し、サブクエリの外部から関数を呼び出すと、期待される結果を得ることができます。
+関数の結果は、影響を受けるデータブロックとブロック内のデータの順序によって異なります。
+ORDER BYを使用してサブクエリを作成し、サブクエリの外部から関数を呼び出すと、期待される結果が得られます。
 
-例えば:
+例:
 
 ``` sql
 SELECT
@@ -571,7 +697,7 @@ FROM
 └─────────┴─────────────────────┴───────┘
 ```
 
-ご注意-ブロックサイズは結果に影響します。 それぞれの新しいブロックでは、 `runningDifference` 状態がリセットされます。
+注意-ブロックサイズは結果に影響します。 それぞれの新しいブロックでは、 `runningDifference` 状態がリセットされます。
 
 ``` sql
 SELECT
@@ -608,23 +734,23 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstvalue {#runningdifferencestartingwithfirstvalue}
 
-と同じ [runningDifference](./other-functions.md#other_functions-runningdifference)、差は、最初の行の値であり、最初の行の値を返し、後続の各行は、前の行からの差を返します。
+同じように [runningDifference](./other-functions.md#other_functions-runningdifference)、差は、最初の行の値であり、最初の行の値を返し、後続の各行は、前の行からの差を返します。
 
 ## マクナムトストリング(num) {#macnumtostringnum}
 
-UInt64番号を受け取ります。 ビッグエンディアンのMACアドレスとして解釈します。 対応するMACアドレスをAA:BB:CC:DD:EE:FF形式で含む文字列を返します。
+UInt64番号を受け入れます。 ビッグエンディアンのMACアドレスとして解釈します。 対応するMACアドレスを含む文字列をAA:BB:CC:DD:EE:FF(十六進形式のコロン区切りの数値)の形式で返します。
 
-## MACStringToNum(s) {#macstringtonums}
+## マクストリングトナム(s) {#macstringtonums}
 
-MACNumToStringの逆関数。 MACアドレスに無効な形式がある場合は、0を返します。
+MACNumToStringの逆関数。 MACアドレスの形式が無効な場合は、0を返します。
 
-## MACStringToOUI(s) {#macstringtoouis}
+## マクストリングトゥーイ(s) {#macstringtoouis}
 
-AA:BB:CC:DD:EE:FF形式のMACアドレスを受け付けます。 最初の三つのオクテットをUInt64の数値として返します。 MACアドレスに無効な形式がある場合は、0を返します。
+AA:BB:CC:DD:EE:FF(十六進形式のコロン区切りの数字)の形式でMACアドレスを受け入れます。 Uint64番号として最初の三つのオクテットを返します。 MACアドレスの形式が無効な場合は、0を返します。
 
 ## getSizeOfEnumType {#getsizeofenumtype}
 
-フィールドの数を返します [列挙型](../../sql-reference/data-types/enum.md).
+フィールドの数を返します。 [Enum](../../sql-reference/data-types/enum.md).
 
 ``` sql
 getSizeOfEnumType(value)
@@ -636,10 +762,10 @@ getSizeOfEnumType(value)
 
 **戻り値**
 
--   を持つフィールドの数 `Enum` 入力値。
--   型が型でない場合は、例外がスローされます `Enum`.
+-   フィールドの数 `Enum` 入力値。
+-   型が指定されていない場合、例外がスローされます `Enum`.
 
-**例えば**
+**例**
 
 ``` sql
 SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
@@ -653,7 +779,7 @@ SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 
 ## blockSerializedSize {#blockserializedsize}
 
-（圧縮を考慮せずに）ディスク上のサイズを返します。
+圧縮を考慮せずにディスク上のサイズを返します。
 
 ``` sql
 blockSerializedSize(value[, value[, ...]])
@@ -665,9 +791,9 @@ blockSerializedSize(value[, value[, ...]])
 
 **戻り値**
 
--   値のブロックのためにディスクに書き込まれるバイト数(圧縮なし)。
+-   値のブロック(圧縮なし)のためにディスクに書き込まれるバイト数。
 
-**例えば**
+**例**
 
 ``` sql
 SELECT blockSerializedSize(maxState(1)) as x
@@ -693,9 +819,9 @@ toColumnTypeName(value)
 
 **戻り値**
 
--   を表すために使用されるクラスの名前を持つ文字列 `value` RAMのデータ型。
+-   表すために使用されるクラスの名前を持つ文字列 `value` RAMのデータ型。
 
-**違いの例`toTypeName ' and ' toColumnTypeName`**
+**の違いの例`toTypeName ' and ' toColumnTypeName`**
 
 ``` sql
 SELECT toTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
@@ -717,7 +843,7 @@ SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 └───────────────────────────────────────────────────────────┘
 ```
 
-この例では、 `DateTime` データタイプはメモリに記憶として `Const(UInt32)`.
+この例では、 `DateTime` デー `Const(UInt32)`.
 
 ## dumpColumnStructure {#dumpcolumnstructure}
 
@@ -733,9 +859,9 @@ dumpColumnStructure(value)
 
 **戻り値**
 
--   を表すために使用される構造体を記述する文字列。 `value` RAMのデータ型。
+-   表すために使用される構造体を記述する文字列 `value` RAMのデータ型。
 
-**例えば**
+**例**
 
 ``` sql
 SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
@@ -763,11 +889,11 @@ defaultValueOfArgumentType(expression)
 
 **戻り値**
 
--   `0` 数字のために.
--   文字列の空の文字列。
--   `ᴺᵁᴸᴸ` のために [Nullable](../../sql-reference/data-types/nullable.md).
+-   `0` 数字のために。
+-   文字列の場合は空の文字列です。
+-   `ᴺᵁᴸᴸ` のために [Null可能](../../sql-reference/data-types/nullable.md).
 
-**例えば**
+**例**
 
 ``` sql
 SELECT defaultValueOfArgumentType( CAST(1 AS Int8) )
@@ -793,7 +919,7 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 
 単一の値を持つ配列を作成します。
 
-内部実装のために使用される [arrayJoin](array-join.md#functions_arrayjoin).
+内部実装のために使用される [アレイジョイン](array-join.md#functions_arrayjoin).
 
 ``` sql
 SELECT replicate(x, arr);
@@ -810,7 +936,7 @@ SELECT replicate(x, arr);
 
 タイプ: `Array`.
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -828,7 +954,7 @@ SELECT replicate(1, ['a', 'b', 'c'])
 
 ## filesystemAvailable {#filesystemavailable}
 
-返金額の残存スペースのファイルシステムのファイルのデータベースはあります。 それは常に合計空き領域よりも小さいです ([filesystemFree](#filesystemfree) でもスペースはOS.
+返金額の残存スペースのファイルシステムのファイルのデータベースはあります。 これは、常に合計空き領域よりも小さいです ([filesystemFree](#filesystemfree)）一部のスペースはOS用に予約されているため。
 
 **構文**
 
@@ -838,11 +964,11 @@ filesystemAvailable()
 
 **戻り値**
 
--   バイト単位で使用可能な残りのスペースの量。
+-   バイト単位で使用可能な残りの領域の量。
 
 タイプ: [UInt64](../../sql-reference/data-types/int-uint.md).
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -860,7 +986,7 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeNam
 
 ## filesystemFree {#filesystemfree}
 
-データベースのファイルがあるファイルシステム上の空き領域の合計を返します。 また見なさい `filesystemAvailable`
+データベースのファイルがあるファイルシステム上の空き領域の合計量を返します。 も参照。 `filesystemAvailable`
 
 **構文**
 
@@ -874,7 +1000,7 @@ filesystemFree()
 
 タイプ: [UInt64](../../sql-reference/data-types/int-uint.md).
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -892,7 +1018,7 @@ SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesyst
 
 ## filesystemCapacity {#filesystemcapacity}
 
-ファイルシステムの容量をバイト単位で返します。 評価のために、 [パス](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-path) データディレク
+ファイルシステムの容量をバイト単位で返します。 評価のために、 [パス](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-path) データディレ
 
 **構文**
 
@@ -902,11 +1028,11 @@ filesystemCapacity()
 
 **戻り値**
 
--   ファイルシステムの容量情報(バイト単位)。
+-   バイト単位のファイルシステムの容量情報。
 
 タイプ: [UInt64](../../sql-reference/data-types/int-uint.md).
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -924,21 +1050,21 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-集約関数の状態を取ります。 集計結果を返します(ファイナライズされた状態)。
+集計関数の状態をとります。 集計結果(最終状態)を返します。
 
 ## runningAccumulate {#function-runningaccumulate}
 
-集約関数の状態を取り、値を持つ列を返します,ブロックラインのセットのためにこれらの状態の蓄積の結果であります,最初から現在の行へ.これ
-たとえば、集計関数の状態（例：runningaccumulate（uniqstate（userid）））を取り、ブロックの各行について、前のすべての行と現在の行の状態をマージしたときの集計関数の結果を返しま
-したがって、関数の結果は、ブロックへのデータの分割とブロック内のデータの順序に依存します。
+集計関数の状態を取り、値を持つ列を返し、最初から現在の行に、ブロック行のセットのためにこれらの状態の蓄積の結果です。
+たとえば、集計関数の状態をとり（例えばrunningAccumulate(uniqState(UserID))）、ブロックの各行に対して、すべての前の行と現在の行の状態のマージ時に集計関数の結果を返します。
+したがって、関数の結果は、データのブロックへの分割およびブロック内のデータの順序に依存する。
 
 ## joinGet {#joinget}
 
-この関数を使用すると、テーブルからのデータと同じ方法でデータを抽出できます [辞書](../../sql-reference/dictionaries/index.md).
+この関数を使用すると、aと同じ方法でテーブルからデータを抽出できます [辞書](../../sql-reference/dictionaries/index.md).
 
 データの取得 [参加](../../engines/table-engines/special/join.md#creating-a-table) 指定された結合キーを使用するテーブル。
 
-サポートされているのは、 `ENGINE = Join(ANY, LEFT, <join_keys>)` 声明。
+サポートするだけでなくテーブルで作成された `ENGINE = Join(ANY, LEFT, <join_keys>)` 声明。
 
 **構文**
 
@@ -948,7 +1074,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **パラメータ**
 
--   `join_storage_table_name` — an [識別子](../syntax.md#syntax-identifiers) 検索が実行される場所を示します。 識別子は既定のデータベースで検索されます(パラメータを参照 `default_database` の設定ファイル)。 デフォル `USE db_name` またはを指定しデータベースのテーブルのセパレータ `db_name.db_table`、例を参照してください。
+-   `join_storage_table_name` — an [識別子](../syntax.md#syntax-identifiers) 検索が実行される場所を示します。 識別子は既定のデータベースで検索されます(パラメーターを参照 `default_database` 設定ファイル内）。 デフォルトのデータベースを上書きするには `USE db_name` またはを指定しデータベースのテーブルのセパレータ `db_name.db_table`、例を参照。
 -   `value_column` — name of the column of the table that contains required data.
 -   `join_keys` — list of keys.
 
@@ -956,11 +1082,11 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 キーのリストに対応する値のリストを返します。
 
-ソーステーブルに特定のものが存在しない場合 `0` または `null` に基づいて返されます [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls) 設定。
+ソーステーブルに特定のものが存在しない場合、 `0` または `null` に基づいて返されます [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls) 設定。
 
 詳細について `join_use_nulls` で [結合操作](../../engines/table-engines/special/join.md).
 
-**例えば**
+**例**
 
 入力テーブル:
 
@@ -997,8 +1123,8 @@ SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS j
 
 ## modelEvaluate(model\_name, …) {#function-modelevaluate}
 
-外部モデルを評価します。
-モデル名とモデル引数を受け取ります。 float64を返します。
+外部モデルの評価
+モデル名とモデル引数を受け取ります。 Float64を返します。
 
 ## throwIf(x\[,custom\_message\]) {#throwifx-custom-message}
 
@@ -1016,7 +1142,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## id {#identity}
 
-引数として使用されたのと同じ値を返します。 デバッグに使用され、試験が可能でャックのクエリーの性能を満たします。 がクエリーの分析のために利用できる可能性指標分析装置が外部サンプリング方式な見てみよう `identity` 機能。
+引数として使用されたのと同じ値を返します。 インデックスを使用してキャンセルし、フルスキャンのクエリパフォーマンスを取得することができます。 クエリを分析してインデックスを使用する可能性がある場合、アナライザは内部を見ません `identity` 機能。
 
 **構文**
 
@@ -1024,7 +1150,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 identity(x)
 ```
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -1040,7 +1166,7 @@ SELECT identity(42)
 └──────────────┘
 ```
 
-## randomprintableasii {#randomascii}
+## randomPrintableASCII {#randomascii}
 
 のランダムなセットを持つ文字列を生成します [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) 印刷可能な文字。
 
@@ -1062,7 +1188,7 @@ randomPrintableASCII(length)
 
 タイプ: [文字列](../../sql-reference/data-types/string.md)
 
-**例えば**
+**例**
 
 ``` sql
 SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers LIMIT 3

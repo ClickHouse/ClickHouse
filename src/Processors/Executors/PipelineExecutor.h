@@ -35,7 +35,10 @@ public:
     /// In case of exception during execution throws any occurred.
     void execute(size_t num_threads);
 
-    String getName() const { return "PipelineExecutor"; }
+    /// Execute single step. Step will be stopped when yield_flag is true.
+    /// Execution is happened in a single thread.
+    /// Return true if execution should be continued.
+    bool executeStep(std::atomic_bool * yield_flag = nullptr);
 
     const Processors & getProcessors() const { return processors; }
 
@@ -203,6 +206,8 @@ private:
     ThreadsQueue threads_queue;
     std::mutex task_queue_mutex;
 
+    /// Flag that checks that initializeExecution was called.
+    bool is_execution_initialized = false;
     std::atomic_bool cancelled;
     std::atomic_bool finished;
 
@@ -235,7 +240,17 @@ private:
         std::mutex mutex;
         bool wake_flag = false;
 
-        /// std::queue<ExecutionState *> pinned_tasks;
+        /// Currently processing state.
+        ExecutionState * state = nullptr;
+
+#ifndef NDEBUG
+        /// Time for different processing stages.
+        UInt64 total_time_ns = 0;
+        UInt64 execution_time_ns = 0;
+        UInt64 processing_time_ns = 0;
+        UInt64 wait_time_ns = 0;
+#endif
+
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
@@ -267,7 +282,15 @@ private:
     bool prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, std::unique_lock<std::mutex> node_lock);
     bool doExpandPipeline(ExpandPipelineTask * task, bool processing);
 
+    /// Continue executor (in case there are tasks in queue).
+    void wakeUpExecutor(size_t thread_num);
+
+    void initializeExecution(size_t num_threads); /// Initialize executor contexts and task_queue.
+    void finalizeExecution(); /// Check all processors are finished.
+
+    /// Methods connected to execution.
     void executeImpl(size_t num_threads);
+    void executeStepImpl(size_t thread_num, size_t num_threads, std::atomic_bool * yield_flag = nullptr);
     void executeSingleThread(size_t thread_num, size_t num_threads);
     void finish();
 

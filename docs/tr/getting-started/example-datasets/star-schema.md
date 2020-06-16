@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 20
 toc_title: "Y\u0131ld\u0131z \u015Eema Ben Benchmarkch Benchmarkmark"
 ---
@@ -28,7 +28,7 @@ $ ./dbgen -s 1000 -T s
 $ ./dbgen -s 1000 -T d
 ```
 
-Clickhouse’da tablolar oluşturma:
+Clickhouse'da tablolar oluşturma:
 
 ``` sql
 CREATE TABLE customer

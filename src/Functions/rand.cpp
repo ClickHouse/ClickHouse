@@ -10,6 +10,7 @@ using FunctionRand = FunctionRandom<UInt32, NameRand>;
 void registerFunctionRand(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRand>(FunctionFactory::CaseInsensitive);
+    factory.registerAlias("rand32", NameRand::name);
 }
 
 }

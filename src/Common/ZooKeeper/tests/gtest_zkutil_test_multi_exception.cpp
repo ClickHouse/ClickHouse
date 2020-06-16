@@ -86,7 +86,7 @@ TEST(zkutil, MultiAsync)
         ops.clear();
 
         auto res = fut.get();
-        ASSERT_EQ(res.error, Coordination::ZOK);
+        ASSERT_EQ(res.error, Coordination::Error::ZOK);
         ASSERT_EQ(res.responses.size(), 2);
     }
 
@@ -126,15 +126,15 @@ TEST(zkutil, MultiAsync)
 
         /// The test is quite heavy. It is normal if session is expired during this test.
         /// If we don't check that, the test will be flacky.
-        if (res.error != Coordination::ZSESSIONEXPIRED && res.error != Coordination::ZCONNECTIONLOSS)
+        if (res.error != Coordination::Error::ZSESSIONEXPIRED && res.error != Coordination::Error::ZCONNECTIONLOSS)
         {
-            ASSERT_EQ(res.error, Coordination::ZNODEEXISTS);
+            ASSERT_EQ(res.error, Coordination::Error::ZNODEEXISTS);
             ASSERT_EQ(res.responses.size(), 2);
         }
     }
     catch (const Coordination::Exception & e)
     {
-        if (e.code != Coordination::ZSESSIONEXPIRED && e.code != Coordination::ZCONNECTIONLOSS)
+        if (e.code != Coordination::Error::ZSESSIONEXPIRED && e.code != Coordination::Error::ZCONNECTIONLOSS)
             throw;
     }
 }

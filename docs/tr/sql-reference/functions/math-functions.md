@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 44
 toc_title: Matematiksel
 ---
@@ -27,7 +27,7 @@ Sayısal bir bağımsız değişken kabul eder ve bağımsız değişken doğal 
 
 ## exp2 (x) {#exp2x}
 
-Sayısal bir bağımsız değişkeni kabul eder ve X gücüne 2’ye yakın bir Float64 numarası döndürür.
+Sayısal bir bağımsız değişkeni kabul eder ve X gücüne 2'ye yakın bir Float64 numarası döndürür.
 
 ## log2 (x) {#log2x}
 
@@ -35,7 +35,7 @@ Sayısal bir bağımsız değişken kabul eder ve değişken ikili logaritma yak
 
 ## exp10 (x) {#exp10x}
 
-Sayısal bir bağımsız değişkeni kabul eder ve 10’a yakın Float64 numarasını x gücüne döndürür.
+Sayısal bir bağımsız değişkeni kabul eder ve 10'a yakın Float64 numarasını x gücüne döndürür.
 
 ## log10(x) {#log10x}
 
@@ -51,7 +51,7 @@ Sayısal bir bağımsız değişkeni kabul eder ve bağımsız değişken kübik
 
 ## erf (x) {#erfx}
 
-Eğer ‘x’ is non-negative, then `erf(x / σ√2)` standart sapma ile normal dağılıma sahip bir rasgele değişkenin olasılığı var mı ‘σ’ beklenen değerden daha fazla ayrılan değeri alır ‘x’.
+Eğer ‘x’ negatif değil, o zaman `erf(x / σ√2)` standart sapma ile normal dağılıma sahip bir rasgele değişkenin olasılığı var mı ‘σ’ beklenen değerden daha fazla ayrılan değeri alır ‘x’.
 
 Örnek (üç sigma kuralı):
 
@@ -103,14 +103,14 @@ Ark teğet.
 
 ## pow (x, y), güç (x, y)) {#powx-y-powerx-y}
 
-İki sayısal bağımsız değişken X ve y alır.X’e yakın bir Float64 numarasını y gücüne döndürür.
+İki sayısal bağımsız değişken X ve y alır.X'e yakın bir Float64 numarasını y gücüne döndürür.
 
 ## ıntexp2 {#intexp2}
 
-Sayısal bir bağımsız değişkeni kabul eder ve X’in gücüne 2’ye yakın bir uint64 numarası döndürür.
+Sayısal bir bağımsız değişkeni kabul eder ve X'in gücüne 2'ye yakın bir uint64 numarası döndürür.
 
 ## ıntexp10 {#intexp10}
 
-Sayısal bir bağımsız değişkeni kabul eder ve X gücüne 10’a yakın bir uint64 numarası döndürür.
+Sayısal bir bağımsız değişkeni kabul eder ve X gücüne 10'a yakın bir uint64 numarası döndürür.
 
 [Orijinal makale](https://clickhouse.tech/docs/en/query_language/functions/math_functions/) <!--hide-->

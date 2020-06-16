@@ -37,6 +37,7 @@ void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
+void registerFunctionsUnixTimestamp64(FunctionFactory & factory);
 
 void testRegisterFunctionsPython(FunctionFactory & factory);
 
@@ -80,6 +81,7 @@ void registerFunctions()
     registerFunctionsJSON(factory);
     registerFunctionsIntrospection(factory);
     registerFunctionsConsistentHashing(factory);
+    registerFunctionsUnixTimestamp64(factory);
 
     testRegisterFunctionsPython(factory);
 }

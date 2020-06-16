@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 45
 toc_title: "\u0646\u0638\u0627\u0631\u062A"
 ---
@@ -38,6 +38,8 @@ toc_title: "\u0646\u0638\u0627\u0631\u062A"
 شما می توانید معیارهای موجود در [سیستم.متریک](../operations/system-tables.md#system_tables-metrics), [سیستم.رویدادها](../operations/system-tables.md#system_tables-events) و [سیستم.\_نامهنویسی ناهمزمان](../operations/system-tables.md#system_tables-asynchronous_metrics) میز
 
 شما می توانید کلیک کنید هاوس به صادرات معیارهای به پیکربندی کنید [گرافیت](https://github.com/graphite-project). دیدن [بخش گرافیت](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) در فایل پیکربندی سرور کلیک. قبل از پیکربندی صادرات معیارهای, شما باید راه اندازی گرافیت با پیروی از رسمی خود را [راهنما](https://graphite.readthedocs.io/en/latest/install.html).
+
+شما می توانید کلیک کنید هاوس به صادرات معیارهای به پیکربندی کنید [پرومتیوس](https://prometheus.io). دیدن [بخش پرومته](server-configuration-parameters/settings.md#server_configuration_parameters-prometheus) در فایل پیکربندی سرور کلیک. قبل از پیکربندی صادرات معیارهای, شما باید راه اندازی پرومته با پیروی از رسمی خود [راهنما](https://prometheus.io/docs/prometheus/latest/installation/).
 
 علاوه بر این, شما می توانید در دسترس بودن سرور از طریق صفحه اصلی نظارت. ارسال `HTTP GET` درخواست برای `/ping`. اگر سرور در دسترس است, با پاسخ `200 OK`.
 

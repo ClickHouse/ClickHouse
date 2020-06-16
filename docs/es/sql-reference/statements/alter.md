@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: ALTER
 ---
@@ -9,7 +9,7 @@ toc_title: ALTER
 
 El `ALTER` consulta sólo se admite para `*MergeTree` mesas, así como `Merge`y`Distributed`. La consulta tiene varias variaciones.
 
-### Manipulaciones De Columna {#column-manipulations}
+### Manipulaciones de columna {#column-manipulations}
 
 Cambiar la estructura de la tabla.
 
@@ -26,7 +26,7 @@ Se admiten las siguientes acciones:
 -   [DROP COLUMN](#alter_drop-column) — Deletes the column.
 -   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
 -   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
--   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
+-   [MODIFY COLUMN](#alter_modify-column) — Changes column's type, default expression and TTL.
 
 Estas acciones se describen en detalle a continuación.
 
@@ -140,7 +140,7 @@ Si hay un error durante una de las etapas sucesivas, los datos se pueden restaur
 
 El `ALTER` se replica la consulta para cambiar columnas. Las instrucciones se guardan en ZooKeeper, luego cada réplica las aplica. Todo `ALTER` las consultas se ejecutan en el mismo orden. La consulta espera a que se completen las acciones adecuadas en las otras réplicas. Sin embargo, una consulta para cambiar columnas en una tabla replicada se puede interrumpir y todas las acciones se realizarán de forma asincrónica.
 
-#### Limitaciones De Consulta ALTER {#alter-query-limitations}
+#### Limitaciones de consulta ALTER {#alter-query-limitations}
 
 El `ALTER` query le permite crear y eliminar elementos separados (columnas) en estructuras de datos anidadas, pero no en estructuras de datos anidadas completas. Para agregar una estructura de datos anidada, puede agregar columnas con un nombre como `name.nested_name` y el tipo `Array(T)`. Una estructura de datos anidada es equivalente a varias columnas de matriz con un nombre que tiene el mismo prefijo antes del punto.
 
@@ -152,7 +152,7 @@ El `ALTER` query bloquea todas las lecturas y escrituras para la tabla. En otras
 
 Para tablas que no almacenan datos por sí mismas (como `Merge` y `Distributed`), `ALTER` simplemente cambia la estructura de la tabla, y no cambia la estructura de las tablas subordinadas. Por ejemplo, cuando se ejecuta ALTER para un `Distributed` mesa, también tendrá que ejecutar `ALTER` para las tablas en todos los servidores remotos.
 
-### Manipulaciones Con Expresiones Clave {#manipulations-with-key-expressions}
+### Manipulaciones con expresiones clave {#manipulations-with-key-expressions}
 
 Se admite el siguiente comando:
 
@@ -169,7 +169,7 @@ El comando es liviano en el sentido de que solo cambia los metadatos. Para mante
 las filas están ordenadas por la expresión de clave de ordenación, no puede agregar expresiones que contengan columnas existentes
 a la clave de ordenación (sólo las columnas añadidas `ADD COLUMN` comando en el mismo `ALTER` consulta).
 
-### Manipulaciones Con índices De Saltos De Datos {#manipulations-with-data-skipping-indices}
+### Manipulaciones con índices de saltos de datos {#manipulations-with-data-skipping-indices}
 
 Solo funciona para tablas en el [`*MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) familia (incluyendo
 [repetición](../../engines/table-engines/mergetree-family/replication.md) tabla). Las siguientes operaciones
@@ -182,7 +182,7 @@ están disponibles:
 Estos comandos son livianos en el sentido de que solo cambian los metadatos o eliminan archivos.
 Además, se replican (sincronizando metadatos de índices a través de ZooKeeper).
 
-### Manipulaciones Con Restricciones {#manipulations-with-constraints}
+### Manipulaciones con restricciones {#manipulations-with-constraints}
 
 Ver más en [limitación](create.md#constraints)
 
@@ -199,17 +199,16 @@ Comprobación de restricciones *no se ejecutará* en los datos existentes si se 
 
 Todos los cambios en las tablas replicadas se transmiten a ZooKeeper, por lo que se aplicarán en otras réplicas.
 
-### Manipulaciones Con Particiones y Piezas {#alter_manipulations-with-partitions}
+### Manipulaciones con particiones y piezas {#alter_manipulations-with-partitions}
 
 Las siguientes operaciones con [partición](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) están disponibles:
 
 -   [DETACH PARTITION](#alter_detach-partition) – Moves a partition to the `detached` directorio y olvidarlo.
 -   [DROP PARTITION](#alter_drop-partition) – Deletes a partition.
 -   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directorio a la tabla.
--   [REPLACE PARTITION](#alter_replace-partition) - Copia la partición de datos de una tabla a otra.
 -   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#alter_replace-partition) - Copia la partición de datos de una tabla a otra y reemplaza.
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) (\#alter\_move\_to\_table-partition) - Mover la partición de datos de una tabla a otra.
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(\#alter\_move\_to\_table-partition) - Mover la partición de datos de una tabla a otra.
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Restablece el valor de una columna especificada en una partición.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Restablece el índice secundario especificado en una partición.
 -   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -364,7 +363,7 @@ La consulta crea una copia de seguridad casi instantáneamente (pero primero esp
 
 Para restaurar los datos de una copia de seguridad, haga lo siguiente:
 
-1.  Crear la tabla si no existe. Para ver la consulta, utilice el .archivo sql (reemplazar `ATTACH` en ella con `CREATE`).
+1.  Cree la tabla si no existe. Para ver la consulta, utilice el .archivo sql (reemplazar `ATTACH` en ella con `CREATE`).
 2.  Copie los datos de la `data/database/table/` directorio dentro de la copia de seguridad a la `/var/lib/clickhouse/data/database/table/detached/` directorio.
 3.  Ejecutar `ALTER TABLE t ATTACH PARTITION` consultas para agregar los datos a una tabla.
 
@@ -403,7 +402,7 @@ ALTER TABLE users ATTACH PARTITION 201902;
 Tenga en cuenta que:
 
 -   El `ALTER ... FETCH PARTITION` consulta no se replica. Coloca la partición en el `detached` sólo en el servidor local.
--   El `ALTER TABLE ... ATTACH` la consulta se replica. Agrega los datos a todas las réplicas. Los datos se agregan a una de las réplicas de la `detached` directorio, y para los demás - de réplicas vecinas.
+-   El `ALTER TABLE ... ATTACH` consulta se replica. Agrega los datos a todas las réplicas. Los datos se agregan a una de las réplicas desde el `detached` directorio, y para los demás - de réplicas vecinas.
 
 Antes de descargar, el sistema verifica si la partición existe y la estructura de la tabla coincide. La réplica más adecuada se selecciona automáticamente de las réplicas en buen estado.
 
@@ -430,7 +429,7 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
-#### Cómo Establecer La expresión De partición {#alter-how-to-specify-part-expr}
+#### Cómo establecer la expresión de partición {#alter-how-to-specify-part-expr}
 
 Puede especificar la expresión de partición en `ALTER ... PARTITION` de diferentes maneras:
 
@@ -451,7 +450,7 @@ OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 
 Los ejemplos de `ALTER ... PARTITION` las consultas se demuestran en las pruebas [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) y [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
 
-### Manipulaciones Con Tabla TTL {#manipulations-with-table-ttl}
+### Manipulaciones con Tabla TTL {#manipulations-with-table-ttl}
 
 Usted puede cambiar [tabla TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) con una solicitud del siguiente formulario:
 
@@ -459,7 +458,7 @@ Usted puede cambiar [tabla TTL](../../engines/table-engines/mergetree-family/mer
 ALTER TABLE table-name MODIFY TTL ttl-expression
 ```
 
-### Sincronicidad De Consultas ALTER {#synchronicity-of-alter-queries}
+### Sincronicidad de las consultas ALTER {#synchronicity-of-alter-queries}
 
 Para tablas no replicables, todas `ALTER` las consultas se realizan de forma sincrónica. Para las tablas replicables, la consulta solo agrega instrucciones para las acciones apropiadas para `ZooKeeper`, y las acciones mismas se realizan tan pronto como sea posible. Sin embargo, la consulta puede esperar a que estas acciones se completen en todas las réplicas.
 
@@ -501,5 +500,103 @@ Las mutaciones están totalmente ordenadas por su orden de creación y se aplica
 Una consulta de mutación regresa inmediatamente después de agregar la entrada de mutación (en el caso de tablas replicadas a ZooKeeper, para tablas no replicadas, al sistema de archivos). La mutación en sí se ejecuta de forma asíncrona utilizando la configuración del perfil del sistema. Para realizar un seguimiento del progreso de las mutaciones, puede usar el [`system.mutations`](../../operations/system-tables.md#system_tables-mutations) tabla. Una mutación que se envió correctamente continuará ejecutándose incluso si se reinician los servidores ClickHouse. No hay forma de revertir la mutación una vez que se presenta, pero si la mutación está atascada por alguna razón, puede cancelarse con el [`KILL MUTATION`](misc.md#kill-mutation) consulta.
 
 Las entradas de mutaciones terminadas no se eliminan de inmediato (el número de entradas conservadas viene determinado por el `finished_mutations_to_keep` parámetro del motor de almacenamiento). Las entradas de mutación más antiguas se eliminan.
+
+## ALTER USER {#alter-user-statement}
+
+Cambia las cuentas de usuario de ClickHouse.
+
+### Sintaxis {#alter-user-syntax}
+
+``` sql
+ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
+    [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+### Descripci {#alter-user-dscr}
+
+Utilizar `ALTER USER` debe tener el [ALTER USER](grant.md#grant-access-management) privilegio.
+
+### Ejemplos {#alter-user-examples}
+
+Establecer roles concedidos como predeterminados:
+
+``` sql
+ALTER USER user DEFAULT ROLE role1, role2
+```
+
+Si los roles no se otorgan previamente a un usuario, ClickHouse produce una excepción.
+
+Establezca todas las funciones concedidas como predeterminadas:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+Si se otorga un rol a un usuario en el futuro, se convertirá en predeterminado automáticamente.
+
+Establezca todas las funciones otorgadas a excepción predeterminada `role1` y `role2`:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+## ALTER ROLE {#alter-role-statement}
+
+Cambia los roles.
+
+### Sintaxis {#alter-role-syntax}
+
+``` sql
+ALTER ROLE [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+## ALTER ROW POLICY {#alter-row-policy-statement}
+
+Cambia la política de fila.
+
+### Sintaxis {#alter-row-policy-syntax}
+
+``` sql
+ALTER [ROW] POLICY [IF EXISTS] name [ON CLUSTER cluster_name] ON [database.]table
+    [RENAME TO new_name]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+## ALTER QUOTA {#alter-quota-statement}
+
+Cambia las cuotas.
+
+### Sintaxis {#alter-quota-syntax}
+
+``` sql
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+        {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
+        NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+## ALTER SETTINGS PROFILE {#alter-settings-profile-statement}
+
+Cambia las cuotas.
+
+### Sintaxis {#alter-settings-profile-syntax}
+
+``` sql
+ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
+```
 
 [Artículo Original](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->

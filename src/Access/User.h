@@ -3,11 +3,10 @@
 #include <Access/IAccessEntity.h>
 #include <Access/Authentication.h>
 #include <Access/AllowedClientHosts.h>
-#include <Access/AccessRights.h>
+#include <Access/GrantedAccess.h>
+#include <Access/GrantedRoles.h>
 #include <Access/ExtendedRoleSet.h>
 #include <Access/SettingsProfileElement.h>
-#include <Core/UUID.h>
-#include <boost/container/flat_set.hpp>
 
 
 namespace DB
@@ -18,15 +17,15 @@ struct User : public IAccessEntity
 {
     Authentication authentication;
     AllowedClientHosts allowed_client_hosts = AllowedClientHosts::AnyHostTag{};
-    AccessRights access;
-    AccessRights access_with_grant_option;
-    boost::container::flat_set<UUID> granted_roles;
-    boost::container::flat_set<UUID> granted_roles_with_admin_option;
+    GrantedAccess access;
+    GrantedRoles granted_roles;
     ExtendedRoleSet default_roles = ExtendedRoleSet::AllTag{};
     SettingsProfileElements settings;
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<User>(); }
+    static constexpr const Type TYPE = Type::USER;
+    Type getType() const override { return TYPE; }
 };
 
 using UserPtr = std::shared_ptr<const User>;

@@ -57,7 +57,7 @@ public:
         readVarUInt(data(place).count, buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
@@ -66,6 +66,12 @@ public:
     void set(AggregateDataPtr place, UInt64 new_count)
     {
         data(place).count = new_count;
+    }
+
+    /// The function returns non-Nullable type even when wrapped with Null combinator.
+    bool returnDefaultWhenOnlyNull() const override
+    {
+        return true;
     }
 };
 
@@ -108,7 +114,7 @@ public:
         readVarUInt(data(place).count, buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }

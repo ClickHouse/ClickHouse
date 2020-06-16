@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 30
 toc_title: MergeTree
 ---
@@ -68,7 +68,7 @@ Parametrelerin açıklaması için bkz. [Sorgu açıklaması oluştur](../../../
 
     Sütun veya keyfi ifadeler bir tuple. Örnek: `ORDER BY (CounterID, EventDate)`.
 
--   `PRIMARY KEY` — The primary key if it [sıralama anahtarından farklıdır](mergetree.md).
+-   `PRIMARY KEY` — The primary key if it [sıralama anahtarından farklıdır](#choosing-a-primary-key-that-differs-from-the-sorting-key).
 
     Varsayılan olarak, birincil anahtar sıralama anahtarıyla aynıdır (bu anahtar tarafından belirtilir). `ORDER BY` yan). Bu nedenle çoğu durumda ayrı bir belirtmek gereksizdir `PRIMARY KEY` yan.
 
@@ -94,7 +94,7 @@ Parametrelerin açıklaması için bkz. [Sorgu açıklaması oluştur](../../../
     -   `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation that is required for using direct I/O access to the storage disk. When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bayt, ClickHouse okur ve doğrudan I/O arabirimi kullanarak depolama diskine veri yazar (`O_DIRECT` seçenek). Eğer `min_merge_bytes_to_use_direct_io = 0`, sonra doğrudan g / Ç devre dışı bırakılır. Varsayılan değer: `10 * 1024 * 1024 * 1024` baytlar.
         <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     -   `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with TTL. Default value: 86400 (1 day).
-    -   `write_final_mark` — Enables or disables writing the final index mark at the end of data part (after the last byte). Default value: 1. Don’t turn it off.
+    -   `write_final_mark` — Enables or disables writing the final index mark at the end of data part (after the last byte). Default value: 1. Don't turn it off.
     -   `merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
     -   `storage_policy` — Storage policy. See [Veri depolama için birden fazla blok cihazı kullanma](#table_engine-mergetree-multiple-volumes).
 
@@ -106,7 +106,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 Örnekte, aylara göre bölümleme ayarladık.
 
-Biz de kullanıcı kimliği ile karma olarak örnekleme için bir ifade ayarlayın. Bu, her biri için tablodaki verileri pseudorandomize etmenizi sağlar `CounterID` ve `EventDate`. Tanım yoularsanız bir [SAMPLE](../../../sql-reference/statements/select.md#select-sample-clause) yan tümcesi verileri seçerken, ClickHouse kullanıcıların bir alt kümesi için eşit pseudorandom veri örneği döndürür.
+Biz de kullanıcı kimliği ile karma olarak örnekleme için bir ifade ayarlayın. Bu, her biri için tablodaki verileri pseudorandomize etmenizi sağlar `CounterID` ve `EventDate`. Tanım yoularsanız bir [SAMPLE](../../../sql-reference/statements/select/sample.md#select-sample-clause) yan tümcesi verileri seçerken, ClickHouse kullanıcıların bir alt kümesi için eşit pseudorandom veri örneği döndürür.
 
 Bu `index_granularity` 8192 varsayılan değer olduğundan ayarı atlanabilir.
 
@@ -150,11 +150,11 @@ Veri bir tabloya eklendiğinde, ayrı veri parçaları oluşturulur ve bunların
 
 Farklı bölümlere ait veriler farklı parçalara ayrılır. Arka planda, ClickHouse daha verimli depolama için veri parçalarını birleştirir. Farklı bölümlere ait parçalar birleştirilmez. Birleştirme mekanizması, aynı birincil anahtara sahip tüm satırların aynı veri bölümünde olacağını garanti etmez.
 
-Her veri parçası mantıksal olarak granüllere ayrılmıştır. Bir granül, Clickhouse’un veri seçerken okuduğu en küçük bölünmez veri kümesidir. ClickHouse satırları veya değerleri bölmez, bu nedenle her granül her zaman bir tamsayı satır içerir. Bir granülün ilk satırı, satır için birincil anahtarın değeri ile işaretlenir. Her veri bölümü için ClickHouse işaretleri depolayan bir dizin dosyası oluşturur. Her sütun için, birincil anahtarda olsun ya da olmasın, ClickHouse aynı işaretleri de saklar. Bu işaretler, verileri doğrudan sütun dosyalarında bulmanızı sağlar.
+Her veri parçası mantıksal olarak granüllere ayrılmıştır. Bir granül, Clickhouse'un veri seçerken okuduğu en küçük bölünmez veri kümesidir. ClickHouse satırları veya değerleri bölmez, bu nedenle her granül her zaman bir tamsayı satır içerir. Bir granülün ilk satırı, satır için birincil anahtarın değeri ile işaretlenir. Her veri bölümü için ClickHouse işaretleri depolayan bir dizin dosyası oluşturur. Her sütun için, birincil anahtarda olsun ya da olmasın, ClickHouse aynı işaretleri de saklar. Bu işaretler, verileri doğrudan sütun dosyalarında bulmanızı sağlar.
 
 Granül boyutu ile sınırlıdır `index_granularity` ve `index_granularity_bytes` tablo motorunun ayarları. Bir granüldeki satır sayısı `[1, index_granularity]` Aralık, satırların boyutuna bağlı olarak. Bir granülün boyutu aşabilir `index_granularity_bytes` tek bir satırın boyutu ayarın değerinden büyükse. Bu durumda, granülün boyutu satırın boyutuna eşittir.
 
-## Sorgularda Birincil Anahtarlar Ve Dizinler {#primary-keys-and-indexes-in-queries}
+## Sorgularda birincil anahtarlar ve dizinler {#primary-keys-and-indexes-in-queries}
 
 Tak thee the `(CounterID, Date)` örnek olarak birincil anahtar. Bu durumda, sıralama ve dizin aşağıdaki gibi gösterilebilir:
 
@@ -175,11 +175,11 @@ Yukarıdaki örnekler, her zaman bir dizin tam taramadan daha etkili olduğunu g
 
 Seyrek bir dizin, ekstra verilerin okunmasına izin verir. Birincil anahtarın tek bir aralığını okurken, `index_granularity * 2` her veri bloğundaki ekstra satırlar okunabilir.
 
-Seyrek dizinler, çok sayıda tablo satırı ile çalışmanıza izin verir, çünkü çoğu durumda, bu tür dizinler bilgisayarın RAM’İNE sığar.
+Seyrek dizinler, çok sayıda tablo satırı ile çalışmanıza izin verir, çünkü çoğu durumda, bu tür dizinler bilgisayarın RAM'İNE sığar.
 
 ClickHouse benzersiz bir birincil anahtar gerektirmez. Aynı birincil anahtar ile birden çok satır ekleyebilirsiniz.
 
-### Birincil Anahtar seçme {#selecting-the-primary-key}
+### Birincil anahtar seçme {#selecting-the-primary-key}
 
 Birincil anahtardaki sütun sayısı açıkça sınırlı değildir. Veri yapısına bağlı olarak, birincil anahtara daha fazla veya daha az sütun ekleyebilirsiniz. Bu Mayıs:
 
@@ -200,18 +200,18 @@ Birincil anahtardaki sütun sayısı açıkça sınırlı değildir. Veri yapıs
 
 Uzun bir birincil anahtar, ekleme performansını ve bellek tüketimini olumsuz yönde etkiler, ancak birincil anahtardaki ek sütunlar, ClickHouse performansını etkilemez `SELECT` sorgular.
 
-### Sıralama anahtarından farklı Bir Birincil Anahtar seçme {#choosing-a-primary-key-that-differs-from-the-sorting-key}
+### Sıralama anahtarından farklı bir birincil anahtar seçme {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
-Sıralama anahtarından (veri bölümlerindeki satırları sıralamak için bir ifade) farklı bir birincil anahtar (her işaret için dizin dosyasında yazılan değerlere sahip bir ifade) belirtmek mümkündür. Bu durumda, birincil anahtar ifadesi tuple, sıralama anahtarı ifadesi tuple’ın bir öneki olmalıdır.
+Sıralama anahtarından (veri bölümlerindeki satırları sıralamak için bir ifade) farklı bir birincil anahtar (her işaret için dizin dosyasında yazılan değerlere sahip bir ifade) belirtmek mümkündür. Bu durumda, birincil anahtar ifadesi tuple, sıralama anahtarı ifadesi tuple'ın bir öneki olmalıdır.
 
 Bu özellik kullanırken yararlıdır [SummingMergeTree](summingmergetree.md) ve
-[AggregatingMergeTree](aggregatingmergetree.md) masa motorları. Bu motorları kullanırken yaygın bir durumda, tablonun iki tür sütunu vardır: *boyutlular* ve *ölçümler*. Tipik sorgular, rasgele ölçü sütunlarının değerlerini toplar `GROUP BY` ve boyutlara göre filtreleme. Çünkü SummingMergeTree ve AggregatingMergeTree sıralama anahtarının aynı değere sahip satırları toplamak, tüm boyutları eklemek doğaldır. Sonuç olarak, anahtar ifadesi uzun bir sütun listesinden oluşur ve bu liste yeni eklenen boyutlarla sık sık güncelleştirilmelidir.
+[AggregatingMergeTree](aggregatingmergetree.md) masa motorları. Bu motorları kullanırken yaygın bir durumda, tablonun iki tür sütunu vardır: *boyutlar* ve *ölçümler*. Tipik sorgular, rasgele ölçü sütunlarının değerlerini toplar `GROUP BY` ve boyutlara göre filtreleme. Çünkü SummingMergeTree ve AggregatingMergeTree sıralama anahtarının aynı değere sahip satırları toplamak, tüm boyutları eklemek doğaldır. Sonuç olarak, anahtar ifadesi uzun bir sütun listesinden oluşur ve bu liste yeni eklenen boyutlarla sık sık güncelleştirilmelidir.
 
 Bu durumda, birincil anahtarda verimli Aralık taramaları sağlayacak ve kalan boyut sütunlarını sıralama anahtarı kümesine ekleyecek yalnızca birkaç sütun bırakmak mantıklıdır.
 
 [ALTER](../../../sql-reference/statements/alter.md) yeni bir sütun aynı anda tabloya ve sıralama anahtarı eklendiğinde, varolan veri parçaları değiştirilmesi gerekmez, çünkü sıralama anahtarının hafif bir işlemdir. Eski sıralama anahtarı yeni sıralama anahtarının bir öneki olduğundan ve yeni eklenen sütunda veri olmadığından, veriler tablo değişikliği anında hem eski hem de yeni sıralama anahtarlarına göre sıralanır.
 
-### Sorgularda Dizin Ve bölümlerin kullanımı {#use-of-indexes-and-partitions-in-queries}
+### Sorgularda dizin ve bölümlerin kullanımı {#use-of-indexes-and-partitions-in-queries}
 
 İçin `SELECT` sorgular, ClickHouse bir dizin kullanılabilir olup olmadığını analiz eder. Eğer bir dizin kullanılabilir `WHERE/PREWHERE` yan tümce, bir eşitlik veya eşitsizlik karşılaştırma işlemini temsil eden bir ifadeye (bağlantı öğelerinden biri olarak veya tamamen) sahiptir veya varsa `IN` veya `LIKE` sütun veya birincil anahtar veya bölümleme anahtar veya bu sütunların belirli kısmen tekrarlayan işlevleri veya bu ifadelerin mantıksal ilişkileri olan ifadeler üzerinde sabit bir önek ile.
 
@@ -239,11 +239,11 @@ Aşağıdaki örnekte, dizin kullanılamaz.
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-Clickhouse’un bir sorgu çalıştırırken dizini kullanıp kullanamayacağını kontrol etmek için ayarları kullanın [force\_index\_by\_date](../../../operations/settings/settings.md#settings-force_index_by_date) ve [force\_primary\_key](../../../operations/settings/settings.md).
+Clickhouse'un bir sorgu çalıştırırken dizini kullanıp kullanamayacağını kontrol etmek için ayarları kullanın [force\_index\_by\_date](../../../operations/settings/settings.md#settings-force_index_by_date) ve [force\_primary\_key](../../../operations/settings/settings.md).
 
 Aylara göre bölümleme anahtarı, yalnızca uygun aralıktaki tarihleri içeren veri bloklarını okumanıza izin verir. Bu durumda, veri bloğu birçok tarih için veri içerebilir (bir aya kadar). Bir blok içinde veriler, ilk sütun olarak tarihi içermeyen birincil anahtara göre sıralanır. Bu nedenle, birincil anahtar önekini belirtmeyen yalnızca bir tarih koşulu ile bir sorgu kullanarak tek bir tarih için okunacak daha fazla veri neden olur.
 
-### Kısmen Monotonik Birincil Anahtarlar için Endeks kullanımı {#use-of-index-for-partially-monotonic-primary-keys}
+### Kısmen monotonik birincil anahtarlar için Endeks kullanımı {#use-of-index-for-partially-monotonic-primary-keys}
 
 Örneğin, Ayın günlerini düşünün. Onlar formu bir [monotonik dizisi](https://en.wikipedia.org/wiki/Monotonic_function) bir ay boyunca, ancak daha uzun süreler için monotonik değil. Bu kısmen monotonik bir dizidir. Bir kullanıcı kısmen monoton birincil anahtar ile tablo oluşturursa, ClickHouse her zamanki gibi seyrek bir dizin oluşturur. Bir kullanıcı bu tür bir tablodan veri seçtiğinde, ClickHouse sorgu koşullarını analiz eder. Kullanıcı, dizinin iki işareti arasında veri almak isterse ve bu işaretlerin her ikisi de bir ay içinde düşerse, ClickHouse bu özel durumda dizini kullanabilir, çünkü sorgu parametreleri ile dizin işaretleri arasındaki mesafeyi hesaplayabilir.
 
@@ -251,7 +251,7 @@ Sorgu parametresi aralığındaki birincil anahtarın değerleri monotonik bir s
 
 ClickHouse bu mantığı yalnızca ay dizilerinin günleri için değil, kısmen monotonik bir diziyi temsil eden herhangi bir birincil anahtar için kullanır.
 
-### Veri Atlama Indeksleri (deneysel) {#table_engine-mergetree-data_skipping-indexes}
+### Veri atlama indeksleri (deneysel) {#table_engine-mergetree-data_skipping-indexes}
 
 Dizin bildirimi sütunlar bölümünde `CREATE` sorgu.
 
@@ -285,7 +285,7 @@ SELECT count() FROM table WHERE s < 'z'
 SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 ```
 
-#### Mevcut Endeks Türleri {#available-types-of-indices}
+#### Mevcut Endeks türleri {#available-types-of-indices}
 
 -   `minmax`
 
@@ -293,7 +293,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 -   `set(max_rows)`
 
-    Belirtilen ifadenin benzersiz değerlerini depolar (en fazla `max_rows` satırlar, `max_rows=0` anlama “no limits”). Kontrol etmek için değerleri kullanır `WHERE` ifade, bir veri bloğu üzerinde tatmin edilemez değildir.
+    Belirtilen ifadenin benzersiz değerlerini depolar (en fazla `max_rows` satırlar, `max_rows=0` Anlamına geliyor “no limits”). Kontrol etmek için değerleri kullanır `WHERE` ifade, bir veri bloğu üzerinde tatmin edilemez değildir.
 
 -   `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
@@ -372,7 +372,7 @@ Eşzamanlı tablo erişimi için çoklu sürüm kullanıyoruz. Başka bir deyiş
 
 Bir tablodan okuma otomatik olarak paralelleştirilir.
 
-## Sütunlar Ve Tablolar için TTL {#table_engine-mergetree-ttl}
+## Sütunlar ve tablolar için TTL {#table_engine-mergetree-ttl}
 
 Değerlerin ömrünü belirler.
 
@@ -387,7 +387,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-Tanımlamak `interval`, kullanma [zaman aralığı](../../../sql-reference/operators.md#operators-datetime) operatörler.
+Tanımlamak `interval`, kullanma [zaman aralığı](../../../sql-reference/operators/index.md#operators-datetime) operatörler.
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH
@@ -480,11 +480,11 @@ ClickHouse, verilerin süresi dolduğunu gördüğünde, zamanlama dışı bir b
 
 Gerçekleştir theirseniz `SELECT` birleştirme arasında sorgu, süresi dolmuş veri alabilirsiniz. Bunu önlemek için, [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) önce sorgu `SELECT`.
 
-## Veri Depolama İçin Birden Fazla Blok Cihazı Kullanma {#table_engine-mergetree-multiple-volumes}
+## Veri depolama için birden fazla blok cihazı kullanma {#table_engine-mergetree-multiple-volumes}
 
 ### Giriş {#introduction}
 
-`MergeTree` aile tablo motorları birden fazla blok cihazlarda veri saklayabilirsiniz. Örneğin, belirli bir tablonun verileri örtük olarak bölündüğünde yararlı olabilir “hot” ve “cold”. En son veriler düzenli olarak talep edilir, ancak yalnızca az miktarda alan gerektirir. Aksine, yağ kuyruklu tarihsel veriler nadiren talep edilir. Birkaç disk varsa, “hot” veriler hızlı disklerde (örneğin, NVMe SSD’ler veya bellekte) bulunabilir; “cold” veri-nispeten yavaş olanlar (örneğin, HDD).
+`MergeTree` aile tablo motorları birden fazla blok cihazlarda veri saklayabilirsiniz. Örneğin, belirli bir tablonun verileri örtük olarak bölündüğünde yararlı olabilir “hot” ve “cold”. En son veriler düzenli olarak talep edilir, ancak yalnızca az miktarda alan gerektirir. Aksine, yağ kuyruklu tarihsel veriler nadiren talep edilir. Birkaç disk varsa, “hot” veriler hızlı disklerde (örneğin, NVMe SSD'ler veya bellekte) bulunabilir; “cold” veri-nispeten yavaş olanlar (örneğin, HDD).
 
 Veri kısmı için minimum hareketli birimdir `MergeTree`- motor masaları. Bir parçaya ait veriler bir diskte saklanır. Veri parçaları arka planda diskler arasında (kullanıcı ayarlarına göre) ve aynı zamanda [ALTER](../../../sql-reference/statements/alter.md#alter_move-partition) sorgular.
 
@@ -567,7 +567,7 @@ Etiketler:
 -   `policy_name_N` — Policy name. Policy names must be unique.
 -   `volume_name_N` — Volume name. Volume names must be unique.
 -   `disk` — a disk within a volume.
--   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks.
+-   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks.
 -   `move_factor` — when the amount of available space gets lower than this factor, data automatically start to move on the next volume if any (by default, 0.1).
 
 Cofiguration örnekleri:
@@ -602,10 +602,10 @@ Cofiguration örnekleri:
 </storage_configuration>
 ```
 
-Verilen örnekte, `hdd_in_order` politika uygular [Ro -und-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling) yaklaşma. Böylece bu politika yalnızca bir birim tanımlar (`single`), veri parçaları tüm disklerinde dairesel sırayla saklanır. Bu tür bir politika, sisteme birkaç benzer disk takılıysa, ancak RAID yapılandırılmamışsa oldukça yararlı olabilir. Her bir disk sürücüsünün güvenilir olmadığını ve bunu 3 veya daha fazla çoğaltma faktörü ile telafi etmek isteyebileceğinizi unutmayın.
+Verilen örnekte, `hdd_in_order` politika uygular [Ro -und-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling) yaklaşmak. Böylece bu politika yalnızca bir birim tanımlar (`single`), veri parçaları tüm disklerinde dairesel sırayla saklanır. Bu tür bir politika, sisteme birkaç benzer disk takılıysa, ancak RAID yapılandırılmamışsa oldukça yararlı olabilir. Her bir disk sürücüsünün güvenilir olmadığını ve bunu 3 veya daha fazla çoğaltma faktörü ile telafi etmek isteyebileceğinizi unutmayın.
 
 Sistemde farklı türde diskler varsa, `moving_from_ssd_to_hdd` politika yerine kullanılabilir. Birim `hot` bir SSD disk oluşur (`fast_ssd`) ve bu birimde saklanabilecek bir parçanın maksimum boyutu 1GB. Tüm parçaları ile boyutu daha büyük 1 GB üzerinde doğrudan saklanır `cold` bir HDD diski içeren birim `disk1`.
-Ayrıca, bir kez disk `fast_ssd` 80’den fazla % tarafından doldurulur, veri transfer edilecektir `disk1` bir arka plan işlemi ile.
+Ayrıca, bir kez disk `fast_ssd` 80'den fazla % tarafından doldurulur, veri transfer edilecektir `disk1` bir arka plan işlemi ile.
 
 Depolama ilkesi içindeki birim numaralandırma sırası önemlidir. Bir birim aşırı doldurulduktan sonra, veriler bir sonrakine taşınır. Disk numaralandırma sırası da önemlidir, çünkü veriler sırayla depolanır.
 

@@ -15,7 +15,6 @@
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/narrowBlockInputStreams.h>
@@ -27,6 +26,7 @@
 #include <hdfs/hdfs.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
+
 
 namespace DB
 {

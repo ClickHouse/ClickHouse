@@ -33,6 +33,7 @@ class QueryProfilerCpu;
 class QueryThreadLog;
 class TasksStatsCounters;
 struct RUsageCounters;
+struct PerfEventsCounters;
 class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;

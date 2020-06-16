@@ -162,4 +162,10 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wunused)
     # Warn if vector operation is not implemented via SIMD capabilities of the architecture
     add_cxx_compile_options(-Wvector-operation-performance)
+
+    # XXX: gcc10 stuck with this option while compiling GatherUtils code
+    # (anyway there are builds with clang, that will warn)
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
+        add_cxx_compile_options(-Wno-sequence-point)
+    endif()
 endif ()

@@ -1,19 +1,19 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
 toc_title: GraphiteMergeTree
 ---
 
-# Graphitemergetree {#graphitemergetree}
+# GraphiteMergeTree {#graphitemergetree}
 
-Ce moteur est conçu pour l’amincissement et l’agrégation / moyenne (cumul) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) données. Il peut être utile aux développeurs qui veulent utiliser ClickHouse comme un magasin de données pour Graphite.
+Ce moteur est conçu pour l'amincissement et l'agrégation / moyenne (cumul) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) données. Il peut être utile aux développeurs qui veulent utiliser ClickHouse comme un magasin de données pour Graphite.
 
-Vous pouvez utiliser N’importe quel moteur de table ClickHouse pour stocker les données Graphite si vous n’avez pas besoin de cumul, mais si vous avez besoin d’un cumul, utilisez `GraphiteMergeTree`. Le moteur réduit le volume de stockage et augmente l’efficacité des requêtes de Graphite.
+Vous pouvez utiliser N'importe quel moteur de table ClickHouse pour stocker les données Graphite si vous n'avez pas besoin de cumul, mais si vous avez besoin d'un cumul, utilisez `GraphiteMergeTree`. Le moteur réduit le volume de stockage et augmente l'efficacité des requêtes de Graphite.
 
 Le moteur hérite des propriétés de [MergeTree](mergetree.md).
 
-## Création d’une Table {#creating-table}
+## Création d'une Table {#creating-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -52,14 +52,14 @@ Les noms de ces colonnes doivent être définis dans la configuration de cumul.
 
 **Les clauses de requête**
 
-Lors de la création d’un `GraphiteMergeTree` de table, de la même [clause](mergetree.md#table_engine-mergetree-creating-a-table) sont nécessaires, comme lors de la création d’un `MergeTree` table.
+Lors de la création d'un `GraphiteMergeTree` de table, de la même [clause](mergetree.md#table_engine-mergetree-creating-a-table) sont nécessaires, comme lors de la création d'un `MergeTree` table.
 
 <details markdown="1">
 
 <summary>Méthode obsolète pour créer une Table</summary>
 
 !!! attention "Attention"
-    N’utilisez pas cette méthode dans les nouveaux projets et, si possible, remplacez les anciens projets par la méthode décrite ci-dessus.
+    N'utilisez pas cette méthode dans les nouveaux projets et, si possible, remplacez les anciens projets par la méthode décrite ci-dessus.
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -127,7 +127,7 @@ default
       1. Patterns with both `function` and `retention`.
       1. Pattern `default`.
 
-Lors du traitement d’une ligne, ClickHouse vérifie les règles `pattern` section. Chacun `pattern` (comprendre `default`) les articles peuvent contenir des `function` paramètre d’agrégation, `retention` les paramètres ou les deux à la fois. Si le nom de la métrique correspond `regexp` les règles de la `pattern` section (ou sections) sont appliquées; sinon, les règles de la `default` section sont utilisés.
+Lors du traitement d'une ligne, ClickHouse vérifie les règles `pattern` section. Chacun `pattern` (comprendre `default`) les articles peuvent contenir des `function` paramètre d'agrégation, `retention` les paramètres ou les deux à la fois. Si le nom de la métrique correspond `regexp` les règles de la `pattern` section (ou sections) sont appliquées; sinon, les règles de la `default` section sont utilisés.
 
 Champs pour `pattern` et `default` section:
 

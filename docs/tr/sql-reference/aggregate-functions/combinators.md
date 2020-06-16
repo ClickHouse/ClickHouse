@@ -1,8 +1,8 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 37
-toc_title: "Toplama fonksiyonu birle\u015Ftiriciler"
+toc_title: "Birle\u015Ftiriciler"
 ---
 
 # Toplama Fonksiyonu Birleştiriciler {#aggregate_functions_combinators}
@@ -34,8 +34,8 @@ Bu birleştiriciyi uygularsanız, toplama işlevi elde edilen değeri döndürme
 Bu durumlarla çalışmak için şunları kullanın:
 
 -   [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) masa motoru.
--   [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) işlev.
--   [runningAccumulate](../../sql-reference/functions/other-functions.md#function-runningaccumulate) işlev.
+-   [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) İşlev.
+-   [runningAccumulate](../../sql-reference/functions/other-functions.md#function-runningaccumulate) İşlev.
 -   [-Birleştirmek](#aggregate_functions_combinators-merge) birleştirici.
 -   [- MergeState](#aggregate_functions_combinators-mergestate) birleştirici.
 
@@ -45,7 +45,7 @@ Bu birleştiriciyi uygularsanız, toplama işlevi Ara toplama durumunu bağıms�
 
 ## - MergeState {#aggregate_functions_combinators-mergestate}
 
-Ara toplama durumlarını-birleştirme Birleştiricisi ile aynı şekilde birleştirir. Bununla birlikte, elde edilen değeri döndürmez, ancak-State combinator’a benzer bir ara toplama durumu döndürür.
+Ara toplama durumlarını-birleştirme Birleştiricisi ile aynı şekilde birleştirir. Bununla birlikte, elde edilen değeri döndürmez, ancak-State combinator'a benzer bir ara toplama durumu döndürür.
 
 ## - ForEach {#agg-functions-combinator-foreach}
 
@@ -53,11 +53,37 @@ Tablolar için bir toplama işlevi, karşılık gelen dizi öğelerini toplayan 
 
 ## - OrDefault {#agg-functions-combinator-ordefault}
 
-Toplamak için hiçbir şey yoksa, toplama işlevinin dönüş türünün Varsayılan değerini doldurur.
+Toplama işlevinin davranışını değiştirir.
+
+Bir toplama işlevinin giriş değerleri yoksa, bu birleştirici ile dönüş veri türü için varsayılan değeri döndürür. Boş giriş verilerini alabilen toplama işlevlerine uygulanır.
+
+`-OrDefault` diğer birleştiriciler ile kullanılabilir.
+
+**Sözdizimi**
+
+``` sql
+<aggFunction>OrDefault(x)
+```
+
+**Parametre**
+
+-   `x` — Aggregate function parameters.
+
+**Döndürülen değerler**
+
+Toplamak için hiçbir şey yoksa, bir toplama işlevinin dönüş türünün Varsayılan değerini döndürür.
+
+Türü kullanılan toplama işlevine bağlıdır.
+
+**Örnek**
+
+Sorgu:
 
 ``` sql
 SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 ```
+
+Sonuç:
 
 ``` text
 ┌─avg(number)─┬─avgOrDefault(number)─┐
@@ -65,21 +91,72 @@ SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 └─────────────┴──────────────────────┘
 ```
 
-## - OrNull {#agg-functions-combinator-ornull}
+Ayrıca `-OrDefault` başka bir birleştiriciler ile kullanılabilir. Toplama işlevi boş girişi kabul etmediğinde yararlıdır.
 
-Doldurmalar `null` toplamak için hiçbir şey varsa. Dönüş sütun null olur.
+Sorgu:
 
 ``` sql
-SELECT avg(number), avgOrNull(number) FROM numbers(0)
+SELECT avgOrDefaultIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
 ```
+
+Sonuç:
 
 ``` text
-┌─avg(number)─┬─avgOrNull(number)─┐
-│         nan │              ᴺᵁᴸᴸ │
-└─────────────┴───────────────────┘
+┌─avgOrDefaultIf(x, greater(x, 10))─┐
+│                              0.00 │
+└───────────────────────────────────┘
 ```
 
-\- OrDefault ve-OrNull diğer birleştiriciler ile kombine edilebilir. Toplama işlevi boş girişi kabul etmediğinde yararlıdır.
+## - OrNull {#agg-functions-combinator-ornull}
+
+Toplama işlevinin davranışını değiştirir.
+
+Bu birleştirici, bir toplama işlevinin sonucunu [Nullable](../data-types/nullable.md) veri türü. Toplama işlevi hesaplamak için değerleri yoksa döndürür [NULL](../syntax.md#null-literal).
+
+`-OrNull` diğer birleştiriciler ile kullanılabilir.
+
+**Sözdizimi**
+
+``` sql
+<aggFunction>OrNull(x)
+```
+
+**Parametre**
+
+-   `x` — Aggregate function parameters.
+
+**Döndürülen değerler**
+
+-   Toplama işlev resultinin sonucu, `Nullable` veri türü.
+-   `NULL`, toplamak için bir şey yoksa.
+
+Tür: `Nullable(aggregate function return type)`.
+
+**Örnek**
+
+Eklemek `-orNull` toplama işlevinin sonuna kadar.
+
+Sorgu:
+
+``` sql
+SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
+```
+
+Sonuç:
+
+``` text
+┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
+│              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
+└───────────────────┴───────────────────────────────┘
+```
+
+Ayrıca `-OrNull` başka bir birleştiriciler ile kullanılabilir. Toplama işlevi boş girişi kabul etmediğinde yararlıdır.
+
+Sorgu:
 
 ``` sql
 SELECT avgOrNullIf(x, x > 10)
@@ -88,6 +165,8 @@ FROM
     SELECT toDecimal32(1.23, 2) AS x
 )
 ```
+
+Sonuç:
 
 ``` text
 ┌─avgOrNullIf(x, greater(x, 10))─┐
@@ -132,7 +211,7 @@ Düşünün `people` aşağıdaki verilerle tablo:
 
 Yaş aralığı içinde olan kişilerin isimlerini alalım `[30,60)` ve `[60,75)`. Yaş için tamsayı temsilini kullandığımızdan, yaşları `[30, 59]` ve `[60,74]` aralıklılar.
 
-Bir dizideki isimleri toplamak için, [groupArray](reference.md#agg_function-grouparray) toplama işlevi. Bir argüman alır. Bizim durumumuzda, bu `name` sütun. Bu `groupArrayResample` fonksiyon kullanmalıdır `age` yaşlara göre isimleri toplamak için sütun. Gerekli aralıkları tanımlamak için `30, 75, 30` argü themanlar içine `groupArrayResample` işlev.
+Bir dizideki isimleri toplamak için, [groupArray](reference.md#agg_function-grouparray) toplama işlevi. Bir argüman alır. Bizim durumumuzda, bu `name` sütun. Bu `groupArrayResample` fonksiyon kullanmalıdır `age` yaşlara göre isimleri toplamak için sütun. Gerekli aralıkları tanımlamak için `30, 75, 30` argü themanlar içine `groupArrayResample` İşlev.
 
 ``` sql
 SELECT groupArrayResample(30, 75, 30)(name, age) FROM people

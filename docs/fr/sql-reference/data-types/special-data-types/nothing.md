@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 60
 toc_title: Rien
 ---
 
 # Rien {#nothing}
 
-Le seul but de ce type de données est de représenter les cas où une valeur n’est pas prévu. Donc vous ne pouvez pas créer un `Nothing` type de valeur.
+Le seul but de ce type de données est de représenter les cas où une valeur n'est pas prévu. Donc vous ne pouvez pas créer un `Nothing` type de valeur.
 
 Par exemple, littéral [NULL](../../../sql-reference/syntax.md#null-literal) a type de `Nullable(Nothing)`. Voir plus sur [Nullable](../../../sql-reference/data-types/nullable.md).
 

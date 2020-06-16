@@ -1,3 +1,4 @@
+
 #include <Access/ExtendedRoleSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
@@ -43,12 +44,6 @@ ExtendedRoleSet::ExtendedRoleSet(const std::vector<UUID> & ids_)
 }
 
 
-ExtendedRoleSet::ExtendedRoleSet(const boost::container::flat_set<UUID> & ids_)
-{
-    add(ids_);
-}
-
-
 ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast)
 {
     init(ast, nullptr);
@@ -73,15 +68,27 @@ void ExtendedRoleSet::init(const ASTExtendedRoleSet & ast, const AccessControlMa
 {
     all = ast.all;
 
-    auto name_to_id = [id_mode{ast.id_mode}, manager](const String & name) -> UUID
+    auto name_to_id = [&ast, manager](const String & name) -> UUID
     {
-        if (id_mode)
+        if (ast.id_mode)
             return parse<UUID>(name);
         assert(manager);
-        auto id = manager->find<User>(name);
-        if (id)
-            return *id;
-        return manager->getID<Role>(name);
+        if (ast.can_contain_users && ast.can_contain_roles)
+        {
+            auto id = manager->find<User>(name);
+            if (id)
+                return *id;
+            return manager->getID<Role>(name);
+        }
+        else if (ast.can_contain_users)
+        {
+            return manager->getID<User>(name);
+        }
+        else
+        {
+            assert(ast.can_contain_roles);
+            return manager->getID<Role>(name);
+        }
     };
 
     if (!ast.names.empty() && !all)
@@ -126,6 +133,7 @@ std::shared_ptr<ASTExtendedRoleSet> ExtendedRoleSet::toAST() const
         ast->names.reserve(ids.size());
         for (const UUID & id : ids)
             ast->names.emplace_back(::DB::toString(id));
+        boost::range::sort(ast->names);
     }
 
     if (!except_ids.empty())
@@ -133,29 +141,10 @@ std::shared_ptr<ASTExtendedRoleSet> ExtendedRoleSet::toAST() const
         ast->except_names.reserve(except_ids.size());
         for (const UUID & except_id : except_ids)
             ast->except_names.emplace_back(::DB::toString(except_id));
+        boost::range::sort(ast->except_names);
     }
 
     return ast;
-}
-
-
-String ExtendedRoleSet::toString() const
-{
-    auto ast = toAST();
-    return serializeAST(*ast);
-}
-
-
-Strings ExtendedRoleSet::toStrings() const
-{
-    if (all || !except_ids.empty())
-        return {toString()};
-
-    Strings names;
-    names.reserve(ids.size());
-    for (const UUID & id : ids)
-        names.emplace_back(::DB::toString(id));
-    return names;
 }
 
 
@@ -192,6 +181,13 @@ std::shared_ptr<ASTExtendedRoleSet> ExtendedRoleSet::toASTWithNames(const Access
 }
 
 
+String ExtendedRoleSet::toString() const
+{
+    auto ast = toAST();
+    return serializeAST(*ast);
+}
+
+
 String ExtendedRoleSet::toStringWithNames(const AccessControlManager & manager) const
 {
     auto ast = toASTWithNames(manager);
@@ -201,19 +197,39 @@ String ExtendedRoleSet::toStringWithNames(const AccessControlManager & manager) 
 
 Strings ExtendedRoleSet::toStringsWithNames(const AccessControlManager & manager) const
 {
-    if (all || !except_ids.empty())
-        return {toStringWithNames(manager)};
+    if (!all && ids.empty())
+        return {};
 
-    Strings names;
-    names.reserve(ids.size());
-    for (const UUID & id : ids)
+    Strings res;
+    res.reserve(ids.size() + except_ids.size());
+
+    if (all)
+        res.emplace_back("ALL");
+    else
     {
-        auto name = manager.tryReadName(id);
-        if (name)
-            names.emplace_back(std::move(*name));
+        for (const UUID & id : ids)
+        {
+            auto name = manager.tryReadName(id);
+            if (name)
+                res.emplace_back(std::move(*name));
+        }
+        std::sort(res.begin(), res.end());
     }
-    boost::range::sort(names);
-    return names;
+
+    if (!except_ids.empty())
+    {
+        res.emplace_back("EXCEPT");
+        size_t old_size = res.size();
+        for (const UUID & id : except_ids)
+        {
+            auto name = manager.tryReadName(id);
+            if (name)
+                res.emplace_back(std::move(*name));
+        }
+        std::sort(res.begin() + old_size, res.end());
+    }
+
+    return res;
 }
 
 
@@ -244,35 +260,9 @@ void ExtendedRoleSet::add(const std::vector<UUID> & ids_)
 }
 
 
-void ExtendedRoleSet::add(const boost::container::flat_set<UUID> & ids_)
-{
-    for (const auto & id : ids_)
-        add(id);
-}
-
-
 bool ExtendedRoleSet::match(const UUID & id) const
 {
     return (all || ids.count(id)) && !except_ids.count(id);
-}
-
-
-bool ExtendedRoleSet::match(const UUID & user_id, const std::vector<UUID> & enabled_roles) const
-{
-    if (!all && !ids.count(user_id))
-    {
-        bool found_enabled_role = std::any_of(
-            enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return ids.count(enabled_role); });
-        if (!found_enabled_role)
-            return false;
-    }
-
-    if (except_ids.count(user_id))
-        return false;
-
-    bool in_except_list = std::any_of(
-        enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return except_ids.count(enabled_role); });
-    return !in_except_list;
 }
 
 

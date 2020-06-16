@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 53
 toc_title: Trabajando con UUID
 ---
 
-# Funciones Para Trabajar Con UUID {#functions-for-working-with-uuid}
+# Funciones para trabajar con UUID {#functions-for-working-with-uuid}
 
 Las funciones para trabajar con UUID se enumeran a continuación.
 

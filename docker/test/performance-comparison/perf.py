@@ -11,6 +11,9 @@ import string
 import time
 import traceback
 
+def tsv_escape(s):
+    return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r','')
+
 stage_start_seconds = time.perf_counter()
 
 def report_stage_end(stage_name):
@@ -28,6 +31,8 @@ parser.add_argument('--port', nargs='*', default=[9000], help="Server port(s). C
 parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 13)), help='Number of query runs per server. Defaults to CHPC_RUNS environment variable.')
 parser.add_argument('--no-long', type=bool, default=True, help='Skip the tests tagged as long.')
 args = parser.parse_args()
+
+test_name = os.path.splitext(os.path.basename(args.file[0].name))[0]
 
 tree = et.parse(args.file[0])
 root = tree.getroot()
@@ -95,11 +100,20 @@ for c in connections:
 
 report_stage_end('drop1')
 
-# Apply settings
+# Apply settings.
+# If there are errors, report them and continue -- maybe a new test uses a setting
+# that is not in master, but the queries can still run. If we have multiple
+# settings and one of them throws an exception, all previous settings for this
+# connection will be reset, because the driver reconnects on error (not
+# configurable). So the end result is uncertain, but hopefully we'll be able to
+# run at least some queries.
 settings = root.findall('settings/*')
 for c in connections:
     for s in settings:
-        c.execute("set {} = '{}'".format(s.tag, s.text))
+        try:
+            c.execute("set {} = '{}'".format(s.tag, s.text))
+        except:
+            print(traceback.format_exc(), file=sys.stderr)
 
 report_stage_end('settings')
 
@@ -110,8 +124,9 @@ for t in tables:
         try:
             res = c.execute("select 1 from {} limit 1".format(t))
         except:
-            print('skipped\t' + traceback.format_exception_only(*sys.exc_info()[:2])[-1])
-            traceback.print_exc()
+            exception_message = traceback.format_exception_only(*sys.exc_info()[:2])[-1]
+            skipped_message = ' '.join(exception_message.split('\n')[:2])
+            print(f'skipped\t{tsv_escape(skipped_message)}')
             sys.exit(0)
 
 report_stage_end('preconditions')
@@ -133,27 +148,32 @@ for c in connections:
 report_stage_end('fill')
 
 # Run test queries
-def tsv_escape(s):
-    return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r','')
-
 test_query_templates = [q.text for q in root.findall('query')]
 test_queries = substitute_parameters(test_query_templates)
 
 report_stage_end('substitute2')
 
-for i, q in enumerate(test_queries):
+for query_index, q in enumerate(test_queries):
+    query_prefix = f'{test_name}.query{query_index}'
+
     # We have some crazy long queries (about 100kB), so trim them to a sane
-    # length.
+    # length. This means we can't use query text as an identifier and have to
+    # use the test name + the test-wide query index.
     query_display_name = q
     if len(query_display_name) > 1000:
-        query_display_name = f'{query_display_name[:1000]}...({i})'
+        query_display_name = f'{query_display_name[:1000]}...({query_index})'
+
+    print(f'display-name\t{query_index}\t{tsv_escape(query_display_name)}')
 
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
     try:
         for conn_index, c in enumerate(connections):
-            res = c.execute(q, query_id = f'prewarm {0} {query_display_name}')
-            print(f'prewarm\t{tsv_escape(query_display_name)}\t{conn_index}\t{c.last_query.elapsed}')
+            prewarm_id = f'{query_prefix}.prewarm0'
+            res = c.execute(q, query_id = prewarm_id)
+            print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}')
+    except KeyboardInterrupt:
+        raise
     except:
         # If prewarm fails for some query -- skip it, and try to test the others.
         # This might happen if the new test introduces some function that the
@@ -170,13 +190,14 @@ for i, q in enumerate(test_queries):
     start_seconds = time.perf_counter()
     server_seconds = 0
     for run in range(0, args.runs):
+        run_id = f'{query_prefix}.run{run}'
         for conn_index, c in enumerate(connections):
-            res = c.execute(q)
-            print(f'query\t{tsv_escape(query_display_name)}\t{run}\t{conn_index}\t{c.last_query.elapsed}')
+            res = c.execute(q, query_id = run_id)
+            print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
             server_seconds += c.last_query.elapsed
 
     client_seconds = time.perf_counter() - start_seconds
-    print(f'client-time\t{tsv_escape(query_display_name)}\t{client_seconds}\t{server_seconds}')
+    print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')
 
 report_stage_end('benchmark')
 

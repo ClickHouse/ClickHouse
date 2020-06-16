@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 52
 toc_title: Tablas del sistema
 ---
 
-# Tablas Del Sistema {#system-tables}
+# Tablas del sistema {#system-tables}
 
 Las tablas del sistema se utilizan para implementar parte de la funcionalidad del sistema y para proporcionar acceso a información sobre cómo funciona el sistema.
 No puede eliminar una tabla del sistema (pero puede realizar DETACH).
@@ -147,29 +147,69 @@ Esta tabla del sistema se utiliza para implementar el `SHOW DATABASES` consulta.
 
 ## sistema.detached\_parts {#system_tables-detached_parts}
 
-Contiene información sobre piezas separadas de [Método de codificación de datos:](../engines/table-engines/mergetree-family/mergetree.md) tabla. El `reason` columna especifica por qué se separó la pieza. Para las piezas separadas por el usuario, el motivo está vacío. Tales partes se pueden unir con [ALTER TABLE ATTACH PARTITION\|PART](../query_language/query_language/alter/#alter_attach-partition) comando. Para obtener la descripción de otras columnas, consulte [sistema.parte](#system_tables-parts). Si el nombre de la pieza no es válido, los valores de algunas columnas pueden ser `NULL`. Tales partes se pueden eliminar con [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
+Contiene información sobre piezas separadas de [Método de codificación de datos:](../engines/table-engines/mergetree-family/mergetree.md) tabla. El `reason` columna especifica por qué se separó la pieza. Para las piezas separadas por el usuario, el motivo está vacío. Tales partes se pueden unir con [ALTER TABLE ATTACH PARTITION\|PART](../sql-reference/statements/alter.md#alter_attach-partition) comando. Para obtener la descripción de otras columnas, consulte [sistema.parte](#system_tables-parts). Si el nombre de la pieza no es válido, los valores de algunas columnas pueden ser `NULL`. Tales partes se pueden eliminar con [ALTER TABLE DROP DETACHED PART](../sql-reference/statements/alter.md#alter_drop-detached).
 
-## sistema.diccionario {#system-dictionaries}
+## sistema.diccionario {#system_tables-dictionaries}
 
-Contiene información sobre diccionarios externos.
+Contiene información sobre [diccionarios externos](../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
 Columna:
 
--   `name` (String) — Dictionary name.
--   `type` (String) — Dictionary type: Flat, Hashed, Cache.
--   `origin` (String) — Path to the configuration file that describes the dictionary.
--   `attribute.names` (Array(String)) — Array of attribute names provided by the dictionary.
--   `attribute.types` (Array(String)) — Corresponding array of attribute types that are provided by the dictionary.
--   `has_hierarchy` (UInt8) — Whether the dictionary is hierarchical.
--   `bytes_allocated` (UInt64) — The amount of RAM the dictionary uses.
--   `hit_rate` (Float64) — For cache dictionaries, the percentage of uses for which the value was in the cache.
--   `element_count` (UInt64) — The number of items stored in the dictionary.
--   `load_factor` (Float64) — The percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
--   `creation_time` (DateTime) — The time when the dictionary was created or last successfully reloaded.
--   `last_exception` (String) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created.
--   `source` (String) — Text describing the data source for the dictionary.
+-   `database` ([Cadena](../sql-reference/data-types/string.md)) — Name of the database containing the dictionary created by DDL query. Empty string for other dictionaries.
+-   `name` ([Cadena](../sql-reference/data-types/string.md)) — [Nombre del diccionario](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict.md).
+-   `status` ([Enum8](../sql-reference/data-types/enum.md)) — Dictionary status. Possible values:
+    -   `NOT_LOADED` — Dictionary was not loaded because it was not used.
+    -   `LOADED` — Dictionary loaded successfully.
+    -   `FAILED` — Unable to load the dictionary as a result of an error.
+    -   `LOADING` — Dictionary is loading now.
+    -   `LOADED_AND_RELOADING` — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: [SYSTEM RELOAD DICTIONARY](../sql-reference/statements/system.md#query_language-system-reload-dictionary) consulta, tiempo de espera, configuración del diccionario ha cambiado).
+    -   `FAILED_AND_RELOADING` — Could not load the dictionary as a result of an error and is loading now.
+-   `origin` ([Cadena](../sql-reference/data-types/string.md)) — Path to the configuration file that describes the dictionary.
+-   `type` ([Cadena](../sql-reference/data-types/string.md)) — Type of a dictionary allocation. [Almacenamiento de diccionarios en la memoria](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md).
+-   `key` — [Tipo de llave](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-key): Clave numérica ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) or Сomposite key ([Cadena](../sql-reference/data-types/string.md)) — form “(type 1, type 2, …, type n)”.
+-   `attribute.names` ([Matriz](../sql-reference/data-types/array.md)([Cadena](../sql-reference/data-types/string.md))) — Array of [nombres de atributos](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes) proporcionada por el diccionario.
+-   `attribute.types` ([Matriz](../sql-reference/data-types/array.md)([Cadena](../sql-reference/data-types/string.md))) — Corresponding array of [tipos de atributos](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes) que son proporcionados por el diccionario.
+-   `bytes_allocated` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Amount of RAM allocated for the dictionary.
+-   `query_count` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of queries since the dictionary was loaded or since the last successful reboot.
+-   `hit_rate` ([Float64](../sql-reference/data-types/float.md)) — For cache dictionaries, the percentage of uses for which the value was in the cache.
+-   `element_count` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of items stored in the dictionary.
+-   `load_factor` ([Float64](../sql-reference/data-types/float.md)) — Percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
+-   `source` ([Cadena](../sql-reference/data-types/string.md)) — Text describing the [fuente de datos](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md) para el diccionario.
+-   `lifetime_min` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Minimum [vida](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) del diccionario en la memoria, después de lo cual ClickHouse intenta volver a cargar el diccionario (si `invalidate_query` está configurado, entonces solo si ha cambiado). Establecer en segundos.
+-   `lifetime_max` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Maximum [vida](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) del diccionario en la memoria, después de lo cual ClickHouse intenta volver a cargar el diccionario (si `invalidate_query` está configurado, entonces solo si ha cambiado). Establecer en segundos.
+-   `loading_start_time` ([FechaHora](../sql-reference/data-types/datetime.md)) — Start time for loading the dictionary.
+-   `last_successful_update_time` ([FechaHora](../sql-reference/data-types/datetime.md)) — End time for loading or updating the dictionary. Helps to monitor some troubles with external sources and investigate causes.
+-   `loading_duration` ([Float32](../sql-reference/data-types/float.md)) — Duration of a dictionary loading.
+-   `last_exception` ([Cadena](../sql-reference/data-types/string.md)) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
 
-Tenga en cuenta que la cantidad de memoria utilizada por el diccionario no es proporcional a la cantidad de elementos almacenados en él. Por lo tanto, para los diccionarios planos y en caché, todas las celdas de memoria se asignan previamente, independientemente de qué tan lleno esté realmente el diccionario.
+**Ejemplo**
+
+Configurar el diccionario.
+
+``` sql
+CREATE DICTIONARY dictdb.dict
+(
+    `key` Int64 DEFAULT -1,
+    `value_default` String DEFAULT 'world',
+    `value_expression` String DEFAULT 'xxx' EXPRESSION 'toString(127 * 172)'
+)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dicttbl' DB 'dictdb'))
+LIFETIME(MIN 0 MAX 1)
+LAYOUT(FLAT())
+```
+
+Asegúrese de que el diccionario esté cargado.
+
+``` sql
+SELECT * FROM system.dictionaries
+```
+
+``` text
+┌─database─┬─name─┬─status─┬─origin──────┬─type─┬─key────┬─attribute.names──────────────────────┬─attribute.types─────┬─bytes_allocated─┬─query_count─┬─hit_rate─┬─element_count─┬───────────load_factor─┬─source─────────────────────┬─lifetime_min─┬─lifetime_max─┬──loading_start_time─┌──last_successful_update_time─┬──────loading_duration─┬─last_exception─┐
+│ dictdb   │ dict │ LOADED │ dictdb.dict │ Flat │ UInt64 │ ['value_default','value_expression'] │ ['String','String'] │           74032 │           0 │        1 │             1 │ 0.0004887585532746823 │ ClickHouse: dictdb.dicttbl │            0 │            1 │ 2020-03-04 04:17:34 │   2020-03-04 04:30:34        │                 0.002 │                │
+└──────────┴──────┴────────┴─────────────┴──────┴────────┴──────────────────────────────────────┴─────────────────────┴─────────────────┴─────────────┴──────────┴───────────────┴───────────────────────┴────────────────────────────┴──────────────┴──────────────┴─────────────────────┴──────────────────────────────┘───────────────────────┴────────────────┘
+```
 
 ## sistema.evento {#system_tables-events}
 
@@ -366,7 +406,7 @@ Esto es similar a la tabla DUAL que se encuentra en otros DBMS.
 
 Contiene información sobre partes de [Método de codificación de datos:](../engines/table-engines/mergetree-family/mergetree.md) tabla.
 
-Cada fila describe una parte de los datos.
+Cada fila describe una parte de datos.
 
 Columna:
 
@@ -379,7 +419,7 @@ Columna:
 
 -   `name` (`String`) – Name of the data part.
 
--   `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging.
+-   `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging.
 
 -   `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` por la granularidad del índice (generalmente 8192) (esta sugerencia no funciona para la granularidad adaptativa).
 
@@ -421,7 +461,7 @@ Columna:
 
 -   `primary_key_bytes_in_memory_allocated` (`UInt64`) – The amount of memory (in bytes) reserved for primary key values.
 
--   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn’t exist. For more details, see [FREEZE PARTITION](../sql-reference/statements/alter.md#alter_freeze-partition)
+-   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../sql-reference/statements/alter.md#alter_freeze-partition)
 
 -   `database` (`String`) – Name of the database.
 
@@ -499,7 +539,7 @@ Contiene entradas de registro. El nivel de registro que va a esta tabla se puede
 Columna:
 
 -   `event_date` (`Date`) - Fecha de la entrada.
--   `event_time` (`DateTime`) - Tiempo de la entrada.
+-   `event_time` (`DateTime`) - Hora de la entrada.
 -   `microseconds` (`UInt32`) - Microsegundos de la entrada.
 -   `thread_name` (String) — Name of the thread from which the logging was done.
 -   `thread_id` (UInt64) — OS thread ID.
@@ -533,7 +573,7 @@ Para habilitar el registro de consultas, [Log\_queries](settings/settings.md#set
 El `system.query_log` tabla registra dos tipos de consultas:
 
 1.  Consultas iniciales ejecutadas directamente por el cliente.
-2.  Niño consultas que fueron iniciados por otras consultas (distribuida de la ejecución de la consulta). Para estos tipos de consultas, la información sobre el padre de las consultas se muestra en la `initial_*` columna.
+2.  Consultas secundarias iniciadas por otras consultas (para la ejecución de consultas distribuidas). Para estos tipos de consultas, la información sobre las consultas principales se muestra en el `initial_*` columna.
 
 Columna:
 
@@ -570,7 +610,7 @@ Columna:
 -   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [Casa de clics-cliente](../interfaces/cli.md).
+-   `os_user` (String) — OS's username who runs [Casa de clics-cliente](../interfaces/cli.md).
 -   `client_hostname` (String) — Hostname of the client machine where the [Casa de clics-cliente](../interfaces/cli.md) o se ejecuta otro cliente TCP.
 -   `client_name` (String) — The [Casa de clics-cliente](../interfaces/cli.md) o otro nombre de cliente TCP.
 -   `client_revision` (UInt32) — Revision of the [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
@@ -644,7 +684,7 @@ Columna:
 -   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [Casa de clics-cliente](../interfaces/cli.md).
+-   `os_user` (String) — OS's username who runs [Casa de clics-cliente](../interfaces/cli.md).
 -   `client_hostname` (String) — Hostname of the client machine where the [Casa de clics-cliente](../interfaces/cli.md) o se ejecuta otro cliente TCP.
 -   `client_name` (String) — The [Casa de clics-cliente](../interfaces/cli.md) o otro nombre de cliente TCP.
 -   `client_revision` (UInt32) — Revision of the [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
@@ -680,24 +720,26 @@ Para analizar los registros, utilice el `addressToLine`, `addressToSymbol` y `de
 
 Columna:
 
--   `event_date`([Fecha](../sql-reference/data-types/date.md)) — Date of sampling moment.
+-   `event_date` ([Fecha](../sql-reference/data-types/date.md)) — Date of sampling moment.
 
--   `event_time`([FechaHora](../sql-reference/data-types/datetime.md)) — Timestamp of sampling moment.
+-   `event_time` ([FechaHora](../sql-reference/data-types/datetime.md)) — Timestamp of the sampling moment.
 
--   `revision`([UInt32](../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
+-   `timestamp_ns` ([UInt64](../sql-reference/data-types/int-uint.md)) — Timestamp of the sampling moment in nanoseconds.
+
+-   `revision` ([UInt32](../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
 
     Cuando se conecta al servidor por `clickhouse-client`, ves la cadena similar a `Connected to ClickHouse server version 19.18.1 revision 54429.`. Este campo contiene el `revision`, pero no el `version` de un servidor.
 
--   `timer_type`([Enum8](../sql-reference/data-types/enum.md)) — Timer type:
+-   `timer_type` ([Enum8](../sql-reference/data-types/enum.md)) — Timer type:
 
     -   `Real` representa el tiempo del reloj de pared.
     -   `CPU` representa el tiempo de CPU.
 
--   `thread_number`([UInt32](../sql-reference/data-types/int-uint.md)) — Thread identifier.
+-   `thread_number` ([UInt32](../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
--   `query_id`([Cadena](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) tabla del sistema.
+-   `query_id` ([Cadena](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) tabla del sistema.
 
--   `trace`([Matriz (UInt64)](../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+-   `trace` ([Matriz (UInt64)](../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
 **Ejemplo**
 
@@ -839,29 +881,58 @@ WHERE
 
 Si esta consulta no devuelve nada, significa que todo está bien.
 
-## sistema.configuración {#system-settings}
+## sistema.configuración {#system-tables-system-settings}
 
-Contiene información sobre la configuración actualmente en uso.
-Es decir, se usa para ejecutar la consulta que está utilizando para leer del sistema.tabla de configuración.
+Contiene información sobre la configuración de sesión para el usuario actual.
 
 Columna:
 
--   `name` (String) — Setting name.
--   `value` (String) — Setting value.
--   `description` (String) — Setting description.
--   `type` (String) — Setting type (implementation specific string value).
--   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
--   `min` (Nullable(String)) — Get minimum allowed value (if any is set via [limitación](settings/constraints-on-settings.md#constraints-on-settings)).
--   `max` (Nullable(String)) — Get maximum allowed value (if any is set via [limitación](settings/constraints-on-settings.md#constraints-on-settings)).
--   `readonly` (UInt8) — Can user change this setting (for more info, look into [limitación](settings/constraints-on-settings.md#constraints-on-settings)).
+-   `name` ([Cadena](../sql-reference/data-types/string.md)) — Setting name.
+-   `value` ([Cadena](../sql-reference/data-types/string.md)) — Setting value.
+-   `changed` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether a setting is changed from its default value.
+-   `description` ([Cadena](../sql-reference/data-types/string.md)) — Short setting description.
+-   `min` ([NULL](../sql-reference/data-types/nullable.md)([Cadena](../sql-reference/data-types/string.md))) — Minimum value of the setting, if any is set via [limitación](settings/constraints-on-settings.md#constraints-on-settings). Si la configuración no tiene ningún valor mínimo, contiene [NULL](../sql-reference/syntax.md#null-literal).
+-   `max` ([NULL](../sql-reference/data-types/nullable.md)([Cadena](../sql-reference/data-types/string.md))) — Maximum value of the setting, if any is set via [limitación](settings/constraints-on-settings.md#constraints-on-settings). Si la configuración no tiene ningún valor máximo, contiene [NULL](../sql-reference/syntax.md#null-literal).
+-   `readonly` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the current user can change the setting:
+    -   `0` — Current user can change the setting.
+    -   `1` — Current user can't change the setting.
 
-Ejemplo:
+**Ejemplo**
+
+En el ejemplo siguiente se muestra cómo obtener información sobre la configuración cuyo nombre contiene `min_i`.
 
 ``` sql
-SELECT name, value
+SELECT *
 FROM system.settings
-WHERE changed
+WHERE name LIKE '%min_i%'
 ```
+
+``` text
+┌─name────────────────────────────────────────┬─value─────┬─changed─┬─description───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┐
+│ min_insert_block_size_rows                  │ 1048576   │       0 │ Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough.                                                                         │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+│ min_insert_block_size_bytes                 │ 268435456 │       0 │ Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough.                                                                        │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+│ read_backoff_min_interval_between_events_ms │ 1000      │       0 │ Settings to reduce the number of threads in case of slow reads. Do not pay attention to the event, if the previous one has passed less than a certain amount of time. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+└─────────────────────────────────────────────┴───────────┴─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┘
+```
+
+Uso de `WHERE changed` puede ser útil, por ejemplo, cuando se desea comprobar:
+
+-   Si los ajustes de los archivos de configuración se cargan correctamente y están en uso.
+-   Configuración que cambió en la sesión actual.
+
+<!-- -->
+
+``` sql
+SELECT * FROM system.settings WHERE changed AND name='load_balancing'
+```
+
+**Ver también**
+
+-   [Configuración](settings/index.md#session-settings-intro)
+-   [Permisos para consultas](settings/permissions-for-queries.md#settings_readonly)
+-   [Restricciones en la configuración](settings/constraints-on-settings.md)
+
+## sistema.table\_engines {#system.table_engines}
 
 ``` text
 ┌─name───────────────────┬─value───────┐
@@ -950,7 +1021,7 @@ Esta tabla contiene las siguientes columnas (el tipo de columna se muestra entre
 
 -   `partition_key` (String) - La expresión de clave de partición especificada en la tabla.
 
--   `sorting_key` (Cadena) - La clave de clasificación de la expresión especificada en la tabla.
+-   `sorting_key` (String) - La expresión de clave de ordenación especificada en la tabla.
 
 -   `primary_key` (String) - La expresión de clave principal especificada en la tabla.
 
@@ -968,7 +1039,7 @@ Esta tabla contiene las siguientes columnas (el tipo de columna se muestra entre
     -   If the table stores data on disk, returns used space on disk (i.e. compressed).
     -   Si la tabla almacena datos en la memoria, devuelve el número aproximado de bytes utilizados en la memoria.
 
-El `system.tables` se utiliza la tabla en `SHOW TABLES` implementación de consultas.
+El `system.tables` se utiliza en `SHOW TABLES` implementación de consultas.
 
 ## sistema.Zookeeper {#system-zookeeper}
 

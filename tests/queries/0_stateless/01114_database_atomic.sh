@@ -57,7 +57,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM test_01114_1.mt"   # result: 5
 
 $CLICKHOUSE_CLIENT -q "SELECT tuple(s, sleepEachRow(3)) FROM test_01114_1.mt" > /dev/null &    # 15s
 sleep 1
-$CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_1"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_1" && echo "dropped"
 
 wait # for INSERT
 

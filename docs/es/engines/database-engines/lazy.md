@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 31
 toc_title: Perezoso
 ---
@@ -11,7 +11,7 @@ Mantiene las tablas en RAM solamente `expiration_time_in_seconds` segundos despu
 
 Está optimizado para almacenar muchas tablas pequeñas \* Log, para las cuales hay un largo intervalo de tiempo entre los accesos.
 
-## Creación De Una Base De Datos {#creating-a-database}
+## Creación de una base de datos {#creating-a-database}
 
     CREATE DATABASE testlazy ENGINE = Lazy(expiration_time_in_seconds);
 

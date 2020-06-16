@@ -13,7 +13,7 @@ server_logs_file=${CLICKHOUSE_TMP}/$cur_name"_server.logs"
 server_logs="--server_logs_file=$server_logs_file"
 rm -f "$server_logs_file"
 
-settings="$server_logs --log_queries=1 --log_query_threads=1 --log_profile_events=1 --log_query_settings=1 --experimental_use_processors=0"
+settings="$server_logs --log_queries=1 --log_query_threads=1 --log_profile_events=1 --log_query_settings=1"
 
 
 # Test insert logging on each block and checkPacket() method

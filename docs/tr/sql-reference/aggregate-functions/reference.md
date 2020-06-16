@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: "Ba\u015Fvurma"
 ---
 
-# Fonksiyon Referans {#function-reference}
+# Toplama Fonksiyonu Referansı {#aggregate-functions-reference}
 
 ## sayma {#agg_function-count}
 
@@ -25,13 +25,13 @@ Fonksiyon alabilir:
 **Döndürülen değer**
 
 -   Fonksiyon parametreleri olmadan çağrılırsa, satır sayısını sayar.
--   Eğer… [ifade](../syntax.md#syntax-expressions) geçirilir, daha sonra işlev bu ifadenin kaç kez NOT null döndürdüğünü sayar. İfad aede bir [Nullable](../../sql-reference/data-types/nullable.md)- type değeri, sonra sonucu `count` kalır değil `Nullable`. İfade döndürülürse işlev 0 döndürür `NULL` tüm satırlar için.
+-   Eğer... [ifade](../syntax.md#syntax-expressions) geçirilir, daha sonra işlev bu ifadenin kaç kez NOT null döndürdüğünü sayar. İfad aede bir [Nullable](../../sql-reference/data-types/nullable.md)- type değeri, sonra sonucu `count` kalır değil `Nullable`. İfade döndürülürse işlev 0 döndürür `NULL` tüm satırlar için.
 
 Her iki durumda da döndürülen değerin türü [Uİnt64](../../sql-reference/data-types/int-uint.md).
 
 **Ayrıntı**
 
-ClickHouse destekler `COUNT(DISTINCT ...)` sözdizimi. Bu yapının davranışı Aşağıdakilere bağlıdır [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) ayar. Aşağıdakilerden hang theisini tanımlar [uniq\*](#agg_function-uniq) fonksiyonlar işlemi gerçekleştirmek için kullanılır. Varsayılan değer [uniqExact](#agg_function-uniqexact) işlev.
+ClickHouse destekler `COUNT(DISTINCT ...)` sözdizimi. Bu yapının davranışı Aşağıdakilere bağlıdır [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) ayar. Aşağıdakilerden hang theisini tanımlar [uniq\*](#agg_function-uniq) fonksiyonlar işlemi gerçekleştirmek için kullanılır. Varsayılan değer [uniqExact](#agg_function-uniqexact) İşlev.
 
 Bu `SELECT count() FROM table` tablodaki girdi sayısı ayrı olarak depolanmadığı için sorgu en iyi duruma getirilmez. Tablodan küçük bir sütun seçer ve içindeki değerlerin sayısını sayar.
 
@@ -81,7 +81,7 @@ Belirli bir sonuç elde etmek için ‘min’ veya ‘max’ fonksiyon yerine �
 
 Bazı durumlarda, yürütme sırasına güvenebilirsiniz. Bu, select ORDER BY kullanan bir alt sorgudan geldiğinde durumlar için geçerlidir.
 
-Ne zaman bir `SELECT` sorgu vardır `GROUP BY` yan tümce veya en az bir toplama işlevi, ClickHouse (Mysql’in aksine), tüm ifadelerin `SELECT`, `HAVING`, ve `ORDER BY` anahtar functionslardan veya toplama işlev .lerinden hesaplan .malıdır. Başka bir deyişle, tablodan seçilen her sütun, anahtarlarda veya toplama işlevlerinde kullanılmalıdır. Mysql’de olduğu gibi davranış elde etmek için, diğer sütunları `any` toplama işlevi.
+Ne zaman bir `SELECT` sorgu vardır `GROUP BY` yan tümce veya en az bir toplama işlevi, ClickHouse (Mysql'in aksine), tüm ifadelerin `SELECT`, `HAVING`, ve `ORDER BY` anahtar functionslardan veya toplama işlev .lerinden hesaplan .malıdır. Başka bir deyişle, tablodan seçilen her sütun, anahtarlarda veya toplama işlevlerinde kullanılmalıdır. Mysql'de olduğu gibi davranış elde etmek için, diğer sütunları `any` toplama işlevi.
 
 ## anyHeavy (x) {#anyheavyx}
 
@@ -113,7 +113,7 @@ FROM ontime
 ## anyLast(x) {#anylastx}
 
 Karşılaşılan son değeri seçer.
-Sonuç için olduğu kadar belirsiz `any` işlev.
+Sonuç için olduğu kadar belirsiz `any` İşlev.
 
 ## groupBitAnd {#groupbitand}
 
@@ -332,9 +332,10 @@ Giriş parametreleri için olduğu gibi sonuç için aynı veri türünü kullan
 
 Sadece sayılar için çalışır.
 
-## sumMap (anahtar, değer) {#agg_functions-summap}
+## sumMap (anahtar, değer), sumMap(Tuple (anahtar, değer)) {#agg_functions-summap}
 
 Toplam thelar ‘value’ belirtilen tuş accordinglara göre dizi ‘key’ dizi.
+Anahtarları ve değerleri diziler dizi geçen anahtarları ve değerleri iki dizi geçen synonymical var.
 Eleman sayısı ‘key’ ve ‘value’ toplam her satır için aynı olmalıdır.
 Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
@@ -347,25 +348,28 @@ CREATE TABLE sum_map(
     statusMap Nested(
         status UInt16,
         requests UInt64
-    )
+    ),
+    statusMapTuple Tuple(Array(Int32), Array(Int32))
 ) ENGINE = Log;
 INSERT INTO sum_map VALUES
-    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10], ([1, 2, 3], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10], ([3, 4, 5], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10], ([4, 5, 6], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10], ([6, 7, 8], [10, 10, 10]));
+
 SELECT
     timeslot,
-    sumMap(statusMap.status, statusMap.requests)
+    sumMap(statusMap.status, statusMap.requests),
+    sumMap(statusMapTuple)
 FROM sum_map
 GROUP BY timeslot
 ```
 
 ``` text
-┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
-│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
-│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
-└─────────────────────┴──────────────────────────────────────────────┘
+┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┬─sumMap(statusMapTuple)─────────┐
+│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │ ([1,2,3,4,5],[10,10,20,10,10]) │
+│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │ ([4,5,6,7,8],[10,10,20,10,10]) │
+└─────────────────────┴──────────────────────────────────────────────┴────────────────────────────────┘
 ```
 
 ## skewPop {#skewpop}
@@ -514,10 +518,10 @@ Ve sonuç olacak:
 
 ## timeSeriesGroupRateSum(uıd, ts, val) {#agg-function-timeseriesgroupratesum}
 
-Benzer şekilde timeSeriesGroupRateSum, timeSeriesGroupRateSum zaman serisi ve daha sonra toplam oranları birlikte oranını hesaplar.
+Benzer şekilde `timeSeriesGroupSum`, `timeSeriesGroupRateSum` zaman serilerinin oranını hesaplar ve daha sonra toplam oranları birlikte hesaplar.
 Ayrıca, bu işlevi kullanmadan önce zaman damgası yükseliş sırasına göre olmalıdır.
 
-Bu işlevi kullanın, yukarıdaki sonuç olacaktır:
+Bu fonksiyon dataun ver theiye uygulanması `timeSeriesGroupSum` örnek, aşağıdaki sonucu alırsınız:
 
 ``` text
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
@@ -549,7 +553,7 @@ Türü `x` ve `weight` aynı olmalıdır.
 **Döndürülen değer**
 
 -   Ağırlıklı ortalama.
--   `NaN`. Tüm ağırlıklar 0’a eşitse.
+-   `NaN`. Tüm ağırlıklar 0'a eşitse.
 
 Tür: [Float64](../data-types/float.md).
 
@@ -592,7 +596,7 @@ Fonksiyon değişken sayıda parametre alır. Parametreler olabilir `Tuple`, `Ar
 
 -   Toplamdaki tüm parametreler için bir karma hesaplar, daha sonra hesaplamalarda kullanır.
 
--   Bir adaptif örnekleme algoritması kullanır. Hesaplama durumu için işlev, 65536’ya kadar öğe karma değerlerinin bir örneğini kullanır.
+-   Bir adaptif örnekleme algoritması kullanır. Hesaplama durumu için işlev, 65536'ya kadar öğe karma değerlerinin bir örneğini kullanır.
 
         This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
@@ -621,7 +625,7 @@ Bu `uniqCombined` fonksiyon, farklı değerlerin sayısını hesaplamak için iy
 
 Fonksiyon değişken sayıda parametre alır. Parametreler olabilir `Tuple`, `Array`, `Date`, `DateTime`, `String` veya sayısal türleri.
 
-`HLL_precision` hücre sayısının baz-2 logaritmasıdır. [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). İsteğe bağlı olarak işlevi kullanabilirsiniz `uniqCombined(x[, ...])`. İçin varsayılan değer `HLL_precision` etkin bir şekilde 96 KiB alan olan 17’dir (2^17 hücre, her biri 6 bit).
+`HLL_precision` hücre sayısının baz-2 logaritmasıdır. [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). İsteğe bağlı olarak işlevi kullanabilirsiniz `uniqCombined(x[, ...])`. İçin varsayılan değer `HLL_precision` etkin bir şekilde 96 KiB alan olan 17'dir (2^17 hücre, her biri 6 bit).
 
 **Döndürülen değer**
 
@@ -687,7 +691,7 @@ Fonksiyon değişken sayıda parametre alır. Parametreler olabilir `Tuple`, `Ar
 
 -   Belirli sonucu sağlar (sorgu işleme sırasına bağlı değildir).
 
-Bu işlevi kullanmanızı önermiyoruz. Çoğu durumda, kullan [uniq](#agg_function-uniq) veya [uniqCombined](#agg_function-uniqcombined) işlev.
+Bu işlevi kullanmanızı önermiyoruz. Çoğu durumda, kullan [uniq](#agg_function-uniq) veya [uniqCombined](#agg_function-uniqcombined) İşlev.
 
 **Ayrıca Bakınız**
 
@@ -703,7 +707,7 @@ Farklı bağımsız değişken değerlerinin tam sayısını hesaplar.
 uniqExact(x[, ...])
 ```
 
-Kullan… `uniqExact` kesinlikle kesin bir sonuca ihtiyacınız varsa işlev. Aksi takdirde kullanın [uniq](#agg_function-uniq) işlev.
+Kullan... `uniqExact` kesinlikle kesin bir sonuca ihtiyacınız varsa işlev. Aksi takdirde kullanın [uniq](#agg_function-uniq) İşlev.
 
 Bu `uniqExact` fonksiyonu daha fazla bellek kullanır `uniq`, çünkü farklı değerlerin sayısı arttıkça devletin büyüklüğü sınırsız büyümeye sahiptir.
 
@@ -727,19 +731,93 @@ Mesela, `groupArray (1) (x)` eşdeğ toer equivalentdir `[any (x)]`.
 
 Bazı durumlarda, hala yürütme sırasına güvenebilirsiniz. Bu, aşağıdaki durumlar için geçerlidir `SELECT` kullanan bir alt sorgudan gelir `ORDER BY`.
 
-## grouparrayınsertat (değer, konum) {#grouparrayinsertatvalue-position}
+## grouparrayınsertat {#grouparrayinsertat}
 
 Belirtilen konumda diziye bir değer ekler.
 
-!!! note "Not"
-    Bu işlev, SQL dizileri için geleneksel tek tabanlı konumların aksine sıfır tabanlı konumlar kullanır.
+**Sözdizimi**
 
-Accepts the value and position as input. If several values ​​are inserted into the same position, any of them might end up in the resulting array (the first one will be used in the case of single-threaded execution). If no value is inserted into a position, the position is assigned the default value.
+``` sql
+groupArrayInsertAt(default_x, size)(x, pos);
+```
 
-İsteğe bağlı parametreler:
+Bir sorguda aynı konuma birkaç değer eklenirse, işlev aşağıdaki şekillerde davranır:
 
--   Boş pozisyonlarda ikame için varsayılan değer.
--   Elde edilen dizinin uzunluğu. Bu, tüm toplama anahtarları için aynı boyuttaki dizileri almanızı sağlar. Bu parametreyi kullanırken, varsayılan değer belirtilmelidir.
+-   Bir sorgu tek bir iş parçacığında yürütülürse, eklenen değerlerden ilki kullanılır.
+-   Bir sorgu birden çok iş parçacığında yürütülürse, ortaya çıkan değer, eklenen değerlerden belirsiz bir değerdir.
+
+**Parametre**
+
+-   `x` — Value to be inserted. [İfade](../syntax.md#syntax-expressions) biri sonuçta [desteklenen veri türleri](../../sql-reference/data-types/index.md).
+-   `pos` — Position at which the specified element `x` eklen .ecektir. Dizideki dizin numaralandırma sıfırdan başlar. [Uİnt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `default_x`— Default value for substituting in empty positions. Optional parameter. [İfade](../syntax.md#syntax-expressions) için yapılandırılmış veri türü ile sonuçlanan `x` parametre. Eğer `default_x` tanımlan ,mamıştır, [varsayılan değerler](../../sql-reference/statements/create.md#create-default-values) kullanılır.
+-   `size`— Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` belirt .ilmelidir. [Uİnt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**Döndürülen değer**
+
+-   Eklenen değerlerle dizi.
+
+Tür: [Dizi](../../sql-reference/data-types/array.md#data-type-array).
+
+**Örnek**
+
+Sorgu:
+
+``` sql
+SELECT groupArrayInsertAt(toString(number), number * 2) FROM numbers(5);
+```
+
+Sonuç:
+
+``` text
+┌─groupArrayInsertAt(toString(number), multiply(number, 2))─┐
+│ ['0','','1','','2','','3','','4']                         │
+└───────────────────────────────────────────────────────────┘
+```
+
+Sorgu:
+
+``` sql
+SELECT groupArrayInsertAt('-')(toString(number), number * 2) FROM numbers(5);
+```
+
+Sonuç:
+
+``` text
+┌─groupArrayInsertAt('-')(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2','-','3','-','4']                          │
+└────────────────────────────────────────────────────────────────┘
+```
+
+Sorgu:
+
+``` sql
+SELECT groupArrayInsertAt('-', 5)(toString(number), number * 2) FROM numbers(5);
+```
+
+Sonuç:
+
+``` text
+┌─groupArrayInsertAt('-', 5)(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2']                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+Elemanların tek bir konuma çok dişli yerleştirilmesi.
+
+Sorgu:
+
+``` sql
+SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
+```
+
+Bu sorgu sonucunda rastgele tamsayı elde edersiniz `[0,9]` Aralık. Mesela:
+
+``` text
+┌─groupArrayInsertAt(number, 0)─┐
+│ [7]                           │
+└───────────────────────────────┘
+```
 
 ## groupArrayMovingSum {#agg_function-grouparraymovingsum}
 
@@ -891,7 +969,7 @@ FROM t
 
 ## groupUniqArray (x), groupUniqArray (max\_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
-Farklı bağımsız değişken değerlerinden bir dizi oluşturur. Bellek tüketimi için aynıdır `uniqExact` işlev.
+Farklı bağımsız değişken değerlerinden bir dizi oluşturur. Bellek tüketimi için aynıdır `uniqExact` İşlev.
 
 İkinci versiyonu (ile `max_size` parametre), elde edilen dizinin boyutunu sınırlar `max_size` öğeler.
 Mesela, `groupUniqArray(1)(x)` eşdeğ toer equivalentdir `[any(x)]`.
@@ -900,9 +978,9 @@ Mesela, `groupUniqArray(1)(x)` eşdeğ toer equivalentdir `[any(x)]`.
 
 Yaklaşık hesaplar [quantile](https://en.wikipedia.org/wiki/Quantile) sayısal veri dizisinin.
 
-Bu işlev geçerlidir [rezerv reservoiruar örnek samplinglemesi](https://en.wikipedia.org/wiki/Reservoir_sampling) 8192’ye kadar bir rezervuar boyutu ve örnekleme için rastgele sayı üreteci ile. Sonuç deterministik değildir. Tam bir miktar elde etmek için [quantileExact](#quantileexact) işlev.
+Bu işlev geçerlidir [rezerv reservoiruar örnek samplinglemesi](https://en.wikipedia.org/wiki/Reservoir_sampling) 8192'ye kadar bir rezervuar boyutu ve örnekleme için rastgele sayı üreteci ile. Sonuç deterministik değildir. Tam bir miktar elde etmek için [quantileExact](#quantileexact) İşlev.
 
-Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) işlev.
+Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) İşlev.
 
 **Sözdizimi**
 
@@ -963,9 +1041,9 @@ Sonuç:
 
 Yaklaşık hesaplar [quantile](https://en.wikipedia.org/wiki/Quantile) sayısal veri dizisinin.
 
-Bu işlev geçerlidir [rezerv reservoiruar örnek samplinglemesi](https://en.wikipedia.org/wiki/Reservoir_sampling) 8192’ye kadar bir rezervuar boyutu ve örnekleme deterministik algoritması ile. Sonuç deterministiktir. Tam bir miktar elde etmek için [quantileExact](#quantileexact) işlev.
+Bu işlev geçerlidir [rezerv reservoiruar örnek samplinglemesi](https://en.wikipedia.org/wiki/Reservoir_sampling) 8192'ye kadar bir rezervuar boyutu ve örnekleme deterministik algoritması ile. Sonuç deterministiktir. Tam bir miktar elde etmek için [quantileExact](#quantileexact) İşlev.
 
-Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) işlev.
+Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) İşlev.
 
 **Sözdizimi**
 
@@ -1029,7 +1107,7 @@ Tam olarak hesaplar [quantile](https://en.wikipedia.org/wiki/Quantile) sayısal 
 
 To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` bellek, nerede `n` geçirilen değerler say .ısıdır. Bununla birlikte, az sayıda değer için, işlev çok etkilidir.
 
-Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) işlev.
+Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) İşlev.
 
 **Sözdizimi**
 
@@ -1081,7 +1159,7 @@ Tam olarak hesaplar [quantile](https://en.wikipedia.org/wiki/Quantile) her elema
 
 To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Each value is counted with its weight, as if it is present `weight` times. A hash table is used in the algorithm. Because of this, if the passed values ​​are frequently repeated, the function consumes less RAM than [quantileExact](#quantileexact). Bunun yerine bu işlevi kullanabilirsiniz `quantileExact` ve 1 ağırlığını belirtin.
 
-Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) işlev.
+Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) İşlev.
 
 **Sözdizimi**
 
@@ -1145,7 +1223,7 @@ Belirlenen hassas hesaplar ile [quantile](https://en.wikipedia.org/wiki/Quantile
 
 Sonuç deterministiktir (sorgu işleme sırasına bağlı değildir). Fonksiyon yükleme web sayfaları kez veya arka uç yanıt süreleri gibi dağılımları tanımlamak dizileri ile çalışmak için optimize edilmiştir.
 
-Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) işlev.
+Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) İşlev.
 
 **Sözdizimi**
 
@@ -1168,10 +1246,10 @@ Takma ad: `medianTiming`.
 
 Hesaplama doğru ise:
 
--   Toplam değer sayısı 5670’i geçmez.
--   Toplam değer sayısı 5670’i aşıyor, ancak sayfa yükleme süresi 1024 ms’den az.
+-   Toplam değer sayısı 5670'i geçmez.
+-   Toplam değer sayısı 5670'i aşıyor, ancak sayfa yükleme süresi 1024 ms'den az.
 
-Aksi takdirde, hesaplamanın sonucu 16 MS’nin en yakın katlarına yuvarlanır.
+Aksi takdirde, hesaplamanın sonucu 16 MS'nin en yakın katlarına yuvarlanır.
 
 !!! note "Not"
     Sayfa yükleme süresi nicelerini hesaplamak için, bu işlev daha etkili ve doğrudur [quantile](#quantile).
@@ -1183,7 +1261,7 @@ Aksi takdirde, hesaplamanın sonucu 16 MS’nin en yakın katlarına yuvarlanır
 Tür: `Float32`.
 
 !!! note "Not"
-    İşlev valuese hiçbir değer geçir (ilmem (işse (kullanırken `quantileTimingIf`), [Nine](../../sql-reference/data-types/float.md#data_type-float-nan-inf) döndürülür. Bunun amacı, bu vakaları sıfır ile sonuçlanan vakalardan ayırmaktır. Görmek [ORDER BY FLA BYGE](../statements/select.md#select-order-by) sıralama ile ilgili notlar için `NaN` değerler.
+    İşlev valuese hiçbir değer geçir (ilmem (işse (kullanırken `quantileTimingIf`), [Nine](../../sql-reference/data-types/float.md#data_type-float-nan-inf) döndürülür. Bunun amacı, bu vakaları sıfır ile sonuçlanan vakalardan ayırmaktır. Görmek [ORDER BY FLA BYGE](../statements/select/order-by.md#select-order-by) sıralama ile ilgili notlar için `NaN` değerler.
 
 **Örnek**
 
@@ -1228,7 +1306,7 @@ Belirlenen hassas hesaplar ile [quantile](https://en.wikipedia.org/wiki/Quantile
 
 Sonuç deterministiktir (sorgu işleme sırasına bağlı değildir). Fonksiyon yükleme web sayfaları kez veya arka uç yanıt süreleri gibi dağılımları tanımlamak dizileri ile çalışmak için optimize edilmiştir.
 
-Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) işlev.
+Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) İşlev.
 
 **Sözdizimi**
 
@@ -1253,10 +1331,10 @@ Takma ad: `medianTimingWeighted`.
 
 Hesaplama doğru ise:
 
--   Toplam değer sayısı 5670’i geçmez.
--   Toplam değer sayısı 5670’i aşıyor, ancak sayfa yükleme süresi 1024 ms’den az.
+-   Toplam değer sayısı 5670'i geçmez.
+-   Toplam değer sayısı 5670'i aşıyor, ancak sayfa yükleme süresi 1024 ms'den az.
 
-Aksi takdirde, hesaplamanın sonucu 16 MS’nin en yakın katlarına yuvarlanır.
+Aksi takdirde, hesaplamanın sonucu 16 MS'nin en yakın katlarına yuvarlanır.
 
 !!! note "Not"
     Sayfa yükleme süresi nicelerini hesaplamak için, bu işlev daha etkili ve doğrudur [quantile](#quantile).
@@ -1268,7 +1346,7 @@ Aksi takdirde, hesaplamanın sonucu 16 MS’nin en yakın katlarına yuvarlanır
 Tür: `Float32`.
 
 !!! note "Not"
-    İşlev valuese hiçbir değer geçir (ilmem (işse (kullanırken `quantileTimingIf`), [Nine](../../sql-reference/data-types/float.md#data_type-float-nan-inf) döndürülür. Bunun amacı, bu vakaları sıfır ile sonuçlanan vakalardan ayırmaktır. Görmek [ORDER BY FLA BYGE](../statements/select.md#select-order-by) sıralama ile ilgili notlar için `NaN` değerler.
+    İşlev valuese hiçbir değer geçir (ilmem (işse (kullanırken `quantileTimingIf`), [Nine](../../sql-reference/data-types/float.md#data_type-float-nan-inf) döndürülür. Bunun amacı, bu vakaları sıfır ile sonuçlanan vakalardan ayırmaktır. Görmek [ORDER BY FLA BYGE](../statements/select/order-by.md#select-order-by) sıralama ile ilgili notlar için `NaN` değerler.
 
 **Örnek**
 
@@ -1308,11 +1386,11 @@ Sonuç:
 
 Yaklaşık hesaplar [quantile](https://en.wikipedia.org/wiki/Quantile) kullanarak sayısal veri diz ofisinin [t-dig -est](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algoritma.
 
-Maksimum hata %1’dir. Bellek tüketimi `log(n)`, nere `n` değer say isısıdır. Sonuç, sorguyu çalıştırma sırasına bağlıdır ve nondeterministic.
+Maksimum hata %1'dir. Bellek tüketimi `log(n)`, nere `n` değer say isısıdır. Sonuç, sorguyu çalıştırma sırasına bağlıdır ve nondeterministic.
 
 Fonksiyonun performansı, performanstan daha düşüktür [quantile](#quantile) veya [quantileTiming](#quantiletiming). Durum boyutunun hassasiyete oranı açısından, bu işlev çok daha iyidir `quantile`.
 
-Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) işlev.
+Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) İşlev.
 
 **Sözdizimi**
 
@@ -1360,13 +1438,13 @@ Sonuç:
 
 ## quantileTDigestWeighted {#quantiletdigestweighted}
 
-Yaklaşık hesaplar [quantile](https://en.wikipedia.org/wiki/Quantile) kullanarak sayısal veri diz ofisinin [t-dig -est](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algoritma. İşlev, her sıra üyesinin ağırlığını dikkate alır. Maksimum hata %1’dir. Bellek tüketimi `log(n)`, nere `n` değer say isısıdır.
+Yaklaşık hesaplar [quantile](https://en.wikipedia.org/wiki/Quantile) kullanarak sayısal veri diz ofisinin [t-dig -est](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algoritma. İşlev, her sıra üyesinin ağırlığını dikkate alır. Maksimum hata %1'dir. Bellek tüketimi `log(n)`, nere `n` değer say isısıdır.
 
 Fonksiyonun performansı, performanstan daha düşüktür [quantile](#quantile) veya [quantileTiming](#quantiletiming). Durum boyutunun hassasiyete oranı açısından, bu işlev çok daha iyidir `quantile`.
 
 Sonuç, sorguyu çalıştırma sırasına bağlıdır ve nondeterministic.
 
-Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) işlev.
+Çoklu kullanırken `quantile*` bir sorguda farklı düzeylerde işlevler, iç durumları birleştirilmez (diğer bir deyişle, sorgu olabilir daha az verimli çalışır). Bu durumda, kullan [quantiles](#quantiles) İşlev.
 
 **Sözdizimi**
 
@@ -1467,19 +1545,31 @@ Bir rassal değişkenin varyansının tarafsız bir tahminini temsil eder, eğer
 
 Dönüşler `Float64`. Ne zaman `n <= 1`, dönüşler `+∞`.
 
+!!! note "Not"
+    Bu işlev sayısal olarak kararsız algoritma kullanır. İhtiyacınız varsa [sayısal kararlılık](https://en.wikipedia.org/wiki/Numerical_stability) hesaplamalarda kullan `varSampStable` İşlev. Daha yavaş çalışır, ancak daha düşük hesaplama hatası sağlar.
+
 ## varPop (x) {#varpopx}
 
 Miktarı hesaplar `Σ((x - x̅)^2) / n`, nere `n` örneklem büyüklüğü ve `x̅`ortalama değer isidir `x`.
 
 Başka bir deyişle, bir dizi değer için dağılım. Dönüşler `Float64`.
 
+!!! note "Not"
+    Bu işlev sayısal olarak kararsız algoritma kullanır. İhtiyacınız varsa [sayısal kararlılık](https://en.wikipedia.org/wiki/Numerical_stability) hesaplamalarda kullan `varPopStable` İşlev. Daha yavaş çalışır, ancak daha düşük hesaplama hatası sağlar.
+
 ## stddevSamp(x) {#stddevsampx}
 
 Sonuç kareköküne eşittir `varSamp(x)`.
 
+!!! note "Not"
+    Bu işlev sayısal olarak kararsız algoritma kullanır. İhtiyacınız varsa [sayısal kararlılık](https://en.wikipedia.org/wiki/Numerical_stability) hesaplamalarda kullan `stddevSampStable` İşlev. Daha yavaş çalışır, ancak daha düşük hesaplama hatası sağlar.
+
 ## stddevPop(x) {#stddevpopx}
 
 Sonuç kareköküne eşittir `varPop(x)`.
+
+!!! note "Not"
+    Bu işlev sayısal olarak kararsız algoritma kullanır. İhtiyacınız varsa [sayısal kararlılık](https://en.wikipedia.org/wiki/Numerical_stability) hesaplamalarda kullan `stddevPopStable` İşlev. Daha yavaş çalışır, ancak daha düşük hesaplama hatası sağlar.
 
 ## topK (N) (x) {#topknx}
 
@@ -1503,7 +1593,7 @@ Parametre atlanırsa, varsayılan değer 10 kullanılır.
 
 **Değişkenler**
 
--   ’ x ’ – The value to calculate frequency.
+-   ' x ' – The value to calculate frequency.
 
 **Örnek**
 
@@ -1565,13 +1655,22 @@ Değerini hesaplar `Σ((x - x̅)(y - y̅)) / (n - 1)`.
 
 Float64 Döndürür. Ne zaman `n <= 1`, returns +∞.
 
+!!! note "Not"
+    Bu işlev sayısal olarak kararsız algoritma kullanır. İhtiyacınız varsa [sayısal kararlılık](https://en.wikipedia.org/wiki/Numerical_stability) hesaplamalarda kullan `covarSampStable` İşlev. Daha yavaş çalışır, ancak daha düşük hesaplama hatası sağlar.
+
 ## covarPop (x, y) {#covarpopx-y}
 
 Değerini hesaplar `Σ((x - x̅)(y - y̅)) / n`.
 
+!!! note "Not"
+    Bu işlev sayısal olarak kararsız algoritma kullanır. İhtiyacınız varsa [sayısal kararlılık](https://en.wikipedia.org/wiki/Numerical_stability) hesaplamalarda kullan `covarPopStable` İşlev. Daha yavaş çalışır, ancak daha düşük bir hesaplama hatası sağlar.
+
 ## corr(x, y) {#corrx-y}
 
 Pearson korelasyon katsayısını hesaplar: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+
+!!! note "Not"
+    Bu işlev sayısal olarak kararsız algoritma kullanır. İhtiyacınız varsa [sayısal kararlılık](https://en.wikipedia.org/wiki/Numerical_stability) hesaplamalarda kullan `corrStable` İşlev. Daha yavaş çalışır, ancak daha düşük hesaplama hatası sağlar.
 
 ## categoricalınformationvalue {#categoricalinformationvalue}
 

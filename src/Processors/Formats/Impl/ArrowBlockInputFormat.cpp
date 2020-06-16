@@ -16,12 +16,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_EXCEPTION;
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_)
-    : IInputFormat(header_, in_)
+ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_)
+    : IInputFormat(header_, in_), stream{stream_}
 {
     prepareReader();
 }
@@ -30,12 +30,23 @@ Chunk ArrowBlockInputFormat::generate()
 {
     Chunk res;
     const Block & header = getPort().getHeader();
-
-    if (record_batch_current >= record_batch_total)
-        return res;
-
     std::vector<std::shared_ptr<arrow::RecordBatch>> single_batch(1);
-    arrow::Status read_status = file_reader->ReadRecordBatch(record_batch_current, &single_batch[0]);
+    arrow::Status read_status;
+
+    if (stream)
+    {
+        read_status = stream_reader->ReadNext(&single_batch[0]);
+        if (!single_batch[0])
+            return res;
+    }
+    else
+    {
+        if (record_batch_current >= record_batch_total)
+            return res;
+
+        read_status = file_reader->ReadRecordBatch(record_batch_current, &single_batch[0]);
+    }
+
     if (!read_status.ok())
         throw Exception{"Error while reading batch of Arrow data: " + read_status.ToString(),
                         ErrorCodes::CANNOT_READ_ALL_DATA};
@@ -57,30 +68,54 @@ void ArrowBlockInputFormat::resetParser()
 {
     IInputFormat::resetParser();
 
-    file_reader.reset();
+    if (stream)
+        stream_reader.reset();
+    else
+        file_reader.reset();
     prepareReader();
 }
 
 void ArrowBlockInputFormat::prepareReader()
 {
-    arrow::Status open_status = arrow::ipc::RecordBatchFileReader::Open(asArrowFile(in), &file_reader);
-    if (!open_status.ok())
-        throw Exception(open_status.ToString(), ErrorCodes::BAD_ARGUMENTS);
-    record_batch_total = file_reader->num_record_batches();
+    arrow::Status status;
+
+    if (stream)
+        status = arrow::ipc::RecordBatchStreamReader::Open(asArrowFile(in), &stream_reader);
+    else
+        status = arrow::ipc::RecordBatchFileReader::Open(asArrowFile(in), &file_reader);
+
+    if (!status.ok())
+        throw Exception{"Error while opening a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+
+    if (stream)
+        record_batch_total = -1;
+    else
+        record_batch_total = file_reader->num_record_batches();
+
     record_batch_current = 0;
 }
 
 void registerInputFormatProcessorArrow(FormatFactory &factory)
 {
     factory.registerInputFormatProcessor(
-            "Arrow",
-            [](ReadBuffer & buf,
-               const Block & sample,
-               const RowInputFormatParams & /* params */,
-               const FormatSettings & /* format_settings */)
-            {
-                return std::make_shared<ArrowBlockInputFormat>(buf, sample);
-            });
+        "Arrow",
+        [](ReadBuffer & buf,
+           const Block & sample,
+           const RowInputFormatParams & /* params */,
+           const FormatSettings & /* format_settings */)
+        {
+            return std::make_shared<ArrowBlockInputFormat>(buf, sample, false);
+        });
+
+    factory.registerInputFormatProcessor(
+        "ArrowStream",
+        [](ReadBuffer & buf,
+           const Block & sample,
+           const RowInputFormatParams & /* params */,
+           const FormatSettings & /* format_settings */)
+        {
+            return std::make_shared<ArrowBlockInputFormat>(buf, sample, true);
+        });
 }
 
 }

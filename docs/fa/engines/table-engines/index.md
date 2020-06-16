@@ -1,7 +1,8 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
-toc_folder_title: Table Engines
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: "\u0645\u0648\u062A\u0648\u0631\u0647\u0627\u06CC \u062C\u062F\u0648\
+  \u0644"
 toc_priority: 26
 toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 ---
@@ -21,7 +22,7 @@ toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 
 ### ادغام {#mergetree}
 
-موتورهای جدول جهانی ترین و کاربردی برای وظایف بار بالا. اموال به اشتراک گذاشته شده توسط این موتور درج داده های سریع با پردازش داده های پس زمینه های بعدی است. `MergeTree` موتورهای خانواده از تکرار داده ها پشتیبانی می کنند (با [تکرار\*](mergetree-family/replication.md#replication) نسخه موتورهای) پارتیشن بندی و ویژگی های دیگر در موتورهای دیگر پشتیبانی نمی شود.
+موتورهای جدول جهانی ترین و کاربردی برای وظایف بار بالا. اموال به اشتراک گذاشته شده توسط این موتور درج داده های سریع با پردازش داده های پس زمینه های بعدی است. `MergeTree` موتورهای خانواده از تکرار داده ها پشتیبانی می کنند (با [تکرار\*](mergetree-family/replication.md#table_engines-replication) نسخه موتورهای) پارتیشن بندی و ویژگی های دیگر در موتورهای دیگر پشتیبانی نمی شود.
 
 موتورهای در خانواده:
 
@@ -62,7 +63,7 @@ toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 -   [توزیع شده](special/distributed.md#distributed)
 -   [ماده بینی](special/materializedview.md#materializedview)
 -   [واژهنامه](special/dictionary.md#dictionary)
--   [ادغام](special/merge.md#merge
+-   پردازشگر پشتیبانی شده:
 -   [پرونده](special/file.md#file)
 -   [خالی](special/null.md#null)
 -   [تنظیم](special/set.md#set)

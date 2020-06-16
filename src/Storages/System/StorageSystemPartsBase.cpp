@@ -14,6 +14,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -110,10 +111,13 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
                 const DatabasePtr database = databases.at(database_name);
 
                 offsets[i] = i ? offsets[i - 1] : 0;
-                for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
+                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     String table_name = iterator->name();
                     StoragePtr storage = iterator->table();
+                    if (!storage)
+                        continue;
+
                     String engine_name = storage->getName();
 
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
