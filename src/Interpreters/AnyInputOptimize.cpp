@@ -24,7 +24,8 @@ namespace
 
 ASTPtr * getExactChild(const ASTPtr & ast, const size_t ind)
 {
-    return &ast->as<ASTFunction>()->arguments->children[ind];
+    if (ast && ast->as<ASTFunction>()->arguments->children[ind])
+        return &ast->as<ASTFunction>()->arguments->children[ind];
 }
 
 ///recursive searching of identifiers
