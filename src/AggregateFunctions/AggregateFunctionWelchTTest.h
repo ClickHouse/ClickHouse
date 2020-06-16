@@ -16,6 +16,10 @@
 
 #include <type_traits>
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 namespace DB
 {
@@ -127,6 +131,16 @@ struct AggregateFunctionWelchTTestData final
         readBinary(size_y, buf);
     }
 
+    size_t get_size_y() const
+    {
+        return size_y;
+    }
+
+    size_t get_size_x() const
+    {
+        return size_x;
+    }
+
     Float64 get_sx() const
     {
         return static_cast<Float64>(square_sum_x + size_x * mean_x * mean_x - 2 * mean_x * sum_x) / (size_x - 1);
@@ -162,10 +176,17 @@ struct AggregateFunctionWelchTTestData final
 
         //round or make infinity dof
         int i_dof = static_cast<int>(dof);
+
         if (i_dof > 100)
         {
             i_dof = 101;
         }
+
+        if(i_dof < 100)
+        {
+            i_dof = 1;
+        }
+
         //check if abs of t is greater than table[dof]
         t = abs(t);
         if (t > CriticalValuesTable[table][i_dof])
@@ -260,6 +281,13 @@ public:
         IColumn & to
     ) const override
     {
+        size_t size_x = this->data(place).get_size_x();
+        size_t size_y = this->data(place).get_size_y();
+
+        if(size_x < 2 || size_y < 2)
+        {
+            throw Exception("Aggregate function " + getName() + " requires samples to be of size > 1", ErrorCodes::BAD_ARGUMENTS);
+        }
 
         Float64 sx = this->data(place).get_sx();
         Float64 sy = this->data(place).get_sy();
