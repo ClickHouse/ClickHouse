@@ -41,11 +41,6 @@ public:
         return "S3";
     }
 
-    Block getHeaderBlock(const Names & /*column_names*/) const
-    {
-        return getSampleBlock();
-    }
-
     Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,

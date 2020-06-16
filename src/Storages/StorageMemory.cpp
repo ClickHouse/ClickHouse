@@ -22,9 +22,19 @@ namespace ErrorCodes
 class MemorySource : public SourceWithProgress
 {
 public:
-    MemorySource(Names column_names_, BlocksList::iterator begin_, BlocksList::iterator end_, const StorageMemory & storage)
-        : SourceWithProgress(storage.getSampleBlockForColumns(column_names_))
-        , column_names(std::move(column_names_)), begin(begin_), end(end_), it(begin) {}
+    MemorySource(
+        Names column_names_,
+        BlocksList::iterator begin_,
+        BlocksList::iterator end_,
+        const StorageMemory & storage,
+        const StorageMetadataPtr & metadata_snapshot)
+        : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals()))
+        , column_names(std::move(column_names_))
+        , begin(begin_)
+        , end(end_)
+        , it(begin)
+    {
+    }
 
     String getName() const override { return "Memory"; }
 
@@ -60,9 +70,14 @@ private:
 class MemoryBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit MemoryBlockOutputStream(StorageMemory & storage_) : storage(storage_) {}
+    explicit MemoryBlockOutputStream(
+        StorageMemory & storage_,
+        const StorageMetadataPtr & metadata_snapshot_)
+        : storage(storage_)
+        , metadata_snapshot(metadata_snapshot_)
+    {}
 
-    Block getHeader() const override { return storage.getSampleBlock(); }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -72,6 +87,7 @@ public:
     }
 private:
     StorageMemory & storage;
+    StorageMetadataPtr metadata_snapshot;
 };
 
 
@@ -87,7 +103,7 @@ StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription col
 
 Pipes StorageMemory::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -113,16 +129,16 @@ Pipes StorageMemory::read(
         std::advance(begin, stream * size / num_streams);
         std::advance(end, (stream + 1) * size / num_streams);
 
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, begin, end, *this));
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, begin, end, *this, metadata_snapshot));
     }
 
     return pipes;
 }
 
 
-BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
-    return std::make_shared<MemoryBlockOutputStream>(*this);
+    return std::make_shared<MemoryBlockOutputStream>(*this, metadata_snapshot);
 }
 
 

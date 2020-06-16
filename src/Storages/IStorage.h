@@ -159,7 +159,6 @@ public: /// thread-unsafe part. lockStructure must be acquired
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_) { metadata = std::make_shared<StorageInMemoryMetadata>(metadata_); }
 
     Block getSampleBlock() const; /// ordinary + materialized.
-    Block getSampleBlockForColumns(const Names & column_names) const; /// ordinary + materialized + aliases + virtuals.
 
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.

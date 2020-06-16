@@ -26,8 +26,8 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
-    , virtual_header(storage.getSampleBlockForColumns(
-          {"_topic", "_key", "_offset", "_partition", "_timestamp", "_timestamp_ms", "_headers.name", "_headers.value"}))
+    , virtual_header(metadata_snapshot->getSampleBlockForColumns(
+            {"_topic", "_key", "_offset", "_partition", "_timestamp", "_timestamp_ms", "_headers.name", "_headers.value"}, storage.getVirtuals()))
 {
 }
 
@@ -44,7 +44,7 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
 
 Block KafkaBlockInputStream::getHeader() const
 {
-    return storage.getSampleBlockForColumns(column_names);
+    return metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals());
 }
 
 void KafkaBlockInputStream::readPrefixImpl()

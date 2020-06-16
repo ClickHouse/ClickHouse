@@ -16,12 +16,15 @@ MergeTreeThreadSelectBlockInputProcessor::MergeTreeThreadSelectBlockInputProcess
     size_t preferred_block_size_bytes_,
     size_t preferred_max_column_in_block_size_bytes_,
     const MergeTreeData & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_)
     :
-    MergeTreeBaseSelectProcessor{pool_->getHeader(), storage_, prewhere_info_, max_block_size_rows_,
+    MergeTreeBaseSelectProcessor{
+        pool_->getHeader(), storage_, metadata_snapshot_, prewhere_info_,
+        max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     thread{thread_},

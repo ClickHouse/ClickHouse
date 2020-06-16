@@ -14,6 +14,7 @@ namespace ErrorCodes
 
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const MergeTreeData & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
     UInt64 max_block_size_rows_,
     size_t preferred_block_size_bytes_,
@@ -29,8 +30,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     bool quiet)
     :
     MergeTreeBaseSelectProcessor{
-        storage_.getSampleBlockForColumns(required_columns_),
-        storage_, prewhere_info_, max_block_size_rows_,
+        metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals()),
+        storage_, metadata_snapshot_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},

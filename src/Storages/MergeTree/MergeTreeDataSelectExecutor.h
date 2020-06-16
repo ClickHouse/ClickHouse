@@ -26,6 +26,7 @@ public:
 
     Pipes read(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         UInt64 max_block_size,
@@ -35,6 +36,7 @@ public:
     Pipes readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         UInt64 max_block_size,
@@ -50,6 +52,7 @@ private:
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         UInt64 max_block_size,
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,
@@ -62,6 +65,7 @@ private:
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         UInt64 max_block_size,
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,
@@ -75,6 +79,7 @@ private:
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         UInt64 max_block_size,
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,

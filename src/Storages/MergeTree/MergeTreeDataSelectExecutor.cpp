@@ -147,6 +147,7 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
 
 Pipes MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     const UInt64 max_block_size,
@@ -154,13 +155,15 @@ Pipes MergeTreeDataSelectExecutor::read(
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
     return readFromParts(
-        data.getDataPartsVector(), column_names_to_return, query_info, context,
-        max_block_size, num_streams, max_block_numbers_to_read);
+        data.getDataPartsVector(), column_names_to_return, metadata_snapshot,
+        query_info, context, max_block_size, num_streams,
+        max_block_numbers_to_read);
 }
 
 Pipes MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     const UInt64 max_block_size,
@@ -205,7 +208,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         }
     }
 
-    NamesAndTypesList available_real_columns = data.getColumns().getAllPhysical();
+    NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
 
     /// If there are only virtual columns in the query, you must request at least one non-virtual one.
     if (real_column_names.empty())
@@ -629,6 +632,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             std::move(parts_with_ranges),
             num_streams,
             column_names_to_read,
+            metadata_snapshot,
             max_block_size,
             settings.use_uncompressed_cache,
             query_info,
@@ -650,6 +654,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             std::move(parts_with_ranges),
             num_streams,
             column_names_to_read,
+            metadata_snapshot,
             max_block_size,
             settings.use_uncompressed_cache,
             query_info,
@@ -665,6 +670,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             std::move(parts_with_ranges),
             num_streams,
             column_names_to_read,
+            metadata_snapshot,
             max_block_size,
             settings.use_uncompressed_cache,
             query_info,
@@ -727,6 +733,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts,
     size_t num_streams,
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     UInt64 max_block_size,
     bool use_uncompressed_cache,
     const SelectQueryInfo & query_info,
@@ -783,8 +790,18 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             num_streams = std::max((sum_marks + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, parts.size());
 
         MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
-            num_streams, sum_marks, min_marks_for_concurrent_read, parts, data, query_info.prewhere_info, true,
-            column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
+            num_streams,
+            sum_marks,
+            min_marks_for_concurrent_read,
+            parts,
+            data,
+            metadata_snapshot,
+            query_info.prewhere_info,
+            true,
+            column_names,
+            MergeTreeReadPool::BackoffSettings(settings),
+            settings.preferred_block_size_bytes,
+            false);
 
         /// Let's estimate total number of rows for progress bar.
         LOG_TRACE(log, "Reading approx. {} rows with {} streams", total_rows, num_streams);
@@ -792,8 +809,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         for (size_t i = 0; i < num_streams; ++i)
         {
             auto source = std::make_shared<MergeTreeThreadSelectBlockInputProcessor>(
-                i, pool, min_marks_for_concurrent_read, max_block_size, settings.preferred_block_size_bytes,
-                settings.preferred_max_column_in_block_size_bytes, data, use_uncompressed_cache,
+                i, pool, min_marks_for_concurrent_read, max_block_size,
+                settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
+                data, metadata_snapshot, use_uncompressed_cache,
                 query_info.prewhere_info, reader_settings, virt_columns);
 
             if (i == 0)
@@ -812,7 +830,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         for (const auto & part : parts)
         {
             auto source = std::make_shared<MergeTreeSelectProcessor>(
-                data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
+                data, metadata_snapshot, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                 settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
                 query_info.prewhere_info, true, reader_settings, virt_columns, part.part_index_in_query);
 
@@ -845,6 +863,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts,
     size_t num_streams,
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     UInt64 max_block_size,
     bool use_uncompressed_cache,
     const SelectQueryInfo & query_info,
@@ -1004,18 +1023,38 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             if (input_order_info->direction == 1)
             {
                 pipes.emplace_back(std::make_shared<MergeTreeSelectProcessor>(
-                    data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
-                    settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
-                    use_uncompressed_cache, query_info.prewhere_info, true, reader_settings,
-                    virt_columns, part.part_index_in_query));
+                    data,
+                    metadata_snapshot,
+                    part.data_part,
+                    max_block_size,
+                    settings.preferred_block_size_bytes,
+                    settings.preferred_max_column_in_block_size_bytes,
+                    column_names,
+                    ranges_to_get_from_part,
+                    use_uncompressed_cache,
+                    query_info.prewhere_info,
+                    true,
+                    reader_settings,
+                    virt_columns,
+                    part.part_index_in_query));
             }
             else
             {
                 pipes.emplace_back(std::make_shared<MergeTreeReverseSelectProcessor>(
-                    data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
-                    settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
-                    use_uncompressed_cache, query_info.prewhere_info, true, reader_settings,
-                    virt_columns, part.part_index_in_query));
+                    data,
+                    metadata_snapshot,
+                    part.data_part,
+                    max_block_size,
+                    settings.preferred_block_size_bytes,
+                    settings.preferred_max_column_in_block_size_bytes,
+                    column_names,
+                    ranges_to_get_from_part,
+                    use_uncompressed_cache,
+                    query_info.prewhere_info,
+                    true,
+                    reader_settings,
+                    virt_columns,
+                    part.part_index_in_query));
 
                 pipes.back().addSimpleTransform(std::make_shared<ReverseTransform>(pipes.back().getHeader()));
             }
@@ -1050,6 +1089,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts && parts,
     size_t num_streams,
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     UInt64 max_block_size,
     bool use_uncompressed_cache,
     const SelectQueryInfo & query_info,
@@ -1088,7 +1128,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     for (const auto & part : parts)
     {
         auto source_processor = std::make_shared<MergeTreeSelectProcessor>(
-            data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
+            data, metadata_snapshot, part.data_part, max_block_size, settings.preferred_block_size_bytes,
             settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
             query_info.prewhere_info, true, reader_settings,
             virt_columns, part.part_index_in_query);

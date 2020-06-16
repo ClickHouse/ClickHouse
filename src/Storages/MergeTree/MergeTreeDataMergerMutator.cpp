@@ -579,7 +579,7 @@ public:
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const FutureMergedMutatedPart & future_part,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     MergeList::Entry & merge_entry,
     TableStructureReadLockHolder &,
     time_t time_of_merge,
@@ -712,7 +712,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     for (const auto & part : parts)
     {
         auto input = std::make_unique<MergeTreeSequentialSource>(
-            data, part, merging_column_names, read_with_direct_io, true);
+            data, metadata_snapshot, part, merging_column_names, read_with_direct_io, true);
 
         input->setProgressCallback(
             MergeProgressCallback(merge_entry, watch_prev_elapsed, horizontal_stage_progress));
@@ -898,7 +898,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             for (size_t part_num = 0; part_num < parts.size(); ++part_num)
             {
                 auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
-                    data, parts[part_num], column_names, read_with_direct_io, true);
+                    data, metadata_snapshot, parts[part_num], column_names, read_with_direct_io, true);
 
                 column_part_source->setProgressCallback(
                     MergeProgressCallback(merge_entry, watch_prev_elapsed, column_progress));

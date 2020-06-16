@@ -1,7 +1,24 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <Common/quoteString.h>
+
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
+    extern const int DUPLICATE_COLUMN;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int TYPE_MISMATCH;
+    extern const int TABLE_IS_DROPPED;
+    extern const int NOT_IMPLEMENTED;
+    extern const int DEADLOCK_AVOIDED;
+}
+
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(
     const ColumnsDescription & columns_,
@@ -237,6 +254,39 @@ Block StorageInMemoryMetadata::getSampleBlock() const
 
     for (const auto & column : getColumns().getAllPhysical())
         res.insert({column.type->createColumn(), column.type, column.name});
+
+    return res;
+}
+
+Block StorageInMemoryMetadata::getSampleBlockForColumns(const Names & column_names, const NamesAndTypesList & virtuals) const
+{
+    Block res;
+
+    std::unordered_map<String, DataTypePtr> columns_map;
+
+    NamesAndTypesList all_columns = getColumns().getAll();
+    for (const auto & elem : all_columns)
+        columns_map.emplace(elem.name, elem.type);
+
+    /// Virtual columns must be appended after ordinary, because user can
+    /// override them.
+    for (const auto & column : virtuals)
+        columns_map.emplace(column.name, column.type);
+
+    for (const auto & name : column_names)
+    {
+        auto it = columns_map.find(name);
+        if (it != columns_map.end())
+        {
+            res.insert({it->second->createColumn(), it->second, it->first});
+        }
+        else
+        {
+            throw Exception(
+                "Column " + backQuote(name) + " not found in table " /*+ getStorageID().getNameForLogs() TODO(alesap)*/,
+                ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+        }
+    }
 
     return res;
 }
