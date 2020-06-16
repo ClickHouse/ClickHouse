@@ -256,7 +256,7 @@ def test_insert_quorum_with_ttl(started_cluster):
                    "(a Int8, d Date) " \
                    "Engine = ReplicatedMergeTree('/clickhouse/tables/{table}', '{replica}') " \
                    "PARTITION BY d ORDER BY a " \
-                   "TTL d + INTERVAL 5 second DELETE WHERE toYear(d) = 2011" \
+                   "TTL d + INTERVAL 5 second DELETE WHERE toYear(d) = 2011 " \
                    "SETTINGS merge_with_ttl_timeout=2 "
 
     print("Create Replicated table with two replicas")
