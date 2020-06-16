@@ -369,7 +369,13 @@ void SystemLog<LogElement>::savingThreadFunction()
 
             if (to_flush.empty())
             {
-                if (is_force_prepare_tables)
+                bool force;
+                {
+                    std::lock_guard lock(mutex);
+                    force = is_force_prepare_tables;
+                }
+
+                if (force)
                 {
                     prepareTable();
                     LOG_TRACE(log, "Table created (force)");
