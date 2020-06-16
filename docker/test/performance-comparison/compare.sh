@@ -12,6 +12,7 @@ function configure
 {
     # Use the new config for both servers, so that we can change it in a PR.
     rm right/config/config.d/text_log.xml ||:
+    rm right/config/config.d/path.xml ||:
     cp -rv right/config left ||:
 
     sed -i 's/<tcp_port>900./<tcp_port>9001/g' left/config/config.xml
@@ -22,7 +23,7 @@ function configure
     echo all killed
 
     set -m # Spawn temporary in its own process groups
-    left/clickhouse-server --config-file=left/config/config.xml -- --path db0 --user_files_path db0/user_files &> setup-server-log.log &
+    left/clickhouse-server --config-file=left/config/config.xml &> setup-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
@@ -35,6 +36,9 @@ function configure
 
     while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
+
+    sed -i 's/>db0<\/path>/>db\/left<\/path>/g' left/config.d/perf-comparison-tweaks-config.xml
+    sed -i 's/>db0<\/path>/>db\/right<\/path>/g' right/config.d/perf-comparison-tweaks-config.xml
 
     # Remove logs etc, because they will be updated, and sharing them between
     # servers with hardlink might cause unpredictable behavior.
@@ -59,12 +63,12 @@ function restart
 
     set -m # Spawn servers in their own process groups
 
-    left/clickhouse-server --config-file=left/config/config.xml -- --path left/db --user_files_path left/db/user_files &>> left-server-log.log &
+    left/clickhouse-server --config-file=left/config/config.xml &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
 
-    right/clickhouse-server --config-file=right/config/config.xml -- --path right/db --user_files_path right/db/user_files &>> right-server-log.log &
+    right/clickhouse-server --config-file=right/config/config.xml &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
