@@ -88,7 +88,7 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
     QueryPipelinePtr last_pipeline;
 
     std::stack<Frame> stack;
-    stack.push({.node = root});
+    stack.push(Frame{.node = root});
 
     while (!stack.empty())
     {
@@ -104,7 +104,7 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
             stack.pop();
         }
         else
-            stack.push({.node = frame.node->children[next_child]});
+            stack.push(Frame{.node = frame.node->children[next_child]});
     }
 
     return last_pipeline;
