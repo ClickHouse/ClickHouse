@@ -4378,10 +4378,10 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 
     /// SECONDARY_QUERY here means, that we received query from DDLWorker
     /// there is no sense to send query to leader, because he will receive it from own DDLWorker
-//    if (query_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-//    {
-//        throw Exception("Cannot execute DDL query, because leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
-//    }
+    if (query_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        throw Exception("Cannot execute DDL query, because leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
+    }
 
     ReplicatedMergeTreeAddress leader_address(getZooKeeper()->get(zookeeper_path + "/replicas/" + leader + "/host"));
 
