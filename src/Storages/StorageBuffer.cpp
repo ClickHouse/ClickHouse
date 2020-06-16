@@ -160,12 +160,13 @@ Pipes StorageBuffer::read(
     {
         auto destination = DatabaseCatalog::instance().getTable(destination_id, context);
 
-        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
         auto destination_lock = destination->lockStructureForShare(
                 false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+
+        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [metadata_snapshot, destination](const String& column_name)
         {
