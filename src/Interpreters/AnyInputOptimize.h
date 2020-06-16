@@ -12,7 +12,7 @@ class AnyInputMatcher
 public:
     struct Data {};
 
-    static void visit(ASTPtr & ast, Data data);
+    static void visit(const ASTPtr & ast, Data data);
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
 };
 using AnyInputVisitor = InDepthNodeVisitor<AnyInputMatcher, true>;

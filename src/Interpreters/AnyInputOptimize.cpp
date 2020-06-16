@@ -53,7 +53,7 @@ void changeAllIdentifiers(ASTPtr & ast, size_t ind, int mode)
 
 
 ///cut old any, put any to identifiers. any(functions(x)) -> functions(any(x))
-void AnyInputMatcher::visit(ASTPtr & current_ast, Data data)
+void AnyInputMatcher::visit(const ASTPtr & current_ast, Data data)
 {
     data = {};
     if (!current_ast)
@@ -70,7 +70,7 @@ void AnyInputMatcher::visit(ASTPtr & current_ast, Data data)
         size_t amount_of_children = function_node->arguments->children[0]->as<ASTFunction>()->arguments->children.size();
         for (size_t i = 0; i < amount_of_children; ++i)
             changeAllIdentifiers(function_node->arguments->children[0], i, mode);
-        current_ast = (function_node->arguments->children[0])->clone();
+        *current_ast = *(current_ast->as<ASTFunction>()->arguments->children[0])->clone();
     }
 }
 
