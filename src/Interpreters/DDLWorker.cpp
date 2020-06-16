@@ -502,7 +502,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
                     else ///circular replication is used.
                     {
                         is_circular_replicated = true;
-                        auto query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get());
+                        auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get());
                         if (query_with_table == nullptr || query_with_table->database.empty())
                         {
                             throw Exception(
