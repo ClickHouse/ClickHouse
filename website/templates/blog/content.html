@@ -8,9 +8,20 @@
             <h1 class="display-4 mb-3">{{ title }}</h1>
         </header>
 
-        <article class="col-md-10 offset-md-1">
-        {{ page.content|adjust_markdown_html }}
-        </article>
+        <div class="row">
+            <article class="col-md-10 offset-1">
+                {{ page.content|adjust_markdown_html }}
+            </article>
+            <section class="d-none d-md-block col-md-1 mh-100">
+                <div class="sticky-top pt-3">
+                    <a href="https://twitter.com/intent/tweet?url={{ url }}"
+                       rel="external nofollow noreferrer" target="_blank">
+                        <img data-src="/images/index/twitter.svg"
+                             alt="Tweet" title="Tweet" class="bg-secondary-alt rounded-circle img-fluid p-1" />
+                    </a>
+                </div>
+            </section>
+        </div>
 
         <section class="col-md-10 offset-md-1 my-5">
             <span title="{{ _('Published date') }}" class="d-inline-block bg-dark text-white p-2 mr-2">{{ page.meta.date }}</span>

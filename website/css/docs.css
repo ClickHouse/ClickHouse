@@ -37,7 +37,7 @@ summary {
     margin-left: .5rem;
 }
 
-#content {
+body[data-spy] #content {
     overflow-x: scroll;
 }
 
