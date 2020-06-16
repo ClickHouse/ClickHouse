@@ -11,6 +11,8 @@
 #include <Interpreters/Context.h>
 #include <Poco/Util/Application.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Functions/registerFunctions.h>
+#include <DataTypes/DataTypeDate.h>
 
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
@@ -20,22 +22,15 @@ DB::StoragePtr createStorage(DB::Context & context)
 
     NamesAndTypesList names_and_types;
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
-    names_and_types.emplace_back("date", std::make_shared<DataTypeDateTime>());
+    names_and_types.emplace_back("date", std::make_shared<DataTypeDate>());
 
     ColumnsDescription desc = ColumnsDescription{names_and_types};
 
     StorageInMemoryMetadata meta = StorageInMemoryMetadata(desc, IndicesDescription{}, ConstraintsDescription{});
     meta.order_by_ast = std::make_shared<ASTIdentifier>("a");
-    //meta.partition_by_ast = std::make_shared<ASTIdentifier>("date");
-    //auto context_holder = getContext();
-    /*try
-    {
-        context.getMergeTreeSettings();
-    } catch (const Exception & e) {
-        std::cerr << e.getStackTraceString();
-    } catch (...) {
-        std::cerr << "Very bad\n";
-    }*/
+
+    registerFunctions();
+
     std::unique_ptr<MergeTreeSettings> ptr = std::make_unique<MergeTreeSettings>(context.getMergeTreeSettings());
 
     StoragePtr table = StorageMergeTree::create(
