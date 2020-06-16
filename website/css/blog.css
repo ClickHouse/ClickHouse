@@ -1,0 +1,8 @@
+body.blog .dropdown-item {
+  color: #111 !important;
+}
+
+body.blog .dropdown-item:hover,
+body.blog .dropdown-item:focus {
+  background-color: #efefef;
+}
