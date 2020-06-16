@@ -50,6 +50,11 @@ public:
         return "Const";
     }
 
+    TypeIndex getDataType() const override
+    {
+        return data->getDataType();
+    }
+
     MutableColumnPtr cloneResized(size_t new_size) const override
     {
         return ColumnConst::create(data, new_size);

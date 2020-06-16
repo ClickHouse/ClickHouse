@@ -16,8 +16,14 @@ namespace ErrorCodes
 namespace JoinCommon
 {
 
-void convertColumnToNullable(ColumnWithTypeAndName & column)
+void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability)
 {
+    if (low_card_nullability && column.type->lowCardinality())
+    {
+        column.column = recursiveRemoveLowCardinality(column.column);
+        column.type = recursiveRemoveLowCardinality(column.type);
+    }
+
     if (column.type->isNullable() || !column.type->canBeInsideNullable())
         return;
 

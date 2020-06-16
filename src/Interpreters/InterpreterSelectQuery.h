@@ -88,6 +88,8 @@ public:
 
     size_t getMaxStreams() const { return max_streams; }
 
+    const SelectQueryInfo & getQueryInfo() const { return query_info; }
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -113,12 +115,13 @@ private:
         const Names & columns_to_remove_after_prewhere);
 
     void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
-    void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
     void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
     void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     static void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info);
+    void executeOrder(QueryPipeline & pipeline, InputOrderInfoPtr sorting_info);
+    void executeOrderOptimized(QueryPipeline & pipeline, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
     void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
     void executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset);
@@ -131,7 +134,8 @@ private:
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
-    String generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
+    String generateFilterActions(
+        ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
 
     enum class Modificator
     {
@@ -158,6 +162,7 @@ private:
 
     /// Is calculated in getSampleBlock. Is used later in readImpl.
     ExpressionAnalysisResult analysis_result;
+    /// For row-level security.
     FilterInfoPtr filter_info;
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
