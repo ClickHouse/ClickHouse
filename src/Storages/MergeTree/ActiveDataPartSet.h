@@ -73,7 +73,8 @@ public:
         Strings parts_covered_by = getPartsCoveredBy(MergeTreePartInfo::fromPartName(part_name, format_version));
         bool result = true;
         for (const auto & part : parts_covered_by)
-            result &= remove(part);
+            if (part != part_name)
+                result &= remove(part);
 
         return result;
     }
