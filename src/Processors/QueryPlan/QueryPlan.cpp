@@ -82,7 +82,7 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
     struct Frame
     {
         Node * node;
-        QueryPipelines pipelines;
+        QueryPipelines pipelines = {};
     };
 
     QueryPipelinePtr last_pipeline;

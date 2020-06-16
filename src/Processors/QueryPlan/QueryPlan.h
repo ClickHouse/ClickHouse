@@ -30,7 +30,7 @@ private:
     struct Node
     {
         QueryPlanStepPtr step;
-        std::vector<Node *> children;
+        std::vector<Node *> children = {};
     };
 
     using Nodes = std::list<Node>;

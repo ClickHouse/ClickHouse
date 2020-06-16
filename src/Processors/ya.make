@@ -139,9 +139,11 @@ SRCS(
     Transforms/AggregatingInOrderTransform.cpp
     QueryPlan/ExpressionStep.cpp
     QueryPlan/FilterStep.cpp
+    QueryPlan/ISourceStep.cpp
     QueryPlan/ITransformingStep.cpp
     QueryPlan/IQueryPlanStep.cpp
     QueryPlan/ReadFromStorageStep.cpp
+    QueryPlan/ReadNothingStep.cpp
     QueryPlan/QueryPlan.cpp
 )
 
