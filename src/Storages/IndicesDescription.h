@@ -48,6 +48,13 @@ struct IndexDescription
 
     /// Parse index from definition AST
     static IndexDescription getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
+
+    IndexDescription() = default;
+
+    /// We need custom copy constructors because we don't want
+    /// unintentionaly share AST variables and modify them.
+    IndexDescription(const IndexDescription & other);
+    IndexDescription & operator=(const IndexDescription & other);
 };
 
 /// All secondary indices in storage
