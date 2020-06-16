@@ -551,6 +551,7 @@ void MergeTreeData::initPartitionKey(ASTPtr partition_by_ast)
     {
         if (typeid_cast<const DataTypeDate *>(minmax_idx_column_types[i].get()))
         {
+            std::cerr << "DEBUG initPartitionKey 1\n";
             if (!encountered_date_column)
             {
                 minmax_idx_date_column_pos = i;
