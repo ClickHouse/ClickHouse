@@ -422,7 +422,7 @@ void DDLWorker::processTasks()
             }
             catch (const Coordination::Exception & e)
             {
-                if (server_startup && e.code == Coordination::ZNONODE)
+                if (server_startup && e.code == Coordination::Error::ZNONODE)
                 {
                     LOG_WARNING(log, "ZooKeeper NONODE error during startup. Ignoring entry {} ({}) : {}", task.entry_name, task.entry.query, getCurrentExceptionMessage(true));
                 }
@@ -603,15 +603,15 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
 
     auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
 
-    if (code == Coordination::ZOK || code == Coordination::ZNODEEXISTS)
+    if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
     {
         // Ok
     }
-    else if (code == Coordination::ZNONODE)
+    else if (code == Coordination::Error::ZNONODE)
     {
         /// There is no parent
         createStatusDirs(task.entry_path, zookeeper);
-        if (Coordination::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
+        if (Coordination::Error::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
             throw Coordination::Exception(code, active_node_path);
     }
     else
@@ -915,8 +915,9 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
         ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
     }
     Coordination::Responses responses;
-    int code = zookeeper->tryMulti(ops, responses);
-    if (code && code != Coordination::ZNODEEXISTS)
+    Coordination::Error code = zookeeper->tryMulti(ops, responses);
+    if (code != Coordination::Error::ZOK
+        && code != Coordination::Error::ZNODEEXISTS)
         throw Coordination::Exception(code);
 }
 
@@ -1013,7 +1014,7 @@ void DDLWorker::runMainThread()
                     }
                 }
             }
-            else if (e.code == Coordination::ZNONODE)
+            else if (e.code == Coordination::Error::ZNONODE)
             {
                 LOG_ERROR(log, "ZooKeeper error: {}", getCurrentExceptionMessage(true));
             }
@@ -1201,8 +1202,8 @@ private:
     static Strings getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path)
     {
         Strings res;
-        int code = zookeeper->tryGetChildren(node_path, res);
-        if (code && code != Coordination::ZNONODE)
+        Coordination::Error code = zookeeper->tryGetChildren(node_path, res);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw Coordination::Exception(code, node_path);
         return res;
     }

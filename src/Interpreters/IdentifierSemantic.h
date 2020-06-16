@@ -41,8 +41,7 @@ struct IdentifierSemantic
     static std::optional<String> extractNestedName(const ASTIdentifier & identifier, const String & table_name);
 
     static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
-    static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const TableWithColumnNames & db_and_table);
-    static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const TableWithColumnNamesAndTypes & db_and_table);
+    static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const TableWithColumnNamesAndTypes & table_with_columns);
 
     static void setColumnShortName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
     static void setColumnLongName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
@@ -53,9 +52,9 @@ struct IdentifierSemantic
     static std::optional<size_t> getMembership(const ASTIdentifier & identifier);
     static std::optional<size_t> chooseTable(const ASTIdentifier &, const std::vector<DatabaseAndTableWithAlias> & tables,
                             bool allow_ambiguous = false);
-    static std::optional<size_t> chooseTable(const ASTIdentifier &, const std::vector<TableWithColumnNames> & tables,
+    static std::optional<size_t> chooseTable(const ASTIdentifier &, const TablesWithColumns & tables,
                             bool allow_ambiguous = false);
-    static std::optional<size_t> chooseTable(const ASTIdentifier &, const std::vector<TableWithColumnNamesAndTypes> & tables,
+    static std::optional<size_t> chooseTableColumnMatch(const ASTIdentifier &, const TablesWithColumns & tables,
                             bool allow_ambiguous = false);
 
 private:

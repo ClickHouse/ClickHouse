@@ -1,15 +1,3 @@
-add_executable (expression expression.cpp)
-target_link_libraries (expression PRIVATE dbms clickhouse_parsers)
-
-add_executable (create_query create_query.cpp)
-target_link_libraries (create_query PRIVATE dbms clickhouse_parsers)
-
-add_executable (select_query select_query.cpp)
-target_link_libraries (select_query PRIVATE clickhouse_storages_system dbms clickhouse_common_io)
-
-add_executable (aggregate aggregate.cpp)
-target_link_libraries (aggregate PRIVATE dbms)
-
 add_executable (hash_map hash_map.cpp)
 target_include_directories (hash_map SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 target_link_libraries (hash_map PRIVATE dbms)
@@ -19,8 +7,7 @@ target_include_directories (hash_map_lookup SYSTEM BEFORE PRIVATE ${SPARSEHASH_I
 target_link_libraries (hash_map_lookup PRIVATE dbms)
 
 add_executable (hash_map3 hash_map3.cpp)
-target_include_directories(hash_map3 SYSTEM BEFORE PRIVATE ${METROHASH_INCLUDE_DIR})
-target_link_libraries (hash_map3 PRIVATE dbms ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
+target_link_libraries (hash_map3 PRIVATE dbms ${FARMHASH_LIBRARIES} metrohash)
 
 add_executable (hash_map_string hash_map_string.cpp)
 target_include_directories (hash_map_string SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
@@ -30,8 +17,7 @@ add_executable (hash_map_string_2 hash_map_string_2.cpp)
 target_link_libraries (hash_map_string_2 PRIVATE dbms)
 
 add_executable (hash_map_string_3 hash_map_string_3.cpp)
-target_include_directories(hash_map_string_3 SYSTEM BEFORE PRIVATE ${METROHASH_INCLUDE_DIR})
-target_link_libraries (hash_map_string_3 PRIVATE dbms ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
+target_link_libraries (hash_map_string_3 PRIVATE dbms ${FARMHASH_LIBRARIES} metrohash)
 
 add_executable (hash_map_string_small hash_map_string_small.cpp)
 target_include_directories (hash_map_string_small SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})

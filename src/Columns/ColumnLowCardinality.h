@@ -39,6 +39,7 @@ public:
 
     std::string getName() const override { return "ColumnLowCardinality"; }
     const char * getFamilyName() const override { return "ColumnLowCardinality"; }
+    TypeIndex getDataType() const override { return TypeIndex::LowCardinality; }
 
     ColumnPtr convertToFullColumn() const { return getDictionary().getNestedColumn()->index(getIndexes(), 0); }
     ColumnPtr convertToFullColumnIfLowCardinality() const override { return convertToFullColumn(); }

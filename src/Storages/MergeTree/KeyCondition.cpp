@@ -7,7 +7,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -826,8 +826,8 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
             }
 
             bool cast_not_needed =
-                    is_set_const /// Set args are already casted inside Set::createFromAST
-                    || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
+                is_set_const /// Set args are already casted inside Set::createFromAST
+                || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
 
             if (!cast_not_needed)
                 castValueToType(key_expr_type, const_value, const_type, node);
@@ -849,7 +849,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
             || const_value.getType() == Field::Types::Float64)
         {
             /// Zero in all types is represented in memory the same way as in UInt64.
-            out.function = const_value.get<UInt64>()
+            out.function = const_value.safeGet<UInt64>()
                 ? RPNElement::ALWAYS_TRUE
                 : RPNElement::ALWAYS_FALSE;
 

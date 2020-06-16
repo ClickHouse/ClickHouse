@@ -210,6 +210,8 @@ private:
 
     /// If true, the table is offline and can not be written to it.
     std::atomic_bool is_readonly {false};
+    /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
+    bool has_metadata_in_zookeeper = true;
 
     String zookeeper_path;
     String replica_name;
@@ -288,14 +290,13 @@ private:
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
 
-    std::atomic_bool need_shutdown{false};
-
     template <class Func>
     void foreachCommittedParts(const Func & func) const;
 
-    /** Creates the minimum set of nodes in ZooKeeper.
+    /** Creates the minimum set of nodes in ZooKeeper and create first replica.
+      * Returns true if was created, false if exists.
       */
-    void createTableIfNotExists();
+    bool createTableIfNotExists();
 
     /** Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
       */
@@ -426,16 +427,23 @@ private:
       * Call when merge_selecting_mutex is locked.
       * Returns false if any part is not in ZK.
       */
-    bool createLogEntryToMergeParts(
+    enum class CreateMergeEntryResult { Ok, MissingPart, LogUpdated, Other };
+
+    CreateMergeEntryResult createLogEntryToMergeParts(
         zkutil::ZooKeeperPtr & zookeeper,
         const DataPartsVector & parts,
         const String & merged_name,
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         bool force_ttl,
-        ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
+        ReplicatedMergeTreeLogEntryData * out_log_entry,
+        int32_t log_version);
 
-    bool createLogEntryToMutatePart(const IMergeTreeDataPart & part, Int64 mutation_version, int alter_version);
+    CreateMergeEntryResult createLogEntryToMutatePart(
+        const IMergeTreeDataPart & part,
+        Int64 mutation_version,
+        int32_t alter_version,
+        int32_t log_version);
 
     /// Exchange parts.
 

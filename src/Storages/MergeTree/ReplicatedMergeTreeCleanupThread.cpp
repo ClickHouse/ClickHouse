@@ -40,7 +40,7 @@ void ReplicatedMergeTreeCleanupThread::run()
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-        if (e.code == Coordination::ZSESSIONEXPIRED)
+        if (e.code == Coordination::Error::ZSESSIONEXPIRED)
             return;
     }
     catch (...)
@@ -320,15 +320,15 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     for (auto & pair : try_remove_futures)
     {
         const String & path = pair.first;
-        int32_t rc = pair.second.get().error;
-        if (rc == Coordination::ZNOTEMPTY)
+        Coordination::Error rc = pair.second.get().error;
+        if (rc == Coordination::Error::ZNOTEMPTY)
         {
             /// Can happen if there are leftover block nodes with children created by previous server versions.
             zookeeper->removeRecursive(path);
             cached_block_stats.erase(first_outdated_block->node);
         }
-        else if (rc)
-            LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", path, zkutil::ZooKeeper::error2string(rc));
+        else if (rc != Coordination::Error::ZOK)
+            LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", path, Coordination::errorMessage(rc));
         else
         {
             /// Successfully removed blocks have to be removed from cache
@@ -349,7 +349,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
 
     Strings blocks;
     Coordination::Stat stat;
-    if (zookeeper.tryGetChildren(storage.zookeeper_path + "/blocks", blocks, &stat))
+    if (Coordination::Error::ZOK != zookeeper.tryGetChildren(storage.zookeeper_path + "/blocks", blocks, &stat))
         throw Exception(storage.zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
     /// Seems like this code is obsolete, because we delete blocks from cache
@@ -392,7 +392,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
     for (auto & elem : exists_futures)
     {
         auto status = elem.second.get();
-        if (status.error != Coordination::ZNONODE)
+        if (status.error != Coordination::Error::ZNONODE)
         {
             cached_block_stats.emplace(elem.first, status.stat.ctime);
             timed_blocks.emplace_back(elem.first, status.stat.ctime);

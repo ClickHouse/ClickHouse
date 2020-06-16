@@ -41,13 +41,13 @@ void MergeTreeBlockOutputStream::write(const Block & block)
             if (storage.merging_mutating_task_handle && !storage.in_memory_merges_throttler.needDelayMerge())
             {
                 storage.in_memory_merges_throttler.reset();
-                storage.merging_mutating_task_handle->wake();
+                storage.merging_mutating_task_handle->signalReadyToRun();
             }
         }
         else if (storage.merging_mutating_task_handle)
         {
             /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
-            storage.merging_mutating_task_handle->wake();
+            storage.merging_mutating_task_handle->signalReadyToRun();
         }
     }
 

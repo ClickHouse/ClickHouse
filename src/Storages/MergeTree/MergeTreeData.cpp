@@ -1,5 +1,4 @@
 #include <Compression/CompressedReadBuffer.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -156,7 +155,8 @@ MergeTreeData::MergeTreeData(
 
     if (metadata.sample_by_ast != nullptr)
     {
-        StorageMetadataKeyField candidate_sampling_key = StorageMetadataKeyField::getKeyFromAST(metadata.sample_by_ast, getColumns(), global_context);
+        StorageMetadataKeyField candidate_sampling_key = StorageMetadataKeyField::getKeyFromAST(
+            metadata.sample_by_ast, getColumns(), global_context);
 
         const auto & pk_sample_block = getPrimaryKey().sample_block;
         if (!pk_sample_block.has(candidate_sampling_key.column_names[0]) && !attach
@@ -1398,6 +1398,24 @@ void MergeTreeData::dropAllData()
     LOG_TRACE(log, "dropAllData: done.");
 }
 
+void MergeTreeData::dropIfEmpty()
+{
+    LOG_TRACE(log, "dropIfEmpty");
+
+    auto lock = lockParts();
+
+    if (!data_parts_by_info.empty())
+        return;
+
+    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+    {
+        /// Non recursive, exception is thrown if there are more files.
+        disk->remove(path + "format_version.txt");
+        disk->remove(path + "detached");
+        disk->remove(path);
+    }
+}
+
 namespace
 {
 
@@ -1984,7 +2002,7 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
             part->remove_time.store(remove_time, std::memory_order_relaxed);
 
         if (part->state != IMergeTreeDataPart::State::Outdated)
-            modifyPartState(part,IMergeTreeDataPart::State::Outdated);
+            modifyPartState(part, IMergeTreeDataPart::State::Outdated);
 
         if (isInMemoryPart(part) && write_ahead_log)
             write_ahead_log->dropPart(part->name);

@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Common/FieldVisitors.h>
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
@@ -24,6 +25,51 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+
+static std::string getTypeString(const AggregateFunctionPtr & func)
+{
+    WriteBufferFromOwnString stream;
+    stream << "AggregateFunction(" << func->getName();
+    const auto & parameters = func->getParameters();
+    const auto & argument_types = func->getArgumentTypes();
+
+    if (!parameters.empty())
+    {
+        stream << '(';
+        for (size_t i = 0; i < parameters.size(); ++i)
+        {
+            if (i)
+                stream << ", ";
+            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+        }
+        stream << ')';
+    }
+
+    for (const auto & argument_type : argument_types)
+        stream << ", " << argument_type->getName();
+
+    stream << ')';
+    return stream.str();
+}
+
+
+ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_)
+    : func(func_), type_string(getTypeString(func))
+{
+}
+
+ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_)
+    : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func))
+{
+
+}
+
+void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
+{
+    func = func_;
+    type_string = getTypeString(func);
 }
 
 
@@ -343,15 +389,10 @@ MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
     return create(func);
 }
 
-String ColumnAggregateFunction::getTypeString() const
-{
-    return DataTypeAggregateFunction(func, func->getArgumentTypes(), func->getParameters()).getName();
-}
-
 Field ColumnAggregateFunction::operator[](size_t n) const
 {
     Field field = AggregateFunctionStateData();
-    field.get<AggregateFunctionStateData &>().name = getTypeString();
+    field.get<AggregateFunctionStateData &>().name = type_string;
     {
         WriteBufferFromString buffer(field.get<AggregateFunctionStateData &>().data);
         func->serialize(data[n], buffer);
@@ -362,7 +403,7 @@ Field ColumnAggregateFunction::operator[](size_t n) const
 void ColumnAggregateFunction::get(size_t n, Field & res) const
 {
     res = AggregateFunctionStateData();
-    res.get<AggregateFunctionStateData &>().name = getTypeString();
+    res.get<AggregateFunctionStateData &>().name = type_string;
     {
         WriteBufferFromString buffer(res.get<AggregateFunctionStateData &>().data);
         func->serialize(data[n], buffer);
@@ -432,8 +473,6 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
 
 void ColumnAggregateFunction::insert(const Field & x)
 {
-    String type_string = getTypeString();
-
     if (x.getType() != Field::Types::AggregateFunctionState)
         throw Exception(String("Inserting field of type ") + x.getTypeName() + " into ColumnAggregateFunction. "
                         "Expected " + Field::Types::toString(Field::Types::AggregateFunctionState), ErrorCodes::LOGICAL_ERROR);
@@ -571,7 +610,7 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
     AggregateDataPtr place = place_buffer.data();
 
     AggregateFunctionStateData serialized;
-    serialized.name = getTypeString();
+    serialized.name = type_string;
 
     func->create(place);
     try

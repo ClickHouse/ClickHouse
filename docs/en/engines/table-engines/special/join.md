@@ -3,9 +3,12 @@ toc_priority: 40
 toc_title: Join
 ---
 
-# Join {#join}
+# Join Table Engine {#join}
 
-Prepared data structure for using in [JOIN](../../../sql-reference/statements/select/join.md#select-join) operations.
+Optional prepared data structure for usage in [JOIN](../../../sql-reference/statements/select/join.md#select-join) operations.
+
+!!! note "Note"
+    This is not an article about the [JOIN clause](../../../sql-reference/statements/select/join.md#select-join) itself.
 
 ## Creating a Table {#creating-a-table}
 
