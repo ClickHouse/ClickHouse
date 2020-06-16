@@ -17,7 +17,7 @@ String RowPolicy::NameParts::getName() const
     name.reserve(database.length() + table_name.length() + short_name.length() + 6);
     name += backQuoteIfNeed(short_name);
     name += " ON ";
-    if (!name.empty())
+    if (!database.empty())
     {
         name += backQuoteIfNeed(database);
         name += '.';

@@ -18,6 +18,30 @@ import amp
 import website
 
 
+def slugify(value, separator):
+    return slugify_impl.slugify(value, separator=separator, word_boundary=True, save_order=True)
+
+
+MARKDOWN_EXTENSIONS = [
+    'mdx_clickhouse',
+    'admonition',
+    'attr_list',
+    'codehilite',
+    'nl2br',
+    'sane_lists',
+    'pymdownx.details',
+    'pymdownx.magiclink',
+    'pymdownx.superfences',
+    'extra',
+    {
+        'toc': {
+            'permalink': True,
+            'slugify': slugify
+        }
+    }
+]
+
+
 class ClickHouseLinkMixin(object):
 
     def handleMatch(self, m, data):
@@ -70,10 +94,6 @@ class ClickHouseMarkdown(markdown.extensions.Extension):
 
 def makeExtension(**kwargs):
     return ClickHouseMarkdown(**kwargs)
-
-
-def slugify(value, separator):
-    return slugify_impl.slugify(value, separator=separator, word_boundary=True, save_order=True)
 
 
 def get_translations(dirname, lang):

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-20 15:32+0300\n"
+"POT-Creation-Date: 2020-06-15 22:29+0300\n"
 "PO-Revision-Date: 2020-03-30 15:12+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fr\n"
@@ -36,27 +36,27 @@ msgstr "ClickHouse-SGBD OLAP open-source rapide"
 msgid "ClickHouse DBMS"
 msgstr "SGBD ClickHouse"
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "open-source"
 msgstr "open-source"
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "relational"
 msgstr "relationnel"
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "analytics"
 msgstr "Analytics"
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "analytical"
 msgstr "analytique"
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "Big Data"
 msgstr "Big Data"
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "web-analytics"
 msgstr "web-analytics"
 
@@ -75,6 +75,14 @@ msgstr ""
 #: templates/footer.html:11
 msgid "Yandex LLC"
 msgstr "Yandex LLC"
+
+#: templates/blog/content.html:16
+msgid "Published date"
+msgstr "Date de publication"
+
+#: templates/blog/nav.html:18
+msgid "Documentation"
+msgstr "Documentation"
 
 #: templates/docs/footer.html:3
 msgid "Rating"
