@@ -492,10 +492,6 @@ public:
     /// Returns column names that need to be read for FINAL to work.
     Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }
 
-    /// Returns columns, which will be needed to calculate dependencies (skip
-    /// indices, TTL expressions) if we update @updated_columns set of columns.
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
-
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 

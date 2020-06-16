@@ -137,13 +137,13 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands)
     return select;
 }
 
-ColumnDependencies getAllColumnDependencies(const StoragePtr & storage, const NameSet & updated_columns)
+ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns)
 {
     NameSet new_updated_columns = updated_columns;
     ColumnDependencies dependencies;
     while (!new_updated_columns.empty())
     {
-        auto new_dependencies = storage->getColumnDependencies(new_updated_columns);
+        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns);
         new_updated_columns.clear();
         for (const auto & dependency : new_dependencies)
         {
@@ -204,6 +204,7 @@ MutationsInterpreter::MutationsInterpreter(
     const Context & context_,
     bool can_execute_)
     : storage(std::move(storage_))
+    , metadata_snapshot(storage->getInMemoryMetadataPtr())
     , commands(std::move(commands_))
     , context(context_)
     , can_execute(can_execute_)
@@ -329,7 +330,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     }
 
     /// Columns, that we need to read for calculation of skip indices or TTL expressions.
-    auto dependencies = getAllColumnDependencies(storage, updated_columns);
+    auto dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
 
     /// First, break a sequence of commands into stages.
     for (const auto & command : commands)
@@ -423,7 +424,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 auto all_columns_vec = all_columns.getNames();
-                auto all_dependencies = getAllColumnDependencies(storage, NameSet(all_columns_vec.begin(), all_columns_vec.end()));
+                auto all_dependencies = getAllColumnDependencies(metadata_snapshot, NameSet(all_columns_vec.begin(), all_columns_vec.end()));
 
                 for (const auto & dependency : all_dependencies)
                 {
@@ -432,7 +433,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 /// Recalc only skip indices of columns, that could be updated by TTL.
-                auto new_dependencies = storage->getColumnDependencies(new_updated_columns);
+                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns);
                 for (const auto & dependency : new_dependencies)
                 {
                     if (dependency.kind == ColumnDependency::SKIP_INDEX)

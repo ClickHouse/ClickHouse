@@ -105,12 +105,18 @@ public:
       */
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
-        MergeListEntry & merge_entry, TableStructureReadLockHolder & table_lock_holder, time_t time_of_merge,
-        const ReservationPtr & space_reservation, bool deduplicate, bool force_ttl);
+        const StorageMetadataPtr & metadata_snapshot,
+        MergeListEntry & merge_entry,
+        TableStructureReadLockHolder & table_lock_holder,
+        time_t time_of_merge,
+        const ReservationPtr & space_reservation,
+        bool deduplicate,
+        bool force_ttl);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
+        const StorageMetadataPtr & metadata_snapshot,
         const MutationCommands & commands,
         MergeListEntry & merge_entry,
         time_t time_of_mutation,
@@ -164,7 +170,7 @@ private:
         const IndicesDescription & all_indices,
         const MutationCommands & commands_for_removes);
 
-    bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
+    bool shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const Names & columns, const MutationCommands & commands) const;
 
     /// Return set of indices which should be recalculated during mutation also
     /// wraps input stream into additional expression stream
