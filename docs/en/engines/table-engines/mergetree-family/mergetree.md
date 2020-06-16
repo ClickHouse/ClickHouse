@@ -51,9 +51,6 @@ ORDER BY expr
 
 For a description of parameters, see the [CREATE query description](../../../sql-reference/statements/create.md).
 
-!!! note "Note"
-    `INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
-
 ### Query Clauses {#mergetree-query-clauses}
 
 -   `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine does not have parameters.
@@ -257,7 +254,7 @@ ClickHouse cannot use an index if the values of the primary key in the query par
 
 ClickHouse uses this logic not only for days of the month sequences, but for any primary key that represents a partially-monotonic sequence.
 
-### Data Skipping Indexes (experimental) {#table_engine-mergetree-data_skipping-indexes}
+### Data Skipping Indexes {#table_engine-mergetree-data_skipping-indexes}
 
 The index declaration is in the columns section of the `CREATE` query.
 
