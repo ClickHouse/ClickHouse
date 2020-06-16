@@ -1,4 +1,4 @@
-SELECT \n    date, \n    id, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM default.test\n    WHERE id = 1\n)\nWHERE id = 1
-SELECT \n    date, \n    id, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM default.test\n    WHERE id = 2\n)\nWHERE id = 2
-SELECT id\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM default.test\n    WHERE id = 1\n)\nWHERE id = 1
-SELECT id\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM default.test\n    WHERE id = 1\n) AS s\nWHERE id = 1
+SELECT \n    date,\n    id,\n    name,\n    value\nFROM \n(\n    SELECT *\n    FROM default.test\n    HAVING id = 1\n) AS test_view\nWHERE id = 1
+SELECT \n    date,\n    id,\n    name,\n    value\nFROM \n(\n    SELECT *\n    FROM default.test\n    HAVING id = 2\n) AS test_view\nWHERE id = 2
+SELECT id\nFROM \n(\n    SELECT *\n    FROM default.test\n    HAVING id = 1\n) AS test_view\nWHERE id = 1
+SELECT id\nFROM \n(\n    SELECT *\n    FROM default.test\n    HAVING id = 1\n) AS s\nWHERE id = 1

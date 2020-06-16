@@ -14,6 +14,7 @@ toc_title: "Int\xE9gration"
 
 -   Systèmes de gestion de bases de données relationnelles
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-lecteur de données](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-réplicateur](https://github.com/larsnovikov/horgh-replicator)
