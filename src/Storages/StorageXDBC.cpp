@@ -97,16 +97,16 @@ Pipes StorageXDBC::read(
     return IStorageURLBase::read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
-BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
+BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
     bridge_helper->startBridgeSync();
 
     NamesAndTypesList cols;
     Poco::URI request_uri = uri;
     request_uri.setPath("/write");
-    for (const String & name : getSampleBlock().getNames())
+    for (const String & name : metadata_snapshot->getSampleBlock().getNames())
     {
-        auto column_data = getColumns().getPhysical(name);
+        auto column_data = metadata_snapshot->getColumns().getPhysical(name);
         cols.emplace_back(column_data.name, column_data.type);
     }
     auto url_params = bridge_helper->getURLParams(cols.toString(), 65536);
@@ -117,14 +117,17 @@ BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageM
     request_uri.addQueryParameter("format_name", format_name);
 
     return std::make_shared<StorageURLBlockOutputStream>(
-            request_uri, format_name, getSampleBlock(), context,
-            ConnectionTimeouts::getHTTPTimeouts(context),
-            chooseCompressionMethod(uri.toString(), compression_method));
+        request_uri,
+        format_name,
+        metadata_snapshot->getSampleBlock(),
+        context,
+        ConnectionTimeouts::getHTTPTimeouts(context),
+        chooseCompressionMethod(uri.toString(), compression_method));
 }
 
-Block StorageXDBC::getHeaderBlock(const Names & column_names) const
+Block StorageXDBC::getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const
 {
-    return getSampleBlockForColumns(column_names);
+    return metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals());
 }
 
 std::string StorageXDBC::getName() const

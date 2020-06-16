@@ -157,7 +157,7 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(con
 
 Pipes IStorageURLBase::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -170,14 +170,15 @@ Pipes IStorageURLBase::read(
         request_uri.addQueryParameter(param, value);
 
     Pipes pipes;
-    pipes.emplace_back(std::make_shared<StorageURLSource>(request_uri,
+    pipes.emplace_back(std::make_shared<StorageURLSource>(
+        request_uri,
         getReadMethod(),
         getReadPOSTDataCallback(column_names, query_info, context, processed_stage, max_block_size),
         format_name,
         getName(),
-        getHeaderBlock(column_names),
+        getHeaderBlock(column_names, metadata_snapshot),
         context,
-        getColumns().getDefaults(),
+        metadata_snapshot->getColumns().getDefaults(),
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(context),
         chooseCompressionMethod(request_uri.getPath(), compression_method)));

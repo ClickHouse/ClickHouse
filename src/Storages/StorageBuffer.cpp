@@ -88,9 +88,11 @@ StorageBuffer::StorageBuffer(
 class BufferSource : public SourceWithProgress
 {
 public:
-    BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage)
-        : SourceWithProgress(storage.getSampleBlockForColumns(column_names_))
-        , column_names(column_names_.begin(), column_names_.end()), buffer(buffer_) {}
+    BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage, const StorageMetadataPtr & metadata_snapshot)
+        : SourceWithProgress(
+            metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals()))
+        , column_names(column_names_.begin(), column_names_.end())
+        , buffer(buffer_) {}
 
     String getName() const override { return "Buffer"; }
 
@@ -145,7 +147,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
 
 Pipes StorageBuffer::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -236,7 +238,7 @@ Pipes StorageBuffer::read(
     Pipes pipes_from_buffers;
     pipes_from_buffers.reserve(num_shards);
     for (auto & buf : buffers)
-        pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, *this));
+        pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, *this, metadata_snapshot));
 
     /** If the sources from the table were processed before some non-initial stage of query execution,
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.

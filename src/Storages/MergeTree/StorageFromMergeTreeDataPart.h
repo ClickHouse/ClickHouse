@@ -21,15 +21,15 @@ public:
 
     Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         unsigned num_streams) override
     {
-        return MergeTreeDataSelectExecutor(part->storage).readFromParts(
-                {part}, column_names, query_info, context, max_block_size, num_streams);
+        return MergeTreeDataSelectExecutor(part->storage)
+            .readFromParts({part}, column_names, metadata_snapshot, query_info, context, max_block_size, num_streams);
     }
 
 

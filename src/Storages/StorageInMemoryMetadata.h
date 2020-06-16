@@ -110,6 +110,8 @@ struct StorageInMemoryMetadata
     Block getSampleBlock() const; /// ordinary + materialized.
     Block getSampleBlockNonMaterialized() const; /// ordinary.
     Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const; /// ordinary + materialized + virtuals.
+    Block getSampleBlockForColumns(
+        const Names & column_names, const NamesAndTypesList & virtuals) const; /// ordinary + materialized + aliases + virtuals.
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;

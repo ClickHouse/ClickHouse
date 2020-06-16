@@ -11,13 +11,15 @@ namespace ErrorCodes
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
     const MergeTreeData & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
     MergeTreeData::DataPartPtr data_part_,
     Names columns_to_read_,
     bool read_with_direct_io_,
     bool take_column_types_from_storage,
     bool quiet)
-    : SourceWithProgress(storage_.getSampleBlockForColumns(columns_to_read_))
+    : SourceWithProgress(metadata_snapshot_->getSampleBlockForColumns(columns_to_read_, storage_.getVirtuals()))
     , storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
     , data_part(std::move(data_part_))
     , columns_to_read(std::move(columns_to_read_))
     , read_with_direct_io(read_with_direct_io_)
@@ -41,7 +43,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
-        const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
+        const NamesAndTypesList & physical_columns = metadata_snapshot->getColumns().getAllPhysical();
         columns_for_reader = physical_columns.addTypes(columns_to_read);
     }
     else

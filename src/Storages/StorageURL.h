@@ -62,7 +62,7 @@ private:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
-    virtual Block getHeaderBlock(const Names & column_names) const = 0;
+    virtual Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const = 0;
 };
 
 class StorageURLBlockOutputStream : public IBlockOutputStream
@@ -124,9 +124,9 @@ public:
         return "URL";
     }
 
-    Block getHeaderBlock(const Names & /*column_names*/) const override
+    Block getHeaderBlock(const Names & /*column_names*/, const StorageMetadataPtr & metadata_snapshot) const override
     {
-        return getSampleBlock();
+        return metadata_snapshot->getSampleBlock();
     }
 };
 }

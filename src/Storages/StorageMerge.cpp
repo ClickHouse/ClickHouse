@@ -129,7 +129,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 
 Pipes StorageMerge::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -157,7 +157,7 @@ Pipes StorageMerge::read(
     modified_context->setSetting("optimize_move_to_prewhere", false);
 
     /// What will be result structure depending on query processed stage in source tables?
-    Block header = getQueryHeader(column_names, query_info, context, processed_stage);
+    Block header = getQueryHeader(column_names, metadata_snapshot, query_info, context, processed_stage);
 
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.
@@ -401,13 +401,17 @@ void StorageMerge::alter(
 }
 
 Block StorageMerge::getQueryHeader(
-    const Names & column_names, const SelectQueryInfo & query_info, const Context & context, QueryProcessingStage::Enum processed_stage)
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage)
 {
     switch (processed_stage)
     {
         case QueryProcessingStage::FetchColumns:
         {
-            Block header = getSampleBlockForColumns(column_names);
+            Block header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals());
             if (query_info.prewhere_info)
             {
                 query_info.prewhere_info->prewhere_actions->execute(header);
@@ -420,7 +424,7 @@ Block StorageMerge::getQueryHeader(
         case QueryProcessingStage::WithMergeableState:
         case QueryProcessingStage::Complete:
             return materializeBlock(InterpreterSelectQuery(
-                query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
+                    query_info.query, context, std::make_shared<OneBlockInputStream>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals())),
                 SelectQueryOptions(processed_stage).analyze()).getSampleBlock());
     }
     throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);

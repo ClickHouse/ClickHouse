@@ -54,12 +54,13 @@ public:
 
     static Block getHeader(
         StorageStripeLog & storage,
+        const StorageMetadataPtr & metadata_snapshot,
         const Names & column_names,
         IndexForNativeFormat::Blocks::const_iterator index_begin,
         IndexForNativeFormat::Blocks::const_iterator index_end)
     {
         if (index_begin == index_end)
-            return storage.getSampleBlockForColumns(column_names);
+            return metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals());
 
         /// TODO: check if possible to always return storage.getSampleBlock()
 
@@ -74,13 +75,22 @@ public:
         return header;
     }
 
-    StripeLogSource(StorageStripeLog & storage_, const Names & column_names, size_t max_read_buffer_size_,
+    StripeLogSource(
+        StorageStripeLog & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        const Names & column_names,
+        size_t max_read_buffer_size_,
         std::shared_ptr<const IndexForNativeFormat> & index_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_)
-        : SourceWithProgress(getHeader(storage_, column_names, index_begin_, index_end_))
-        , storage(storage_), max_read_buffer_size(max_read_buffer_size_)
-        , index(index_), index_begin(index_begin_), index_end(index_end_)
+        : SourceWithProgress(
+            getHeader(storage_, metadata_snapshot_, column_names, index_begin_, index_end_))
+        , storage(storage_)
+        , metadata_snapshot(metadata_snapshot_)
+        , max_read_buffer_size(max_read_buffer_size_)
+        , index(index_)
+        , index_begin(index_begin_)
+        , index_end(index_end_)
     {
     }
 
@@ -110,6 +120,7 @@ protected:
 
 private:
     StorageStripeLog & storage;
+    StorageMetadataPtr metadata_snapshot;
     size_t max_read_buffer_size;
 
     std::shared_ptr<const IndexForNativeFormat> index;
@@ -253,7 +264,7 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 
 Pipes StorageStripeLog::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -271,7 +282,7 @@ Pipes StorageStripeLog::read(
     String index_file = table_path + "index.mrk";
     if (!disk->exists(index_file))
     {
-        pipes.emplace_back(std::make_shared<NullSource>(getSampleBlockForColumns(column_names)));
+        pipes.emplace_back(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals())));
         return pipes;
     }
 
@@ -291,7 +302,7 @@ Pipes StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         pipes.emplace_back(std::make_shared<StripeLogSource>(
-            *this, column_names, context.getSettingsRef().max_read_buffer_size, index, begin, end));
+            *this, metadata_snapshot, column_names, context.getSettingsRef().max_read_buffer_size, index, begin, end));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.

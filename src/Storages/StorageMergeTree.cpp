@@ -177,14 +177,15 @@ StorageMergeTree::~StorageMergeTree()
 
 Pipes StorageMergeTree::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return reader.read(column_names, query_info, context, max_block_size, num_streams);
+    return reader.read(column_names, metadata_snapshot, query_info,
+        context, max_block_size, num_streams);
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows() const

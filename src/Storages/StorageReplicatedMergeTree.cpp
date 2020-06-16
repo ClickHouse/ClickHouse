@@ -3387,7 +3387,7 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
 
 Pipes StorageReplicatedMergeTree::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -3402,10 +3402,10 @@ Pipes StorageReplicatedMergeTree::read(
     if (context.getSettingsRef().select_sequential_consistency)
     {
         auto max_added_blocks = getMaxAddedBlocks();
-        return reader.read(column_names, query_info, context, max_block_size, num_streams, &max_added_blocks);
+        return reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams, &max_added_blocks);
     }
 
-    return reader.read(column_names, query_info, context, max_block_size, num_streams);
+    return reader.read(column_names, metadata_snapshot, query_info, context, max_block_size, num_streams);
 }
 
 
