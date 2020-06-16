@@ -62,19 +62,6 @@ Block IStorage::getSampleBlock() const
     return res;
 }
 
-Block IStorage::getSampleBlockWithVirtuals() const
-{
-    auto res = getSampleBlock();
-
-    /// Virtual columns must be appended after ordinary, because user can
-    /// override them.
-    for (const auto & column : getVirtuals())
-        res.insert({column.type->createColumn(), column.type, column.name});
-
-    return res;
-}
-
-
 Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;

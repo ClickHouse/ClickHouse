@@ -19,8 +19,14 @@ namespace DB
 
 PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     const StoragePtr & storage_,
-    const Context & context_, const ASTPtr & query_ptr_, bool no_destination)
-    : storage(storage_), context(context_), query_ptr(query_ptr_)
+    const StorageMetadataPtr & metadata_snapshot_,
+    const Context & context_,
+    const ASTPtr & query_ptr_,
+    bool no_destination)
+    : storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+    , context(context_)
+    , query_ptr(query_ptr_)
 {
     /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
@@ -60,6 +66,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     for (const auto & database_table : dependencies)
     {
         auto dependent_table = DatabaseCatalog::instance().getTable(database_table, context);
+        auto dependent_metadata_snapshot = dependent_table->getInMemoryMetadataPtr();
 
         ASTPtr query;
         BlockOutputStreamPtr out;
@@ -97,9 +104,11 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             out = io.out;
         }
         else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
-            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *insert_context, ASTPtr(), true);
+            out = std::make_shared<PushingToViewsBlockOutputStream>(
+                dependent_table, dependent_metadata_snapshot, *insert_context, ASTPtr(), true);
         else
-            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *insert_context, ASTPtr());
+            out = std::make_shared<PushingToViewsBlockOutputStream>(
+                dependent_table, dependent_metadata_snapshot, *insert_context, ASTPtr());
 
         views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr});
     }
@@ -118,9 +127,9 @@ Block PushingToViewsBlockOutputStream::getHeader() const
     /// If we don't write directly to the destination
     /// then expect that we're inserting with precalculated virtual columns
     if (output)
-        return storage->getSampleBlock();
+        return metadata_snapshot->getSampleBlock();
     else
-        return storage->getSampleBlockWithVirtuals();
+        return metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals());
 }
 
 

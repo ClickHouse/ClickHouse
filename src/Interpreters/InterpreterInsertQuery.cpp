@@ -83,7 +83,7 @@ Block InterpreterInsertQuery::getSampleBlock(
     if (!query.columns)
     {
         if (no_destination)
-            return table->getSampleBlockWithVirtuals();
+            return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtuals());
         else
             return table_sample_non_materialized;
     }
@@ -232,7 +232,7 @@ BlockIO InterpreterInsertQuery::execute()
             if (table->noPushingToViews() && !no_destination)
                 out = table->write(query_ptr, metadata_snapshot, context);
             else
-                out = std::make_shared<PushingToViewsBlockOutputStream>(table, context, query_ptr, no_destination);
+                out = std::make_shared<PushingToViewsBlockOutputStream>(table, metadata_snapshot, context, query_ptr, no_destination);
 
             /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
 
