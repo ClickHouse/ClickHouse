@@ -222,7 +222,7 @@ if (ENABLE_HYPERSCAN)
             PRIVATE
                 -g0 # library has too much debug information
                 -march=corei7
-                -fno-omit-frame-pointer
+                -fno-omit-frame-pointer # otherwise stack unwinding from this library leads to segfault
         )
         target_include_directories (hyperscan
             PRIVATE
