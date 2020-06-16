@@ -24,6 +24,12 @@ set force_optimize_skip_unused_shards=1;
 select * from dist_01071; -- { serverError 507 }
 set force_optimize_skip_unused_shards=2;
 select * from dist_01071; -- { serverError 507 }
+drop table if exists dist_01071;
+
+-- non deterministic function (i.e. rand())
+create table dist_01071 as data_01071 Engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01071, key + rand());
+set force_optimize_skip_unused_shards=1;
+select * from dist_01071 where key = 0; -- { serverError 507 }
 
 drop table if exists data_01071;
 drop table if exists dist_01071;
