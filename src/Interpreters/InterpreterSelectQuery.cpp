@@ -79,6 +79,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/PartialSortingStep.h>
 
 
 namespace DB
@@ -1679,12 +1680,6 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputOrderIn
     SortDescription output_order_descr = getSortDescription(query, *context);
     UInt64 limit = getLimitForSorting(query, *context);
 
-    const Settings & settings = context->getSettingsRef();
-
-    IBlockInputStream::LocalLimits limits;
-    limits.mode = IBlockInputStream::LIMITS_CURRENT;
-    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
-
     if (input_sorting_info)
     {
         /* Case of sorting with optimization using sorting key.
@@ -1697,22 +1692,16 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputOrderIn
         return;
     }
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-    {
-        if (stream_type != QueryPipeline::StreamType::Main)
-            return nullptr;
+    const Settings & settings = context->getSettingsRef();
 
-        return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
-    });
+    PartialSortingStep partial_sorting(
+            DataStream{.header = pipeline.getHeader()},
+            output_order_descr,
+            limit,
+            SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode));
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-    {
-        if (stream_type == QueryPipeline::StreamType::Totals)
-            return nullptr;
-
-        auto transform = std::make_shared<LimitsCheckingTransform>(header, limits);
-        return transform;
-    });
+    partial_sorting.setStepDescription("Sort each block before ORDER BY");
+    partial_sorting.transformPipeline(pipeline);
 
     /// Merge the sorted blocks.
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
