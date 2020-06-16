@@ -16,7 +16,7 @@
             <span title="{{ _('Published date') }}" class="d-inline-block bg-dark text-white p-2 mr-2">{{ page.meta.date }}</span>
             {% if page.meta.tags %}
                 {% for tag in page.meta.tags %}
-                    <div class="d-inline-block bg-light p-2 mr-2">
+                    <div class="tag d-inline-block bg-light p-2 mr-2">
                         {{ tag }}
                     </div>
                 {% endfor %}
@@ -30,7 +30,7 @@
             {% set post_image = post.get('image') or '/images/index/intro.svg' %}
             <div class="row">
                 <div class="col-12 col-md-6">
-                    <img class="img-fluid" src="{{ post_image }}" alt="{{ post['title'] }}" title="{{ post['title'] }}" />
+                    <img class="img-fluid" data-src="{{ post_image }}" alt="{{ post['title'] }}" title="{{ post['title'] }}" />
                 </div>
                 <div class="col-12 col-md-6 p-3">
                     <h2>{{ post['title'] }}</h2>
