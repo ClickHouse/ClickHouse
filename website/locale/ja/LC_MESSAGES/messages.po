@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-20 15:32+0300\n"
+"POT-Creation-Date: 2020-06-15 22:29+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ja\n"
@@ -33,27 +33,27 @@ msgstr "ﾂ環板篠ｮﾂ嘉ｯﾂ偲青エﾂδﾂ-ﾂエﾂスﾂ-ﾂシﾂ"
 msgid "ClickHouse DBMS"
 msgstr "クリックハウスDBMS"
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "open-source"
 msgstr "オープンソース"
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "relational"
 msgstr "関係"
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "analytics"
 msgstr "analytics"
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "analytical"
 msgstr "分析"
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "Big Data"
 msgstr "ビッグデータ"
 
-#: templates/common_meta.html:24
+#: templates/common_meta.html:28
 msgid "web-analytics"
 msgstr "ウェブ分析"
 
@@ -70,6 +70,14 @@ msgstr "ソフトウェアは、明示または黙示を問わず、いかなる
 #: templates/footer.html:11
 msgid "Yandex LLC"
 msgstr "Yandex LLC"
+
+#: templates/blog/content.html:16
+msgid "Published date"
+msgstr "公開日"
+
+#: templates/blog/nav.html:18
+msgid "Documentation"
+msgstr "文書"
 
 #: templates/docs/footer.html:3
 msgid "Rating"
