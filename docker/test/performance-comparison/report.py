@@ -325,8 +325,8 @@ if args.report == 'main':
     def print_benchmark_results():
         left_json = json.load(open('benchmark/website-left.json'));
         right_json = json.load(open('benchmark/website-right.json'));
-        left_qps = left_json["statistics"]["QPS"]
-        right_qps = right_json["statistics"]["QPS"]
+        left_qps = next(iter(left_json.values()))["statistics"]["QPS"]
+        right_qps = next(iter(right_json.values()))["statistics"]["QPS"]
         relative_diff = (right_qps - left_qps) / left_qps;
         times_diff = max(right_qps, left_qps) / max(0.01, min(right_qps, left_qps))
         print(tableStart('Concurrent benchmarks'))
