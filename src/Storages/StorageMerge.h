@@ -37,7 +37,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
 
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked

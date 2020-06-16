@@ -36,7 +36,12 @@ public:
       * It means that different participants of leader election have different identifiers
       *  and existence of more than one ephemeral node with same identifier indicates an error.
       */
-    LeaderElection(DB::BackgroundSchedulePool & pool_, const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
+    LeaderElection(
+        DB::BackgroundSchedulePool & pool_,
+        const std::string & path_,
+        ZooKeeper & zookeeper_,
+        LeadershipHandler handler_,
+        const std::string & identifier_)
         : pool(pool_), path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
         , log_name("LeaderElection (" + path + ")")
         , log(&Poco::Logger::get(log_name))
@@ -121,7 +126,7 @@ private:
         {
             DB::tryLogCurrentException(log);
 
-            if (e.code == Coordination::ZSESSIONEXPIRED)
+            if (e.code == Coordination::Error::ZSESSIONEXPIRED)
                 return;
         }
         catch (...)

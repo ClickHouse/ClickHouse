@@ -171,6 +171,12 @@ public:
         return nullptr;
     }
 
+    /** When the function is wrapped with Null combinator,
+      * should we return Nullable type with NULL when no values were aggregated
+      * or we should return non-Nullable type with default value (example: count, countDistinct).
+      */
+    virtual bool returnDefaultWhenOnlyNull() const { return false; }
+
     const DataTypes & getArgumentTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
 

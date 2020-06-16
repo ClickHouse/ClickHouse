@@ -1805,7 +1805,7 @@ For more information see [parameters](#agg_functions-stochasticlinearregression-
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1.  Fitting
+**1.** Fitting
 
 <!-- -->
 
@@ -1813,7 +1813,7 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
     Predicted labels have to be in \[-1, 1\].
 
-1.  Predicting
+**2.** Predicting
 
 <!-- -->
 

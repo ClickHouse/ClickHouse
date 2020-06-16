@@ -78,7 +78,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <default_profile>default</default_profile>
 ```
 
-## dictionaries\_config {#dictionaries-config}
+## dictionaries\_config {#server_configuration_parameters-dictionaries_config}
 
 Путь к конфигурации внешних словарей.
 
@@ -95,7 +95,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## dictionaries\_lazy\_load {#dictionaries-lazy-load}
+## dictionaries\_lazy\_load {#server_configuration_parameters-dictionaries_lazy_load}
 
 Отложенная загрузка словарей.
 
