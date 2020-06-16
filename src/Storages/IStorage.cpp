@@ -47,11 +47,6 @@ bool IStorage::hasSecondaryIndices() const
     return !metadata->secondary_indices.empty();
 }
 
-const ConstraintsDescription & IStorage::getConstraints() const
-{
-    return metadata->constraints;
-}
-
 
 namespace
 {

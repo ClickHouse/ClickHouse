@@ -301,17 +301,17 @@ private:
     /** Creates the minimum set of nodes in ZooKeeper and create first replica.
       * Returns true if was created, false if exists.
       */
-    bool createTableIfNotExists();
+    bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot);
 
     /** Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
       */
-    void createReplica();
+    void createReplica(const StorageMetadataPtr & metadata_snapshot);
 
     /** Create nodes in the ZK, which must always be, but which might not exist when older versions of the server are running.
       */
     void createNewZooKeeperNodes();
 
-    void checkTableStructure(const String & zookeeper_prefix);
+    void checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockStructureForAlter() lock.

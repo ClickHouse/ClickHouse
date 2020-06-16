@@ -237,9 +237,9 @@ BlockIO InterpreterInsertQuery::execute()
             /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
 
             /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
-            if (const auto & constraints = table->getConstraints(); !constraints.empty())
+            if (const auto & constraints = metadata_snapshot->getConstraints(); !constraints.empty())
                 out = std::make_shared<CheckConstraintsBlockOutputStream>(
-                    query.table_id, out, out->getHeader(), table->getConstraints(), context);
+                    query.table_id, out, out->getHeader(), metadata_snapshot->getConstraints(), context);
 
             /// Actually we don't know structure of input blocks from query/table,
             /// because some clients break insertion protocol (columns != header)
