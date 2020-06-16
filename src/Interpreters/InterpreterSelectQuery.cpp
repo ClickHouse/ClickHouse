@@ -84,6 +84,7 @@
 #include <Processors/QueryPlan/MergingSortedStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 
 
 namespace DB
@@ -1795,8 +1796,9 @@ void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline, bool do_n
             limit_offset = 0;
         }
 
-        auto limit = std::make_shared<LimitTransform>(pipeline.getHeader(), limit_length, limit_offset, pipeline.getNumStreams());
-        pipeline.addPipe({std::move(limit)});
+        LimitStep limit(DataStream{.header = pipeline.getHeader()}, limit_length, limit_offset);
+        limit.setStepDescription("preliminary LIMIT");
+        limit.transformPipeline(pipeline);
     }
 }
 
@@ -1903,14 +1905,14 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
             order_descr = getSortDescription(query, *context);
         }
 
-        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type != QueryPipeline::StreamType::Main)
-                return nullptr;
+        LimitStep limit(
+                DataStream{.header = pipeline.getHeader()},
+                limit_length, limit_offset, always_read_till_end, query.limit_with_ties, order_descr);
 
-            return std::make_shared<LimitTransform>(
-                    header, limit_length, limit_offset, 1, always_read_till_end, query.limit_with_ties, order_descr);
-        });
+        if (query.limit_with_ties)
+            limit.setStepDescription("LIMIT WITH TIES");
+
+        limit.transformPipeline(pipeline);
     }
 }
 
