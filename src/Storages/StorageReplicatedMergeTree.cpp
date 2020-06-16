@@ -248,6 +248,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         return;
     }
 
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+
     if (!attach)
     {
         if (!getDataParts().empty())
@@ -255,21 +257,21 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
         try
         {
-            bool is_first_replica = createTableIfNotExists();
+            bool is_first_replica = createTableIfNotExists(metadata_snapshot);
 
             /// We have to check granularity on other replicas. If it's fixed we
             /// must create our new replica with fixed granularity and store this
             /// information in /replica/metadata.
             other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
 
-            checkTableStructure(zookeeper_path);
+            checkTableStructure(zookeeper_path, metadata_snapshot);
 
             Coordination::Stat metadata_stat;
             current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
             metadata_version = metadata_stat.version;
 
             if (!is_first_replica)
-                createReplica();
+                createReplica(metadata_snapshot);
         }
         catch (...)
         {
@@ -288,11 +290,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         {
             /// We have to check shared node granularity before we create ours.
             other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
-            ReplicatedMergeTreeTableMetadata current_metadata(*this);
+            ReplicatedMergeTreeTableMetadata current_metadata(*this, metadata_snapshot);
             current_zookeeper->createOrUpdate(replica_path + "/metadata", current_metadata.toString(), zkutil::CreateMode::Persistent);
         }
 
-        checkTableStructure(replica_path);
+        checkTableStructure(replica_path, metadata_snapshot);
         checkParts(skip_sanity_checks);
 
         if (current_zookeeper->exists(replica_path + "/metadata_version"))
@@ -418,7 +420,7 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 }
 
 
-bool StorageReplicatedMergeTree::createTableIfNotExists()
+bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot)
 {
     auto zookeeper = getZooKeeper();
     zookeeper->createAncestors(zookeeper_path);
@@ -483,7 +485,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists()
         LOG_DEBUG(log, "Creating table {}", zookeeper_path);
 
         /// We write metadata of table so that the replicas can check table parameters with them.
-        String metadata_str = ReplicatedMergeTreeTableMetadata(*this).toString();
+        String metadata_str = ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).toString();
 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
@@ -552,7 +554,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists()
     throw Exception("Cannot create table, because it is created concurrently every time or because of logical error", ErrorCodes::LOGICAL_ERROR);
 }
 
-void StorageReplicatedMergeTree::createReplica()
+void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metadata_snapshot)
 {
     auto zookeeper = getZooKeeper();
 
@@ -588,7 +590,7 @@ void StorageReplicatedMergeTree::createReplica()
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/is_lost", is_lost_value,
             zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata", ReplicatedMergeTreeTableMetadata(*this).toString(),
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata", ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).toString(),
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", getColumns().toString(),
             zkutil::CreateMode::Persistent));
@@ -728,11 +730,11 @@ void StorageReplicatedMergeTree::drop()
 /** Verify that list of columns and table storage_settings_ptr match those specified in ZK (/ metadata).
     * If not, throw an exception.
     */
-void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_prefix)
+void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot)
 {
     auto zookeeper = getZooKeeper();
 
-    ReplicatedMergeTreeTableMetadata old_metadata(*this);
+    ReplicatedMergeTreeTableMetadata old_metadata(*this, metadata_snapshot);
 
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(zookeeper_prefix + "/metadata", &metadata_stat);
@@ -3624,7 +3626,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
-        auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this).checkAndFindDiff(metadata_from_entry);
+        auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, getInMemoryMetadataPtr()).checkAndFindDiff(metadata_from_entry);
         setTableStructure(std::move(columns_from_entry), metadata_diff);
         metadata_version = entry.alter_version;
 
@@ -3683,24 +3685,24 @@ void StorageReplicatedMergeTree::alter(
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
 
-        StorageInMemoryMetadata current_metadata = getInMemoryMetadata();
+        auto current_metadata = getInMemoryMetadataPtr();
 
-        StorageInMemoryMetadata future_metadata = current_metadata;
+        StorageInMemoryMetadata future_metadata = *current_metadata;
         params.apply(future_metadata, query_context);
 
-        ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this);
-        if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata.sorting_key.definition_ast))
+        ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this, current_metadata);
+        if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata->sorting_key.definition_ast))
             future_metadata_in_zk.sorting_key = serializeAST(*future_metadata.sorting_key.expression_list_ast);
 
-        if (ast_to_str(future_metadata.table_ttl.definition_ast) != ast_to_str(current_metadata.table_ttl.definition_ast))
+        if (ast_to_str(future_metadata.table_ttl.definition_ast) != ast_to_str(current_metadata->table_ttl.definition_ast))
             future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.table_ttl.definition_ast);
 
         String new_indices_str = future_metadata.secondary_indices.toString();
-        if (new_indices_str != current_metadata.secondary_indices.toString())
+        if (new_indices_str != current_metadata->secondary_indices.toString())
             future_metadata_in_zk.skip_indices = new_indices_str;
 
         String new_constraints_str = future_metadata.constraints.toString();
-        if (new_constraints_str != current_metadata.constraints.toString())
+        if (new_constraints_str != current_metadata->constraints.toString())
             future_metadata_in_zk.constraints = new_constraints_str;
 
         Coordination::Requests ops;
@@ -3711,14 +3713,15 @@ void StorageReplicatedMergeTree::alter(
         String new_columns_str = future_metadata.columns.toString();
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/columns", new_columns_str, -1));
 
-        if (ast_to_str(current_metadata.settings_changes) != ast_to_str(future_metadata.settings_changes))
+        if (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes))
         {
             lockStructureExclusively(
                     table_lock_holder, query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
             /// Just change settings
-            current_metadata.settings_changes = future_metadata.settings_changes;
-            changeSettings(current_metadata.settings_changes, table_lock_holder);
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, current_metadata);
+            StorageInMemoryMetadata metadata_copy = *current_metadata;
+            metadata_copy.settings_changes = future_metadata.settings_changes;
+            changeSettings(metadata_copy.settings_changes, table_lock_holder);
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy);
         }
 
         /// We can be sure, that in case of successfull commit in zookeeper our
@@ -3733,7 +3736,7 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->create_time = time(nullptr);
 
         auto maybe_mutation_commands = params.getMutationCommands(
-            current_metadata, query_context.getSettingsRef().materialize_ttl_after_modify, query_context);
+            *current_metadata, query_context.getSettingsRef().materialize_ttl_after_modify, query_context);
         alter_entry->have_mutation = !maybe_mutation_commands.empty();
 
         ops.emplace_back(zkutil::makeCreateRequest(

@@ -290,4 +290,5 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(const Names & column_nam
 
     return res;
 }
+
 }

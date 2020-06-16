@@ -130,7 +130,7 @@ public:
     virtual bool hasEvenlyDistributedRead() const { return false; }
 
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
-    virtual bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
+    bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -144,7 +144,6 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// Has at least one non primary index
     bool hasSecondaryIndices() const;
 
-    const ConstraintsDescription & getConstraints() const;
 
     /// Storage settings
     ASTPtr getSettingsChanges() const;

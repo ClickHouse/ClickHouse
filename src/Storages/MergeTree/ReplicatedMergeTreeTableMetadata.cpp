@@ -23,7 +23,7 @@ static String formattedAST(const ASTPtr & ast)
     return ss.str();
 }
 
-ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data)
+ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
@@ -53,15 +53,15 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         partition_key = formattedAST(data.getPartitionKey().expression_list_ast);
 
-    ttl_table = formattedAST(data.getTableTTLs().definition_ast);
+    ttl_table = formattedAST(metadata_snapshot->getTableTTLs().definition_ast);
 
-    skip_indices = data.getSecondaryIndices().toString();
+    skip_indices = metadata_snapshot->getSecondaryIndices().toString();
     if (data.canUseAdaptiveGranularity())
         index_granularity_bytes = data_settings->index_granularity_bytes;
     else
         index_granularity_bytes = 0;
 
-    constraints = data.getConstraints().toString();
+    constraints = metadata_snapshot->getConstraints().toString();
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
