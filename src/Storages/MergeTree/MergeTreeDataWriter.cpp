@@ -192,7 +192,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     return result;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition)
+MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot)
 {
     Block & block = block_with_partition.block;
 
@@ -302,7 +302,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream out(new_data_part, columns, index_factory.getMany(data.getSecondaryIndices()), compression_codec);
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(data.getSecondaryIndices()), compression_codec);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);

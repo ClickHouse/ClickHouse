@@ -88,7 +88,7 @@ Block InterpreterInsertQuery::getSampleBlock(
             return table_sample_non_materialized;
     }
 
-    Block table_sample = table->getSampleBlock();
+    Block table_sample = metadata_snapshot->getSampleBlock();
     /// Form the block based on the column names from the query
     Block res;
     for (const auto & identifier : query.columns->children)

@@ -10,13 +10,15 @@ namespace ErrorCodes
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeDataPartPtr & data_part,
+    const StorageMetadataPtr & metadata_snapshot_,
     const Block & header_,
     CompressionCodecPtr default_codec,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(data_part), header(header_)
+    : IMergedBlockOutputStream(data_part, metadata_snapshot_)
+    , header(header_)
 {
     const auto & global_settings = data_part->storage.global_context.getSettings();
     MergeTreeWriterSettings writer_settings(

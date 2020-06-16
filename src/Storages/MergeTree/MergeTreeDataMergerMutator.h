@@ -182,6 +182,7 @@ private:
     /// Override all columns of new part using mutating_stream
     void mutateAllPartColumns(
         MergeTreeData::MutableDataPartPtr new_data_part,
+        const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeIndices & skip_indices,
         BlockInputStreamPtr mutating_stream,
         time_t time_of_mutation,
@@ -192,6 +193,7 @@ private:
     /// Mutate some columns of source part with mutation_stream
     void mutateSomePartColumns(
         const MergeTreeDataPartPtr & source_part,
+        const StorageMetadataPtr & metadata_snapshot,
         const std::set<MergeTreeIndexPtr> & indices_to_recalc,
         const Block & mutation_header,
         MergeTreeData::MutableDataPartPtr new_data_part,

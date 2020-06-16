@@ -333,7 +333,8 @@ void RemoteQueryExecutor::sendExternalTables()
                 data->table_name = table.first;
 
                 if (pipes.empty())
-                    data->pipe = std::make_unique<Pipe>(std::make_shared<SourceFromSingleChunk>(cur->getSampleBlock(), Chunk()));
+                    data->pipe = std::make_unique<Pipe>(
+                            std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), Chunk()));
                 else if (pipes.size() == 1)
                     data->pipe = std::make_unique<Pipe>(std::move(pipes.front()));
                 else

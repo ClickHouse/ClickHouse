@@ -155,15 +155,17 @@ private:
 class StripeLogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit StripeLogBlockOutputStream(StorageStripeLog & storage_)
-        : storage(storage_), lock(storage.rwlock),
-        data_out_file(storage.table_path + "data.bin"),
-        data_out_compressed(storage.disk->writeFile(data_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append)),
-        data_out(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size),
-        index_out_file(storage.table_path + "index.mrk"),
-        index_out_compressed(storage.disk->writeFile(index_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append)),
-        index_out(*index_out_compressed),
-        block_out(data_out, 0, storage.getSampleBlock(), false, &index_out, storage.disk->getFileSize(data_out_file))
+    explicit StripeLogBlockOutputStream(StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_)
+        : storage(storage_)
+        , metadata_snapshot(metadata_snapshot_)
+        , lock(storage.rwlock)
+        , data_out_file(storage.table_path + "data.bin")
+        , data_out_compressed(storage.disk->writeFile(data_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append))
+        , data_out(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size)
+        , index_out_file(storage.table_path + "index.mrk")
+        , index_out_compressed(storage.disk->writeFile(index_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append))
+        , index_out(*index_out_compressed)
+        , block_out(data_out, 0, metadata_snapshot->getSampleBlock(), false, &index_out, storage.disk->getFileSize(data_out_file))
     {
     }
 
@@ -179,7 +181,7 @@ public:
         }
     }
 
-    Block getHeader() const override { return storage.getSampleBlock(); }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -205,6 +207,7 @@ public:
 
 private:
     StorageStripeLog & storage;
+    StorageMetadataPtr metadata_snapshot;
     std::unique_lock<std::shared_mutex> lock;
 
     String data_out_file;
@@ -311,9 +314,9 @@ Pipes StorageStripeLog::read(
 }
 
 
-BlockOutputStreamPtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
-    return std::make_shared<StripeLogBlockOutputStream>(*this);
+    return std::make_shared<StripeLogBlockOutputStream>(*this, metadata_snapshot);
 }
 
 

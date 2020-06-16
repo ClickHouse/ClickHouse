@@ -65,7 +65,7 @@ StorageMySQL::StorageMySQL(
 
 Pipes StorageMySQL::read(
     const Names & column_names_,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info_,
     const Context & context_,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -74,12 +74,17 @@ Pipes StorageMySQL::read(
 {
     check(column_names_);
     String query = transformQueryForExternalDatabase(
-        query_info_, getColumns().getOrdinary(), IdentifierQuotingStyle::BackticksMySQL, remote_database_name, remote_table_name, context_);
+        query_info_,
+        metadata_snapshot->getColumns().getOrdinary(),
+        IdentifierQuotingStyle::BackticksMySQL,
+        remote_database_name,
+        remote_table_name,
+        context_);
 
     Block sample_block;
     for (const String & column_name : column_names_)
     {
-        auto column_data = getColumns().getPhysical(column_name);
+        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
         sample_block.insert({ column_data.type, column_data.name });
     }
 
@@ -95,12 +100,15 @@ Pipes StorageMySQL::read(
 class StorageMySQLBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit StorageMySQLBlockOutputStream(const StorageMySQL & storage_,
+    explicit StorageMySQLBlockOutputStream(
+        const StorageMySQL & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
         const size_t & mysql_max_rows_to_insert)
         : storage{storage_}
+        , metadata_snapshot{metadata_snapshot_}
         , remote_database_name{remote_database_name_}
         , remote_table_name{remote_table_name_}
         , entry{entry_}
@@ -108,7 +116,7 @@ public:
     {
     }
 
-    Block getHeader() const override { return storage.getSampleBlock(); }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -136,7 +144,7 @@ public:
         sqlbuf << backQuoteMySQL(remote_database_name) << "." << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutput("Values", sqlbuf, storage.getSampleBlock(), storage.global_context);
+        auto writer = FormatFactory::instance().getOutput("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.global_context);
         writer->write(block);
 
         if (!storage.on_duplicate_clause.empty())
@@ -192,6 +200,7 @@ public:
 
 private:
     const StorageMySQL & storage;
+    StorageMetadataPtr metadata_snapshot;
     std::string remote_database_name;
     std::string remote_table_name;
     mysqlxx::PoolWithFailover::Entry entry;
@@ -199,9 +208,9 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
+BlockOutputStreamPtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
-    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.get(), context.getSettingsRef().mysql_max_rows_to_insert);
+    return std::make_shared<StorageMySQLBlockOutputStream>(*this, metadata_snapshot, remote_database_name, remote_table_name, pool.get(), context.getSettingsRef().mysql_max_rows_to_insert);
 }
 
 void registerStorageMySQL(StorageFactory & factory)

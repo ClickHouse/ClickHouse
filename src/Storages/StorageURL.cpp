@@ -186,10 +186,10 @@ Pipes IStorageURLBase::read(
     return pipes;
 }
 
-BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & /*context*/)
+BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     return std::make_shared<StorageURLBlockOutputStream>(
-        uri, format_name, getSampleBlock(), context_global,
+        uri, format_name, metadata_snapshot->getSampleBlock(), context_global,
         ConnectionTimeouts::getHTTPTimeouts(context_global),
         chooseCompressionMethod(uri.toString(), compression_method));
 }

@@ -59,7 +59,7 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
 
 Pipes StorageSystemReplicas::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -146,7 +146,7 @@ Pipes StorageSystemReplicas::read(
         col_engine = filtered_block.getByName("engine").column;
     }
 
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
+    MutableColumns res_columns = metadata_snapshot->getSampleBlock().cloneEmptyColumns();
 
     for (size_t i = 0, size = col_database->size(); i < size; ++i)
     {
@@ -187,7 +187,7 @@ Pipes StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.zookeeper_exception);
     }
 
-    Block header = getSampleBlock();
+    Block header = metadata_snapshot->getSampleBlock();
 
     Columns fin_columns;
     fin_columns.reserve(res_columns.size());
@@ -203,7 +203,7 @@ Pipes StorageSystemReplicas::read(
     Chunk chunk(std::move(fin_columns), num_rows);
 
     Pipes pipes;
-    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
     return pipes;
 }
 

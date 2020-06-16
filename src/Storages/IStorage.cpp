@@ -52,16 +52,6 @@ const ConstraintsDescription & IStorage::getConstraints() const
     return metadata->constraints;
 }
 
-Block IStorage::getSampleBlock() const
-{
-    Block res;
-
-    for (const auto & column : getColumns().getAllPhysical())
-        res.insert({column.type->createColumn(), column.type, column.name});
-
-    return res;
-}
-
 
 namespace
 {

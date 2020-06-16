@@ -114,10 +114,12 @@ private:
 class LogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit LogBlockOutputStream(StorageLog & storage_)
-        : storage(storage_),
-        lock(storage.rwlock),
-        marks_stream(storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Rewrite))
+    explicit LogBlockOutputStream(StorageLog & storage_, const StorageMetadataPtr & metadata_snapshot_)
+        : storage(storage_)
+        , metadata_snapshot(metadata_snapshot_)
+        , lock(storage.rwlock)
+        , marks_stream(
+            storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Rewrite))
     {
     }
 
@@ -133,12 +135,13 @@ public:
         }
     }
 
-    Block getHeader() const override { return storage.getSampleBlock(); }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
     void write(const Block & block) override;
     void writeSuffix() override;
 
 private:
     StorageLog & storage;
+    StorageMetadataPtr metadata_snapshot;
     std::unique_lock<std::shared_mutex> lock;
     bool done = false;
 
@@ -621,10 +624,10 @@ Pipes StorageLog::read(
     return pipes;
 }
 
-BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     loadMarks();
-    return std::make_shared<LogBlockOutputStream>(*this);
+    return std::make_shared<LogBlockOutputStream>(*this, metadata_snapshot);
 }
 
 CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & /* context */)

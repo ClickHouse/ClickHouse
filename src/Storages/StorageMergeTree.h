@@ -55,7 +55,11 @@ public:
       */
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
-    void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
+    void alterPartition(
+        const ASTPtr & query,
+        const StorageMetadataPtr & /* metadata_snapshot */,
+        const PartitionCommands & commands,
+        const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 

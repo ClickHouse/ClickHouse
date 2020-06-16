@@ -223,7 +223,7 @@ void TCPHandler::runImpl()
                 }
 
                 /// Send block to the client - input storage structure.
-                state.input_header = input_storage->getSampleBlock();
+                state.input_header = input_storage->getInMemoryMetadataPtr()->getSampleBlock();
                 sendData(state.input_header);
             });
 

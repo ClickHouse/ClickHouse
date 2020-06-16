@@ -109,8 +109,8 @@ private:
 class TinyLogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit TinyLogBlockOutputStream(StorageTinyLog & storage_)
-        : storage(storage_), lock(storage_.rwlock)
+    explicit TinyLogBlockOutputStream(StorageTinyLog & storage_, const StorageMetadataPtr & metadata_snapshot_)
+        : storage(storage_), metadata_snapshot(metadata_snapshot_), lock(storage_.rwlock)
     {
     }
 
@@ -126,13 +126,14 @@ public:
         }
     }
 
-    Block getHeader() const override { return storage.getSampleBlock(); }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
     void write(const Block & block) override;
     void writeSuffix() override;
 
 private:
     StorageTinyLog & storage;
+    StorageMetadataPtr metadata_snapshot;
     std::unique_lock<std::shared_mutex> lock;
     bool done = false;
 
@@ -394,7 +395,7 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const Storage
 
 Pipes StorageTinyLog::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -408,15 +409,15 @@ Pipes StorageTinyLog::read(
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
     pipes.emplace_back(std::make_shared<TinyLogSource>(
-        max_block_size, Nested::collect(getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
+        max_block_size, Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
 
     return pipes;
 }
 
 
-BlockOutputStreamPtr StorageTinyLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageTinyLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
-    return std::make_shared<TinyLogBlockOutputStream>(*this);
+    return std::make_shared<TinyLogBlockOutputStream>(*this, metadata_snapshot);
 }
 
 
