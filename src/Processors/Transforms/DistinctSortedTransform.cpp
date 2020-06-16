@@ -90,9 +90,8 @@ void DistinctSortedTransform::executeOnInterval(
     const ColumnRawPtrs & other_columns, IColumn::Filter & filter, size_t key_begin, size_t key_end)
 {
     if (data.type == ClearableSetVariants::Type::EMPTY)
-    {
         data.init(ClearableSetVariants::chooseMethod(other_columns, other_columns_sizes));
-    }
+
     switch (data.type)
     {
         case ClearableSetVariants::Type::EMPTY:
