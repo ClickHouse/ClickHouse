@@ -585,8 +585,9 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
     for (ASTIdentifier * ident : identifiers)
     {
         bool got_alias = aliases.count(ident->name);
+        bool allow_ambiguous = got_alias; /// allow ambiguous column overridden by an alias
 
-        if (auto table_pos = IdentifierSemantic::chooseTable(*ident, tables))
+        if (auto table_pos = IdentifierSemantic::chooseTableColumnMatch(*ident, tables, allow_ambiguous))
         {
             if (!ident->isShort())
             {
