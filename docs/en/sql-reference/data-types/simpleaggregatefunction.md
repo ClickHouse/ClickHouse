@@ -12,6 +12,8 @@ The following aggregate functions are supported:
 -   [`groupBitAnd`](../../sql-reference/aggregate-functions/reference.md#groupbitand)
 -   [`groupBitOr`](../../sql-reference/aggregate-functions/reference.md#groupbitor)
 -   [`groupBitXor`](../../sql-reference/aggregate-functions/reference.md#groupbitxor)
+-   [`groupArrayArray`](../../sql-reference/aggregate-functions/reference.md#agg_function-grouparray)
+-   [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference.md#groupuniqarrayx-groupuniqarraymax-sizex)
 
 Values of the `SimpleAggregateFunction(func, Type)` look and stored the same way as `Type`, so you do not need to apply functions with `-Merge`/`-State` suffixes. `SimpleAggregateFunction` has better performance than `AggregateFunction` with same aggregation function.
 

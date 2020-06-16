@@ -14,6 +14,7 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
 
 -   سیستم های مدیریت پایگاه داده رابطه ای
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [در حال بارگذاری](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [تاتر-خروجی زیر-داده خوان](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)

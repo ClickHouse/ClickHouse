@@ -38,6 +38,7 @@
 #include <Common/Throttler.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/clearPasswordFromCommandLine.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
@@ -2006,6 +2007,7 @@ public:
 
         argsToConfig(common_arguments, config(), 100);
 
+        clearPasswordFromCommandLine(argc, argv);
     }
 };
 

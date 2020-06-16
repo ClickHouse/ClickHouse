@@ -1,7 +1,7 @@
 Babel==2.8.0
 certifi==2020.4.5.2
 chardet==3.0.4
-googletrans==2.4.0
+googletrans==3.0.0
 idna==2.9
 Jinja2==2.11.2
 pandocfilters==1.4.2
