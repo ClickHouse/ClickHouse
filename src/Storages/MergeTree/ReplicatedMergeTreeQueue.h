@@ -209,11 +209,14 @@ private:
     /// Add part for mutations with block_number > part.getDataVersion()
     void addPartToMutations(const String & part_name);
 
-    /// Remove part from mutations (parts_to_do) which were assigned to mutate it
-    /// with block_number > part.getDataVersion()
-    /// and block_number == part.getDataVersion()
-    ///     ^ (this may happen if we downloaded mutated part from other replica)
-    void removePartFromMutations(const String & part_name);
+    /// Remove covered parts from mutations (parts_to_do) which were assigned
+    /// for mutation. If remove_part == true, than also remove part itself.
+    ///
+    /// Part removed from mutations which satisfy contitions:
+    /// block_number > part.getDataVersion()
+    /// or block_number == part.getDataVersion()
+    ///    ^ (this may happen if we downloaded mutated part from other replica)
+    void removeCoveredPartsFromMutations(const String & part_name, bool remove_part);
 
     /// Update the insertion times in ZooKeeper.
     void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper,

@@ -208,21 +208,18 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
             ///
             /// But we remove covered parts from mutations, because we actually
             /// have replacing part.
-            Strings covered_parts = current_parts.getPartsCoveredBy(MergeTreePartInfo::fromPartName(entry->actual_new_part_name, format_version));
-
-            for (const auto & covered_part : covered_parts)
-                removePartFromMutations(covered_part);
+            ///
+            /// NOTE actual_new_part_name is very confusing and error-prone. This approach must be fixed.
+            removeCoveredPartsFromMutations(entry->actual_new_part_name, /*remove_part = */ false);
         }
 
         for (const String & virtual_part_name : entry->getVirtualPartNames())
         {
-            Strings replaced_parts;
-            current_parts.add(virtual_part_name, &replaced_parts);
+            current_parts.add(virtual_part_name);
 
             /// These parts are already covered by newer part, we don't have to
             /// mutate it.
-            for (const auto & replaced_part : replaced_parts)
-                removePartFromMutations(replaced_part);
+            removeCoveredPartsFromMutations(virtual_part_name, /*remove_part = */ false);
         }
 
         String drop_range_part_name;
@@ -250,13 +247,13 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
             /// Because execution of the entry is unsuccessful,
             /// `virtual_part_name` will never appear so we won't need to mutate
             /// it.
-            removePartFromMutations(virtual_part_name);
+            removeCoveredPartsFromMutations(virtual_part_name, /*remove_part = */ true);
         }
     }
 }
 
 
-void ReplicatedMergeTreeQueue::removePartFromMutations(const String & part_name)
+void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & part_name, bool remove_part)
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
     auto in_partition = mutations_by_partition.find(part_info.partition_id);
@@ -270,7 +267,11 @@ void ReplicatedMergeTreeQueue::removePartFromMutations(const String & part_name)
     {
         MutationStatus & status = *it->second;
 
-        status.parts_to_do.removePartAndCoveredParts(part_name);
+        if (remove_part)
+            status.parts_to_do.removePartAndCoveredParts(part_name);
+        else
+            status.parts_to_do.removePartsCoveredBy(part_name);
+
         if (status.parts_to_do.size() == 0)
             some_mutations_are_probably_done = true;
 
@@ -1969,6 +1970,6 @@ void ReplicatedMergeTreeQueue::removeCurrentPartsFromMutations()
 {
     std::lock_guard state_lock(state_mutex);
     for (const auto & part_name : current_parts.getParts())
-        removePartFromMutations(part_name);
+        removeCoveredPartsFromMutations(part_name, /*remove_part = */ true);
 }
 }
