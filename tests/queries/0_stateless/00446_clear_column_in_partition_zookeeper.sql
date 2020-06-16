@@ -26,7 +26,6 @@ DROP TABLE IF EXISTS clear_column2 NO DELAY;
 SELECT sleep(1) FORMAT Null;
 CREATE TABLE clear_column1 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '1', d, d, 8192);
 CREATE TABLE clear_column2 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '2', d, d, 8192);
-SYSTEM STOP MERGES;
 
 INSERT INTO clear_column1 (d) VALUES ('2000-01-01'), ('2000-02-01');
 SYSTEM SYNC REPLICA clear_column2;
@@ -63,9 +62,7 @@ SELECT sum(data_uncompressed_bytes) FROM system.columns WHERE database=currentDa
 ALTER TABLE clear_column1 CLEAR COLUMN s IN PARTITION '200001';
 ALTER TABLE clear_column1 CLEAR COLUMN s IN PARTITION '200002';
 
--- Merges cannot be blocked after all manipulations
 SET optimize_throw_if_noop = 1;
-SYSTEM START MERGES;
 OPTIMIZE TABLE clear_column1 PARTITION '200001';
 OPTIMIZE TABLE clear_column1 PARTITION '200002';
 
