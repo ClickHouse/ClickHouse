@@ -29,4 +29,15 @@ private:
     SortDescription required_sort_description;
 };
 
+class ReadInOrderOptimizerForDistinct
+{
+public:
+    explicit ReadInOrderOptimizerForDistinct(const Names & source_columns_);
+    InputOrderInfoPtr getInputOrder(const StoragePtr & storage) const;
+
+private:
+    Names source_columns;
+    NameSet forbidden_columns;
+};
+
 }

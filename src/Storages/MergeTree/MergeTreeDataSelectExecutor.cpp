@@ -637,9 +637,23 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             reader_settings,
             result_projection);
     }
-    else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.input_order_info)
+    else if (((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.input_order_info) ||
+            (settings.optimize_distinct_in_order && query_info.distinct_order_info))
     {
-        size_t prefix_size = query_info.input_order_info->order_key_prefix_descr.size();
+        bool prefer_distinct_order = false;
+        size_t prefix_size = 0, distinct_prefix_size = 0;
+        if (query_info.input_order_info)
+            prefix_size = query_info.input_order_info->order_key_prefix_descr.size();
+        else
+            prefer_distinct_order = true;
+        if (query_info.distinct_order_info)
+            distinct_prefix_size = query_info.distinct_order_info->order_key_prefix_descr.size();
+        if (!settings.optimize_aggregation_in_order && distinct_prefix_size > prefix_size)
+        {
+            prefer_distinct_order = true;
+            prefix_size = distinct_prefix_size;
+        }
+        std::cerr << std::boolalpha << prefer_distinct_order << "\n";
         auto order_key_prefix_ast = data.getSortingKey().expression_list_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
@@ -657,7 +671,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             virt_column_names,
             settings,
             reader_settings,
-            result_projection);
+            result_projection,
+            prefer_distinct_order);
     }
     else
     {
@@ -852,10 +867,13 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     const Names & virt_columns,
     const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
-    ExpressionActionsPtr & out_projection) const
+    ExpressionActionsPtr & out_projection,
+    bool prefer_distinct_order) const
 {
     size_t sum_marks = 0;
-    const InputOrderInfoPtr & input_order_info = query_info.input_order_info;
+    InputOrderInfoPtr & input_order_info = query_info.input_order_info;
+    if (prefer_distinct_order)
+        input_order_info = query_info.distinct_order_info;
 
     size_t adaptive_parts = 0;
     std::vector<size_t> sum_marks_in_parts(parts.size());

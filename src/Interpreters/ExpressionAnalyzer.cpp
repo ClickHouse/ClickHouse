@@ -752,10 +752,6 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
             group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(all_columns, context));
             getRootActions(child, only_types, group_by_elements_actions.back());
         }
-//        std::cerr << "group_by_elements_actions\n";
-//        for (const auto & elem : group_by_elements_actions) {
-//            std::cerr << elem->dumpActions() << "\n";
-//        }
     }
 
     return true;
@@ -1158,6 +1154,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             && !query_analyzer.hasAggregation()
             && !query.final()
             && !has_stream_with_non_joined_rows;
+
+        optimize_distinct_in_order = settings.optimize_distinct_in_order && storage && query.distinct;
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));

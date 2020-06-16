@@ -175,6 +175,7 @@ struct ExpressionAnalysisResult
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
+    bool optimize_distinct_in_order = false;
 
     ExpressionActionsPtr before_join;   /// including JOIN
     ExpressionActionsPtr before_where;

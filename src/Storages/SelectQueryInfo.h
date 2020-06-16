@@ -62,6 +62,8 @@ using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 class ReadInOrderOptimizer;
 using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 
+class ReadInOrderOptimizerForDistinct;
+using ReadInOrderOptimizerForDistinctPtr = std::shared_ptr<const ReadInOrderOptimizerForDistinct>;
 
 /** Query along with some additional data,
   *  that can be used during query processing
@@ -78,6 +80,9 @@ struct SelectQueryInfo
     ReadInOrderOptimizerPtr order_optimizer;
     /// We can modify it while reading from storage
     mutable InputOrderInfoPtr input_order_info;
+
+    ReadInOrderOptimizerForDistinctPtr distinct_optimizer;
+    InputOrderInfoPtr distinct_order_info;
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)

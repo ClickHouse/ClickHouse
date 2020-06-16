@@ -69,7 +69,8 @@ private:
         const Names & virt_columns,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
-        ExpressionActionsPtr & out_projection) const;
+        ExpressionActionsPtr & out_projection,
+        bool prefer_distinct_order) const;
 
     Pipes spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,

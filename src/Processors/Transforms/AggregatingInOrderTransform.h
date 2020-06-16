@@ -52,7 +52,7 @@ private:
     UInt64 res_rows = 0;
 
     bool need_generate = false;
-    bool block_end_reached = false;
+    bool res_block_ready = false;
     bool is_consume_started = false;
     bool is_consume_finished = false;
 

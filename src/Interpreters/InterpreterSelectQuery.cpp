@@ -73,6 +73,7 @@
 #include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
 
 
 namespace DB
@@ -758,7 +759,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
                     executeOrder(pipeline, query_info.input_order_info);
 
                 if (expressions.has_order_by && query.limitLength())
-                    executeDistinct(pipeline, false, expressions.selected_columns);
+                    executeDistinct(pipeline, false, expressions.selected_columns, query_info.distinct_order_info);
 
                 if (expressions.hasLimitBy())
                 {
@@ -856,7 +857,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
             else
             {
                 executeExpression(pipeline, expressions.before_order_and_select);
-                executeDistinct(pipeline, true, expressions.selected_columns);
+                executeDistinct(pipeline, true, expressions.selected_columns,  query_info.distinct_order_info);
             }
 
             preliminary_sort();
@@ -900,7 +901,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
                     executeHaving(pipeline, expressions.before_having);
 
                 executeExpression(pipeline, expressions.before_order_and_select);
-                executeDistinct(pipeline, true, expressions.selected_columns);
+                executeDistinct(pipeline, true, expressions.selected_columns, query_info.distinct_order_info);
 
             }
             else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube)
@@ -941,8 +942,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
               * then DISTINCT needs to be performed once again after merging all streams.
               */
             if (need_second_distinct_pass)
-                executeDistinct(pipeline, false, expressions.selected_columns);
-
+                executeDistinct(pipeline, false, expressions.selected_columns, nullptr);
             if (expressions.hasLimitBy())
             {
                 executeExpression(pipeline, expressions.before_limit_by);
@@ -1285,18 +1285,23 @@ void InterpreterSelectQuery::executeFetchColumns(
         /// Maybe we will need to calc input_order_info later, e.g. while reading from StorageMerge.
         if (analysis_result.optimize_read_in_order || analysis_result.optimize_aggregation_in_order)
         {
-            if (analysis_result.optimize_read_in_order)
-                query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                    analysis_result.order_by_elements_actions,
-                    getSortDescription(query, *context),
-                    query_info.syntax_analyzer_result);
-            else
+            if (analysis_result.optimize_aggregation_in_order)
                 query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                     analysis_result.group_by_elements_actions,
                     getSortDescriptionFromGroupBy(query),
                     query_info.syntax_analyzer_result);
+            else
+                query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+                    analysis_result.order_by_elements_actions,
+                    getSortDescription(query, *context),
+                    query_info.syntax_analyzer_result);
 
             query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage);
+        }
+        if (!analysis_result.optimize_aggregation_in_order && analysis_result.optimize_distinct_in_order)
+        {
+            query_info.distinct_optimizer = std::make_shared<ReadInOrderOptimizerForDistinct>(analysis_result.selected_columns);
+            query_info.distinct_order_info = query_info.distinct_optimizer->getInputOrder(storage);
         }
 
         Pipes pipes = storage->read(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
@@ -1795,7 +1800,7 @@ void InterpreterSelectQuery::executeProjection(QueryPipeline & pipeline, const E
 }
 
 
-void InterpreterSelectQuery::executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns)
+void InterpreterSelectQuery::executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns, InputOrderInfoPtr input_order)
 {
     auto & query = getSelectQuery();
     if (query.distinct)
@@ -1811,13 +1816,26 @@ void InterpreterSelectQuery::executeDistinct(QueryPipeline & pipeline, bool befo
 
         SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
 
-        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+        if (input_order)
         {
-            if (stream_type == QueryPipeline::StreamType::Totals)
-                return nullptr;
+            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type == QueryPipeline::StreamType::Totals)
+                    return nullptr;
 
-            return std::make_shared<DistinctTransform>(header, limits, limit_for_distinct, columns);
-        });
+                return std::make_shared<DistinctSortedTransform>(header, limits, limit_for_distinct, input_order->order_key_prefix_descr, columns);
+            });
+        }
+        else
+        {
+            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type == QueryPipeline::StreamType::Totals)
+                    return nullptr;
+
+                return std::make_shared<DistinctTransform>(header, limits, limit_for_distinct, columns);
+            });
+        }
     }
 }
 

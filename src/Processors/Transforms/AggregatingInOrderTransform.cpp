@@ -137,7 +137,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
                     source_column = source_column->cut(key_begin, rows - key_begin);
 
                 current_chunk = Chunk(source_columns, rows - key_begin);
-                block_end_reached = true;
+                res_block_ready = true;
                 need_generate = true;
                 cur_block_size = 0;
                 return;
@@ -148,7 +148,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             ++cur_block_size;
         }
     }
-    block_end_reached = false;
+    res_block_ready = false;
 }
 
 
@@ -183,7 +183,7 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         return Status::PortFull;
     }
 
-    if (block_end_reached)
+    if (res_block_ready)
     {
         if (need_generate)
         {
