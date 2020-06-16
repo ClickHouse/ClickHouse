@@ -85,6 +85,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 
 
 namespace DB
@@ -1538,34 +1539,14 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPipeline & pipeline, bo
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
-    if (!settings.distributed_aggregation_memory_efficient)
-    {
-        /// We union several sources into one, parallelizing the work.
-        pipeline.resize(1);
-
-        /// Now merge the aggregated blocks
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<MergingAggregatedTransform>(header, transform_params, settings.max_threads);
-        });
-    }
-    else
-    {
-        /// pipeline.resize(max_streams); - Seem we don't need it.
-        auto num_merge_threads = settings.aggregation_memory_efficient_merge_threads
-                                 ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
-                                 : static_cast<size_t>(settings.max_threads);
-
-        auto pipe = createMergingAggregatedMemoryEfficientPipe(
-            pipeline.getHeader(),
+    MergingAggregatedStep merging_aggregated(
+            DataStream{.header = pipeline.getHeader()},
             transform_params,
-            pipeline.getNumStreams(),
-            num_merge_threads);
+            settings.distributed_aggregation_memory_efficient,
+            settings.max_threads,
+            settings.aggregation_memory_efficient_merge_threads);
 
-        pipeline.addPipe(std::move(pipe));
-    }
-
-    pipeline.enableQuotaForCurrentStreams();
+    merging_aggregated.transformPipeline(pipeline);
 }
 
 
