@@ -1,12 +1,13 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnDependency.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/KeyDescription.h>
-#include <Storages/TTLDescription.h>
 #include <Storages/SelectQueryDescription.h>
+#include <Storages/TTLDescription.h>
 
 #include <Common/MultiVersion.h>
 
@@ -77,6 +78,34 @@ struct StorageInMemoryMetadata
     void setSettingsChanges(const ASTPtr & settings_changes_);
 
     void setSelectQuery(const SelectQueryDescription & select_);
+
+    const ColumnsDescription & getColumns() const; /// returns combined set of columns
+    const IndicesDescription & getSecondaryIndices() const;
+    /// Has at least one non primary index
+    bool hasSecondaryIndices() const;
+
+    const ConstraintsDescription & getConstraints() const;
+
+    /// Common tables TTLs (for rows and moves).
+    TTLTableDescription getTableTTLs() const;
+    bool hasAnyTableTTL() const;
+
+    /// Separate TTLs for columns.
+    TTLColumnsDescription getColumnTTLs() const;
+    bool hasAnyColumnTTL() const;
+
+    /// Just wrapper for table TTLs, return rows part of table TTLs.
+    TTLDescription getRowsTTL() const;
+    bool hasRowsTTL() const;
+
+    /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
+    /// table TTL.
+    TTLDescriptions getMoveTTLs() const;
+    bool hasAnyMoveTTL() const;
+
+    /// Returns columns, which will be needed to calculate dependencies (skip
+    /// indices, TTL expressions) if we update @updated_columns set of columns.
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;
