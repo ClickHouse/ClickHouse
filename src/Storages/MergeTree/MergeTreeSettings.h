@@ -28,7 +28,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
 #define LIST_OF_MERGE_TREE_SETTINGS(M)                                 \
     M(SettingUInt64, index_granularity, 8192, "How many rows correspond to one primary key value.", 0) \
     \
-    /** Data storing format settigns. */ \
+    /** Data storing format settings. */ \
     M(SettingUInt64, min_bytes_for_wide_part, 0, "Minimal uncompressed size in bytes to create part in wide format instead of compact", 0) \
     M(SettingUInt64, min_rows_for_wide_part, 0, "Minimal number of rows to create part in wide format instead of compact", 0) \
     \

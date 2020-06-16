@@ -116,6 +116,12 @@ inline bool isControlASCII(char c)
     return static_cast<unsigned char>(c) <= 31;
 }
 
+inline bool isPrintableASCII(char c)
+{
+    uint8_t uc = c;
+    return uc >= 32 && uc <= 126;   /// 127 is ASCII DEL.
+}
+
 /// Works assuming isAlphaASCII.
 inline char toLowerIfAlphaASCII(char c)
 {

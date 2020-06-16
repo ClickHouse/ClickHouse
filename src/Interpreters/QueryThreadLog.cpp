@@ -67,10 +67,8 @@ Block QueryThreadLogElement::createBlock()
     };
 }
 
-void QueryThreadLogElement::appendToBlock(Block & block) const
+void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
 {
-    MutableColumns columns = block.mutateColumns();
-
     size_t i = 0;
 
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
@@ -107,8 +105,6 @@ void QueryThreadLogElement::appendToBlock(Block & block) const
         columns[i++]->insertDefault();
         columns[i++]->insertDefault();
     }
-
-    block.setColumns(std::move(columns));
 }
 
 }

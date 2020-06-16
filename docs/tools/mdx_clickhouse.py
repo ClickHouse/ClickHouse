@@ -18,6 +18,30 @@ import amp
 import website
 
 
+def slugify(value, separator):
+    return slugify_impl.slugify(value, separator=separator, word_boundary=True, save_order=True)
+
+
+MARKDOWN_EXTENSIONS = [
+    'mdx_clickhouse',
+    'admonition',
+    'attr_list',
+    'codehilite',
+    'nl2br',
+    'sane_lists',
+    'pymdownx.details',
+    'pymdownx.magiclink',
+    'pymdownx.superfences',
+    'extra',
+    {
+        'toc': {
+            'permalink': True,
+            'slugify': slugify
+        }
+    }
+]
+
+
 class ClickHouseLinkMixin(object):
 
     def handleMatch(self, m, data):
@@ -72,10 +96,6 @@ def makeExtension(**kwargs):
     return ClickHouseMarkdown(**kwargs)
 
 
-def slugify(value, separator):
-    return slugify_impl.slugify(value, separator=separator, word_boundary=True, save_order=True)
-
-
 def get_translations(dirname, lang):
     import babel.support
     return babel.support.Translations.load(
@@ -119,6 +139,11 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
 
     def on_page_markdown(self, markdown, page, config, files):
         markdown = super(PatchedMacrosPlugin, self).on_page_markdown(markdown, page, config, files)
+
+        if os.path.islink(page.file.abs_src_path):
+            lang = config.data['theme']['language']
+            page.canonical_url = page.canonical_url.replace(f'/{lang}/', '/en/', 1)
+
         if config.data['extra'].get('version_prefix') or config.data['extra'].get('single_page'):
             return markdown
         if self.skip_git_log:

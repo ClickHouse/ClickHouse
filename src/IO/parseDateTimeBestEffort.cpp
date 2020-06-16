@@ -562,8 +562,17 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
 {
     time_t whole;
     DateTimeSubsecondPart subsecond = {0, 0}; // needs to be explicitly initialized sine it could be missing from input string
-    if (!parseDateTimeBestEffortImpl<bool>(whole, in, local_time_zone, utc_time_zone, &subsecond))
-        return ReturnType(false);
+
+    if constexpr (std::is_same_v<ReturnType, bool>)
+    {
+        if (!parseDateTimeBestEffortImpl<bool>(whole, in, local_time_zone, utc_time_zone, &subsecond))
+            return false;
+    }
+    else
+    {
+        parseDateTimeBestEffortImpl<ReturnType>(whole, in, local_time_zone, utc_time_zone, &subsecond);
+    }
+
 
     DateTime64::NativeType fractional = subsecond.value;
     if (scale < subsecond.digits)

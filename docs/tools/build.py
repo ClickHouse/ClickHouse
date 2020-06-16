@@ -20,8 +20,8 @@ from mkdocs import exceptions
 import mkdocs.commands.build
 
 import amp
+import blog
 import mdx_clickhouse
-
 import redirects
 import single_page
 import test
@@ -58,17 +58,6 @@ def build_for_lang(lang, args):
             'custom_dir': os.path.join(os.path.dirname(__file__), '..', args.theme_dir),
             'language': lang,
             'direction': 'rtl' if lang == 'fa' else 'ltr',
-            # TODO: cleanup
-            'feature': {
-                'tabs': False
-            },
-            'palette': {
-                'primary': 'white',
-                'accent': 'white'
-            },
-            'font': False,
-            'logo': 'images/logo.svg',
-            'favicon': 'assets/images/favicon.ico',
             'static_templates': ['404.html'],
             'extra': {
                 'now': int(time.mktime(datetime.datetime.now().timetuple()))  # TODO better way to avoid caching
@@ -106,25 +95,6 @@ def build_for_lang(lang, args):
         else:
             site_dir = os.path.join(args.docs_output_dir, lang)
 
-        markdown_extensions = [
-            'mdx_clickhouse',
-            'admonition',
-            'attr_list',
-            'codehilite',
-            'nl2br',
-            'sane_lists',
-            'pymdownx.details',
-            'pymdownx.magiclink',
-            'pymdownx.superfences',
-            'extra',
-            {
-                'toc': {
-                    'permalink': True,
-                    'slugify': mdx_clickhouse.slugify
-                }
-            }
-        ]
-
         plugins = ['macros']
         if args.htmlproofer:
             plugins.append('htmlproofer')
@@ -144,7 +114,7 @@ def build_for_lang(lang, args):
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',
             edit_uri=f'edit/master/docs/{lang}',
-            markdown_extensions=markdown_extensions,
+            markdown_extensions=mdx_clickhouse.MARKDOWN_EXTENSIONS,
             plugins=plugins,
             extra=dict(
                 now=datetime.datetime.now().isoformat(),
@@ -158,14 +128,15 @@ def build_for_lang(lang, args):
                 events=args.events,
                 languages=languages,
                 includes_dir=os.path.join(os.path.dirname(__file__), '..', '_includes'),
-                is_amp=False
+                is_amp=False,
+                is_blog=False
             )
         )
 
         if os.path.exists(config_path):
             raw_config['config_file'] = config_path
         else:
-            raw_config['nav'] = nav.build_nav(lang, args)
+            raw_config['nav'] = nav.build_docs_nav(lang, args)
 
         cfg = config.load_config(**raw_config)
 
@@ -198,7 +169,7 @@ def build_docs(args):
         if lang:
             tasks.append((lang, args,))
     util.run_function_in_parallel(build_for_lang, tasks, threads=False)
-    redirects.build_redirects(args)
+    redirects.build_docs_redirects(args)
 
 
 def build(args):
@@ -215,6 +186,9 @@ def build(args):
     from github import build_releases
     build_releases(args, build_docs)
 
+    if not args.skip_blog:
+        blog.build_blog(args)
+
     if not args.skip_website:
         website.process_benchmark_results(args)
         website.minify_website(args)
@@ -226,12 +200,14 @@ if __name__ == '__main__':
     website_dir = os.path.join('..', 'website')
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja,tr,fa')
+    arg_parser.add_argument('--blog-lang', default='en,ru')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default=website_dir)
     arg_parser.add_argument('--website-dir', default=website_dir)
+    arg_parser.add_argument('--blog-dir', default=os.path.join(website_dir, 'blog'))
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--enable-stable-releases', action='store_true')
-    arg_parser.add_argument('--stable-releases-limit', type=int, default='4')
+    arg_parser.add_argument('--stable-releases-limit', type=int, default='3')
     arg_parser.add_argument('--lts-releases-limit', type=int, default='2')
     arg_parser.add_argument('--nav-limit', type=int, default='0')
     arg_parser.add_argument('--version-prefix', type=str, default='')
@@ -241,6 +217,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--skip-amp', action='store_true')
     arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--skip-website', action='store_true')
+    arg_parser.add_argument('--skip-blog', action='store_true')
     arg_parser.add_argument('--skip-git-log', action='store_true')
     arg_parser.add_argument('--test-only', action='store_true')
     arg_parser.add_argument('--minify', action='store_true')
@@ -260,6 +237,7 @@ if __name__ == '__main__':
     logging.getLogger('MARKDOWN').setLevel(logging.INFO)
 
     args.docs_output_dir = os.path.join(os.path.abspath(args.output_dir), 'docs')
+    args.blog_output_dir = os.path.join(os.path.abspath(args.output_dir), 'blog')
 
     from github import choose_latest_releases, get_events
     args.stable_releases = choose_latest_releases(args) if args.enable_stable_releases else []
@@ -270,6 +248,7 @@ if __name__ == '__main__':
 
     if args.test_only:
         args.skip_multi_page = True
+        args.skip_blog = True
         args.skip_website = True
         args.skip_pdf = True
         args.skip_amp = True

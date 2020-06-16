@@ -12,10 +12,10 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int BAD_CAST;
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_STORAGE_READONLY;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -403,7 +403,7 @@ void IAccessStorage::throwBadCast(const UUID & id, EntityType type, const String
 {
     throw Exception(
         "ID {" + toString(id) + "}: " + outputEntityTypeAndName(type, name) + " expected to be of type " + toString(required_type),
-        ErrorCodes::BAD_CAST);
+        ErrorCodes::LOGICAL_ERROR);
 }
 
 

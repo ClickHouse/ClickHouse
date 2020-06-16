@@ -78,7 +78,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <default_profile>default</default_profile>
 ```
 
-## dictionaries\_config {#dictionaries-config}
+## dictionaries\_config {#server_configuration_parameters-dictionaries_config}
 
 Путь к конфигурации внешних словарей.
 
@@ -95,7 +95,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## dictionaries\_lazy\_load {#dictionaries-lazy-load}
+## dictionaries\_lazy\_load {#server_configuration_parameters-dictionaries_lazy_load}
 
 Отложенная загрузка словарей.
 
@@ -574,11 +574,11 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </query_log>
 ```
 
-## query\_thread\_log {#server_configuration_parameters-query-thread-log}
+## query\_thread\_log {#server_configuration_parameters-query_thread_log}
 
 Настройка логирования потоков выполнения запросов, принятых с настройкой [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads).
 
-Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_thread\_log](../../operations/server-configuration-parameters/settings.md#system_tables-query-thread-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_thread\_log](../../operations/server-configuration-parameters/settings.md#system_tables-query_thread_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 
@@ -686,7 +686,7 @@ TCP порт для защищённого обмена данными с кли
 <mysql_port>9004</mysql_port>
 ```
 
-## tmp\_path {#tmp-path}
+## tmp_path {#tmp-path}
 
 Путь ко временным данным для обработки больших запросов.
 
@@ -698,6 +698,17 @@ TCP порт для защищённого обмена данными с кли
 ``` xml
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
+## tmp_policy {#tmp-policy}
+
+Политика из [storage_configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) для хранения временных файлов.
+
+Если политика не задана, используется [tmp_path](#tmp-path). В противном случае `tmp_path` игнорируется.
+
+!!! note "Примечание"
+    - `move_factor` игнорируется.
+    - `keep_free_space_bytes` игнорируется.
+    - `max_data_part_size_bytes` игнорируется.
+    - В данной политике у вас должен быть ровно один том.
 
 ## uncompressed\_cache\_size {#server-settings-uncompressed_cache_size}
 
@@ -831,6 +842,10 @@ ClickHouse использует ZooKeeper для хранения метадан
 Обновление выполняется асинхронно, отдельным системным потоком.
 
 **Значение по умолчанию**: 15.
+
+**Смотрите также**
+
+-   [background_schedule_pool_size](../settings/settings.md#background_schedule_pool_size)
 
 ## access_control_path {#access_control_path}
 

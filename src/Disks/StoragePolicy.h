@@ -4,6 +4,7 @@
 #include <Disks/IDisk.h>
 #include <Disks/IVolume.h>
 #include <Disks/VolumeJBOD.h>
+#include <Disks/SingleDiskVolume.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -98,6 +99,7 @@ private:
 
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 
 /// Parse .xml configuration and store information about policies
 /// Mostly used for introspection.
@@ -112,10 +114,10 @@ public:
     StoragePolicyPtr get(const String & name) const;
 
     /// All policies
-    const std::map<String, StoragePolicyPtr> & getPoliciesMap() const { return policies; }
+    const StoragePoliciesMap & getPoliciesMap() const { return policies; }
 
 private:
-    std::map<String, StoragePolicyPtr> policies;
+    StoragePoliciesMap policies;
 };
 
 }

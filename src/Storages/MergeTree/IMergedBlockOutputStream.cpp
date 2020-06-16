@@ -9,7 +9,7 @@ namespace DB
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part)
     : storage(data_part->storage)
-    , disk(data_part->disk)
+    , volume(data_part->volume)
     , part_path(data_part->getFullRelativePath())
 {
 }
@@ -82,7 +82,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     {
         if (checksums.files.count(removed_file))
         {
-            data_part->disk->remove(data_part->getFullRelativePath() + removed_file);
+            data_part->volume->getDisk()->remove(data_part->getFullRelativePath() + removed_file);
             checksums.files.erase(removed_file);
         }
     }

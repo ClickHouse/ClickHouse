@@ -29,8 +29,10 @@ namespace ErrorCodes
 /// Allows loading dictionaries from a MongoDB collection
 class MongoDBDictionarySource final : public IDictionarySource
 {
+public:
     MongoDBDictionarySource(
         const DictionaryStructure & dict_struct_,
+        const std::string & uri_,
         const std::string & host_,
         UInt16 port_,
         const std::string & user_,
@@ -39,13 +41,6 @@ class MongoDBDictionarySource final : public IDictionarySource
         const std::string & db_,
         const std::string & collection_,
         const Block & sample_block_);
-
-public:
-    MongoDBDictionarySource(
-        const DictionaryStructure & dict_struct,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        Block & sample_block);
 
     MongoDBDictionarySource(const MongoDBDictionarySource & other);
 
@@ -76,12 +71,13 @@ public:
 
 private:
     const DictionaryStructure dict_struct;
-    const std::string host;
-    const UInt16 port;
-    const std::string user;
+    const std::string uri;
+    std::string host;
+    UInt16 port;
+    std::string user;
     const std::string password;
     const std::string method;
-    const std::string db;
+    std::string db;
     const std::string collection;
     Block sample_block;
 

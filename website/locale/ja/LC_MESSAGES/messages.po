@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-08 17:57+0300\n"
+"POT-Creation-Date: 2020-06-16 13:35+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ja\n"
@@ -33,27 +33,27 @@ msgstr "ﾂ環板篠ｮﾂ嘉ｯﾂ偲青エﾂδﾂ-ﾂエﾂスﾂ-ﾂシﾂ"
 msgid "ClickHouse DBMS"
 msgstr "クリックハウスDBMS"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "open-source"
 msgstr "オープンソース"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "relational"
 msgstr "関係"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "analytics"
 msgstr "analytics"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "analytical"
 msgstr "分析"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "Big Data"
 msgstr "ビッグデータ"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "web-analytics"
 msgstr "ウェブ分析"
 
@@ -71,15 +71,63 @@ msgstr "ソフトウェアは、明示または黙示を問わず、いかなる
 msgid "Yandex LLC"
 msgstr "Yandex LLC"
 
+#: templates/blog/content.html:16
+msgid "Published date"
+msgstr "公開日"
+
+#: templates/blog/nav.html:20
+msgid "New&nbsp;post"
+msgstr "新しい&nbsp;ポスト"
+
+#: templates/blog/nav.html:25
+msgid "Documentation"
+msgstr "文書"
+
+#: templates/docs/footer.html:3
+msgid "Rating"
+msgstr "評価"
+
+#: templates/docs/footer.html:3
+msgid "votes"
+msgstr "投票"
+
 #: templates/docs/footer.html:4
+msgid "Article Rating"
+msgstr "記事の評価"
+
+#: templates/docs/footer.html:4
+msgid "Was this content helpful?"
+msgstr "この内容は有用だったか。"
+
+#: templates/docs/footer.html:7
+msgid "Unusable"
+msgstr "使用不可"
+
+#: templates/docs/footer.html:7
+msgid "Poor"
+msgstr "貧しい"
+
+#: templates/docs/footer.html:7
+msgid "Good"
+msgstr "よし"
+
+#: templates/docs/footer.html:7
+msgid "Excellent"
+msgstr "優れた"
+
+#: templates/docs/footer.html:8
+msgid "documentation"
+msgstr "文書"
+
+#: templates/docs/footer.html:15
 msgid "Built from"
 msgstr "から構築"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "published on"
 msgstr "掲載され"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "modified on"
 msgstr "に変更"
 

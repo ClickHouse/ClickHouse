@@ -144,7 +144,7 @@ def test_mysql_federated(mysql_server, server_address):
     node.query('''CREATE TABLE mysql_federated.test (col UInt32) ENGINE = Log''', settings={"password": "123"})
     node.query('''INSERT INTO mysql_federated.test VALUES (0), (1), (5)''', settings={"password": "123"})
 
-    code, (_, stderr) = mysql_server.exec_run('''
+    code, (stdout, stderr) = mysql_server.exec_run('''
         mysql
         -e "DROP SERVER IF EXISTS clickhouse;"
         -e "CREATE SERVER clickhouse FOREIGN DATA WRAPPER mysql OPTIONS (USER 'default', PASSWORD '123', HOST '{host}', PORT {port}, DATABASE 'mysql_federated');"
@@ -152,6 +152,9 @@ def test_mysql_federated(mysql_server, server_address):
         -e "CREATE DATABASE mysql_federated;"
     '''.format(host=server_address, port=server_port), demux=True)
 
+    if code != 0:
+        print(stdout)
+        print(stderr)
     assert code == 0
 
     code, (stdout, stderr) = mysql_server.exec_run('''

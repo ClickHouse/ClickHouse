@@ -155,9 +155,9 @@ def test_introspection():
     assert instance.query("SHOW ENABLED ROLES", user='A') == TSV([[ "R1", 0, 1, 1 ]])
     assert instance.query("SHOW ENABLED ROLES", user='B') == TSV([[ "R2", 1, 1, 1 ]])
 
-    assert instance.query("SELECT name, storage, host_ip, host_names, host_names_regexp, host_names_like, default_roles_all, default_roles_list, default_roles_except from system.users WHERE name IN ('A', 'B') ORDER BY name") ==\
-           TSV([[ "A", "disk", "['::/0']", "[]", "[]", "[]", 1, "[]", "[]" ],
-                [ "B", "disk", "['::/0']", "[]", "[]", "[]", 1, "[]", "[]" ]])
+    assert instance.query("SELECT name, storage, auth_type, auth_params, host_ip, host_names, host_names_regexp, host_names_like, default_roles_all, default_roles_list, default_roles_except from system.users WHERE name IN ('A', 'B') ORDER BY name") ==\
+           TSV([[ "A", "disk", "no_password", "[]", "['::/0']", "[]", "[]", "[]", 1, "[]", "[]" ],
+                [ "B", "disk", "no_password", "[]", "['::/0']", "[]", "[]", "[]", 1, "[]", "[]" ]])
     
     assert instance.query("SELECT name, storage from system.roles WHERE name IN ('R1', 'R2') ORDER BY name") ==\
            TSV([[ "R1", "disk" ],

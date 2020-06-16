@@ -12,8 +12,8 @@ def test_chroot_with_same_root():
     cluster_1 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_a.xml')
     cluster_2 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_a.xml')
 
-    node1 = cluster_1.add_instance('node1', config_dir='configs', with_zookeeper=True)
-    node2 = cluster_2.add_instance('node2', config_dir='configs', with_zookeeper=True)
+    node1 = cluster_1.add_instance('node1', config_dir='configs', with_zookeeper=True, zookeeper_use_tmpfs=False)
+    node2 = cluster_2.add_instance('node2', config_dir='configs', with_zookeeper=True, zookeeper_use_tmpfs=False)
     nodes = [node1, node2]
 
     def create_zk_root(zk):
@@ -51,8 +51,8 @@ def test_chroot_with_different_root():
     cluster_1 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_a.xml')
     cluster_2 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_b.xml')
 
-    node1 = cluster_1.add_instance('node1', config_dir='configs', with_zookeeper=True)
-    node2 = cluster_2.add_instance('node2', config_dir='configs', with_zookeeper=True)
+    node1 = cluster_1.add_instance('node1', config_dir='configs', with_zookeeper=True, zookeeper_use_tmpfs=False)
+    node2 = cluster_2.add_instance('node2', config_dir='configs', with_zookeeper=True, zookeeper_use_tmpfs=False)
     nodes = [node1, node2]
 
     def create_zk_roots(zk):
@@ -69,7 +69,7 @@ def test_chroot_with_different_root():
 
             for i, node in enumerate(nodes):
                 node.query('''
-                CREATE TABLE simple (date Date, id UInt32) 
+                CREATE TABLE simple (date Date, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);
                 '''.format(replica=node.name))
                 for j in range(2): # Second insert to test deduplication
@@ -90,8 +90,8 @@ def test_identity():
     cluster_1 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_with_password.xml')
     cluster_2 = ClickHouseCluster(__file__)
 
-    node1 = cluster_1.add_instance('node1', config_dir='configs', with_zookeeper=True)
-    node2 = cluster_2.add_instance('node2', config_dir='configs', with_zookeeper=True)
+    node1 = cluster_1.add_instance('node1', config_dir='configs', with_zookeeper=True, zookeeper_use_tmpfs=False)
+    node2 = cluster_2.add_instance('node2', config_dir='configs', with_zookeeper=True, zookeeper_use_tmpfs=False)
 
     try:
         cluster_1.start()
@@ -138,7 +138,7 @@ def test_secure_connection():
     docker_compose = NamedTemporaryFile(delete=False)
 
     docker_compose.write(
-        "version: '2.2'\nservices:\n" +
+        "version: '2.3'\nservices:\n" +
         TEMPLATE.format(zoo_id=1, configs_dir=configs_dir, helpers_dir=helpers_dir) +
         TEMPLATE.format(zoo_id=2, configs_dir=configs_dir, helpers_dir=helpers_dir) +
         TEMPLATE.format(zoo_id=3, configs_dir=configs_dir, helpers_dir=helpers_dir)
@@ -146,9 +146,9 @@ def test_secure_connection():
     docker_compose.close()
 
     node1 = cluster.add_instance('node1', config_dir='configs_secure', with_zookeeper=True,
-                                 zookeeper_docker_compose_path=docker_compose.name)
+                                 zookeeper_docker_compose_path=docker_compose.name, zookeeper_use_tmpfs=False)
     node2 = cluster.add_instance('node2', config_dir='configs_secure', with_zookeeper=True,
-                                 zookeeper_docker_compose_path=docker_compose.name)
+                                 zookeeper_docker_compose_path=docker_compose.name, zookeeper_use_tmpfs=False)
 
     try:
         cluster.start()

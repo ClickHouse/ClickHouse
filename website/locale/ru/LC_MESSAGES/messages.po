@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-08 17:57+0300\n"
+"POT-Creation-Date: 2020-06-16 13:35+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
@@ -38,27 +38,27 @@ msgstr "ClickHouse-быстрая СУБД OLAP с открытым исходн
 msgid "ClickHouse DBMS"
 msgstr "СУБД ClickHouse"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "open-source"
 msgstr "открытый исходный код"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "relational"
 msgstr "реляционный"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "analytics"
 msgstr "аналитика"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "analytical"
 msgstr "аналитический"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "Big Data"
 msgstr "большие данные"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "web-analytics"
 msgstr "веб-аналитика"
 
@@ -78,15 +78,63 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr "ООО «Яндекс»"
 
+#: templates/blog/content.html:16
+msgid "Published date"
+msgstr "Дата публикации"
+
+#: templates/blog/nav.html:20
+msgid "New&nbsp;post"
+msgstr "Новый&nbsp;пост"
+
+#: templates/blog/nav.html:25
+msgid "Documentation"
+msgstr "Документация"
+
+#: templates/docs/footer.html:3
+msgid "Rating"
+msgstr "Рейтинг"
+
+#: templates/docs/footer.html:3
+msgid "votes"
+msgstr "голосов"
+
 #: templates/docs/footer.html:4
+msgid "Article Rating"
+msgstr "Рейтинг статьи"
+
+#: templates/docs/footer.html:4
+msgid "Was this content helpful?"
+msgstr "Был ли этот контент полезным?"
+
+#: templates/docs/footer.html:7
+msgid "Unusable"
+msgstr "Непригодная"
+
+#: templates/docs/footer.html:7
+msgid "Poor"
+msgstr "Плохая"
+
+#: templates/docs/footer.html:7
+msgid "Good"
+msgstr "Хорошая"
+
+#: templates/docs/footer.html:7
+msgid "Excellent"
+msgstr "Отличная"
+
+#: templates/docs/footer.html:8
+msgid "documentation"
+msgstr "документация"
+
+#: templates/docs/footer.html:15
 msgid "Built from"
 msgstr "Собрано из"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "published on"
 msgstr "опубликовано"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "modified on"
 msgstr "изменено"
 
@@ -148,15 +196,15 @@ msgstr "Cодержание"
 
 #: templates/index/community.html:4
 msgid "ClickHouse community"
-msgstr "Сообщество ClickHouse"
+msgstr "ClickHouse сообщество"
 
 #: templates/index/community.html:13 templates/index/community.html:14
 msgid "ClickHouse YouTube Channel"
-msgstr "ClickHouse YouTube Канал"
+msgstr "YouTube канал ClickHouse"
 
 #: templates/index/community.html:25 templates/index/community.html:26
 msgid "ClickHouse Official Twitter Account"
-msgstr "Официальный Твиттер-Аккаунт ClickHouse"
+msgstr "Официальный аккаунт в Twitter"
 
 #: templates/index/community.html:36 templates/index/community.html:37
 msgid "ClickHouse at Telegram"
@@ -164,7 +212,7 @@ msgstr "ClickHouse в Telegram"
 
 #: templates/index/community.html:41
 msgid "Chat with real users in "
-msgstr "Чат с реальными пользователями "
+msgstr "Чат с другими пользователями "
 
 #: templates/index/community.html:44 templates/index/community.html:116
 msgid "English"
@@ -172,7 +220,7 @@ msgstr "Английский"
 
 #: templates/index/community.html:45
 msgid "or in"
-msgstr "или в"
+msgstr "или"
 
 #: templates/index/community.html:47 templates/index/community.html:117
 msgid "Russian"
@@ -180,19 +228,19 @@ msgstr "Русский"
 
 #: templates/index/community.html:65
 msgid "Open GitHub issue to ask for help or to file a feature request"
-msgstr "Открыть вопрос на GitHub, чтобы попросить помочь или подать запрос "
+msgstr "В GitHub Issues можно попросить помочь или запросить новую возможность "
 
 #: templates/index/community.html:76 templates/index/community.html:77
 msgid "ClickHouse Slack Workspace"
-msgstr "Рабочее Пространство ClickHouse Slack"
+msgstr "ClickHouse Slack"
 
 #: templates/index/community.html:82
 msgid "Multipurpose public hangout"
-msgstr "Универсальное публичное сообщество"
+msgstr "Универсальное сообщество"
 
 #: templates/index/community.html:101
 msgid "Ask any questions"
-msgstr "Задать любые вопросы"
+msgstr "Задай любые вопросы"
 
 #: templates/index/community.html:115
 msgid "ClickHouse Blog"
@@ -208,7 +256,7 @@ msgstr "ClickHouse в Google Groups"
 
 #: templates/index/community.html:133
 msgid "Email discussions"
-msgstr "Обсуждения по электронной почте"
+msgstr "Обсуждения по email"
 
 #: templates/index/community.html:142
 msgid "Like ClickHouse?"
@@ -216,7 +264,7 @@ msgstr "Нравится ClickHouse?"
 
 #: templates/index/community.html:143
 msgid "Help to spread the word about it via"
-msgstr "Помогите распространить информацию о нём через"
+msgstr "Помоги распространить информацию о нём через"
 
 #: templates/index/community.html:144
 msgid "and"
@@ -224,7 +272,7 @@ msgstr "и"
 
 #: templates/index/community.html:153
 msgid "Hosting ClickHouse Meetups"
-msgstr "Таких Встреч ClickHouse "
+msgstr "Проведение ClickHouse митапов"
 
 #: templates/index/community.html:157
 msgid ""
@@ -233,15 +281,14 @@ msgid ""
 "Please, feel this form if you want to become one or want to meet "
 "ClickHouse core team for any other reason."
 msgstr ""
-"Встречи ClickHouse имеют важное значение для укрепления сообщества во "
-"всем мире, но они не могут быть возможны без помощи местных "
-"организаторов. Пожалуйста, прочувствуйте эту форму, если вы хотите стать "
-"одним из них или хотите встретиться с основной командой ClickHouse по "
-"любой другой причине."
+"Встречи ClickHouse необходимы для укрепления сообщества во всем мире, но "
+"они не могут быть возможны без помощи местных организаторов. Пожалуйста, "
+"почувствуйте эту форму, если вы хотите стать одним из них или хотите "
+"встретиться с основной командой ClickHouse по любой другой причине."
 
 #: templates/index/community.html:159
 msgid "ClickHouse Meetup"
-msgstr "ClickHouse Сходка"
+msgstr "ClickHouse митап"
 
 #: templates/index/community.html:165
 msgid "Name"
@@ -249,7 +296,7 @@ msgstr "Имя"
 
 #: templates/index/community.html:168
 msgid "Email"
-msgstr "Электронная почта"
+msgstr "Email"
 
 #: templates/index/community.html:171
 msgid "Company"
@@ -261,23 +308,23 @@ msgstr "Город"
 
 #: templates/index/community.html:179
 msgid "We'd like to host a public ClickHouse Meetup"
-msgstr "Мы хотели бы провести публичное собрание ClickHouse Meetup"
+msgstr "Мы хотели бы провести публичный ClickHouse митап"
 
 #: templates/index/community.html:185
 msgid "We'd like to invite Yandex ClickHouse team to our office"
-msgstr "Мы хотели бы пригласить команду Yandex ClickHouse в наш офис"
+msgstr "Мы хотели бы пригласить команду разработки ClickHouse в наш офис"
 
 #: templates/index/community.html:191
 msgid "We'd like to invite Yandex ClickHouse team to another event we organize"
 msgstr ""
-"Мы хотели бы пригласить команду Yandex ClickHouse на другое мероприятие, "
-"которое мы организуем"
+"Мы хотели бы пригласить команду разработки ClickHouse на другое "
+"мероприятие, которое мы организуем"
 
 #: templates/index/community.html:197
 msgid "We're interested in commercial consulting, support or managed service"
 msgstr ""
-"Мы заинтересованы в коммерческом консалтинге, поддержке или управляемом "
-"обслуживании"
+"Мы заинтересованы в консалтинге, коммерческой поддержке или управляемом "
+"сервисе"
 
 #: templates/index/community.html:201
 msgid "Additional comments"
@@ -292,8 +339,8 @@ msgid ""
 "If you have any more thoughts or questions, feel free to contact Yandex "
 "ClickHouse team directly at"
 msgstr ""
-"Если у вас есть еще какие-либо мысли или вопросы, не стесняйтесь "
-"обращаться в команду Яндекс ClickHouse напрямую по адресу"
+"Если у вас есть какие-либо мысли или вопросы, не стесняйтесь обращаться в"
+" команду ClickHouse в Яндексе напрямую по адресу"
 
 #: templates/index/community.html:213
 msgid "turn on JavaScript to see email address"
@@ -334,4 +381,23 @@ msgstr "включите JavaScript, чтобы увидеть адрес эле
 
 #~ msgid "modified at"
 #~ msgstr "изменено"
+
+#~ msgid ""
+#~ "ClickHouse meetups are essential for "
+#~ "strengthening community worldwide, but they"
+#~ " couldn't be possible without the "
+#~ "help of local organizers. Please, fill"
+#~ " this form if you want to "
+#~ "become one or want to meet "
+#~ "ClickHouse core team for any other "
+#~ "reason."
+#~ msgstr ""
+#~ "ClickHouse митапы играют ключевую роль "
+#~ "укреплении нашего сообщества во всем "
+#~ "мире, но они не могли бы быть "
+#~ "возможны без помощи местных организаторов. "
+#~ "Пожалуйста, заполните эту форму, если вы"
+#~ " хотите стать одним из них или "
+#~ "хотите встретиться с командой разработки "
+#~ "ClickHouse по любой другой причине."
 

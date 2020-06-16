@@ -17,6 +17,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Context.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -86,7 +87,7 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
         bool insert_sync_, UInt64 insert_timeout_)
         : context(context_), storage(storage_), query_ast(query_ast_), query_string(queryToString(query_ast_)),
         cluster(cluster_), insert_sync(insert_sync_),
-        insert_timeout(insert_timeout_), log(&Logger::get("DistributedBlockOutputStream"))
+        insert_timeout(insert_timeout_), log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
 }
 
@@ -113,9 +114,8 @@ void DistributedBlockOutputStream::write(const Block & block)
         if (ordinary_block.has(col.name))
         {
             ordinary_block.erase(col.name);
-            LOG_DEBUG(log, storage.getStorageID().getNameForLogs()
-                << ": column " + col.name + " will be removed, "
-                << "because it is MATERIALIZED");
+            LOG_DEBUG(log, "{}: column {} will be removed, because it is MATERIALIZED",
+                storage.getStorageID().getNameForLogs(), col.name);
         }
     }
 
@@ -228,7 +228,7 @@ void DistributedBlockOutputStream::waitForJobs()
     size_t num_finished_jobs = finished_jobs_count;
 
     if (num_finished_jobs < jobs_count)
-        LOG_WARNING(log, "Expected " << jobs_count << " writing jobs, but finished only " << num_finished_jobs);
+        LOG_WARNING(log, "Expected {} writing jobs, but finished only {}", jobs_count, num_finished_jobs);
 }
 
 
@@ -409,12 +409,10 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 
 void DistributedBlockOutputStream::writeSuffix()
 {
-    auto log_performance = [this] ()
+    auto log_performance = [this]()
     {
         double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG(log, "It took " << std::fixed << std::setprecision(1) << elapsed << " sec. to insert " << inserted_blocks << " blocks"
-                   << ", " << std::fixed << std::setprecision(1) << inserted_rows / elapsed << " rows per second"
-                   << ". " << getCurrentStateDescription());
+        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
     };
 
     if (insert_sync && pool)
@@ -520,7 +518,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
     }
     else
     {
-        if (shard_info.isLocal())
+        if (shard_info.isLocal() && settings.prefer_localhost_replica)
             writeToLocal(block, shard_info.getLocalNodeCount());
 
         std::vector<std::string> dir_names;

@@ -23,18 +23,10 @@ struct EntropyData
 {
     using Weight = UInt64;
 
-    using HashingMap = HashMap<
-        Value, Weight,
-        HashCRC32<Value>,
-        HashTableGrower<4>,
-        HashTableAllocatorWithStackMemory<sizeof(std::pair<Value, Weight>) * (1 << 3)>>;
+    using HashingMap = HashMapWithStackMemory<Value, Weight, HashCRC32<Value>, 4>;
 
     /// For the case of pre-hashed values.
-    using TrivialMap = HashMap<
-        Value, Weight,
-        UInt128TrivialHash,
-        HashTableGrower<4>,
-        HashTableAllocatorWithStackMemory<sizeof(std::pair<Value, Weight>) * (1 << 3)>>;
+    using TrivialMap = HashMapWithStackMemory<Value, Weight, UInt128TrivialHash, 4>;
 
     using Map = std::conditional_t<std::is_same_v<UInt128, Value>, TrivialMap, HashingMap>;
 

@@ -34,7 +34,7 @@
 {% if single_page and page.content %}
 <!-- BREAK -->
 (function() {
-    {% for chunk in page.content|chunks %}
+    {% for chunk in page.content|adjust_markdown_html|chunks %}
     document.write({{ chunk|tojson|safe }});
     {% endfor %}
 })();

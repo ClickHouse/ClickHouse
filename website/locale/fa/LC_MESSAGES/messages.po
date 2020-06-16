@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-08 17:57+0300\n"
+"POT-Creation-Date: 2020-06-16 13:35+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fa\n"
@@ -36,27 +36,27 @@ msgstr "ClickHouse - سریع باز-منبع OLAP DBMS"
 msgid "ClickHouse DBMS"
 msgstr "خانه عروسکی"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "open-source"
 msgstr "متن باز"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "relational"
 msgstr "رابطه"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "analytics"
 msgstr "تجزیه و تحلیل"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "analytical"
 msgstr "تحلیلی"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "Big Data"
 msgstr "داده های بزرگ"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "web-analytics"
 msgstr "تجزیه و تحلیل وب سایت"
 
@@ -76,15 +76,63 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr "Yandex, LLC"
 
+#: templates/blog/content.html:16
+msgid "Published date"
+msgstr "تاریخ انتشار"
+
+#: templates/blog/nav.html:20
+msgid "New&nbsp;post"
+msgstr "جدید & nbsp;پست"
+
+#: templates/blog/nav.html:25
+msgid "Documentation"
+msgstr "مستندات"
+
+#: templates/docs/footer.html:3
+msgid "Rating"
+msgstr "درجهبندی"
+
+#: templates/docs/footer.html:3
+msgid "votes"
+msgstr "رای"
+
 #: templates/docs/footer.html:4
+msgid "Article Rating"
+msgstr "رتبه مقاله"
+
+#: templates/docs/footer.html:4
+msgid "Was this content helpful?"
+msgstr "این مطالب مفید بود?"
+
+#: templates/docs/footer.html:7
+msgid "Unusable"
+msgstr "غیرقابل استفاده"
+
+#: templates/docs/footer.html:7
+msgid "Poor"
+msgstr "فقیر"
+
+#: templates/docs/footer.html:7
+msgid "Good"
+msgstr "خوبه"
+
+#: templates/docs/footer.html:7
+msgid "Excellent"
+msgstr "عالیه"
+
+#: templates/docs/footer.html:8
+msgid "documentation"
+msgstr "مستندات"
+
+#: templates/docs/footer.html:15
 msgid "Built from"
 msgstr "ساخته شده از"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "published on"
 msgstr "منتشر شده در"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "modified on"
 msgstr "تغییریافته"
 

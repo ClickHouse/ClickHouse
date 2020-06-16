@@ -67,6 +67,12 @@ public:
     {
         data(place).count = new_count;
     }
+
+    /// The function returns non-Nullable type even when wrapped with Null combinator.
+    bool returnDefaultWhenOnlyNull() const override
+    {
+        return true;
+    }
 };
 
 

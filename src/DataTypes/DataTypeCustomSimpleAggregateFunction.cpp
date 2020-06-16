@@ -30,7 +30,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static const std::vector<String> supported_functions{"any", "anyLast", "min", "max", "sum", "groupBitAnd", "groupBitOr", "groupBitXor", "sumMap"};
+static const std::vector<String> supported_functions{"any", "anyLast", "min", "max", "sum", "groupBitAnd", "groupBitOr", "groupBitXor", "sumMap", "groupArrayArray", "groupUniqArrayArray"};
 
 
 String DataTypeCustomSimpleAggregateFunction::getName() const
@@ -82,8 +82,11 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
         {
             const ASTLiteral * lit = parameters[i]->as<ASTLiteral>();
             if (!lit)
-                throw Exception("Parameters to aggregate functions must be literals",
-                                ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
+                throw Exception(
+                    ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
+                    "Parameters to aggregate functions must be literals. "
+                    "Got parameter '{}' for function '{}'",
+                    parameters[i]->formatForErrorMessage(), function_name);
 
             params_row[i] = lit->value;
         }

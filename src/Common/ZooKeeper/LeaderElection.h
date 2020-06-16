@@ -36,10 +36,15 @@ public:
       * It means that different participants of leader election have different identifiers
       *  and existence of more than one ephemeral node with same identifier indicates an error.
       */
-    LeaderElection(DB::BackgroundSchedulePool & pool_, const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
+    LeaderElection(
+        DB::BackgroundSchedulePool & pool_,
+        const std::string & path_,
+        ZooKeeper & zookeeper_,
+        LeadershipHandler handler_,
+        const std::string & identifier_)
         : pool(pool_), path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
         , log_name("LeaderElection (" + path + ")")
-        , log(&Logger::get(log_name))
+        , log(&Poco::Logger::get(log_name))
     {
         task = pool.createTask(log_name, [this] { threadFunction(); });
         createNode();
@@ -67,7 +72,7 @@ private:
     LeadershipHandler handler;
     std::string identifier;
     std::string log_name;
-    Logger * log;
+    Poco::Logger * log;
 
     EphemeralNodeHolderPtr node;
     std::string node_name;
@@ -121,7 +126,7 @@ private:
         {
             DB::tryLogCurrentException(log);
 
-            if (e.code == Coordination::ZSESSIONEXPIRED)
+            if (e.code == Coordination::Error::ZSESSIONEXPIRED)
                 return;
         }
         catch (...)

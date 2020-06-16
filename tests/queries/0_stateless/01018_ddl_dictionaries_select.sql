@@ -105,6 +105,19 @@ LAYOUT(HASHED());
 
 SELECT dictGetString('database_for_dict.dict3', 'some_column', toUInt64(12));
 
+-- dictGet with table name
+USE database_for_dict;
+SELECT dictGetString(dict3, 'some_column', toUInt64(12));
+SELECT dictGetString(database_for_dict.dict3, 'some_column', toUInt64(12));
+SELECT dictGetString(default.dict3, 'some_column', toUInt64(12)); -- {serverError 36}
+SELECT dictGet(dict3, 'some_column', toUInt64(12));
+SELECT dictGet(database_for_dict.dict3, 'some_column', toUInt64(12));
+SELECT dictGet(default.dict3, 'some_column', toUInt64(12)); -- {serverError 36}
+USE default;
+
+-- alias should be handled correctly
+SELECT 'database_for_dict.dict3' as n, dictGet(n, 'some_column', toUInt64(12));
+
 DROP TABLE database_for_dict.table_for_dict;
 
 SYSTEM RELOAD DICTIONARIES; -- {serverError 60}

@@ -89,7 +89,7 @@ bool DatabaseMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(const Context &, const FilterByNameFunction & filter_by_table_name)
 {
     Tables tables;
     std::lock_guard<std::mutex> lock(mutex);
@@ -103,12 +103,12 @@ DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(const FilterByNameFun
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables);
 }
 
-bool DatabaseMySQL::isTableExist(const String & name) const
+bool DatabaseMySQL::isTableExist(const String & name, const Context &) const
 {
-    return bool(tryGetTable(name));
+    return bool(tryGetTable(name, global_context));
 }
 
-StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name) const
+StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, const Context &) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -155,7 +155,7 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
     return create_table_query;
 }
 
-ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, bool throw_on_error) const
+ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -501,7 +501,7 @@ void DatabaseMySQL::createTable(const Context &, const String & table_name, cons
     /// XXX: hack
     /// In order to prevent users from broken the table structure by executing attach table database_name.table_name (...)
     /// we should compare the old and new create_query to make them completely consistent
-    const auto & origin_create_query = getCreateTableQuery(table_name);
+    const auto & origin_create_query = getCreateTableQuery(table_name, global_context);
     origin_create_query->as<ASTCreateQuery>()->attach = true;
 
     if (queryToString(origin_create_query) != queryToString(create_query))

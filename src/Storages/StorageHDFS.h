@@ -45,7 +45,7 @@ private:
     Context & context;
     String compression_method;
 
-    Logger * log = &Logger::get("StorageHDFS");
+    Poco::Logger * log = &Poco::Logger::get("StorageHDFS");
 };
 }
 

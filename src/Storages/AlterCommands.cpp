@@ -253,7 +253,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
-void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
+void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & context) const
 {
     if (type == ADD_COLUMN)
     {
@@ -313,30 +313,36 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
                 column.default_desc.expression = default_expression;
             }
         });
+
     }
     else if (type == MODIFY_ORDER_BY)
     {
-        if (!metadata.primary_key_ast && metadata.order_by_ast)
+        auto & sorting_key = metadata.sorting_key;
+        auto & primary_key = metadata.primary_key;
+        if (primary_key.definition_ast == nullptr && sorting_key.definition_ast != nullptr)
         {
-            /// Primary and sorting key become independent after this ALTER so we have to
-            /// save the old ORDER BY expression as the new primary key.
-            metadata.primary_key_ast = metadata.order_by_ast->clone();
+            /// Primary and sorting key become independent after this ALTER so
+            /// we have to save the old ORDER BY expression as the new primary
+            /// key.
+            primary_key = KeyDescription::getKeyFromAST(sorting_key.definition_ast, metadata.columns, context);
         }
 
-        metadata.order_by_ast = order_by;
+        /// Recalculate key with new order_by expression.
+        sorting_key.recalculateWithNewAST(order_by, metadata.columns, context);
     }
     else if (type == COMMENT_COLUMN)
     {
-        metadata.columns.modify(column_name, [&](ColumnDescription & column) { column.comment = *comment; });
+        metadata.columns.modify(column_name,
+            [&](ColumnDescription & column) { column.comment = *comment; });
     }
     else if (type == ADD_INDEX)
     {
         if (std::any_of(
-                metadata.indices.indices.cbegin(),
-                metadata.indices.indices.cend(),
-                [this](const ASTPtr & index_ast)
+                metadata.secondary_indices.cbegin(),
+                metadata.secondary_indices.cend(),
+                [this](const auto & index)
                 {
-                    return index_ast->as<ASTIndexDeclaration &>().name == index_name;
+                    return index.name == index_name;
                 }))
         {
             if (if_not_exists)
@@ -346,47 +352,47 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
                                 ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        auto insert_it = metadata.indices.indices.end();
+        auto insert_it = metadata.secondary_indices.end();
 
         if (!after_index_name.empty())
         {
             insert_it = std::find_if(
-                    metadata.indices.indices.begin(),
-                    metadata.indices.indices.end(),
-                    [this](const ASTPtr & index_ast)
+                    metadata.secondary_indices.begin(),
+                    metadata.secondary_indices.end(),
+                    [this](const auto & index)
                     {
-                        return index_ast->as<ASTIndexDeclaration &>().name == after_index_name;
+                        return index.name == after_index_name;
                     });
 
-            if (insert_it == metadata.indices.indices.end())
+            if (insert_it == metadata.secondary_indices.end())
                 throw Exception("Wrong index name. Cannot find index " + backQuote(after_index_name) + " to insert after.",
                         ErrorCodes::BAD_ARGUMENTS);
 
             ++insert_it;
         }
 
-        metadata.indices.indices.emplace(insert_it, std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl));
+        metadata.secondary_indices.emplace(insert_it, IndexDescription::getIndexFromAST(index_decl, metadata.columns, context));
     }
     else if (type == DROP_INDEX)
     {
         if (!partition && !clear)
         {
             auto erase_it = std::find_if(
-                    metadata.indices.indices.begin(),
-                    metadata.indices.indices.end(),
-                    [this](const ASTPtr & index_ast)
+                    metadata.secondary_indices.begin(),
+                    metadata.secondary_indices.end(),
+                    [this](const auto & index)
                     {
-                        return index_ast->as<ASTIndexDeclaration &>().name == index_name;
+                        return index.name == index_name;
                     });
 
-            if (erase_it == metadata.indices.indices.end())
+            if (erase_it == metadata.secondary_indices.end())
             {
                 if (if_exists)
                     return;
                 throw Exception("Wrong index name. Cannot find index " + backQuote(index_name) + " to drop.", ErrorCodes::BAD_ARGUMENTS);
             }
 
-            metadata.indices.indices.erase(erase_it);
+            metadata.secondary_indices.erase(erase_it);
         }
     }
     else if (type == ADD_CONSTRAINT)
@@ -430,15 +436,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
     }
     else if (type == MODIFY_TTL)
     {
-        metadata.ttl_for_table_ast = ttl;
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl, metadata.columns, context, metadata.primary_key);
     }
     else if (type == MODIFY_QUERY)
     {
-        metadata.select = select;
+        metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, context);
     }
     else if (type == MODIFY_SETTING)
     {
-        auto & settings_from_storage = metadata.settings_ast->as<ASTSetQuery &>().changes;
+        auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & change : settings_changes)
         {
             auto finder = [&change](const SettingChange & c) { return c.name == change.name; };
@@ -465,8 +471,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
                     rename_visitor.visit(column_to_modify.ttl);
             });
         }
-        if (metadata.ttl_for_table_ast)
-            rename_visitor.visit(metadata.ttl_for_table_ast);
+        if (metadata.table_ttl.definition_ast)
+            rename_visitor.visit(metadata.table_ttl.definition_ast);
+
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            metadata.table_ttl.definition_ast, metadata.columns, context, metadata.primary_key);
 
         for (auto & constraint : metadata.constraints.constraints)
             rename_visitor.visit(constraint);
@@ -594,7 +603,28 @@ bool AlterCommand::isCommentAlter() const
     return false;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(const StorageInMemoryMetadata & metadata) const
+bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
+{
+    if (type == MODIFY_TTL)
+        return true;
+
+    if (!ttl || type != MODIFY_COLUMN)
+        return false;
+
+    bool ttl_changed = true;
+    for (const auto & [name, ttl_ast] : metadata.columns.getColumnTTLs())
+    {
+        if (name == column_name && queryToString(*ttl) == queryToString(*ttl_ast))
+        {
+            ttl_changed = false;
+            break;
+        }
+    }
+
+    return ttl_changed;
+}
+
+std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, const Context & context) const
 {
     if (!isRequireMutationStage(metadata))
         return {};
@@ -637,6 +667,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(const S
     }
 
     result.ast = ast->clone();
+    apply(metadata, context);
     return result;
 }
 
@@ -675,7 +706,7 @@ String alterTypeToString(const AlterCommand::Type type)
     __builtin_unreachable();
 }
 
-void AlterCommands::apply(StorageInMemoryMetadata & metadata) const
+void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & context) const
 {
     if (!prepared)
         throw DB::Exception("Alter commands is not prepared. Cannot apply. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -683,7 +714,31 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata) const
     auto metadata_copy = metadata;
     for (const AlterCommand & command : *this)
         if (!command.ignore)
-            command.apply(metadata_copy);
+            command.apply(metadata_copy, context);
+
+    /// Changes in columns may lead to changes in keys expression.
+    metadata_copy.sorting_key.recalculateWithNewColumns(metadata_copy.columns, context);
+    if (metadata_copy.primary_key.definition_ast != nullptr)
+    {
+        metadata_copy.primary_key.recalculateWithNewColumns(metadata_copy.columns, context);
+    }
+    else
+    {
+        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.primary_key.definition_ast = nullptr;
+    }
+
+    /// Changes in columns may lead to changes in TTL expressions.
+    auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
+    for (const auto & [name, ast] : column_ttl_asts)
+    {
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, metadata_copy.columns, context, metadata_copy.primary_key);
+        metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
+    }
+
+    if (metadata_copy.table_ttl.definition_ast != nullptr)
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            metadata_copy.table_ttl.definition_ast, metadata_copy.columns, context, metadata_copy.primary_key);
 
     metadata = std::move(metadata_copy);
 }
@@ -733,6 +788,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
+    NameSet modified_columns, renamed_columns;
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -740,7 +796,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
         {
-            if (metadata.columns.has(column_name) || metadata.columns.hasNested(column_name))
+            if (all_columns.has(column_name) || all_columns.hasNested(column_name))
             {
                 if (!command.if_not_exists)
                     throw Exception{"Cannot add column " + backQuote(column_name) + ": column with this name already exists",
@@ -757,7 +813,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
-            if (!metadata.columns.has(column_name))
+            if (!all_columns.has(column_name))
             {
                 if (!command.if_exists)
                     throw Exception{"Wrong column name. Cannot find column " + backQuote(column_name) + " to modify",
@@ -765,18 +821,23 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 else
                     continue;
             }
+
+            if (renamed_columns.count(column_name))
+                throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
+                                ErrorCodes::NOT_IMPLEMENTED};
+            modified_columns.emplace(column_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (metadata.columns.has(command.column_name) || metadata.columns.hasNested(command.column_name))
+            if (all_columns.has(command.column_name) || all_columns.hasNested(command.column_name))
             {
-                for (const ColumnDescription & column : metadata.columns)
+                for (const ColumnDescription & column : all_columns)
                 {
                     const auto & default_expression = column.default_desc.expression;
                     if (default_expression)
                     {
                         ASTPtr query = default_expression->clone();
-                        auto syntax_result = SyntaxAnalyzer(context).analyze(query, metadata.columns.getAll());
+                        auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns.getAll());
                         const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
                         const auto required_columns = actions->getRequiredColumns();
 
@@ -786,6 +847,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                 ErrorCodes::ILLEGAL_COLUMN);
                     }
                 }
+                all_columns.remove(command.column_name);
             }
             else if (!command.if_exists)
                 throw Exception(
@@ -794,7 +856,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         }
         else if (command.type == AlterCommand::COMMENT_COLUMN)
         {
-            if (!metadata.columns.has(command.column_name))
+            if (!all_columns.has(command.column_name))
             {
                 if (!command.if_exists)
                     throw Exception{"Wrong column name. Cannot find column " + backQuote(command.column_name) + " to comment",
@@ -803,7 +865,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         }
         else if (command.type == AlterCommand::MODIFY_SETTING)
         {
-            if (metadata.settings_ast == nullptr)
+            if (metadata.settings_changes == nullptr)
                 throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)
@@ -842,6 +904,10 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 throw Exception{"Cannot rename to " + backQuote(command.rename_to) + ": column with this name already exists",
                                 ErrorCodes::DUPLICATE_COLUMN};
 
+            if (modified_columns.count(column_name))
+                throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
+                                ErrorCodes::NOT_IMPLEMENTED};
+
             String from_nested_table_name = Nested::extractTableName(command.column_name);
             String to_nested_table_name = Nested::extractTableName(command.rename_to);
             bool from_nested = from_nested_table_name != command.column_name;
@@ -855,6 +921,8 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
             else if (!from_nested && !to_nested)
             {
                 all_columns.rename(command.column_name, command.rename_to);
+                renamed_columns.emplace(command.column_name);
+                renamed_columns.emplace(command.rename_to);
             }
             else
             {
@@ -886,9 +954,9 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                     default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
                 }
             } /// if we change data type for column with default
-            else if (metadata.columns.has(column_name) && command.data_type)
+            else if (all_columns.has(column_name) && command.data_type)
             {
-                auto column_in_table = metadata.columns.get(column_name);
+                auto column_in_table = all_columns.get(column_name);
                 /// Column doesn't have a default, nothing to check
                 if (!column_in_table.default_desc.expression)
                     continue;
@@ -930,13 +998,35 @@ bool AlterCommands::isCommentAlter() const
     return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isCommentAlter(); });
 }
 
+static MutationCommand createMaterializeTTLCommand()
+{
+    MutationCommand command;
+    auto ast = std::make_shared<ASTAlterCommand>();
+    ast->type = ASTAlterCommand::MATERIALIZE_TTL;
+    command.type = MutationCommand::MATERIALIZE_TTL;
+    command.ast = std::move(ast);
+    return command;
+}
 
-MutationCommands AlterCommands::getMutationCommands(const StorageInMemoryMetadata & metadata) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, const Context & context) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)
-        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata); mutation_cmd)
+        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context); mutation_cmd)
             result.push_back(*mutation_cmd);
+
+    if (materialize_ttl)
+    {
+        for (const auto & alter_cmd : *this)
+        {
+            if (alter_cmd.isTTLAlter(metadata))
+            {
+                result.push_back(createMaterializeTTLCommand());
+                break;
+            }
+        }
+    }
+
     return result;
 }
 

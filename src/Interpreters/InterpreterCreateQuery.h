@@ -3,7 +3,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/IndicesDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Common/ThreadPool.h>
 #include <Access/AccessRightsElement.h>
