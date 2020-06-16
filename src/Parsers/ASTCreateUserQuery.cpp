@@ -65,7 +65,8 @@ namespace
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH " << authentication_type_name
                       << (settings.hilite ? IAST::hilite_none : "");
         if (password)
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " BY " << quoteString(*password);
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " BY " << (settings.hilite ? IAST::hilite_none : "")
+                << quoteString(*password);
     }
 
 

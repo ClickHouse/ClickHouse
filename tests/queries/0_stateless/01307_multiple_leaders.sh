@@ -22,8 +22,8 @@ function thread()
 }
 
 
-thread 0 1000 &
-thread 1 1000 &
+thread 0 200 &
+thread 1 200 &
 
 wait
 
