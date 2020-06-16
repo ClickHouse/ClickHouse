@@ -75,6 +75,8 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/QueryPlan/ReadFromStorageStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 
 
 namespace DB
@@ -708,23 +710,25 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
 
         if (expressions.prewhere_info)
         {
-            pipeline.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<FilterTransform>(
-                        header,
-                        expressions.prewhere_info->prewhere_actions,
-                        expressions.prewhere_info->prewhere_column_name,
-                        expressions.prewhere_info->remove_prewhere_column);
-            });
+            FilterStep prewhere_step(
+                    DataStream{.header = pipeline.getHeader()},
+                    expressions.prewhere_info->prewhere_actions,
+                    expressions.prewhere_info->prewhere_column_name,
+                    expressions.prewhere_info->remove_prewhere_column);
+
+            prewhere_step.setStepDescription("PREWHERE");
+            prewhere_step.transformPipeline(pipeline);
 
             // To remove additional columns in dry run
             // For example, sample column which can be removed in this stage
             if (expressions.prewhere_info->remove_columns_actions)
             {
-                pipeline.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<ExpressionTransform>(header, expressions.prewhere_info->remove_columns_actions);
-                });
+                ExpressionStep remove_columns(
+                        DataStream{.header = pipeline.getHeader()},
+                        expressions.prewhere_info->remove_columns_actions);
+
+                remove_columns.setStepDescription("Remove unnecessary columns after PREWHERE");
+                remove_columns.transformPipeline(pipeline);
             }
         }
     }
@@ -1329,6 +1333,8 @@ void InterpreterSelectQuery::executeFetchColumns(
                 table_lock, options, storage,
                 required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
 
+        read_step.setStepDescription("Read from " + storage->getName());
+
         pipeline = std::move(*read_step.updatePipeline({}));
     }
     else
@@ -1337,10 +1343,9 @@ void InterpreterSelectQuery::executeFetchColumns(
     /// Aliases in table declaration.
     if (processing_stage == QueryProcessingStage::FetchColumns && alias_actions)
     {
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<ExpressionTransform>(header, alias_actions);
-        });
+        ExpressionStep table_aliases(DataStream{.header = pipeline.getHeader()}, alias_actions);
+        table_aliases.setStepDescription("Add table aliases");
+        table_aliases.transformPipeline(pipeline);
     }
 }
 

@@ -46,9 +46,16 @@ public:
     bool hasOutputStream() const { return output_stream.has_value(); }
     const DataStream & getOutputStream() const;
 
+    /// Methods to describe what this step is needed for.
+    const std::string & getStepDescription() const { return step_description; }
+    void setStepDescription(std::string description) { step_description = std::move(description); }
+
 protected:
     DataStreams input_streams;
     std::optional<DataStream> output_stream;
+
+    /// Text description about what current step does.
+    std::string step_description;
 };
 
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
