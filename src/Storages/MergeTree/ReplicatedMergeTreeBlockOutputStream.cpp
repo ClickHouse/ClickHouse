@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int NO_ACTIVE_REPLICAS;
     extern const int DUPLICATE_DATA_PART;
+    extern const int LOGICAL_ERROR;
 }
 
 
