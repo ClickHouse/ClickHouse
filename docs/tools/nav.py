@@ -1,4 +1,5 @@
 import collections
+import datetime
 import logging
 import os
 
@@ -19,7 +20,8 @@ def build_nav_entry(root, args):
         return None, None, None
     result_items = []
     index_meta, index_content = util.read_md_file(os.path.join(root, 'index.md'))
-    current_title = index_meta.get('toc_folder_title', index_meta.get('toc_title', find_first_header(index_content)))
+    current_title = index_meta.get('toc_folder_title', index_meta.get('toc_title'))
+    current_title = current_title or index_meta.get('title', find_first_header(index_content))
     for filename in os.listdir(root):
         path = os.path.join(root, filename)
         if os.path.isdir(path):
@@ -47,7 +49,7 @@ def build_nav_entry(root, args):
     return index_meta.get('toc_priority', 10000), current_title, result
 
 
-def build_nav(lang, args):
+def build_docs_nav(lang, args):
     docs_dir = os.path.join(args.docs_dir, lang)
     _, _, nav = build_nav_entry(docs_dir, args)
     result = []
@@ -64,8 +66,48 @@ def build_nav(lang, args):
         key = list(result[0].keys())[0]
         result[0][key][index_key] = 'index.md'
         result[0][key].move_to_end(index_key, last=False)
-    print('result', result)
     return result
+
+
+def build_blog_nav(lang, args):
+    blog_dir = os.path.join(args.blog_dir, lang)
+    years = sorted(os.listdir(blog_dir), reverse=True)
+    result_nav = [{'hidden': 'index.md'}]
+    post_meta = collections.OrderedDict()
+    for year in years:
+        year_dir = os.path.join(blog_dir, year)
+        if not os.path.isdir(year_dir):
+            continue
+        result_nav.append({year: collections.OrderedDict()})
+        posts = []
+        post_meta_items = []
+        for post in os.listdir(year_dir):
+            meta, _ = util.read_md_file(os.path.join(year_dir, post))
+            post_date = meta['date']
+            post_title = meta['title']
+            if datetime.date.fromisoformat(post_date) > datetime.date.today():
+                continue
+            posts.append(
+                (post_date, post_title, os.path.join(year, post),)
+            )
+            if post_title in post_meta:
+                raise RuntimeError(f'Duplicate post title: {post_title}')
+            if not post_date.startswith(f'{year}-'):
+                raise RuntimeError(f'Post date {post_date} doesn\'t match the folder year {year}: {post_title}')
+            post_url_part = post.replace('.md', '')
+            post_meta_items.append((post_date, {
+                'date': post_date,
+                'title': post_title,
+                'image': meta.get('image'),
+                'url': f'/blog/{lang}/{year}/{post_url_part}/'
+            },))
+        for _, title, path in sorted(posts, reverse=True):
+            result_nav[-1][year][title] = path
+        for _, post_meta_item in sorted(post_meta_items,
+                                        reverse=True,
+                                        key=lambda item: item[0]):
+            post_meta[post_meta_item['title']] = post_meta_item
+    return result_nav, post_meta
 
 
 def _custom_get_navigation(files, config):
