@@ -235,7 +235,7 @@ function build_log_column_definitions
 {
 # FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
 # absolutely atrocious way. This should be done by the file() function itself.
-for x in {right,left}-{addresses,{query,query-thread,trace,metric}-log}.tsv
+for x in {right,left}-{addresses,{query,query-thread,trace,{async-,}metric}-log}.tsv
 do
     paste -d' ' \
         <(sed -n '1{s/\t/\n/g;p;q}' "$x" | sed 's/\(^.*$\)/"\1"/') \
