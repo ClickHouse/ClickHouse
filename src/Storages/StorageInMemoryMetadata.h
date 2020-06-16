@@ -106,6 +106,8 @@ struct StorageInMemoryMetadata
     /// Returns columns, which will be needed to calculate dependencies (skip
     /// indices, TTL expressions) if we update @updated_columns set of columns.
     ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
+
+    Block getSampleBlockNonMaterialized() const; /// ordinary.
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;

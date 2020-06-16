@@ -642,6 +642,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
         LOG_ERROR(log, "Destination table {} doesn't exist. Block of data is discarded.", destination_id.getNameForLogs());
         return;
     }
+    auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
 
     auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
@@ -651,7 +652,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     /** We will insert columns that are the intersection set of columns of the buffer table and the subordinate table.
       * This will support some of the cases (but not all) when the table structure does not match.
       */
-    Block structure_of_destination_table = allow_materialized ? table->getSampleBlock() : table->getSampleBlockNonMaterialized();
+    Block structure_of_destination_table
+        = allow_materialized ? table->getSampleBlock() : destination_metadata_snapshot->getSampleBlockNonMaterialized();
     Block block_to_write;
     for (size_t i : ext::range(0, structure_of_destination_table.columns()))
     {

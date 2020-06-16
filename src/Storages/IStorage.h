@@ -160,7 +160,6 @@ public: /// thread-unsafe part. lockStructure must be acquired
 
     Block getSampleBlock() const; /// ordinary + materialized.
     Block getSampleBlockWithVirtuals() const; /// ordinary + materialized + virtuals.
-    Block getSampleBlockNonMaterialized() const; /// ordinary.
     Block getSampleBlockForColumns(const Names & column_names) const; /// ordinary + materialized + aliases + virtuals.
 
     /// Verify that all the requested names are in the table and are set correctly:

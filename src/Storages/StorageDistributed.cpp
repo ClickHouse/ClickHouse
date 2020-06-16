@@ -511,7 +511,7 @@ Pipes StorageDistributed::read(
 }
 
 
-BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
+BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
     auto cluster = getCluster();
     const auto & settings = context.getSettingsRef();
@@ -536,7 +536,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        context, *this, createInsertToRemoteTableQuery(remote_database, remote_table, getSampleBlockNonMaterialized()), cluster,
+        context, *this, createInsertToRemoteTableQuery(remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()), cluster,
         insert_sync, timeout);
 }
 
