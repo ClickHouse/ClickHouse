@@ -75,11 +75,7 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls",
         Poco::NumberFormatter::format(use_nulls));
 
-    ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, {},
-        ConnectionTimeouts(
-            context.getSettingsRef().http_connection_timeout,
-            context.getSettingsRef().http_send_timeout,
-            context.getSettingsRef().http_receive_timeout));
+    ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
 
     std::string columns_info;
     readStringBinary(columns_info, buf);
