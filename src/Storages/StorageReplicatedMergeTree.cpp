@@ -160,7 +160,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     bool attach,
     const StorageID & table_id_,
     const String & relative_data_path_,
-    const StorageInMemoryMetadata & metadata,
+    const StorageInMemoryMetadata & metadata_,
     Context & context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
@@ -168,7 +168,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     bool has_force_restore_data_flag)
     : MergeTreeData(table_id_,
                     relative_data_path_,
-                    metadata,
+                    metadata_,
                     context_,
                     date_column_name,
                     merging_params_,
@@ -244,6 +244,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         LOG_WARNING(log, "No metadata in ZooKeeper: table will be in readonly mode.");
         is_readonly = true;
+        has_metadata_in_zookeeper = false;
         return;
     }
 
@@ -482,7 +483,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists()
         LOG_DEBUG(log, "Creating table {}", zookeeper_path);
 
         /// We write metadata of table so that the replicas can check table parameters with them.
-        String metadata = ReplicatedMergeTreeTableMetadata(*this).toString();
+        String metadata_str = ReplicatedMergeTreeTableMetadata(*this).toString();
 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
@@ -491,7 +492,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists()
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/dropped", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/dropped", -1));
 
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata,
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata_str,
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/columns", getColumns().toString(),
             zkutil::CreateMode::Persistent));
@@ -526,7 +527,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists()
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/is_lost", "0",
             zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata", metadata,
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata", metadata_str,
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", getColumns().toString(),
             zkutil::CreateMode::Persistent));
@@ -620,9 +621,14 @@ void StorageReplicatedMergeTree::createReplica()
 
 void StorageReplicatedMergeTree::drop()
 {
+    /// There is also the case when user has configured ClickHouse to wrong ZooKeeper cluster,
+    /// in this case, has_metadata_in_zookeeper = false, and we also permit to drop the table.
+
+    if (has_metadata_in_zookeeper)
     {
         auto zookeeper = tryGetZooKeeper();
 
+        /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (is_readonly || !zookeeper)
             throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
@@ -745,9 +751,18 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
 
 void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    if (new_columns != metadata.columns)
-        metadata.columns = new_columns;
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    if (new_columns != new_metadata.columns)
+    {
+        new_metadata.columns = new_columns;
+
+        new_metadata.column_ttls_by_name.clear();
+        for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
+        {
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, global_context, new_metadata.primary_key);
+            new_metadata.column_ttls_by_name[name] = new_ttl_entry;
+        }
+    }
 
     if (!metadata_diff.empty())
     {
@@ -756,43 +771,51 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
             ParserNotEmptyExpressionList parser(false);
             auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
+            ASTPtr order_by_ast;
             if (new_sorting_key_expr_list->children.size() == 1)
-                metadata.order_by_ast = new_sorting_key_expr_list->children[0];
+                order_by_ast = new_sorting_key_expr_list->children[0];
             else
             {
                 auto tuple = makeASTFunction("tuple");
                 tuple->arguments->children = new_sorting_key_expr_list->children;
-                metadata.order_by_ast = tuple;
+                order_by_ast = tuple;
             }
+            auto & sorting_key = new_metadata.sorting_key;
+            auto & primary_key = new_metadata.primary_key;
 
-            if (!isPrimaryKeyDefined())
+            sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, global_context);
+
+            if (primary_key.definition_ast == nullptr)
             {
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
-                metadata.primary_key_ast = getSortingKeyAST()->clone();
+                auto old_sorting_key_ast = getSortingKey().definition_ast;
+                primary_key = KeyDescription::getKeyFromAST(
+                    old_sorting_key_ast, new_metadata.columns, global_context);
             }
         }
 
         if (metadata_diff.skip_indices_changed)
-            metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, global_context);
+            new_metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, global_context);
 
         if (metadata_diff.constraints_changed)
-            metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
+            new_metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
 
         if (metadata_diff.ttl_table_changed)
         {
             ParserTTLExpressionList parser;
-            metadata.ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            auto ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl_for_table_ast, new_metadata.columns, global_context, new_metadata.primary_key);
         }
     }
 
     auto table_id = getStorageID();
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id, new_metadata);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    setProperties(metadata);
-    setTTLExpressions(new_columns, metadata.ttl_for_table_ast);
+    setProperties(new_metadata);
+    setTTLExpressions(new_metadata);
 }
 
 
@@ -3622,13 +3645,13 @@ void StorageReplicatedMergeTree::alter(
                 table_lock_holder, query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
-        StorageInMemoryMetadata metadata = getInMemoryMetadata();
-        params.apply(metadata, query_context);
+        StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
+        params.apply(future_metadata, query_context);
 
 
-        changeSettings(metadata.settings_ast, table_lock_holder);
+        changeSettings(future_metadata.settings_changes, table_lock_holder);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
         return;
     }
 
@@ -3661,11 +3684,11 @@ void StorageReplicatedMergeTree::alter(
         params.apply(future_metadata, query_context);
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this);
-        if (ast_to_str(future_metadata.order_by_ast) != ast_to_str(current_metadata.order_by_ast))
-            future_metadata_in_zk.sorting_key = serializeAST(*extractKeyExpressionList(future_metadata.order_by_ast));
+        if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata.sorting_key.definition_ast))
+            future_metadata_in_zk.sorting_key = serializeAST(*future_metadata.sorting_key.expression_list_ast);
 
-        if (ast_to_str(future_metadata.ttl_for_table_ast) != ast_to_str(current_metadata.ttl_for_table_ast))
-            future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.ttl_for_table_ast);
+        if (ast_to_str(future_metadata.table_ttl.definition_ast) != ast_to_str(current_metadata.table_ttl.definition_ast))
+            future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.table_ttl.definition_ast);
 
         String new_indices_str = future_metadata.secondary_indices.toString();
         if (new_indices_str != current_metadata.secondary_indices.toString())
@@ -3683,13 +3706,13 @@ void StorageReplicatedMergeTree::alter(
         String new_columns_str = future_metadata.columns.toString();
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/columns", new_columns_str, -1));
 
-        if (ast_to_str(current_metadata.settings_ast) != ast_to_str(future_metadata.settings_ast))
+        if (ast_to_str(current_metadata.settings_changes) != ast_to_str(future_metadata.settings_changes))
         {
             lockStructureExclusively(
                     table_lock_holder, query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
             /// Just change settings
-            current_metadata.settings_ast = future_metadata.settings_ast;
-            changeSettings(current_metadata.settings_ast, table_lock_holder);
+            current_metadata.settings_changes = future_metadata.settings_changes;
+            changeSettings(current_metadata.settings_changes, table_lock_holder);
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, current_metadata);
         }
 
@@ -4032,8 +4055,20 @@ void StorageReplicatedMergeTree::rename(const String & new_path_to_table_data, c
     MergeTreeData::rename(new_path_to_table_data, new_table_id);
 
     /// Update table name in zookeeper
-    auto zookeeper = getZooKeeper();
-    zookeeper->set(replica_path + "/host", getReplicatedMergeTreeAddress().toString());
+    if (!is_readonly)
+    {
+        /// We don't do it for readonly tables, because it will be updated on next table startup.
+        /// It is also Ok to skip ZK error for the same reason.
+        try
+        {
+            auto zookeeper = getZooKeeper();
+            zookeeper->set(replica_path + "/host", getReplicatedMergeTreeAddress().toString());
+        }
+        catch (Coordination::Exception & e)
+        {
+            LOG_WARNING(log, "Cannot update the value of 'host' node (replica address) in ZooKeeper: {}", e.displayText());
+        }
+    }
 
     /// TODO: You can update names of loggers.
 }
@@ -5625,9 +5660,16 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
 
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeper());
-    /// This is significant, because the execution of this task could be delayed at BackgroundPool.
-    /// And we force it to be executed.
-    queue_task_handle->signalReadyToRun();
+
+    {
+        auto lock = queue.lockQueue();
+        if (!queue_task_handle)
+            return false;
+
+        /// This is significant, because the execution of this task could be delayed at BackgroundPool.
+        /// And we force it to be executed.
+        queue_task_handle->signalReadyToRun();
+    }
 
     Poco::Event target_size_event;
     auto callback = [&target_size_event, queue_size] (size_t new_queue_size)

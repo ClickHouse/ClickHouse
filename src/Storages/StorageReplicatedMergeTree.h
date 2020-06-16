@@ -210,6 +210,8 @@ private:
 
     /// If true, the table is offline and can not be written to it.
     std::atomic_bool is_readonly {false};
+    /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
+    bool has_metadata_in_zookeeper = true;
 
     String zookeeper_path;
     String replica_name;
@@ -548,7 +550,7 @@ protected:
         bool attach,
         const StorageID & table_id_,
         const String & relative_data_path_,
-        const StorageInMemoryMetadata & metadata,
+        const StorageInMemoryMetadata & metadata_,
         Context & context_,
         const String & date_column_name,
         const MergingParams & merging_params_,
