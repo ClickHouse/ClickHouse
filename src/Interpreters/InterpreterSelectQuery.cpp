@@ -77,6 +77,8 @@
 #include <Processors/QueryPlan/ReadFromStorageStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 
 
 namespace DB
@@ -706,7 +708,8 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
 
     if (options.only_analyze)
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(source_header)));
+        ReadNothingStep read_nothing(DataStream{.header = source_header});
+        read_nothing.initializePipeline(pipeline);
 
         if (expressions.prewhere_info)
         {
@@ -736,11 +739,13 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
     {
         if (prepared_input)
         {
-            pipeline.init(Pipe(std::make_shared<SourceFromInputStream>(prepared_input)));
+            ReadFromPreparedSource prepared_source_step(Pipe(std::make_shared<SourceFromInputStream>(prepared_input)));
+            prepared_source_step.initializePipeline(pipeline);
         }
         else if (prepared_pipe)
         {
-            pipeline.init(std::move(*prepared_pipe));
+            ReadFromPreparedSource prepared_source_step(std::move(*prepared_pipe));
+            prepared_source_step.initializePipeline(pipeline);
         }
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&
@@ -1050,7 +1055,9 @@ void InterpreterSelectQuery::executeFetchColumns(
                 {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc.parameters), desc.column_name}};
 
             auto istream = std::make_shared<OneBlockInputStream>(block_with_count);
-            pipeline.init(Pipe(std::make_shared<SourceFromInputStream>(istream)));
+            ReadFromPreparedSource prepared_count(Pipe(std::make_shared<SourceFromInputStream>(istream)));
+            prepared_count.setStepDescription("Optimized trivial count");
+            prepared_count.initializePipeline(pipeline);
             from_stage = QueryProcessingStage::WithMergeableState;
             analysis_result.first_stage = false;
             return;
