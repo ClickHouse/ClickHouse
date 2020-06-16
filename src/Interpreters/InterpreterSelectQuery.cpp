@@ -81,6 +81,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/PartialSortingStep.h>
 #include <Processors/QueryPlan/MergeSortingStep.h>
+#include <Processors/QueryPlan/MergingSortedStep.h>
 
 
 namespace DB
@@ -955,7 +956,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
                   */
 
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
-                    executeMergeSorted(pipeline);
+                    executeMergeSorted(pipeline, "before ORDER BY");
                 else    /// Otherwise, just sort.
                     executeOrder(pipeline, query_info.input_order_info);
             }
@@ -1716,36 +1717,30 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputOrderIn
     merge_sorting_step.transformPipeline(pipeline);
 
     /// If there are several streams, we merge them into one
-    executeMergeSorted(pipeline, output_order_descr, limit);
+    executeMergeSorted(pipeline, output_order_descr, limit, "before ORDER BY");
 }
 
 
-void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline)
+void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const std::string & description)
 {
     auto & query = getSelectQuery();
     SortDescription order_descr = getSortDescription(query, *context);
     UInt64 limit = getLimitForSorting(query, *context);
 
-    executeMergeSorted(pipeline, order_descr, limit);
+    executeMergeSorted(pipeline, order_descr, limit, description);
 }
 
-void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit)
+void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit, const std::string & description)
 {
-    /// If there are several streams, then we merge them into one
-    if (pipeline.getNumStreams() > 1)
-    {
-        const Settings & settings = context->getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
 
-        auto transform = std::make_shared<MergingSortedTransform>(
-            pipeline.getHeader(),
-            pipeline.getNumStreams(),
+    MergingSortedStep merging_sorted(
+            DataStream{.header = pipeline.getHeader()},
             sort_description,
             settings.max_block_size, limit);
 
-        pipeline.addPipe({ std::move(transform) });
-
-        pipeline.enableQuotaForCurrentStreams();
-    }
+    merging_sorted.setStepDescription("Merge sorted streams " + description);
+    merging_sorted.transformPipeline(pipeline);
 }
 
 
@@ -1955,7 +1950,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const SubqueriesForSets & subqueries_for_sets)
 {
     if (query_info.input_order_info)
-        executeMergeSorted(pipeline, query_info.input_order_info->order_key_prefix_descr, 0);
+        executeMergeSorted(pipeline, query_info.input_order_info->order_key_prefix_descr, 0, "before creating sets for subqueries and joins");
 
     const Settings & settings = context->getSettingsRef();
 

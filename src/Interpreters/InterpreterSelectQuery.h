@@ -123,7 +123,7 @@ private:
     void executeOrder(QueryPipeline & pipeline, InputOrderInfoPtr sorting_info);
     void executeOrderOptimized(QueryPipeline & pipeline, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
     void executeWithFill(QueryPipeline & pipeline);
-    void executeMergeSorted(QueryPipeline & pipeline);
+    void executeMergeSorted(QueryPipeline & pipeline, const std::string & description);
     void executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset);
     void executeLimitBy(QueryPipeline & pipeline);
     void executeLimit(QueryPipeline & pipeline);
@@ -132,7 +132,7 @@ private:
     void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(QueryPipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
-    void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
+    void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit, const std::string & description);
 
     String generateFilterActions(
         ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
