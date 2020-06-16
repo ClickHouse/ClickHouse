@@ -1,3 +1,4 @@
+#pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 namespace DB
