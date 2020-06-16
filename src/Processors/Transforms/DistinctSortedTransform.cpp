@@ -139,7 +139,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
     cur_block_rows = 0;
 
     /// Stop reading if we already reach the limit.
-    if (limit_hint && data.getTotalRowCount() >= limit_hint)
+    if (limit_hint && total_rows >= limit_hint)
     {
         stopReading();
         return;
@@ -175,7 +175,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
         if (key_begin != key_end)
         {
             executeOnInterval(other_columns, filter, key_begin, key_end);
-            if (!set_size_limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+            if (!set_size_limits.check(total_rows, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
                 return;
         }
         low = key_begin = key_end;
