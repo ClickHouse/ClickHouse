@@ -21,6 +21,7 @@
 #include <Interpreters/PartLog.h>
 #include <Disks/StoragePolicy.h>
 #include <Interpreters/Aggregator.h>
+#include <Storages/extractKeyExpressionList.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -509,6 +510,13 @@ public:
     void reportBrokenPart(const String & name) const
     {
         broken_part_callback(name);
+    }
+
+    /// TODO (alesap) Duplicate method required for compatibility.
+    /// Must be removed.
+    static ASTPtr extractKeyExpressionList(const ASTPtr & node)
+    {
+        return DB::extractKeyExpressionList(node);
     }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
