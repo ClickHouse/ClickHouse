@@ -110,6 +110,9 @@ while [[ $($CLICKHOUSE_CLIENT --query "select * from system.mutations where tabl
         break
     fi
     sleep 1
+    for i in `seq $REPLICAS`; do
+        $CLICKHOUSE_CLIENT --query "ATTACH TABLE concurrent_mutate_mt_$i" 2> /dev/null
+    done
     counter=$(($counter + 1))
 done
 
