@@ -13,6 +13,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <limits>
+#include <cmath>
 
 #include <type_traits>
 
@@ -189,7 +190,7 @@ struct AggregateFunctionWelchTTestData final
 
         //check if abs of t is greater than table[dof]
         t = abs(t);
-        if (t > CriticalValuesTable[table][i_dof])
+        if (t >= CriticalValuesTable[table][i_dof])
         {
             return static_cast<UInt8>(1);
             //in this case we reject the null hypothesis
@@ -284,7 +285,7 @@ public:
         size_t size_x = this->data(place).get_size_x();
         size_t size_y = this->data(place).get_size_y();
 
-        if(size_x < 2 || size_y < 2)
+        if( size_x < 2 || size_y < 2)
         {
             throw Exception("Aggregate function " + getName() + " requires samples to be of size > 1", ErrorCodes::BAD_ARGUMENTS);
         }
