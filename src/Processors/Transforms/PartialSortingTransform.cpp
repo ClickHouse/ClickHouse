@@ -123,7 +123,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
     sortBlock(block, description, limit);
 
     /// Check if we can use this block for optimization.
-    if (1500 <= limit && limit <= block.rows())
+    if (min_limit_for_partial_sort_optimization <= limit && limit <= block.rows())
     {
         bool update_threshold_block = threshold_block_columns.empty();
         if (!update_threshold_block)
