@@ -26,9 +26,11 @@ public:
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & /* metadata_snapshot */) const override
     {
-        return getTargetTable()->mayBenefitFromIndexForIn(left_in_operand, query_context);
+        auto target_table = getTargetTable();
+        auto metadata_snapshot = target_table->getInMemoryMetadataPtr();
+        return target_table->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;

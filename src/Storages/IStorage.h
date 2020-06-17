@@ -140,10 +140,6 @@ public:
 public: /// thread-unsafe part. lockStructure must be acquired
 
     const ColumnsDescription & getColumns() const; /// returns combined set of columns
-    const IndicesDescription & getSecondaryIndices() const;
-    /// Has at least one non primary index
-    bool hasSecondaryIndices() const;
-
 
     /// Storage settings
     ASTPtr getSettingsChanges() const;
@@ -413,7 +409,7 @@ public:
     virtual bool supportsIndexForIn() const { return false; }
 
     /// Provides a hint that the storage engine may evaluate the IN-condition by using an index.
-    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, const Context & /* query_context */) const { return false; }
+    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, const Context & /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
 
     /// Checks validity of the data
     virtual CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) { throw Exception("Check query is not supported for " + getName() + " storage", ErrorCodes::NOT_IMPLEMENTED); }

@@ -294,8 +294,8 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
 
 
-    const ColumnsDescription & columns_desc = storage->getColumns();
-    const IndicesDescription & indices_desc = storage->getSecondaryIndices();
+    const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
+    const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     NameSet updated_columns;

@@ -35,9 +35,10 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
+    bool mayBenefitFromIndexForIn(
+        const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & metadata_snapshot) const override
     {
-        return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
+        return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
 
     NamesAndTypesList getVirtuals() const override

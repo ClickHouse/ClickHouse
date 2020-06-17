@@ -37,17 +37,6 @@ const ColumnsDescription & IStorage::getColumns() const
     return metadata->columns;
 }
 
-const IndicesDescription & IStorage::getSecondaryIndices() const
-{
-    return metadata->secondary_indices;
-}
-
-bool IStorage::hasSecondaryIndices() const
-{
-    return !metadata->secondary_indices.empty();
-}
-
-
 namespace
 {
 #if !defined(ARCADIA_BUILD)

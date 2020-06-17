@@ -84,7 +84,7 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
 

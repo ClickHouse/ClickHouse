@@ -350,7 +350,8 @@ public:
     bool supportsSettings() const override { return true; }
     NamesAndTypesList getVirtuals() const override;
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &) const override;
+    bool
+    mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &, const StorageMetadataPtr & metadata_snapshot) const override;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -643,8 +644,8 @@ public:
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
-    ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression() const;
-    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression() const;
+    ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
+    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
 
     std::optional<TTLDescription> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 

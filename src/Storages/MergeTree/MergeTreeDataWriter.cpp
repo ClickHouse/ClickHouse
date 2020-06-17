@@ -262,8 +262,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     new_data_part->volume->getDisk()->createDirectories(full_path);
 
     /// If we need to calculate some columns to sort.
-    if (data.hasSortingKey() || data.hasSecondaryIndices())
-        data.getSortingKeyAndSkipIndicesExpression()->execute(block);
+    if (data.hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
+        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot)->execute(block);
 
     Names sort_columns = data.getSortingKeyColumns();
     SortDescription sort_description;
@@ -302,7 +302,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(data.getSecondaryIndices()), compression_codec);
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
