@@ -163,6 +163,7 @@ ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_
 
 bool isStorageTouchedByMutations(
     StoragePtr storage,
+    const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     Context context_copy)
 {
@@ -183,7 +184,7 @@ bool isStorageTouchedByMutations(
     /// Interpreter must be alive, when we use result of execute() method.
     /// For some reason it may copy context and and give it into ExpressionBlockInputStream
     /// after that we will use context from destroyed stack frame in our stream.
-    InterpreterSelectQuery interpreter(select_query, context_copy, storage, SelectQueryOptions().ignoreLimits());
+    InterpreterSelectQuery interpreter(select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits());
     BlockInputStreamPtr in = interpreter.execute().getInputStream();
 
     Block block = in->read();
@@ -200,18 +201,19 @@ bool isStorageTouchedByMutations(
 
 MutationsInterpreter::MutationsInterpreter(
     StoragePtr storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
     MutationCommands commands_,
     const Context & context_,
     bool can_execute_)
     : storage(std::move(storage_))
-    , metadata_snapshot(storage->getInMemoryMetadataPtr())
+    , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
     , context(context_)
     , can_execute(can_execute_)
 {
     mutation_ast = prepare(!can_execute);
     SelectQueryOptions limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
-    select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, limits);
+    select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot_, limits);
 }
 
 static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot)
@@ -504,7 +506,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
-                InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
+                InterpreterSelectQuery interpreter{select_query, context, storage, metadata_snapshot, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
 
                 auto first_stage_header = interpreter.getSampleBlock();
                 auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
