@@ -1,4 +1,4 @@
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
 
 
@@ -20,7 +20,7 @@ namespace
     }
 }
 
-void ASTExtendedRoleSet::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     if (empty())
     {
@@ -74,7 +74,7 @@ void ASTExtendedRoleSet::formatImpl(const FormatSettings & settings, FormatState
 }
 
 
-void ASTExtendedRoleSet::replaceCurrentUserTagWithName(const String & current_user_name)
+void ASTRolesOrUsersSet::replaceCurrentUserTagWithName(const String & current_user_name)
 {
     if (current_user)
     {
