@@ -226,7 +226,6 @@ void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & c
         sentry_value_t threads = sentry_value_new_object();
         sentry_value_set_by_key(threads, "values", values);
 
-
         sentry_value_set_by_key(event, "threads", threads);
 
         LOG_INFO(logger, "Sending crash report");
