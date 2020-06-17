@@ -32,7 +32,6 @@ protected:
     static constexpr size_t prefix_size = sizeof(Data);
     AggregateFunctionPtr nested_func;
     size_t num_arguments;
-    
 
     AggregateDataPtr getNestedPlace(AggregateDataPtr place) const noexcept
     {
@@ -103,43 +102,37 @@ public:
             AggregateFunctionDistinctSingleNumericData<T>,
             AggregateFunctionDistinctSingleNumericImpl<T>>(nested, arguments) {}
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & vec = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
-        if (this->data(place).value.insert(vec[row_num]).second)
-            this->nested_func->add(this->getNestedPlace(place), columns, row_num, arena);
+        this->data(place).value.insert(vec[row_num]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        auto & cur_set = this->data(place).value;
-        auto & rhs_set = this->data(rhs).value;
-
-        auto arguments = this->argument_types[0]->createColumn();
-        for (auto & elem : rhs_set)
-            if (cur_set.insert(elem.getValue()).second)
-                arguments->insert(elem.getValue());
-
-        const auto * arguments_ptr = arguments.get();
-        if (!arguments->empty())
-            this->nested_func->addBatchSinglePlace(arguments->size(), this->getNestedPlace(place), &arguments_ptr, arena);
+        this->data(place).value.merge(this->data(rhs).value);
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         this->data(place).value.write(buf);
-        this->nested_func->serialize(this->getNestedPlace(place), buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).value.read(buf);
-        this->nested_func->deserialize(this->getNestedPlace(place), buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
     {
-        this->nested_func->insertResultInto(this->getNestedPlace(place), to);
+        const auto & set = this->data(place).value;
+        auto arguments = this->argument_types[0]->createColumn();
+        for (const auto & elem : set)
+            arguments->insert(elem.getValue());
+
+        const auto * arguments_ptr = arguments.get();
+        this->nested_func->addBatchSinglePlace(arguments->size(), this->getNestedPlace(place), &arguments_ptr, arena);
+        this->nested_func->insertResultInto(this->getNestedPlace(place), to, arena);
     }
 };
 
@@ -170,38 +163,25 @@ public:
         bool inserted;
         auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
         set.emplace(key_holder, it, inserted);
-        if (inserted)
-            this->nested_func->add(this->getNestedPlace(place), columns, row_num, arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_set = this->data(place).value;
-        auto & rhs_set = this->data(rhs).value;
+        const auto & rhs_set = this->data(rhs).value;
 
         Data::Set::LookupResult it;
         bool inserted;
-        auto arguments = this->argument_types[0]->createColumn();
-        for (auto & elem : rhs_set)
-        {
+        for (const auto & elem : rhs_set)
             cur_set.emplace(ArenaKeyHolder{elem.getValue(), *arena}, it, inserted);
-            if (inserted)
-                deserializeAndInsert<is_plain_column>(elem.getValue(), *arguments);
-        }
-
-        const auto * arguments_ptr = arguments.get();
-        if (!arguments->empty())
-            this->nested_func->addBatchSinglePlace(arguments->size(), this->getNestedPlace(place), &arguments_ptr, arena);
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
-        auto & set = this->data(place).value;
+        const auto & set = this->data(place).value;
         writeVarUInt(set.size(), buf);
         for (const auto & elem : set)
             writeStringBinary(elem.getValue(), buf);
-
-        this->nested_func->serialize(this->getNestedPlace(place), buf);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
@@ -211,13 +191,18 @@ public:
         readVarUInt(size, buf);
         for (size_t i = 0; i < size; ++i)
             set.insert(readStringBinaryInto(*arena, buf));
-
-        this->nested_func->deserialize(this->getNestedPlace(place), buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
     {
-        this->nested_func->insertResultInto(this->getNestedPlace(place), to);
+        const auto & set = this->data(place).value;
+        auto arguments = this->argument_types[0]->createColumn();
+        for (const auto & elem : set)
+            deserializeAndInsert<is_plain_column>(elem.getValue(), *arguments);
+
+        const auto * arguments_ptr = arguments.get();
+        this->nested_func->addBatchSinglePlace(arguments->size(), this->getNestedPlace(place), &arguments_ptr, arena);
+        this->nested_func->insertResultInto(this->getNestedPlace(place), to, arena);
     }
 };
 
