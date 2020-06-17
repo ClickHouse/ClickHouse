@@ -290,7 +290,7 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
-        sharding_key_expr = buildShardingKeyExpression(sharding_key_, *global_context, getColumns().getAllPhysical(), false);
+        sharding_key_expr = buildShardingKeyExpression(sharding_key_, *global_context, metadata_.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
     }
 
@@ -447,6 +447,7 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
     const auto & settings = context.getSettingsRef();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
 
     if (canForceGroupByNoMerge(context, to_stage, query_ptr))
         return QueryProcessingStage::Complete;
@@ -454,7 +455,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
     ClusterPtr cluster = getCluster();
     if (settings.optimize_skip_unused_shards)
     {
-        ClusterPtr optimized_cluster = getOptimizedCluster(context, query_ptr);
+        ClusterPtr optimized_cluster = getOptimizedCluster(context, metadata_snapshot, query_ptr);
         if (optimized_cluster)
             cluster = optimized_cluster;
     }
@@ -476,7 +477,7 @@ Pipes StorageDistributed::read(
     ClusterPtr cluster = getCluster();
     if (settings.optimize_skip_unused_shards)
     {
-        ClusterPtr optimized_cluster = getOptimizedCluster(context, query_info.query);
+        ClusterPtr optimized_cluster = getOptimizedCluster(context, metadata_snapshot, query_info.query);
         if (optimized_cluster)
         {
             LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}", makeFormattedListOfShards(optimized_cluster));
@@ -683,14 +684,14 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : global_context->getCluster(cluster_name);
 }
 
-ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, const ASTPtr & query_ptr) const
+ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = context.getSettingsRef();
 
     if (has_sharding_key)
     {
-        ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, context);
+        ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, metadata_snapshot, context);
         if (optimized)
             return optimized;
     }
@@ -751,7 +752,11 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
-ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context) const
+ClusterPtr StorageDistributed::skipUnusedShards(
+    ClusterPtr cluster,
+    const ASTPtr & query_ptr,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Context & context) const
 {
     const auto & select = query_ptr->as<ASTSelectQuery &>();
 
@@ -770,7 +775,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const ASTPtr
         condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
     }
 
-    replaceConstantExpressions(condition_ast, context, getColumns().getAll(), shared_from_this());
+    replaceConstantExpressions(condition_ast, context, metadata_snapshot->getColumns().getAll(), shared_from_this());
     const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards

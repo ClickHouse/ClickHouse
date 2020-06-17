@@ -358,7 +358,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
         if (written_streams.count(stream_name))
             return;
 
-        const auto & columns = storage.getColumns();
+        const auto & columns = metadata_snapshot->getColumns();
         streams.try_emplace(
             stream_name,
             storage.disk,
@@ -445,7 +445,7 @@ StorageLog::StorageLog(
     /// create directories if they do not exist
     disk->createDirectories(table_path);
 
-    for (const auto & column : getColumns().getAllPhysical())
+    for (const auto & column : metadata_.getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
     marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
@@ -539,13 +539,14 @@ void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     files.clear();
     file_count = 0;
     loaded_marks = false;
 
     disk->clearDirectory(table_path);
 
-    for (const auto & column : getColumns().getAllPhysical())
+    for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
     file_checker = FileChecker{disk, table_path + "sizes.json"};
@@ -553,11 +554,11 @@ void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
 }
 
 
-const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
+const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMetadataPtr & metadata_snapshot) const
 {
     /// There should be at least one physical column
-    const String column_name = getColumns().getAllPhysical().begin()->name;
-    const auto column_type = getColumns().getAllPhysical().begin()->type;
+    const String column_name = metadata_snapshot->getColumns().getAllPhysical().begin()->name;
+    const auto column_type = metadata_snapshot->getColumns().getAllPhysical().begin()->type;
     String filename;
 
     /** We take marks from first column.
@@ -590,13 +591,13 @@ Pipes StorageLog::read(
     metadata_snapshot->check(column_names, getVirtuals());
     loadMarks();
 
-    NamesAndTypesList all_columns = Nested::collect(getColumns().getAllPhysical().addTypes(column_names));
+    NamesAndTypesList all_columns = Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names));
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
     Pipes pipes;
 
-    const Marks & marks = getMarksWithRealRowCount();
+    const Marks & marks = getMarksWithRealRowCount(metadata_snapshot);
     size_t marks_size = marks.size();
 
     if (num_streams > marks_size)

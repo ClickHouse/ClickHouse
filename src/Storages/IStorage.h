@@ -137,7 +137,6 @@ public:
 
 public: /// thread-unsafe part. lockStructure must be acquired
 
-    const ColumnsDescription & getColumns() const; /// returns combined set of columns
     StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata; }
     StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata; }
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_) { metadata = std::make_shared<StorageInMemoryMetadata>(metadata_); }

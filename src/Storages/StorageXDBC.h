@@ -29,7 +29,8 @@ public:
         const std::string & remote_database_name,
         const std::string & remote_table_name,
         const ColumnsDescription & columns_,
-        const Context & context_, BridgeHelperPtr bridge_helper_);
+        const Context & context_,
+        BridgeHelperPtr bridge_helper_);
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
@@ -45,6 +46,7 @@ private:
 
     std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
@@ -52,6 +54,7 @@ private:
 
     std::function<void(std::ostream &)> getReadPOSTDataCallback(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,

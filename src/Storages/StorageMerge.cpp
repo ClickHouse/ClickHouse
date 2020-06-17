@@ -250,9 +250,11 @@ Pipes StorageMerge::createSources(
 
     if (!storage)
     {
-        auto pipe = InterpreterSelectQuery(modified_query_info.query, *modified_context,
-                                             std::make_shared<OneBlockInputStream>(header),
-                                             SelectQueryOptions(processed_stage).analyze()).execute().pipeline.getPipe();
+        auto pipe = InterpreterSelectQuery(
+            modified_query_info.query, *modified_context,
+            std::make_shared<OneBlockInputStream>(header),
+            SelectQueryOptions(processed_stage).analyze()).execute().pipeline.getPipe();
+
         pipe.addInterpreterContext(modified_context);
         pipes.emplace_back(std::move(pipe));
         return pipes;
@@ -263,7 +265,7 @@ Pipes StorageMerge::createSources(
     {
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
-            real_column_names.push_back(ExpressionActions::getSmallestColumn(storage->getColumns().getAllPhysical()));
+            real_column_names.push_back(ExpressionActions::getSmallestColumn(metadata_snapshot->getColumns().getAllPhysical()));
 
         pipes = storage->read(real_column_names, metadata_snapshot, modified_query_info, *modified_context, processed_stage, max_block_size, UInt32(streams_num));
     }

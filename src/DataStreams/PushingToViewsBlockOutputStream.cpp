@@ -79,6 +79,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
+            auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
             query = dependent_metadata_snapshot->getSelectQuery().inner_query;
 
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
@@ -90,7 +91,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             /// Insert only columns returned by select.
             auto list = std::make_shared<ASTExpressionList>();
-            const auto & inner_table_columns = inner_table->getColumns();
+            const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
             for (auto & column : header)
                 /// But skip columns which storage doesn't have.
                 if (inner_table_columns.hasPhysical(column.name))
@@ -323,7 +324,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             Context local_context = *select_context;
             local_context.addViewSource(
                 StorageValues::create(
-                    storage->getStorageID(), storage->getColumns(), block, storage->getVirtuals()));
+                    storage->getStorageID(), metadata_snapshot->getColumns(), block, storage->getVirtuals()));
             select.emplace(view.query, local_context, SelectQueryOptions());
             in = std::make_shared<MaterializingBlockInputStream>(select->execute().getInputStream());
 

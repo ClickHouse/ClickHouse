@@ -76,7 +76,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
 
     ordered_names = header_without_virtual_columns.getNames();
 
-    task_columns = getReadTaskColumns(storage, data_part, required_columns, prewhere_info, check_columns);
+    task_columns = getReadTaskColumns(storage, metadata_snapshot, data_part, required_columns, prewhere_info, check_columns);
 
     /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();
@@ -87,11 +87,12 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
 
     owned_mark_cache = storage.global_context.getMarkCache();
 
-    reader = data_part->getReader(task_columns.columns, all_mark_ranges,
-        owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
+    reader = data_part->getReader(task_columns.columns, metadata_snapshot,
+        all_mark_ranges, owned_uncompressed_cache.get(),
+        owned_mark_cache.get(), reader_settings);
 
     if (prewhere_info)
-        pre_reader = data_part->getReader(task_columns.pre_columns, all_mark_ranges,
+        pre_reader = data_part->getReader(task_columns.pre_columns, metadata_snapshot, all_mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
 }
 

@@ -74,12 +74,12 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
             owned_uncompressed_cache = storage.global_context.getUncompressedCache();
         owned_mark_cache = storage.global_context.getMarkCache();
 
-        reader = task->data_part->getReader(task->columns, rest_mark_ranges,
+        reader = task->data_part->getReader(task->columns, metadata_snapshot, rest_mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
             IMergeTreeReader::ValueSizeMap{}, profile_callback);
 
         if (prewhere_info)
-            pre_reader = task->data_part->getReader(task->pre_columns, rest_mark_ranges,
+            pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, rest_mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 IMergeTreeReader::ValueSizeMap{}, profile_callback);
     }
@@ -90,12 +90,12 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
         {
             auto rest_mark_ranges = pool->getRestMarks(*task->data_part, task->mark_ranges[0]);
             /// retain avg_value_size_hints
-            reader = task->data_part->getReader(task->columns, rest_mark_ranges,
+            reader = task->data_part->getReader(task->columns, metadata_snapshot, rest_mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 reader->getAvgValueSizeHints(), profile_callback);
 
             if (prewhere_info)
-                pre_reader = task->data_part->getReader(task->pre_columns, rest_mark_ranges,
+                pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, rest_mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 reader->getAvgValueSizeHints(), profile_callback);
         }

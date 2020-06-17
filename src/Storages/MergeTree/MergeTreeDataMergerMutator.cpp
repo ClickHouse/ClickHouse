@@ -604,8 +604,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
 
-    Names all_column_names = data.getColumns().getNamesOfPhysical();
-    NamesAndTypesList storage_columns = data.getColumns().getAllPhysical();
+    Names all_column_names = metadata_snapshot->getColumns().getNamesOfPhysical();
+    NamesAndTypesList storage_columns = metadata_snapshot->getColumns().getAllPhysical();
     const auto data_settings = data.getSettings();
 
     NamesAndTypesList gathering_columns;
@@ -1041,7 +1041,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     UInt64 watch_prev_elapsed = 0;
     MergeStageProgress stage_progress(1.0);
 
-    NamesAndTypesList storage_columns = data.getColumns().getAllPhysical();
+    NamesAndTypesList storage_columns = metadata_snapshot->getColumns().getAllPhysical();
 
     if (!for_interpreter.empty())
     {

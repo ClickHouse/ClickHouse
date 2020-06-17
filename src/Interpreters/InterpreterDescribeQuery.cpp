@@ -91,7 +91,8 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 
         auto table_lock = table->lockStructureForShare(
                 false, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        columns = table->getColumns();
+        auto metadata_snapshot = table->getInMemoryMetadataPtr();
+        columns = metadata_snapshot->getColumns();
     }
 
     Block sample_block = getSampleBlock();

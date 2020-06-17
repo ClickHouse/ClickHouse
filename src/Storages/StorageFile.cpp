@@ -417,7 +417,7 @@ Pipes StorageFile::read(
 
     for (size_t i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-                this_ptr, metadata_snapshot, context, max_block_size, files_info, getColumns().getDefaults()));
+                this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumns().getDefaults()));
 
     return pipes;
 }

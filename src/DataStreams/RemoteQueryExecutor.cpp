@@ -325,7 +325,7 @@ void RemoteQueryExecutor::sendExternalTables()
                 Pipes pipes;
 
                 pipes = cur->read(
-                    cur->getColumns().getNamesOfPhysical(),
+                    metadata_snapshot->getColumns().getNamesOfPhysical(),
                     metadata_snapshot, {}, context,
                     read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
