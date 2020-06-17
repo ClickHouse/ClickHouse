@@ -33,15 +33,14 @@ public:
         Block header = children.back()->getHeader();
         for (auto & column_ : header.getColumnsWithTypeAndName())
         {
-            if (startsWith(column_.name, "HOP_SLICE"))
+            if (startsWith(column_.name, "WINDOW_ID"))
             {
                 position = header.getPositionByName(column_.name);
-                hop_slice_name = column_.name;
                 break;
             }
         }
         if (position < 0)
-            throw Exception("Not found column HOP_SLICE", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Not found column WINDOW_ID", ErrorCodes::LOGICAL_ERROR);
     }
 
     String getName() const override { return "ReplaceWindowColumn"; }
@@ -68,7 +67,6 @@ protected:
 
 private:
     String window_column_name;
-    String hop_slice_name;
     DataTypePtr window_column_type;
     int position;
     Tuple window_value;
