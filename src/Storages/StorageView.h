@@ -30,9 +30,9 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name) const
+    void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name, const StorageMetadataPtr & metadata_snapshot) const
     {
-        replaceWithSubquery(select_query, getSelectQuery().inner_query->clone(), view_name);
+        replaceWithSubquery(select_query, metadata_snapshot->getSelectQuery().inner_query->clone(), view_name);
     }
 
     static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name);

@@ -138,9 +138,6 @@ public:
 public: /// thread-unsafe part. lockStructure must be acquired
 
     const ColumnsDescription & getColumns() const; /// returns combined set of columns
-    /// Select query for *View storages.
-    const SelectQueryDescription & getSelectQuery() const;
-    bool hasSelectQuery() const;
 
     StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata; }
     StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata; }

@@ -400,5 +400,14 @@ ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
         return settings_changes->clone();
     return nullptr;
 }
+const SelectQueryDescription & StorageInMemoryMetadata::getSelectQuery() const
+{
+    return select;
+}
+
+bool StorageInMemoryMetadata::hasSelectQuery() const
+{
+    return select.select_query != nullptr;
+}
 
 }

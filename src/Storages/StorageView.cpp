@@ -63,7 +63,7 @@ Pipes StorageView::read(
 {
     Pipes pipes;
 
-    ASTPtr current_inner_query = getSelectQuery().inner_query;
+    ASTPtr current_inner_query = metadata_snapshot->getSelectQuery().inner_query;
 
     if (query_info.view_query)
     {
