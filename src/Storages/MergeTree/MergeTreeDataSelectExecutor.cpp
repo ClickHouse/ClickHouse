@@ -390,7 +390,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
         RelativeSize size_of_universum = 0;
-        const auto & sampling_key = data.getSamplingKey();
+        const auto & sampling_key = metadata_snapshot->getSamplingKey();
         DataTypePtr sampling_column_type = sampling_key.data_types[0];
 
         if (typeid_cast<const DataTypeUInt64 *>(sampling_column_type.get()))
@@ -459,7 +459,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             /// If sample and final are used together no need to calculate sampling expression twice.
             /// The first time it was calculated for final, because sample key is a part of the PK.
             /// So, assume that we already have calculated column.
-            ASTPtr sampling_key_ast = data.getSamplingKeyAST();
+            ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST();
 
             if (select.final())
             {

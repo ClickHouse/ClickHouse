@@ -342,4 +342,27 @@ Names StorageInMemoryMetadata::getSortingKeyColumns() const
         return sorting_key.column_names;
     return {};
 }
+
+const KeyDescription & StorageInMemoryMetadata::getSamplingKey() const
+{
+    return sampling_key;
+}
+
+bool StorageInMemoryMetadata::isSamplingKeyDefined() const
+{
+    return sampling_key.definition_ast != nullptr;
+}
+
+bool StorageInMemoryMetadata::hasSamplingKey() const
+{
+    return !sampling_key.column_names.empty();
+}
+
+Names StorageInMemoryMetadata::getColumnsRequiredForSampling() const
+{
+    if (hasSamplingKey())
+        return sampling_key.expression->getRequiredColumns();
+    return {};
+}
+
 }

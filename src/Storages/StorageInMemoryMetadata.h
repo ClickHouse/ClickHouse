@@ -140,6 +140,17 @@ struct StorageInMemoryMetadata
 
     /// Returns column names that need to be read for FINAL to work.
     Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }
+
+    /// Returns structure with sampling key.
+    const KeyDescription & getSamplingKey() const;
+    /// Returns sampling expression AST for storage or nullptr if there is none.
+    ASTPtr getSamplingKeyAST() const { return sampling_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) sampling key.
+    bool isSamplingKeyDefined() const;
+    /// Storage has sampling key.
+    bool hasSamplingKey() const;
+    /// Returns column names that need to be read to calculate sampling key.
+    Names getColumnsRequiredForSampling() const;
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;

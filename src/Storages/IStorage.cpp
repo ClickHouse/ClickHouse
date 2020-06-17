@@ -348,34 +348,11 @@ Names IStorage::getPrimaryKeyColumns() const
     return {};
 }
 
-const KeyDescription & IStorage::getSamplingKey() const
-{
-    return metadata->sampling_key;
-}
-
-bool IStorage::isSamplingKeyDefined() const
-{
-    return metadata->sampling_key.definition_ast != nullptr;
-}
-
-bool IStorage::hasSamplingKey() const
-{
-    return !metadata->sampling_key.column_names.empty();
-}
-
-Names IStorage::getColumnsRequiredForSampling() const
-{
-    if (hasSamplingKey())
-        return metadata->sampling_key.expression->getRequiredColumns();
-    return {};
-}
-
 TTLTableDescription IStorage::getTableTTLs() const
 {
     std::lock_guard lock(ttl_mutex);
     return metadata->table_ttl;
 }
-
 
 bool IStorage::hasAnyTableTTL() const
 {
