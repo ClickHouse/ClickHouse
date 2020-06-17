@@ -28,7 +28,10 @@ public:
     }
 
     AggregateFunctionPtr transformAggregateFunction(
-            const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array &) const override
+        const AggregateFunctionPtr & nested_function,
+        const AggregateFunctionProperties &,
+        const DataTypes & arguments,
+        const Array &) const override
     {
         AggregateFunctionPtr res;
         if (arguments.size() == 1)
