@@ -18,7 +18,7 @@ For proper operation of introspection functions:
 
         For security reasons introspection functions are disabled by default.
 
-ClickHouse saves profiler reports to the [trace\_log](../../operations/system-tables.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
+ClickHouse saves profiler reports to the [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
 
 ## addressToLine {#addresstoline}
 

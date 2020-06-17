@@ -145,10 +145,10 @@ Settings:
 -   interval – The interval for sending, in seconds.
 -   timeout – The timeout for sending data, in seconds.
 -   root\_path – Prefix for keys.
--   metrics – Sending data from the [system.metrics](../../operations/system-tables.md#system_tables-metrics) table.
--   events – Sending deltas data accumulated for the time period from the [system.events](../../operations/system-tables.md#system_tables-events) table.
--   events\_cumulative – Sending cumulative data from the [system.events](../../operations/system-tables.md#system_tables-events) table.
--   asynchronous\_metrics – Sending data from the [system.asynchronous\_metrics](../../operations/system-tables.md#system_tables-asynchronous_metrics) table.
+-   metrics – Sending data from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
+-   events – Sending deltas data accumulated for the time period from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+-   events\_cumulative – Sending cumulative data from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+-   asynchronous\_metrics – Sending data from the [system.asynchronous\_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
 
 You can configure multiple `<graphite>` clauses. For instance, you can use this for sending different data at different intervals.
 
@@ -503,7 +503,7 @@ Keys for server/client settings:
 
 Logging events that are associated with [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
-Queries are logged in the [system.part\_log](../../operations/system-tables.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
+Queries are logged in the [system.part\_log](../../operations/system-tables/part_log.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
@@ -544,9 +544,9 @@ Settings:
 
 -   `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
 -   `port` – Port for `endpoint`.
--   `metrics` – Flag that sets to expose metrics from the [system.metrics](../../operations/system-tables.md#system_tables-metrics) table.
--   `events` – Flag that sets to expose metrics from the [system.events](../../operations/system-tables.md#system_tables-events) table.
--   `asynchronous_metrics` – Flag that sets to expose current metrics values from the [system.asynchronous\_metrics](../../operations/system-tables.md#system_tables-asynchronous_metrics) table.
+-   `metrics` – Flag that sets to expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
+-   `events` – Flag that sets to expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+-   `asynchronous_metrics` – Flag that sets to expose current metrics values from the [system.asynchronous\_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
 
 **Example**
 
@@ -564,7 +564,7 @@ Settings:
 
 Setting for logging queries received with the [log\_queries=1](../../operations/settings/settings.md) setting.
 
-Queries are logged in the [system.query\_log](../../operations/system-tables.md#system_tables-query_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+Queries are logged in the [system.query\_log](../../operations/system-tables/query_log.md#system_tables-query_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
@@ -590,7 +590,7 @@ If the table doesn’t exist, ClickHouse will create it. If the structure of the
 
 Setting for logging threads of queries received with the [log\_query\_threads=1](../../operations/settings/settings.md#settings-log-query-threads) setting.
 
-Queries are logged in the [system.query\_thread\_log](../../operations/system-tables.md#system_tables-query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+Queries are logged in the [system.query\_thread\_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
@@ -614,7 +614,7 @@ If the table doesn’t exist, ClickHouse will create it. If the structure of the
 
 ## trace\_log {#server_configuration_parameters-trace_log}
 
-Settings for the [trace\_log](../../operations/system-tables.md#system_tables-trace_log) system table operation.
+Settings for the [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
 
 Parameters:
 

@@ -1254,7 +1254,7 @@ Default value: 1000000000 nanoseconds (once a second).
 
 See also:
 
--   System table [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
 
@@ -1277,7 +1277,7 @@ Default value: 1000000000 nanoseconds.
 
 See also:
 
--   System table [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
@@ -1293,7 +1293,7 @@ Default value: 0.
 **See Also**
 
 -   [Sampling Query Profiler](../../operations/optimizing-performance/sampling-query-profiler.md)
--   System table [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## input\_format\_parallel\_parsing {#input-format-parallel-parsing}
 

@@ -17,7 +17,7 @@ ClickHouse operations manual consists of the following major sections:
 -   [Data Backup](../operations/backup.md)
 -   [Configuration Files](../operations/configuration-files.md)
 -   [Quotas](../operations/quotas.md)
--   [System Tables](../operations/system-tables.md)
+-   [System Tables](../operations/system-tables/index.md)
 -   [Server Configuration Parameters](../operations/server-configuration-parameters/index.md)
 -   [How To Test Your Hardware With ClickHouse](../operations/performance-test.md)
 -   [Settings](../operations/settings/index.md)

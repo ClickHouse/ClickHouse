@@ -28,7 +28,7 @@ This query is identical to `SELECT name FROM system.databases [INTO OUTFILE file
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Outputs the content of the [system.processes](../../operations/system-tables.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
+Outputs the content of the [system.processes](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
 
 The `SELECT * FROM system.processes` query returns data about all the current queries.
 
