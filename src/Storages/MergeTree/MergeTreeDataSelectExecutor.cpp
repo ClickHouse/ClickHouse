@@ -100,7 +100,10 @@ static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts
 
 
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
-    const MergeTreeData::DataPartsVector & parts, const KeyCondition & key_condition, const Settings & settings) const
+    const MergeTreeData::DataPartsVector & parts,
+    const StorageMetadataPtr & metadata_snapshot,
+    const KeyCondition & key_condition,
+    const Settings & settings) const
 {
     size_t rows_count = 0;
 
@@ -109,7 +112,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 
     for (const auto & part : parts)
     {
-        MarkRanges ranges = markRangesFromPKRange(part, key_condition, settings);
+        MarkRanges ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings);
 
         /** In order to get a lower bound on the number of rows that match the condition on PK,
           *  consider only guaranteed full marks.
@@ -224,7 +227,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     data.check(real_column_names);
 
     const Settings & settings = context.getSettingsRef();
-    const auto & primary_key = data.getPrimaryKey();
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
     Names primary_key_columns = primary_key.column_names;
 
     KeyCondition key_condition(query_info, context, primary_key_columns, primary_key.expression);
@@ -326,7 +329,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         /// Convert absolute value of the sampling (in form `SAMPLE 1000000` - how many rows to read) into the relative `SAMPLE 0.1` (how much data to read).
         size_t approx_total_rows = 0;
         if (relative_sample_size > 1 || relative_sample_offset > 1)
-            approx_total_rows = getApproximateTotalRowsToRead(parts, key_condition, settings);
+            approx_total_rows = getApproximateTotalRowsToRead(parts, metadata_snapshot, key_condition, settings);
 
         if (relative_sample_size > 1)
         {
@@ -565,8 +568,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     {
         RangesInDataPart ranges(part, part_index++);
 
-        if (data.hasPrimaryKey())
-            ranges.ranges = markRangesFromPKRange(part, key_condition, settings);
+        if (metadata_snapshot->hasPrimaryKey())
+            ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings);
         else
         {
             size_t total_marks_count = part->getMarksCount();
@@ -1297,7 +1300,10 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
-    const MergeTreeData::DataPartPtr & part, const KeyCondition & key_condition, const Settings & settings) const
+    const MergeTreeData::DataPartPtr & part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const KeyCondition & key_condition,
+    const Settings & settings) const
 {
     MarkRanges res;
 
@@ -1335,7 +1341,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
         /// If there are no monotonic functions, there is no need to save block reference.
         /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
-        const auto & primary_key = data.getPrimaryKey();
+        const auto & primary_key = metadata_snapshot->getPrimaryKey();
         if (key_condition.hasMonotonicFunctionsChain())
         {
             auto index_block = std::make_shared<Block>();

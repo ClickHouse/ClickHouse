@@ -173,11 +173,11 @@ MergeTreeData::MergeTreeData(
     const auto settings = getSettings();
 
     /// NOTE: using the same columns list as is read when performing actual merges.
-    merging_params.check(getColumns().getAllPhysical());
+    merging_params.check(metadata_.getColumns().getAllPhysical());
 
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
-        const auto & pk_sample_block = getPrimaryKey().sample_block;
+        const auto & pk_sample_block = metadata_.getPrimaryKey().sample_block;
         if (!pk_sample_block.has(metadata_.sampling_key.column_names[0]) && !attach
             && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
@@ -410,7 +410,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
 
 ExpressionActionsPtr MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const
 {
-    return getCombinedIndicesExpression(getPrimaryKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), global_context);
+    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), global_context);
 }
 
 ExpressionActionsPtr MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const
@@ -2915,11 +2915,12 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
     return total_covered_parts;
 }
 
-bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
+bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
+    const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const
 {
     const String column_name = node->getColumnName();
 
-    for (const auto & name : getPrimaryKeyColumns())
+    for (const auto & name : metadata_snapshot->getPrimaryKeyColumns())
         if (column_name == name)
             return true;
 
@@ -2929,7 +2930,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const A
 
     if (const auto * func = node->as<ASTFunction>())
         if (func->arguments->children.size() == 1)
-            return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front());
+            return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front(), metadata_snapshot);
 
     return false;
 }
@@ -2946,14 +2947,14 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
     {
         for (const auto & item : left_in_operand_tuple->arguments->children)
         {
-            if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(item))
+            if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(item, metadata_snapshot))
                 return true;
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
                 if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(item))
                     return true;
         }
         /// The tuple itself may be part of the primary key, so check that as a last resort.
-        return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand);
+        return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot);
     }
     else
     {
@@ -2961,7 +2962,7 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
             if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(left_in_operand))
                 return true;
 
-        return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand);
+        return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot);
     }
 }
 

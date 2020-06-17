@@ -1604,7 +1604,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     if (mutating_stream == nullptr)
         throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-    if (data.hasPrimaryKey() || metadata_snapshot->hasSecondaryIndices())
+    if (metadata_snapshot->hasPrimaryKey() || metadata_snapshot->hasSecondaryIndices())
         mutating_stream = std::make_shared<MaterializingBlockInputStream>(
             std::make_shared<ExpressionBlockInputStream>(mutating_stream, data.getPrimaryKeyAndSkipIndicesExpression(metadata_snapshot)));
 

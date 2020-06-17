@@ -812,7 +812,7 @@ protected:
         DataPartsLock & data_parts_lock) const;
 
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
-    bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
+    bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Common part for |freezePartition()| and |freezeAll()|.
     using MatcherFn = std::function<bool(const DataPartPtr &)>;

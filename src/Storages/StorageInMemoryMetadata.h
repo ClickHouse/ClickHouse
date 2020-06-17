@@ -151,6 +151,21 @@ struct StorageInMemoryMetadata
     bool hasSamplingKey() const;
     /// Returns column names that need to be read to calculate sampling key.
     Names getColumnsRequiredForSampling() const;
+
+    /// Returns structure with primary key.
+    const KeyDescription & getPrimaryKey() const;
+    /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
+    ASTPtr getPrimaryKeyAST() const { return primary_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) sorting key.
+    bool isPrimaryKeyDefined() const;
+    /// Storage has primary key (maybe part of some other key). It means, that
+    /// it contains at least one column.
+    bool hasPrimaryKey() const;
+    /// Returns column names that need to be read to calculate primary key.
+    Names getColumnsRequiredForPrimaryKey() const;
+    /// Returns columns names in sorting key specified by. For example: 'a', 'x
+    /// * y', 'toStartOfMonth(date)', etc.
+    Names getPrimaryKeyColumns() const;
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;
