@@ -773,7 +773,7 @@ GROUP BY is not supported for array columns.
 
 A constant can’t be specified as arguments for aggregate functions. Example: sum(1). Instead of this, you can get rid of the constant. Example: `count()`.
 
-#### NULL Processing {#null-processing}
+#### NULL Processing {#group-by-null-processing}
 
 For grouping, ClickHouse interprets [NULL](../syntax.md) as a value, and `NULL=NULL`.
 
@@ -1211,7 +1211,7 @@ ORDER BY EventDate ASC
 For each day after March 17th, count the percentage of pageviews made by users who visited the site on March 17th.
 A subquery in the IN clause is always run just one time on a single server. There are no dependent subqueries.
 
-#### NULL Processing {#null-processing-1}
+#### NULL Processing {#in-null-processing}
 
 During request processing, the IN operator assumes that the result of an operation with [NULL](../syntax.md) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
 

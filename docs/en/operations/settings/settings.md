@@ -1318,6 +1318,6 @@ the result is:
 
 **See Also** 
 
--   [NULL Processing in IN Operators](../../sql-reference/statements/select.md#null-processing-1)
+-   [NULL Processing in IN Operators](../../sql-reference/statements/select.md#in-null-processing)
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
