@@ -35,7 +35,7 @@ TimeoutSetter::~TimeoutSetter()
     catch (std::exception & e)
     {
         // Sometimes catched on macos
-        LOG_ERROR(&Logger::get("Client"), std::string{"TimeoutSetter: Can't reset timeouts: "} + e.what());
+        LOG_ERROR(&Poco::Logger::get("Client"), "TimeoutSetter: Can't reset timeouts: {}", e.what());
     }
 }
 }

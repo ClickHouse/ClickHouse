@@ -57,7 +57,7 @@ def parse_one_pull_request(item):
         category = "NO CL CATEGORY"
 
     # Filter out the PR categories that are not for changelog.
-    if re.match(r'(?i)doc|((non|in|not|un)[-\s]*significant)', category):
+    if re.match(r'(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)', category):
         return False
 
     if not entry:

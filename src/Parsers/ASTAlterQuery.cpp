@@ -146,7 +146,7 @@ void ASTAlterCommand::formatImpl(
     }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD CONSTRAINT" << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD CONSTRAINT " << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
         constraint_decl->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::DROP_CONSTRAINT)
@@ -181,13 +181,13 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << " TO ";
         switch (move_destination_type)
         {
-            case PartDestinationType::DISK:
+            case DataDestinationType::DISK:
                 settings.ostr << "DISK ";
                 break;
-            case PartDestinationType::VOLUME:
+            case DataDestinationType::VOLUME:
                 settings.ostr << "VOLUME ";
                 break;
-            case PartDestinationType::TABLE:
+            case DataDestinationType::TABLE:
                 settings.ostr << "TABLE ";
                 if (!to_database.empty())
                 {
@@ -201,7 +201,7 @@ void ASTAlterCommand::formatImpl(
             default:
                 break;
         }
-        if (move_destination_type != PartDestinationType::TABLE)
+        if (move_destination_type != DataDestinationType::TABLE)
         {
             settings.ostr << quoteString(move_destination_name);
         }

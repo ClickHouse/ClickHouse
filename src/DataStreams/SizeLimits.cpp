@@ -16,8 +16,8 @@ bool SizeLimits::check(UInt64 rows, UInt64 bytes, const char * what, int too_man
                 + ", current rows: " + formatReadableQuantity(rows), too_many_rows_exception_code);
 
         if (max_bytes && bytes > max_bytes)
-            throw Exception("Limit for " + std::string(what) + " exceeded, max bytes: " + formatReadableSizeWithBinarySuffix(max_bytes)
-                + ", current bytes: " + formatReadableSizeWithBinarySuffix(bytes), too_many_bytes_exception_code);
+            throw Exception(fmt::format("Limit for {} exceeded, max bytes: {}, current bytes: {}",
+                std::string(what), ReadableSize(max_bytes), ReadableSize(bytes)), too_many_bytes_exception_code);
 
         return true;
     }

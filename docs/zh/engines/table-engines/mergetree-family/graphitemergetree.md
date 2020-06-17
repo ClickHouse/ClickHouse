@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
 toc_title: GraphiteMergeTree
 ---
@@ -81,7 +81,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## 汇总配置 {#rollup-configuration}
 
-汇总的设置由 [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite_rollup) 服务器配置中的参数。 参数的名称可以是any。 您可以创建多个配置并将它们用于不同的表。
+汇总的设置由 [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) 服务器配置中的参数。 参数的名称可以是any。 您可以创建多个配置并将它们用于不同的表。
 
 汇总配置结构:
 

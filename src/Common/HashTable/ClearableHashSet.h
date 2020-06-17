@@ -84,3 +84,15 @@ public:
         this->m_size = 0;
     }
 };
+
+template <typename Key, typename Hash, size_t initial_size_degree>
+using ClearableHashSetWithStackMemory = ClearableHashSet<
+    Key,
+    Hash,
+    HashTableGrower<initial_size_degree>,
+    HashTableAllocatorWithStackMemory<
+        (1ULL << initial_size_degree)
+        * sizeof(
+            ClearableHashTableCell<
+                Key,
+                HashTableCell<Key, Hash, ClearableHashSetState>>)>>;

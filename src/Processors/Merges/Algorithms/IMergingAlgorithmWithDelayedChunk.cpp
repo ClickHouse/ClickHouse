@@ -28,15 +28,15 @@ void IMergingAlgorithmWithDelayedChunk::initializeQueue(Chunks chunks)
     queue = SortingHeap<SortCursor>(cursors);
 }
 
-void IMergingAlgorithmWithDelayedChunk::updateCursor(Chunk chunk, size_t source_num)
+void IMergingAlgorithmWithDelayedChunk::updateCursor(Chunk & chunk, size_t source_num)
 {
     auto & source_chunk = source_chunks[source_num];
 
     /// Extend lifetime of last chunk.
-    last_chunk = std::move(source_chunk);
+    last_chunk.swap(source_chunk);
     last_chunk_sort_columns = std::move(cursors[source_num].sort_columns);
 
-    source_chunk = std::move(chunk);
+    source_chunk.swap(chunk);
     cursors[source_num].reset(source_chunk.getColumns(), {});
 
     queue.push(cursors[source_num]);

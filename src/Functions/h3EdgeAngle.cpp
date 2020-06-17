@@ -5,12 +5,15 @@
 #    include <Functions/FunctionFactory.h>
 #    include <Functions/IFunction.h>
 #    include <Common/typeid_cast.h>
+#    include <IO/WriteHelpers.h>
 #    include <ext/range.h>
 
 #    if __has_include(<h3/h3api.h>)
 #        include <h3/h3api.h>
+#        include <h3/constants.h>
 #    else
 #        include <h3api.h>
+#        include <constants.h>
 #    endif
 
 
@@ -19,7 +22,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
+
 class FunctionH3EdgeAngle : public IFunction
 {
 public:
@@ -54,6 +59,9 @@ public:
         for (const auto row : ext::range(0, input_rows_count))
         {
             const int resolution = col_hindex->getUInt(row);
+            if (resolution > MAX_H3_RES)
+                throw Exception("The argument 'resolution' (" + toString(resolution) + ") of function " + getName()
+                    + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
             // Numerical constant is 180 degrees / pi / Earth radius, Earth radius is from h3 sources
             Float64 res = 8.99320592271288084e-6 * edgeLengthM(resolution);

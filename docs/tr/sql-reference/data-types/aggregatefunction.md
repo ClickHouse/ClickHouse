@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 52
 toc_title: AggregateFunction (ad, types_of_arguments...)
 ---
 
 # AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
 
-Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [materyalize bir görünüm](../../sql-reference/statements/select.md#create-view). Bir toplama işlevi durumu üretmek için ortak yolu ile toplama işlevi çağırarak olduğunu `-State` sonek. Gelecekte toplanmanın nihai sonucunu elde etmek için, aynı toplama işlevini `-Merge`sonek.
+Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [materyalize bir görünüm](../../sql-reference/statements/create.md#create-view). Bir toplama işlevi durumu üretmek için ortak yolu ile toplama işlevi çağırarak olduğunu `-State` sonek. Gelecekte toplanmanın nihai sonucunu elde etmek için, aynı toplama işlevini `-Merge`sonek.
 
 `AggregateFunction` — parametric data type.
 

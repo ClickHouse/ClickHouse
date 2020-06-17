@@ -28,7 +28,7 @@ Main features:
     If necessary, you can set the data sampling method in the table.
 
 !!! info "Info"
-    The [Merge](../special/merge.md) engine does not belong to the `*MergeTree` family.
+    The [Merge](../special/merge.md#merge) engine does not belong to the `*MergeTree` family.
 
 ## Creating a Table {#table_engine-mergetree-creating-a-table}
 
@@ -41,8 +41,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
     INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2
 ) ENGINE = MergeTree()
+ORDER BY expr
 [PARTITION BY expr]
-[ORDER BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
 [TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
@@ -51,30 +51,31 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of parameters, see the [CREATE query description](../../../sql-reference/statements/create.md).
 
-!!! note "Note"
-    `INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
-
 ### Query Clauses {#mergetree-query-clauses}
 
 -   `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine does not have parameters.
 
--   `PARTITION BY` — The [partitioning key](custom-partitioning-key.md).
+-   `ORDER BY` — The sorting key.
+
+    A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
+
+    ClickHouse uses the sorting key as a primary key if the primary key is not defined obviously by the `PRIMARY KEY` clause. 
+    
+    Use the `ORDER BY tuple()` syntax, if you don't need sorting. See [Selecting the Primary Key](#selecting-the-primary-key).
+
+-   `PARTITION BY` — The [partitioning key](custom-partitioning-key.md). Optional.
 
     For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](../../../sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
--   `ORDER BY` — The sorting key.
-
-    A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
-
--   `PRIMARY KEY` — The primary key if it [differs from the sorting key](#choosing-a-primary-key-that-differs-from-the-sorting-key).
+-   `PRIMARY KEY` — The primary key if it [differs from the sorting key](#choosing-a-primary-key-that-differs-from-the-sorting-key). Optional.
 
     By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause). Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
 
--   `SAMPLE BY` — An expression for sampling.
+-   `SAMPLE BY` — An expression for sampling. Optional.
 
     If a sampling expression is used, the primary key must contain it. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
--   `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes).
+-   `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes). Optional.
 
     Expression must have one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
@@ -83,7 +84,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
     For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
--   `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
+-   `SETTINGS` — Additional parameters that control the behavior of the `MergeTree` (optional):
 
     -   `index_granularity` — Maximum number of data rows between the marks of an index. Default value: 8192. See [Data Storage](#mergetree-data-storage).
     -   `index_granularity_bytes` — Maximum size of data granules in bytes. Default value: 10Mb. To restrict the granule size only by number of rows, set to 0 (not recommended). See [Data Storage](#mergetree-data-storage).
@@ -104,7 +105,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 In the example, we set partitioning by month.
 
-We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If you define a [SAMPLE](../../../sql-reference/statements/select.md#select-sample-clause) clause when selecting the data, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
+We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If you define a [SAMPLE](../../../sql-reference/statements/select/sample.md#select-sample-clause) clause when selecting the data, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
 
 The `index_granularity` setting can be omitted because 8192 is the default value.
 
@@ -198,6 +199,10 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
+You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](../../../operations/settings/settings.md#settings-max-insert-threads).
+    
+To select data in the initial order, use [single-threaded](../../../operations/settings/settings.md#settings-max_threads) `SELECT` queries.
+
 ### Choosing a Primary Key that Differs from the Sorting Key {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
 It is possible to specify a primary key (an expression with values that are written in the index file for each mark) that is different from the sorting key (an expression for sorting the rows in data parts). In this case the primary key expression tuple must be a prefix of the sorting key expression tuple.
@@ -249,7 +254,7 @@ ClickHouse cannot use an index if the values of the primary key in the query par
 
 ClickHouse uses this logic not only for days of the month sequences, but for any primary key that represents a partially-monotonic sequence.
 
-### Data Skipping Indexes (experimental) {#table_engine-mergetree-data_skipping-indexes}
+### Data Skipping Indexes {#table_engine-mergetree-data_skipping-indexes}
 
 The index declaration is in the columns section of the `CREATE` query.
 
@@ -332,8 +337,8 @@ The `set` index can be used with all functions. Function subsets for other index
 |------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
 | [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [notEquals(!=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✗           | ✗             |
-| [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✗           | ✗             |
+| [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [endsWith](../../../sql-reference/functions/string-functions.md#endswith)                                  | ✗           | ✗      | ✔           | ✔           | ✗             |
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
@@ -349,7 +354,8 @@ The `set` index can be used with all functions. Function subsets for other index
 
 Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
 
-Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can’t be used for optimizing queries where the result of a function is expected to be false, for example:
+!!! note "Note"
+    Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can’t be used for optimizing queries where the result of a function is expected to be false, for example:
 
 -   Can be optimized:
     -   `s LIKE '%test%'`
@@ -385,7 +391,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-To define `interval`, use [time interval](../../../sql-reference/operators.md#operators-datetime) operators.
+To define `interval`, use [time interval](../../../sql-reference/operators/index.md#operators-datetime) operators.
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH
@@ -474,11 +480,11 @@ ALTER TABLE example_table
 
 Data with an expired TTL is removed when ClickHouse merges data parts.
 
-When ClickHouse see that data is expired, it performs an off-schedule merge. To control the frequency of such merges, you can set [merge\_with\_ttl\_timeout](#mergetree_setting-merge_with_ttl_timeout). If the value is too low, it will perform many off-schedule merges that may consume a lot of resources.
+When ClickHouse see that data is expired, it performs an off-schedule merge. To control the frequency of such merges, you can set `merge_with_ttl_timeout`. If the value is too low, it will perform many off-schedule merges that may consume a lot of resources.
 
 If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) query before `SELECT`.
 
-## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
+## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes} 
 
 ### Introduction {#introduction}
 
@@ -495,7 +501,7 @@ Data part is the minimum movable unit for `MergeTree`-engine tables. The data be
 
 The names given to the described entities can be found in the system tables, [system.storage\_policies](../../../operations/system-tables.md#system_tables-storage_policies) and [system.disks](../../../operations/system-tables.md#system_tables-disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
 
-### Configuration {#table_engine-mergetree-multiple-volumes-configure}
+### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
 Disks, volumes and storage policies should be declared inside the `<storage_configuration>` tag either in the main file `config.xml` or in a distinct file in the `config.d` directory.
 
@@ -622,6 +628,8 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 ```
 
 The `default` storage policy implies using only one volume, which consists of only one disk given in `<path>`. Once a table is created, its storage policy cannot be changed.
+
+The number of threads performing background moves of data parts can be changed by [background_move_pool_size](../../../operations/settings/settings.md#background_move_pool_size) setting.
 
 ### Details {#details}
 

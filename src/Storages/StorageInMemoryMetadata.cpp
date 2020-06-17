@@ -2,81 +2,53 @@
 
 namespace DB
 {
+
 StorageInMemoryMetadata::StorageInMemoryMetadata(
     const ColumnsDescription & columns_,
-    const IndicesDescription & indices_,
+    const IndicesDescription & secondary_indices_,
     const ConstraintsDescription & constraints_)
     : columns(columns_)
-    , indices(indices_)
+    , secondary_indices(secondary_indices_)
     , constraints(constraints_)
 {
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
-    , indices(other.indices)
+    , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
+    , partition_key(other.partition_key)
+    , primary_key(other.primary_key)
+    , sorting_key(other.sorting_key)
+    , sampling_key(other.sampling_key)
+    , column_ttls_by_name(other.column_ttls_by_name)
+    , table_ttl(other.table_ttl)
+    , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
+    , select(other.select)
 {
-    if (other.partition_by_ast)
-        partition_by_ast = other.partition_by_ast->clone();
-    if (other.order_by_ast)
-        order_by_ast = other.order_by_ast->clone();
-    if (other.primary_key_ast)
-        primary_key_ast = other.primary_key_ast->clone();
-    if (other.ttl_for_table_ast)
-        ttl_for_table_ast = other.ttl_for_table_ast->clone();
-    if (other.sample_by_ast)
-        sample_by_ast = other.sample_by_ast->clone();
-    if (other.settings_ast)
-        settings_ast = other.settings_ast->clone();
-    if (other.select)
-        select = other.select->clone();
 }
 
 StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemoryMetadata & other)
 {
-    if (this == &other)
+    if (&other == this)
         return *this;
 
     columns = other.columns;
-    indices = other.indices;
+    secondary_indices = other.secondary_indices;
     constraints = other.constraints;
-
-    if (other.partition_by_ast)
-        partition_by_ast = other.partition_by_ast->clone();
+    partition_key = other.partition_key;
+    primary_key = other.primary_key;
+    sorting_key = other.sorting_key;
+    sampling_key = other.sampling_key;
+    column_ttls_by_name = other.column_ttls_by_name;
+    table_ttl = other.table_ttl;
+    if (other.settings_changes)
+        settings_changes = other.settings_changes->clone();
     else
-        partition_by_ast.reset();
-
-    if (other.order_by_ast)
-        order_by_ast = other.order_by_ast->clone();
-    else
-        order_by_ast.reset();
-
-    if (other.primary_key_ast)
-        primary_key_ast = other.primary_key_ast->clone();
-    else
-        primary_key_ast.reset();
-
-    if (other.ttl_for_table_ast)
-        ttl_for_table_ast = other.ttl_for_table_ast->clone();
-    else
-        ttl_for_table_ast.reset();
-
-    if (other.sample_by_ast)
-        sample_by_ast = other.sample_by_ast->clone();
-    else
-        sample_by_ast.reset();
-
-    if (other.settings_ast)
-        settings_ast = other.settings_ast->clone();
-    else
-        settings_ast.reset();
-
-    if (other.select)
-        select = other.select->clone();
-    else
-        select.reset();
-
+        settings_changes.reset();
+    select = other.select;
     return *this;
 }
+
+
 }

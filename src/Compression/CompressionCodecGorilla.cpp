@@ -90,6 +90,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
     if (source_size % sizeof(T) != 0)
         throw Exception("Cannot compress, data size " + toString(source_size) + " is not aligned to " + toString(sizeof(T)), ErrorCodes::CANNOT_COMPRESS);
     const char * source_end = source + source_size;
+    const char * dest_start = dest;
     const char * dest_end = dest + dest_size;
 
     const UInt32 items_count = source_size / sizeof(T);
@@ -145,7 +146,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     writer.flush();
 
-    return sizeof(items_count) + sizeof(prev_value) + writer.count() / 8;
+    return (dest - dest_start) + (writer.count() + 7) / 8;
 }
 
 template <typename T>

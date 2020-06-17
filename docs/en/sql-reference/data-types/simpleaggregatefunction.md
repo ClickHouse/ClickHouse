@@ -1,6 +1,6 @@
-# SimpleAggregateFunction(name, types\_of\_arguments…) {#data-type-simpleaggregatefunction}
+# SimpleAggregateFunction {#data-type-simpleaggregatefunction}
 
-`SimpleAggregateFunction` data type stores current value of the aggregate function, and does not store its full state as [`AggregateFunction`](aggregatefunction.md) does. This optimization can be applied to functions for which the following property holds: the result of applying a function `f` to a row set `S1 UNION ALL S2` can be obtained by applying `f` to parts of the row set separately, and then again applying `f` to the results: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`. This property guarantees that partial aggregation results are enough to compute the combined one, so we don’t have to store and process any extra data.
+`SimpleAggregateFunction(name, types_of_arguments…)` data type stores current value of the aggregate function, and does not store its full state as [`AggregateFunction`](aggregatefunction.md) does. This optimization can be applied to functions for which the following property holds: the result of applying a function `f` to a row set `S1 UNION ALL S2` can be obtained by applying `f` to parts of the row set separately, and then again applying `f` to the results: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`. This property guarantees that partial aggregation results are enough to compute the combined one, so we don’t have to store and process any extra data.
 
 The following aggregate functions are supported:
 
@@ -12,6 +12,8 @@ The following aggregate functions are supported:
 -   [`groupBitAnd`](../../sql-reference/aggregate-functions/reference.md#groupbitand)
 -   [`groupBitOr`](../../sql-reference/aggregate-functions/reference.md#groupbitor)
 -   [`groupBitXor`](../../sql-reference/aggregate-functions/reference.md#groupbitxor)
+-   [`groupArrayArray`](../../sql-reference/aggregate-functions/reference.md#agg_function-grouparray)
+-   [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference.md#groupuniqarrayx-groupuniqarraymax-sizex)
 
 Values of the `SimpleAggregateFunction(func, Type)` look and stored the same way as `Type`, so you do not need to apply functions with `-Merge`/`-State` suffixes. `SimpleAggregateFunction` has better performance than `AggregateFunction` with same aggregation function.
 

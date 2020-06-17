@@ -48,7 +48,7 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
             const IProcessor & curr = *processor;
             const IProcessor & next = port.getInputPort().getProcessor();
 
-            out << "n" << get_proc_id(curr) << " -> " << "n" << get_proc_id(next) << ";\n";
+            out << "n" << get_proc_id(curr) << " -> n" << get_proc_id(next) << ";\n";
         }
     }
     out << "}\n";

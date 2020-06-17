@@ -45,7 +45,7 @@ private:
     /// Should read using direct IO
     bool read_with_direct_io;
 
-    Logger * log = &Logger::get("MergeTreeSequentialSource");
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeSequentialSource");
 
     std::shared_ptr<MarkCache> mark_cache;
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 40
 toc_title: "Dizeleri ile \xE7al\u0131\u015Fma"
 ---
@@ -10,36 +10,36 @@ toc_title: "Dizeleri ile \xE7al\u0131\u015Fma"
 ## boş {#empty}
 
 Boş bir dize için 1 veya boş olmayan bir dize için 0 döndürür.
-Sonuç türü Uint8’dir.
+Sonuç türü Uint8'dir.
 Bir boşluk veya boş bayt olsa bile, en az bir bayt içeriyorsa, bir dize boş olarak kabul edilir.
 İşlev ayrıca diziler için de çalışır.
 
 ## notEmpty {#notempty}
 
 Boş bir dize için 0 veya boş olmayan bir dize için 1 döndürür.
-Sonuç türü Uint8’dir.
+Sonuç türü Uint8'dir.
 İşlev ayrıca diziler için de çalışır.
 
 ## uzunluk {#length}
 
 Bir dizenin uzunluğunu bayt cinsinden döndürür (karakterlerde değil, kod noktalarında değil).
-Sonuç türü Uint64’tür.
+Sonuç türü Uint64'tür.
 İşlev ayrıca diziler için de çalışır.
 
 ## lengthUTF8 {#lengthutf8}
 
 Dizenin UTF-8 kodlanmış metni oluşturan bir bayt kümesi içerdiğini varsayarak, Unicode kod noktalarında (karakterlerde değil) bir dizenin uzunluğunu döndürür. Bu varsayım karşılanmazsa, bir sonuç döndürür (bir istisna atmaz).
-Sonuç türü Uint64’tür.
+Sonuç türü Uint64'tür.
 
 ## char\_length, CHAR\_LENGTH {#char-length}
 
 Dizenin UTF-8 kodlanmış metni oluşturan bir bayt kümesi içerdiğini varsayarak, Unicode kod noktalarında (karakterlerde değil) bir dizenin uzunluğunu döndürür. Bu varsayım karşılanmazsa, bir sonuç döndürür (bir istisna atmaz).
-Sonuç türü Uint64’tür.
+Sonuç türü Uint64'tür.
 
 ## character\_length, CHARACTER\_LENGTH {#character-length}
 
 Dizenin UTF-8 kodlanmış metni oluşturan bir bayt kümesi içerdiğini varsayarak, Unicode kod noktalarında (karakterlerde değil) bir dizenin uzunluğunu döndürür. Bu varsayım karşılanmazsa, bir sonuç döndürür (bir istisna atmaz).
-Sonuç türü Uint64’tür.
+Sonuç türü Uint64'tür.
 
 ## alt, lcase {#lower}
 
@@ -110,7 +110,7 @@ repeat(s, n)
 
 **Döndürülen değer**
 
-Dize içeren tek dize `s` tekrarlanan `n` kez. Eğer `n` \< 1, işlev boş dize döndürür.
+Dize içeren tek dize `s` tekrarlanan `n` zamanlar. Eğer `n` \< 1, işlev boş dize döndürür.
 
 Tür: `String`.
 
@@ -257,7 +257,7 @@ Sonuç:
 
 ## alt dize (s, ofset, uzunluk), orta (s, ofset, uzunluk), substr (s, ofset, uzunluk) {#substring}
 
-Bayttan başlayarak bir alt dize döndürür ‘offset’ ind thatex yani ‘length’ uzun bayt. Karakter indeksleme birinden başlar (standart SQL’DE olduğu gibi). Bu ‘offset’ ve ‘length’ bağımsız değişkenler sabit olmalıdır.
+Bayttan başlayarak bir alt dize döndürür ‘offset’ ind thatex yani ‘length’ uzun bayt. Karakter indeksleme birinden başlar (standart SQL'DE olduğu gibi). Bu ‘offset’ ve ‘length’ bağımsız değişkenler sabit olmalıdır.
 
 ## substringUTF8(s, ofset, uzunluk) {#substringutf8}
 
@@ -265,7 +265,7 @@ Olarak aynı ‘substring’, ancak Unicode kod noktaları için. Dizenin UTF-8 
 
 ## appendTrailingCharİfAbsent (s, c) {#appendtrailingcharifabsent}
 
-Eğer… ‘s’ dize boş değildir ve ‘c’ sonunda karakter, ekler ‘c’ sonuna kadar karakter.
+Eğer... ‘s’ dize boş değildir ve ‘c’ sonunda karakter, ekler ‘c’ sonuna kadar karakter.
 
 ## convertCharset (s, from, to) {#convertcharset}
 
@@ -281,7 +281,7 @@ Base64 kodlu dizeyi çözme ‘s’ orijinal dizeye. Başarısızlık durumunda 
 
 ## tryBase64Decode (s) {#trybase64decode}
 
-Base64decode’a benzer, ancak hata durumunda boş bir dize döndürülür.
+Base64decode'a benzer, ancak hata durumunda boş bir dize döndürülür.
 
 ## endsWith (s, sonek) {#endswith}
 
@@ -472,18 +472,18 @@ Sonuç:
 
 CRC-32-IEEE 802.3 polinom ve başlangıç değerini kullanarak bir dizenin CRC32 sağlama toplamını döndürür `0xffffffff` (zlib uygulaması).
 
-Sonuç türü Uint32’dir.
+Sonuç türü Uint32'dir.
 
 ## Crc32ieee (s) {#crc32ieee}
 
 CRC-32-IEEE 802.3 polinomunu kullanarak bir dizenin CRC32 sağlama toplamını döndürür.
 
-Sonuç türü Uint32’dir.
+Sonuç türü Uint32'dir.
 
 ## CRC64 (s) {#crc64}
 
 CRC-64-ECMA polinomunu kullanarak bir dizenin CRC64 sağlama toplamını döndürür.
 
-Sonuç türü Uint64’tür.
+Sonuç türü Uint64'tür.
 
 [Orijinal makale](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->

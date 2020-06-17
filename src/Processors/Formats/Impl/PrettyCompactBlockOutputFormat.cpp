@@ -83,19 +83,19 @@ void PrettyCompactBlockOutputFormat::writeRow(
 {
     size_t num_columns = max_widths.size();
 
-    writeCString("│ ", out);
+    writeCString("│", out);
 
     for (size_t j = 0; j < num_columns; ++j)
     {
         if (j != 0)
-            writeCString(" │ ", out);
+            writeCString("│", out);
 
         const auto & type = *header.getByPosition(j).type;
         const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
         writeValueWithPadding(*columns[j], type, row_num, cur_widths, max_widths[j]);
     }
 
-    writeCString(" │\n", out);
+    writeCString("│\n", out);
 }
 
 void PrettyCompactBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)

@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 33
 toc_title: ReplacingMergeTree
 ---
 
-# Replacingmergetree {#replacingmergetree}
+# ReplacingMergeTree {#replacingmergetree}
 
 El motor difiere de [Método de codificación de datos:](mergetree.md#table_engines-mergetree) en que elimina las entradas duplicadas con el mismo valor de clave principal (o más exactamente, con el mismo [clave de clasificación](mergetree.md) valor).
 
@@ -13,7 +13,7 @@ La desduplicación de datos solo se produce durante una fusión. La fusión ocur
 
 Así, `ReplacingMergeTree` es adecuado para borrar datos duplicados en segundo plano para ahorrar espacio, pero no garantiza la ausencia de duplicados.
 
-## Creación De Una Tabla {#creating-a-table}
+## Creación de una tabla {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

@@ -6,7 +6,7 @@ toc_title: HDFS
 # HDFS {#table_engines-hdfs}
 
 This engine provides integration with [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)via ClickHouse. This engine is similar
-to the [File](../special/file.md) and [URL](../special/url.md) engines, but provides Hadoop-specific features.
+to the [File](../special/file.md#table_engines-file) and [URL](../special/url.md#table_engines-url) engines, but provides Hadoop-specific features.
 
 ## Usage {#usage}
 

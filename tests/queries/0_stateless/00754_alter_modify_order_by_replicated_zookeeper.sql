@@ -43,7 +43,7 @@ DETACH TABLE test.summing_r2;
 ALTER TABLE test.summing_r1 ADD COLUMN t UInt32 AFTER z, MODIFY ORDER BY (x, y, t * t) SETTINGS replication_alter_partitions_sync = 2; -- { serverError 341 }
 ATTACH TABLE test.summing_r2;
 
-SELECT sleep(1) Format Null;
+SYSTEM SYNC REPLICA test.summing_r2;
 
 SELECT '*** Check SHOW CREATE TABLE after offline ALTER ***';
 SHOW CREATE TABLE test.summing_r2;

@@ -115,6 +115,7 @@ public:
     String getName() const override { return "FunctionCapture"; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
@@ -243,6 +244,7 @@ public:
 
     String getName() const override { return name; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     DataTypePtr getReturnType(const ColumnsWithTypeAndName &) const override { return return_type; }
     size_t getNumberOfArguments() const override { return capture->captured_types.size(); }
 

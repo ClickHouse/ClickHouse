@@ -9,6 +9,63 @@ toc_title: Other
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
+## getMacro {#getmacro}
+
+Gets a named value from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration.
+
+**Syntax** 
+
+```sql
+getMacro(name);
+```
+
+**Parameters**
+
+- `name` — Name to retrieve from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
+
+**Returned value**
+
+- Value of the specified macro.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+The example `macros` section in the server configuration file:
+
+```xml
+<macros>
+    <test>Value</test>
+</macros>
+```
+
+Query:
+
+```sql
+SELECT getMacro('test');
+```
+
+Result:
+
+```text
+┌─getMacro('test')─┐
+│ Value            │
+└──────────────────┘
+```
+
+An alternative way to get the same value:
+
+```sql
+SELECT * FROM system.macros
+WHERE macro = 'test';
+```
+
+```text
+┌─macro─┬─substitution─┐
+│ test  │ Value        │
+└───────┴──────────────┘
+```
+
 ## FQDN {#fqdn}
 
 Returns the fully qualified domain name.
@@ -179,6 +236,75 @@ Result:
 ┌─currentUser()─┐
 │ default       │
 └───────────────┘
+```
+
+## isConstant {#is-constant}
+
+Checks whether the argument is a constant expression.
+
+A constant expression means an expression whose resulting value is known at the query analysis (i.e. before execution). For example, expressions over [literals](../syntax.md#literals) are constant expressions.
+
+The function is intended for development, debugging and demonstration.
+
+**Syntax**
+
+``` sql
+isConstant(x)
+```
+
+**Parameters**
+
+- `x` — Expression to check.
+
+**Returned values**
+
+- `1` — `x` is constant.
+- `0` — `x` is non-constant.
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT isConstant(x + 1) FROM (SELECT 43 AS x)
+```
+
+Result:
+
+```text
+┌─isConstant(plus(x, 1))─┐
+│                      1 │
+└────────────────────────┘
+```
+
+Query:
+
+```sql
+WITH 3.14 AS pi SELECT isConstant(cos(pi))
+```
+
+Result:
+
+```text
+┌─isConstant(cos(pi))─┐
+│                   1 │
+└─────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT isConstant(number) FROM numbers(1)
+```
+
+Result:
+
+```text
+┌─isConstant(number)─┐
+│                  0 │
+└────────────────────┘
 ```
 
 ## isFinite(x) {#isfinitex}
@@ -1073,5 +1199,53 @@ SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers 
 │      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                               30 │
 └────────┴────────────────────────────────┴──────────────────────────────────┘
 ```
+
+## randomString {#randomstring}
+
+Generates a binary string of the specified length filled with random bytes (including zero bytes).
+
+**Syntax**
+
+``` sql
+randomString(length)
+```
+
+**Parameters** 
+
+-   `length` — String length. Positive integer.
+
+**Returned value**
+
+-   String filled with random bytes.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT randomString(30) AS str, length(str) AS len FROM numbers(2) FORMAT Vertical;
+```
+
+Result:
+
+``` text
+Row 1:
+──────
+str: 3 G  :   pT ?w тi  k aV f6
+len: 30
+
+Row 2:
+──────
+str: 9 ,]    ^   )  ]??  8
+len: 30
+```
+
+**See Also**
+
+-   [generateRandom](../../sql-reference/table-functions/generate.md#generaterandom)
+-   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
+
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->

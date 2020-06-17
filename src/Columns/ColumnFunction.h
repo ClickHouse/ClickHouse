@@ -29,6 +29,7 @@ private:
 
 public:
     const char * getFamilyName() const override { return "Function"; }
+    TypeIndex getDataType() const override { return TypeIndex::Function; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -119,6 +120,11 @@ public:
     void getPermutation(bool, size_t, int, Permutation &) const override
     {
         throw Exception("getPermutation is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const override
+    {
+        throw Exception("updatePermutation is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void gather(ColumnGathererStream &) override

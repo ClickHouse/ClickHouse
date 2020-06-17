@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 33
 toc_title: MySQL
 ---
@@ -97,7 +97,7 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-## همچنین نگاه کنید {#see-also}
+## همچنین نگاه کنید به {#see-also}
 
 -   [این ‘mysql’ تابع جدول](../../../sql-reference/table-functions/mysql.md)
 -   [با استفاده از خروجی زیر به عنوان منبع فرهنگ لغت خارجی](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)

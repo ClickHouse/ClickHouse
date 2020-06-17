@@ -8,6 +8,8 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -17,7 +19,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Interpreters/convertFieldToType.h>
 #include <boost/functional/hash.hpp>
 
 

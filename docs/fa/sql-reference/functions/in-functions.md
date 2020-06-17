@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 60
 toc_title: "\u0627\u062C\u0631\u0627\u06CC \u0627\u067E\u0631\u0627\u062A\u0648\u0631\
   \ \u062F\u0631"
@@ -10,7 +10,7 @@ toc_title: "\u0627\u062C\u0631\u0627\u06CC \u0627\u067E\u0631\u0627\u062A\u0648\
 
 ## در notIn, globalIn, globalNotIn {#in-functions}
 
-بخش را ببینید [در اپراتورها](../statements/select.md#select-in-operators).
+بخش را ببینید [در اپراتورها](../operators/in.md#select-in-operators).
 
 ## tuple(x, y, …), operator (x, y, …) {#tuplex-y-operator-x-y}
 

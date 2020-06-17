@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 65
 toc_title: Comment Construire ClickHouse sur Mac OS X
 ---
 
-# Comment Construire ClickHouse Sur Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
+# Comment Construire ClickHouse sur Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
 Build devrait fonctionner sur Mac OS X 10.15 (Catalina)
 
@@ -15,7 +15,7 @@ Build devrait fonctionner sur Mac OS X 10.15 (Catalina)
 $ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 ```
 
-## Installez Les Compilateurs, Outils Et bibliothèques Requis {#install-required-compilers-tools-and-libraries}
+## Installez les compilateurs, outils et bibliothèques requis {#install-required-compilers-tools-and-libraries}
 
 ``` bash
 $ brew install cmake ninja libtool gettext
@@ -45,12 +45,12 @@ $ ninja
 $ cd ..
 ```
 
-## Mises En Garde {#caveats}
+## Mises en garde {#caveats}
 
-Si vous avez l’intention d’exécuter clickhouse-server, assurez-vous d’augmenter la variable maxfiles du système.
+Si vous avez l'intention d'exécuter clickhouse-server, assurez-vous d'augmenter la variable maxfiles du système.
 
 !!! info "Note"
-    Vous aurez besoin d’utiliser sudo.
+    Vous aurez besoin d'utiliser sudo.
 
 Pour ce faire, créez le fichier suivant:
 

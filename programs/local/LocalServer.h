@@ -4,12 +4,11 @@
 #include <Poco/Util/Application.h>
 #include <memory>
 #include <loggers/Loggers.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
-
-class Context;
 
 /// Lightweight Application for clickhouse-local
 /// No networking, no extra configs and working directories, no pid and status files, no dictionaries, no logging.

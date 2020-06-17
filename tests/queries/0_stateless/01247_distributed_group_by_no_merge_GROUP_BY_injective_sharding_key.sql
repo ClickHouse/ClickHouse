@@ -1,3 +1,11 @@
+-- TODO: correct testing with real unique shards
+
+-- Avoid "Connection failed at try №1" messages.
+SET send_logs_level = 'none';
+SET connect_timeout_with_failover_ms = 5000;
+
+set optimize_distributed_group_by_sharding_key=1;
+
 drop table if exists dist_01247;
 drop table if exists data_01247;
 
@@ -60,3 +68,12 @@ select 'GROUP BY (Distributed-over-Distributed)';
 select count(), * from cluster(test_cluster_two_shards, currentDatabase(), dist_01247) group by number;
 select 'GROUP BY (Distributed-over-Distributed) distributed_group_by_no_merge';
 select count(), * from cluster(test_cluster_two_shards, currentDatabase(), dist_01247) group by number settings distributed_group_by_no_merge=1;
+
+select 'extremes';
+select count(), * from dist_01247 group by number settings extremes=1;
+select 'WITH TOTALS';
+select count(), * from dist_01247 group by number with totals;
+select 'WITH ROLLUP';
+select count(), * from dist_01247 group by number with rollup;
+select 'WITH CUBE';
+select count(), * from dist_01247 group by number with cube;

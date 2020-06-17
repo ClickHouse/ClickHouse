@@ -1,7 +1,8 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
-toc_folder_title: Table Engines
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: "\u0645\u0648\u062A\u0648\u0631\u0647\u0627\u06CC \u062C\u062F\u0648\
+  \u0644"
 toc_priority: 26
 toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 ---
@@ -21,17 +22,17 @@ toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 
 ### ادغام {#mergetree}
 
-موتورهای جدول جهانی ترین و کاربردی برای وظایف بار بالا. اموال به اشتراک گذاشته شده توسط این موتور درج داده های سریع با پردازش داده های پس زمینه های بعدی است. `MergeTree` موتورهای خانواده از تکرار داده ها پشتیبانی می کنند (با [تکرار\*](mergetree-family/replication.md) نسخه موتورهای) پارتیشن بندی و ویژگی های دیگر در موتورهای دیگر پشتیبانی نمی شود.
+موتورهای جدول جهانی ترین و کاربردی برای وظایف بار بالا. اموال به اشتراک گذاشته شده توسط این موتور درج داده های سریع با پردازش داده های پس زمینه های بعدی است. `MergeTree` موتورهای خانواده از تکرار داده ها پشتیبانی می کنند (با [تکرار\*](mergetree-family/replication.md#table_engines-replication) نسخه موتورهای) پارتیشن بندی و ویژگی های دیگر در موتورهای دیگر پشتیبانی نمی شود.
 
 موتورهای در خانواده:
 
--   [ادغام](mergetree-family/mergetree.md)
--   [جایگزینی](mergetree-family/replacingmergetree.md)
--   [سامینگمرگتری](mergetree-family/summingmergetree.md)
--   [ریزدانه](mergetree-family/aggregatingmergetree.md)
--   [سقوط غذای اصلی](mergetree-family/collapsingmergetree.md)
--   [در حال بارگذاری](mergetree-family/versionedcollapsingmergetree.md)
--   [نمودار](mergetree-family/graphitemergetree.md)
+-   [ادغام](mergetree-family/mergetree.md#mergetree)
+-   [جایگزینی](mergetree-family/replacingmergetree.md#replacingmergetree)
+-   [سامینگمرگتری](mergetree-family/summingmergetree.md#summingmergetree)
+-   [ریزدانه](mergetree-family/aggregatingmergetree.md#aggregatingmergetree)
+-   [سقوط غذای اصلی](mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
+-   [در حال بارگذاری](mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
+-   [نمودار](mergetree-family/graphitemergetree.md#graphitemergetree)
 
 ### ثبت {#log}
 
@@ -39,9 +40,9 @@ toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 
 موتورهای در خانواده:
 
--   [جمع شدن](log-family/tinylog.md)
--   [خط زدن](log-family/stripelog.md)
--   [ثبت](log-family/log.md)
+-   [جمع شدن](log-family/tinylog.md#tinylog)
+-   [خط زدن](log-family/stripelog.md#stripelog)
+-   [ثبت](log-family/log.md#log)
 
 ### موتورهای یکپارچه سازی {#integration-engines}
 
@@ -49,30 +50,30 @@ toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 
 موتورهای در خانواده:
 
--   [کافکا](integrations/kafka.md)
--   [MySQL](integrations/mysql.md)
--   [ODBC](integrations/odbc.md)
--   [JDBC](integrations/jdbc.md)
--   [HDFS](integrations/hdfs.md)
+-   [کافکا](integrations/kafka.md#kafka)
+-   [MySQL](integrations/mysql.md#mysql)
+-   [ODBC](integrations/odbc.md#table-engine-odbc)
+-   [JDBC](integrations/jdbc.md#table-engine-jdbc)
+-   [HDFS](integrations/hdfs.md#hdfs)
 
 ### موتورهای ویژه {#special-engines}
 
 موتورهای در خانواده:
 
--   [توزیع شده](special/distributed.md)
--   [ماده بینی](special/materializedview.md)
--   [واژهنامه](special/dictionary.md)
--   [ادغام](special/merge.md)
--   [پرونده](special/file.md)
--   [خالی](special/null.md)
--   [تنظیم](special/set.md)
--   [پیوستن](special/join.md)
--   [URL](special/url.md)
--   [نما](special/view.md)
--   [حافظه](special/memory.md)
--   [بافر](special/buffer.md)
+-   [توزیع شده](special/distributed.md#distributed)
+-   [ماده بینی](special/materializedview.md#materializedview)
+-   [واژهنامه](special/dictionary.md#dictionary)
+-   پردازشگر پشتیبانی شده:
+-   [پرونده](special/file.md#file)
+-   [خالی](special/null.md#null)
+-   [تنظیم](special/set.md#set)
+-   [پیوستن](special/join.md#join)
+-   [URL](special/url.md#table_engines-url)
+-   [نما](special/view.md#table_engines-view)
+-   [حافظه](special/memory.md#memory)
+-   [بافر](special/buffer.md#buffer)
 
-## ستونهای مجازی {#table_engines-virtual-columns}
+## ستونهای مجازی {#table_engines-virtual_columns}
 
 ستون مجازی یک ویژگی موتور جدول انتگرال است که در کد منبع موتور تعریف شده است.
 

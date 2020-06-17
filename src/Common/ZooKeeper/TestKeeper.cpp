@@ -158,7 +158,7 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
             }
             else
-                throw Exception("Illegal command as part of multi ZooKeeper request", ZBADARGUMENTS);
+                throw Exception("Illegal command as part of multi ZooKeeper request", Error::ZBADARGUMENTS);
         }
     }
 
@@ -338,7 +338,7 @@ ResponsePtr TestKeeperListRequest::process(TestKeeper::Container & container, in
     {
         auto path_prefix = path;
         if (path_prefix.empty())
-            throw Exception("Logical error: path cannot be empty", ZSESSIONEXPIRED);
+            throw Exception("Logical error: path cannot be empty", Error::ZSESSIONEXPIRED);
 
         if (path_prefix.back() != '/')
             path_prefix += '/';
@@ -514,7 +514,7 @@ void TestKeeper::finalize()
                 WatchResponse response;
                 response.type = SESSION;
                 response.state = EXPIRED_SESSION;
-                response.error = ZSESSIONEXPIRED;
+                response.error = Error::ZSESSIONEXPIRED;
 
                 for (auto & callback : path_watch.second)
                 {
@@ -541,7 +541,7 @@ void TestKeeper::finalize()
             if (info.callback)
             {
                 ResponsePtr response = info.request->createResponse();
-                response->error = ZSESSIONEXPIRED;
+                response->error = Error::ZSESSIONEXPIRED;
                 try
                 {
                     info.callback(*response);
@@ -556,7 +556,7 @@ void TestKeeper::finalize()
                 WatchResponse response;
                 response.type = SESSION;
                 response.state = EXPIRED_SESSION;
-                response.error = ZSESSIONEXPIRED;
+                response.error = Error::ZSESSIONEXPIRED;
                 try
                 {
                     info.watch(response);
@@ -587,10 +587,10 @@ void TestKeeper::pushRequest(RequestInfo && request)
         std::lock_guard lock(push_request_mutex);
 
         if (expired)
-            throw Exception("Session expired", ZSESSIONEXPIRED);
+            throw Exception("Session expired", Error::ZSESSIONEXPIRED);
 
         if (!requests_queue.tryPush(std::move(request), operation_timeout.totalMilliseconds()))
-            throw Exception("Cannot push request to queue within operation timeout", ZOPERATIONTIMEOUT);
+            throw Exception("Cannot push request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
     }
     catch (...)
     {
