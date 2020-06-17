@@ -7,6 +7,10 @@ body.blog .dropdown-item:focus {
   background-color: #efefef;
 }
 
+.blog .social-icon {
+    background: #eee;
+}
+
 @media (prefers-color-scheme: dark) {
   body.blog .dropdown-item {
     color: #fff !important;
@@ -16,5 +20,9 @@ body.blog .dropdown-item:focus {
   .blog .dropdown-item:focus,
   .blog .tag{
     background-color: #666 !important;
+  }
+
+  .blog .social-icon {
+    background: #444451;
   }
 }
