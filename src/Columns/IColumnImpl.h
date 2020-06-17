@@ -57,7 +57,7 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
     UInt64 * indexes [[maybe_unused]];
     UInt64 * next_index [[maybe_unused]];
 
-    if constexpr(use_indexes)
+    if constexpr (use_indexes)
     {
         num_indexes = row_indexes->size();
         next_index = indexes = row_indexes->data();
