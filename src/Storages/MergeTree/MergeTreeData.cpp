@@ -1333,10 +1333,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 
     checkTTLExpressions(new_metadata, old_metadata);
 
-    if (hasSettingsChanges())
+    if (old_metadata.hasSettingsChanges())
     {
 
-        const auto current_changes = getSettingsChanges()->as<const ASTSetQuery &>().changes;
+        const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
         for (const auto & changed_setting : new_changes)
         {

@@ -393,4 +393,12 @@ Names StorageInMemoryMetadata::getPrimaryKeyColumns() const
         return primary_key.column_names;
     return {};
 }
+
+ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
+{
+    if (settings_changes)
+        return settings_changes->clone();
+    return nullptr;
+}
+
 }

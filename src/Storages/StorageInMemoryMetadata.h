@@ -169,6 +169,10 @@ struct StorageInMemoryMetadata
     /// Returns columns names in sorting key specified by. For example: 'a', 'x
     /// * y', 'toStartOfMonth(date)', etc.
     Names getPrimaryKeyColumns() const;
+
+    /// Storage settings
+    ASTPtr getSettingsChanges() const;
+    bool hasSettingsChanges() const { return settings_changes != nullptr; }
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;
