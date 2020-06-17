@@ -147,7 +147,7 @@ BlockInputStreamPtr StorageLiveView::completeQuery(Pipes pipes)
     };
     block_context->addExternalTable(getBlocksTableName(), TemporaryTableHolder(global_context, creator));
 
-    InterpreterSelectQuery select(getInnerBlocksQuery(), *block_context, StoragePtr(), SelectQueryOptions(QueryProcessingStage::Complete));
+    InterpreterSelectQuery select(getInnerBlocksQuery(), *block_context, StoragePtr(), nullptr, SelectQueryOptions(QueryProcessingStage::Complete));
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().getInputStream());
 
     /// Squashing is needed here because the view query can generate a lot of blocks
@@ -214,7 +214,7 @@ void StorageLiveView::writeIntoLiveView(
         };
         TemporaryTableHolder blocks_storage(context, creator);
 
-        InterpreterSelectQuery select_block(mergeable_query, context, blocks_storage.getTable(),
+        InterpreterSelectQuery select_block(mergeable_query, context, blocks_storage.getTable(), blocks_storage.getTable()->getInMemoryMetadataPtr(),
             QueryProcessingStage::WithMergeableState);
 
         auto data_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(

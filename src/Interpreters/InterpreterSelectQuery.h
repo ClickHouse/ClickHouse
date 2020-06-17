@@ -70,6 +70,7 @@ public:
         const ASTPtr & query_ptr_,
         const Context & context_,
         const StoragePtr & storage_,
+        const StorageMetadataPtr & metadata_snapshot_ = nullptr,
         const SelectQueryOptions & = {});
 
     ~InterpreterSelectQuery() override;
@@ -98,7 +99,8 @@ private:
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,
-        const Names & required_result_column_names = {});
+        const Names & required_result_column_names = {},
+        const StorageMetadataPtr & metadata_snapshot_= nullptr);
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
@@ -184,13 +186,13 @@ private:
     StoragePtr storage;
     StorageID table_id = StorageID::createEmpty();  /// Will be initialized if storage is not nullptr
     TableStructureReadLockHolder table_lock;
-    StorageMetadataPtr metadata_snapshot;
 
     /// Used when we read from prepared input, not table or subquery.
     BlockInputStreamPtr input;
     std::optional<Pipe> input_pipe;
 
     Poco::Logger * log;
+    StorageMetadataPtr metadata_snapshot;
 };
 
 }

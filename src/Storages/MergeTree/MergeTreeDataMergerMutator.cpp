@@ -1019,7 +1019,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             commands_for_part.emplace_back(command);
     }
 
-    if (!isStorageTouchedByMutations(storage_from_source_part, commands_for_part, context_for_reading))
+    if (!isStorageTouchedByMutations(storage_from_source_part, metadata_snapshot, commands_for_part, context_for_reading))
     {
         LOG_TRACE(log, "Part {} doesn't change up to mutation version {}", source_part->name, future_part.part_info.mutation);
         return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info);
@@ -1045,7 +1045,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     if (!for_interpreter.empty())
     {
-        interpreter.emplace(storage_from_source_part, for_interpreter, context_for_reading, true);
+        interpreter.emplace(storage_from_source_part, metadata_snapshot, for_interpreter, context_for_reading, true);
         in = interpreter->execute(table_lock_holder);
         updated_header = interpreter->getUpdatedHeader();
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));

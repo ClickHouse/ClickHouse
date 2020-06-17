@@ -165,8 +165,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const StoragePtr & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const SelectQueryOptions & options_)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::nullopt, storage_, options_.copy().noSubquery())
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::nullopt, storage_, options_.copy().noSubquery(), {}, metadata_snapshot_)
 {}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
@@ -214,7 +215,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     std::optional<Pipe> input_pipe_,
     const StoragePtr & storage_,
     const SelectQueryOptions & options_,
-    const Names & required_result_column_names)
+    const Names & required_result_column_names,
+    const StorageMetadataPtr & metadata_snapshot_)
     : options(options_)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
     , query_ptr(options.modify_inplace ? query_ptr_ : query_ptr_->clone())
@@ -223,6 +225,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , input(input_)
     , input_pipe(std::move(input_pipe_))
     , log(&Poco::Logger::get("InterpreterSelectQuery"))
+    , metadata_snapshot(metadata_snapshot_)
 {
     checkStackSize();
 
@@ -255,7 +258,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         table_lock = storage->lockStructureForShare(
                 false, context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
-        metadata_snapshot = storage->getInMemoryMetadataPtr();
+        if (metadata_snapshot == nullptr)
+            metadata_snapshot = storage->getInMemoryMetadataPtr();
     }
 
     if (has_input || !joined_tables.resolveTables())

@@ -789,7 +789,8 @@ bool StorageMergeTree::tryMutatePart()
 
                 if (!commands_for_size_validation.empty())
                 {
-                    MutationsInterpreter interpreter(shared_from_this(), commands_for_size_validation, global_context, false);
+                    MutationsInterpreter interpreter(
+                        shared_from_this(), metadata_snapshot, commands_for_size_validation, global_context, false);
                     commands_size += interpreter.evaluateCommandsSize();
                 }
 
