@@ -101,7 +101,7 @@ public:
     virtual bool isView() const { return false; }
 
     /// Returns true if the storage supports queries with the SAMPLE section.
-    virtual bool supportsSampling() const { return hasSamplingKey(); }
+    virtual bool supportsSampling() const { return getInMemoryMetadataPtr()->hasSamplingKey(); }
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
@@ -441,18 +441,6 @@ public:
     /// Returns columns names in sorting key specified by. For example: 'a', 'x
     /// * y', 'toStartOfMonth(date)', etc.
     Names getPrimaryKeyColumns() const;
-
-    /// Returns structure with sampling key.
-    const KeyDescription & getSamplingKey() const;
-    /// Returns sampling expression AST for storage or nullptr if there is none.
-    ASTPtr getSamplingKeyAST() const { return metadata->sampling_key.definition_ast; }
-    /// Storage has user-defined (in CREATE query) sampling key.
-    bool isSamplingKeyDefined() const;
-    /// Storage has sampling key.
-    bool hasSamplingKey() const;
-    /// Returns column names that need to be read to calculate sampling key.
-    Names getColumnsRequiredForSampling() const;
-
 
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }

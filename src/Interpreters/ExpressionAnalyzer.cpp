@@ -1062,7 +1062,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))
         {
-            Names columns_for_sampling = storage->getColumnsRequiredForSampling();
+            Names columns_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
                 columns_for_sampling.begin(), columns_for_sampling.end());
         }
