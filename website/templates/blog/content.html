@@ -13,11 +13,21 @@
                 {{ page.content|adjust_markdown_html }}
             </article>
             <section class="d-none d-md-block col-md-1 mh-100">
-                <div class="sticky-top pt-3">
-                    <a href="https://twitter.com/intent/tweet?url={{ url }}"
+                <div class="sticky-top pt-2">
+                    <a class="d-block mb-2" href="https://twitter.com/intent/tweet?url={{ title|urlencode }}+{{ url|urlencode }}"
                        rel="external nofollow noreferrer" target="_blank">
-                        <img data-src="/images/index/twitter.svg"
-                             alt="Tweet" title="Tweet" class="bg-secondary-alt rounded-circle img-fluid p-1" />
+                        <img src="/images/index/twitter.svg"
+                             alt="{{ _('Share on') }} Twitter" title="{{ _('Share on') }} Twitter" class="social-icon rounded-circle img-fluid w-100 p-1" />
+                    </a>
+                    <a class="d-block mb-2" href="https://news.ycombinator.com/submitlink?t={{ title|urlencode }}&u={{ url|urlencode }}"
+                       rel="external nofollow noreferrer" target="_blank">
+                        <img src="/images/index/hackernews.svg"
+                             alt="{{ _('Share on') }} HackerNews" title="{{ _('Share on') }} Hacker News" class="rounded-circle img-fluid w-100 p-1" />
+                    </a>
+                    <a class="d-block mb-2" href="http://www.reddit.com/submit?title={{ title|urlencode }}&url={{ url|urlencode }}"
+                       rel="external nofollow noreferrer" target="_blank">
+                        <img src="/images/index/reddit.svg"
+                             alt="{{ _('Share on') }} Reddit" title="{{ _('Share on') }} Reddit" class="invert-dark rounded-circle img-fluid w-100 p-1" />
                     </a>
                 </div>
             </section>
@@ -33,7 +43,8 @@
                 {% endfor %}
             {% endif %}
         </section>
-        {% include "templates/blog/footer.html" %}
+
+
     </div>
     {% else %}
         {% for post in config.extra.post_meta.values() %}
@@ -43,7 +54,7 @@
                 <div class="col-12 col-md-6">
                     <img class="img-fluid" data-src="{{ post_image }}" alt="{{ post['title'] }}" title="{{ post['title'] }}" />
                 </div>
-                <div class="col-12 col-md-6 p-3">
+                <div class="col-12 col-md-6">
                     <h2>{{ post['title'] }}</h2>
                     <span class="text-muted">{{ post['date'] }}</span>
                 </div>
@@ -52,3 +63,21 @@
         {% endfor %}
     {% endif %}
 </div>
+{% if not page.meta.is_index and language == 'en' %}
+</div> {## end row ##}
+</div> {## end container ##}
+<div class="comments-bg">
+    <div class="container">
+        <div class="row">
+            <section class="col-md-10 offset-md-1 my-5">
+                <div id="embedd-comments"></div>
+            </section>
+        </div>
+    </div>
+</div>
+<div class="container"> {## new container ##}
+<div class="row"> {## new row ##}
+<script async type="text/javascript" src="/js/embedd.min.js?{{ config.extra.rev_short }}"></script>
+{% endif %}
+
+{% include "templates/blog/footer.html" %}

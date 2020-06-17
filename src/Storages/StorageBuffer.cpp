@@ -229,6 +229,17 @@ Pipes StorageBuffer::read(
     for (auto & buf : buffers)
         pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, *this));
 
+    /// Convert pipes from table to structure from buffer.
+    if (!pipes_from_buffers.empty() && !pipes_from_dst.empty()
+        && !blocksHaveEqualStructure(pipes_from_buffers.front().getHeader(), pipes_from_dst.front().getHeader()))
+    {
+        for (auto & pipe : pipes_from_dst)
+            pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
+                    pipe.getHeader(),
+                    pipes_from_buffers.front().getHeader(),
+                    ConvertingTransform::MatchColumnsMode::Name));
+    }
+
     /** If the sources from the table were processed before some non-initial stage of query execution,
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
       */

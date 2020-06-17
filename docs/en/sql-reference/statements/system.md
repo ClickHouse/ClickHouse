@@ -79,6 +79,7 @@ Complied expression cache used when query/user/profile enable option [compile](.
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
 Flushes buffers of log messages to system tables (e.g. system.query\_log). Allows you to not wait 7.5 seconds when debugging.
+This will also create system tables even if message queue is empty.
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 
