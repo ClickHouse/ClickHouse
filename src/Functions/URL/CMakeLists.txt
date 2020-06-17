@@ -11,6 +11,11 @@ endif ()
 # TODO: move Functions/Regexps.h to some lib and use here
 target_link_libraries(clickhouse_functions_url PRIVATE hyperscan)
 
+if(USE_HYPERSCAN)
+    target_link_libraries(clickhouse_functions_url PRIVATE ${HYPERSCAN_LIBRARY})
+    target_include_directories(clickhouse_functions_url SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
+endif()
+
 if (USE_GPERF)
     # Only for regenerate
     add_custom_target(generate-tldlookup-gperf ./tldLookup.sh
