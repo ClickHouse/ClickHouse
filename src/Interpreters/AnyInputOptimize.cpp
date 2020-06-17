@@ -24,7 +24,8 @@ namespace
 
 ASTPtr * getExactChild(const ASTPtr & ast, const size_t ind)
 {
-    if (ast && ast->as<ASTFunction>()->arguments->children[ind])
+    if (ast && ast->as<ASTFunction>()->arguments->children &&
+        ast->as<ASTFunction>()->arguments->children[ind])
         return &ast->as<ASTFunction>()->arguments->children[ind];
     return nullptr;
 }
@@ -65,15 +66,15 @@ void AnyInputMatcher::visit(ASTPtr & current_ast, Data data)
 
     auto * function_node = current_ast->as<ASTFunction>();
     if (function_node && (function_node->name == any || function_node->name == anyLast)
-        && function_node->arguments->children[0]->as<ASTFunction>())
+        && function_node->arguments->children && function_node->arguments->children[0] &&
+        function_node->arguments->children[0]->as<ASTFunction>())
     {
         int mode = 0;
         if (function_node->name.c_str() == anyLast)
             mode = 1;
         ///cut any or anyLast
-        size_t amount_of_children = function_node->arguments->children[0]->as<ASTFunction>()->arguments->children.size();
         current_ast = (function_node->arguments->children[0])->clone();
-        for (size_t i = 0; i < amount_of_children; ++i)
+        for (size_t i = 0; i < current_ast->as<ASTFunction>()->arguments->children.size(); ++i)
             changeAllIdentifiers(current_ast, i, mode);
     }
 }
