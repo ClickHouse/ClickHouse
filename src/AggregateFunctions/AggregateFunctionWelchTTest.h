@@ -183,7 +183,7 @@ struct AggregateFunctionWelchTTestData final
             i_dof = 101;
         }
 
-        if(i_dof < 100)
+        if (i_dof < 100)
         {
             i_dof = 1;
         }
@@ -285,7 +285,7 @@ public:
         size_t size_x = this->data(place).get_size_x();
         size_t size_y = this->data(place).get_size_y();
 
-        if( size_x < 2 || size_y < 2)
+        if (size_x < 2 || size_y < 2)
         {
             throw Exception("Aggregate function " + getName() + " requires samples to be of size > 1", ErrorCodes::BAD_ARGUMENTS);
         }
