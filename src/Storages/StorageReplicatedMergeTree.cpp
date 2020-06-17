@@ -71,6 +71,10 @@ namespace ProfileEvents
     extern const Event ReplicatedPartFetches;
     extern const Event DataAfterMergeDiffersFromReplica;
     extern const Event DataAfterMutationDiffersFromReplica;
+    extern const Event CreatedLogEntryForMerge;
+    extern const Event NotCreatedLogEntryForMerge;
+    extern const Event CreatedLogEntryForMutation;
+    extern const Event NotCreatedLogEntryForMutation;
 }
 
 namespace CurrentMetrics
@@ -2602,10 +2606,12 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
         String path_created = dynamic_cast<const Coordination::CreateResponse &>(*responses.front()).path_created;
         entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 
+        ProfileEvents::increment(ProfileEvents::CreatedLogEntryForMerge);
         LOG_TRACE(log, "Created log entry {} for merge {}", path_created, merged_name);
     }
     else if (code == Coordination::Error::ZBADVERSION)
     {
+        ProfileEvents::increment(ProfileEvents::NotCreatedLogEntryForMerge);
         LOG_TRACE(log, "Log entry is not created for merge {} because log was updated", merged_name);
         return CreateMergeEntryResult::LogUpdated;
     }
@@ -2666,12 +2672,14 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
 
     if (code == Coordination::Error::ZBADVERSION)
     {
+        ProfileEvents::increment(ProfileEvents::NotCreatedLogEntryForMutation);
         LOG_TRACE(log, "Log entry is not created for mutation {} because log was updated", new_part_name);
         return CreateMergeEntryResult::LogUpdated;
     }
 
     zkutil::KeeperMultiException::check(code, ops, responses);
 
+    ProfileEvents::increment(ProfileEvents::CreatedLogEntryForMutation);
     LOG_TRACE(log, "Created log entry for mutation {}", new_part_name);
     return CreateMergeEntryResult::Ok;
 }
