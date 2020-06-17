@@ -7,24 +7,22 @@
 #include <Poco/Util/Application.h>
 #include <daemon/BaseDaemon.h>
 
-DB::BackgroundProcessingPoolTaskResult checkLow(std::vector<bool> & checks, int i, std::mutex & mut)
+DB::BackgroundProcessingPoolTaskResult checkLow(std::vector<bool> & checks, int i)
 {
     int policy;
     sched_param param;
     if (pthread_getschedparam(pthread_self(), &policy, &param))
     {
-        std::lock_guard<std::mutex> guard(mut);
         checks[i] = false;
 
-        return DB::BackgroundProcessingPoolTaskResult::ERROR;
+        return DB::BackgroundProcessingPoolTaskResult::SUCCESS;
     }
 
     if (policy != SCHED_IDLE)
     {
-        std::lock_guard<std::mutex> guard(mut);
         checks[i] = false;
 
-        return DB::BackgroundProcessingPoolTaskResult::ERROR;
+        return DB::BackgroundProcessingPoolTaskResult::SUCCESS;
     }
     return DB::BackgroundProcessingPoolTaskResult::SUCCESS;
 }
@@ -104,14 +102,12 @@ TEST(BackgroundLowPriorityProcessingPool, SimpleCase)
         ASSERT_EQ(i, data[i]) << "failed on " << i << " step\n";
     }
 
-    std::mutex mut;
     std::vector<bool> checks(16, true);
     std::vector<BackgroundProcessingPool::TaskHandle> handles(16);
-    sched_param sched_param_{};
     for (int i = 0; i < 16; ++i)
     {
-        handles[i] = pool.createTask([&mut, &checks, i, &sched_param_] { pthread_setschedparam(pthread_self(), SCHED_IDLE, &sched_param_); return checkLow(checks, i, mut); });
-        pool.startTask(handles[i]);
+        handles[i] = pool.createTask([&checks, i] { return checkLow(checks, i); });
+        pool.startTask(handles[i], false);
     }
     std::this_thread::sleep_for(std::chrono::seconds(1));
     for (int i = 0; i < 16; ++i)
