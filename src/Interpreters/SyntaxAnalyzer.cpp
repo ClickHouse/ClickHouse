@@ -1,4 +1,4 @@
-#include  <Core/Settings.h>
+#include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 
