@@ -157,7 +157,7 @@ SRCS(
     QueryPlan/ReadFromStorageStep.cpp
     QueryPlan/ReadNothingStep.cpp
     QueryPlan/RollupStep.cpp
-    QueryPlan/TotalsHavingStep
+    QueryPlan/TotalsHavingStep.cpp
     QueryPlan/QueryPlan.cpp
 )
 
