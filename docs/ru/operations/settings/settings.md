@@ -1236,7 +1236,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 **См. также** 
 
--   [Обработка значения NULL в операторе IN](../../sql-reference/statements/select.md#in-null-processing)
+-   [Обработка значения NULL в операторе IN](../../sql-reference/operators/in.md#in-null-processing)
 
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 

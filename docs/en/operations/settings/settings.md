@@ -1453,7 +1453,8 @@ the result is:
 
 **See Also** 
 
--   [NULL Processing in IN Operators](../../sql-reference/statements/select.md#in-null-processing)
+-   [NULL Processing in IN Operators](../../sql-reference/operators/in.md#in-null-processing)
+
 ## low_cardinality_max_dictionary_size {#low_cardinality_max_dictionary_size}
 
 Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can't be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
