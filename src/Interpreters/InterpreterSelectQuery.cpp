@@ -93,6 +93,7 @@
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/ExtremesStep.h>
 
 
 namespace DB
@@ -1676,10 +1677,9 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const 
 
 void InterpreterSelectQuery::executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression)
 {
-    pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
-    {
-       return std::make_shared<ExpressionTransform>(header, expression);
-    });
+    ExpressionStep projection_step(DataStream{.header = pipeline.getHeader()}, expression);
+    projection_step.setStepDescription("Projection");
+    projection_step.transformPipeline(pipeline);
 }
 
 
@@ -1866,7 +1866,8 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
     if (!context->getSettingsRef().extremes)
         return;
 
-    pipeline.addExtremesTransform();
+    ExtremesStep extremes_step(DataStream{.header = pipeline.getHeader()});
+    extremes_step.transformPipeline(pipeline);
 }
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const SubqueriesForSets & subqueries_for_sets)
