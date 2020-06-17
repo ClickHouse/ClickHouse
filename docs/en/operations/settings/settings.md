@@ -1262,4 +1262,62 @@ Possible values:
 
 Default value: 16.
 
+## transform_null_in {#transform_null_in}
+
+Enables or disables NULL-to-zero transformation in the `IN` operator.
+
+By default, the `IN` operator processes `NULL` as 0.  
+If `transform_null_in` is enabled, the `IN` operator processes `NULL` as [NULL](../../sql-reference/syntax.md#null-literal). 
+
+Possible values:
+
+-   0 — NULL-to-zero transformation is enabled.
+-   1 — NULL-to-zero transformation is disabled.
+
+Default value: 0.
+
+**Example** 
+
+Consider the `null_in` table:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+│    3 │     3 │
+└──────┴───────┘
+```
+When `transform_null_in` equals 0:
+
+```sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL);
+```
+
+returns:
+
+```text
+┌──idx─┬────i─┐
+│    1 │    1 │
+└──────┴──────┘
+```
+
+When `transform_null_in` equals 1: 
+
+```sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
+```
+the result is:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+└──────┴───────┘
+```
+
+
+**See Also** 
+
+-   [NULL Processing in IN Operators](../../sql-reference/statements/select.md#null-processing-1)
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

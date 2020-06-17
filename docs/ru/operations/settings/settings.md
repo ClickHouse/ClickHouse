@@ -1153,4 +1153,61 @@ Default value: 0.
 
 Значение по умолчанию: 16.
 
+## transform_null_in {#transform_null_in}
+
+Включает или отключает преобразование значения `NULL` в 0 в операторе `IN`.
+
+По умолчанию оператор `IN` обрабатывает значение `NULL` как 0.  
+Если настройка `transform_null_in` включена, оператор `IN` обрабатывает `NULL` как [NULL](../../sql-reference/syntax.md#null-literal). 
+
+Возможные значения:
+
+-   0 — `NULL` обрабатывается как 0.
+-   1 — `NULL` обрабатывается как [NULL](../../sql-reference/syntax.md#null-literal).
+
+Значение по умолчанию: 0.
+
+**Пример** 
+
+Рассмотрим таблицу `null_in`:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+│    3 │     3 │
+└──────┴───────┘
+```
+Если значение `transform_null_in` равно 0, запрос
+
+```sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL);
+```
+
+возвращает результат
+
+```text
+┌──idx─┬────i─┐
+│    1 │    1 │
+└──────┴──────┘
+```
+
+Если значение `transform_null_in` равно 1, запрос 
+
+```sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
+```
+возращает результат
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+└──────┴───────┘
+```
+
+**См. также** 
+
+-   [Обработка значения NULL в операторе IN](../../sql-reference/statements/select.md#null-processing-1)
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
