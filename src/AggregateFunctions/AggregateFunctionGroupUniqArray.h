@@ -16,6 +16,7 @@
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/KeyHolderHelpers.h>
 
 #define AGGREGATE_FUNCTION_GROUP_ARRAY_UNIQ_MAX_SIZE 0xFFFFFF
 
@@ -147,26 +148,6 @@ class AggregateFunctionGroupUniqArrayGeneric
 
     using State = AggregateFunctionGroupUniqArrayGenericData;
 
-    static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
-    {
-        if constexpr (is_plain_column)
-        {
-            return ArenaKeyHolder{column.getDataAt(row_num), arena};
-        }
-        else
-        {
-            const char * begin = nullptr;
-            StringRef serialized = column.serializeValueIntoArena(row_num, arena, begin);
-            assert(serialized.data != nullptr);
-            return SerializedKeyHolder{serialized, arena};
-        }
-    }
-
-    static void deserializeAndInsert(StringRef str, IColumn & data_to)
-    {
-        return deserializeAndInsertImpl<is_plain_column>(str, data_to);
-    }
-
 public:
     AggregateFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
         : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>({input_data_type_}, {})
@@ -215,7 +196,7 @@ public:
 
         bool inserted;
         State::Set::LookupResult it;
-        auto key_holder = getKeyHolder(*columns[0], row_num, *arena);
+        auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
         set.emplace(key_holder, it, inserted);
     }
 
@@ -247,22 +228,9 @@ public:
         offsets_to.push_back(offsets_to.back() + set.size());
 
         for (auto & elem : set)
-            deserializeAndInsert(elem.getValue(), data_to);
+            deserializeAndInsert<is_plain_column>(elem.getValue(), data_to);
     }
 };
-
-template <>
-inline void deserializeAndInsertImpl<false>(StringRef str, IColumn & data_to)
-{
-    data_to.deserializeAndInsertFromArena(str.data);
-}
-
-template <>
-inline void deserializeAndInsertImpl<true>(StringRef str, IColumn & data_to)
-{
-    data_to.insertData(str.data, str.size);
-}
-
 #undef AGGREGATE_FUNCTION_GROUP_ARRAY_UNIQ_MAX_SIZE
 
 }
