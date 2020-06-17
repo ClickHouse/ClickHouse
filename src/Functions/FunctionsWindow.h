@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -152,32 +150,10 @@ namespace
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             return col_tuple->getColumnPtr(index);
         }
-        else if (const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(column.get()); col_array)
-        {
-            const ColumnTuple * col_tuple_ = checkAndGetColumn<ColumnTuple>(&col_array->getData());
-            if (!col_tuple_)
-                throw Exception(
-                    "Illegal column for first argument of function " + function_name + ". Must be a Tuple or Array(Tuple)",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            const auto & bound_column = col_tuple_->getColumn(index);
-            const ColumnUInt32::Container & bound_data = static_cast<const ColumnUInt32 &>(bound_column).getData();
-            const auto & column_offsets = col_array->getOffsets();
-            auto res = ColumnUInt32::create();
-            ColumnUInt32::Container & res_data = res->getData();
-            res_data.reserve(column_offsets.size());
-            IColumn::Offset current_offset = 0;
-            for (size_t i = 0; i < column_offsets.size(); ++i)
-            {
-                res_data.push_back(bound_data[current_offset]);
-                current_offset = column_offsets[i];
-            }
-            return res;
-        }
         else
         {
             throw Exception(
-                "Illegal column for first argument of function " + function_name + ". Must be a Tuple or Array(Tuple)",
+                "Illegal column for first argument of function " + function_name + ". Must be Tuple",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
@@ -622,7 +598,7 @@ namespace
                 auto type_ = WhichDataType(arguments[0].type);
                 if (!type_.isTuple() && !type_.isUInt32())
                     throw Exception(
-                        "Illegal type of first argument of function " + function_name + " should be Tuple, Array, UInt8 or UInt32",
+                        "Illegal type of first argument of function " + function_name + " should be Tuple or UInt32",
                         ErrorCodes::ILLEGAL_COLUMN);
                 return std::make_shared<DataTypeDateTime>();
             }
