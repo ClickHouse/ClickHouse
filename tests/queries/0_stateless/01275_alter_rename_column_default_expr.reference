@@ -7,7 +7,7 @@
 2019-10-01	6	6	7	6 + 7
 2019-10-02	7	7	8	7 + 8
 2019-10-03	8	8	9	8 + 9
-CREATE TABLE default.table_for_rename\n(\n    `date` Date, \n    `key` UInt64, \n    `value4` String, \n    `value5` String, \n    `value3` String DEFAULT concat(value4, \' + \', value5)\n)\nENGINE = MergeTree()\nPARTITION BY date\nORDER BY key\nSETTINGS index_granularity = 8192
+CREATE TABLE default.table_for_rename\n(\n    `date` Date,\n    `key` UInt64,\n    `value4` String,\n    `value5` String,\n    `value3` String DEFAULT concat(value4, \' + \', value5)\n)\nENGINE = MergeTree()\nPARTITION BY date\nORDER BY key\nSETTINGS index_granularity = 8192
 2019-10-01	0	0	1	0 + 1
 2019-10-02	1	1	2	1 + 2
 2019-10-03	2	2	3	2 + 3
@@ -36,7 +36,7 @@ CREATE TABLE default.table_for_rename\n(\n    `date` Date, \n    `key` UInt64, \
 2019-10-03	17	17	18	17 + 18
 2019-10-01	18	18	19	18 + 19
 2019-10-02	19	19	20	19 + 20
-CREATE TABLE default.table_for_rename\n(\n    `date` Date, \n    `key` UInt64, \n    `value1` String, \n    `value2` String, \n    `value3` String DEFAULT concat(value1, \' + \', value2)\n)\nENGINE = MergeTree()\nPARTITION BY date\nORDER BY key\nSETTINGS index_granularity = 8192
+CREATE TABLE default.table_for_rename\n(\n    `date` Date,\n    `key` UInt64,\n    `value1` String,\n    `value2` String,\n    `value3` String DEFAULT concat(value1, \' + \', value2)\n)\nENGINE = MergeTree()\nPARTITION BY date\nORDER BY key\nSETTINGS index_granularity = 8192
 2019-10-01	0	0	1	0 + 1
 2019-10-02	1	1	2	1 + 2
 2019-10-03	2	2	3	2 + 3

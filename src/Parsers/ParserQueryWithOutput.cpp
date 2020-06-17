@@ -15,6 +15,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ParserShowAccessEntitiesQuery.h>
+#include <Parsers/ParserShowAccessQuery.h>
 #include <Parsers/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/ParserShowGrantsQuery.h>
 #include <Parsers/ParserShowPrivilegesQuery.h>
@@ -38,6 +39,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
     ParserWatchQuery watch_p;
+    ParserShowAccessQuery show_access_p;
     ParserShowAccessEntitiesQuery show_access_entities_p;
     ParserShowCreateAccessEntityQuery show_create_access_entity_p;
     ParserShowGrantsQuery show_grants_p;
@@ -70,6 +72,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || kill_query_p.parse(pos, query, expected)
         || optimize_p.parse(pos, query, expected)
         || watch_p.parse(pos, query, expected)
+        || show_access_p.parse(pos, query, expected)
         || show_access_entities_p.parse(pos, query, expected)
         || show_grants_p.parse(pos, query, expected)
         || show_privileges_p.parse(pos, query, expected);

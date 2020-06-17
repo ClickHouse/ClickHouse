@@ -43,7 +43,10 @@ services:
 
 # Empty container to run proxy resolver.
   resolver:
-    image: python:3
+    build:
+      context: ../../../docker/test/integration/
+      dockerfile: resolver/Dockerfile
+      network: host
     ports:
       - "4083:8080"
     tty: true

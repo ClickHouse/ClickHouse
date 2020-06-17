@@ -32,6 +32,7 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "table",              std::make_shared<DataTypeString>() },
         { "name",               std::make_shared<DataTypeString>() },
         { "type",               std::make_shared<DataTypeString>() },
+        { "position",           std::make_shared<DataTypeUInt64>() },
         { "default_kind",       std::make_shared<DataTypeString>() },
         { "default_expression", std::make_shared<DataTypeString>() },
         { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
@@ -131,8 +132,10 @@ protected:
 
             bool check_access_for_columns = check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
 
+            size_t position = 0;
             for (const auto & column : columns)
             {
+                ++position;
                 if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 
@@ -147,6 +150,8 @@ protected:
                     res_columns[res_index++]->insert(column.name);
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.type->getName());
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(position);
 
                 if (column.default_desc.expression)
                 {
@@ -303,12 +308,15 @@ Pipes StorageSystemColumns::read(
 
             for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
-                const String & table_name = iterator->name();
-                storages.emplace(std::piecewise_construct,
-                    std::forward_as_tuple(database_name, table_name),
-                    std::forward_as_tuple(iterator->table()));
-                table_column_mut->insert(table_name);
-                ++offsets[i];
+                if (const auto & table = iterator->table())
+                {
+                    const String & table_name = iterator->name();
+                    storages.emplace(std::piecewise_construct,
+                        std::forward_as_tuple(database_name, table_name),
+                        std::forward_as_tuple(table));
+                    table_column_mut->insert(table_name);
+                    ++offsets[i];
+                }
             }
         }
 

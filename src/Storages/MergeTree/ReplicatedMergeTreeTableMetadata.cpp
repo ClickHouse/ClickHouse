@@ -55,7 +55,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     ttl_table = formattedAST(data.getTableTTLs().definition_ast);
 
-    skip_indices = data.getIndices().toString();
+    skip_indices = data.getSecondaryIndices().toString();
     if (data.canUseAdaptiveGranularity())
         index_granularity_bytes = data_settings->index_granularity_bytes;
     else

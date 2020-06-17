@@ -40,7 +40,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 Вычисляет угловое расстояние на сфере по [формуле большого круга](https://en.wikipedia.org/wiki/Great-circle_distance).
 
 ``` sql
-greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
 **Входные параметры**

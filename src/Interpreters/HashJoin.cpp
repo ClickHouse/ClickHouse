@@ -35,6 +35,8 @@ namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
     extern const int NOT_IMPLEMENTED;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
@@ -105,7 +107,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 {
     if (nullable)
     {
-        JoinCommon::convertColumnToNullable(column);
+        JoinCommon::convertColumnToNullable(column, true);
         if (column.type->isNullable() && !negative_null_map.empty())
         {
             MutableColumnPtr mutable_column = IColumn::mutate(std::move(column.column));
@@ -1230,7 +1232,7 @@ DataTypePtr HashJoin::joinGetReturnType(const String & column_name, bool or_null
     std::shared_lock lock(data->rwlock);
 
     if (!sample_block_with_columns_to_add.has(column_name))
-        throw Exception("StorageJoin doesn't contain column " + column_name, ErrorCodes::LOGICAL_ERROR);
+        throw Exception("StorageJoin doesn't contain column " + column_name, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     auto elem = sample_block_with_columns_to_add.getByName(column_name);
     if (or_null)
         elem.type = makeNullable(elem.type);
@@ -1254,7 +1256,7 @@ void HashJoin::joinGet(Block & block, const String & column_name, bool or_null) 
     std::shared_lock lock(data->rwlock);
 
     if (key_names_right.size() != 1)
-        throw Exception("joinGet only supports StorageJoin containing exactly one key", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("joinGet only supports StorageJoin containing exactly one key", ErrorCodes::UNSUPPORTED_JOIN_KEYS);
 
     checkTypeOfKey(block, right_table_keys);
 
@@ -1269,7 +1271,7 @@ void HashJoin::joinGet(Block & block, const String & column_name, bool or_null) 
         joinGetImpl(block, {elem}, std::get<MapsOne>(data->maps));
     }
     else
-        throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 }
 
 

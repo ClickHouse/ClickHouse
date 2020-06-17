@@ -63,8 +63,10 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
     static std::atomic_uint total_sends {0};
 
-    if ((data_settings->replicated_max_parallel_sends && total_sends >= data_settings->replicated_max_parallel_sends)
-        || (data_settings->replicated_max_parallel_sends_for_table && data.current_table_sends >= data_settings->replicated_max_parallel_sends_for_table))
+    if ((data_settings->replicated_max_parallel_sends
+            && total_sends >= data_settings->replicated_max_parallel_sends)
+        || (data_settings->replicated_max_parallel_sends_for_table
+            && data.current_table_sends >= data_settings->replicated_max_parallel_sends_for_table))
     {
         response.setStatus(std::to_string(HTTP_TOO_MANY_REQUESTS));
         response.setReason("Too many concurrent fetches, try again later");
@@ -86,9 +88,6 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
     try
     {
-        auto storage_lock = data.lockStructureForShare(
-                false, RWLockImpl::NO_QUERY, data.getSettings()->lock_acquire_timeout_for_background_operations);
-
         MergeTreeData::DataPartPtr part = findPart(part_name);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
@@ -185,6 +184,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     bool to_detached,
     const String & tmp_prefix_)
 {
+    if (blocker.isCancelled())
+        throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
+
     /// Validation of the input that may come from malicious replica.
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
     const auto data_settings = data.getSettings();
@@ -297,7 +299,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
 
         if (blocker.isCancelled())
         {
-            /// NOTE The is_cancelled flag also makes sense to check every time you read over the network, performing a poll with a not very large timeout.
+            /// NOTE The is_cancelled flag also makes sense to check every time you read over the network,
+            /// performing a poll with a not very large timeout.
             /// And now we check it only between read chunks (in the `copyData` function).
             disk->removeRecursive(part_download_path);
             throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);

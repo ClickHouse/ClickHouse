@@ -40,6 +40,10 @@ public:
     virtual bool isValid() const = 0;
 
     virtual const String & name() const = 0;
+
+    /// This method can return nullptr if it's Lazy database
+    /// (a database with support for lazy tables loading
+    /// - it maintains a list of tables but tables are loaded lazily).
     virtual const StoragePtr & table() const = 0;
 
     virtual ~IDatabaseTablesIterator() = default;
