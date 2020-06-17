@@ -10,6 +10,7 @@ class FunctionFactory;
 void registerFunctionGeoDistance(FunctionFactory & factory);
 void registerFunctionPointInEllipses(FunctionFactory & factory);
 void registerFunctionPointInPolygon(FunctionFactory & factory);
+// void registerFunctionPolygonsIntersection(FunctionFactory & factory);
 void registerFunctionGeohashEncode(FunctionFactory & factory);
 void registerFunctionGeohashDecode(FunctionFactory & factory);
 void registerFunctionGeohashesInBox(FunctionFactory & factory);
@@ -37,6 +38,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionGeoDistance(factory);
     registerFunctionPointInEllipses(factory);
     registerFunctionPointInPolygon(factory);
+    // registerFunctionPolygonsIntersection(factory);
     registerFunctionGeohashEncode(factory);
     registerFunctionGeohashDecode(factory);
     registerFunctionGeohashesInBox(factory);
