@@ -309,7 +309,7 @@ void TinyLogBlockOutputStream::writeSuffix()
 
 void TinyLogBlockOutputStream::write(const Block & block)
 {
-    storage.check(block, true);
+    metadata_snapshot->check(block, true);
 
     /// The set of written offset columns so that you do not write shared columns for nested structures multiple times
     WrittenStreams written_streams;
@@ -402,7 +402,7 @@ Pipes StorageTinyLog::read(
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
-    check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals());
 
     Pipes pipes;
 

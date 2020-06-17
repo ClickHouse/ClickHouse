@@ -37,7 +37,7 @@ public:
         size_t /*max_block_size*/,
         unsigned /*num_streams*/) override
     {
-        check(column_names);
+        metadata_snapshot->check(column_names, getVirtuals());
 
         Block sample_block = metadata_snapshot->getSampleBlock();
         MutableColumns res_columns = sample_block.cloneEmptyColumns();

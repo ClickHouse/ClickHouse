@@ -177,6 +177,21 @@ struct StorageInMemoryMetadata
     /// Select query for *View storages.
     const SelectQueryDescription & getSelectQuery() const;
     bool hasSelectQuery() const;
+
+    /// Verify that all the requested names are in the table and are set correctly:
+    /// list of names is not empty and the names do not repeat.
+    void check(const Names & column_names, const NamesAndTypesList & virtuals) const;
+
+    /// Check that all the requested names are in the table and have the correct types.
+    void check(const NamesAndTypesList & columns) const;
+
+    /// Check that all names from the intersection of `names` and `columns` are in the table and have the same types.
+    void check(const NamesAndTypesList & columns, const Names & column_names) const;
+
+    /// Check that the data block contains all the columns of the table with the correct types,
+    /// contains only the columns of the table, and all the columns are different.
+    /// If |need_all| is set, then checks that all the columns of the table are in the block.
+    void check(const Block & block, bool need_all = false) const;
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;

@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
 }
 
-bool StorageSystemPartsBase::hasStateColumn(const Names & column_names) const
+bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const
 {
     bool has_state_column = false;
     Names real_column_names;
@@ -41,7 +41,7 @@ bool StorageSystemPartsBase::hasStateColumn(const Names & column_names) const
 
     /// Do not check if only _state column is requested
     if (!(has_state_column && real_column_names.empty()))
-        check(real_column_names);
+        metadata_snapshot->check(real_column_names, {});
 
     return has_state_column;
 }
@@ -232,7 +232,7 @@ Pipes StorageSystemPartsBase::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    bool has_state_column = hasStateColumn(column_names);
+    bool has_state_column = hasStateColumn(column_names, metadata_snapshot);
 
     StoragesInfoStream stream(query_info, context);
 

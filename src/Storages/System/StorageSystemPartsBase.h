@@ -57,7 +57,7 @@ class StorageSystemPartsBase : public IStorage
 public:
     Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
@@ -67,7 +67,7 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
 private:
-    bool hasStateColumn(const Names & column_names) const;
+    bool hasStateColumn(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const;
 
 protected:
     const FormatSettings format_settings;

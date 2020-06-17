@@ -35,7 +35,7 @@ Pipes StorageSystemDisks::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals());
 
     MutableColumnPtr col_name = ColumnString::create();
     MutableColumnPtr col_path = ColumnString::create();
