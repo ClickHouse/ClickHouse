@@ -107,9 +107,10 @@ TEST(BackgroundLowPriorityProcessingPool, SimpleCase)
     std::mutex mut;
     std::vector<bool> checks(16, true);
     std::vector<BackgroundProcessingPool::TaskHandle> handles(16);
+    sched_param sched_param_{};
     for (int i = 0; i < 16; ++i)
     {
-        handles[i] = pool.createTask([&mut, &checks, i] { return checkLow(checks, i, mut); });
+        handles[i] = pool.createTask([&mut, &checks, i, &sched_param_] { pthread_setschedparam(pthread_self(), SCHED_IDLE, &sched_param_); return checkLow(checks, i, mut); });
         pool.startTask(handles[i]);
     }
     std::this_thread::sleep_for(std::chrono::seconds(1));
