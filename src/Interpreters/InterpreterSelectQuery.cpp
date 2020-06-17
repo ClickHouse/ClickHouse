@@ -492,8 +492,12 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
         && options.to_stage > QueryProcessingStage::WithMergeableState;
 
+    Names columns_required_for_sampling;
+    Names columns_required_for_;
+
     analysis_result = ExpressionAnalysisResult(
             *query_analyzer,
+            metadata_snapshot,
             first_stage,
             second_stage,
             options.only_analyze,
@@ -1329,7 +1333,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     getSortDescriptionFromGroupBy(query),
                     query_info.syntax_analyzer_result);
 
-            query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage);
+            query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
         }
 
         Pipes pipes = storage->read(required_columns, metadata_snapshot, query_info, *context, processing_stage, max_block_size, max_streams);

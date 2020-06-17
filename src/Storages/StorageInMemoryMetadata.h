@@ -123,6 +123,23 @@ struct StorageInMemoryMetadata
     bool hasPartitionKey() const;
     /// Returns column names that need to be read to calculate partition key.
     Names getColumnsRequiredForPartitionKey() const;
+
+    /// Returns structure with sorting key.
+    const KeyDescription & getSortingKey() const;
+    /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
+    ASTPtr getSortingKeyAST() const { return sorting_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) sorting key.
+    bool isSortingKeyDefined() const;
+    /// Storage has sorting key. It means, that it contains at least one column.
+    bool hasSortingKey() const;
+    /// Returns column names that need to be read to calculate sorting key.
+    Names getColumnsRequiredForSortingKey() const;
+    /// Returns columns names in sorting key specified by user in ORDER BY
+    /// expression. For example: 'a', 'x * y', 'toStartOfMonth(date)', etc.
+    Names getSortingKeyColumns() const;
+
+    /// Returns column names that need to be read for FINAL to work.
+    Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;

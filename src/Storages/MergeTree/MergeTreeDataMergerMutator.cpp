@@ -612,8 +612,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     NamesAndTypesList merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
-        storage_columns, data.getSortingKey().expression, metadata_snapshot->getSecondaryIndices(),
-        data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
+        storage_columns,
+        metadata_snapshot->getSortingKey().expression,
+        metadata_snapshot->getSecondaryIndices(),
+        data.merging_params,
+        gathering_columns,
+        gathering_column_names,
+        merging_columns,
+        merging_column_names);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk);
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
@@ -719,16 +725,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         Pipe pipe(std::move(input));
 
-        if (data.hasSortingKey())
+        if (metadata_snapshot->hasSortingKey())
         {
-            auto expr = std::make_shared<ExpressionTransform>(pipe.getHeader(), data.getSortingKey().expression);
+            auto expr = std::make_shared<ExpressionTransform>(pipe.getHeader(), metadata_snapshot->getSortingKey().expression);
             pipe.addSimpleTransform(std::move(expr));
         }
 
         pipes.emplace_back(std::move(pipe));
     }
 
-    Names sort_columns = data.getSortingKeyColumns();
+    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);

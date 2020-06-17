@@ -796,7 +796,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
             {
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
-                auto old_sorting_key_ast = getSortingKey().definition_ast;
+                auto old_sorting_key_ast = old_metadata.getSortingKey().definition_ast;
                 primary_key = KeyDescription::getKeyFromAST(
                     old_sorting_key_ast, new_metadata.columns, global_context);
             }
