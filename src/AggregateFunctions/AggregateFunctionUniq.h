@@ -244,12 +244,6 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
-
-    /// The function returns non-Nullable type even when wrapped with Null combinator.
-    bool returnDefaultWhenOnlyNull() const override
-    {
-        return true;
-    }
 };
 
 
@@ -303,12 +297,6 @@ public:
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
-    }
-
-    /// The function returns non-Nullable type even when wrapped with Null combinator.
-    bool returnDefaultWhenOnlyNull() const override
-    {
-        return true;
     }
 };
 
