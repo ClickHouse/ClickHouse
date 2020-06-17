@@ -139,7 +139,8 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
         create_table_query->table = table_id.table_name;
         create_table_query->database = table_id.database_name;
 
-        for (const auto & column_type_and_name : storage->getColumns().getOrdinary())
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+        for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
         {
             const auto & column_declaration = std::make_shared<ASTColumnDeclaration>();
             column_declaration->name = column_type_and_name.name;

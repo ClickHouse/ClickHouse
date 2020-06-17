@@ -129,7 +129,7 @@ String InterpreterSelectQuery::generateFilterActions(
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, SyntaxAnalyzerResult({}, storage));
+    auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, SyntaxAnalyzerResult({}, storage, metadata_snapshot));
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context, metadata_snapshot);
     actions = analyzer.simpleSelectActions();
 
@@ -263,7 +263,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     if (has_input || !joined_tables.resolveTables())
-        joined_tables.makeFakeTable(storage, source_header);
+        joined_tables.makeFakeTable(storage, metadata_snapshot, source_header);
 
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
@@ -311,8 +311,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot);
 
         syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
-                query_ptr, SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage),
-                options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
+            query_ptr,
+            SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage, metadata_snapshot),
+            options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
         if (view)
         {
@@ -1087,7 +1088,7 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         /// Detect, if ALIAS columns are required for query execution
         auto alias_columns_required = false;
-        const ColumnsDescription & storage_columns = storage->getColumns();
+        const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();
         for (const auto & column_name : required_columns)
         {
             auto column_default = storage_columns.getDefault(column_name);
@@ -1210,7 +1211,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 prewhere_info->prewhere_actions = std::move(new_actions);
 
                 auto analyzed_result
-                    = SyntaxAnalyzer(*context).analyze(required_columns_from_prewhere_expr, storage->getColumns().getAllPhysical());
+                    = SyntaxAnalyzer(*context).analyze(required_columns_from_prewhere_expr, metadata_snapshot->getColumns().getAllPhysical());
                 prewhere_info->alias_actions
                     = ExpressionAnalyzer(required_columns_from_prewhere_expr, analyzed_result, *context).getActions(true, false);
 

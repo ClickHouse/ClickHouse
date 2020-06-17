@@ -136,7 +136,9 @@ std::string IStorageURLBase::getReadMethod() const
     return Poco::Net::HTTPRequest::HTTP_GET;
 }
 
-std::vector<std::pair<std::string, std::string>> IStorageURLBase::getReadURIParams(const Names & /*column_names*/,
+std::vector<std::pair<std::string, std::string>> IStorageURLBase::getReadURIParams(
+    const Names & /*column_names*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
@@ -145,7 +147,9 @@ std::vector<std::pair<std::string, std::string>> IStorageURLBase::getReadURIPara
     return {};
 }
 
-std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(const Names & /*column_names*/,
+std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
+    const Names & /*column_names*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
@@ -165,7 +169,7 @@ Pipes IStorageURLBase::read(
     unsigned /*num_streams*/)
 {
     auto request_uri = uri;
-    auto params = getReadURIParams(column_names, query_info, context, processed_stage, max_block_size);
+    auto params = getReadURIParams(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size);
     for (const auto & [param, value] : params)
         request_uri.addQueryParameter(param, value);
 
@@ -173,7 +177,9 @@ Pipes IStorageURLBase::read(
     pipes.emplace_back(std::make_shared<StorageURLSource>(
         request_uri,
         getReadMethod(),
-        getReadPOSTDataCallback(column_names, query_info, context, processed_stage, max_block_size),
+        getReadPOSTDataCallback(
+            column_names, metadata_snapshot, query_info,
+            context, processed_stage, max_block_size),
         format_name,
         getName(),
         getHeaderBlock(column_names, metadata_snapshot),

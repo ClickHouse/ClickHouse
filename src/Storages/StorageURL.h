@@ -50,6 +50,7 @@ private:
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
@@ -57,6 +58,7 @@ private:
 
     virtual std::function<void(std::ostream &)> getReadPOSTDataCallback(
         const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
@@ -68,12 +70,13 @@ private:
 class StorageURLBlockOutputStream : public IBlockOutputStream
 {
 public:
-    StorageURLBlockOutputStream(const Poco::URI & uri,
-                                const String & format,
-                                const Block & sample_block_,
-                                const Context & context,
-                                const ConnectionTimeouts & timeouts,
-                                const CompressionMethod compression_method);
+    StorageURLBlockOutputStream(
+        const Poco::URI & uri,
+        const String & format,
+        const Block & sample_block_,
+        const Context & context,
+        const ConnectionTimeouts & timeouts,
+        const CompressionMethod compression_method);
 
     Block getHeader() const override
     {

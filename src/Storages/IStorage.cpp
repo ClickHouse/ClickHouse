@@ -32,12 +32,6 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
 }
 
-const ColumnsDescription & IStorage::getColumns() const
-{
-    return metadata->columns;
-}
-
-
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Virtual column maybe overriden by real column

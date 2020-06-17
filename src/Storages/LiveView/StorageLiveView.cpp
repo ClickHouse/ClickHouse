@@ -142,8 +142,10 @@ BlockInputStreamPtr StorageLiveView::completeQuery(Pipes pipes)
 
     auto creator = [&](const StorageID & blocks_id_global)
     {
-        return StorageBlocks::createStorage(blocks_id_global, getParentStorage()->getColumns(),
-                                            std::move(pipes), QueryProcessingStage::WithMergeableState);
+        auto parent_table_metadata = getParentStorage()->getInMemoryMetadataPtr();
+        return StorageBlocks::createStorage(
+            blocks_id_global, parent_table_metadata->getColumns(),
+            std::move(pipes), QueryProcessingStage::WithMergeableState);
     };
     block_context->addExternalTable(getBlocksTableName(), TemporaryTableHolder(global_context, creator));
 
@@ -209,8 +211,10 @@ void StorageLiveView::writeIntoLiveView(
 
         auto creator = [&](const StorageID & blocks_id_global)
         {
-            return StorageBlocks::createStorage(blocks_id_global, live_view.getParentStorage()->getColumns(),
-                                                std::move(pipes), QueryProcessingStage::FetchColumns);
+            auto parent_metadata = live_view.getParentStorage()->getInMemoryMetadataPtr();
+            return StorageBlocks::createStorage(
+                blocks_id_global, parent_metadata->getColumns(),
+                std::move(pipes), QueryProcessingStage::FetchColumns);
         };
         TemporaryTableHolder blocks_storage(context, creator);
 

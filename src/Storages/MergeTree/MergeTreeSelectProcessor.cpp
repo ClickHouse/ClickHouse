@@ -68,7 +68,9 @@ try
     }
     is_first_task = false;
 
-    task_columns = getReadTaskColumns(storage, data_part, required_columns, prewhere_info, check_columns);
+    task_columns = getReadTaskColumns(
+        storage, metadata_snapshot, data_part,
+        required_columns, prewhere_info, check_columns);
 
     auto size_predictor = (preferred_block_size_bytes == 0)
         ? nullptr
@@ -90,11 +92,11 @@ try
 
         owned_mark_cache = storage.global_context.getMarkCache();
 
-        reader = data_part->getReader(task_columns.columns, all_mark_ranges,
+        reader = data_part->getReader(task_columns.columns, metadata_snapshot, all_mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
 
         if (prewhere_info)
-            pre_reader = data_part->getReader(task_columns.pre_columns, all_mark_ranges,
+            pre_reader = data_part->getReader(task_columns.pre_columns, metadata_snapshot, all_mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
     }
 

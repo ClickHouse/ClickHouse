@@ -237,8 +237,9 @@ void TinyLogSource::readData(const String & name, const IDataType & type, IColum
 }
 
 
-IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(const String & name,
-                                                                           WrittenStreams & written_streams)
+IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(
+    const String & name,
+    WrittenStreams & written_streams)
 {
     return [&] (const IDataType::SubstreamPath & path) -> WriteBuffer *
     {
@@ -247,12 +248,13 @@ IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(const
         if (!written_streams.insert(stream_name).second)
             return nullptr;
 
-        const auto & columns = storage.getColumns();
+        const auto & columns = metadata_snapshot->getColumns();
         if (!streams.count(stream_name))
-            streams[stream_name] = std::make_unique<Stream>(storage.disk,
-                                                            storage.files[stream_name].data_file_path,
-                                                            columns.getCodecOrDefault(name),
-                                                            storage.max_compress_block_size);
+            streams[stream_name] = std::make_unique<Stream>(
+                storage.disk,
+                storage.files[stream_name].data_file_path,
+                columns.getCodecOrDefault(name),
+                storage.max_compress_block_size);
 
         return &streams[stream_name]->compressed;
     };
@@ -351,7 +353,7 @@ StorageTinyLog::StorageTinyLog(
         disk->createDirectories(table_path);
     }
 
-    for (const auto & col : getColumns().getAllPhysical())
+    for (const auto & col : metadata_.getColumns().getAllPhysical())
         addFiles(col.name, *col.type);
 }
 
@@ -430,13 +432,14 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context
 void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
 
     disk->clearDirectory(table_path);
 
     files.clear();
     file_checker = FileChecker{disk, table_path + "sizes.json"};
 
-    for (const auto &column : getColumns().getAllPhysical())
+    for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 }
 

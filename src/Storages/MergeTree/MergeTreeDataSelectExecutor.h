@@ -95,12 +95,6 @@ private:
         const KeyCondition & key_condition,
         const Settings & settings) const;
 
-    /// Create the expression "Sign == 1".
-    void createPositiveSignCondition(
-        ExpressionActionsPtr & out_expression,
-        String & out_column,
-        const Context & context) const;
-
     MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
         const StorageMetadataPtr & metadata_snapshot,

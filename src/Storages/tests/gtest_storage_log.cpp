@@ -78,7 +78,7 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & cont
     Block block;
 
     {
-        const auto & storage_columns = table->getColumns();
+        const auto & storage_columns = metadata_snapshot->getColumns();
         ColumnWithTypeAndName column;
         column.name = "a";
         column.type = storage_columns.getPhysical("a").type;

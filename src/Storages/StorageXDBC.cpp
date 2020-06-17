@@ -50,7 +50,9 @@ std::string StorageXDBC::getReadMethod() const
     return Poco::Net::HTTPRequest::HTTP_POST;
 }
 
-std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(const Names & column_names,
+std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
@@ -59,20 +61,22 @@ std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(c
     NamesAndTypesList cols;
     for (const String & name : column_names)
     {
-        auto column_data = getColumns().getPhysical(name);
+        auto column_data = metadata_snapshot->getColumns().getPhysical(name);
         cols.emplace_back(column_data.name, column_data.type);
     }
     return bridge_helper->getURLParams(cols.toString(), max_block_size);
 }
 
-std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(const Names & /*column_names*/,
+std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
+    const Names & /*column_names*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
     String query = transformQueryForExternalDatabase(query_info,
-        getColumns().getOrdinary(),
+        metadata_snapshot->getColumns().getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
         remote_database_name,
         remote_table_name,

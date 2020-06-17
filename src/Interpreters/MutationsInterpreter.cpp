@@ -419,7 +419,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             else
             {
                 NameSet new_updated_columns;
-                auto column_ttls = storage->getColumns().getColumnTTLs();
+                auto column_ttls = metadata_snapshot->getColumns().getColumnTTLs();
                 for (const auto & elem : column_ttls)
                 {
                     dependencies.emplace(elem.first, ColumnDependency::TTL_TARGET);
@@ -528,7 +528,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
 ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & prepared_stages, bool dry_run)
 {
-    NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
+    NamesAndTypesList all_columns = metadata_snapshot->getColumns().getAllPhysical();
 
 
     /// Next, for each stage calculate columns changed by this and previous stages.

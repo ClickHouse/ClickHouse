@@ -441,7 +441,7 @@ Pipes StorageGenerateRandom::read(
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const ColumnsDescription & our_columns = getColumns();
+    const ColumnsDescription & our_columns = metadata_snapshot->getColumns();
     Block block_header;
     for (const auto & name : column_names)
     {

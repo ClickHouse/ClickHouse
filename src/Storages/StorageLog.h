@@ -26,7 +26,7 @@ public:
 
     Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
@@ -112,7 +112,7 @@ private:
       *
       * Return the first group of marks that contain the number of rows, but not the internals of the arrays.
       */
-    const Marks & getMarksWithRealRowCount() const;
+    const Marks & getMarksWithRealRowCount(const StorageMetadataPtr & metadata_snapshot) const;
 };
 
 }

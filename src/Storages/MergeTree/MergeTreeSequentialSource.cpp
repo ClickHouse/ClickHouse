@@ -39,7 +39,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     addTotalRowsApprox(data_part->rows_count);
 
     /// Add columns because we don't want to read empty blocks
-    injectRequiredColumns(storage, data_part, columns_to_read);
+    injectRequiredColumns(storage, metadata_snapshot, data_part, columns_to_read);
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
@@ -60,7 +60,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         .save_marks_in_cache = false
     };
 
-    reader = data_part->getReader(columns_for_reader,
+    reader = data_part->getReader(columns_for_reader, metadata_snapshot,
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
         /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings);
 }

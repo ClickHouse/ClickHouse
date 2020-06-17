@@ -650,7 +650,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         auto order_key_prefix_ast = metadata_snapshot->getSortingKey().expression_list_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
-        auto syntax_result = SyntaxAnalyzer(context).analyze(order_key_prefix_ast, data.getColumns().getAllPhysical());
+        auto syntax_result = SyntaxAnalyzer(context).analyze(order_key_prefix_ast, metadata_snapshot->getColumns().getAllPhysical());
         auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActions(false);
 
         res = spreadMarkRangesAmongStreamsWithOrder(
@@ -1273,29 +1273,6 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
     return pipes;
 }
-
-
-void MergeTreeDataSelectExecutor::createPositiveSignCondition(
-    ExpressionActionsPtr & out_expression, String & out_column, const Context & context) const
-{
-    auto function = std::make_shared<ASTFunction>();
-    auto arguments = std::make_shared<ASTExpressionList>();
-    auto sign = std::make_shared<ASTIdentifier>(data.merging_params.sign_column);
-    auto one = std::make_shared<ASTLiteral>(1);
-
-    function->name = "equals";
-    function->arguments = arguments;
-    function->children.push_back(arguments);
-
-    arguments->children.push_back(sign);
-    arguments->children.push_back(one);
-
-    ASTPtr query = function;
-    auto syntax_result = SyntaxAnalyzer(context).analyze(query, data.getColumns().getAllPhysical());
-    out_expression = ExpressionAnalyzer(query, syntax_result, context).getActions(false);
-    out_column = function->getColumnName();
-}
-
 
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.

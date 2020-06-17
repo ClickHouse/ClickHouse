@@ -37,6 +37,7 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
 
 IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     const NamesAndTypesList & columns_to_read,
+    const StorageMetadataPtr & metadata_snapshot,
     const MarkRanges & mark_ranges,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
@@ -46,7 +47,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
 {
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartWide>(shared_from_this());
     return std::make_unique<MergeTreeReaderWide>(
-        ptr, columns_to_read, uncompressed_cache,
+        ptr, columns_to_read, metadata_snapshot, uncompressed_cache,
         mark_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback);
 }
