@@ -90,6 +90,8 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/RollupStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
 
 
 namespace DB
@@ -1540,16 +1542,16 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modif
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, true);
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+    if (modificator == Modificator::ROLLUP)
     {
-        if (stream_type == QueryPipeline::StreamType::Totals)
-            return nullptr;
-
-        if (modificator == Modificator::ROLLUP)
-            return std::make_shared<RollupTransform>(header, std::move(transform_params));
-        else
-            return std::make_shared<CubeTransform>(header, std::move(transform_params));
-    });
+        RollupStep rollup_step(DataStream{.header = pipeline.getHeader()}, std::move(transform_params));
+        rollup_step.transformPipeline(pipeline);
+    }
+    else
+    {
+        CubeStep rollup_step(DataStream{.header = pipeline.getHeader()}, std::move(transform_params));
+        cube_step.transformPipeline(pipeline);
+    }
 }
 
 

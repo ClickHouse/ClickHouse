@@ -140,6 +140,7 @@ SRCS(
     QueryPlan/AddingDelayedStreamStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/CreatingSetsStep.cpp
+    QueryPlan/CubeStep.cpp
     QueryPlan/DistinctStep.cpp
     QueryPlan/ExpressionStep.cpp
     QueryPlan/FilterStep.cpp
@@ -155,6 +156,7 @@ SRCS(
     QueryPlan/ReadFromPreparedSource.cpp
     QueryPlan/ReadFromStorageStep.cpp
     QueryPlan/ReadNothingStep.cpp
+    QueryPlan/RollupStep.cpp
     QueryPlan/TotalsHavingStep
     QueryPlan/QueryPlan.cpp
 )

@@ -8,7 +8,7 @@ namespace DB
 class DistinctStep : public ITransformingStep
 {
 public:
-    explicit DistinctStep(
+    DistinctStep(
             const DataStream & input_stream_,
             const SizeLimits & set_size_limits_,
             UInt64 limit_hint_,
