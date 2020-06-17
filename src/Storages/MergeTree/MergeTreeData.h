@@ -556,8 +556,8 @@ public:
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
     /// Tables structure should be locked.
-    MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
-    MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table) const;
+    MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
+    MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info);
@@ -781,14 +781,14 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void checkProperties(const StorageInMemoryMetadata & new_metadata, bool attach = false) const;
+    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false) const;
 
-    void setProperties(const StorageInMemoryMetadata & new_metadata, bool attach = false);
+    void setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false);
 
     void initPartitionKey(const KeyDescription & new_partition_key);
 
-    void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata) const;
-    void setTTLExpressions(const StorageInMemoryMetadata & new_metadata);
+    void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const;
+    void setTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 

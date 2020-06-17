@@ -259,6 +259,7 @@ void StorageMergeTree::alter(
     auto table_id = getStorageID();
 
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, context.getSettingsRef().materialize_ttl_after_modify, context);
     String mutation_file_name;
     Int64 mutation_version = -1;
@@ -282,8 +283,8 @@ void StorageMergeTree::alter(
 
             changeSettings(new_metadata.settings_changes, table_lock_holder);
             /// Reinitialize primary key because primary key column types might have changed.
-            setProperties(new_metadata);
-            setTTLExpressions(new_metadata);
+            setProperties(new_metadata, old_metadata);
+            setTTLExpressions(new_metadata, old_metadata);
 
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
 
@@ -1151,9 +1152,11 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 {
     auto lock1 = lockStructureForShare(false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto lock2 = source_table->lockStructureForShare(false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
+    auto my_metadata_snapshot = getInMemoryMetadataPtr();
 
     Stopwatch watch;
-    MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table);
+    MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
     String partition_id = getPartitionIDFromQuery(partition, context);
 
     DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
@@ -1232,9 +1235,12 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                        " should have the same storage policy of source table " + getStorageID().getNameForLogs() + ". " +
                        getStorageID().getNameForLogs() + ": " + this->getStoragePolicy()->getName() + ", " +
                        dest_table_storage->getStorageID().getNameForLogs() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::LOGICAL_ERROR);
+
+    auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     Stopwatch watch;
 
-    MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this);
+    MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
     String partition_id = getPartitionIDFromQuery(partition, context);
 
     DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);

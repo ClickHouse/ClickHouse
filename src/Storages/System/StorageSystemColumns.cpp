@@ -122,13 +122,13 @@ protected:
                         throw;
                 }
 
-                columns = storage->getColumns();
+                auto metadadata_snapshot = storage->getInMemoryMetadataPtr();
+                columns = metadadata_snapshot->getColumns();
 
-                cols_required_for_partition_key = storage->getColumnsRequiredForPartitionKey();
+                cols_required_for_partition_key = metadadata_snapshot->getColumnsRequiredForPartitionKey();
                 cols_required_for_sorting_key = storage->getColumnsRequiredForSortingKey();
                 cols_required_for_primary_key = storage->getColumnsRequiredForPrimaryKey();
                 cols_required_for_sampling = storage->getColumnsRequiredForSampling();
-
                 column_sizes = storage->getColumnSizes();
             }
 

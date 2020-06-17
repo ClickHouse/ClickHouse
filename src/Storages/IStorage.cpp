@@ -319,28 +319,6 @@ NamesAndTypesList IStorage::getVirtuals() const
     return {};
 }
 
-const KeyDescription & IStorage::getPartitionKey() const
-{
-    return metadata->partition_key;
-}
-
-bool IStorage::isPartitionKeyDefined() const
-{
-    return metadata->partition_key.definition_ast != nullptr;
-}
-
-bool IStorage::hasPartitionKey() const
-{
-    return !metadata->partition_key.column_names.empty();
-}
-
-Names IStorage::getColumnsRequiredForPartitionKey() const
-{
-    if (hasPartitionKey())
-        return metadata->partition_key.expression->getRequiredColumns();
-    return {};
-}
-
 const KeyDescription & IStorage::getSortingKey() const
 {
     return metadata->sorting_key;
