@@ -1,66 +1,48 @@
 0
 1
 2
-3
-4
-5
-6
-7
-8
-9
 0
 1
 2
-3
-4
-5
-6
-7
-8
-9
 0
 1
 2
-3
-4
-5
-6
-7
-8
-9
-SELECT number\nFROM numbers(10)\nORDER BY number ASC
-SELECT number\nFROM numbers(10)\nORDER BY abs(toFloat32(number)) ASC
-SELECT number\nFROM numbers(10)\nORDER BY toFloat32(abs(number)) ASC
+2
+1
+0
 0
 1
 2
-3
-4
-5
-6
-7
-8
-9
 0
 1
 2
-3
-4
-5
-6
-7
-8
-9
+SELECT number\nFROM numbers(3)\nORDER BY number ASC
+SELECT number\nFROM numbers(3)\nORDER BY abs(toFloat32(number)) ASC
+SELECT number\nFROM numbers(3)\nORDER BY toFloat32(abs(number)) ASC
+SELECT number\nFROM numbers(3)\nORDER BY number DESC
+SELECT number\nFROM numbers(3)\nORDER BY number ASC
+SELECT number\nFROM numbers(3)\nORDER BY exp(number) ASC
 0
 1
 2
-3
-4
-5
-6
-7
-8
-9
-SELECT number\nFROM numbers(10)\nORDER BY toFloat32(toFloat64(number)) ASC
-SELECT number\nFROM numbers(10)\nORDER BY abs(toFloat32(number)) ASC
-SELECT number\nFROM numbers(10)\nORDER BY toFloat32(abs(number)) ASC
+0
+1
+2
+0
+1
+2
+2
+1
+0
+0
+1
+2
+0
+1
+2
+SELECT number\nFROM numbers(3)\nORDER BY toFloat32(toFloat64(number)) ASC
+SELECT number\nFROM numbers(3)\nORDER BY abs(toFloat32(number)) ASC
+SELECT number\nFROM numbers(3)\nORDER BY toFloat32(abs(number)) ASC
+SELECT number\nFROM numbers(3)\nORDER BY -number ASC
+SELECT number\nFROM numbers(3)\nORDER BY -number DESC
+SELECT number\nFROM numbers(3)\nORDER BY exp(number) ASC

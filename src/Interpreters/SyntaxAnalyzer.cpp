@@ -26,7 +26,7 @@
 #include <Interpreters/DuplicateDistinctVisitor.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
-#include <Interpreters/MonotonousOrderByVisitor.h>
+#include <Interpreters/MonotonicityCheckVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -471,13 +471,32 @@ void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, bool optimize_duplicate
 }
 
 /// Optimize monotonous functions in ORDER BY
-void optimizeMonotonousFunctionsInOrderBy(ASTPtr & query, bool optimize_monotonous_functions_in_order_by,
+void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, bool optimize_monotonous_functions_in_order_by,
                                           const Context & context, const TablesWithColumns & tables_with_columns)
 {
     if (optimize_monotonous_functions_in_order_by)
     {
-        MonotonousOrderByVisitor::Data data{tables_with_columns, context};
-        MonotonousOrderByVisitor(data).visit(query);
+        auto order_by = select_query->orderBy();
+
+        if (!order_by)
+            return;
+
+        for (size_t i = 0; i < order_by->children.size(); ++i)
+        {
+            auto child = order_by->children[i];
+            if (child->children.empty() || !child->children[0]->as<ASTFunction>())
+                continue;
+
+            MonotonicityCheckVisitor::Data monotonicity_checker_data{tables_with_columns, context};
+            MonotonicityCheckVisitor(monotonicity_checker_data).visit(child);
+            if (monotonicity_checker_data.monotonicity.is_monotonic)
+            {
+                auto * order_by_element = child->as<ASTOrderByElement>();
+                order_by_element->children[0] = monotonicity_checker_data.identifier->ptr();
+                if (!monotonicity_checker_data.monotonicity.is_positive)
+                    order_by_element->direction *= -1;
+            }
+        }
     }
 }
 
@@ -949,7 +968,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeDuplicateOrderByAndDistinct(query, settings.optimize_duplicate_order_by_and_distinct, context);
 
         /// Replace monotonous functions with its argument
-        optimizeMonotonousFunctionsInOrderBy(query, settings.optimize_monotonous_functions_in_order_by, context, tables_with_columns);
+        optimizeMonotonousFunctionsInOrderBy(select_query, settings.optimize_monotonous_functions_in_order_by, context, tables_with_columns);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
