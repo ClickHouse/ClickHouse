@@ -11,8 +11,3 @@ INSERT INTO welch_ttest VALUES (2224.779, 2465.0984), (2588.11, 1909.0328), (197
 SELECT WelchTTest(0.02)(left, right) from welch_ttest;
 
 DROP TABLE IF EXISTS welch_ttest;
-CREATE TABLE welch_ttest (left Int64, right Int64) ENGINE = Memory;
-
-INSERT INTO welch_ttest VALUES (1, 1), (1, 1), (1, 1);
-SELECT WelchTTest(0.1)(left, right) from welch_ttest;
-DROP TABLE IF EXISTS welch_ttest;
