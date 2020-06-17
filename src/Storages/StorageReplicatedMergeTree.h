@@ -19,12 +19,12 @@
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Storages/MergeTree/LeaderElection.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/LeaderElection.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Processors/Pipe.h>
 
@@ -222,6 +222,7 @@ private:
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
 
     /** Is this replica "leading". The leader replica selects the parts to merge.
+      * It can be false only when old ClickHouse versions are working on the same cluster, because now we allow multiple leaders.
       */
     std::atomic<bool> is_leader {false};
     zkutil::LeaderElectionPtr leader_election;
@@ -497,6 +498,7 @@ private:
     bool waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /// Choose leader replica, send requst to it and wait.
+    /// Only makes sense when old ClickHouse versions are working on the same cluster, because now we allow multiple leaders.
     void sendRequestToLeaderReplica(const ASTPtr & query, const Context & query_context);
 
     /// Throw an exception if the table is readonly.
