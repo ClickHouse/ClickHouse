@@ -69,7 +69,7 @@ BlockIO InterpreterAlterQuery::execute()
         }
         else if (auto mut_command = MutationCommand::parse(command_ast))
         {
-            if (mut_command->type == MutationCommand::MATERIALIZE_TTL && !table->hasAnyTTL())
+            if (mut_command->type == MutationCommand::MATERIALIZE_TTL && !metadata_snapshot->hasAnyTTL())
                 throw Exception("Cannot MATERIALIZE TTL as there is no TTL set for table "
                     + table->getStorageID().getNameForLogs(), ErrorCodes::INCORRECT_QUERY);
 

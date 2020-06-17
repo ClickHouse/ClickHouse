@@ -129,8 +129,6 @@ public:
     /// Example is StorageSystemNumbers.
     virtual bool hasEvenlyDistributedRead() const { return false; }
 
-    /// Returns true if there is set table TTL, any column TTL or any move TTL.
-    bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -362,7 +360,13 @@ public:
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
       */
-    virtual bool optimize(const ASTPtr & /*query*/, const ASTPtr & /*partition*/, bool /*final*/, bool /*deduplicate*/, const Context & /*context*/)
+    virtual bool optimize(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const ASTPtr & /*partition*/,
+        bool /*final*/,
+        bool /*deduplicate*/,
+        const Context & /*context*/)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -429,23 +433,6 @@ public:
 
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
-
-    /// Common tables TTLs (for rows and moves).
-    TTLTableDescription getTableTTLs() const;
-    bool hasAnyTableTTL() const;
-
-    /// Separate TTLs for columns.
-    TTLColumnsDescription getColumnTTLs() const;
-    bool hasAnyColumnTTL() const;
-
-    /// Just wrapper for table TTLs, return rows part of table TTLs.
-    TTLDescription getRowsTTL() const;
-    bool hasRowsTTL() const;
-
-    /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
-    /// table TTL.
-    TTLDescriptions getMoveTTLs() const;
-    bool hasAnyMoveTTL() const;
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:

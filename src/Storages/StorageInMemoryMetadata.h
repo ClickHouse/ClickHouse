@@ -86,6 +86,9 @@ struct StorageInMemoryMetadata
 
     const ConstraintsDescription & getConstraints() const;
 
+    /// Returns true if there is set table TTL, any column TTL or any move TTL.
+    bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
+
     /// Common tables TTLs (for rows and moves).
     TTLTableDescription getTableTTLs() const;
     bool hasAnyTableTTL() const;

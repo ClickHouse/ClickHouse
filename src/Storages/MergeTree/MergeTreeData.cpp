@@ -2801,8 +2801,9 @@ MergeTreeData::selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & tt
 {
     time_t max_max_ttl = 0;
     TTLDescriptions::const_iterator best_entry_it;
+    auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    const auto & move_ttl_entries = getMoveTTLs();
+    const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
     for (auto ttl_entry_it = move_ttl_entries.begin(); ttl_entry_it != move_ttl_entries.end(); ++ttl_entry_it)
     {
         auto ttl_info_it = ttl_infos.moves_ttl.find(ttl_entry_it->result_column);
@@ -3235,11 +3236,12 @@ bool MergeTreeData::selectPartsAndMove()
 bool MergeTreeData::areBackgroundMovesNeeded() const
 {
     auto policy = getStoragePolicy();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
 
     if (policy->getVolumes().size() > 1)
         return true;
 
-    return policy->getVolumes().size() == 1 && policy->getVolumes()[0]->getDisks().size() > 1 && hasAnyMoveTTL();
+    return policy->getVolumes().size() == 1 && policy->getVolumes()[0]->getDisks().size() > 1 && metadata_snapshot->hasAnyMoveTTL();
 }
 
 bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr space)

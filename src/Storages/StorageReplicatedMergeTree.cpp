@@ -3475,7 +3475,12 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
 
 
 bool StorageReplicatedMergeTree::optimize(
-    const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context)
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ASTPtr & partition,
+    bool final,
+    bool deduplicate,
+    const Context & query_context)
 {
     assertNotReadonly();
 
@@ -3498,7 +3503,7 @@ bool StorageReplicatedMergeTree::optimize(
             return false;
         };
 
-        bool force_ttl = (final && hasAnyTTL());
+        bool force_ttl = (final && metadata_snapshot->hasAnyTTL());
         const auto storage_settings_ptr = getSettings();
 
         if (!partition && final)
