@@ -88,6 +88,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/AddingDelayedStreamStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 
 
 namespace DB
@@ -1873,12 +1874,14 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pip
 
     const Settings & settings = context->getSettingsRef();
 
-    auto creating_sets = std::make_shared<CreatingSetsTransform>(
-            pipeline.getHeader(), subqueries_for_sets,
+    CreatingSetsStep creating_sets(
+            DataStream{.header = pipeline.getHeader()},
+            subqueries_for_sets,
             SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
             *context);
 
-    pipeline.addCreatingSetsTransform(std::move(creating_sets));
+    creating_sets.setStepDescription("Create sets for subqueries and joins");
+    creating_sets.transformPipeline(pipeline);
 }
 
 
