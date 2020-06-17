@@ -80,7 +80,7 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
 }
 
 
-void DataTypeFactory::registerDataType(const String & family_name, Creator creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness)
 {
     if (creator == nullptr)
         throw Exception("DataTypeFactory: the data type family " + family_name + " has been provided "
@@ -136,7 +136,7 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCre
     }, case_sensitiveness);
 }
 
-const DataTypeFactory::Creator& DataTypeFactory::findCreatorByName(const String & family_name) const
+const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String & family_name) const
 {
     {
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
