@@ -1,11 +1,11 @@
 #pragma once
 
-#include "ZooKeeper.h"
-#include "KeeperException.h"
 #include <functional>
 #include <memory>
 #include <common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
 
 
@@ -23,7 +23,18 @@ namespace CurrentMetrics
 namespace zkutil
 {
 
-/** Implements leader election algorithm described here: http://zookeeper.apache.org/doc/r3.4.5/recipes.html#sc_leaderElection
+/** Initially was used to implement leader election algorithm described here:
+  * http://zookeeper.apache.org/doc/r3.4.5/recipes.html#sc_leaderElection
+  *
+  * But then we decided to get rid of leader election, so every replica can become leader.
+  * For now, every replica can become leader if there is no leader among replicas with old version.
+  *
+  * It's tempting to remove this class at all, but we have to maintain it,
+  *  to maintain compatibility when replicas with different versions work on the same cluster
+  *  (this is allowed for short time period during cluster update).
+  *
+  * Replicas with new versions creates ephemeral sequential nodes with values like "replica_name (multiple leaders Ok)".
+  * If the first node belongs to a replica with new version, then all replicas with new versions become leaders.
   */
 class LeaderElection
 {
@@ -42,7 +53,7 @@ public:
         ZooKeeper & zookeeper_,
         LeadershipHandler handler_,
         const std::string & identifier_)
-        : pool(pool_), path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
+        : pool(pool_), path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_ + suffix)
         , log_name("LeaderElection (" + path + ")")
         , log(&Poco::Logger::get(log_name))
     {
@@ -65,6 +76,7 @@ public:
     }
 
 private:
+    static inline constexpr auto suffix = " (multiple leaders Ok)";
     DB::BackgroundSchedulePool & pool;
     DB::BackgroundSchedulePool::TaskHolder task;
     std::string path;
@@ -106,18 +118,27 @@ private:
         {
             Strings children = zookeeper.getChildren(path);
             std::sort(children.begin(), children.end());
-            auto it = std::lower_bound(children.begin(), children.end(), node_name);
-            if (it == children.end() || *it != node_name)
+
+            auto my_node_it = std::lower_bound(children.begin(), children.end(), node_name);
+            if (my_node_it == children.end() || *my_node_it != node_name)
                 throw Poco::Exception("Assertion failed in LeaderElection");
 
-            if (it == children.begin())
+            String value = zookeeper.get(path + "/" + children.front());
+
+#if !defined(ARCADIA_BUILD) /// C++20; Replicated tables are unused in Arcadia.
+            if (value.ends_with(suffix))
             {
                 ProfileEvents::increment(ProfileEvents::LeaderElectionAcquiredLeadership);
                 handler();
                 return;
             }
+#endif
+            if (my_node_it == children.begin())
+                throw Poco::Exception("Assertion failed in LeaderElection");
 
-            if (!zookeeper.existsWatch(path + "/" + *(it - 1), nullptr, task->getWatchCallback()))
+            /// Watch for the node in front of us.
+            --my_node_it;
+            if (!zookeeper.existsWatch(path + "/" + *my_node_it, nullptr, task->getWatchCallback()))
                 task->schedule();
 
             success = true;
