@@ -966,9 +966,6 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         /// Move arithmetic operations out of aggregation functions
         optimizeArithmeticOperationsInAgr(query, settings.optimize_arithmetic_operations_in_aggregate_functions);
 
-        ///Move all operations out of any function
-        optimizeAnyInput(query, settings.optimize_any_input);
-
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
 
@@ -977,6 +974,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         /// GROUP BY functions of other keys elimination.
         optimizeGroupByFunctionKeys(select_query, settings.optimize_group_by_function_keys);
+
+        ///Move all operations out of any function
+        optimizeAnyInput(query, settings.optimize_any_input);
 
         /// Eliminate min/max/any aggregators of functions of GROUP BY keys
         optimizeAggregateFunctionsOfGroupByKeys(select_query, settings.optimize_aggregators_of_group_by_keys);
