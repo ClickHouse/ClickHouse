@@ -9,42 +9,41 @@ toc_title: System Tables
 
 System tables provide information about:
 
-- Server states, processes, and environment.
-- Server's internal processes.
+-   Server states, processes, and environment.
+-   Server’s internal processes.
 
 System tables:
 
-- Located in the `system` database.
-- Available only for reading data.
-- Can't be dropped or altered, but can be detached.
+-   Located in the `system` database.
+-   Available only for reading data.
+-   Can’t be dropped or altered, but can be detached.
 
 Most of system tables store their data in RAM. A ClickHouse server creates such system tables at the start.
 
-Unlike other system tables, the system tables [metric_log](#system_tables-metric_log), [query_log](#system_tables-query_log), [query_thread_log](#system_tables-query_thread_log), [trace_log](#system_tables-trace_log) are served by [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) table engine and store their data in a storage filesystem. If you remove a table from a filesystem, the ClickHouse server creates the empty one again at the time of the next data writing. If system table schema changed in a new release, then ClickHouse renames the current table and creates a new one.
+Unlike other system tables, the system tables [metric\_log](#system_tables-metric_log), [query\_log](#system_tables-query_log), [query\_thread\_log](#system_tables-query_thread_log), [trace\_log](#system_tables-trace_log) are served by [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) table engine and store their data in a storage filesystem. If you remove a table from a filesystem, the ClickHouse server creates the empty one again at the time of the next data writing. If system table schema changed in a new release, then ClickHouse renames the current table and creates a new one.
 
 By default, table growth is unlimited. To control a size of a table, you can use [TTL](../sql-reference/statements/alter.md#manipulations-with-table-ttl) settings for removing outdated log records. Also you can use the partitioning feature of `MergeTree`-engine tables.
-
 
 ### Sources of System Metrics {#system-tables-sources-of-system-metrics}
 
 For collecting system metrics ClickHouse server uses:
 
-- `CAP_NET_ADMIN` capability.
-- [procfs](https://en.wikipedia.org/wiki/Procfs) (only in Linux).
+-   `CAP_NET_ADMIN` capability.
+-   [procfs](https://en.wikipedia.org/wiki/Procfs) (only in Linux).
 
 **procfs**
 
-If ClickHouse server doesn't have `CAP_NET_ADMIN` capability, it tries to fall back to `ProcfsMetricsProvider`. `ProcfsMetricsProvider` allows collecting per-query system metrics (for CPU and I/O).
+If ClickHouse server doesn’t have `CAP_NET_ADMIN` capability, it tries to fall back to `ProcfsMetricsProvider`. `ProcfsMetricsProvider` allows collecting per-query system metrics (for CPU and I/O).
 
 If procfs is supported and enabled on the system, ClickHouse server collects these metrics:
 
-- `OSCPUVirtualTimeMicroseconds`
-- `OSCPUWaitMicroseconds`
-- `OSIOWaitMicroseconds`
-- `OSReadChars`
-- `OSWriteChars`
-- `OSReadBytes`
-- `OSWriteBytes`
+-   `OSCPUVirtualTimeMicroseconds`
+-   `OSCPUWaitMicroseconds`
+-   `OSIOWaitMicroseconds`
+-   `OSReadChars`
+-   `OSWriteChars`
+-   `OSReadBytes`
+-   `OSWriteBytes`
 
 ## system.asynchronous\_metrics {#system_tables-asynchronous_metrics}
 
@@ -78,14 +77,14 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 
 **See Also**
 
--   [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [Monitoring](../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
 -   [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
 -   [system.events](#system_tables-events) — Contains a number of events that have occurred.
 -   [system.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 
-## system.asynchronous_metric_log {#system-tables-async-log}
+## system.asynchronous\_metric\_log {#system-tables-async-log}
 
-Contains the historical values for `system.asynchronous_log` (see [system.asynchronous_metrics](#system_tables-asynchronous_metrics))
+Contains the historical values for `system.asynchronous_log` (see [system.asynchronous\_metrics](#system_tables-asynchronous_metrics))
 
 ## system.clusters {#system-clusters}
 
@@ -109,8 +108,8 @@ Please note that `errors_count` is updated once per query to the cluster, but `e
 **See also**
 
 -   [Table engine Distributed](../engines/table-engines/special/distributed.md)
--   [distributed\_replica\_error\_cap setting](settings/settings.md#settings-distributed_replica_error_cap)
--   [distributed\_replica\_error\_half\_life setting](settings/settings.md#settings-distributed_replica_error_half_life)
+-   [distributed\_replica\_error\_cap setting](../operations/settings/settings.md#settings-distributed_replica_error_cap)
+-   [distributed\_replica\_error\_half\_life setting](../operations/settings/settings.md#settings-distributed_replica_error_half_life)
 
 ## system.columns {#system-columns}
 
@@ -182,7 +181,7 @@ This table contains a single String column called ‘name’ – the name of a d
 Each database that the server knows about has a corresponding entry in the table.
 This system table is used for implementing the `SHOW DATABASES` query.
 
-## system.data_type_families {#system_tables-data_type_families}
+## system.data\_type\_families {#system_tables-data_type_families}
 
 Contains information about supported [data types](../sql-reference/data-types/).
 
@@ -314,7 +313,7 @@ SELECT * FROM system.events LIMIT 5
 -   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 -   [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
 -   [system.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
--   [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [Monitoring](../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## system.functions {#system-functions}
 
@@ -327,7 +326,7 @@ Columns:
 
 ## system.graphite\_retentions {#system-graphite-retentions}
 
-Contains information about parameters [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) which are used in tables with [\*GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md) engines.
+Contains information about parameters [graphite\_rollup](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) which are used in tables with [\*GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md) engines.
 
 Columns:
 
@@ -399,7 +398,7 @@ SELECT * FROM system.metrics LIMIT 10
 -   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 -   [system.events](#system_tables-events) — Contains a number of events that occurred.
 -   [system.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
--   [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [Monitoring](../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## system.metric\_log {#system_tables-metric_log}
 
@@ -455,7 +454,7 @@ CurrentMetric_ReplicatedChecks:                             0
 -   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 -   [system.events](#system_tables-events) — Contains a number of events that occurred.
 -   [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
--   [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [Monitoring](../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## system.numbers {#system-numbers}
 
@@ -557,7 +556,7 @@ Columns:
 
 ## system.part\_log {#system_tables-part-log}
 
-The `system.part_log` table is created only if the [part\_log](server-configuration-parameters/settings.md#server_configuration_parameters-part-log) server setting is specified.
+The `system.part_log` table is created only if the [part\_log](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-part-log) server setting is specified.
 
 This table contains information about events that occurred with [data parts](../engines/table-engines/mergetree-family/custom-partitioning-key.md) in the [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) family tables, such as adding or merging data.
 
@@ -631,20 +630,20 @@ Columns:
 -   `source_file` (LowCardinality(String)) — Source file from which the logging was done.
 -   `source_line` (UInt64) — Source line from which the logging was done.
 
-## system.query_log {#system_tables-query_log}
+## system.query\_log {#system_tables-query_log}
 
 Contains information about executed queries, for example, start time, duration of processing, error messages.
 
 !!! note "Note"
     The table doesn’t contain input data for `INSERT` queries.
 
-You can change settings of queries logging in the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) section of the server configuration.
+You can change settings of queries logging in the [query\_log](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) section of the server configuration.
 
-You can disable queries logging by setting [log_queries = 0](settings/settings.md#settings-log-queries). We don't recommend to turn off logging because information in this table is important for solving issues.
+You can disable queries logging by setting [log\_queries = 0](../operations/settings/settings.md#settings-log-queries). We don’t recommend to turn off logging because information in this table is important for solving issues.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query\_log](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse doesn't delete data from the table automatically. See [Introduction](#system-tables-introduction) for more details.
+ClickHouse doesn’t delete data from the table automatically. See [Introduction](#system-tables-introduction) for more details.
 
 The `system.query_log` table registers two kinds of queries:
 
@@ -668,8 +667,8 @@ Columns:
 -   `event_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Query starting time.
 -   `query_start_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Start time of query execution.
 -   `query_duration_ms` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution in milliseconds.
--   `read_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number or rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_rows` includes the total number of rows read at all replicas. Each replica sends it's `read_rows` value, and the server-initiator of the query summarize all received and local values. The cache volumes doesn't affect this value.
--   `read_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number or bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_bytes` includes the total number of rows read at all replicas. Each replica sends it's `read_bytes` value, and the server-initiator of the query summarize all received and local values. The cache volumes doesn't affect this value.
+-   `read_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number or rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_rows` includes the total number of rows read at all replicas. Each replica sends it’s `read_rows` value, and the server-initiator of the query summarize all received and local values. The cache volumes doesn’t affect this value.
+-   `read_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number or bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_bytes` includes the total number of rows read at all replicas. Each replica sends it’s `read_bytes` value, and the server-initiator of the query summarize all received and local values. The cache volumes doesn’t affect this value.
 -   `written_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
 -   `written_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
 -   `result_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of rows in a result of the `SELECT` query, or a number of rows in the `INSERT` query.
@@ -677,7 +676,7 @@ Columns:
 -   `memory_usage` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Memory consumption by the query.
 -   `query` ([String](../sql-reference/data-types/string.md)) — Query string.
 -   `exception` ([String](../sql-reference/data-types/string.md)) — Exception message.
--   `exception_code` ([Int32](../sql-reference/data-types/int-uint.md)) — Code of an exception. 
+-   `exception_code` ([Int32](../sql-reference/data-types/int-uint.md)) — Code of an exception.
 -   `stack_trace` ([String](../sql-reference/data-types/string.md)) — [Stack trace](https://en.wikipedia.org/wiki/Stack_trace). An empty string, if the query was completed successfully.
 -   `is_initial_query` ([UInt8](../sql-reference/data-types/int-uint.md)) — Query type. Possible values:
     -   1 — Query was initiated by the client.
@@ -705,7 +704,7 @@ Columns:
     -   1 — `GET` method was used.
     -   2 — `POST` method was used.
 -   `http_user_agent` ([String](../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP request.
--   `quota_key` ([String](../sql-reference/data-types/string.md)) — The “quota key” specified in the [quotas](quotas.md) setting (see `keyed`).
+-   `quota_key` ([String](../sql-reference/data-types/string.md)) — The “quota key” specified in the [quotas](../operations/quotas.md) setting (see `keyed`).
 -   `revision` ([UInt32](../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
 -   `thread_numbers` ([Array(UInt32)](../sql-reference/data-types/array.md)) — Number of threads that are participating in query execution.
 -   `ProfileEvents.Names` ([Array(String)](../sql-reference/data-types/array.md)) — Counters that measure different metrics. The description of them could be found in the table [system.events](#system_tables-events)
@@ -764,24 +763,24 @@ ProfileEvents.Names:  []
 ProfileEvents.Values: []
 Settings.Names:       ['use_uncompressed_cache','load_balancing','log_queries','max_memory_usage']
 Settings.Values:      ['0','random','1','10000000000']
-
 ```
+
 **See Also**
 
--   [system.query_thread_log](#system_tables-query_thread_log) — This table contains information about each query execution thread.
+-   [system.query\_thread\_log](#system_tables-query_thread_log) — This table contains information about each query execution thread.
 
-## system.query_thread_log {#system_tables-query_thread_log}
+## system.query\_thread\_log {#system_tables-query_thread_log}
 
 Contains information about threads which execute queries, for example, thread name, thread start time, duration of query processing.
 
 To start logging:
 
-1. Configure parameters in the [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
-2. Set [log_query_threads](settings/settings.md#settings-log-query-threads) to 1.
+1.  Configure parameters in the [query\_thread\_log](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
+2.  Set [log\_query\_threads](../operations/settings/settings.md#settings-log-query-threads) to 1.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query\_thread\_log](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse doesn't delete data from the table automatically. See [Introduction](#system-tables-introduction) for more details.
+ClickHouse doesn’t delete data from the table automatically. See [Introduction](#system-tables-introduction) for more details.
 
 Columns:
 
@@ -826,7 +825,7 @@ Columns:
     -   1 — `GET` method was used.
     -   2 — `POST` method was used.
 -   `http_user_agent` ([String](../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP request.
--   `quota_key` ([String](../sql-reference/data-types/string.md)) — The “quota key” specified in the [quotas](quotas.md) setting (see `keyed`).
+-   `quota_key` ([String](../sql-reference/data-types/string.md)) — The “quota key” specified in the [quotas](../operations/quotas.md) setting (see `keyed`).
 -   `revision` ([UInt32](../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
 -   `ProfileEvents.Names` ([Array(String)](../sql-reference/data-types/array.md)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events).
 -   `ProfileEvents.Values` ([Array(UInt64)](../sql-reference/data-types/array.md)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
@@ -882,13 +881,13 @@ ProfileEvents.Values: [1,97,81,5,81]
 
 **See Also**
 
-- [system.query_log](#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
+-   [system.query\_log](#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
 
 ## system.trace\_log {#system_tables-trace_log}
 
 Contains stack traces collected by the sampling query profiler.
 
-ClickHouse creates this table when the [trace\_log](server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) server configuration section is set. Also the [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) and [query\_profiler\_cpu\_time\_period\_ns](settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
+ClickHouse creates this table when the [trace\_log](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) server configuration section is set. Also the [query\_profiler\_real\_time\_period\_ns](../operations/settings/settings.md#query_profiler_real_time_period_ns) and [query\_profiler\_cpu\_time\_period\_ns](../operations/settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
 
 To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` introspection functions.
 
@@ -1065,8 +1064,8 @@ Columns:
 -   `value` ([String](../sql-reference/data-types/string.md)) — Setting value.
 -   `changed` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether a setting is changed from its default value.
 -   `description` ([String](../sql-reference/data-types/string.md)) — Short setting description.
--   `min` ([Nullable](../sql-reference/data-types/nullable.md)([String](../sql-reference/data-types/string.md))) — Minimum value of the setting, if any is set via [constraints](settings/constraints-on-settings.md#constraints-on-settings). If the setting has no minimum value, contains [NULL](../sql-reference/syntax.md#null-literal).
--   `max` ([Nullable](../sql-reference/data-types/nullable.md)([String](../sql-reference/data-types/string.md))) — Maximum value of the setting, if any is set via [constraints](settings/constraints-on-settings.md#constraints-on-settings). If the setting has no maximum value, contains [NULL](../sql-reference/syntax.md#null-literal).
+-   `min` ([Nullable](../sql-reference/data-types/nullable.md)([String](../sql-reference/data-types/string.md))) — Minimum value of the setting, if any is set via [constraints](../operations/settings/constraints-on-settings.md#constraints-on-settings). If the setting has no minimum value, contains [NULL](../sql-reference/syntax.md#null-literal).
+-   `max` ([Nullable](../sql-reference/data-types/nullable.md)([String](../sql-reference/data-types/string.md))) — Maximum value of the setting, if any is set via [constraints](../operations/settings/constraints-on-settings.md#constraints-on-settings). If the setting has no maximum value, contains [NULL](../sql-reference/syntax.md#null-literal).
 -   `readonly` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the current user can change the setting:
     -   `0` — Current user can change the setting.
     -   `1` — Current user can’t change the setting.
@@ -1102,9 +1101,9 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 
 **See also**
 
--   [Settings](settings/index.md#session-settings-intro)
--   [Permissions for Queries](settings/permissions-for-queries.md#settings_readonly)
--   [Constraints on Settings](settings/constraints-on-settings.md)
+-   [Settings](../operations/settings/index.md#session-settings-intro)
+-   [Permissions for Queries](../operations/settings/permissions-for-queries.md#settings_readonly)
+-   [Constraints on Settings](../operations/settings/constraints-on-settings.md)
 
 ## system.table\_engines {#system.table_engines}
 

@@ -18,12 +18,12 @@ ClickHouse supports the following syntaxes for `count`:
 The function can take:
 
 -   Zero parameters.
--   One [expression](../syntax.md#syntax-expressions).
+-   One [expression](../../sql-reference/syntax.md#syntax-expressions).
 
 **Returned value**
 
 -   If the function is called without parameters it counts the number of rows.
--   If the [expression](../syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a [Nullable](../../sql-reference/data-types/nullable.md)-type value, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
+-   If the [expression](../../sql-reference/syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a [Nullable](../../sql-reference/data-types/nullable.md)-type value, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
 
 In both cases the type of the returned value is [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -379,12 +379,12 @@ Returns a tuple of two arrays: keys in sorted order, and values calculated for t
 
 Example:
 
-```sql
+``` sql
 SELECT minMap(a, b)
 FROM values('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1]))
 ```
 
-```text
+``` text
 ┌─minMap(a, b)──────┐
 │ ([1,2,3],[2,1,1]) │
 └───────────────────┘
@@ -399,12 +399,12 @@ Returns a tuple of two arrays: keys in sorted order, and values calculated for t
 
 Example:
 
-```sql
+``` sql
 SELECT maxMap(a, b)
 FROM values('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1]))
 ```
 
-```text
+``` text
 ┌─maxMap(a, b)──────┐
 │ ([1,2,3],[2,2,1]) │
 └───────────────────┘
@@ -420,7 +420,7 @@ skewPop(expr)
 
 **Parameters**
 
-`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+`expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a number.
 
 **Returned value**
 
@@ -444,7 +444,7 @@ skewSamp(expr)
 
 **Parameters**
 
-`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+`expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a number.
 
 **Returned value**
 
@@ -466,7 +466,7 @@ kurtPop(expr)
 
 **Parameters**
 
-`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+`expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a number.
 
 **Returned value**
 
@@ -490,7 +490,7 @@ kurtSamp(expr)
 
 **Parameters**
 
-`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+`expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a number.
 
 **Returned value**
 
@@ -583,8 +583,8 @@ avgWeighted(x, weight)
 
 **Parameters**
 
--   `x` — Values. [Integer](../data-types/int-uint.md) or [floating-point](../data-types/float.md).
--   `weight` — Weights of the values. [Integer](../data-types/int-uint.md) or [floating-point](../data-types/float.md).
+-   `x` — Values. [Integer](../../sql-reference/data-types/int-uint.md) or [floating-point](../../sql-reference/data-types/float.md).
+-   `weight` — Weights of the values. [Integer](../../sql-reference/data-types/int-uint.md) or [floating-point](../../sql-reference/data-types/float.md).
 
 Type of `x` and `weight` must be the same.
 
@@ -593,7 +593,7 @@ Type of `x` and `weight` must be the same.
 -   Weighted mean.
 -   `NaN`. If all the weights are equal to 0.
 
-Type: [Float64](../data-types/float.md).
+Type: [Float64](../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -775,25 +775,25 @@ Inserts a value into the array at the specified position.
 
 **Syntax**
 
-```sql
+``` sql
 groupArrayInsertAt(default_x, size)(x, pos);
 ```
 
 If in one query several values are inserted into the same position, the function behaves in the following ways:
 
-- If a query is executed in a single thread, the first one of the inserted values is used.
-- If a query is executed in multiple threads, the resulting value is an undetermined one of the inserted values.
+-   If a query is executed in a single thread, the first one of the inserted values is used.
+-   If a query is executed in multiple threads, the resulting value is an undetermined one of the inserted values.
 
 **Parameters**
 
-- `x` — Value to be inserted. [Expression](../syntax.md#syntax-expressions) resulting in one of the [supported data types](../../sql-reference/data-types/index.md).
-- `pos` — Position at which the specified element `x` is to be inserted. Index numbering in the array starts from zero. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
-- `default_x`— Default value for substituting in empty positions. Optional parameter. [Expression](../syntax.md#syntax-expressions) resulting in the data type configured for the `x` parameter. If `default_x` is not defined, the [default values](../../sql-reference/statements/create.md#create-default-values) are used.
-- `size`— Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` must be specified. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `x` — Value to be inserted. [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in one of the [supported data types](../../sql-reference/data-types/index.md).
+-   `pos` — Position at which the specified element `x` is to be inserted. Index numbering in the array starts from zero. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `default_x`— Default value for substituting in empty positions. Optional parameter. [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in the data type configured for the `x` parameter. If `default_x` is not defined, the [default values](../../sql-reference/statements/create.md#create-default-values) are used.
+-   `size`— Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` must be specified. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Returned value**
 
-- Array with inserted values.
+-   Array with inserted values.
 
 Type: [Array](../../sql-reference/data-types/array.md#data-type-array).
 
@@ -801,13 +801,13 @@ Type: [Array](../../sql-reference/data-types/array.md#data-type-array).
 
 Query:
 
-```sql
+``` sql
 SELECT groupArrayInsertAt(toString(number), number * 2) FROM numbers(5);
 ```
 
 Result:
 
-```text
+``` text
 ┌─groupArrayInsertAt(toString(number), multiply(number, 2))─┐
 │ ['0','','1','','2','','3','','4']                         │
 └───────────────────────────────────────────────────────────┘
@@ -815,13 +815,13 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT groupArrayInsertAt('-')(toString(number), number * 2) FROM numbers(5);
 ```
 
 Result:
 
-```text
+``` text
 ┌─groupArrayInsertAt('-')(toString(number), multiply(number, 2))─┐
 │ ['0','-','1','-','2','-','3','-','4']                          │
 └────────────────────────────────────────────────────────────────┘
@@ -829,13 +829,13 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT groupArrayInsertAt('-', 5)(toString(number), number * 2) FROM numbers(5);
 ```
 
 Result:
 
-```text
+``` text
 ┌─groupArrayInsertAt('-', 5)(toString(number), multiply(number, 2))─┐
 │ ['0','-','1','-','2']                                             │
 └───────────────────────────────────────────────────────────────────┘
@@ -845,13 +845,13 @@ Multi-threaded insertion of elements into one position.
 
 Query:
 
-```sql
+``` sql
 SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
 ```
 
 As a result of this query you get random integer in the `[0,9]` range. For example:
 
-```text
+``` text
 ┌─groupArrayInsertAt(number, 0)─┐
 │ [7]                           │
 └───────────────────────────────┘
@@ -870,7 +870,7 @@ The function can take the window size as a parameter. If left unspecified, the f
 
 **Parameters**
 
--   `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
+-   `numbers_for_summing` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in a numeric data type value.
 -   `window_size` — Size of the calculation window.
 
 **Returned values**
@@ -943,7 +943,7 @@ The function can take the window size as a parameter. If left unspecified, the f
 
 **Parameters**
 
--   `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
+-   `numbers_for_summing` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in a numeric data type value.
 -   `window_size` — Size of the calculation window.
 
 **Returned values**
@@ -1275,7 +1275,7 @@ Alias: `medianTiming`.
 
 -   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 
--   `expr` — [Expression](../syntax.md#syntax-expressions) over a column values returning a [Float\*](../../sql-reference/data-types/float.md)-type number.
+-   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) over a column values returning a [Float\*](../../sql-reference/data-types/float.md)-type number.
 
         - If negative values are passed to the function, the behavior is undefined.
         - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
@@ -1299,7 +1299,7 @@ Otherwise, the result of the calculation is rounded to the nearest multiple of 1
 Type: `Float32`.
 
 !!! note "Note"
-    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
+    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../../sql-reference/statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
 
 **Example**
 
@@ -1358,7 +1358,7 @@ Alias: `medianTimingWeighted`.
 
 -   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 
--   `expr` — [Expression](../syntax.md#syntax-expressions) over a column values returning a [Float\*](../../sql-reference/data-types/float.md)-type number.
+-   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) over a column values returning a [Float\*](../../sql-reference/data-types/float.md)-type number.
 
         - If negative values are passed to the function, the behavior is undefined.
         - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
@@ -1384,7 +1384,7 @@ Otherwise, the result of the calculation is rounded to the nearest multiple of 1
 Type: `Float32`.
 
 !!! note "Note"
-    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
+    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../../sql-reference/statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
 
 **Example**
 
@@ -1779,7 +1779,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ### Usage {#agg_functions-stochasticlinearregression-usage}
 
 `stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
-To predict we use function [evalMLMethod](../functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
+To predict we use function [evalMLMethod](../../sql-reference/functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
 

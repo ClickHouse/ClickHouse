@@ -364,7 +364,7 @@ dateDiff('unit', startdate, enddate, [timezone])
 
 **Parameters**
 
--   `unit` — Time unit, in which the returned value is expressed. [String](../syntax.md#syntax-string-literal).
+-   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
         Supported values:
 
