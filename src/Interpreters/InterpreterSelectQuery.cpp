@@ -89,6 +89,7 @@
 #include <Processors/QueryPlan/AddingDelayedStreamStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
 
 
 namespace DB
@@ -1508,12 +1509,13 @@ void InterpreterSelectQuery::executeTotalsAndHaving(QueryPipeline & pipeline, bo
 {
     const Settings & settings = context->getSettingsRef();
 
-    auto totals_having = std::make_shared<TotalsHavingTransform>(
-            pipeline.getHeader(), overflow_row, expression,
+    TotalsHavingStep totals_having_step(
+            DataStream{.header = pipeline.getHeader()},
+            overflow_row, expression,
             has_having ? getSelectQuery().having()->getColumnName() : "",
             settings.totals_mode, settings.totals_auto_threshold, final);
 
-    pipeline.addTotalsHavingTransform(std::move(totals_having));
+    totals_having_step.transformPipeline(pipeline);
 }
 
 
