@@ -446,7 +446,7 @@ Pipes StorageJoin::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals());
 
     Pipes pipes;
     pipes.emplace_back(std::make_shared<JoinSource>(*join, max_block_size, metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals())));

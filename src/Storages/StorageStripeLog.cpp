@@ -276,7 +276,7 @@ Pipes StorageStripeLog::read(
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
-    check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals());
 
     NameSet column_names_set(column_names.begin(), column_names.end());
 

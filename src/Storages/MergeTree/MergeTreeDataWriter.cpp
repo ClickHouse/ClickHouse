@@ -138,7 +138,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     if (!block || !block.rows())
         return result;
 
-    data.check(block, true);
+    metadata_snapshot->check(block, true);
 
     if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
