@@ -11,7 +11,7 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 class AddingDelayedStreamStep : public ITransformingStep
 {
 public:
-    explicit AddingDelayedStreamStep(
+    AddingDelayedStreamStep(
             const DataStream & input_stream_,
             ProcessorPtr source_);
 

@@ -87,6 +87,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/AddingDelayedStreamStep.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 
 
 namespace DB
@@ -1422,96 +1423,31 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
-    /// Forget about current totals and extremes. They will be calculated again after aggregation if needed.
-    pipeline.dropTotalsAndExtremes();
+    SortDescription group_by_sort_description;
 
     if (group_by_info && settings.optimize_aggregation_in_order)
-    {
-        auto & query = getSelectQuery();
-        SortDescription group_by_descr = getSortDescriptionFromGroupBy(query);
-        bool need_finish_sorting = (group_by_info->order_key_prefix_descr.size() < group_by_descr.size());
-
-        if (need_finish_sorting)
-        {
-            /// TOO SLOW
-        }
-        else
-        {
-            if (pipeline.getNumStreams() > 1)
-            {
-                auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
-                size_t counter = 0;
-                pipeline.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_descr, settings.max_block_size, many_data, counter++);
-                });
-
-                for (auto & column_description : group_by_descr)
-                {
-                    if (!column_description.column_name.empty())
-                    {
-                        column_description.column_number = pipeline.getHeader().getPositionByName(column_description.column_name);
-                        column_description.column_name.clear();
-                    }
-                }
-
-                auto transform = std::make_shared<AggregatingSortedTransform>(
-                    pipeline.getHeader(),
-                    pipeline.getNumStreams(),
-                    group_by_descr,
-                    settings.max_block_size);
-
-                pipeline.addPipe({ std::move(transform) });
-            }
-            else
-            {
-                pipeline.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_descr, settings.max_block_size);
-                });
-            }
-
-            pipeline.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<FinalizingSimpleTransform>(header, transform_params);
-            });
-
-            pipeline.enableQuotaForCurrentStreams();
-            return;
-        }
-    }
-
-    /// If there are several sources, then we perform parallel aggregation
-    if (pipeline.getNumStreams() > 1)
-    {
-        /// Add resize transform to uniformly distribute data between aggregating streams.
-        if (!(storage && storage->hasEvenlyDistributedRead()))
-            pipeline.resize(pipeline.getNumStreams(), true, true);
-
-        auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
-        auto merge_threads = settings.aggregation_memory_efficient_merge_threads
-                ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
-                : static_cast<size_t>(settings.max_threads);
-
-        size_t counter = 0;
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, max_streams, merge_threads);
-        });
-
-        pipeline.resize(1);
-    }
+        group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
     else
-    {
-        pipeline.resize(1);
+        group_by_info = nullptr;
 
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<AggregatingTransform>(header, transform_params);
-        });
-    }
+    auto merge_threads = max_streams;
+    auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
+                                        ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+                                        : static_cast<size_t>(settings.max_threads);
 
-    pipeline.enableQuotaForCurrentStreams();
+    bool storage_has_evenly_distributed_read = storage && storage->hasEvenlyDistributedRead();
+
+    AggregatingStep aggregating_step(
+            DataStream{.header = pipeline.getHeader()},
+            std::move(transform_params),
+            settings.max_block_size,
+            merge_threads,
+            temporary_data_merge_threads,
+            storage_has_evenly_distributed_read,
+            std::move(group_by_info),
+            std::move(group_by_sort_description));
+
+    aggregating_step.transformPipeline(pipeline);
 }
 
 
