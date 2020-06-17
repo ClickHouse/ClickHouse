@@ -94,6 +94,7 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
+#include <Processors/QueryPlan/OffsetsStep.h>
 
 
 namespace DB
@@ -1852,12 +1853,8 @@ void InterpreterSelectQuery::executeOffset(QueryPipeline & pipeline)
         UInt64 limit_offset;
         std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, *context);
 
-        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type != QueryPipeline::StreamType::Main)
-                return nullptr;
-            return std::make_shared<OffsetTransform>(header, limit_offset, 1);
-        });
+        OffsetsStep offsets_step(DataStream{.header = pipeline.getHeader()}, limit_offset);
+        offsets_step.transformPipeline(pipeline);
     }
 }
 
