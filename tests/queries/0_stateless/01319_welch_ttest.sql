@@ -15,3 +15,4 @@ CREATE TABLE welch_ttest (left Int64, right Int64) ENGINE = Memory;
 
 INSERT INTO welch_ttest VALUES (1, 1), (1, 1), (1, 1);
 SELECT WelchTTest(0.1)(left, right) from welch_ttest;
+DROP TABLE IF EXISTS welch_ttest;
