@@ -30,7 +30,7 @@
 namespace DB::GatherUtils
 {
 
-enum class ArraySearchType 
+enum class ArraySearchType
 {
   Any, // Corresponds to the hasAny array function
   All, // Corresponds to the hasAll array function

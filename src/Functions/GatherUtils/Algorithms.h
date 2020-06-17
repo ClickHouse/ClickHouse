@@ -452,7 +452,7 @@ bool sliceHasImplSubStr(const FirstSliceType & first, const SecondSliceType & se
     const bool has_first_null_map = first_null_map != nullptr;
     const bool has_second_null_map = second_null_map != nullptr;
 
-    if (second.size == 0) 
+    if (second.size == 0)
         return true;
 
     const auto aux = buildKMPFailureArray<SecondSliceType, isEqualUnary>(second, second_null_map);
@@ -502,7 +502,7 @@ std::unique_ptr<size_t[]> buildKMPFailureArray(const SliceType & pattern, const 
         {
             auto cond_null_map_match = (has_null_map && pattern_null_map[i] == pattern_null_map[length]);
             auto cond_both_non_null = (!has_null_map || (pattern_null_map[i] == 0 && pattern_null_map[length] == 0));
-            if (cond_null_map_match || ( cond_both_non_null && isEqual(pattern, i, length)))
+            if (cond_null_map_match || (cond_both_non_null && isEqual(pattern, i, length)))
             {
                 aux[i] = length + 1;
                 break;
@@ -514,7 +514,7 @@ std::unique_ptr<size_t[]> buildKMPFailureArray(const SliceType & pattern, const 
         }
         auto cond_null_map_match = (has_null_map && pattern_null_map[i] == pattern_null_map[0]);
         auto cond_both_non_null = (!has_null_map || (pattern_null_map[i] == 0 && pattern_null_map[0] == 0));
-        if (length == 0)                                                           
+        if (length == 0)
         {
             aux[i] = static_cast<size_t>(cond_null_map_match || (cond_both_non_null && isEqual(pattern, i, 0)));
         }
