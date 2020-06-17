@@ -1,6 +1,9 @@
-#include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/copyData.h>
+#include <DataStreams/materializeBlock.h>
+
+#include <DataTypes/DataTypeAggregateFunction.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -27,53 +30,11 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
-#include <Storages/IStorage.h>
-#include <Storages/StorageView.h>
-
-#include <TableFunctions/ITableFunction.h>
-
-#include <Functions/IFunction.h>
-#include <Core/Field.h>
-#include <Core/Types.h>
-#include <Columns/Collator.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
-#include <ext/map.h>
-#include <ext/scope_guard.h>
-#include <memory>
-
-#include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/InflatingExpressionTransform.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/MergingAggregatedTransform.h>
-#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-#include <Processors/Transforms/TotalsHavingTransform.h>
-#include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Transforms/LimitsCheckingTransform.h>
-#include <Processors/Transforms/MergeSortingTransform.h>
-#include <Processors/Transforms/DistinctTransform.h>
-#include <Processors/Transforms/LimitByTransform.h>
-#include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/RollupTransform.h>
-#include <Processors/Transforms/CubeTransform.h>
-#include <Processors/Transforms/FillingTransform.h>
-#include <Processors/LimitTransform.h>
-#include <Processors/OffsetTransform.h>
-#include <Processors/Transforms/FinishSortingTransform.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataStreams/materializeBlock.h>
 #include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ConvertingTransform.h>
-#include <Processors/Transforms/AggregatingInOrderTransform.h>
-#include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/QueryPlan/ReadFromStorageStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -96,6 +57,24 @@
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/OffsetsStep.h>
 #include <Processors/QueryPlan/FinishSortingStep.h>
+
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageView.h>
+
+#include <TableFunctions/ITableFunction.h>
+
+#include <Functions/IFunction.h>
+#include <Core/Field.h>
+#include <Core/Types.h>
+#include <Columns/Collator.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
+#include <ext/map.h>
+#include <ext/scope_guard.h>
+#include <memory>
 
 
 namespace DB
@@ -1398,10 +1377,8 @@ void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const Expres
 
 void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
-    pipeline.addSimpleTransform([&](const Block & header)
-    {
-        return std::make_shared<ExpressionTransform>(header, expression);
-    });
+    ExpressionStep expression_before_aggregation(DataStream{.header = pipeline.getHeader()}, expression);
+    expression_before_aggregation.transformPipeline(pipeline);
 
     Block header_before_aggregation = pipeline.getHeader();
     ColumnNumbers keys;
@@ -1490,7 +1467,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPipeline & pipeline, bo
 
     MergingAggregatedStep merging_aggregated(
             DataStream{.header = pipeline.getHeader()},
-            transform_params,
+            std::move(transform_params),
             settings.distributed_aggregation_memory_efficient,
             settings.max_threads,
             settings.aggregation_memory_efficient_merge_threads);
