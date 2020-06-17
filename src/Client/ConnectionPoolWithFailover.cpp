@@ -74,6 +74,12 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
         if (last_used >= nested_pools.size())
             last_used = 0;
         ++last_used;
+        /* Consider nested_pools.size() equals to 5
+         * last_used = 1 -> get_priority: 0 1 2 3 4
+         * last_used = 2 -> get_priority: 5 0 1 2 3
+         * last_used = 3 -> get_priority: 5 4 0 1 2
+         * ...
+         * */
         get_priority = [&](size_t i) { ++i; return i < last_used ? nested_pools.size() - i : i - last_used; };
         break;
     }
@@ -190,6 +196,12 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         if (last_used >= nested_pools.size())
             last_used = 0;
         ++last_used;
+        /* Consider nested_pools.size() equals to 5
+         * last_used = 1 -> get_priority: 0 1 2 3 4
+         * last_used = 2 -> get_priority: 5 0 1 2 3
+         * last_used = 3 -> get_priority: 5 4 0 1 2
+         * ...
+         * */
         get_priority = [&](size_t i) { ++i; return i < last_used ? nested_pools.size() - i : i - last_used; };
         break;
     }
