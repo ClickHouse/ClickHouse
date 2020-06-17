@@ -92,6 +92,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
 
 
 namespace DB
@@ -1788,10 +1789,8 @@ void InterpreterSelectQuery::executeWithFill(QueryPipeline & pipeline)
         if (fill_descr.empty())
             return;
 
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<FillingTransform>(header, fill_descr);
-        });
+        FillingStep filling_step(DataStream{.header = pipeline.getHeader()}, std::move(fill_descr));
+        filling_step.transformPipeline(pipeline);
     }
 }
 
