@@ -1549,7 +1549,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modif
     }
     else
     {
-        CubeStep rollup_step(DataStream{.header = pipeline.getHeader()}, std::move(transform_params));
+        CubeStep cube_step(DataStream{.header = pipeline.getHeader()}, std::move(transform_params));
         cube_step.transformPipeline(pipeline);
     }
 }
