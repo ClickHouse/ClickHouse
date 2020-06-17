@@ -173,6 +173,10 @@ struct StorageInMemoryMetadata
     /// Storage settings
     ASTPtr getSettingsChanges() const;
     bool hasSettingsChanges() const { return settings_changes != nullptr; }
+
+    /// Select query for *View storages.
+    const SelectQueryDescription & getSelectQuery() const;
+    bool hasSelectQuery() const;
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;

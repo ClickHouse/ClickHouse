@@ -165,7 +165,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
 void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
-    const auto & select_query = getSelectQuery();
+    const auto & select_query = getInMemoryMetadataPtr()->getSelectQuery();
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
 
@@ -209,13 +209,14 @@ void StorageMaterializedView::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
     /// start modify query
     if (context.getSettingsRef().allow_experimental_alter_materialized_view_structure)
     {
         const auto & new_select = new_metadata.select;
-        const auto & old_select = getSelectQuery();
+        const auto & old_select = old_metadata.getSelectQuery();
 
         DatabaseCatalog::instance().updateDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
 
@@ -268,6 +269,7 @@ void StorageMaterializedView::mutate(const MutationCommands & commands, const Co
 void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 {
     auto old_table_id = getStorageID();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     bool from_atomic_to_atomic_database = old_table_id.hasUUID() && new_table_id.hasUUID();
 
     if (has_inner_table && tryGetTargetTable() && !from_atomic_to_atomic_database)
@@ -293,14 +295,15 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     }
 
     IStorage::renameInMemory(new_table_id);
-    const auto & select_query = getSelectQuery();
+    const auto & select_query = metadata_snapshot->getSelectQuery();
     // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
     DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::shutdown()
 {
-    const auto & select_query = getSelectQuery();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & select_query = metadata_snapshot->getSelectQuery();
     /// Make sure the dependency is removed after DETACH TABLE
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeDependency(select_query.select_table_id, getStorageID());

@@ -308,7 +308,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
         if (view)
-            view->replaceWithSubquery(getSelectQuery(), view_table);
+            view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot);
 
         syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
                 query_ptr, SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage),

@@ -319,14 +319,4 @@ NamesAndTypesList IStorage::getVirtuals() const
     return {};
 }
 
-const SelectQueryDescription & IStorage::getSelectQuery() const
-{
-    return metadata->select;
-}
-
-bool IStorage::hasSelectQuery() const
-{
-    return metadata->select.select_query != nullptr;
-}
-
 }
