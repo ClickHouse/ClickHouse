@@ -130,7 +130,7 @@ String InterpreterSelectQuery::generateFilterActions(
 
     /// Using separate expression analyzer to prevent any possible alias injection
     auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, SyntaxAnalyzerResult({}, storage));
-    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context);
+    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context, metadata_snapshot);
     actions = analyzer.simpleSelectActions();
 
     return expr_list->children.at(0)->getColumnName();
@@ -336,7 +336,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 context->getQueryContext().addScalar(it.first, it.second);
 
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
-                query_ptr, syntax_analyzer_result, *context,
+                query_ptr, syntax_analyzer_result, *context, metadata_snapshot,
                 NameSet(required_result_column_names.begin(), required_result_column_names.end()),
                 !options.only_analyze, options);
 

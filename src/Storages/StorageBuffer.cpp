@@ -447,7 +447,8 @@ BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Storag
 }
 
 
-bool StorageBuffer::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const
+bool StorageBuffer::mayBenefitFromIndexForIn(
+    const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
     if (!destination_id)
         return false;
@@ -457,7 +458,8 @@ bool StorageBuffer::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
     if (destination.get() == this)
         throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-    return destination->mayBenefitFromIndexForIn(left_in_operand, query_context);
+    /// TODO alesap (check destination metadata)
+    return destination->mayBenefitFromIndexForIn(left_in_operand, query_context, destination->getInMemoryMetadataPtr());
 }
 
 

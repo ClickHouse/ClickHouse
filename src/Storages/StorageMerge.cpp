@@ -81,7 +81,7 @@ bool StorageMerge::isRemote() const
 }
 
 
-bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const
+bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
     /// It's beneficial if it is true for at least one table.
     StorageListWithLocks selected_tables = getSelectedTables(
@@ -90,7 +90,9 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, cons
     size_t i = 0;
     for (const auto & table : selected_tables)
     {
-        if (std::get<0>(table)->mayBenefitFromIndexForIn(left_in_operand, query_context))
+        auto storage_ptr = std::get<0>(table);
+        auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
+        if (storage_ptr->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot))
             return true;
 
         ++i;

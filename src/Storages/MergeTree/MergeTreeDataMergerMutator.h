@@ -177,6 +177,7 @@ private:
     std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         BlockInputStreamPtr & input_stream,
         const NamesAndTypesList & updated_columns,
+        const StorageMetadataPtr & metadata_snapshot,
         const Context & context) const;
 
     /// Override all columns of new part using mutating_stream

@@ -356,7 +356,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
         const IAST & args = *func->arguments;
         const ASTPtr & left_in_operand = args.children.at(0);
 
-        if (storage()->mayBenefitFromIndexForIn(left_in_operand, context))
+        if (storage()->mayBenefitFromIndexForIn(left_in_operand, context, metadata_snapshot))
         {
             const ASTPtr & arg = args.children.at(1);
             if (arg->as<ASTSubquery>() || arg->as<ASTIdentifier>())

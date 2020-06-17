@@ -408,14 +408,14 @@ ExpressionActionsPtr getCombinedIndicesExpression(
 
 }
 
-ExpressionActionsPtr MergeTreeData::getPrimaryKeyAndSkipIndicesExpression() const
+ExpressionActionsPtr MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const
 {
-    return getCombinedIndicesExpression(getPrimaryKey(), getSecondaryIndices(), getColumns(), global_context);
+    return getCombinedIndicesExpression(getPrimaryKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), global_context);
 }
 
-ExpressionActionsPtr MergeTreeData::getSortingKeyAndSkipIndicesExpression() const
+ExpressionActionsPtr MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const
 {
-    return getCombinedIndicesExpression(getSortingKey(), getSecondaryIndices(), getColumns(), global_context);
+    return getCombinedIndicesExpression(getSortingKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), global_context);
 }
 
 
@@ -1237,9 +1237,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     commands.apply(new_metadata, global_context);
-    if (getSecondaryIndices().empty() && !new_metadata.secondary_indices.empty() &&
-            !settings.allow_experimental_data_skipping_indices)
+    if (old_metadata.getSecondaryIndices().empty() && !new_metadata.secondary_indices.empty()
+        && !settings.allow_experimental_data_skipping_indices)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
 
@@ -1259,7 +1260,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             columns_alter_type_forbidden.insert(col);
     }
 
-    for (const auto & index : getSecondaryIndices())
+    for (const auto & index : old_metadata.getSecondaryIndices())
     {
         for (const String & col : index.expression->getRequiredColumns())
             columns_alter_type_forbidden.insert(col);
@@ -2932,7 +2933,8 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const A
     return false;
 }
 
-bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &) const
+bool MergeTreeData::mayBenefitFromIndexForIn(
+    const ASTPtr & left_in_operand, const Context &, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Make sure that the left side of the IN operator contain part of the key.
     /// If there is a tuple on the left side of the IN operator, at least one item of the tuple
@@ -2945,7 +2947,7 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
         {
             if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(item))
                 return true;
-            for (const auto & index : getSecondaryIndices())
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
                 if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(item))
                     return true;
         }
@@ -2954,7 +2956,7 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
     }
     else
     {
-        for (const auto & index : getSecondaryIndices())
+        for (const auto & index : metadata_snapshot->getSecondaryIndices())
             if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(left_in_operand))
                 return true;
 
