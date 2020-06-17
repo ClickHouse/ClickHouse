@@ -70,7 +70,7 @@ int main(int argc, char ** argv)
         Poco::Logger::root().setLevel("trace");
 
         zkutil::ZooKeeper zk(argv[1]);
-        LineReader lr({}, '\\');
+        LineReader lr({}, false, {"\\"}, {});
 
         do
         {

@@ -26,6 +26,11 @@ public:
         return std::make_shared<StorageBlocks>(table_id, columns, std::move(pipes), to_stage);
     }
     std::string getName() const override { return "Blocks"; }
+    /// It is passed inside the query and solved at its level.
+    bool supportsPrewhere() const override { return true; }
+    bool supportsSampling() const override { return true; }
+    bool supportsFinal() const override { return true; }
+
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override { return to_stage; }
 
     Pipes read(

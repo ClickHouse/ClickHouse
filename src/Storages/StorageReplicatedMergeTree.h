@@ -19,12 +19,12 @@
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Storages/MergeTree/LeaderElection.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/LeaderElection.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Processors/Pipe.h>
 
@@ -210,6 +210,8 @@ private:
 
     /// If true, the table is offline and can not be written to it.
     std::atomic_bool is_readonly {false};
+    /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
+    bool has_metadata_in_zookeeper = true;
 
     String zookeeper_path;
     String replica_name;
@@ -220,6 +222,7 @@ private:
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
 
     /** Is this replica "leading". The leader replica selects the parts to merge.
+      * It can be false only when old ClickHouse versions are working on the same cluster, because now we allow multiple leaders.
       */
     std::atomic<bool> is_leader {false};
     zkutil::LeaderElectionPtr leader_election;
@@ -288,14 +291,13 @@ private:
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
 
-    std::atomic_bool need_shutdown{false};
-
     template <class Func>
     void foreachCommittedParts(const Func & func) const;
 
-    /** Creates the minimum set of nodes in ZooKeeper.
+    /** Creates the minimum set of nodes in ZooKeeper and create first replica.
+      * Returns true if was created, false if exists.
       */
-    void createTableIfNotExists();
+    bool createTableIfNotExists();
 
     /** Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
       */
@@ -426,16 +428,23 @@ private:
       * Call when merge_selecting_mutex is locked.
       * Returns false if any part is not in ZK.
       */
-    bool createLogEntryToMergeParts(
+    enum class CreateMergeEntryResult { Ok, MissingPart, LogUpdated, Other };
+
+    CreateMergeEntryResult createLogEntryToMergeParts(
         zkutil::ZooKeeperPtr & zookeeper,
         const DataPartsVector & parts,
         const String & merged_name,
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         bool force_ttl,
-        ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
+        ReplicatedMergeTreeLogEntryData * out_log_entry,
+        int32_t log_version);
 
-    bool createLogEntryToMutatePart(const IMergeTreeDataPart & part, Int64 mutation_version, int alter_version);
+    CreateMergeEntryResult createLogEntryToMutatePart(
+        const IMergeTreeDataPart & part,
+        Int64 mutation_version,
+        int32_t alter_version,
+        int32_t log_version);
 
     /// Exchange parts.
 
@@ -489,6 +498,7 @@ private:
     bool waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /// Choose leader replica, send requst to it and wait.
+    /// Only makes sense when old ClickHouse versions are working on the same cluster, because now we allow multiple leaders.
     void sendRequestToLeaderReplica(const ASTPtr & query, const Context & query_context);
 
     /// Throw an exception if the table is readonly.
@@ -542,7 +552,7 @@ protected:
         bool attach,
         const StorageID & table_id_,
         const String & relative_data_path_,
-        const StorageInMemoryMetadata & metadata,
+        const StorageInMemoryMetadata & metadata_,
         Context & context_,
         const String & date_column_name,
         const MergingParams & merging_params_,

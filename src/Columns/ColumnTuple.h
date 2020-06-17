@@ -40,6 +40,7 @@ public:
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
+    TypeIndex getDataType() const override { return TypeIndex::Tuple; }
 
     MutableColumnPtr cloneEmpty() const override;
     MutableColumnPtr cloneResized(size_t size) const override;

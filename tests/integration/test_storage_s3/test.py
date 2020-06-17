@@ -2,13 +2,13 @@ import json
 import logging
 import random
 import threading
+import os
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 import helpers.client
-
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
@@ -82,14 +82,16 @@ def get_nginx_access_logs():
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("restricted_dummy", main_configs=["configs/config_for_test_remote_host_filter.xml"], with_minio=True)
-        cluster.add_instance("dummy", with_minio=True)
+        cluster.add_instance("restricted_dummy", main_configs=["configs/config_for_test_remote_host_filter.xml"],
+                             with_minio=True)
+        cluster.add_instance("dummy", with_minio=True, main_configs=["configs/defaultS3.xml"])
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
 
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
+        run_s3_mock(cluster)
 
         yield cluster
     finally:
@@ -199,14 +201,15 @@ def test_put_get_with_globs(cluster):
         for j in range(10):
             path = "{}_{}/{}.csv".format(i, random.choice(['a', 'b', 'c', 'd']), j)
             max_path = max(path, max_path)
-            values = "({},{},{})".format(i, j, i+j)
+            values = "({},{},{})".format(i, j, i + j)
             query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
                 cluster.minio_host, cluster.minio_port, bucket, path, table_format, values)
             run_query(instance, query)
 
     query = "select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from s3('http://{}:{}/{}/*_{{a,b,c,d}}/%3f.csv', 'CSV', '{}')".format(
         cluster.minio_redirect_host, cluster.minio_redirect_port, bucket, table_format)
-    assert run_query(instance, query).splitlines() == ["450\t450\t900\t0.csv\t{bucket}/{max_path}".format(bucket=bucket, max_path=max_path)]
+    assert run_query(instance, query).splitlines() == [
+        "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(bucket=bucket, max_path=max_path)]
 
 
 # Test multipart put.
@@ -307,3 +310,29 @@ def test_s3_glob_scheherazade(cluster):
     query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/night_*/tale.csv', 'CSV', '{}')".format(
         cluster.minio_redirect_host, cluster.minio_redirect_port, bucket, table_format)
     assert run_query(instance, query).splitlines() == ["1001\t1001\t1001\t1001"]
+
+
+def run_s3_mock(cluster):
+    logging.info("Starting s3 mock")
+    container_id = cluster.get_container_id('resolver')
+    current_dir = os.path.dirname(__file__)
+    cluster.copy_file_to_container(container_id, os.path.join(current_dir, "s3_mock", "mock_s3.py"), "mock_s3.py")
+    cluster.exec_in_container(container_id, ["python", "mock_s3.py"], detach=True)
+    logging.info("S3 mock started")
+
+
+# Test get values in CSV format with default settings.
+def test_get_csv_default(cluster):
+    ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'), ["curl", "-s", "http://resolver:8080"])
+    assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
+    
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    filename = "test.csv"
+    get_query = "select * from s3('http://resolver:8080/{bucket}/{file}', 'CSV', '{table_format}')".format(
+        bucket=cluster.minio_restricted_bucket,
+        file=filename,
+        table_format=table_format)
+
+    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    result = run_query(instance, get_query)
+    assert result == '1\t2\t3\n'

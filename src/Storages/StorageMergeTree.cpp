@@ -52,7 +52,7 @@ namespace ActionLocks
 StorageMergeTree::StorageMergeTree(
     const StorageID & table_id_,
     const String & relative_data_path_,
-    const StorageInMemoryMetadata & metadata,
+    const StorageInMemoryMetadata & metadata_,
     bool attach,
     Context & context_,
     const String & date_column_name,
@@ -62,7 +62,7 @@ StorageMergeTree::StorageMergeTree(
     : MergeTreeData(
         table_id_,
         relative_data_path_,
-        metadata,
+        metadata_,
         context_,
         date_column_name,
         merging_params_,
@@ -95,16 +95,36 @@ void StorageMergeTree::startup()
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
 
-    auto & merge_pool = global_context.getBackgroundPool();
-    merging_mutating_task_handle = merge_pool.createTask([this] { return mergeMutateTask(); });
-    /// Ensure that thread started only after assignment to 'merging_mutating_task_handle' is done.
-    merge_pool.startTask(merging_mutating_task_handle);
-
-    if (areBackgroundMovesNeeded())
+    try
     {
-        auto & move_pool = global_context.getBackgroundMovePool();
-        moving_task_handle = move_pool.createTask([this] { return movePartsTask(); });
-        move_pool.startTask(moving_task_handle);
+        auto & merge_pool = global_context.getBackgroundPool();
+        merging_mutating_task_handle = merge_pool.createTask([this] { return mergeMutateTask(); });
+        /// Ensure that thread started only after assignment to 'merging_mutating_task_handle' is done.
+        merge_pool.startTask(merging_mutating_task_handle);
+
+        if (areBackgroundMovesNeeded())
+        {
+            auto & move_pool = global_context.getBackgroundMovePool();
+            moving_task_handle = move_pool.createTask([this] { return movePartsTask(); });
+            move_pool.startTask(moving_task_handle);
+        }
+    }
+    catch (...)
+    {
+        /// Exception safety: failed "startup" does not require a call to "shutdown" from the caller.
+        /// And it should be able to safely destroy table after exception in "startup" method.
+        /// It means that failed "startup" must not create any background tasks that we will have to wait.
+        try
+        {
+            shutdown();
+        }
+        catch (...)
+        {
+            std::terminate();
+        }
+
+        /// Note: after failed "startup", the table will be in a state that only allows to destroy the object.
+        throw;
     }
 }
 
@@ -121,16 +141,6 @@ void StorageMergeTree::shutdown()
         mutation_wait_event.notify_all();
     }
 
-    try
-    {
-        clearOldPartsFromFilesystem(true);
-    }
-    catch (...)
-    {
-        /// Example: the case of readonly filesystem, we have failure removing old parts.
-        /// Should not prevent table shutdown.
-        tryLogCurrentException(log);
-    }
 
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
@@ -140,6 +150,23 @@ void StorageMergeTree::shutdown()
 
     if (moving_task_handle)
         global_context.getBackgroundMovePool().removeTask(moving_task_handle);
+
+
+    try
+    {
+        /// We clear all old parts after stopping all background operations.
+        /// It's important, because background operations can produce temporary
+        /// parts which will remove themselves in their descrutors. If so, we
+        /// may have race condition between our remove call and background
+        /// process.
+        clearOldPartsFromFilesystem(true);
+    }
+    catch (...)
+    {
+        /// Example: the case of readonly filesystem, we have failure removing old parts.
+        /// Should not prevent table shutdown.
+        tryLogCurrentException(log);
+    }
 }
 
 
@@ -229,39 +256,42 @@ void StorageMergeTree::alter(
 {
     auto table_id = getStorageID();
 
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    auto maybe_mutation_commands = commands.getMutationCommands(metadata, context.getSettingsRef().materialize_ttl_after_modify);
-    commands.apply(metadata);
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, context.getSettingsRef().materialize_ttl_after_modify, context);
+    String mutation_file_name;
+    Int64 mutation_version = -1;
+    commands.apply(new_metadata, context);
 
-    /// This alter can be performed at metadata level only
+    /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-        changeSettings(metadata.settings_ast, table_lock_holder);
+        changeSettings(new_metadata.settings_changes, table_lock_holder);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
     }
     else
     {
-        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+        {
+            /// TODO (relax this lock and remove this action lock)
+            auto merges_block = getActionLock(ActionLocks::PartsMerge);
+            lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-        changeSettings(metadata.settings_ast, table_lock_holder);
-        /// Reinitialize primary key because primary key column types might have changed.
-        setProperties(metadata);
+            changeSettings(new_metadata.settings_changes, table_lock_holder);
+            /// Reinitialize primary key because primary key column types might have changed.
+            setProperties(new_metadata);
 
-        setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast);
+            setTTLExpressions(new_metadata);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
 
-        String mutation_file_name;
-        Int64 mutation_version = -1;
-        if (!maybe_mutation_commands.empty())
-            mutation_version = startMutation(maybe_mutation_commands, mutation_file_name);
-
-        /// We release all locks except alter_intention_lock which allows
-        /// to execute alter queries sequentially
-        table_lock_holder.releaseAllExceptAlterIntention();
+            if (!maybe_mutation_commands.empty())
+                mutation_version = startMutation(maybe_mutation_commands, mutation_file_name);
+            /// We release all locks except alter_intention_lock which allows
+            /// to execute alter queries sequentially
+            table_lock_holder.releaseAllExceptAlterIntention();
+        }
 
         /// Always execute required mutations synchronously, because alters
         /// should be executed in sequential order.
@@ -365,6 +395,8 @@ public:
                 entry.latest_fail_reason = exception_message;
             }
         }
+
+        storage.currently_processing_in_background_condition.notify_all();
     }
 };
 
@@ -385,7 +417,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
     current_mutations_by_version.emplace(version, insertion.first->second);
 
     LOG_INFO(log, "Added mutation: {}", mutation_file_name);
-    merging_mutating_task_handle->wake();
+    merging_mutating_task_handle->signalReadyToRun();
     return version;
 }
 
@@ -518,7 +550,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     }
 
     /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
-    merging_mutating_task_handle->wake();
+    merging_mutating_task_handle->signalReadyToRun();
 
     return CancellationCode::CancelSent;
 }
@@ -566,7 +598,7 @@ bool StorageMergeTree::merge(
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
 
     {
-        std::lock_guard lock(currently_processing_in_background_mutex);
+        std::unique_lock lock(currently_processing_in_background_mutex);
 
         auto can_merge = [this, &lock] (const DataPartPtr & left, const DataPartPtr & right, String *) -> bool
         {
@@ -590,8 +622,33 @@ bool StorageMergeTree::merge(
         }
         else
         {
-            UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
-            selected = merger_mutator.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
+            while (true)
+            {
+                UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
+                selected = merger_mutator.selectAllPartsToMergeWithinPartition(
+                    future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
+
+                /// If final - we will wait for currently processing merges to finish and continue.
+                /// TODO Respect query settings for timeout
+                if (final
+                    && !selected
+                    && !currently_merging_mutating_parts.empty()
+                    && out_disable_reason
+                    && out_disable_reason->empty())
+                {
+                    LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now) to perform OPTIMIZE FINAL",
+                        currently_merging_mutating_parts.size());
+
+                    if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
+                        lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
+                    {
+                        *out_disable_reason = "Timeout while waiting for already running merges before running OPTIMIZE with FINAL";
+                        break;
+                    }
+                }
+                else
+                    break;
+            }
         }
 
         if (!selected)
@@ -847,7 +904,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
 
 Int64 StorageMergeTree::getCurrentMutationVersion(
     const DataPartPtr & part,
-    std::lock_guard<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
+    std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
 {
     auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
     if (it == current_mutations_by_version.begin())

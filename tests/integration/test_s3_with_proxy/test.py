@@ -14,9 +14,7 @@ def run_resolver(cluster):
     current_dir = os.path.dirname(__file__)
     cluster.copy_file_to_container(container_id, os.path.join(current_dir, "proxy-resolver", "resolver.py"),
                                    "resolver.py")
-    cluster.copy_file_to_container(container_id, os.path.join(current_dir, "proxy-resolver", "entrypoint.sh"),
-                                   "entrypoint.sh")
-    cluster.exec_in_container(container_id, ["/bin/bash", "entrypoint.sh"], detach=True)
+    cluster.exec_in_container(container_id, ["python", "resolver.py"], detach=True)
 
 
 @pytest.fixture(scope="module")

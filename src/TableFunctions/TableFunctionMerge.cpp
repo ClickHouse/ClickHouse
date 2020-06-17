@@ -34,7 +34,8 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
         auto iterator = database->getTablesIterator(context, table_name_match);
 
         if (iterator->isValid())
-            any_table = iterator->table();
+            if (const auto & table = iterator->table())
+                any_table = table;
     }
 
     if (!any_table)

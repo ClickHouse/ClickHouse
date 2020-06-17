@@ -51,6 +51,9 @@ public:
     /// Name of a Column kind, without parameters (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
+    /// Type of data that column contains. It's an underlying type: UInt16 for Date, UInt32 for DateTime, so on.
+    virtual TypeIndex getDataType() const = 0;
+
     /** If column isn't constant, returns itself.
       * If column is constant, transforms constant to full column (if column type allows such transform) and return it.
       */

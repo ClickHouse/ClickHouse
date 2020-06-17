@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
@@ -34,6 +33,7 @@
 
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
@@ -47,6 +47,7 @@
 #include <Interpreters/getTableExpressions.h>
 
 #include <Core/Field.h>
+#include <Core/Settings.h>
 
 #include <IO/ReadHelpers.h>
 
@@ -539,7 +540,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
 }
 
 
-void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
 {
     for (const auto & command : commands)
     {
@@ -560,10 +561,10 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
     auto table_id = getStorageID();
 
     checkAlterIsPossible(params, context.getSettingsRef());
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
-    setColumns(std::move(metadata.columns));
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    params.apply(new_metadata, context);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
+    setColumns(std::move(new_metadata.columns));
 }
 
 
@@ -649,11 +650,21 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
     auto & node_data = cluster_nodes_data[key];
     if (!node_data.directory_monitor)
     {
-        node_data.conneciton_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
+        node_data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
         node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
-            *this, path, node_data.conneciton_pool, monitors_blocker, global_context->getDistributedSchedulePool());
+            *this, path, node_data.connection_pool, monitors_blocker, global_context->getDistributedSchedulePool());
     }
     return *node_data.directory_monitor;
+}
+
+std::vector<StorageDistributedDirectoryMonitor::Status> StorageDistributed::getDirectoryMonitorsStatuses() const
+{
+    std::vector<StorageDistributedDirectoryMonitor::Status> statuses;
+    std::lock_guard lock(cluster_nodes_mutex);
+    statuses.reserve(cluster_nodes_data.size());
+    for (const auto & node : cluster_nodes_data)
+        statuses.push_back(node.second.directory_monitor->getStatus());
+    return statuses;
 }
 
 size_t StorageDistributed::getShardCount() const

@@ -56,6 +56,7 @@ private:
 
 public:
     const char * getFamilyName() const override { return "String"; }
+    TypeIndex getDataType() const override { return TypeIndex::String; }
 
     size_t size() const override
     {

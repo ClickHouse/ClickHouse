@@ -139,7 +139,6 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
         return result;
 
     data.check(block, true);
-    block.checkNumberOfRows();
 
     if (!data.hasPartitionKey()) /// Table is not partitioned.
     {
@@ -263,8 +262,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     new_data_part->volume->getDisk()->createDirectories(full_path);
 
     /// If we need to calculate some columns to sort.
-    if (data.hasSortingKey() || data.hasSkipIndices())
-        data.sorting_key_and_skip_indices_expr->execute(block);
+    if (data.hasSortingKey() || data.hasSecondaryIndices())
+        data.getSortingKeyAndSkipIndicesExpression()->execute(block);
 
     Names sort_columns = data.getSortingKeyColumns();
     SortDescription sort_description;
@@ -302,7 +301,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
 
-    MergedBlockOutputStream out(new_data_part, columns, data.skip_indices, compression_codec);
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+    MergedBlockOutputStream out(new_data_part, columns, index_factory.getMany(data.getSecondaryIndices()), compression_codec);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
