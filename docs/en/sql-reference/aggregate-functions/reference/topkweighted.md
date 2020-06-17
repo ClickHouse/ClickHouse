@@ -1,3 +1,7 @@
+---
+toc_priority: 109
+---
+
 # topKWeighted {#topkweighted}
 
 Similar to `topK` but takes one additional argument of integer type - `weight`. Every value is accounted `weight` times for frequency calculation.
@@ -15,7 +19,7 @@ topKWeighted(N)(x, weight)
 **Arguments**
 
 -   `x` – The value.
--   `weight` — The weight. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `weight` — The weight. [UInt8](../../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 

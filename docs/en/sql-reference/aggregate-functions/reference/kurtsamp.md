@@ -14,11 +14,11 @@ kurtSamp(expr)
 
 **Parameters**
 
-`expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a number.
+`expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
 
 **Returned value**
 
-The kurtosis of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
+The kurtosis of the given distribution. Type — [Float64](../../../sql-reference/data-types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
 
 **Example**
 

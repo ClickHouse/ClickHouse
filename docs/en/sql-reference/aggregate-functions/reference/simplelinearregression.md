@@ -1,3 +1,7 @@
+---
+toc_priority: 220
+---
+
 # simpleLinearRegression {#simplelinearregression}
 
 Performs simple (unidimensional) linear regression.

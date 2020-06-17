@@ -1,3 +1,7 @@
+---
+toc_priority: 221
+---
+
 # stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
 This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size and has few methods for updating weights ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (used by default), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
@@ -18,7 +22,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ### Usage {#agg_functions-stochasticlinearregression-usage}
 
 `stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
-To predict we use function [evalMLMethod](../../sql-reference/functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
+To predict we use function [evalMLMethod](../../../sql-reference/functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
 
@@ -67,5 +71,5 @@ The query will return a column of predicted values. Note that first argument of 
 
 **See Also**
 
--   [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
+-   [stochasticLogisticRegression](stochasticlogisticregression.md#agg_functions-stochasticlogisticregression)
 -   [Difference between linear and logistic regressions](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)

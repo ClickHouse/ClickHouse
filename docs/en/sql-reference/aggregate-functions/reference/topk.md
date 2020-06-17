@@ -1,4 +1,8 @@
-# topK(N)(x) {#topknx}
+---
+toc_priority: 108
+---
+
+# topK {#topk}
 
 Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
 
@@ -24,7 +28,7 @@ If the parameter is omitted, default value 10 is used.
 
 **Example**
 
-Take the [OnTime](../../getting-started/example-datasets/ontime.md) data set and select the three most frequently occurring values in the `AirlineID` column.
+Take the [OnTime](../../../getting-started/example-datasets/ontime.md) data set and select the three most frequently occurring values in the `AirlineID` column.
 
 ``` sql
 SELECT topK(3)(AirlineID) AS res

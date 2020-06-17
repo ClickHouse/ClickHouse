@@ -4,16 +4,16 @@
 
 The following aggregate functions are supported:
 
--   [`any`](../../sql-reference/aggregate-functions/reference.md#agg_function-any)
--   [`anyLast`](../../sql-reference/aggregate-functions/reference.md#anylastx)
--   [`min`](../../sql-reference/aggregate-functions/reference.md#agg_function-min)
--   [`max`](../../sql-reference/aggregate-functions/reference.md#agg_function-max)
--   [`sum`](../../sql-reference/aggregate-functions/reference.md#agg_function-sum)
--   [`groupBitAnd`](../../sql-reference/aggregate-functions/reference.md#groupbitand)
--   [`groupBitOr`](../../sql-reference/aggregate-functions/reference.md#groupbitor)
--   [`groupBitXor`](../../sql-reference/aggregate-functions/reference.md#groupbitxor)
--   [`groupArrayArray`](../../sql-reference/aggregate-functions/reference.md#agg_function-grouparray)
--   [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference.md#groupuniqarrayx-groupuniqarraymax-sizex)
+-   [`any`](../../sql-reference/aggregate-functions/reference/any.md#agg_function-any)
+-   [`anyLast`](../../sql-reference/aggregate-functions/reference/anylast.md#anylastx)
+-   [`min`](../../sql-reference/aggregate-functions/reference/min.md#agg_function-min)
+-   [`max`](../../sql-reference/aggregate-functions/reference/max.md#agg_function-max)
+-   [`sum`](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum)
+-   [`groupBitAnd`](../../sql-reference/aggregate-functions/reference/groupbitand.md#groupbitand)
+-   [`groupBitOr`](../../sql-reference/aggregate-functions/reference/groupbitor.md#groupbitor)
+-   [`groupBitXor`](../../sql-reference/aggregate-functions/reference/groupbitxor.md#groupbitxor)
+-   [`groupArrayArray`](../../sql-reference/aggregate-functions/reference/grouparray.md#agg_function-grouparray)
+-   [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference/groupuniqarray.md#groupuniqarray)
 
 Values of the `SimpleAggregateFunction(func, Type)` look and stored the same way as `Type`, so you do not need to apply functions with `-Merge`/`-State` suffixes. `SimpleAggregateFunction` has better performance than `AggregateFunction` with same aggregation function.
 

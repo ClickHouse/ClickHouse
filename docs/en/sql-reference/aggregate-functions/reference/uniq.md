@@ -1,3 +1,7 @@
+---
+toc_priority: 190
+---
+
 # uniq {#agg_function-uniq}
 
 Calculates the approximate number of different values of the argument.

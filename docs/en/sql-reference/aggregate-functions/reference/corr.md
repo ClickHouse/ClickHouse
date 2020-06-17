@@ -1,4 +1,10 @@
-# corr(x, y) {#corrx-y}
+---
+toc_priority: 107
+---
+
+# corr {#corrx-y}
+
+Syntax: `corr(x, y)`
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 

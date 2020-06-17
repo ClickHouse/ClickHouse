@@ -12,11 +12,11 @@ skewPop(expr)
 
 **Parameters**
 
-`expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a number.
+`expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
 
 **Returned value**
 
-The skewness of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md)
+The skewness of the given distribution. Type — [Float64](../../../sql-reference/data-types/float.md)
 
 **Example**
 

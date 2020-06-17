@@ -1,4 +1,10 @@
-# covarPop(x, y) {#covarpopx-y}
+---
+toc_priority: 36
+---
+
+# covarPop {#covarpop}
+
+Syntax: `covarPop(x, y)`
 
 Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 

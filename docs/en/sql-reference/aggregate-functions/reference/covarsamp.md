@@ -1,4 +1,8 @@
-# covarSamp(x, y) {#covarsampx-y}
+---
+toc_priority: 37
+---
+
+# covarSamp {#covarsamp}
 
 Calculates the value of `Σ((x - x̅)(y - y̅)) / (n - 1)`.
 

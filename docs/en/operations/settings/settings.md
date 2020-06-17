@@ -1072,15 +1072,15 @@ Default value: 0.
 
 ## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
-Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) construction.
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) construction.
 
 Possible values:
 
--   [uniq](../../sql-reference/aggregate-functions/reference.md#agg_function-uniq)
--   [uniqCombined](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined)
--   [uniqCombined64](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined64)
--   [uniqHLL12](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqhll12)
--   [uniqExact](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqexact)
+-   [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniqCombined](../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
+-   [uniqCombined64](../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
+-   [uniqExact](../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
 
 Default value: `uniqExact`.
 

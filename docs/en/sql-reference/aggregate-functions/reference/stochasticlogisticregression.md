@@ -1,3 +1,7 @@
+---
+toc_priority: 222
+---
+
 # stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
 
 This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way.
@@ -47,5 +51,5 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 **See Also**
 
--   [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
+-   [stochasticLinearRegression](stochasticlinearregression.md#agg_functions-stochasticlinearregression)
 -   [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)

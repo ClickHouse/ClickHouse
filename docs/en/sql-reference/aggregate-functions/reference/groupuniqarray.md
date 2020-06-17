@@ -2,7 +2,7 @@
 toc_priority: 111
 ---
 
-# groupUniqArray{#groupuniqarrayx-groupuniqarraymax-sizex}
+# groupUniqArray{#groupuniqarray}
 
 Syntax: `groupUniqArray(x)` or `groupUniqArray(max_size)(x)`
 

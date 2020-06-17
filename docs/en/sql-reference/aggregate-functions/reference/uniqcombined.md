@@ -1,3 +1,7 @@
+---
+toc_priority: 192
+---
+
 # uniqCombined {#agg_function-uniqcombined}
 
 Calculates the approximate number of different argument values.
