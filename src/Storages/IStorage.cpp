@@ -319,35 +319,6 @@ NamesAndTypesList IStorage::getVirtuals() const
     return {};
 }
 
-const KeyDescription & IStorage::getSortingKey() const
-{
-    return metadata->sorting_key;
-}
-
-bool IStorage::isSortingKeyDefined() const
-{
-    return metadata->sorting_key.definition_ast != nullptr;
-}
-
-bool IStorage::hasSortingKey() const
-{
-    return !metadata->sorting_key.column_names.empty();
-}
-
-Names IStorage::getColumnsRequiredForSortingKey() const
-{
-    if (hasSortingKey())
-        return metadata->sorting_key.expression->getRequiredColumns();
-    return {};
-}
-
-Names IStorage::getSortingKeyColumns() const
-{
-    if (hasSortingKey())
-        return metadata->sorting_key.column_names;
-    return {};
-}
-
 const KeyDescription & IStorage::getPrimaryKey() const
 {
     return metadata->primary_key;

@@ -179,7 +179,7 @@ Pipes StorageBuffer::read(
         if (dst_has_same_structure)
         {
             if (query_info.order_optimizer)
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination);
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination, metadata_snapshot);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             pipes_from_dst = destination->read(

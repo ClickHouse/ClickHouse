@@ -225,7 +225,7 @@ static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPt
     for (const String & col : metadata_snapshot->getColumnsRequiredForPartitionKey())
         key_columns.insert(col);
 
-    for (const String & col : merge_tree_data->getColumnsRequiredForSortingKey())
+    for (const String & col : metadata_snapshot->getColumnsRequiredForSortingKey())
         key_columns.insert(col);
     /// We don't process sample_by_ast separately because it must be among the primary key columns.
 
@@ -731,7 +731,7 @@ size_t MutationsInterpreter::evaluateCommandsSize()
 
 std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIfPossible(const Block & header) const
 {
-    Names sort_columns = storage->getSortingKeyColumns();
+    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);

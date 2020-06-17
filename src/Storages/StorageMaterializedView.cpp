@@ -121,7 +121,7 @@ Pipes StorageMaterializedView::read(
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     if (query_info.order_optimizer)
-        query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage);
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
 
     Pipes pipes = storage->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 

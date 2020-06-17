@@ -427,20 +427,6 @@ public:
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
-    /// Returns structure with sorting key.
-    const KeyDescription & getSortingKey() const;
-    /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
-    ASTPtr getSortingKeyAST() const { return metadata->sorting_key.definition_ast; }
-    /// Storage has user-defined (in CREATE query) sorting key.
-    bool isSortingKeyDefined() const;
-    /// Storage has sorting key. It means, that it contains at least one column.
-    bool hasSortingKey() const;
-    /// Returns column names that need to be read to calculate sorting key.
-    Names getColumnsRequiredForSortingKey() const;
-    /// Returns columns names in sorting key specified by user in ORDER BY
-    /// expression. For example: 'a', 'x * y', 'toStartOfMonth(date)', etc.
-    Names getSortingKeyColumns() const;
-
     /// Returns structure with primary key.
     const KeyDescription & getPrimaryKey() const;
     /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
@@ -467,8 +453,6 @@ public:
     /// Returns column names that need to be read to calculate sampling key.
     Names getColumnsRequiredForSampling() const;
 
-    /// Returns column names that need to be read for FINAL to work.
-    Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }
 
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }

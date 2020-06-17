@@ -274,7 +274,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
-void MergeTreeData::checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & /*old_metadata*/, bool attach) const
+void MergeTreeData::checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach) const
 {
     if (!new_metadata.sorting_key.definition_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -312,7 +312,7 @@ void MergeTreeData::checkProperties(const StorageInMemoryMetadata & new_metadata
     auto all_columns = new_metadata.columns.getAllPhysical();
 
     /// Order by check AST
-    if (hasSortingKey())
+    if (old_metadata.hasSortingKey())
     {
         /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
         /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
@@ -321,7 +321,7 @@ void MergeTreeData::checkProperties(const StorageInMemoryMetadata & new_metadata
         Names new_sorting_key_columns = new_sorting_key.column_names;
 
         ASTPtr added_key_column_expr_list = std::make_shared<ASTExpressionList>();
-        const auto & old_sorting_key_columns = getSortingKeyColumns();
+        const auto & old_sorting_key_columns = old_metadata.getSortingKeyColumns();
         for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
         {
             if (old_i < old_sorting_key_columns.size())
@@ -342,7 +342,7 @@ void MergeTreeData::checkProperties(const StorageInMemoryMetadata & new_metadata
 
             NamesAndTypesList deleted_columns;
             NamesAndTypesList added_columns;
-            getColumns().getAllPhysical().getDifference(all_columns, deleted_columns, added_columns);
+            old_metadata.getColumns().getAllPhysical().getDifference(all_columns, deleted_columns, added_columns);
 
             for (const String & col : used_columns)
             {
@@ -415,7 +415,7 @@ ExpressionActionsPtr MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const 
 
 ExpressionActionsPtr MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const
 {
-    return getCombinedIndicesExpression(getSortingKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), global_context);
+    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), global_context);
 }
 
 
@@ -487,8 +487,8 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
             for (const auto & col : old_metadata.getColumnsRequiredForPartitionKey())
                 columns_ttl_forbidden.insert(col);
 
-        if (hasSortingKey())
-            for (const auto & col : getColumnsRequiredForSortingKey())
+        if (old_metadata.hasSortingKey())
+            for (const auto & col : old_metadata.getColumnsRequiredForSortingKey())
                 columns_ttl_forbidden.insert(col);
 
         for (const auto & [name, ttl_description] : new_column_ttls)
@@ -1266,9 +1266,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             columns_alter_type_forbidden.insert(col);
     }
 
-    if (hasSortingKey())
+    if (old_metadata.hasSortingKey())
     {
-        auto sorting_key_expr = getSortingKey().expression;
+        auto sorting_key_expr = old_metadata.getSortingKey().expression;
         for (const ExpressionAction & action : sorting_key_expr->getActions())
         {
             auto action_columns = action.getNeededColumns();
@@ -2981,7 +2981,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
         return ast ? queryToString(ast) : "";
     };
 
-    if (query_to_string(getSortingKeyAST()) != query_to_string(src_data->getSortingKeyAST()))
+    if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
         throw Exception("Tables have different ordering", ErrorCodes::BAD_ARGUMENTS);
 
     if (query_to_string(my_snapshot->getPartitionKeyAST()) != query_to_string(src_snapshot->getPartitionKeyAST()))

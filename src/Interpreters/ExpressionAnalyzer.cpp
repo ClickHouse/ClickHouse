@@ -1011,6 +1011,7 @@ ExpressionActionsPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
 
 ExpressionAnalysisResult::ExpressionAnalysisResult(
         SelectQueryExpressionAnalyzer & query_analyzer,
+        const StorageMetadataPtr & metadata_snapshot,
         bool first_stage_,
         bool second_stage_,
         bool only_types,
@@ -1068,7 +1069,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (storage && query.final())
         {
-            Names columns_for_final = storage->getColumnsRequiredForFinal();
+            Names columns_for_final = metadata_snapshot->getColumnsRequiredForFinal();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
                 columns_for_final.begin(), columns_for_final.end());
         }

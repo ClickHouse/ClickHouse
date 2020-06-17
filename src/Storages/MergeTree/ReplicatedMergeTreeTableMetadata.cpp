@@ -41,11 +41,11 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     /// - When we have only ORDER BY, than store it in "primary key:" row of /metadata
     /// - When we have both, than store PRIMARY KEY in "primary key:" row and ORDER BY in "sorting key:" row of /metadata
     if (!data.isPrimaryKeyDefined())
-        primary_key = formattedAST(data.getSortingKey().expression_list_ast);
+        primary_key = formattedAST(metadata_snapshot->getSortingKey().expression_list_ast);
     else
     {
         primary_key = formattedAST(data.getPrimaryKey().expression_list_ast);
-        sorting_key = formattedAST(data.getSortingKey().expression_list_ast);
+        sorting_key = formattedAST(metadata_snapshot->getSortingKey().expression_list_ast);
     }
 
     data_format_version = data.format_version;

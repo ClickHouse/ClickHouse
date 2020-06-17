@@ -312,4 +312,34 @@ Names StorageInMemoryMetadata::getColumnsRequiredForPartitionKey() const
         return partition_key.expression->getRequiredColumns();
     return {};
 }
+
+
+const KeyDescription & StorageInMemoryMetadata::getSortingKey() const
+{
+    return sorting_key;
+}
+
+bool StorageInMemoryMetadata::isSortingKeyDefined() const
+{
+    return sorting_key.definition_ast != nullptr;
+}
+
+bool StorageInMemoryMetadata::hasSortingKey() const
+{
+    return !sorting_key.column_names.empty();
+}
+
+Names StorageInMemoryMetadata::getColumnsRequiredForSortingKey() const
+{
+    if (hasSortingKey())
+        return sorting_key.expression->getRequiredColumns();
+    return {};
+}
+
+Names StorageInMemoryMetadata::getSortingKeyColumns() const
+{
+    if (hasSortingKey())
+        return sorting_key.column_names;
+    return {};
+}
 }
