@@ -424,7 +424,6 @@ Block StorageMerge::getQueryHeader(
             if (query_info.prewhere_info)
             {
                 query_info.prewhere_info->prewhere_actions->execute(header);
-                header = materializeBlock(header);
                 if (query_info.prewhere_info->remove_prewhere_column)
                     header.erase(query_info.prewhere_info->prewhere_column_name);
             }
@@ -432,9 +431,9 @@ Block StorageMerge::getQueryHeader(
         }
         case QueryProcessingStage::WithMergeableState:
         case QueryProcessingStage::Complete:
-            return materializeBlock(InterpreterSelectQuery(
+            return InterpreterSelectQuery(
                     query_info.query, context, std::make_shared<OneBlockInputStream>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals())),
-                SelectQueryOptions(processed_stage).analyze()).getSampleBlock());
+                SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
     }
     throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);
 }

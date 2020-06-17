@@ -7,7 +7,6 @@
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <common/logger_useful.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Path.h>
 #include <Common/ShellCommand.h>
