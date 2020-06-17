@@ -1,4 +1,4 @@
-#include <Core/Settings.h>
+#include  <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 
@@ -26,6 +26,7 @@
 #include <Interpreters/DuplicateDistinctVisitor.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
+#include <Interpreters/IfWithStringsVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -529,6 +530,12 @@ void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_miltiif)
         OptimizeIfChainsVisitor().visit(query);
 }
 
+void TransformIfStringsIntoEnum(ASTPtr & query)
+{
+    FindingIfWithStringsVisitor::Data useless_data{};
+    FindingIfWithStringsVisitor(useless_data).visit(query);
+}
+
 void optimizeArithmeticOperationsInAgr(ASTPtr & query, bool optimize_arithmetic_operations_in_agr_func)
 {
     if (optimize_arithmetic_operations_in_agr_func)
@@ -932,6 +939,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         /// Remove duplicate items from ORDER BY.
         optimizeOrderBy(select_query);
+
+        /// If function "if" has String-type arguments, transform them into enum
+        TransformIfStringsIntoEnum(query);
 
         /// Remove duplicate ORDER BY and DISTINCT from subqueries.
         optimizeDuplicateOrderByAndDistinct(query, settings.optimize_duplicate_order_by_and_distinct, context);
