@@ -718,6 +718,13 @@ case "$stage" in
     time run_tests ||:
     ;&
 "get_profiles")
+    # Check for huge pages.
+    cat /sys/kernel/mm/transparent_hugepage/enabled > thp-enabled.txt ||:
+    cat /proc/meminfo > meminfo.txt ||:
+    for pid in $(pgrep -f clickhouse-server)
+    do
+        cat "/proc/$pid/smaps" > "$pid-smaps.txt" ||:
+    done
     # Getting profiles inexplicably hangs sometimes, so try to save some logs if
     # this happens again. Give the servers some time to collect all info, then
     # trace and kill. Start in a subshell, so that both function don't interfere
