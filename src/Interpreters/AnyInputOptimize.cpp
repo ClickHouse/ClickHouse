@@ -72,9 +72,9 @@ void AnyInputMatcher::visit(ASTPtr & current_ast, Data data)
             mode = 1;
         ///cut any or anyLast
         size_t amount_of_children = function_node->arguments->children[0]->as<ASTFunction>()->arguments->children.size();
+        current_ast = (function_node->arguments->children[0])->clone();
         for (size_t i = 0; i < amount_of_children; ++i)
-            changeAllIdentifiers(function_node->arguments->children[0], i, mode);
-        current_ast = (current_ast->as<ASTFunction>()->arguments->children[0])->clone();
+            changeAllIdentifiers(current_ast, i, mode);
     }
 }
 
