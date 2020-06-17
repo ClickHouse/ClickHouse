@@ -39,25 +39,22 @@ public:
 
 private:
     ORC_UNIQUE_PTR<orc::Type> getORCType(const DataTypePtr & type);
+
     template <typename Decimal, typename DecimalVectorBatch, typename ConvertFunc>
-    void writeDecimals(
-            orc::ColumnVectorBatch * orc_column,
-            const IColumn & column,
-            DataTypePtr & type,
-            const PaddedPODArray<UInt8> * null_bytemap,
-            size_t rows_num,
-            ConvertFunc convert);
+    void writeDecimals(orc::ColumnVectorBatch * orc_column, const IColumn & column, DataTypePtr & type,
+                        const PaddedPODArray<UInt8> * null_bytemap, ConvertFunc convert);
+
     template <typename NumberType, typename NumberVectorBatch>
-    void writeNumbers(
-            orc::ColumnVectorBatch * orc_column,
-            const IColumn & column,
-            const PaddedPODArray<UInt8> * null_bytemap,
-            size_t rows_num);
-    void writeColumn(
-            orc::ColumnVectorBatch * orc_column,
-            const IColumn & column, DataTypePtr & type,
-            const PaddedPODArray<UInt8> * null_bytemap,
-            size_t rows_num);
+    void writeNumbers(orc::ColumnVectorBatch * orc_column, const IColumn & column, const PaddedPODArray<UInt8> * null_bytemap);
+
+    template <typename ColumnType>
+    void writeStrings(orc::ColumnVectorBatch * orc_column, const IColumn & column, const PaddedPODArray<UInt8> * null_bytemap);
+
+    template <typename ColumnType, typename GetSecondsFunc, typename GetNanosecondsFunc>
+    void writeDateTimes(orc::ColumnVectorBatch * orc_column, const IColumn & column, const PaddedPODArray<UInt8> * null_bytemap,
+                        GetSecondsFunc get_seconds, GetNanosecondsFunc get_nanoseconds);
+
+    void writeColumn(orc::ColumnVectorBatch * orc_column, const IColumn & column, DataTypePtr & type, const PaddedPODArray<UInt8> * null_bytemap);
 
     const FormatSettings format_settings;
     ORCOutputStream output_stream;
