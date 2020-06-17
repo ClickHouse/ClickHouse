@@ -244,8 +244,13 @@ public:
       */
     virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 
+    /// Compare the whole column with single value from rhs column.
+    /// If row_indexes is nullptr, it's ignored. Otherwise, it is a set of rows to compare.
+    /// compare_results[i] will be equal to compareAt(row_indexes[i], rhs_row_num, rhs, nan_direction_hint) * direction
+    /// row_indexes (if not ignored) will contain row numbers for which compare result is 0
+    /// see compareImpl for default implementation.
     virtual void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                               PaddedPODArray<UInt64> & row_indexes, PaddedPODArray<Int8> & compare_results,
+                               PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                                int direction, int nan_direction_hint) const = 0;
 
     /** Returns a permutation that sorts elements of this column,
@@ -418,10 +423,17 @@ protected:
     template <typename Derived>
     std::vector<MutablePtr> scatterImpl(ColumnIndex num_columns, const Selector & selector) const;
 
-    template <typename Derived>
+    template <typename Derived, bool reversed, bool use_indexes>
     void compareImpl(const Derived & rhs, size_t rhs_row_num,
-                     PaddedPODArray<UInt64> & row_indexes, PaddedPODArray<Int8> & compare_results,
-                     int direction, int nan_direction_hint) const;
+                     PaddedPODArray<UInt64> * row_indexes,
+                     PaddedPODArray<Int8> & compare_results,
+                     int nan_direction_hint) const;
+
+    template <typename Derived>
+    void doCompareColumn(const Derived & rhs, size_t rhs_row_num,
+                         PaddedPODArray<UInt64> * row_indexes,
+                         PaddedPODArray<Int8> & compare_results,
+                         int direction, int nan_direction_hint) const;
 };
 
 using ColumnPtr = IColumn::Ptr;
