@@ -420,8 +420,9 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & action
             aggregate.argument_names[i] = name;
         }
 
+        AggregateFunctionProperties properties;
         aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters) : Array();
-        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters);
+        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters, properties);
 
         aggregate_descriptions.push_back(aggregate);
     }
