@@ -701,13 +701,13 @@ arrayDifference(array)
 
 **Parameters**
 
--   `array` – [Array](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [Array](https://clickhouse.tech/docs/en/data_types/array/).
 
 **Returned values**
 
 Returns an array of differences between adjacent elements.
 
-Type: [UInt\*](https://clickhouse.yandex/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.yandex/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.yandex/docs/en/data_types/float/).
+Type: [UInt\*](https://clickhouse.tech/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.tech/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.tech/docs/en/data_types/float/).
 
 **Example**
 
@@ -753,7 +753,7 @@ arrayDistinct(array)
 
 **Parameters**
 
--   `array` – [Array](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [Array](https://clickhouse.tech/docs/en/data_types/array/).
 
 **Returned values**
 

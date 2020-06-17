@@ -23,12 +23,16 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
+#include <Interpreters/DuplicateDistinctVisitor.h>
+#include <Interpreters/DuplicateOrderByVisitor.h>
+#include <Interpreters/GroupByFunctionKeysVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/queryToString.h>
 
@@ -343,6 +347,89 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
         appendUnusedGroupByColumn(select_query, source_columns);
 }
 
+///eliminate functions of other GROUP BY keys
+void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query, bool optimize_group_by_function_keys)
+{
+    if (!optimize_group_by_function_keys)
+        return;
+
+    if (!select_query->groupBy())
+        return;
+
+    auto grp_by = select_query->groupBy();
+    auto & group_keys = grp_by->children;
+
+    ASTs modified; ///result
+    std::unordered_set<String> key_names_to_keep; ///set of keys' short names
+
+    ///check if optimization is needed while building set
+    bool need_optimization = false;
+    ///filling set with short names of keys
+    for (auto & group_key : group_keys)
+    {
+        if (!need_optimization && group_key->as<ASTFunction>())
+            need_optimization = true;
+
+        if (auto * group_key_ident = group_key->as<ASTIdentifier>())
+        {
+            if (key_names_to_keep.count(group_key_ident->shortName()))
+            {
+                ///There may be a collision between different tables having similar variables.
+                ///Due to the fact that we can't track these conflicts yet,
+                ///it's better to disable optimization to avoid elimination necessary keys.
+                need_optimization = false;
+                break;
+            }
+
+            key_names_to_keep.insert(group_key_ident->shortName());
+            continue;
+        }
+        if (auto * group_key_func = group_key->as<ASTFunction>())
+        {
+            key_names_to_keep.insert(group_key_func->getColumnName());
+            continue;
+        }
+        else
+        {
+            key_names_to_keep.insert(group_key->getColumnName());
+        }
+    }
+    if (!need_optimization)
+        return;
+
+    GroupByFunctionKeysVisitor::Data visitor_data{key_names_to_keep};
+    GroupByFunctionKeysVisitor(visitor_data).visit(grp_by);
+
+    modified.reserve(group_keys.size());
+
+    ///filling the result
+    for (auto & group_key : group_keys)
+    {
+        if (auto * group_key_func = group_key->as<ASTFunction>())
+        {
+            if (key_names_to_keep.count(group_key_func->getColumnName()))
+                modified.push_back(group_key);
+
+            continue;
+        }
+        if (auto * group_key_ident = group_key->as<ASTIdentifier>())
+        {
+            if (key_names_to_keep.count(group_key_ident->shortName()))
+                modified.push_back(group_key);
+
+            continue;
+        }
+        else
+        {
+            if (key_names_to_keep.count(group_key->getColumnName()))
+                modified.push_back(group_key);
+        }
+    }
+
+    ///modifying the input
+    grp_by->children = modified;
+}
+
 /// Remove duplicate items from ORDER BY.
 void optimizeOrderBy(const ASTSelectQuery * select_query)
 {
@@ -368,6 +455,18 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
 
     if (unique_elems.size() < elems.size())
         elems = std::move(unique_elems);
+}
+
+/// Optimize duplicate ORDER BY and DISTINCT
+void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, bool optimize_duplicate_order_by_and_distinct, const Context & context)
+{
+    if (optimize_duplicate_order_by_and_distinct)
+    {
+        DuplicateOrderByVisitor::Data order_by_data{context, false};
+        DuplicateOrderByVisitor(order_by_data).visit(query);
+        DuplicateDistinctVisitor::Data distinct_data{};
+        DuplicateDistinctVisitor(distinct_data).visit(query);
+    }
 }
 
 /// Remove duplicate items from LIMIT BY.
@@ -828,8 +927,14 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         /// GROUP BY injective function elimination.
         optimizeGroupBy(select_query, source_columns_set, context);
 
+        /// GROUP BY functions of other keys elimination.
+        optimizeGroupByFunctionKeys(select_query, settings.optimize_group_by_function_keys);
+
         /// Remove duplicate items from ORDER BY.
         optimizeOrderBy(select_query);
+
+        /// Remove duplicate ORDER BY and DISTINCT from subqueries.
+        optimizeDuplicateOrderByAndDistinct(query, settings.optimize_duplicate_order_by_and_distinct, context);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
