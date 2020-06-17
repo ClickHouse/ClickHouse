@@ -129,7 +129,10 @@ private:
 
     void setDataType(LiteralInfo & info)
     {
-        /// Type (Field::Types:Which) of literal in AST can be: String, UInt64, Int64, Float64, Null or Array of simple literals (not of Arrays).
+        /// Type (Field::Types:Which) of literal in AST can be:
+        /// 1. simple literal type: String, UInt64, Int64, Float64, Null
+        /// 2. complex literal type: Array or Tuple of simple literals
+        /// 3. Array or Tuple of complex literals
         /// Null and empty Array literals are considered as tokens, because template with Nullable(Nothing) or Array(Nothing) is useless.
 
         Field::Types::Which field_type = info.literal->value.getType();
