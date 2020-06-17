@@ -86,6 +86,7 @@ public:
 
     virtual MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,

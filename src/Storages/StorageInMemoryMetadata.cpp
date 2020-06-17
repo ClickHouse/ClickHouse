@@ -365,4 +365,32 @@ Names StorageInMemoryMetadata::getColumnsRequiredForSampling() const
     return {};
 }
 
+const KeyDescription & StorageInMemoryMetadata::getPrimaryKey() const
+{
+    return primary_key;
+}
+
+bool StorageInMemoryMetadata::isPrimaryKeyDefined() const
+{
+    return primary_key.definition_ast != nullptr;
+}
+
+bool StorageInMemoryMetadata::hasPrimaryKey() const
+{
+    return !primary_key.column_names.empty();
+}
+
+Names StorageInMemoryMetadata::getColumnsRequiredForPrimaryKey() const
+{
+    if (hasPrimaryKey())
+        return primary_key.expression->getRequiredColumns();
+    return {};
+}
+
+Names StorageInMemoryMetadata::getPrimaryKeyColumns() const
+{
+    if (!primary_key.column_names.empty())
+        return primary_key.column_names;
+    return {};
+}
 }

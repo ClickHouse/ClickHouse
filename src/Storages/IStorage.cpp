@@ -319,35 +319,6 @@ NamesAndTypesList IStorage::getVirtuals() const
     return {};
 }
 
-const KeyDescription & IStorage::getPrimaryKey() const
-{
-    return metadata->primary_key;
-}
-
-bool IStorage::isPrimaryKeyDefined() const
-{
-    return metadata->primary_key.definition_ast != nullptr;
-}
-
-bool IStorage::hasPrimaryKey() const
-{
-    return !metadata->primary_key.column_names.empty();
-}
-
-Names IStorage::getColumnsRequiredForPrimaryKey() const
-{
-    if (hasPrimaryKey())
-        return metadata->primary_key.expression->getRequiredColumns();
-    return {};
-}
-
-Names IStorage::getPrimaryKeyColumns() const
-{
-    if (!metadata->primary_key.column_names.empty())
-        return metadata->primary_key.column_names;
-    return {};
-}
-
 TTLTableDescription IStorage::getTableTTLs() const
 {
     std::lock_guard lock(ttl_mutex);

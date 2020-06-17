@@ -91,6 +91,7 @@ private:
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(
         const MergeTreeData::DataPartsVector & parts,
+        const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const Settings & settings) const;
 
@@ -102,6 +103,7 @@ private:
 
     MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
+        const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const Settings & settings) const;
 

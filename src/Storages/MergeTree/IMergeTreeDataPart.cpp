@@ -437,7 +437,8 @@ void IMergeTreeDataPart::loadIndex()
     if (!index_granularity.isInitialized())
         throw Exception("Index granularity is not loaded before index loading", ErrorCodes::LOGICAL_ERROR);
 
-    const auto & primary_key = storage.getPrimaryKey();
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
     size_t key_size = primary_key.column_names.size();
 
     if (key_size)
@@ -842,7 +843,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
     String path = getFullRelativePath();
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    const auto & pk = storage.getPrimaryKey();
+    const auto & pk = metadata_snapshot->getPrimaryKey();
     if (!checksums.empty())
     {
         if (!pk.column_names.empty() && !checksums.files.count("primary.idx"))

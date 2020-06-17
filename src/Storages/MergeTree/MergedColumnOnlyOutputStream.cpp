@@ -28,6 +28,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     writer = data_part->getWriter(
         header.getNamesAndTypesList(),
+        metadata_snapshot_,
         indices_to_recalc,
         default_codec,
         std::move(writer_settings),
