@@ -319,13 +319,6 @@ NamesAndTypesList IStorage::getVirtuals() const
     return {};
 }
 
-ASTPtr IStorage::getSettingsChanges() const
-{
-    if (metadata->settings_changes)
-        return metadata->settings_changes->clone();
-    return nullptr;
-}
-
 const SelectQueryDescription & IStorage::getSelectQuery() const
 {
     return metadata->select;

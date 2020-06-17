@@ -138,11 +138,6 @@ public:
 public: /// thread-unsafe part. lockStructure must be acquired
 
     const ColumnsDescription & getColumns() const; /// returns combined set of columns
-
-    /// Storage settings
-    ASTPtr getSettingsChanges() const;
-    bool hasSettingsChanges() const { return metadata->settings_changes != nullptr; }
-
     /// Select query for *View storages.
     const SelectQueryDescription & getSelectQuery() const;
     bool hasSelectQuery() const;
