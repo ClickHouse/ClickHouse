@@ -154,6 +154,16 @@ struct AggregateFunctionWelchTTestData final
 
     Float64 get_T(Float64 sx, Float64 sy) const
     {
+        if (sx == 0 && sy == 0)
+        {
+            throw Exception("division by zero encountered in Aggregate function WelchTTest", ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        if (sx == -sy && size_x == size_y)
+        {
+            throw Exception("division by zero encountered in Aggregate function WelchTTest", ErrorCodes::BAD_ARGUMENTS);
+        }
+
         return static_cast<Float64>(mean_x - mean_y) / std::sqrt(sx / size_x + sy / size_y);
     }
 
