@@ -26,8 +26,8 @@
 #include <Interpreters/DuplicateDistinctVisitor.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
-#include <Interpreters/AnyInputOptimize.h>
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
+#include <Interpreters/AnyInputOptimize.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
