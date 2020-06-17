@@ -526,7 +526,8 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, bool op
             if (monotonicity_checker_data.monotonicity.is_monotonic)
             {
                 auto * order_by_element = child->as<ASTOrderByElement>();
-                order_by_element->children[0] = monotonicity_checker_data.identifier->ptr();
+                order_by_element->children[0] = monotonicity_checker_data.identifier->clone();
+                order_by_element->children[0]->setAlias("");
                 if (!monotonicity_checker_data.monotonicity.is_positive)
                     order_by_element->direction *= -1;
             }
@@ -969,9 +970,6 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
 
-    /// Replace monotonous functions with its argument. Must be done before normalize
-    optimizeMonotonousFunctionsInOrderBy(select_query, settings.optimize_monotonous_functions_in_order_by, context, tables_with_columns);
-
     normalize(query, result.aliases, settings);
 
     /// Remove unneeded columns according to 'required_result_columns'.
@@ -1006,6 +1004,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         /// Remove duplicate ORDER BY and DISTINCT from subqueries.
         optimizeDuplicateOrderByAndDistinct(query, settings.optimize_duplicate_order_by_and_distinct, context);
+
+        /// Replace monotonous functions with its argument
+        optimizeMonotonousFunctionsInOrderBy(select_query, settings.optimize_monotonous_functions_in_order_by, context, tables_with_columns);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
