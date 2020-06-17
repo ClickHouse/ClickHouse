@@ -237,11 +237,12 @@ public:
     template <typename ... TAllocatorParams>
     void push_back_raw_many(size_t number_of_items, const void * ptr, TAllocatorParams &&... allocator_params)
     {
-        if (unlikely(c_end == c_end_of_storage))
-            reserve(number_of_items, std::forward<TAllocatorParams>(allocator_params)...);
+        size_t items_byte_size = byte_size(number_of_items);
+        if (unlikely(c_end + items_byte_size > c_end_of_storage))
+            reserve(size() + number_of_items, std::forward<TAllocatorParams>(allocator_params)...);
 
-        memcpy(c_end, ptr, ELEMENT_SIZE * number_of_items);
-        c_end += byte_size(number_of_items);
+        memcpy(c_end, ptr, items_byte_size);
+        c_end += items_byte_size;
     }
 
     void protect()
