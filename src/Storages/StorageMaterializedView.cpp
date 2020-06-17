@@ -187,10 +187,18 @@ void StorageMaterializedView::checkStatementCanBeForwarded() const
             + "Execute the statement directly on it.", ErrorCodes::INCORRECT_QUERY);
 }
 
-bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
+bool StorageMaterializedView::optimize(
+    const ASTPtr & query,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const ASTPtr & partition,
+    bool final,
+    bool deduplicate,
+    const Context & context)
 {
     checkStatementCanBeForwarded();
-    return getTargetTable()->optimize(query, partition, final, deduplicate, context);
+    auto storage_ptr = getTargetTable();
+    auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
+    return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, context);
 }
 
 void StorageMaterializedView::alter(

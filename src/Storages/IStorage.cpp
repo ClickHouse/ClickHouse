@@ -319,53 +319,6 @@ NamesAndTypesList IStorage::getVirtuals() const
     return {};
 }
 
-TTLTableDescription IStorage::getTableTTLs() const
-{
-    std::lock_guard lock(ttl_mutex);
-    return metadata->table_ttl;
-}
-
-bool IStorage::hasAnyTableTTL() const
-{
-    return hasAnyMoveTTL() || hasRowsTTL();
-}
-
-TTLColumnsDescription IStorage::getColumnTTLs() const
-{
-    std::lock_guard lock(ttl_mutex);
-    return metadata->column_ttls_by_name;
-}
-
-bool IStorage::hasAnyColumnTTL() const
-{
-    std::lock_guard lock(ttl_mutex);
-    return !metadata->column_ttls_by_name.empty();
-}
-
-TTLDescription IStorage::getRowsTTL() const
-{
-    std::lock_guard lock(ttl_mutex);
-    return metadata->table_ttl.rows_ttl;
-}
-
-bool IStorage::hasRowsTTL() const
-{
-    std::lock_guard lock(ttl_mutex);
-    return metadata->table_ttl.rows_ttl.expression != nullptr;
-}
-
-TTLDescriptions IStorage::getMoveTTLs() const
-{
-    std::lock_guard lock(ttl_mutex);
-    return metadata->table_ttl.move_ttl;
-}
-
-bool IStorage::hasAnyMoveTTL() const
-{
-    std::lock_guard lock(ttl_mutex);
-    return !metadata->table_ttl.move_ttl.empty();
-}
-
 ASTPtr IStorage::getSettingsChanges() const
 {
     if (metadata->settings_changes)

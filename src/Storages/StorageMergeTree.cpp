@@ -693,7 +693,7 @@ bool StorageMergeTree::merge(
     {
         /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
         ///  without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
-        bool force_ttl = (final && hasAnyTTL());
+        bool force_ttl = (final && metadata_snapshot->hasAnyTTL());
 
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr),
@@ -965,7 +965,12 @@ void StorageMergeTree::clearOldMutations(bool truncate)
 }
 
 bool StorageMergeTree::optimize(
-    const ASTPtr & /*query*/, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
+    const ASTPtr & /*query*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const ASTPtr & partition,
+    bool final,
+    bool deduplicate,
+    const Context & context)
 {
     String disable_reason;
     if (!partition && final)
