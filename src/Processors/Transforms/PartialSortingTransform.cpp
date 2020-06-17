@@ -35,7 +35,7 @@ bool less(const ColumnRawPtrs & lhs, UInt64 lhs_row_num,
     size_t size = description.size();
     for (size_t i = 0; i < size; ++i)
     {
-        int res = description[i].direction * lhs[i]->compareAt(lhs_row_num, rhs_row_num, *rhs[i], 1);
+        int res = description[i].direction * lhs[i]->compareAt(lhs_row_num, rhs_row_num, *rhs[i], description[i].nulls_direction);
         if (res < 0)
             return true;
         else if (res > 0)
@@ -45,29 +45,49 @@ bool less(const ColumnRawPtrs & lhs, UInt64 lhs_row_num,
 }
 
 size_t getFilterMask(const ColumnRawPtrs & lhs, const ColumnRawPtrs & rhs, size_t rhs_row_num,
-                     const SortDescription & description, size_t rows_num, IColumn::Filter & filter)
+                     const SortDescription & description, size_t num_rows, IColumn::Filter & filter,
+                     PaddedPODArray<UInt64> & rows_to_compare, PaddedPODArray<Int8> & compare_results)
 {
-    filter.resize_fill(rows_num, 0);
-    PaddedPODArray<UInt64> rows_to_compare(rows_num);
-    PaddedPODArray<Int8> compare_results(rows_num, 0);
-    size_t filtered_count = rows_num;
+    filter.resize(0);
+    filter.resize_fill(num_rows);
+    compare_results.resize(num_rows);
 
-    for (size_t i = 0; i < rows_num; ++i)
-        rows_to_compare[i] = i;
-
-    size_t size = description.size();
-    for (size_t i = 0; i < size; ++i)
+    if (description.size() == 1)
     {
-        lhs[i]->compareColumn(*rhs[i], rhs_row_num, rows_to_compare, compare_results, description[i].direction, 1);
+        /// Fast path for single column
+        lhs[0]->compareColumn(*rhs[0], rhs_row_num, nullptr, compare_results,
+                              description[0].direction, description[0].nulls_direction);
+    }
+    else
+    {
+        rows_to_compare.resize(num_rows);
 
-        if (rows_to_compare.empty())
-            break;
+        for (size_t i = 0; i < num_rows; ++i)
+            rows_to_compare[i] = i;
+
+        size_t size = description.size();
+        for (size_t i = 0; i < size; ++i)
+        {
+            lhs[i]->compareColumn(*rhs[i], rhs_row_num, &rows_to_compare, compare_results,
+                                  description[i].direction, description[i].nulls_direction);
+
+            if (rows_to_compare.empty())
+                break;
+        }
     }
 
-    for (size_t i = 0; i != rows_num; ++i)
-        filtered_count -= (filter[i] = (compare_results[i] <= 0));
+    size_t result_size_hint = 0;
 
-    return filtered_count;
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        /// Leave only rows that are less then row from rhs.
+        filter[i] = compare_results[i] < 0;
+
+        if (filter[i])
+            ++result_size_hint;
+    }
+
+    return result_size_hint;
 }
 
 void PartialSortingTransform::transform(Chunk & chunk)
@@ -76,48 +96,47 @@ void PartialSortingTransform::transform(Chunk & chunk)
         read_rows->add(chunk.getNumRows());
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-    chunk.clear();
-
-    ColumnRawPtrs block_columns;
-    UInt64 rows_num = block.rows();
 
     /** If we've saved columns from previously blocks we could filter all rows from current block
       * which are unnecessary for sortBlock(...) because they obviously won't be in the top LIMIT rows.
       */
     if (!threshold_block_columns.empty())
     {
-        block_columns = extractColumns(block, description);
-        IColumn::Filter filter;
-        size_t filtered_count = getFilterMask(block_columns, threshold_block_columns, limit - 1, description, rows_num, filter);
+        UInt64 rows_num = block.rows();
+        auto block_columns = extractColumns(block, description);
 
-        if (filtered_count)
+        size_t result_size_hint = getFilterMask(
+                block_columns, threshold_block_columns, limit - 1,
+                description, rows_num, filter, rows_to_compare, compare_results);
+
+        /// Everything was filtered. Skip whole chunk.
+        if (result_size_hint == 0)
+            return;
+
+        if (result_size_hint < rows_num)
         {
-            auto expected_size = rows_num - filtered_count;
-            size_t i = 0;
-            Columns new_columns(block.columns());
-            for (auto & column : block.getColumns())
-            {
-                new_columns[i++] = column->filter(filter, expected_size);
-            }
-            block.setColumns(new_columns);
+            for (auto & column : block)
+                column.column = column.column->filter(filter, result_size_hint);
         }
     }
 
     sortBlock(block, description, limit);
 
-    if (!threshold_block_columns.empty())
+    /// Check if we can use this block for optimization.
+    if (1500 <= limit && limit <= block.rows())
     {
-        block_columns = extractColumns(block, description);
-    }
+        bool update_threshold_block = threshold_block_columns.empty();
+        if (!update_threshold_block)
+        {
+            auto block_columns = extractColumns(block, description);
+            update_threshold_block = less(block_columns, limit - 1, threshold_block_columns, limit - 1, description);
+        }
 
-    /** If this is the first processed block or (limit - 1)'th row of the current block
-      * is less than current threshold row then we could update threshold.
-      */
-    if (1500 <= limit && limit <= block.rows() &&
-        (threshold_block_columns.empty() || less(block_columns, limit - 1, threshold_block_columns, limit - 1, description)))
-    {
-        threshold_block = block.cloneWithColumns(block.getColumns());
-        threshold_block_columns = extractColumns(threshold_block, description);
+        if (update_threshold_block)
+        {
+            threshold_block = block.cloneWithColumns(block.getColumns());
+            threshold_block_columns = extractColumns(threshold_block, description);
+        }
     }
 
     chunk.setColumns(block.getColumns(), block.rows());

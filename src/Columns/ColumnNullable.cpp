@@ -249,11 +249,11 @@ int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null
 }
 
 void ColumnNullable::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                   PaddedPODArray<UInt64> & row_indexes, PaddedPODArray<Int8> & compare_results,
+                                   PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                                    int direction, int nan_direction_hint) const
 {
-    return compareImpl<ColumnNullable>(assert_cast<const ColumnNullable &>(rhs), rhs_row_num, row_indexes,
-                                       compare_results, direction, nan_direction_hint);
+    return doCompareColumn<ColumnNullable>(assert_cast<const ColumnNullable &>(rhs), rhs_row_num, row_indexes,
+                                           compare_results, direction, nan_direction_hint);
 }
 
 void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const

@@ -16,6 +16,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
@@ -192,8 +197,9 @@ public:
         return 0;
     }
 
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> &, PaddedPODArray<Int8> &, int, int) const override
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
+        throw Exception("Method compareColumn is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;

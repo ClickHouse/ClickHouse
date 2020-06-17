@@ -35,7 +35,7 @@ public:
     size_t byteSize() const override { return 0; }
     size_t allocatedBytes() const override { return 0; }
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> &, PaddedPODArray<Int8> &, int, int) const override
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
     }
 
