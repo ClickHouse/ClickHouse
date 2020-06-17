@@ -74,10 +74,10 @@ public:
 
         const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
         auto pos = IdentifierSemantic::getMembership(*data.identifier);
-        if (!pos.has_value())
+        if (!pos)
         {
             pos = IdentifierSemantic::chooseTableColumnMatch(*data.identifier, data.tables, true);
-            if (!pos.has_value())
+            if (!pos)
             {
                 data.monotonicity.is_monotonic = false;
                 return;
@@ -86,7 +86,7 @@ public:
 
         auto data_type_and_name = data.tables[*pos].columns.tryGetByName(data.identifier->shortName());
 
-        if (!data_type_and_name.has_value())
+        if (!data_type_and_name)
         {
             data.monotonicity.is_monotonic = false;
             return;

@@ -528,17 +528,20 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, bool op
                 auto * order_by_element = child->as<ASTOrderByElement>();
                 auto uuid_to_check_in_group_by = order_by_element->children[0]->getTreeHash();
                 auto group_by = select_query->groupBy();
-                bool has_the_same_ast_in_group_by = false;
-                for (const auto & elem: group_by->children)
+                if (group_by)
                 {
-                    if (elem->getTreeHash() == uuid_to_check_in_group_by)
+                    bool has_the_same_ast_in_group_by = false;
+                    for (const auto & elem: group_by->children)
                     {
-                        has_the_same_ast_in_group_by = true;
-                        break;
+                        if (elem->getTreeHash() == uuid_to_check_in_group_by)
+                        {
+                            has_the_same_ast_in_group_by = true;
+                            break;
+                        }
                     }
+                    if (has_the_same_ast_in_group_by)
+                        continue;
                 }
-                if (has_the_same_ast_in_group_by)
-                    continue;
                 order_by_element->children[0] = monotonicity_checker_data.identifier->clone();
                 order_by_element->children[0]->setAlias("");
                 if (!monotonicity_checker_data.monotonicity.is_positive)
