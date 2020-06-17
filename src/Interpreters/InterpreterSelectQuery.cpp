@@ -95,6 +95,7 @@
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/OffsetsStep.h>
+#include <Processors/QueryPlan/FinishSortingStep.h>
 
 
 namespace DB
@@ -1572,40 +1573,14 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPipeline & pipeline, Inp
 {
     const Settings & settings = context->getSettingsRef();
 
-    bool need_finish_sorting = (input_sorting_info->order_key_prefix_descr.size() < output_order_descr.size());
-    if (pipeline.getNumStreams() > 1)
-    {
-        UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
-        auto transform = std::make_shared<MergingSortedTransform>(
-                pipeline.getHeader(),
-                pipeline.getNumStreams(),
-                input_sorting_info->order_key_prefix_descr,
-                settings.max_block_size, limit_for_merging);
+    FinishSortingStep finish_sorting_step(
+            DataStream{.header = pipeline.getHeader()},
+            input_sorting_info->order_key_prefix_descr,
+            output_order_descr,
+            settings.max_block_size,
+            limit);
 
-        pipeline.addPipe({ std::move(transform) });
-    }
-
-    pipeline.enableQuotaForCurrentStreams();
-
-    if (need_finish_sorting)
-    {
-        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type != QueryPipeline::StreamType::Main)
-                return nullptr;
-
-            return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
-        });
-
-            /// NOTE limits are not applied to the size of temporary sets in FinishSortingTransform
-
-            pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
-            {
-                return std::make_shared<FinishSortingTransform>(
-                    header, input_sorting_info->order_key_prefix_descr,
-                    output_order_descr, settings.max_block_size, limit);
-        });
-    }
+    finish_sorting_step.transformPipeline(pipeline);
 }
 
 void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputOrderInfoPtr input_sorting_info)
