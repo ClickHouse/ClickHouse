@@ -464,7 +464,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
 
 Pipes StorageDistributed::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -497,7 +497,7 @@ Pipes StorageDistributed::read(
     const Scalars & scalars = context.hasQueryContext() ? context.getQueryContext().getScalars() : Scalars{};
 
     bool has_virtual_shard_num_column = std::find(column_names.begin(), column_names.end(), "_shard_num") != column_names.end();
-    if (has_virtual_shard_num_column && !isVirtualColumn("_shard_num"))
+    if (has_virtual_shard_num_column && !isVirtualColumn("_shard_num", metadata_snapshot))
         has_virtual_shard_num_column = false;
 
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr

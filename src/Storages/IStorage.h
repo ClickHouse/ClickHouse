@@ -159,7 +159,7 @@ protected:
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
-    bool isVirtualColumn(const String & column_name) const;
+    bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
 
 private:

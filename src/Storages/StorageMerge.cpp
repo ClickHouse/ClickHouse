@@ -146,7 +146,7 @@ Pipes StorageMerge::read(
 
     for (const auto & column_name : column_names)
     {
-        if (column_name == "_table" && isVirtualColumn(column_name))
+        if (column_name == "_table" && isVirtualColumn(column_name, metadata_snapshot))
             has_table_virtual_column = true;
         else
             real_column_names.push_back(column_name);
