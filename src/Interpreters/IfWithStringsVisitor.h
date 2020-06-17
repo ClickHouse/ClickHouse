@@ -30,6 +30,7 @@ void transformStringsIntoEnum(ASTFunction * function_if_node)
         enum_result = "Enum8(\'" + second_literal + "\' = 1, \'" + first_literal + "\' = 2)";
     }
     auto enum_arg = std::make_shared<ASTLiteral>(enum_result);
+
     auto first_cast = makeASTFunction("CAST");
     first_cast->arguments->children.push_back(function_if_node->arguments->children[1]);
     first_cast->arguments->children.push_back(enum_arg);
@@ -47,7 +48,7 @@ struct FindingIfWithStringsMatcher
     struct Data {};
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
-        if(node->as<ASTFunction>())
+        if (node->as<ASTFunction>())
         {
             if (node->as<ASTFunction>()->name == "if")
             {
