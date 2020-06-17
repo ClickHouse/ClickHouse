@@ -67,24 +67,20 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        auto get_parser = [&block, &arguments] (size_t i) {
-            const ColumnWithTypeAndName polygon = block.getByPosition(arguments[i]);
-            return makeGeometryFromColumnParser(polygon);
-        };
+        // auto get_parser = [&block, &arguments] (size_t i) {
+            // const ColumnWithTypeAndName polygon = block.getByPosition(arguments[i]);
+            // return makeGeometryFromColumnParser(polygon);
+        // };
 
-        auto first_parser = get_parser(0);
+        const ColumnWithTypeAndName polygon = block.getByPosition(arguments[0]);
+        auto first_parser = makeGeometryFromColumnParser(polygon);
         auto first_container = createContainer(first_parser);
 
-        auto second_parser = get_parser(1);
+        const ColumnWithTypeAndName polygon2 = block.getByPosition(arguments[1]);
+        auto second_parser = makeGeometryFromColumnParser(polygon2);
         auto second_container = createContainer(second_parser);
 
-        auto res_column = ColumnArray::create(ColumnArray::create(ColumnArray::create(
-            ColumnTuple::create(
-                Columns{ColumnVector<Float64>::create(input_rows_count),
-                ColumnVector<Float64>::create(input_rows_count)}
-            )
-        )));
-        auto & data = res_column->getData();
+        Float64MultiPolygonSerializer serializer;
 
         for (size_t i = 0; i < input_rows_count; i++)
         {
@@ -92,14 +88,15 @@ public:
             get(second_parser, second_container, i);
 
             Float64Geometry intersection;
-            boost::geometry::intersection(first_container, second_container, intersection);
+            boost::geometry::intersection(
+                boost::get<Float64MultiPolygon>(first_container),
+                boost::get<Float64MultiPolygon>(second_container),
+                boost::get<Float64MultiPolygon>(intersection));
 
-            // GeometrySerializer<MultiPolygon, Float64MultiPolygonSerializerVisitor> serializer;
-            // serializer.add(intersection);
-            // data[i] = serializer.finalize();
+            serializer.add(intersection);
         }
 
-        // block.getByPosition(result).column = std::move(res_column);
+        block.getByPosition(result).column = std::move(serializer.finalize());
     }
 };
 
