@@ -1497,13 +1497,12 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPipeline & pipeline, bo
 
 void InterpreterSelectQuery::executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression)
 {
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-    {
-        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
+    FilterStep having_step(
+            DataStream{.header = pipeline.getHeader()},
+            expression, getSelectQuery().having()->getColumnName(), false);
 
-        /// TODO: do we need to save filter there?
-        return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having()->getColumnName(), false, on_totals);
-    });
+    having_step.setStepDescription("HAVING");
+    having_step.transformPipeline(pipeline);
 }
 
 
