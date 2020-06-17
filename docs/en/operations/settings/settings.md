@@ -822,6 +822,7 @@ ClickHouse supports the following algorithms of choosing replicas:
 -   [Nearest hostname](#load_balancing-nearest_hostname)
 -   [In order](#load_balancing-in_order)
 -   [First or random](#load_balancing-first_or_random)
+-   [Round robin](#load_balancing-round_robin)
 
 ### Random (by Default) {#load_balancing-random}
 
@@ -864,6 +865,14 @@ load_balancing = first_or_random
 This algorithm chooses the first replica in the set or a random replica if the first is unavailable. It’s effective in cross-replication topology setups, but useless in other configurations.
 
 The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, the load is evenly distributed among replicas that are still available.
+
+### Round robin {#load_balancing-round_robin}
+
+``` sql
+load_balancing = round_robin
+```
+
+This algorithm uses round robin policy across replicas with the same number of errors (only the queries with `round_robin` policy is accounted).
 
 ## prefer\_localhost\_replica {#settings-prefer-localhost-replica}
 
