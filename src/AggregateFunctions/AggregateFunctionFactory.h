@@ -79,6 +79,7 @@ private:
         const DataTypes & argument_types,
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
+        bool has_null_arguments,
         int recursion_level) const;
 
 private:
