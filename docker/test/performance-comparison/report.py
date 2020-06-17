@@ -359,7 +359,7 @@ if args.report == 'main':
     error_tests += slow_average_tests
     if error_tests:
         status = 'failure'
-        message_array.append(str(error_tests) + ' errors')
+        message_array.insert(0, str(error_tests) + ' errors')
 
     if message_array:
         message = ', '.join(message_array)

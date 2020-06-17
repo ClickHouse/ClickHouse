@@ -1,0 +1,14 @@
+SELECT number\nFROM \n(\n    SELECT number\n    FROM \n    (\n        SELECT DISTINCT number\n        FROM numbers(3)\n    )\n)\nORDER BY number ASC
+0
+1
+2
+SELECT DISTINCT number\nFROM \n(\n    SELECT DISTINCT number\n    FROM \n    (\n        SELECT DISTINCT number\n        FROM numbers(3)\n        ORDER BY number ASC\n    )\n    ORDER BY number ASC\n)\nORDER BY number ASC
+0
+1
+2
+SELECT number\nFROM \n(\n    SELECT DISTINCT number\n    FROM \n    (\n        SELECT DISTINCT number % 2 AS number\n        FROM numbers(3)\n    )\n)\nORDER BY number ASC
+0
+1
+SELECT DISTINCT number\nFROM \n(\n    SELECT DISTINCT number\n    FROM \n    (\n        SELECT DISTINCT number % 2 AS number\n        FROM numbers(3)\n        ORDER BY number ASC\n    )\n    ORDER BY number ASC\n)\nORDER BY number ASC
+0
+1

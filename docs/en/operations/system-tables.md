@@ -83,6 +83,10 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 -   [system.events](#system_tables-events) — Contains a number of events that have occurred.
 -   [system.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 
+## system.asynchronous_metric_log {#system-tables-async-log}
+
+Contains the historical values for `system.asynchronous_log` (see [system.asynchronous_metrics](#system_tables-asynchronous_metrics))
+
 ## system.clusters {#system-clusters}
 
 Contains information about clusters available in the config file and the servers in them.

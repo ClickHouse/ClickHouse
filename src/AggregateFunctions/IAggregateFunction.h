@@ -166,7 +166,8 @@ public:
      *  nested_function is a smart pointer to this aggregate function itself.
      *  arguments and params are for nested_function.
      */
-    virtual AggregateFunctionPtr getOwnNullAdapter(const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/, const Array & /*params*/) const
+    virtual AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/, const Array & /*params*/) const
     {
         return nullptr;
     }
@@ -277,6 +278,17 @@ public:
     {
         return alignof(Data);
     }
+};
+
+
+/// Properties of aggregate function that are independent of argument types and parameters.
+struct AggregateFunctionProperties
+{
+    /** When the function is wrapped with Null combinator,
+      * should we return Nullable type with NULL when no values were aggregated
+      * or we should return non-Nullable type with default value (example: count, countDistinct).
+      */
+    bool returns_default_when_only_null = false;
 };
 
 
