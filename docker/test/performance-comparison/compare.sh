@@ -188,10 +188,13 @@ function get_profiles
     # Collect the profiles
     clickhouse-client --port 9001 --query "set query_profiler_cpu_time_period_ns = 0"
     clickhouse-client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
-    clickhouse-client --port 9001 --query "set query_profiler_cpu_time_period_ns = 0"
-    clickhouse-client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
-    clickhouse-client --port 9001 --query "system flush logs"
-    clickhouse-client --port 9002 --query "system flush logs"
+    clickhouse-client --port 9001 --query "system flush logs" &
+
+    clickhouse-client --port 9002 --query "set query_profiler_cpu_time_period_ns = 0"
+    clickhouse-client --port 9002 --query "set query_profiler_real_time_period_ns = 0"
+    clickhouse-client --port 9002 --query "system flush logs" &
+
+    wait
 
     clickhouse-client --port 9001 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
     clickhouse-client --port 9001 --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
@@ -725,12 +728,17 @@ case "$stage" in
     do
         cat "/proc/$pid/smaps" > "$pid-smaps.txt" ||:
     done
-    # Getting profiles inexplicably hangs sometimes, so try to save some logs if
-    # this happens again. Give the servers some time to collect all info, then
-    # trace and kill. Start in a subshell, so that both function don't interfere
-    # with each other's jobs through `wait`. Also make the subshell have its own
-    # process group, so that we can then kill it with all its child processes.
-    # Somehow it doesn't kill the children by itself when dying.
+
+    # Sleep for five minutes to see how the servers enter a quiescent state (e.g.
+    # how fast the memory usage drops).
+    sleep 300
+
+    # We had a bug where getting profiles froze sometimes, so try to save some
+    # logs if this happens again. Give the servers some time to collect all info,
+    # then trace and kill. Start in a subshell, so that both function don't
+    # interfere with each other's jobs through `wait`. Also make the subshell
+    # have its own process group, so that we can then kill it with all its child
+    # processes. Somehow it doesn't kill the children by itself when dying.
     set -m
     ( get_profiles_watchdog ) &
     watchdog_pid=$!
