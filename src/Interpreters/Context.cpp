@@ -1744,6 +1744,7 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
     std::lock_guard lock(shared->storage_policies_mutex);
 
     auto policy_selector = getStoragePolicySelector(lock);
+    std::cerr << "Working well\n";
 
     return policy_selector->get(name);
 }
@@ -1782,6 +1783,7 @@ StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::
 
         shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector(lock));
     }
+    std::cerr << "May be here?\n";
     return shared->merge_tree_storage_policy_selector;
 }
 

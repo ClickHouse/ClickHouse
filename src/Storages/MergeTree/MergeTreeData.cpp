@@ -191,11 +191,13 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
+    std::cerr << "DEBUG OK before setTTLExpressions\n";
     setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast);
 
     /// format_file always contained on any data path
     PathWithDisk version_file;
     /// Creating directories, if not exist.
+    std::cerr << "DEBUG OK before creating directories\n";
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
         disk->createDirectories(path);
@@ -213,12 +215,14 @@ MergeTreeData::MergeTreeData(
     }
 
     /// If not choose any
+    std::cerr << "DEBUG OK before version_file.first\n";
     if (version_file.first.empty())
         version_file = {relative_data_path + "format_version.txt", getStoragePolicy()->getAnyDisk()};
 
     bool version_file_exists = version_file.second->exists(version_file.first);
 
     // When data path or file not exists, ignore the format_version check
+    std::cerr << "DEBUG OK before !attach || !version_file_exists\n";
     if (!attach || !version_file_exists)
     {
         format_version = min_format_version;
@@ -235,6 +239,7 @@ MergeTreeData::MergeTreeData(
             throw Exception("Bad version file: " + fullPath(version_file.second, version_file.first), ErrorCodes::CORRUPTED_DATA);
     }
 
+    std::cerr << "DEBUG OK before format_version\n";
     if (format_version < min_format_version)
     {
         if (min_format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING.toUnderType())
@@ -243,9 +248,11 @@ MergeTreeData::MergeTreeData(
                 ErrorCodes::METADATA_MISMATCH);
     }
 
+    std::cerr << "DEBUG OK last?\n";
     String reason;
     if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
         LOG_WARNING(log, "{} Settings 'min_bytes_for_wide_part' and 'min_bytes_for_wide_part' will be ignored.", reason);
+    std::cerr << "DEBUG OK last!\n";
 }
 
 
@@ -276,7 +283,9 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 {
-    return global_context.getStoragePolicy(getSettings()->storage_policy);
+    auto h = global_context.getStoragePolicy(getSettings()->storage_policy);
+    std::cerr << "getStoragePolicy\n";
+    return h
 }
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name)
@@ -2917,6 +2926,7 @@ ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(UInt64 expected_siz
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
     ReservationPtr reservation = tryReserveSpacePreferringTTLRules(expected_size, ttl_infos, time_of_move, min_volume_index);
+    std::cerr << "IN RESERVE SPACE PREFERRING TTL RULES\n";
 
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
@@ -2926,13 +2936,17 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
         time_t time_of_move,
         size_t min_volume_index) const
 {
+    std::cerr << "IN TRY RESERVE SPACE PREFERRING TTL RULES\n";
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
     ReservationPtr reservation;
 
+    std::cerr << "ttl_entry 1\n";
     auto ttl_entry = selectTTLEntryForTTLInfos(ttl_infos, time_of_move);
+    std::cerr << "ttl_entry 2\n";
     if (ttl_entry)
     {
+        std::cerr << "destination_ptr 1\n";
         SpacePtr destination_ptr = getDestinationForTTL(*ttl_entry);
         if (!destination_ptr)
         {
@@ -2954,7 +2968,9 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
         }
     }
 
+    std::cerr << "reserve 1\n";
     reservation = getStoragePolicy()->reserve(expected_size, min_volume_index);
+    std::cerr << "reserve 2\n";
 
     return reservation;
 }

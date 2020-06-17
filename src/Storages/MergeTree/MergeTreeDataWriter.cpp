@@ -236,8 +236,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
     NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
+    std::cerr << "DEBUG before get columns\n";
     ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, time(nullptr));
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
+    std::cerr << "DEBUG after volume\n";
 
     auto new_data_part = data.createPart(
         part_name,

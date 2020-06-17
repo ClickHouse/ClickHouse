@@ -37,11 +37,12 @@ DB::StoragePtr createStorage(DB::Context & context)
         StorageID("test", "test"), "table/", meta, false, context, "date", MergeTreeData::MergingParams{}, std::move(ptr), false);
 
     table->startup();
+    std::cerr << "KEK\n";
 
     return table;
 }
 
-std::string writeData(/*size_t rows,*/ DB::StoragePtr & table/*, DB::Context & context*/)
+std::string writeData(size_t rows, DB::StoragePtr & table, DB::Context & context)
 {
     using namespace DB;
 
@@ -50,18 +51,18 @@ std::string writeData(/*size_t rows,*/ DB::StoragePtr & table/*, DB::Context & c
     Block block;
 
     {
-        /*const auto & storage_columns =*/ table->getColumns();
-        /*ColumnWithTypeAndName column1;
+        const auto & storage_columns = table->getColumns();
+        ColumnWithTypeAndName column1;
         column1.name = "a";
         column1.type = storage_columns.getPhysical("a").type;
         auto col1 = column1.type->createColumn();
         ColumnWithTypeAndName column2;
         column2.name = "date";
         column2.type = storage_columns.getPhysical("date").type;
-        auto col2 = column2.type->createColumn();*/
-        //ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col1).getData();
+        auto col2 = column2.type->createColumn();
+        ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col1).getData();
 
-        /*vec.resize(rows);
+        vec.resize(rows);
         for (size_t i = 0; i < rows; ++i)
         {
             vec[i] = i;
@@ -74,11 +75,11 @@ std::string writeData(/*size_t rows,*/ DB::StoragePtr & table/*, DB::Context & c
         column1.column = std::move(col1);
         column2.column = std::move(col2);
         block.insert(column1);
-        block.insert(column2);*/
+        block.insert(column2);
     }
 
-    //BlockOutputStreamPtr out = table->write({}, context);
-    //out->write(block);
+    BlockOutputStreamPtr out = table->write({}, context);
+    out->write(block);
 
     return data;
 }
@@ -153,16 +154,17 @@ TEST(GrabOldModifiedParts, SimpleCase) {
 
     std::string data;
 
-    //data += writeData(/*10,*/ table/*, ctx*/);
-    /*data += ",";
+    data += writeData(10, table, ctx);
+    data += ",";
     data += writeData(20, table, ctx);
     data += ",";
-    data += writeData(10, table, ctx);*/
+    data += writeData(10, table, ctx);
 
-    //StorageMergeTree *tree = dynamic_cast<StorageMergeTree *>(table.get());
-    //tree->grabOldModifiedParts();
+    StorageMergeTree *tree = dynamic_cast<StorageMergeTree *>(table.get());
+    tree->grabOldModifiedParts();
 
     //ASSERT_EQ(data, readData(table, ctx));
+    table->shutdown();
     ctx.shutdown();
 }
 
