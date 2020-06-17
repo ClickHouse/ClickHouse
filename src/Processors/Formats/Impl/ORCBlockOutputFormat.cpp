@@ -136,14 +136,13 @@ template <typename NumberType, typename NumberVectorBatch>
 void ORCBlockOutputFormat::ORCBlockOutputFormat::writeNumbers(
         orc::ColumnVectorBatch * orc_column,
         const IColumn & column,
-        const PaddedPODArray<UInt8> * null_bytemap,
-        size_t rows_num)
+        const PaddedPODArray<UInt8> * null_bytemap)
 {
     NumberVectorBatch * number_orc_column = dynamic_cast<NumberVectorBatch *>(orc_column);
     const auto & number_column = assert_cast<const ColumnVector<NumberType> &>(column);
-    number_orc_column->resize(rows_num);
+    number_orc_column->resize(number_column.size());
 
-    for (size_t i = 0; i != rows_num; ++i)
+    for (size_t i = 0; i != number_column.size(); ++i)
     {
         if (null_bytemap && (*null_bytemap)[i])
         {
@@ -152,7 +151,7 @@ void ORCBlockOutputFormat::ORCBlockOutputFormat::writeNumbers(
         }
         number_orc_column->data[i] = number_column.getElement(i);
     }
-    number_orc_column->numElements = rows_num;
+    number_orc_column->numElements = number_column.size();
 }
 
 template <typename Decimal, typename DecimalVectorBatch, typename ConvertFunc>
@@ -161,7 +160,6 @@ void ORCBlockOutputFormat::ORCBlockOutputFormat::writeDecimals(
         const IColumn & column,
         DataTypePtr & type,
         const PaddedPODArray<UInt8> * null_bytemap,
-        size_t rows_num,
         ConvertFunc convert)
 {
     DecimalVectorBatch *decimal_orc_column = dynamic_cast<DecimalVectorBatch *>(orc_column);
@@ -169,8 +167,8 @@ void ORCBlockOutputFormat::ORCBlockOutputFormat::writeDecimals(
     const auto * decimal_type = typeid_cast<const DataTypeDecimal<Decimal> *>(type.get());
     decimal_orc_column->precision = decimal_type->getPrecision();
     decimal_orc_column->scale = decimal_type->getScale();
-    decimal_orc_column->resize(rows_num);
-    for (size_t i = 0; i != rows_num; ++i)
+    decimal_orc_column->resize(decimal_column.size());
+    for (size_t i = 0; i != decimal_column.size(); ++i)
     {
         if (null_bytemap && (*null_bytemap)[i])
         {
@@ -179,134 +177,150 @@ void ORCBlockOutputFormat::ORCBlockOutputFormat::writeDecimals(
         }
         decimal_orc_column->values[i] = convert(decimal_column.getElement(i).value);
     }
-    decimal_orc_column->numElements = rows_num;
+    decimal_orc_column->numElements = decimal_column.size();
+}
+
+template <typename ColumnType>
+void ORCBlockOutputFormat::ORCBlockOutputFormat::writeStrings(
+        orc::ColumnVectorBatch * orc_column,
+        const IColumn & column,
+        const PaddedPODArray<UInt8> * null_bytemap)
+{
+    orc::StringVectorBatch * string_orc_column = dynamic_cast<orc::StringVectorBatch *>(orc_column);
+    const auto & string_column = assert_cast<const ColumnType &>(column);
+    string_orc_column->resize(string_column.size());
+
+    for (size_t i = 0; i != string_column.size(); ++i)
+    {
+        if (null_bytemap && (*null_bytemap)[i])
+        {
+            string_orc_column->notNull[i] = 0;
+            continue;
+        }
+        const StringRef & string = string_column.getDataAt(i);
+        string_orc_column->data[i] = const_cast<char *>(string.data);
+        string_orc_column->length[i] = string.size;
+    }
+    string_orc_column->numElements = string_column.size();
+}
+
+template <typename ColumnType, typename GetSecondsFunc, typename GetNanosecondsFunc>
+void ORCBlockOutputFormat::ORCBlockOutputFormat::writeDateTimes(
+        orc::ColumnVectorBatch * orc_column,
+        const IColumn & column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        GetSecondsFunc get_seconds,
+        GetNanosecondsFunc get_nanoseconds)
+{
+    orc::TimestampVectorBatch * timestamp_orc_column = dynamic_cast<orc::TimestampVectorBatch *>(orc_column);
+    const auto & timestamp_column = assert_cast<const ColumnType &>(column);
+    timestamp_orc_column->resize(timestamp_column.size());
+
+    for (size_t i = 0; i != timestamp_column.size(); ++i)
+    {
+        if (null_bytemap && (*null_bytemap)[i])
+        {
+            timestamp_orc_column->notNull[i] = 0;
+            continue;
+        }
+        timestamp_orc_column->data[i] = get_seconds(timestamp_column.getElement(i));
+        timestamp_orc_column->nanoseconds[i] = get_nanoseconds(timestamp_column.getElement(i));
+    }
+    timestamp_orc_column->numElements = timestamp_column.size();
 }
 
 void ORCBlockOutputFormat::writeColumn(
         orc::ColumnVectorBatch * orc_column,
         const IColumn & column,
         DataTypePtr & type,
-        const PaddedPODArray<UInt8> * null_bytemap,
-        size_t rows_num)
+        const PaddedPODArray<UInt8> * null_bytemap)
 {
     if (null_bytemap)
     {
         orc_column->hasNulls = true;
+        orc_column->notNull.resize(column.size());
     }
     switch (type->getTypeId())
     {
         case TypeIndex::Int8:
         {
-            writeNumbers<Int8, orc::LongVectorBatch>(orc_column, column, null_bytemap, rows_num);
+            writeNumbers<Int8, orc::LongVectorBatch>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::UInt8:
         {
-            writeNumbers<UInt8, orc::LongVectorBatch>(orc_column, column, null_bytemap, rows_num);
+            writeNumbers<UInt8, orc::LongVectorBatch>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::Int16:
         {
-            writeNumbers<Int16, orc::LongVectorBatch>(orc_column, column, null_bytemap, rows_num);
+            writeNumbers<Int16, orc::LongVectorBatch>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
         {
-            writeNumbers<UInt16, orc::LongVectorBatch>(orc_column, column, null_bytemap, rows_num);
+            writeNumbers<UInt16, orc::LongVectorBatch>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::Int32:
         {
-            writeNumbers<Int32, orc::LongVectorBatch>(orc_column, column, null_bytemap, rows_num);
+            writeNumbers<Int32, orc::LongVectorBatch>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::UInt32:
         {
-            writeNumbers<UInt32, orc::LongVectorBatch>(orc_column, column, null_bytemap, rows_num);
+            writeNumbers<UInt32, orc::LongVectorBatch>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::Int64:
         {
-            writeNumbers<Int64, orc::LongVectorBatch>(orc_column, column, null_bytemap, rows_num);
+            writeNumbers<Int64, orc::LongVectorBatch>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::UInt64:
         {
-            writeNumbers<UInt64,orc::LongVectorBatch>(orc_column, column, null_bytemap, rows_num);
+            writeNumbers<UInt64,orc::LongVectorBatch>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::Float32:
         {
-            writeNumbers<Float32, orc::DoubleVectorBatch>(orc_column, column, null_bytemap, rows_num);
+            writeNumbers<Float32, orc::DoubleVectorBatch>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::Float64:
         {
-            writeNumbers<Float64, orc::DoubleVectorBatch>(orc_column, column, null_bytemap, rows_num);
+            writeNumbers<Float64, orc::DoubleVectorBatch>(orc_column, column, null_bytemap);
             break;
         }
-        case TypeIndex::FixedString: [[fallthrough]];
+        case TypeIndex::FixedString:
+        {
+            writeStrings<ColumnFixedString>(orc_column, column, null_bytemap);
+            break;
+        }
         case TypeIndex::String:
         {
-            orc::StringVectorBatch * string_orc_column = dynamic_cast<orc::StringVectorBatch *>(orc_column);
-            const auto & string_column = assert_cast<const ColumnString &>(column);
-            string_orc_column->resize(rows_num);
-
-            for (size_t i = 0; i != rows_num; ++i)
-            {
-                if (null_bytemap && (*null_bytemap)[i])
-                {
-                    string_orc_column->notNull[i] = 0;
-                    continue;
-                }
-                const StringRef & string = string_column.getDataAt(i);
-                string_orc_column->data[i] = const_cast<char *>(string.data);
-                string_orc_column->length[i] = string.size;
-            }
-            string_orc_column->numElements = rows_num;
+            writeStrings<ColumnString>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::DateTime:
         {
-            orc::TimestampVectorBatch * timestamp_orc_column = dynamic_cast<orc::TimestampVectorBatch *>(orc_column);
-            const auto & timestamp_column = assert_cast<const ColumnUInt32 &>(column);
-            timestamp_orc_column->resize(rows_num);
-
-            for (size_t i = 0; i != rows_num; ++i)
-            {
-                if (null_bytemap && (*null_bytemap)[i])
-                {
-                    timestamp_orc_column->notNull[i] = 0;
-                    continue;
-                }
-                timestamp_orc_column->data[i] = timestamp_column.getElement(i);
-                timestamp_orc_column->nanoseconds[i] = 0;
-            }
-            timestamp_orc_column->numElements = rows_num;
+            writeDateTimes<ColumnUInt32>(
+                    orc_column,
+                    column, null_bytemap,
+                    [](UInt32 value){ return value; },
+                    [](UInt32){ return 0; });
             break;
         }
         case TypeIndex::DateTime64:
         {
-            orc::TimestampVectorBatch * timestamp_orc_column = dynamic_cast<orc::TimestampVectorBatch *>(orc_column);
-            const auto & timestamp_column = assert_cast<const DataTypeDateTime64::ColumnType &>(column);
             const auto * timestamp_type = assert_cast<const DataTypeDateTime64 *>(type.get());
-
             UInt32 scale = timestamp_type->getScale();
-            timestamp_orc_column->resize(rows_num);
-
-            for (size_t i = 0; i != rows_num; ++i)
-            {
-                if (null_bytemap && (*null_bytemap)[i])
-                {
-                    timestamp_orc_column->notNull[i] = 0;
-                    continue;
-                }
-                UInt64 value = timestamp_column.getElement(i);
-                timestamp_orc_column->data[i] = value / std::pow(10, scale);
-                timestamp_orc_column->nanoseconds[i] = (value % UInt64(std::pow(10, scale))) * std::pow(10, 9 - scale);
-            }
-            timestamp_orc_column->numElements = rows_num;
+            writeDateTimes<DataTypeDateTime64::ColumnType>(
+                    orc_column,
+                    column, null_bytemap,
+                    [scale](UInt64 value){ return value / std::pow(10, scale); },
+                    [scale](UInt64 value){ return (value % UInt64(std::pow(10, scale))) * std::pow(10, 9 - scale); });
             break;
         }
         case TypeIndex::Decimal32:;
@@ -316,7 +330,6 @@ void ORCBlockOutputFormat::writeColumn(
                     column,
                     type,
                     null_bytemap,
-                    rows_num,
                     [](Int32 value){ return value; });
             break;
         }
@@ -327,7 +340,6 @@ void ORCBlockOutputFormat::writeColumn(
                     column,
                     type,
                     null_bytemap,
-                    rows_num,
                     [](Int64 value){ return value; });
             break;
         }
@@ -338,7 +350,6 @@ void ORCBlockOutputFormat::writeColumn(
                     column,
                     type,
                     null_bytemap,
-                    rows_num,
                     [](Int128 value){ return orc::Int128(value >> 64, (value << 64) >> 64); });
             break;
         }
@@ -347,7 +358,7 @@ void ORCBlockOutputFormat::writeColumn(
             const auto & nullable_column = assert_cast<const ColumnNullable &>(column);
             const PaddedPODArray<UInt8> & new_null_bytemap = assert_cast<const ColumnVector<UInt8> &>(*nullable_column.getNullMapColumnPtr()).getData();
             auto nested_type = removeNullable(type);
-            writeColumn(orc_column, nullable_column.getNestedColumn(), nested_type, &new_null_bytemap, rows_num);
+            writeColumn(orc_column, nullable_column.getNestedColumn(), nested_type, &new_null_bytemap);
             break;
         }
         /* Doesn't work
@@ -357,16 +368,16 @@ void ORCBlockOutputFormat::writeColumn(
             const auto & list_column = assert_cast<const ColumnArray &>(column);
             auto nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
             const ColumnArray::Offsets & offsets = list_column.getOffsets();
-            list_orc_column->resize(rows_num);
+            list_orc_column->resize(list_column.size());
             list_orc_column->offsets[0] = 0;
-            for (size_t i = 0; i != rows_num; ++i)
+            for (size_t i = 0; i != list_column.size(); ++i)
             {
                 list_orc_column->offsets[i + 1] = offsets[i];
             }
             const IColumn & nested_column = list_column.getData();
             orc::ColumnVectorBatch * nested_orc_column = list_orc_column->elements.get();
             writeColumn(nested_orc_column, nested_column, nested_type, null_bytemap, nested_column.size());
-            list_orc_column->numElements = rows_num;
+            list_orc_column->numElements = list_column.size();
             break;
         }
          */
@@ -383,7 +394,7 @@ void ORCBlockOutputFormat::consume(Chunk chunk)
     orc::StructVectorBatch *root = dynamic_cast<orc::StructVectorBatch *>(batch.get());
     for (size_t i = 0; i != columns_num; ++i)
     {
-        writeColumn(root->fields[i], *chunk.getColumns()[i], data_types[i], nullptr, rows_num);
+        writeColumn(root->fields[i], *chunk.getColumns()[i], data_types[i], nullptr);
     }
     root->numElements = rows_num;
     writer->add(*batch);
