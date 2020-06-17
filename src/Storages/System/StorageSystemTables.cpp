@@ -267,6 +267,7 @@ protected:
                         throw;
                     }
                 }
+                auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
                 ++rows_count;
 
@@ -365,7 +366,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    if ((expression_ptr = table->getPartitionKeyAST()))
+                    if ((expression_ptr = metadata_snapshot->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();

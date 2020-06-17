@@ -169,7 +169,7 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
-    setProperties(metadata_, attach);
+    setProperties(metadata_, metadata_, attach);
     const auto settings = getSettings();
 
     /// NOTE: using the same columns list as is read when performing actual merges.
@@ -184,7 +184,7 @@ MergeTreeData::MergeTreeData(
     }
 
 
-    setTTLExpressions(metadata_);
+    setTTLExpressions(metadata_, metadata_);
 
     /// format_file always contained on any data path
     PathWithDisk version_file;
@@ -274,7 +274,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
-void MergeTreeData::checkProperties(const StorageInMemoryMetadata & new_metadata, bool attach) const
+void MergeTreeData::checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & /*old_metadata*/, bool attach) const
 {
     if (!new_metadata.sorting_key.definition_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -381,9 +381,9 @@ void MergeTreeData::checkProperties(const StorageInMemoryMetadata & new_metadata
 
 }
 
-void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, bool attach)
+void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach)
 {
-    checkProperties(new_metadata, attach);
+    checkProperties(new_metadata, old_metadata, attach);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -475,7 +475,7 @@ void MergeTreeData::initPartitionKey(const KeyDescription & new_partition_key)
 }
 
 
-void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_metadata) const
+void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const
 {
     auto new_column_ttls = new_metadata.column_ttls_by_name;
 
@@ -483,8 +483,8 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
     {
         NameSet columns_ttl_forbidden;
 
-        if (hasPartitionKey())
-            for (const auto & col : getColumnsRequiredForPartitionKey())
+        if (old_metadata.hasPartitionKey())
+            for (const auto & col : old_metadata.getColumnsRequiredForPartitionKey())
                 columns_ttl_forbidden.insert(col);
 
         if (hasSortingKey())
@@ -517,9 +517,9 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
 }
 
 /// Todo replace columns with TTL for columns
-void MergeTreeData::setTTLExpressions(const StorageInMemoryMetadata & new_metadata)
+void MergeTreeData::setTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata)
 {
-    checkTTLExpressions(new_metadata);
+    checkTTLExpressions(new_metadata, old_metadata);
     //setColumnTTLs(new_metadata.column_ttls_by_name);
     //setTableTTLs(new_metadata.table_ttl);
 }
@@ -1251,12 +1251,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     /// (and not as a part of some expression) and if the ALTER only affects column metadata.
     NameSet columns_alter_type_metadata_only;
 
-    if (hasPartitionKey())
+    if (old_metadata.hasPartitionKey())
     {
         /// Forbid altering partition key columns because it can change partition ID format.
         /// TODO: in some cases (e.g. adding an Enum value) a partition key column can still be ALTERed.
         /// We should allow it.
-        for (const String & col : getColumnsRequiredForPartitionKey())
+        for (const String & col : old_metadata.getColumnsRequiredForPartitionKey())
             columns_alter_type_forbidden.insert(col);
     }
 
@@ -1284,7 +1284,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         columns_alter_type_forbidden.insert(merging_params.sign_column);
 
     std::map<String, const IDataType *> old_types;
-    for (const auto & column : getColumns().getAllPhysical())
+    for (const auto & column : old_metadata.getColumns().getAllPhysical())
         old_types.emplace(column.name, column.type.get());
 
 
@@ -1329,9 +1329,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         }
     }
 
-    checkProperties(new_metadata);
+    checkProperties(new_metadata, old_metadata);
 
-    checkTTLExpressions(new_metadata);
+    checkTTLExpressions(new_metadata, old_metadata);
 
     if (hasSettingsChanges())
     {
@@ -2450,7 +2450,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
 
     /// Re-parse partition key fields using the information about expected field types.
 
-    size_t fields_count = getPartitionKey().sample_block.columns();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    size_t fields_count = metadata_snapshot->getPartitionKey().sample_block.columns();
     if (partition_ast.fields_count != fields_count)
         throw Exception(
             "Wrong number of fields in the partition expression: " + toString(partition_ast.fields_count) +
@@ -2467,7 +2468,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
-        auto input_stream = FormatFactory::instance().getInput("Values", buf, getPartitionKey().sample_block, context, context.getSettingsRef().max_block_size);
+        auto input_stream = FormatFactory::instance().getInput("Values", buf, metadata_snapshot->getPartitionKey().sample_block, context, context.getSettingsRef().max_block_size);
 
         auto block = input_stream->read();
         if (!block || !block.rows())
@@ -2964,7 +2965,7 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
     }
 }
 
-MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table) const
+MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
 {
     MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(&source_table);
     if (!src_data)
@@ -2972,7 +2973,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
                         " supports attachPartitionFrom only for MergeTree family of table engines."
                         " Got " + source_table.getName(), ErrorCodes::NOT_IMPLEMENTED);
 
-    if (getColumns().getAllPhysical().sizeOfDifference(src_data->getColumns().getAllPhysical()))
+    if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception("Tables have different structure", ErrorCodes::INCOMPATIBLE_COLUMNS);
 
     auto query_to_string = [] (const ASTPtr & ast)
@@ -2983,7 +2984,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (query_to_string(getSortingKeyAST()) != query_to_string(src_data->getSortingKeyAST()))
         throw Exception("Tables have different ordering", ErrorCodes::BAD_ARGUMENTS);
 
-    if (query_to_string(getPartitionKeyAST()) != query_to_string(src_data->getPartitionKeyAST()))
+    if (query_to_string(my_snapshot->getPartitionKeyAST()) != query_to_string(src_snapshot->getPartitionKeyAST()))
         throw Exception("Tables have different partition key", ErrorCodes::BAD_ARGUMENTS);
 
     if (format_version != src_data->format_version)
@@ -2992,9 +2993,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     return *src_data;
 }
 
-MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const
+MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
+    const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
 {
-    return checkStructureAndGetMergeTreeData(*source_table);
+    return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot);
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(const MergeTreeData::DataPartPtr & src_part,

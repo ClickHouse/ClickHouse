@@ -291,4 +291,25 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(const Names & column_nam
     return res;
 }
 
+const KeyDescription & StorageInMemoryMetadata::getPartitionKey() const
+{
+    return partition_key;
+}
+
+bool StorageInMemoryMetadata::isPartitionKeyDefined() const
+{
+    return partition_key.definition_ast != nullptr;
+}
+
+bool StorageInMemoryMetadata::hasPartitionKey() const
+{
+    return !partition_key.column_names.empty();
+}
+
+Names StorageInMemoryMetadata::getColumnsRequiredForPartitionKey() const
+{
+    if (hasPartitionKey())
+        return partition_key.expression->getRequiredColumns();
+    return {};
+}
 }

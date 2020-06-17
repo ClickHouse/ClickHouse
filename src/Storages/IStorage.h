@@ -427,18 +427,6 @@ public:
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
-    /// Returns structure with partition key.
-    const KeyDescription & getPartitionKey() const;
-    /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
-    ASTPtr getPartitionKeyAST() const { return metadata->partition_key.definition_ast; }
-    /// Storage has user-defined (in CREATE query) partition key.
-    bool isPartitionKeyDefined() const;
-    /// Storage has partition key.
-    bool hasPartitionKey() const;
-    /// Returns column names that need to be read to calculate partition key.
-    Names getColumnsRequiredForPartitionKey() const;
-
-
     /// Returns structure with sorting key.
     const KeyDescription & getSortingKey() const;
     /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.

@@ -16,7 +16,7 @@ void MergeTreeBlockOutputStream::write(const Block & block)
 {
     storage.delayInsertOrThrowIfNeeded();
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot);
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;

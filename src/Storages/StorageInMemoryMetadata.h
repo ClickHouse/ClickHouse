@@ -112,6 +112,17 @@ struct StorageInMemoryMetadata
     Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const; /// ordinary + materialized + virtuals.
     Block getSampleBlockForColumns(
         const Names & column_names, const NamesAndTypesList & virtuals) const; /// ordinary + materialized + aliases + virtuals.
+
+    /// Returns structure with partition key.
+    const KeyDescription & getPartitionKey() const;
+    /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
+    ASTPtr getPartitionKeyAST() const { return partition_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) partition key.
+    bool isPartitionKeyDefined() const;
+    /// Storage has partition key.
+    bool hasPartitionKey() const;
+    /// Returns column names that need to be read to calculate partition key.
+    Names getColumnsRequiredForPartitionKey() const;
 };
 
 using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;

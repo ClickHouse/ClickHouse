@@ -214,7 +214,7 @@ MutationsInterpreter::MutationsInterpreter(
     select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, limits);
 }
 
-static NameSet getKeyColumns(const StoragePtr & storage)
+static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot)
 {
     const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
     if (!merge_tree_data)
@@ -222,7 +222,7 @@ static NameSet getKeyColumns(const StoragePtr & storage)
 
     NameSet key_columns;
 
-    for (const String & col : merge_tree_data->getColumnsRequiredForPartitionKey())
+    for (const String & col : metadata_snapshot->getColumnsRequiredForPartitionKey())
         key_columns.insert(col);
 
     for (const String & col : merge_tree_data->getColumnsRequiredForSortingKey())
@@ -239,15 +239,16 @@ static NameSet getKeyColumns(const StoragePtr & storage)
 }
 
 static void validateUpdateColumns(
-    const StoragePtr & storage, const NameSet & updated_columns,
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns,
     const std::unordered_map<String, Names> & column_to_affected_materialized)
 {
-    NameSet key_columns = getKeyColumns(storage);
+    NameSet key_columns = getKeyColumns(storage, metadata_snapshot);
 
     for (const String & column_name : updated_columns)
     {
         auto found = false;
-        for (const auto & col : storage->getColumns().getOrdinary())
+        for (const auto & col : metadata_snapshot->getColumns().getOrdinary())
         {
             if (col.name == column_name)
             {
@@ -258,7 +259,7 @@ static void validateUpdateColumns(
 
         if (!found)
         {
-            for (const auto & col : storage->getColumns().getMaterialized())
+            for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
             {
                 if (col.name == column_name)
                     throw Exception("Cannot UPDATE materialized column " + backQuote(column_name), ErrorCodes::CANNOT_UPDATE_COLUMN);
@@ -326,7 +327,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             }
         }
 
-        validateUpdateColumns(storage, updated_columns, column_to_affected_materialized);
+        validateUpdateColumns(storage, metadata_snapshot, updated_columns, column_to_affected_materialized);
     }
 
     /// Columns, that we need to read for calculation of skip indices or TTL expressions.
