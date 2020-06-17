@@ -24,8 +24,7 @@ namespace
 
 ASTPtr * getExactChild(const ASTPtr & ast, const size_t ind)
 {
-    if (ast && ast->as<ASTFunction>()->arguments->children &&
-        ast->as<ASTFunction>()->arguments->children[ind])
+    if (ast && ast->as<ASTFunction>()->arguments->children[ind])
         return &ast->as<ASTFunction>()->arguments->children[ind];
     return nullptr;
 }
@@ -66,7 +65,7 @@ void AnyInputMatcher::visit(ASTPtr & current_ast, Data data)
 
     auto * function_node = current_ast->as<ASTFunction>();
     if (function_node && (function_node->name == any || function_node->name == anyLast)
-        && function_node->arguments->children && function_node->arguments->children[0] &&
+        && (function_node->arguments->children.size() > 0) && function_node->arguments->children[0] &&
         function_node->arguments->children[0]->as<ASTFunction>())
     {
         int mode = 0;
