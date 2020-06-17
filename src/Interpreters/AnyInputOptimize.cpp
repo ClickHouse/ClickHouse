@@ -26,6 +26,7 @@ ASTPtr * getExactChild(const ASTPtr & ast, const size_t ind)
 {
     if (ast && ast->as<ASTFunction>()->arguments->children[ind])
         return &ast->as<ASTFunction>()->arguments->children[ind];
+    return nullptr;
 }
 
 ///recursive searching of identifiers
@@ -35,6 +36,8 @@ void changeAllIdentifiers(ASTPtr & ast, size_t ind, int mode)
     if (mode)
         name = anyLast;
     ASTPtr * exact_child = getExactChild(ast, ind);
+    if (!exact_child)
+        return;
     if ((*exact_child)->as<ASTIdentifier>())
     {
         ///put new any
@@ -54,7 +57,7 @@ void changeAllIdentifiers(ASTPtr & ast, size_t ind, int mode)
 
 
 ///cut old any, put any to identifiers. any(functions(x)) -> functions(any(x))
-void AnyInputMatcher::visit(const ASTPtr & current_ast, Data data)
+void AnyInputMatcher::visit(ASTPtr & current_ast, Data data)
 {
     data = {};
     if (!current_ast)
@@ -71,7 +74,7 @@ void AnyInputMatcher::visit(const ASTPtr & current_ast, Data data)
         size_t amount_of_children = function_node->arguments->children[0]->as<ASTFunction>()->arguments->children.size();
         for (size_t i = 0; i < amount_of_children; ++i)
             changeAllIdentifiers(function_node->arguments->children[0], i, mode);
-        *current_ast = *(current_ast->as<ASTFunction>()->arguments->children[0])->clone();
+        current_ast = (current_ast->as<ASTFunction>()->arguments->children[0])->clone();
     }
 }
 
