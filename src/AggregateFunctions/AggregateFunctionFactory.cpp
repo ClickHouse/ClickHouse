@@ -77,11 +77,15 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         DataTypes nested_types = combinator->transformArguments(type_without_low_cardinality);
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        AggregateFunctionPtr nested_function = getImpl(name, nested_types, nested_parameters, out_properties, recursion_level);
+        bool has_null_arguments = std::any_of(type_without_low_cardinality.begin(), type_without_low_cardinality.end(),
+            [](const auto & type) { return type->onlyNull(); });
+
+        AggregateFunctionPtr nested_function = getImpl(
+            name, nested_types, nested_parameters, out_properties, has_null_arguments, recursion_level);
         return combinator->transformAggregateFunction(nested_function, out_properties, type_without_low_cardinality, parameters);
     }
 
-    auto res = getImpl(name, type_without_low_cardinality, parameters, out_properties, recursion_level);
+    auto res = getImpl(name, type_without_low_cardinality, parameters, out_properties, false, recursion_level);
     if (!res)
         throw Exception("Logical error: AggregateFunctionFactory returned nullptr", ErrorCodes::LOGICAL_ERROR);
     return res;
@@ -93,6 +97,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     const DataTypes & argument_types,
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
+    bool has_null_arguments,
     int recursion_level) const
 {
     String name = getAliasToOrName(name_param);
@@ -116,11 +121,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         out_properties = found.properties;
 
         /// The case when aggregate function should return NULL on NULL arguments. This case is handled in "get" method.
-        if (!out_properties.returns_default_when_only_null
-            && std::any_of(argument_types.begin(), argument_types.end(), [](const auto & type) { return WhichDataType(type).isNothing(); }))
-        {
+        if (!out_properties.returns_default_when_only_null && has_null_arguments)
             return nullptr;
-        }
 
         return found.creator(name, argument_types, parameters);
     }
