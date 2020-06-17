@@ -105,7 +105,7 @@ namespace
             else if (node.name == "HOP")
             {
                 is_hop = true;
-                std::static_pointer_cast<ASTFunction>(node_ptr)->name = "HOP_SLICE";
+                std::static_pointer_cast<ASTFunction>(node_ptr)->name = "WINDOW_ID";
                 if (!window_function)
                 {
                     window_function = node.clone();
@@ -127,14 +127,20 @@ namespace
         }
     };
 
-    struct ReplaceFunctionHopSliceVisitorData
+    struct ReplaceFunctionWindowIdVisitorData
     {
         using TypeToVisit = ASTFunction;
+        bool is_tumble;
 
-        static void visit(const ASTFunction & node, ASTPtr & node_ptr)
+        void visit(const ASTFunction & node, ASTPtr & node_ptr)
         {
-            if (node.name == "HOP_SLICE")
-                std::static_pointer_cast<ASTFunction>(node_ptr)->name = "HOP";
+            if (node.name == "WINDOW_ID")
+            {
+                if (is_tumble)
+                    std::static_pointer_cast<ASTFunction>(node_ptr)->name = "TUMBLE";
+                else
+                    std::static_pointer_cast<ASTFunction>(node_ptr)->name = "HOP";
+            }
         }
     };
 
@@ -147,7 +153,7 @@ namespace
 
         void visit(ASTFunction & node, ASTPtr & node_ptr)
         {
-            if (node.name == "TUMBLE" || node.name == "HOP" || node.name == "HOP_SLICE")
+            if (node.name == "TUMBLE" || node.name == "HOP" || node.name == "WINDOW_ID")
             {
                 if (const auto * t = node.arguments->children[0]->as<ASTFunction>(); t && t->name == "now")
                 {
@@ -166,7 +172,7 @@ namespace
         static void visit(ASTFunction & node, ASTPtr & node_ptr)
         {
             if (node.name == "HOP")
-                std::static_pointer_cast<ASTFunction>(node_ptr)->name = "HOP_SLICE";
+                std::static_pointer_cast<ASTFunction>(node_ptr)->name = "WINDOW_ID";
         }
     };
 
@@ -460,7 +466,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
         columns_list->children.push_back(column_window);
     }
 
-    for (auto & column : t_sample_block.getColumnsWithTypeAndName())
+    for (const auto & column : t_sample_block.getColumnsWithTypeAndName())
     {
         ParserIdentifierWithOptionalParameters parser;
         String sql = column.type->getName();
@@ -672,7 +678,7 @@ inline UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
 inline void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
 {
     std::lock_guard lock(fire_signal_mutex);
-    for (auto & signal : signals)
+    for (const auto & signal : signals)
         fire_signal.push_back(signal);
     fire_signal_condition.notify_all();
 }
@@ -866,8 +872,9 @@ StorageWindowView::StorageWindowView(
 
     final_query = mergeable_query->clone();
 
-    ReplaceFunctionHopSliceVisitorData final_query_data;
-    InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionHopSliceVisitorData>, true>(final_query_data).visit(final_query);
+    ReplaceFunctionWindowIdVisitorData final_query_data;
+    final_query_data.is_tumble = is_tumble;
+    InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionWindowIdVisitorData>, true>(final_query_data).visit(final_query);
 
     is_watermark_strictly_ascending = query.is_watermark_strictly_ascending;
     is_watermark_ascending = query.is_watermark_ascending;
@@ -960,7 +967,10 @@ StorageWindowView::StorageWindowView(
         inner_table_id = inner_storage->getStorageID();
     }
 
-    window_column_name = std::regex_replace(window_id_name, std::regex("HOP_SLICE"), "HOP");
+    if (is_tumble)
+        window_column_name = std::regex_replace(window_id_name, std::regex("WINDOW_ID"), "TUMBLE");
+    else
+        window_column_name = std::regex_replace(window_id_name, std::regex("WINDOW_ID"), "HOP");
 
     clean_cache_task = wv_context->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanCache(); });
     if (is_proctime)
@@ -1081,9 +1091,9 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
         UInt32 t_max_timstamp = 0;
         if (!window_view.is_tumble || window_view.is_watermark_bounded || window_view.allowed_lateness)
         {
-            auto & column_timestamp = block.getByName(window_view.timestamp_column_name).column;
+            const auto & column_timestamp = block.getByName(window_view.timestamp_column_name).column;
             const ColumnUInt32::Container & timestamp_data = static_cast<const ColumnUInt32 &>(*column_timestamp).getData();
-            for (auto& timestamp : timestamp_data)
+            for (const auto & timestamp : timestamp_data)
             {
                 if (timestamp > t_max_timstamp)
                     t_max_timstamp = timestamp;

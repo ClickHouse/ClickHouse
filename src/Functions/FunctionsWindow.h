@@ -48,9 +48,9 @@ enum WindowFunctionName
     TUMBLE_START,
     TUMBLE_END,
     HOP,
-    HOP_SLICE,
     HOP_START,
-    HOP_END
+    HOP_END,
+    WINDOW_ID
 };
 namespace ErrorCodes
 {
@@ -477,26 +477,19 @@ namespace
     };
 
     template <>
-    struct WindowImpl<HOP_SLICE>
+    struct WindowImpl<WINDOW_ID>
     {
-        static constexpr auto name = "HOP_SLICE";
+        static constexpr auto name = "WINDOW_ID";
 
         [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
-            if (arguments.size() != 3 && arguments.size() != 4)
-            {
-                throw Exception(
-                    "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
-                        + ", should be 3.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-            }
             if (!WhichDataType(arguments[0].type).isDateTime())
                 throw Exception(
                     "Illegal type of first argument of function " + function_name + " should be DateTime", ErrorCodes::ILLEGAL_COLUMN);
             if (!WhichDataType(arguments[1].type).isInterval())
                 throw Exception(
                     "Illegal type of second argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
-            if (!WhichDataType(arguments[2].type).isInterval())
+            if (arguments.size() >= 3 && !WhichDataType(arguments[2].type).isInterval())
                 throw Exception(
                     "Illegal type of third argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
             if (arguments.size() == 4 && !WhichDataType(arguments[3].type).isString())
@@ -504,11 +497,16 @@ namespace
                     "Illegal type " + arguments[3].type->getName() + " of argument of function " + function_name
                         + ". This argument is optional and must be a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if (arguments.size() > 4)
+                throw Exception(
+                    "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
+                        + ", should not larger than 4.",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
             return std::make_shared<DataTypeUInt32>();
         }
 
         [[maybe_unused]] static ColumnPtr
-        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
+        dispatchForHopColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
         {
             const auto & time_column = block.getByPosition(arguments[0]);
             const auto & hop_interval_column = block.getByPosition(arguments[1]);
@@ -591,6 +589,24 @@ namespace
                 end_data[i] = wend_latest;
             }
             return end;
+        }
+
+        [[maybe_unused]] static ColumnPtr
+        dispatchForTumbleColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
+        {
+            ColumnPtr column = WindowImpl<TUMBLE>::dispatchForColumns(block, arguments, function_name);
+            return executeWindowBound(column, 1, function_name);
+        }
+
+        [[maybe_unused]] static ColumnPtr
+        dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
+        {
+            const auto & third_column = block.getByPosition(arguments[2]);
+
+            if (arguments.size() == 2 || (arguments.size() == 3 && WhichDataType(third_column.type).isString()))
+                return dispatchForTumbleColumns(block, arguments, function_name);
+            else
+                return dispatchForHopColumns(block, arguments, function_name);
         }
     };
 
@@ -712,7 +728,7 @@ using FunctionTumble = FunctionWindow<TUMBLE>;
 using FunctionTumbleStart = FunctionWindow<TUMBLE_START>;
 using FunctionTumbleEnd = FunctionWindow<TUMBLE_END>;
 using FunctionHop = FunctionWindow<HOP>;
-using FunctionHopSlice = FunctionWindow<HOP_SLICE>;
+using FunctionWindowId = FunctionWindow<WINDOW_ID>;
 using FunctionHopStart = FunctionWindow<HOP_START>;
 using FunctionHopEnd = FunctionWindow<HOP_END>;
 }
