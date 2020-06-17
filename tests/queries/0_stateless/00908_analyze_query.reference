@@ -1,1 +1,1 @@
-SELECT \n    a, \n    b\nFROM a
+SELECT \n    a,\n    b\nFROM a
