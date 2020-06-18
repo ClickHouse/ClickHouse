@@ -28,7 +28,7 @@ pymdown-extensions==7.1
 python-slugify==1.2.6
 PyYAML==5.3.1
 repackage==0.7.3
-requests==2.23.0
+requests==2.24.0
 singledispatch==3.4.0.3
 six==1.15.0
 soupsieve==2.0.1

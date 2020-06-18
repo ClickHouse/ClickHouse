@@ -13,19 +13,19 @@ Returns a string with the name of the host that this function was performed on. 
 
 Gets a named value from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration.
 
-**Syntax** 
+**Syntax**
 
-```sql
+``` sql
 getMacro(name);
 ```
 
 **Parameters**
 
-- `name` — Name to retrieve from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
+-   `name` — Name to retrieve from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
-- Value of the specified macro.
+-   Value of the specified macro.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -33,7 +33,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 The example `macros` section in the server configuration file:
 
-```xml
+``` xml
 <macros>
     <test>Value</test>
 </macros>
@@ -41,13 +41,13 @@ The example `macros` section in the server configuration file:
 
 Query:
 
-```sql
+``` sql
 SELECT getMacro('test');
 ```
 
 Result:
 
-```text
+``` text
 ┌─getMacro('test')─┐
 │ Value            │
 └──────────────────┘
@@ -55,12 +55,12 @@ Result:
 
 An alternative way to get the same value:
 
-```sql
+``` sql
 SELECT * FROM system.macros
 WHERE macro = 'test';
 ```
 
-```text
+``` text
 ┌─macro─┬─substitution─┐
 │ test  │ Value        │
 └───────┴──────────────┘
@@ -242,7 +242,7 @@ Result:
 
 Checks whether the argument is a constant expression.
 
-A constant expression means an expression whose resulting value is known at the query analysis (i.e. before execution). For example, expressions over [literals](../syntax.md#literals) are constant expressions.
+A constant expression means an expression whose resulting value is known at the query analysis (i.e. before execution). For example, expressions over [literals](../../sql-reference/syntax.md#literals) are constant expressions.
 
 The function is intended for development, debugging and demonstration.
 
@@ -254,26 +254,26 @@ isConstant(x)
 
 **Parameters**
 
-- `x` — Expression to check.
+-   `x` — Expression to check.
 
 **Returned values**
 
-- `1` — `x` is constant.
-- `0` — `x` is non-constant.
+-   `1` — `x` is constant.
+-   `0` — `x` is non-constant.
 
-Type: [UInt8](../data-types/int-uint.md).
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
 Query:
 
-```sql
+``` sql
 SELECT isConstant(x + 1) FROM (SELECT 43 AS x)
 ```
 
 Result:
 
-```text
+``` text
 ┌─isConstant(plus(x, 1))─┐
 │                      1 │
 └────────────────────────┘
@@ -281,13 +281,13 @@ Result:
 
 Query:
 
-```sql
+``` sql
 WITH 3.14 AS pi SELECT isConstant(cos(pi))
 ```
 
 Result:
 
-```text
+``` text
 ┌─isConstant(cos(pi))─┐
 │                   1 │
 └─────────────────────┘
@@ -295,13 +295,13 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT isConstant(number) FROM numbers(1)
 ```
 
 Result:
 
-```text
+``` text
 ┌─isConstant(number)─┐
 │                  0 │
 └────────────────────┘
@@ -345,7 +345,7 @@ Result:
     │     inf │                            42 │
     └─────────┴───────────────────────────────┘
 
-You can get similar result by using [ternary operator](conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
+You can get similar result by using [ternary operator](../../sql-reference/functions/conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
 
 ## isNaN(x) {#isnanx}
 
@@ -732,7 +732,7 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-Same as for [runningDifference](./other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
+Same as for [runningDifference](../../sql-reference/functions/other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
 
 ## MACNumToString(num) {#macnumtostringnum}
 
@@ -917,7 +917,7 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 
 Creates an array with a single value.
 
-Used for internal implementation of [arrayJoin](array-join.md#functions_arrayjoin).
+Used for internal implementation of [arrayJoin](../../sql-reference/functions/array-join.md#functions_arrayjoin).
 
 ``` sql
 SELECT replicate(x, arr);
@@ -1072,7 +1072,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Parameters**
 
--   `join_storage_table_name` — an [identifier](../syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
+-   `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
 -   `value_column` — name of the column of the table that contains required data.
 -   `join_keys` — list of keys.
 
@@ -1210,7 +1210,7 @@ Generates a binary string of the specified length filled with random bytes (incl
 randomString(length)
 ```
 
-**Parameters** 
+**Parameters**
 
 -   `length` — String length. Positive integer.
 
@@ -1246,6 +1246,5 @@ len: 30
 
 -   [generateRandom](../../sql-reference/table-functions/generate.md#generaterandom)
 -   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
-
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->
