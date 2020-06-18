@@ -19,11 +19,12 @@ public:
     uint64_t getNaturalWriteSize() const override;
     void write(const void* buf, size_t length) override;
 
-    void close() override {};
-    const std::string& getName() const override { return "ORCOutputStream"; };
+    void close() override {}
+    const std::string& getName() const override { return name; }
 
 private:
     WriteBuffer & out;
+    std::string name = "ORCOutputStream";
 };
 
 class ORCBlockOutputFormat : public IOutputFormat
@@ -34,8 +35,6 @@ public:
     String getName() const override { return "ORCBlockOutputFormat"; }
     void consume(Chunk chunk) override;
     void finalize() override;
-
-    String getContentType() const override { return "application/octet-stream"; }
 
 private:
     ORC_UNIQUE_PTR<orc::Type> getORCType(const DataTypePtr & type);
