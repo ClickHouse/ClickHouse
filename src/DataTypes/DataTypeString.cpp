@@ -379,14 +379,14 @@ bool DataTypeString::equals(const IDataType & rhs) const
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments)
+    if (arguments && !arguments->children.empty())
     {
         if (arguments->children.size() > 1)
-            throw Exception("String data type family mustnt have more than one argument - size in characters", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception("String data type family mustn't have more than one argument - size in characters", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const auto * argument = arguments->children[0]->as<ASTLiteral>();
         if (!argument || argument->value.getType() != Field::Types::UInt64 || argument->value.get<UInt64>() == 0)
-            throw Exception("FixedString data type family may have only a number (positive integer) as its argument", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+            throw Exception("String data type family may have only a number (positive integer) as its argument", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
     }
 
     return std::make_shared<DataTypeString>();
@@ -416,8 +416,18 @@ void registerDataTypeString(DataTypeFactory & factory)
     factory.registerAlias("LONGBLOB", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BYTEA", "String", DataTypeFactory::CaseInsensitive); /// PostgreSQL
 
+    factory.registerAlias("CHARACTER LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("CHARACTER VARYING", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("CHAR LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("CHAR VARYING", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("VARYING CHAR", "String", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("NATIVE CHARACTER", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("NATIONAL CHAR", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("NATIONAL CHARACTER", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("NATIONAL CHARACTER LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("NATIONAL CHARACTER VARYING", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("NATIONAL CHAR VARYING", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("NCHAR VARYING", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("NCHAR LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BINARY LARGE OBJECT", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BINARY VARYING", "String", DataTypeFactory::CaseInsensitive);
 }
 }
