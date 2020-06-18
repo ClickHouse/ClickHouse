@@ -132,27 +132,27 @@ struct AggregateFunctionWelchTTestData final
         readBinary(size_y, buf);
     }
 
-    size_t get_size_y() const
+    size_t getSizeY() const
     {
         return size_y;
     }
 
-    size_t get_size_x() const
+    size_t getSizeX() const
     {
         return size_x;
     }
 
-    Float64 get_sx() const
+    Float64 getSx() const
     {
         return static_cast<Float64>(square_sum_x + size_x * mean_x * mean_x - 2 * mean_x * sum_x) / (size_x - 1);
     }
 
-    Float64 get_sy() const
+    Float64 getSy() const
     {
         return static_cast<Float64>(square_sum_y + size_y * mean_y * mean_y - 2 * mean_y * sum_y) / (size_y - 1);
     }
 
-    Float64 get_T(Float64 sx, Float64 sy) const
+    Float64 getT(Float64 sx, Float64 sy) const
     {
         if (sx == 0 && sy == 0)
         {
@@ -167,13 +167,13 @@ struct AggregateFunctionWelchTTestData final
         return static_cast<Float64>(mean_x - mean_y) / std::sqrt(sx / size_x + sy / size_y);
     }
 
-    Float64 get_degrees_of_freed(Float64 sx, Float64 sy) const
+    Float64 getDegreesOfFreedom(Float64 sx, Float64 sy) const
     {
         return static_cast<Float64>(sx / size_x + sy / size_y) * (sx / size_x + sy / size_y) /
                ((sx * sx / (size_x * size_x * (size_x - 1))) + (sy * sy / (size_y * size_y * (size_y - 1))));
     }
 
-    UInt8 get_result(Float64 t, Float64 dof, Float64 parametr) const
+    UInt8 getResult(Float64 t, Float64 dof, Float64 parametr) const
     {
         //find our table
         int table = 0;
@@ -193,7 +193,7 @@ struct AggregateFunctionWelchTTestData final
             i_dof = 101;
         }
 
-        if (i_dof < 100)
+        if (i_dof < 1)
         {
             i_dof = 1;
         }
@@ -202,12 +202,12 @@ struct AggregateFunctionWelchTTestData final
         t = abs(t);
         if (t >= CriticalValuesTable[table][i_dof])
         {
-            return static_cast<UInt8>(1);
+            return static_cast<UInt8>(0);
             //in this case we reject the null hypothesis
         }
         else
         {
-            return static_cast<UInt8>(0);
+            return static_cast<UInt8>(1);
         }
     }
 };
@@ -292,19 +292,19 @@ public:
         IColumn & to
     ) const override
     {
-        size_t size_x = this->data(place).get_size_x();
-        size_t size_y = this->data(place).get_size_y();
+        size_t size_x = this->data(place).getSizeX();
+        size_t size_y = this->data(place).getSizeY();
 
         if (size_x < 2 || size_y < 2)
         {
             throw Exception("Aggregate function " + getName() + " requires samples to be of size > 1", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        Float64 sx = this->data(place).get_sx();
-        Float64 sy = this->data(place).get_sy();
-        Float64 t_value = this->data(place).get_T(sx, sy);
-        Float64 dof = this->data(place).get_degrees_of_freed(sx, sy);
-        UInt8 result = this->data(place).get_result(t_value, dof, significance_level);
+        Float64 sx = this->data(place).getSx();
+        Float64 sy = this->data(place).getSy();
+        Float64 t_value = this->data(place).getT(sx, sy);
+        Float64 dof = this->data(place).getDegreesOfFreedom(sx, sy);
+        UInt8 result = this->data(place).getResult(t_value, dof, significance_level);
 
         auto & column = static_cast<ColumnVector<UInt8> &>(to);
         column.getData().push_back(result);
