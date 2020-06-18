@@ -537,8 +537,8 @@ void optimizeRedundantFunctionsInOrderBy(ASTSelectQuery * select_query, bool opt
 
             if (auto * identifier = child->children[0]->as<ASTIdentifier>())
             {
-                if (!keys.count(identifier->shortName()))
-                    keys.insert(identifier->shortName());
+                if (!keys.count(getIdentifierName(identifier)))
+                    keys.insert(getIdentifierName(identifier));
                 else
                     continue;
             }

@@ -45,7 +45,7 @@ public:
         if (!identifier)
             return;
 
-        if (data.keys.count(identifier->shortName()))
+        if (data.keys.count(getIdentifierName(identifier)))
             data.should_be_erased = true;
     }
 
