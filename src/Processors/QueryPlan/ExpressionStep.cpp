@@ -9,7 +9,8 @@ namespace DB
 
 static ITransformingStep::DataStreamTraits getTraits(const ExpressionActionsPtr & expression)
 {
-    return ITransformingStep::DataStreamTraits{
+    return ITransformingStep::DataStreamTraits
+    {
             .preserves_distinct_columns = !expression->hasJoinOrArrayJoin()
     };
 }

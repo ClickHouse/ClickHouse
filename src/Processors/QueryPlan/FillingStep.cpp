@@ -7,7 +7,8 @@ namespace DB
 
 static ITransformingStep::DataStreamTraits getTraits()
 {
-    return ITransformingStep::DataStreamTraits{
+    return ITransformingStep::DataStreamTraits
+    {
             .preserves_distinct_columns = false /// TODO: it seem to actually be true. Check it later.
     };
 }
