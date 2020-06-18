@@ -75,10 +75,10 @@ void AsynchronousMetrics::run()
 
         const auto now = time_point_cast<seconds>(system_clock::now());
 
-        // Use seconds since the start of the day, because who knows when the
-        // epoch started, maybe it's on fractional minute or something.
-        const auto start_of_day = time_point_cast<seconds>(time_point_cast<days>(now));
-        const auto seconds_passed = now - start_of_day;
+        // Use seconds since the start of the hour, because we don't know when
+        // the epoch started, maybe on some weird fractional time.
+        const auto start_of_hour = time_point_cast<seconds>(time_point_cast<hours>(now));
+        const auto seconds_passed = now - start_of_hour;
 
         // Rotate time forward by half a period -- e.g. if a period is a minute,
         // we'll collect metrics on start of minute + 30 seconds. This is to
@@ -88,7 +88,7 @@ void AsynchronousMetrics::run()
 
         const auto periods_passed = (seconds_passed + rotation) / period;
         const auto seconds_next = (periods_passed + 1) * period - rotation;
-        const auto time_next = start_of_day + seconds_next;
+        const auto time_next = start_of_hour + seconds_next;
 
         return time_next;
     };
