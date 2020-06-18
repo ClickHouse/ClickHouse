@@ -49,6 +49,7 @@ SRCS(
     registerAggregateFunctions.cpp
     UniqCombinedBiasData.cpp
     UniqVariadicHash.cpp
+    AggregateFunctionRankCorr.cpp
 )
 
 END()
