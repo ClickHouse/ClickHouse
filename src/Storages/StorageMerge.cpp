@@ -170,9 +170,7 @@ Pipes StorageMerge::read(
     if (selected_tables.empty())
         /// FIXME: do we support sampling in this case?
         return createSources(
-            metadata_snapshot, query_info, processed_stage,
-            max_block_size, header, {}, real_column_names,
-            modified_context, 0, has_table_virtual_column);
+            {}, query_info, processed_stage, max_block_size, header, {}, real_column_names, modified_context, 0, has_table_virtual_column);
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier = std::min(unsigned(tables_count), std::max(1U, unsigned(context.getSettingsRef().max_streams_multiplier_for_merge_tables)));
@@ -212,8 +210,10 @@ Pipes StorageMerge::read(
         if (query_info.query->as<ASTSelectQuery>()->sampleSize() && !storage->supportsSampling())
             throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
+        auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
+
         auto source_pipes = createSources(
-            metadata_snapshot, query_info, processed_stage,
+            storage_metadata_snapshot, query_info, processed_stage,
             max_block_size, header, table, real_column_names, modified_context,
             current_streams, has_table_virtual_column);
 
@@ -266,6 +266,7 @@ Pipes StorageMerge::createSources(
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(metadata_snapshot->getColumns().getAllPhysical()));
+
 
         pipes = storage->read(real_column_names, metadata_snapshot, modified_query_info, *modified_context, processed_stage, max_block_size, UInt32(streams_num));
     }
