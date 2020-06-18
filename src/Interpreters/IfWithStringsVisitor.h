@@ -43,9 +43,13 @@ void transformStringsIntoEnum(ASTFunction * function_if_node)
     function_if_node->arguments->children[2] = second_cast;
 }
 
-struct FindingIfWithStringsMatcher
+struct GettingFunctionArgumentsAliasesMatcher
 {
-    struct Data {};
+    struct Data
+    {
+        std::unordered_set<String> & aliases_inside_functions;
+    };
+
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
         if (node->as<ASTFunction>())
@@ -57,8 +61,64 @@ struct FindingIfWithStringsMatcher
         }
         return true;
     }
+    static void visit(ASTPtr & ast, Data & data)
+    {
+        if (auto * function_node = ast->as<ASTFunction>())
+        {
+            if (function_node->name == "if")
+            {
+                String alias = ast->tryGetAlias();
+                if (!alias.empty())
+                {
+                    data.aliases_inside_functions.insert(alias);
+                }
+            }
+        }
+    }
+};
 
-    static void visit(ASTPtr & ast, Data &)
+using GettingFunctionArgumentsAliasesVisitor = InDepthNodeVisitor<GettingFunctionArgumentsAliasesMatcher, true>;
+
+struct FunctionOfAliasesMatcher
+{
+    struct Data
+    {
+        std::unordered_set<String> & aliases_inside_functions;
+    };
+
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
+    {
+        return !(node->as<ASTFunction>());
+    }
+
+    static void visit(ASTPtr & ast, Data & data)
+    {
+        if (auto * function_node = ast->as<ASTFunction>())
+        {
+            if (function_node->name != "if")
+            {
+                GettingFunctionArgumentsAliasesVisitor::Data aliases_data{data.aliases_inside_functions};
+                GettingFunctionArgumentsAliasesVisitor(aliases_data).visit(function_node->arguments);
+            }
+        }
+    }
+};
+
+using FunctionOfAliasesVisitor = InDepthNodeVisitor<FunctionOfAliasesMatcher, true>;
+
+struct FindingIfWithStringsMatcher
+{
+    struct Data
+    {
+        std::unordered_set<String> & if_functions_as_aliases_inside_functions;
+    };
+
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
+    {
+        return !(node->as<ASTFunction>());
+    }
+
+    static void visit(ASTPtr & ast, Data & data)
     {
         if (auto * function_node = ast->as<ASTFunction>())
         {
@@ -67,11 +127,16 @@ struct FindingIfWithStringsMatcher
                 if (function_node->arguments->children[1]->as<ASTLiteral>() &&
                     function_node->arguments->children[2]->as<ASTLiteral>())
                 {
+                    String func_alias = ast->tryGetAlias();
+                    if (!func_alias.empty())
+                    {
+                        if (data.if_functions_as_aliases_inside_functions.count(func_alias))
+                            return;
+                    }
+
                     if (!strcmp(function_node->arguments->children[1]->as<ASTLiteral>()->value.getTypeName(), "String")
                         && !strcmp(function_node->arguments->children[2]->as<ASTLiteral>()->value.getTypeName(), "String"))
-                    {
                         transformStringsIntoEnum(function_node);
-                    }
                 }
             }
         }

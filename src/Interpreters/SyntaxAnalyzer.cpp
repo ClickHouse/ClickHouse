@@ -566,8 +566,14 @@ void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_miltiif)
 
 void TransformIfStringsIntoEnum(ASTPtr & query)
 {
-    FindingIfWithStringsVisitor::Data useless_data{};
-    FindingIfWithStringsVisitor(useless_data).visit(query);
+    std::unordered_set<String> if_functions_as_aliases_inside_functions;
+
+    FunctionOfAliasesVisitor::Data alias_data{if_functions_as_aliases_inside_functions};
+    FunctionOfAliasesVisitor(alias_data).visit(query);
+
+    FindingIfWithStringsVisitor::Data skip_alias_data{if_functions_as_aliases_inside_functions};
+    FindingIfWithStringsVisitor(skip_alias_data).visit(query);
+
 }
 
 void optimizeArithmeticOperationsInAgr(ASTPtr & query, bool optimize_arithmetic_operations_in_agr_func)
