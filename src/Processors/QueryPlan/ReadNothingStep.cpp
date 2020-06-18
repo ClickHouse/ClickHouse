@@ -5,8 +5,8 @@
 namespace DB
 {
 
-ReadNothingStep::ReadNothingStep(DataStream output_stream_)
-    : ISourceStep(std::move(output_stream_))
+ReadNothingStep::ReadNothingStep(Block output_header)
+    : ISourceStep(DataStream{.header = std::move(output_header)})
 {
 }
 
