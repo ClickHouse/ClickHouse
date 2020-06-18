@@ -1,0 +1,16 @@
+0
+1
+2
+0
+1
+2
+SELECT number AS x\nFROM numbers(3)\nORDER BY x ASC
+SELECT number AS x\nFROM numbers(3)\nORDER BY \n    exp(x) ASC,\n    x ASC
+0
+1
+2
+0
+1
+2
+SELECT number AS x\nFROM numbers(3)\nORDER BY \n    x ASC,\n    exp(x) ASC
+SELECT number AS x\nFROM numbers(3)\nORDER BY \n    exp(x) ASC,\n    x ASC

@@ -28,6 +28,7 @@
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
 #include <Interpreters/AnyInputOptimize.h>
+#include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -501,6 +502,51 @@ void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, bool optimize_duplicate
         DuplicateOrderByVisitor(order_by_data).visit(query);
         DuplicateDistinctVisitor::Data distinct_data{};
         DuplicateDistinctVisitor(distinct_data).visit(query);
+    }
+}
+
+/// If ORDER BY has argument x followed by f(x) transfroms it to ORDER BY x
+void optimizeRedundantFunctionsInOrderBy(ASTSelectQuery * select_query, bool optimize_redundant_functions_in_order_by)
+{
+    if (optimize_redundant_functions_in_order_by)
+    {
+        auto order_by = select_query->orderBy();
+
+        if (!order_by)
+            return;
+
+        std::unordered_set<String> keys;
+        ASTs result;
+        result.reserve(order_by->children.size());
+
+        for (auto & child : order_by->children)
+        {
+            if (child->children.empty())
+                continue;
+
+            if (child->children[0]->as<ASTFunction>())
+            {
+                if (!keys.empty())
+                {
+                    RedundantFunctionsInOrderByVisitor::Data data{keys};
+                    RedundantFunctionsInOrderByVisitor(data).visit(child);
+                    if (data.should_be_erased)
+                        continue;
+                }
+            }
+
+            if (auto * identifier = child->children[0]->as<ASTIdentifier>())
+            {
+                if (!keys.count(identifier->shortName()))
+                    keys.insert(identifier->shortName());
+                else
+                    continue;
+            }
+
+            result.push_back(child);
+        }
+
+        order_by->children = std::move(result);
     }
 }
 
@@ -986,6 +1032,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         /// Remove duplicate ORDER BY and DISTINCT from subqueries.
         optimizeDuplicateOrderByAndDistinct(query, settings.optimize_duplicate_order_by_and_distinct, context);
+
+        /// Remove functions from ORDER BY if its argument is also in ORDER BY
+        optimizeRedundantFunctionsInOrderBy(select_query, settings.optimize_redundant_functions_in_order_by);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
