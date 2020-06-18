@@ -12,7 +12,7 @@ namespace DB
 struct BlockIO;
 class Context;
 struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /** Prepares an input stream which produce data containing in INSERT query
   * Head of inserting data could be stored in INSERT ast directly

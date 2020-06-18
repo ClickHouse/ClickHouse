@@ -17,7 +17,7 @@ struct Settings;
 struct SelectQueryOptions;
 using Scalars = std::map<String, Block>;
 struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 struct SyntaxAnalyzerResult
 {

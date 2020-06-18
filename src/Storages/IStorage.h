@@ -82,7 +82,7 @@ public:
     IStorage() = delete;
     /// Storage fields should be initialized in separate methods like setColumns
     /// or setTableTTLs.
-    explicit IStorage(StorageID storage_id_) : storage_id(std::move(storage_id_)), metadata(std::make_shared<StorageInMemoryMetadata>()) {} //-V730
+    explicit IStorage(StorageID storage_id_) : storage_id(std::move(storage_id_)), metadata(std::make_unique<StorageInMemoryMetadata>()) {} //-V730
 
     virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;
@@ -137,9 +137,12 @@ public:
 
 public: /// thread-unsafe part. lockStructure must be acquired
 
-    StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata; }
-    StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata; }
-    void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_) { metadata = std::make_shared<StorageInMemoryMetadata>(metadata_); }
+    StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata.get(); }
+    StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
+    void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
+    {
+        metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
+    }
 
 
     /// Return list of virtual columns (like _part, _table, etc). In the vast
@@ -165,9 +168,7 @@ private:
     StorageID storage_id;
     mutable std::mutex id_mutex;
 
-    /// TODO (alesap) just use multiversion for atomic metadata
-    mutable std::mutex ttl_mutex;
-    StorageMetadataPtr metadata;
+    MultiVersionStorageMetadataPtr metadata;
 private:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;

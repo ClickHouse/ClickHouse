@@ -194,7 +194,7 @@ struct StorageInMemoryMetadata
     void check(const Block & block, bool need_all = false) const;
 };
 
-using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using MultiVersionStorageMetadataPtr = MultiVersion<StorageInMemoryMetadata>;
 
 }
