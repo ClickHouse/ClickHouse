@@ -119,7 +119,7 @@ ReadFromStorageStep::ReadFromStorageStep(
 
     pipeline->init(std::move(pipes));
 
-    input_streams.emplace_back(DataStream{.header = pipeline->getHeader()});
+    output_stream = DataStream{.header = pipeline->getHeader()};
 }
 
 ReadFromStorageStep::~ReadFromStorageStep() = default;
