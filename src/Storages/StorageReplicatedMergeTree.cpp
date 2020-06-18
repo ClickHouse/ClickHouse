@@ -818,6 +818,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
+    checkTTLExpressions(new_metadata, old_metadata);
     setProperties(new_metadata, old_metadata);
 
     auto table_id = getStorageID();

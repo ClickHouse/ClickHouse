@@ -183,6 +183,9 @@ MergeTreeData::MergeTreeData(
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
     }
 
+
+    checkTTLExpressions(metadata_, metadata_);
+
     /// format_file always contained on any data path
     PathWithDisk version_file;
     /// Creating directories, if not exist.
