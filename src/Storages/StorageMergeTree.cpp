@@ -1086,8 +1086,6 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = merger_mutator.merges_blocker.cancel();
-        /// Waits for completion of merge and does not start new ones.
-        auto lock = lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
         String partition_id = getPartitionIDFromQuery(partition, context);
 
