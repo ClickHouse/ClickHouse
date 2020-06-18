@@ -220,7 +220,7 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
 
     if (l_size != r_size)
     {
-        result = ::testing::AssertionFailure() << "size mismatch" << " expected: " << l_size << " got:" << r_size;
+        result = ::testing::AssertionFailure() << "size mismatch, expected: " << l_size << " got:" << r_size;
     }
     if (l_size == 0 || r_size == 0)
     {

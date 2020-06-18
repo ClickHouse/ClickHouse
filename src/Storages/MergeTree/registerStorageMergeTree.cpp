@@ -117,8 +117,9 @@ static void appendGraphitePattern(
                                                        aggregate_function_name, params_row, "GraphiteMergeTree storage initialization");
 
             /// TODO Not only Float64
-            pattern.function = AggregateFunctionFactory::instance().get(aggregate_function_name, {std::make_shared<DataTypeFloat64>()},
-                                                                        params_row);
+            AggregateFunctionProperties properties;
+            pattern.function = AggregateFunctionFactory::instance().get(
+                aggregate_function_name, {std::make_shared<DataTypeFloat64>()}, params_row, properties);
         }
         else if (startsWith(key, "retention"))
         {
@@ -205,121 +206,32 @@ static void setGraphitePatternsFromConfig(const Context & context,
 }
 
 
-static String getMergeTreeVerboseHelp(bool is_extended_syntax)
+static String getMergeTreeVerboseHelp(bool)
 {
     using namespace std::string_literals;
 
     String help = R"(
 
-MergeTree is a family of storage engines.
+Syntax for the MergeTree table engine:
 
-MergeTrees are different in two ways:
-- they may be replicated and non-replicated;
-- they may do different actions on merge: nothing; sign collapse; sum; apply aggregete functions.
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    ...
+    INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
+    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2
+) ENGINE = MergeTree()
+ORDER BY expr
+[PARTITION BY expr]
+[PRIMARY KEY expr]
+[SAMPLE BY expr]
+[TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
+[SETTINGS name=value, ...]
 
-So we have 14 combinations:
-    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, GraphiteMergeTree, VersionedCollapsingMergeTree
-    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedGraphiteMergeTree, ReplicatedVersionedCollapsingMergeTree
+See details in documentation: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/. Other engines of the family support different syntax, see details in the corresponding documentation topics.
 
-In most of cases, you need MergeTree or ReplicatedMergeTree.
-
-For replicated merge trees, you need to supply a path in ZooKeeper and a replica name as the first two parameters.
-Path in ZooKeeper is like '/clickhouse/tables/01/' where /clickhouse/tables/ is a common prefix and 01 is a shard name.
-Replica name is like 'mtstat01-1' - it may be the hostname or any suitable string identifying replica.
-You may use macro substitutions for these parameters. It's like ReplicatedMergeTree('/clickhouse/tables/{shard}/', '{replica}'...
-Look at the <macros> section in server configuration file.
-)";
-
-    if (!is_extended_syntax)
-        help += R"(
-Next parameter (which is the first for unreplicated tables and the third for replicated tables) is the name of date column.
-Date column must exist in the table and have type Date (not DateTime).
-It is used for internal data partitioning and works like some kind of index.
-
-If your source data doesn't have a column of type Date, but has a DateTime column, you may add values for Date column while loading,
-    or you may INSERT your source data to a table of type Log and then transform it with INSERT INTO t SELECT toDate(time) AS date, * FROM ...
-If your source data doesn't have any date or time, you may just pass any constant for a date column while loading.
-
-Next parameter is optional sampling expression. Sampling expression is used to implement SAMPLE clause in query for approximate query execution.
-If you don't need approximate query execution, simply omit this parameter.
-Sample expression must be one of the elements of the primary key tuple. For example, if your primary key is (CounterID, EventDate, intHash64(UserID)), your sampling expression might be intHash64(UserID).
-
-Next parameter is the primary key tuple. It's like (CounterID, EventDate, intHash64(UserID)) - a list of column names or functional expressions in round brackets. If your primary key has just one element, you may omit round brackets.
-
-Careful choice of the primary key is extremely important for processing short-time queries.
-
-Next parameter is index (primary key) granularity. Good value is 8192. You have no reasons to use any other value.
-)";
-
-    help += R"(
-For the Collapsing mode, the )" + (is_extended_syntax ? "only"s : "last"s) + R"( parameter is the name of a sign column - a special column that is used to 'collapse' rows with the same primary key while merging.
-
-For the Summing mode, the optional )" + (is_extended_syntax ? ""s : "last "s) + R"(parameter is a list of columns to sum while merging. This list is passed in round brackets, like (PageViews, Cost).
-If this parameter is omitted, the storage will sum all numeric columns except columns participating in the primary key.
-
-For the Replacing mode, the optional )" + (is_extended_syntax ? ""s : "last "s) + R"(parameter is the name of a 'version' column. While merging, for all rows with the same primary key, only one row is selected: the last row, if the version column was not specified, or the last row with the maximum version value, if specified.
-
-For VersionedCollapsing mode, the )" + (is_extended_syntax ? ""s : "last "s) + R"(2 parameters are the name of a sign column and the name of a 'version' column. Version column must be in primary key. While merging, a pair of rows with the same primary key and different sign may collapse.
-)";
-
-    if (is_extended_syntax)
-        help += R"(
-You can specify a partitioning expression in the PARTITION BY clause. It is optional but highly recommended.
-A common partitioning expression is some function of the event date column e.g. PARTITION BY toYYYYMM(EventDate) will partition the table by month.
-Rows with different partition expression values are never merged together. That allows manipulating partitions with ALTER commands.
-Also it acts as a kind of index.
-
-Sorting key is specified in the ORDER BY clause. It is mandatory for all MergeTree types.
-It is like (CounterID, EventDate, intHash64(UserID)) - a list of column names or functional expressions
-in round brackets.
-If your sorting key has just one element, you may omit round brackets.
-
-By default primary key is equal to the sorting key. You can specify a primary key that is a prefix of the
-sorting key in the PRIMARY KEY clause.
-
-Careful choice of the primary key is extremely important for processing short-time queries.
-
-Optional sampling expression can be specified in the SAMPLE BY clause. It is used to implement the SAMPLE clause in a SELECT query for approximate query execution.
-Sampling expression must be one of the elements of the primary key tuple. For example, if your primary key is (CounterID, EventDate, intHash64(UserID)), your sampling expression might be intHash64(UserID).
-
-Engine settings can be specified in the SETTINGS clause. Full list is in the source code in the 'src/Storages/MergeTree/MergeTreeSettings.h' file.
-E.g. you can specify the index (primary key) granularity with SETTINGS index_granularity = 8192.
-
-Examples:
-
-MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate) SETTINGS index_granularity = 8192
-
-MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) SAMPLE BY intHash32(UserID)
-
-MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) PRIMARY KEY (CounterID, EventDate) SAMPLE BY intHash32(UserID)
-
-CollapsingMergeTree(Sign) PARTITION BY StartDate SAMPLE BY intHash32(UserID) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
-
-SummingMergeTree PARTITION BY toMonday(EventDate) ORDER BY (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo)
-
-SummingMergeTree((Shows, Clicks, Cost, CostCur, ShowsSumPosition, ClicksSumPosition, SessionNum, SessionLen, SessionCost, GoalsNum, SessionDepth)) PARTITION BY toYYYYMM(EventDate) ORDER BY (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo)
-
-ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}') PARTITION BY EventDate ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) SAMPLE BY intHash32(UserID)
-)";
-    else
-        help += R"(
-Examples:
-
-MergeTree(EventDate, (CounterID, EventDate), 8192)
-
-MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
-
-CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
-
-SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192)
-
-SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192, (Shows, Clicks, Cost, CostCur, ShowsSumPosition, ClicksSumPosition, SessionNum, SessionLen, SessionCost, GoalsNum, SessionDepth))
-
-ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
-)";
-
-    help += R"(
-For further info please read the documentation: https://clickhouse.yandex/
+If you use the Replicated version of engines, see https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/.
 )";
 
     return help;
@@ -506,6 +418,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         ++arg_num;
     }
 
+    /// This merging param maybe used as part of sorting key
+    std::optional<String> merging_param_key_arg;
+
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
     {
         if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.sign_column))
@@ -569,50 +484,83 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     ErrorCodes::BAD_ARGUMENTS);
 
         --arg_cnt;
+        /// Version collapsing is the only engine which add additional column to
+        /// sorting key.
+        merging_param_key_arg = merging_params.version_column;
     }
 
     String date_column_name;
-    ASTPtr partition_by_ast;
-    ASTPtr order_by_ast;
-    ASTPtr primary_key_ast;
-    ASTPtr sample_by_ast;
-    ASTPtr ttl_table_ast;
-    ASTPtr settings_ast;
-    IndicesDescription indices_description;
-    ConstraintsDescription constraints_description;
+
+    StorageInMemoryMetadata metadata;
+    metadata.columns = args.columns;
 
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(args.context.getMergeTreeSettings());
 
     if (is_extended_storage_def)
     {
+        ASTPtr partition_by_key;
         if (args.storage_def->partition_by)
-            partition_by_ast = args.storage_def->partition_by->ptr();
+            partition_by_key = args.storage_def->partition_by->ptr();
+
+        /// Partition key may be undefined, but despite this we store it's empty
+        /// value in partition_key structure. MergeTree checks this case and use
+        /// single default partition with name "all".
+        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, args.context);
 
         if (!args.storage_def->order_by)
             throw Exception("You must provide an ORDER BY expression in the table definition. "
                 "If you don't want this table to be sorted, use ORDER BY tuple()",
                 ErrorCodes::BAD_ARGUMENTS);
 
-        order_by_ast = args.storage_def->order_by->ptr();
+        /// Get sorting key from engine arguments.
+        ///
+        /// NOTE: store merging_param_key_arg as additional key column. We do it
+        /// before storage creation. After that storage will just copy this
+        /// column if sorting key will be changed.
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context, merging_param_key_arg);
 
+        /// If primary key explicitely defined, than get it from AST
         if (args.storage_def->primary_key)
-            primary_key_ast = args.storage_def->primary_key->ptr();
+        {
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
+        }
+        else /// Otherwise we copy it from primary key definition
+        {
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context);
+            /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
+            /// will return false but hasPrimaryKey() will return true.
+            metadata.primary_key.definition_ast = nullptr;
+        }
 
         if (args.storage_def->sample_by)
-            sample_by_ast = args.storage_def->sample_by->ptr();
+            metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.context);
 
         if (args.storage_def->ttl_table)
-            ttl_table_ast = args.storage_def->ttl_table->ptr();
-
+            metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                args.storage_def->ttl_table->ptr(),
+                metadata.columns,
+                args.context,
+                metadata.primary_key);
 
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
-                indices_description.push_back(IndexDescription::getIndexFromAST(index, args.columns, args.context));
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, args.columns, args.context));
+
+        if (args.query.columns_list && args.query.columns_list->constraints)
+            for (auto & constraint : args.query.columns_list->constraints->children)
+                metadata.constraints.constraints.push_back(constraint);
+
+        auto column_ttl_asts = args.columns.getColumnTTLs();
+        for (const auto & [name, ast] : column_ttl_asts)
+        {
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, args.columns, args.context, metadata.primary_key);
+            metadata.column_ttls_by_name[name] = new_ttl_entry;
+        }
 
         storage_settings->loadFromQuery(*args.storage_def);
 
         if (args.storage_def->settings)
-            settings_ast = args.storage_def->settings->ptr();
+            metadata.settings_changes = args.storage_def->settings->ptr();
     }
     else
     {
@@ -627,12 +575,23 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If there is an expression for sampling
         if (arg_cnt - arg_num == 3)
         {
-            sample_by_ast = engine_args[arg_num];
+            metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context);
             ++arg_num;
         }
 
-        /// Now only two parameters remain - primary_key, index_granularity.
-        order_by_ast = engine_args[arg_num];
+        /// Get sorting key from engine arguments.
+        ///
+        /// NOTE: store merging_param_key_arg as additional key column. We do it
+        /// before storage creation. After that storage will just copy this
+        /// column if sorting key will be changed.
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, args.context, merging_param_key_arg);
+
+        /// In old syntax primary_key always equals to sorting key.
+        metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context);
+        /// But it's not explicitely defined, so we evaluate definition to
+        /// nullptr
+        metadata.primary_key.definition_ast = nullptr;
+
         ++arg_num;
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
@@ -648,17 +607,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (arg_num != arg_cnt)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
 
-    if (!args.attach && !indices_description.empty() && !args.local_context.getSettingsRef().allow_experimental_data_skipping_indices)
+    if (!args.attach && !metadata.secondary_indices.empty() && !args.local_context.getSettingsRef().allow_experimental_data_skipping_indices)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
-
-    StorageInMemoryMetadata metadata(args.columns, indices_description, args.constraints);
-    metadata.partition_by_ast = partition_by_ast;
-    metadata.order_by_ast = order_by_ast;
-    metadata.primary_key_ast = primary_key_ast;
-    metadata.ttl_for_table_ast = ttl_table_ast;
-    metadata.sample_by_ast = sample_by_ast;
-    metadata.settings_ast = settings_ast;
 
     if (replicated)
         return StorageReplicatedMergeTree::create(

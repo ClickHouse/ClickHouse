@@ -47,6 +47,7 @@ SRCS(
     shift10.cpp
     sleep.cpp
     terminalColors.cpp
+    errnoToString.cpp
 )
 
 END()

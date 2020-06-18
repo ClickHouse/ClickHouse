@@ -64,7 +64,7 @@ A subquery in the IN clause is always run just one time on a single server. Ther
 
 ## NULL Processing {#null-processing-1}
 
-During request processing, the IN operator assumes that the result of an operation with [NULL](../syntax.md#null-literal) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
+During request processing, the IN operator assumes that the result of an operation with [NULL](../../sql-reference/syntax.md#null-literal) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
 
 Here is an example with the `t_null` table:
 

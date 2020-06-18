@@ -7,7 +7,7 @@ toc_title: How to Build ClickHouse on Linux for AARCH64 (ARM64)
 
 This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on another Linux machine with AARCH64 CPU architecture. This is intended for continuous integration checks that run on Linux servers.
 
-The cross-build for AARCH64 is based on the [Build instructions](build.md), follow them first.
+The cross-build for AARCH64 is based on the [Build instructions](../development/build.md), follow them first.
 
 # Install Clang-8 {#install-clang-8}
 
