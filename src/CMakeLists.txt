@@ -88,6 +88,7 @@ list (APPEND dbms_sources
     AggregateFunctions/AggregateFunctionFactory.cpp
     AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
     AggregateFunctions/AggregateFunctionState.cpp
+    AggregateFunctions/AggregateFunctionCount.cpp
     AggregateFunctions/parseAggregateFunctionParameters.cpp)
 
 list (APPEND dbms_headers
@@ -96,6 +97,7 @@ list (APPEND dbms_headers
     AggregateFunctions/AggregateFunctionFactory.h
     AggregateFunctions/AggregateFunctionCombinatorFactory.h
     AggregateFunctions/AggregateFunctionState.h
+    AggregateFunctions/AggregateFunctionCount.cpp
     AggregateFunctions/FactoryHelpers.h
     AggregateFunctions/parseAggregateFunctionParameters.h)
 
@@ -171,7 +173,6 @@ else()
     # force all split libs to be linked
     set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
 endif ()
-target_link_libraries (dbms INTERFACE clickhouse_aggregate_functions)
 
 macro (dbms_target_include_directories)
     foreach (module ${all_modules})
