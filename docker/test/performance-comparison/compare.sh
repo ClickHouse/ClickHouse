@@ -36,18 +36,14 @@ function configure
     while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
-    # Remove logs etc, because they will be updated, and sharing them between
-    # servers with hardlink might cause unpredictable behavior.
-    rm db0/data/system/* -rf ||:
-    rm db0/metadata/system/* -rf ||:
-
     # Make copies of the original db for both servers. Use hardlinks instead
-    # of copying. Be careful to remove preprocessed configs and system tables,or
-    # it can lead to weird effects.
+    # of copying to save space. Before that, remove preprocessed configs and
+    # system tables, because sharing them between servers with hardlinks may
+    # lead to weird effects.
     rm -r left/db ||:
     rm -r right/db ||:
     rm -r db0/preprocessed_configs ||:
-    rm -r db/{data,metadata}/system ||:
+    rm -r db0/{data,metadata}/system ||:
     cp -al db0/ left/db/
     cp -al db0/ right/db/
 }
@@ -294,7 +290,6 @@ create table query_metrics engine File(TSV, -- do not add header -- will parse w
 # query. We also don't have lateral joins. So I just put all runs of each
 # query into a separate file, and then compute randomization distribution
 # for each file. I do this in parallel using GNU parallel.
-query_index=1
 IFS=$'\n'
 for prefix in $(cut -f1,2 "analyze/query-run-metrics.tsv" | sort | uniq)
 do

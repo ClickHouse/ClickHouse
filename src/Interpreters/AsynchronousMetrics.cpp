@@ -129,13 +129,15 @@ static void calculateMaxAndSum(Max & max, Sum & sum, T x)
         max = x;
 }
 
-/// FIXME remove this
-static void write_cb(void * /* callback param */, const char *s)
+#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
+uint64_t updateJemallocEpoch()
 {
-  std::cerr << s << std::endl;
+    uint64_t value = 0;
+    size_t size = sizeof(value);
+    mallctl("epoch", &value, &size, &value, size);
+    return value;
 }
 
-#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
 template <typename Value>
 static void saveJemallocMetricImpl(AsynchronousMetricValues & values,
     const std::string & jemalloc_full_name,
@@ -303,9 +305,13 @@ void AsynchronousMetrics::update()
     }
 
 #if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
-    /// FIXME remove this
-    malloc_stats_print(write_cb, nullptr /* callback param */, "g");
+    // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
+    // the following calls will return stale values. It increments and returns
+    // the current epoch number, which might be useful to log as a sanity check.
+    auto epoch = updateJemallocEpoch();
+    new_values["jemalloc.epoch"] = epoch;
 
+    // Collect the statistics themselves.
     saveJemallocMetric<size_t>(new_values, "allocated");
     saveJemallocMetric<size_t>(new_values, "active");
     saveJemallocMetric<size_t>(new_values, "metadata");
