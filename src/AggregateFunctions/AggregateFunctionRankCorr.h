@@ -16,11 +16,8 @@
 #include <limits>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
-
 
 #include <Common/ArenaAllocator.h>
-#include <Common/assert_cast.h>
 
 #include <type_traits>
 
@@ -180,23 +177,20 @@ public:
         //create a copy of values not to format data
         PODArrayWithStackMemory<std::pair<Float64, Float64>, 32> tmp_values;
         tmp_values.resize(size);
-        for (size_t j = 0; j < size; ++ j){
+        for (size_t j = 0; j < size; ++ j)
+        {
             tmp_values[j] = static_cast<std::pair<Float64, Float64>>(value[j]);
         }
-
-//        size_t k = 1;
-//        if (k){
-//            throw Exception("passed making tmp array", ErrorCodes::BAD_ARGUMENTS);
-//        }
 
         //sort x_values
         std::sort(std::begin(tmp_values), std::end(tmp_values), ComparePairFirst<std::greater>{});
 
-        for (size_t j = 0; j < size; ){
+        for (size_t j = 0; j < size; )
+        {
             //replace x_values with their ranks
-            size_t same = 1;
-            size_t cur_sum = 0;
             size_t rank = j + 1;
+            size_t same = 1;
+            size_t cur_sum = rank;
             size_t cur_start = j;
 
             while (j < size - 1)
@@ -217,7 +211,8 @@ public:
 
             // insert rank is calculated as average of ranks of equal values
             Float64 insert_rank = static_cast<Float64>(cur_sum) / same;
-            for (size_t i = cur_start; i <= j; ++i) {
+            for (size_t i = cur_start; i <= j; ++i)
+            {
                 tmp_values[i].first = insert_rank;
             }
             j++;
@@ -227,11 +222,12 @@ public:
         std::sort(std::begin(tmp_values), std::end(tmp_values), ComparePairSecond<std::greater>{});
 
         //replace y_values with their ranks
-        for (size_t j = 0; j < size; ){
+        for (size_t j = 0; j < size; )
+        {
             //replace x_values with their ranks
-            size_t same = 1;
-            size_t cur_sum = 0;
             size_t rank = j + 1;
+            size_t same = 1;
+            size_t cur_sum = rank;
             size_t cur_start = j;
 
             while (j < size - 1)
@@ -252,7 +248,8 @@ public:
 
             // insert rank is calculated as average of ranks of equal values
             Float64 insert_rank = static_cast<Float64>(cur_sum) / same;
-            for (size_t i = cur_start; i <= j; ++i) {
+            for (size_t i = cur_start; i <= j; ++i)
+            {
                 tmp_values[i].second = insert_rank;
             }
             j++;
