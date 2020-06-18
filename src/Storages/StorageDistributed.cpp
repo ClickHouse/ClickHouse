@@ -619,7 +619,7 @@ Strings StorageDistributed::getDataPaths() const
     return paths;
 }
 
-void StorageDistributed::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     std::lock_guard lock(cluster_nodes_mutex);
 

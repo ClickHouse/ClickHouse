@@ -292,7 +292,11 @@ public:
     /** Clear the table data and leave it empty.
       * Must be called under lockForAlter.
       */
-    virtual void truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &)
+    virtual void truncate(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /* metadata_snapshot */,
+        const Context & /* context */,
+        TableStructureWriteLockHolder &)
     {
         throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

@@ -231,7 +231,7 @@ void StorageMergeTree::drop()
     dropAllData();
 }
 
-void StorageMergeTree::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     {
         /// Asks to complete merges and does not allow them to start.

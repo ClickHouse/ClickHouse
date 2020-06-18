@@ -37,7 +37,7 @@ public:
 
     void drop() override;
 
-    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     bool optimize(
         const ASTPtr & query,

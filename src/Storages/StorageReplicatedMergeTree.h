@@ -120,7 +120,7 @@ public:
       */
     void drop() override;
 
-    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 

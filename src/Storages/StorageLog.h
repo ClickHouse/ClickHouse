@@ -39,7 +39,7 @@ public:
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 
-    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableStructureWriteLockHolder &) override;
 
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
 

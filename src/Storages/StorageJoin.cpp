@@ -64,10 +64,9 @@ StorageJoin::StorageJoin(
 }
 
 
-void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageJoin::truncate(
+    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableStructureWriteLockHolder &)
 {
-    /// TODO(alesap) FIXME
-    auto metadata_snapshot = getInMemoryMetadataPtr();
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
     Poco::File(path + "tmp/").createDirectories();

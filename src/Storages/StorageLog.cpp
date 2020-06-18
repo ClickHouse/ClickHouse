@@ -535,11 +535,10 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
     renameInMemory(new_table_id);
 }
 
-void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableStructureWriteLockHolder &)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
     files.clear();
     file_count = 0;
     loaded_marks = false;
