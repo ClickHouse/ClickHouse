@@ -9,21 +9,13 @@
 
 DB::BackgroundProcessingPoolTaskResult checkLow(std::vector<bool> & checks, int i)
 {
-    int policy;
+    int policy = -1;
     sched_param param;
-    if (pthread_getschedparam(pthread_self(), &policy, &param))
-    {
-        checks[i] = false;
-
-        return DB::BackgroundProcessingPoolTaskResult::SUCCESS;
-    }
+    pthread_getschedparam(pthread_self(), &policy, &param);
 
     if (policy != SCHED_IDLE)
-    {
         checks[i] = false;
 
-        return DB::BackgroundProcessingPoolTaskResult::SUCCESS;
-    }
     return DB::BackgroundProcessingPoolTaskResult::SUCCESS;
 }
 
