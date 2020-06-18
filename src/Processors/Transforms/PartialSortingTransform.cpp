@@ -48,8 +48,7 @@ size_t getFilterMask(const ColumnRawPtrs & lhs, const ColumnRawPtrs & rhs, size_
                      const SortDescription & description, size_t num_rows, IColumn::Filter & filter,
                      PaddedPODArray<UInt64> & rows_to_compare, PaddedPODArray<Int8> & compare_results)
 {
-    filter.resize(0);
-    filter.resize_fill(num_rows);
+    filter.resize(num_rows);
     compare_results.resize(num_rows);
 
     if (description.size() == 1)
@@ -125,17 +124,13 @@ void PartialSortingTransform::transform(Chunk & chunk)
     /// Check if we can use this block for optimization.
     if (min_limit_for_partial_sort_optimization <= limit && limit <= block.rows())
     {
-        bool update_threshold_block = threshold_block_columns.empty();
-        if (!update_threshold_block)
-        {
-            auto block_columns = extractColumns(block, description);
-            update_threshold_block = less(block_columns, limit - 1, threshold_block_columns, limit - 1, description);
-        }
+        auto block_columns = extractColumns(block, description);
 
-        if (update_threshold_block)
+        if (threshold_block_columns.empty() ||
+            less(block_columns, limit - 1, threshold_block_columns, limit - 1, description))
         {
-            threshold_block = block.cloneWithColumns(block.getColumns());
-            threshold_block_columns = extractColumns(threshold_block, description);
+            threshold_block = block;
+            threshold_block_columns.swap(block_columns);
         }
     }
 
