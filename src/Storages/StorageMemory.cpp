@@ -149,7 +149,7 @@ void StorageMemory::drop()
 }
 
 void StorageMemory::truncate(
-    const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &)
+    const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
     std::lock_guard lock(mutex);
     data.clear();

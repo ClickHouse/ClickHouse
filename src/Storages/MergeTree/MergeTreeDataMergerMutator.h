@@ -107,7 +107,7 @@ public:
         const FutureMergedMutatedPart & future_part,
         const StorageMetadataPtr & metadata_snapshot,
         MergeListEntry & merge_entry,
-        TableStructureReadLockHolder & table_lock_holder,
+        TableLockHolder & table_lock_holder,
         time_t time_of_merge,
         const ReservationPtr & space_reservation,
         bool deduplicate,
@@ -122,7 +122,7 @@ public:
         time_t time_of_mutation,
         const Context & context,
         const ReservationPtr & space_reservation,
-        TableStructureReadLockHolder & table_lock_holder);
+        TableLockHolder & table_lock_holder);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,

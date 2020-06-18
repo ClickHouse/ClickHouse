@@ -5,44 +5,17 @@
 namespace DB
 {
 
-/// Structs that hold table structure (columns, their types, default values etc.) locks when executing queries.
-/// See IStorage::lock* methods for comments.
-
-struct TableStructureWriteLockHolder
+struct TableExclusiveLockHolder
 {
-    void release()
-    {
-        *this = TableStructureWriteLockHolder();
-    }
-
-    void releaseAllExceptAlterIntention()
-    {
-        new_data_structure_lock.reset();
-        structure_lock.reset();
-    }
+    void release() { *this = TableExclusiveLockHolder(); }
 
 private:
     friend class IStorage;
 
     /// Order is important.
-    RWLockImpl::LockHolder alter_intention_lock;
-    RWLockImpl::LockHolder new_data_structure_lock;
-    RWLockImpl::LockHolder structure_lock;
+    RWLockImpl::LockHolder alter_lock;
+    RWLockImpl::LockHolder drop_lock;
 };
 
-struct TableStructureReadLockHolder
-{
-    void release()
-    {
-        *this = TableStructureReadLockHolder();
-    }
-
-private:
-    friend class IStorage;
-
-    /// Order is important.
-    RWLockImpl::LockHolder new_data_structure_lock;
-    RWLockImpl::LockHolder structure_lock;
-};
-
+using TableLockHolder = RWLockImpl::LockHolder;
 }

@@ -333,7 +333,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
         const auto & table = iterator->table();
         if (table && table.get() != this)
             selected_tables.emplace_back(
-                    table, table->lockStructureForShare(false, query_id, settings.lock_acquire_timeout), iterator->name());
+                    table, table->lockForShare(query_id, settings.lock_acquire_timeout), iterator->name());
 
         iterator->next();
     }
@@ -362,7 +362,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
         if (storage.get() != this)
         {
             selected_tables.emplace_back(
-                    storage, storage->lockStructureForShare(false, query_id, settings.lock_acquire_timeout), iterator->name());
+                    storage, storage->lockForShare(query_id, settings.lock_acquire_timeout), iterator->name());
             virtual_column->insert(iterator->name());
         }
 
@@ -405,9 +405,8 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Se
 }
 
 void StorageMerge::alter(
-    const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+    const AlterCommands & params, const Context & context, TableLockHolder &)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
 
     StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();

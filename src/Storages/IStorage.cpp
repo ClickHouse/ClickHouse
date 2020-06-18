@@ -47,58 +47,43 @@ RWLockImpl::LockHolder IStorage::tryLockTimed(
     return lock_holder;
 }
 
-TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id, const SettingSeconds & acquire_timeout)
+TableLockHolder IStorage::lockForShare(const String & query_id, const SettingSeconds & acquire_timeout)
 {
-    TableStructureReadLockHolder result;
-    if (will_add_new_data)
-        result.new_data_structure_lock = tryLockTimed(new_data_structure_lock, RWLockImpl::Read, query_id, acquire_timeout);
-    result.structure_lock = tryLockTimed(structure_lock, RWLockImpl::Read, query_id, acquire_timeout);
+    TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+
     return result;
 }
 
-TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_id, const SettingSeconds & acquire_timeout)
+TableLockHolder IStorage::lockForAlter(const String & query_id, const SettingSeconds & acquire_timeout)
 {
-    TableStructureWriteLockHolder result;
-    result.alter_intention_lock = tryLockTimed(alter_intention_lock, RWLockImpl::Write, query_id, acquire_timeout);
+    TableLockHolder result = tryLockTimed(alter_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+
     return result;
 }
 
-void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id, const SettingSeconds & acquire_timeout)
-{
-    if (!lock_holder.alter_intention_lock)
-        throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-    if (!lock_holder.new_data_structure_lock)
-        lock_holder.new_data_structure_lock = tryLockTimed(new_data_structure_lock, RWLockImpl::Write, query_id, acquire_timeout);
-    lock_holder.structure_lock = tryLockTimed(structure_lock, RWLockImpl::Write, query_id, acquire_timeout);
-}
-
-TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout)
+TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout)
 {
-    TableStructureWriteLockHolder result;
-    result.alter_intention_lock = tryLockTimed(alter_intention_lock, RWLockImpl::Write, query_id, acquire_timeout);
+    TableExclusiveLockHolder result;
+    result.alter_lock = tryLockTimed(alter_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
-    result.new_data_structure_lock = tryLockTimed(new_data_structure_lock, RWLockImpl::Write, query_id, acquire_timeout);
-    result.structure_lock = tryLockTimed(structure_lock, RWLockImpl::Write, query_id, acquire_timeout);
+    result.drop_lock = tryLockTimed(drop_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
     return result;
 }
 
 void IStorage::alter(
-    const AlterCommands & params,
-    const Context & context,
-    TableStructureWriteLockHolder & table_lock_holder)
+    const AlterCommands & params, const Context & context, TableLockHolder &)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);

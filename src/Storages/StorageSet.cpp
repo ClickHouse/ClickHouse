@@ -142,7 +142,7 @@ void StorageSet::finishInsert() { set->finishInsert(); }
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
 
-void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableStructureWriteLockHolder &)
+void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();

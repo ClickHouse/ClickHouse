@@ -14,7 +14,7 @@ class Context;
 struct StoragesInfo
 {
     StoragePtr storage = nullptr;
-    TableStructureReadLockHolder table_lock;
+    TableLockHolder table_lock;
 
     String database;
     String table;

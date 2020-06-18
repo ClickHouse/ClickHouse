@@ -42,7 +42,7 @@ public:
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /* metadata_snapshot */,
         const Context & /* context */,
-        TableStructureWriteLockHolder &) override;
+        TableExclusiveLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 

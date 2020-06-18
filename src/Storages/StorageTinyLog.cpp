@@ -430,7 +430,7 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context
 }
 
 void StorageTinyLog::truncate(
-    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableStructureWriteLockHolder &)
+    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 

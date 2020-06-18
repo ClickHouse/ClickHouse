@@ -477,7 +477,7 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
-    /// Must be called with locked lockStructureForShare().
+    /// Must be called with locked lockForShare().
     void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 
     /// After the call to dropAllData() no method can be called.
@@ -489,7 +489,7 @@ public:
 
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
-    /// Must be called with locked lockStructureForAlter().
+    /// Must be called with locked lockForShare().
     void rename(const String & new_table_path, const StorageID & new_table_id) override;
 
     /// Check if the ALTER can be performed:
@@ -502,10 +502,10 @@ public:
     /// Change MergeTreeSettings
     void changeSettings(
            const ASTPtr & new_settings,
-           TableStructureWriteLockHolder & table_lock_holder);
+           TableLockHolder & table_lock_holder);
 
     /// Freezes all parts.
-    void freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
+    void freezeAll(const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
@@ -527,7 +527,7 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
 
 
 public:

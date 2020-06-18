@@ -75,9 +75,9 @@ public:
     CancellationCode killMutation(const String & mutation_id) override;
 
     void drop() override;
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
-    void alter(const AlterCommands & commands, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, const Context & context, TableLockHolder & table_lock_holder) override;
 
     void checkTableCanBeDropped() const override;
 

@@ -41,7 +41,7 @@ public:
 
     void drop() override;
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
     std::optional<UInt64> totalRows() const override;
     std::optional<UInt64> totalBytes() const override;

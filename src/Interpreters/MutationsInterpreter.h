@@ -32,12 +32,12 @@ public:
         const Context & context_,
         bool can_execute_);
 
-    void validate(TableStructureReadLockHolder & table_lock_holder);
+    void validate();
 
     size_t evaluateCommandsSize();
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
-    BlockInputStreamPtr execute(TableStructureReadLockHolder & table_lock_holder);
+    BlockInputStreamPtr execute();
 
     /// Only changed columns.
     const Block & getUpdatedHeader() const;

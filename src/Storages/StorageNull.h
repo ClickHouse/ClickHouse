@@ -44,7 +44,7 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
 
-    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
 
     std::optional<UInt64> totalRows() const override
     {

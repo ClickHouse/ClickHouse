@@ -103,7 +103,7 @@ public:
 
     bool optimize(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context) override;
 
-    void alter(const AlterCommands & params, const Context & query_context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & query_context, TableLockHolder & table_lock_holder) override;
 
     void alterPartition(
         const ASTPtr & query,
@@ -120,7 +120,7 @@ public:
       */
     void drop() override;
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
@@ -315,7 +315,7 @@ private:
     void checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
-    /// Must be called under IStorage::lockStructureForAlter() lock.
+    /// Must be called under IStorage::lockForAlter() lock.
     void setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff);
 
     /** Check that the set of parts corresponds to that in ZK (/replicas/me/parts/).

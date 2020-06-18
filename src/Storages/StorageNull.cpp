@@ -45,10 +45,8 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, const Set
 }
 
 
-void StorageNull::alter(
-    const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+void StorageNull::alter(const AlterCommands & params, const Context & context, TableLockHolder &)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
 
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();

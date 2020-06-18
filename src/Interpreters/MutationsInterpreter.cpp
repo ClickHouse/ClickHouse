@@ -671,7 +671,7 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::ve
     return in;
 }
 
-void MutationsInterpreter::validate(TableStructureReadLockHolder &)
+void MutationsInterpreter::validate()
 {
     const Settings & settings = context.getSettingsRef();
 
@@ -696,7 +696,7 @@ void MutationsInterpreter::validate(TableStructureReadLockHolder &)
     addStreamsForLaterStages(stages, in)->getHeader();
 }
 
-BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &)
+BlockInputStreamPtr MutationsInterpreter::execute()
 {
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);

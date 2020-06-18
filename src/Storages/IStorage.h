@@ -135,7 +135,7 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
-public: /// thread-unsafe part. lockStructure must be acquired
+public:
 
     StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata.get(); }
     StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
@@ -174,21 +174,11 @@ private:
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
 
 public:
-    /// Acquire this lock if you need the table structure to remain constant during the execution of
-    /// the query. If will_add_new_data is true, this means that the query will add new data to the table
-    /// (INSERT or a parts merge).
-    TableStructureReadLockHolder lockStructureForShare(bool will_add_new_data, const String & query_id, const SettingSeconds & acquire_timeout);
+    TableLockHolder lockForShare(const String & query_id, const SettingSeconds & acquire_timeout);
 
-    /// Acquire this lock at the start of ALTER to lock out other ALTERs and make sure that only you
-    /// can modify the table structure. It can later be upgraded to the exclusive lock.
-    TableStructureWriteLockHolder lockAlterIntention(const String & query_id, const SettingSeconds & acquire_timeout);
+    TableLockHolder lockForAlter(const String & query_id, const SettingSeconds & acquire_timeout);
 
-    /// Upgrade alter intention lock to the full exclusive structure lock. This is done by ALTER queries
-    /// to ensure that no other query uses the table structure and it can be safely changed.
-    void lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id, const SettingSeconds & acquire_timeout);
-
-    /// Acquire the full exclusive lock immediately. No other queries can run concurrently.
-    TableStructureWriteLockHolder lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout);
+    TableExclusiveLockHolder lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout);
 
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
@@ -297,7 +287,7 @@ public:
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /* metadata_snapshot */,
         const Context & /* context */,
-        TableStructureWriteLockHolder &)
+        TableExclusiveLockHolder &)
     {
         throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -323,7 +313,7 @@ public:
       * This method must fully execute the ALTER query, taking care of the locks itself.
       * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata->
       */
-    virtual void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder);
+    virtual void alter(const AlterCommands & params, const Context & context, TableLockHolder & alter_lock_holder);
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
@@ -441,22 +431,9 @@ public:
     }
 
 private:
-    /// You always need to take the next three locks in this order.
+    mutable RWLock alter_lock = RWLockImpl::create();
 
-    /// If you hold this lock exclusively, you can be sure that no other structure modifying queries
-    /// (e.g. ALTER, DROP) are concurrently executing. But queries that only read table structure
-    /// (e.g. SELECT, INSERT) can continue to execute.
-    mutable RWLock alter_intention_lock = RWLockImpl::create();
-
-    /// It is taken for share for the entire INSERT query and the entire merge of the parts (for MergeTree).
-    /// ALTER COLUMN queries acquire an exclusive lock to ensure that no new parts with the old structure
-    /// are added to the table and thus the set of parts to modify doesn't change.
-    mutable RWLock new_data_structure_lock = RWLockImpl::create();
-
-    /// Lock for the table column structure (names, types, etc.) and data path.
-    /// It is taken in exclusive mode by queries that modify them (e.g. RENAME, ALTER and DROP)
-    /// and in share mode by other queries.
-    mutable RWLock structure_lock = RWLockImpl::create();
+    mutable RWLock drop_lock = RWLockImpl::create();
 };
 
 }

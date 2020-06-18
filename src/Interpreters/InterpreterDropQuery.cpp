@@ -93,7 +93,7 @@ BlockIO InterpreterDropQuery::executeToTable(
         {
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->shutdown();
-            TableStructureWriteLockHolder table_lock;
+            TableExclusiveLockHolder table_lock;
             if (database->getEngineName() != "Atomic")
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table from memory, don't touch data and metadata
@@ -116,7 +116,7 @@ BlockIO InterpreterDropQuery::executeToTable(
 
             table->shutdown();
 
-            TableStructureWriteLockHolder table_lock;
+            TableExclusiveLockHolder table_lock;
             if (database->getEngineName() != "Atomic")
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 

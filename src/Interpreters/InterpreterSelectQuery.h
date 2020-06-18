@@ -185,7 +185,7 @@ private:
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
     StorageID table_id = StorageID::createEmpty();  /// Will be initialized if storage is not nullptr
-    TableStructureReadLockHolder table_lock;
+    TableLockHolder table_lock;
 
     /// Used when we read from prepared input, not table or subquery.
     BlockInputStreamPtr input;

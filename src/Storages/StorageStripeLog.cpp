@@ -326,7 +326,7 @@ CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, const Conte
     return file_checker.check();
 }
 
-void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
 

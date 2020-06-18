@@ -1436,7 +1436,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
 
 void MergeTreeData::changeSettings(
         const ASTPtr & new_settings,
-        TableStructureWriteLockHolder & /* table_lock_holder */)
+        TableLockHolder & /* table_lock_holder */)
 {
     if (new_settings)
     {
@@ -1481,7 +1481,7 @@ void MergeTreeData::changeSettings(
     }
 }
 
-void MergeTreeData::freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder &)
+void MergeTreeData::freezeAll(const String & with_name, const Context & context, TableLockHolder &)
 {
     freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
 }
@@ -2289,7 +2289,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 }
 
 
-void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context, TableStructureReadLockHolder &)
+void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context, TableLockHolder &)
 {
     std::optional<String> prefix;
     String partition_id;
