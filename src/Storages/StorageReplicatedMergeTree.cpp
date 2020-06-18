@@ -743,7 +743,7 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(zookeeper_prefix + "/metadata", &metadata_stat);
     auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
-    old_metadata.checkEquals(metadata_from_zk, getColumns(), global_context);
+    old_metadata.checkEquals(metadata_from_zk, metadata_snapshot->getColumns(), global_context);
 
     Coordination::Stat columns_stat;
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(zookeeper_prefix + "/columns", &columns_stat));
