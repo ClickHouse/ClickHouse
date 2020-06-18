@@ -267,15 +267,18 @@ void LDAPClient::closeConnection() noexcept
 
 bool LDAPSimpleAuthClient::check()
 {
-    bool result = false;
-
     if (params.user.empty())
         throw Exception("LDAP authentication of a user with an empty name is not allowed", ErrorCodes::BAD_ARGUMENTS);
+
+    if (params.password.empty())
+        return false; // Silently reject authentication attempt if the password is empty as if it didn't match.
 
     SCOPE_EXIT({ closeConnection(); });
 
     const bool graceful_bind_failure = true;
     const auto rc = openConnection(graceful_bind_failure);
+
+    bool result = false;
 
     switch (rc)
     {
