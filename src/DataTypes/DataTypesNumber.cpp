@@ -63,6 +63,7 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("REAL", "Float32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("SINGLE", "Float32", DataTypeFactory::CaseInsensitive);   /// MS Access
     factory.registerAlias("DOUBLE", "Float64", DataTypeFactory::CaseInsensitive);
+
     factory.registerAlias("DOUBLE PRECISION", "Float64", DataTypeFactory::CaseInsensitive);
 }
 
