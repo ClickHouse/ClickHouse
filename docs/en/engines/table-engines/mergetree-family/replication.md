@@ -63,7 +63,7 @@ For each `INSERT` query, approximately ten entries are added to ZooKeeper throug
 
 For very large clusters, you can use different ZooKeeper clusters for different shards. However, this hasn’t proven necessary on the Yandex.Metrica cluster (approximately 300 servers).
 
-Replication is asynchronous and multi-master. `INSERT` queries (as well as `ALTER`) can be sent to any available server. Data is inserted on the server where the query is run, and then it is copied to the other servers. Because it is asynchronous, recently inserted data appears on the other replicas with some latency. If part of the replicas are not available, the data is written when they become available. If a replica is available, the latency is the amount of time it takes to transfer the block of compressed data over the network. The number of threads performing background tasks for replicated tables can be set by [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size) setting.
+Replication is asynchronous and multi-master. `INSERT` queries (as well as `ALTER`) can be sent to any available server. Data is inserted on the server where the query is run, and then it is copied to the other servers. Because it is asynchronous, recently inserted data appears on the other replicas with some latency. If part of the replicas are not available, the data is written when they become available. If a replica is available, the latency is the amount of time it takes to transfer the block of compressed data over the network. The number of threads performing background tasks for replicated tables can be set by [background\_schedule\_pool\_size](../../../operations/settings/settings.md#background_schedule_pool_size) setting.
 
 By default, an INSERT query waits for confirmation of writing the data from only one replica. If the data was successfully written to only one replica and the server with this replica ceases to exist, the stored data will be lost. To enable getting confirmation of data writes from multiple replicas, use the `insert_quorum` option.
 
@@ -217,6 +217,6 @@ If the data in ZooKeeper was lost or damaged, you can save data by moving it to 
 
 **See also**
 
--   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
+-   [background\_schedule\_pool\_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/replication/) <!--hide-->

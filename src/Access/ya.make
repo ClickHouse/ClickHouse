@@ -17,7 +17,6 @@ SRCS(
     EnabledRolesInfo.cpp
     EnabledRowPolicies.cpp
     EnabledSettings.cpp
-    ExtendedRoleSet.cpp
     ExternalAuthenticators.cpp
     GrantedAccess.cpp
     GrantedRoles.cpp
@@ -31,6 +30,7 @@ SRCS(
     QuotaUsage.cpp
     Role.cpp
     RoleCache.cpp
+    RolesOrUsersSet.cpp
     RowPolicy.cpp
     RowPolicyCache.cpp
     SettingsConstraints.cpp

@@ -12,7 +12,7 @@ This engine:
 
 See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for details.
 
-The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
+The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
 
 ## Creating a Table {#creating-a-table}
 
@@ -47,7 +47,7 @@ VersionedCollapsingMergeTree(sign, version)
 
 **Query Clauses**
 
-When creating a `VersionedCollapsingMergeTree` table, the same [clauses](mergetree.md) are required as when creating a `MergeTree` table.
+When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required as when creating a `MergeTree` table.
 
 <details markdown="1">
 

@@ -10,12 +10,9 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
 #include <Storages/CheckResults.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/IndicesDescription.h>
-#include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/TTLDescription.h>
 #include <Storages/ColumnDependency.h>
+#include <Storages/SelectQueryDescription.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -141,6 +138,7 @@ public:
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
 public: /// thread-unsafe part. lockStructure must be acquired
+
     const ColumnsDescription & getColumns() const; /// returns combined set of columns
     void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
 
@@ -152,9 +150,17 @@ public: /// thread-unsafe part. lockStructure must be acquired
     const ConstraintsDescription & getConstraints() const;
     void setConstraints(ConstraintsDescription constraints_);
 
-    /// Returns storage metadata copy. Direct modification of
-    /// result structure doesn't affect storage.
-    virtual StorageInMemoryMetadata getInMemoryMetadata() const;
+    /// Storage settings
+    ASTPtr getSettingsChanges() const;
+    void setSettingsChanges(const ASTPtr & settings_changes_);
+    bool hasSettingsChanges() const { return metadata.settings_changes != nullptr; }
+
+    /// Select query for *View storages.
+    const SelectQueryDescription & getSelectQuery() const;
+    void setSelectQuery(const SelectQueryDescription & select_);
+    bool hasSelectQuery() const;
+
+    StorageInMemoryMetadata getInMemoryMetadata() const { return metadata; }
 
     Block getSampleBlock() const; /// ordinary + materialized.
     Block getSampleBlockWithVirtuals() const; /// ordinary + materialized + virtuals.
@@ -199,18 +205,9 @@ private:
     StorageID storage_id;
     mutable std::mutex id_mutex;
 
-    ColumnsDescription columns;
-    IndicesDescription secondary_indices;
-    ConstraintsDescription constraints;
-
-    StorageMetadataKeyField partition_key;
-    StorageMetadataKeyField primary_key;
-    StorageMetadataKeyField sorting_key;
-    StorageMetadataKeyField sampling_key;
-
-    TTLColumnsDescription column_ttls_by_name;
-    TTLTableDescription table_ttl;
-
+    /// TODO (alesap) just use multiversion for atomic metadata
+    mutable std::mutex ttl_mutex;
+    StorageInMemoryMetadata metadata;
 private:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
@@ -364,7 +361,7 @@ public:
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
       */
-    virtual void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings);
+    virtual void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const;
 
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.
@@ -443,12 +440,12 @@ public:
     virtual Strings getDataPaths() const { return {}; }
 
     /// Returns structure with partition key.
-    const StorageMetadataKeyField & getPartitionKey() const;
+    const KeyDescription & getPartitionKey() const;
     /// Set partition key for storage (methods bellow, are just wrappers for this
     /// struct).
-    void setPartitionKey(const StorageMetadataKeyField & partition_key_);
+    void setPartitionKey(const KeyDescription & partition_key_);
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
-    ASTPtr getPartitionKeyAST() const { return partition_key.definition_ast; }
+    ASTPtr getPartitionKeyAST() const { return metadata.partition_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) partition key.
     bool isPartitionKeyDefined() const;
     /// Storage has partition key.
@@ -458,12 +455,12 @@ public:
 
 
     /// Returns structure with sorting key.
-    const StorageMetadataKeyField & getSortingKey() const;
+    const KeyDescription & getSortingKey() const;
     /// Set sorting key for storage (methods bellow, are just wrappers for this
     /// struct).
-    void setSortingKey(const StorageMetadataKeyField & sorting_key_);
+    void setSortingKey(const KeyDescription & sorting_key_);
     /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
-    ASTPtr getSortingKeyAST() const { return sorting_key.definition_ast; }
+    ASTPtr getSortingKeyAST() const { return metadata.sorting_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sorting key.
     bool isSortingKeyDefined() const;
     /// Storage has sorting key. It means, that it contains at least one column.
@@ -475,12 +472,12 @@ public:
     Names getSortingKeyColumns() const;
 
     /// Returns structure with primary key.
-    const StorageMetadataKeyField & getPrimaryKey() const;
+    const KeyDescription & getPrimaryKey() const;
     /// Set primary key for storage (methods bellow, are just wrappers for this
     /// struct).
-    void setPrimaryKey(const StorageMetadataKeyField & primary_key_);
+    void setPrimaryKey(const KeyDescription & primary_key_);
     /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
-    ASTPtr getPrimaryKeyAST() const { return primary_key.definition_ast; }
+    ASTPtr getPrimaryKeyAST() const { return metadata.primary_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sorting key.
     bool isPrimaryKeyDefined() const;
     /// Storage has primary key (maybe part of some other key). It means, that
@@ -493,12 +490,12 @@ public:
     Names getPrimaryKeyColumns() const;
 
     /// Returns structure with sampling key.
-    const StorageMetadataKeyField & getSamplingKey() const;
+    const KeyDescription & getSamplingKey() const;
     /// Set sampling key for storage (methods bellow, are just wrappers for this
     /// struct).
-    void setSamplingKey(const StorageMetadataKeyField & sampling_key_);
+    void setSamplingKey(const KeyDescription & sampling_key_);
     /// Returns sampling expression AST for storage or nullptr if there is none.
-    ASTPtr getSamplingKeyAST() const { return sampling_key.definition_ast; }
+    ASTPtr getSamplingKeyAST() const { return metadata.sampling_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sampling key.
     bool isSamplingKeyDefined() const;
     /// Storage has sampling key.
@@ -517,22 +514,22 @@ public:
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
     /// Common tables TTLs (for rows and moves).
-    const TTLTableDescription & getTableTTLs() const;
+    TTLTableDescription getTableTTLs() const;
     void setTableTTLs(const TTLTableDescription & table_ttl_);
     bool hasAnyTableTTL() const;
 
     /// Separate TTLs for columns.
-    const TTLColumnsDescription & getColumnTTLs() const;
+    TTLColumnsDescription getColumnTTLs() const;
     void setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_);
     bool hasAnyColumnTTL() const;
 
     /// Just wrapper for table TTLs, return rows part of table TTLs.
-    const TTLDescription & getRowsTTL() const;
+    TTLDescription getRowsTTL() const;
     bool hasRowsTTL() const;
 
     /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
     /// table TTL.
-    const TTLDescriptions & getMoveTTLs() const;
+    TTLDescriptions getMoveTTLs() const;
     bool hasAnyMoveTTL() const;
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.

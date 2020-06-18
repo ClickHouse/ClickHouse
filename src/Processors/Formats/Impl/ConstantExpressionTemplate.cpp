@@ -74,7 +74,7 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
     size_t elements_num = nested_types.size();
     info.special_parser.nested_types.reserve(elements_num);
 
-    for (auto nested_type : nested_types)
+    for (auto & nested_type : nested_types)
     {
         /// It can be Array(Nullable(nested_type)) or Tuple(..., Nullable(nested_type), ...)
         bool is_nullable = false;
@@ -201,7 +201,10 @@ private:
 
     static void setDataType(LiteralInfo & info)
     {
-        /// Type (Field::Types:Which) of literal in AST can be: String, UInt64, Int64, Float64, Null or Array of simple literals (not of Arrays).
+        /// Type (Field::Types:Which) of literal in AST can be:
+        /// 1. simple literal type: String, UInt64, Int64, Float64, Null
+        /// 2. complex literal type: Array or Tuple of simple literals
+        /// 3. Array or Tuple of complex literals
         /// Null and empty Array literals are considered as tokens, because template with Nullable(Nothing) or Array(Nothing) is useless.
 
         Field::Types::Which field_type = info.literal->value.getType();
