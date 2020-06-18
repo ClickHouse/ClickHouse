@@ -63,7 +63,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<QueryPlan> plans)
     }
 
     for (auto & plan : plans)
-        nodes.insert(nodes.end(), plan.nodes.begin(), plan.nodes.end());
+        nodes.splice(nodes.end(), std::move(plan.nodes));
 
     nodes.emplace_back(Node{.step = std::move(step)});
     root = &nodes.back();
