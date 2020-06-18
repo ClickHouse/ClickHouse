@@ -20,12 +20,4 @@
     </metric_log>
 
     <uncompressed_cache_size>1000000000</uncompressed_cache_size>
-
-    <tmp_path replace="remove"/>
-    <user_files_path replace="remove"/>
-    <format_schema_path replace="remove"/>
-    <access_control_path replace="remove"/>
-
-    <!-- the following parameters may be modified with sed, see compare.sh -->
-    <path replace="replace">db0</path>
 </yandex>
