@@ -3633,13 +3633,16 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
     zookeeper->multi(requests);
 
-    LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
+    {
+        auto alter_lock = lockExclusively(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+        LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
-    auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, getInMemoryMetadataPtr()).checkAndFindDiff(metadata_from_entry);
-    setTableStructure(std::move(columns_from_entry), metadata_diff);
-    metadata_version = entry.alter_version;
+        auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, getInMemoryMetadataPtr()).checkAndFindDiff(metadata_from_entry);
+        setTableStructure(std::move(columns_from_entry), metadata_diff);
+        metadata_version = entry.alter_version;
 
-    LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", metadata_version);
+        LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", metadata_version);
+    }
 
     /// This transaction may not happen, but it's OK, because on the next retry we will eventually create/update this node
     zookeeper->createOrUpdate(replica_path + "/metadata_version", std::to_string(metadata_version), zkutil::CreateMode::Persistent);
