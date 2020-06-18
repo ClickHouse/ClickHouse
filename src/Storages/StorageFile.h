@@ -85,7 +85,7 @@ private:
 
     mutable std::shared_mutex rwlock;
 
-    Logger * log = &Logger::get("StorageFile");
+    Poco::Logger * log = &Poco::Logger::get("StorageFile");
 };
 
 }

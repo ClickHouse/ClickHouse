@@ -70,7 +70,7 @@ Chunk ValuesBlockInputFormat::generate()
         if (!templates[i] || !templates[i]->rowsCount())
             continue;
         if (columns[i]->empty())
-            columns[i] = std::move(*templates[i]->evaluateAll(block_missing_values, i)).mutate();
+            columns[i] = IColumn::mutate(templates[i]->evaluateAll(block_missing_values, i));
         else
         {
             ColumnPtr evaluated = templates[i]->evaluateAll(block_missing_values, i, columns[i]->size());
@@ -134,7 +134,7 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
     /// Expression in the current row is not match template deduced on the first row.
     /// Evaluate expressions, which were parsed using this template.
     if (column->empty())
-        column = std::move(*templates[column_idx]->evaluateAll(block_missing_values, column_idx)).mutate();
+        column = IColumn::mutate(templates[column_idx]->evaluateAll(block_missing_values, column_idx));
     else
     {
         ColumnPtr evaluated = templates[column_idx]->evaluateAll(block_missing_values, column_idx, column->size());

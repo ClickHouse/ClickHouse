@@ -3,7 +3,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <memory>
 #include <list>

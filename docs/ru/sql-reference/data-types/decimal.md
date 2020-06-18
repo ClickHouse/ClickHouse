@@ -29,9 +29,9 @@
 
 Результат операции между двумя Decimal расширяется до большего типа (независимо от порядка аргументов).
 
--   Decimal64(S1) <op> Decimal32(S2) -\> Decimal64(S)
--   Decimal128(S1) <op> Decimal32(S2) -\> Decimal128(S)
--   Decimal128(S1) <op> Decimal64(S2) -\> Decimal128(S)
+-   `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
+-   `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
+-   `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
 
 Для размера дробной части (scale) результата действуют следующие правила:
 

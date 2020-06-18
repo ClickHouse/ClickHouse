@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: "\u0630\u062E\u06CC\u0631\u0647 \u0648\u0627\u0698\u0647\u0646\u0627\u0645\
   \u0647\u0647\u0627 \u062F\u0631 \u062D\u0627\u0641\u0638\u0647"
@@ -57,6 +57,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [درهم](#dicts-external_dicts_dict_layout-hashed)
 -   [فشردهسازی](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [نهانگاه](#cache)
+-   [مستقیم](#direct)
 -   [رنگها](#range-hashed)
 -   [\_ساخت مجتمع](#complex-key-hashed)
 -   [\_پیچید\_چهای پیچیده](#complex-key-cache)
@@ -297,6 +298,28 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 
 این نوع ذخیره سازی برای استفاده با کامپوزیت است [کلید](external-dicts-dict-structure.md). مشابه به `cache`.
 
+### مستقیم {#direct}
+
+فرهنگ لغت در حافظه ذخیره نمی شود و به طور مستقیم به منبع می رود در طول پردازش یک درخواست.
+
+کلید فرهنگ لغت است `UInt64` نوع.
+
+همه انواع [منابع](external-dicts-dict-sources.md), به جز فایل های محلی, پشتیبانی می شوند.
+
+مثال پیکربندی:
+
+``` xml
+<layout>
+  <direct />
+</layout>
+```
+
+یا
+
+``` sql
+LAYOUT(DIRECT())
+```
+
 ### شمال اروپا {#ip-trie}
 
 این نوع ذخیره سازی برای پیشوندهای نقشه برداری شبکه (نشانی های اینترنتی) به فراداده مانند ان است.
@@ -355,7 +378,7 @@ PRIMARY KEY prefix
 
 کلید باید تنها یک ویژگی نوع رشته ای داشته باشد که شامل یک پیشوند مجاز است. انواع دیگر هنوز پشتیبانی نمی شوند.
 
-برای نمایش داده شد, شما باید توابع مشابه استفاده کنید (`dictGetT` با یک تاپل) به لغت نامه ها با کلید های ترکیبی:
+برای نمایش داده شد, شما باید توابع مشابه استفاده کنید (`dictGetT` با یک تاپل) به عنوان لغت نامه با کلید های کامپوزیت:
 
 ``` sql
 dictGetT('dict_name', 'attr_name', tuple(ip))

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 46
 toc_title: GenerateRandom
 ---
@@ -9,12 +9,12 @@ toc_title: GenerateRandom
 
 Le moteur de table GenerateRandom produit des données aléatoires pour un schéma de table donné.
 
-Exemples d’utilisation:
+Exemples d'utilisation:
 
 -   Utiliser dans le test pour remplir une grande table reproductible.
 -   Générer une entrée aléatoire pour les tests de fuzzing.
 
-## Utilisation Dans Le Serveur Clickhouse {#usage-in-clickhouse-server}
+## Utilisation dans le serveur ClickHouse {#usage-in-clickhouse-server}
 
 ``` sql
 ENGINE = GenerateRandom(random_seed, max_string_length, max_array_length)
@@ -49,7 +49,7 @@ SELECT * FROM generate_engine_table LIMIT 3
 └──────┴────────────┘
 ```
 
-## Les Détails De Mise En Œuvre {#details-of-implementation}
+## Les détails de mise en Œuvre {#details-of-implementation}
 
 -   Pas pris en charge:
     -   `ALTER`

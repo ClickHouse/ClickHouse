@@ -57,7 +57,16 @@ public:
     static uint8_t readMethod(const char * source);
 
     /// Some codecs may use information about column type which appears after codec creation
-    virtual void useInfoAboutType(DataTypePtr /* data_type */) { }
+    virtual void useInfoAboutType(DataTypePtr /* data_type */) {}
+
+    /// Return true if this codec actually compressing something. Otherwise it can be just transformation that helps compression (e.g. Delta).
+    virtual bool isCompression() const = 0;
+
+    /// Is it a generic compression algorithm like lz4, zstd. Usually it does not make sense to apply generic compression more than single time.
+    virtual bool isGenericCompression() const = 0;
+
+    /// If it does nothing.
+    virtual bool isNone() const { return false; }
 
 protected:
 

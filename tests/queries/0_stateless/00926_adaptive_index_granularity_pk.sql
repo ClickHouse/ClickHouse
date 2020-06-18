@@ -57,6 +57,7 @@ SET force_primary_key = 0;
 DROP TABLE IF EXISTS large_alter_table_00926;
 DROP TABLE IF EXISTS store_of_hash_00926;
 
+SET allow_suspicious_codecs = 1;
 CREATE TABLE large_alter_table_00926 (
     somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12)),
     id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC),

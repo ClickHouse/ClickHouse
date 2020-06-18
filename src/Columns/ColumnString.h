@@ -56,6 +56,7 @@ private:
 
 public:
     const char * getFamilyName() const override { return "String"; }
+    TypeIndex getDataType() const override { return TypeIndex::String; }
 
     size_t size() const override
     {
@@ -225,8 +226,12 @@ public:
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
+    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
+
     /// Sorting with respect of collation.
     void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const;
+
+    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation & res, EqualRanges& equal_range) const;
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
 

@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 40
 toc_title: "\u067E\u06CC\u0648\u0633\u062A\u0646"
 ---
 
 # پیوستن {#join}
 
-ساختار داده تهیه شده برای استفاده در [JOIN](../../../sql-reference/statements/select.md#select-join) عملیات.
+ساختار داده تهیه شده برای استفاده در [JOIN](../../../sql-reference/statements/select/join.md#select-join) عملیات.
 
 ## ایجاد یک جدول {#creating-a-table}
 
@@ -23,8 +23,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **پارامترهای موتور**
 
--   `join_strictness` – [پیوستن به سختی](../../../sql-reference/statements/select.md#select-join-strictness).
--   `join_type` – [پیوستن به نوع](../../../sql-reference/statements/select.md#select-join-types).
+-   `join_strictness` – [پیوستن به سختی](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_type` – [پیوستن به نوع](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` بند که `JOIN` عملیات با ساخته شده.
 
 وارد کردن `join_strictness` و `join_type` پارامترهای بدون نقل قول, مثلا, `Join(ANY, LEFT, col1)`. اونا باید با `JOIN` عملیاتی که جدول خواهد شد برای استفاده. اگر پارامترها مطابقت ندارند, خانه عروسکی می کند یک استثنا پرتاب نمی کند و ممکن است داده های نادرست بازگشت.
@@ -100,7 +100,7 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 این `Join`- جداول موتور نمی تواند مورد استفاده قرار گیرد `GLOBAL JOIN` عملیات.
 
-این `Join`- موتور اجازه می دهد تا استفاده کنید [ارزشهای خبری عبارتند از:](../../../operations/settings/settings.md#join_use_nulls) تنظیم در `CREATE TABLE` بیانیه. و [SELECT](../../../sql-reference/statements/select.md) پرسوجو به کار میرود `join_use_nulls` منم همینطور اگر شما متفاوت است `join_use_nulls` تنظیمات, شما می توانید یک خطا پیوستن به جدول از. این بستگی به نوع پیوستن دارد. هنگام استفاده [جوینت](../../../sql-reference/functions/other-functions.md#joinget) تابع, شما مجبور به استفاده از همان `join_use_nulls` تنظیم در `CRATE TABLE` و `SELECT` اظهارات.
+این `Join`- موتور اجازه می دهد تا استفاده کنید [ارزشهای خبری عبارتند از:](../../../operations/settings/settings.md#join_use_nulls) تنظیم در `CREATE TABLE` بیانیه. و [SELECT](../../../sql-reference/statements/select/index.md) پرسوجو به کار میرود `join_use_nulls` منم همینطور اگر شما متفاوت است `join_use_nulls` تنظیمات, شما می توانید یک خطا پیوستن به جدول از. این بستگی به نوع پیوستن دارد. هنگام استفاده [جوینت](../../../sql-reference/functions/other-functions.md#joinget) تابع, شما مجبور به استفاده از همان `join_use_nulls` تنظیم در `CRATE TABLE` و `SELECT` اظهارات.
 
 ## ذخیره سازی داده ها {#data-storage}
 

@@ -63,7 +63,7 @@ private:
     bool last_block_is_duplicate = false;
 
     using Logger = Poco::Logger;
-    Logger * log;
+    Poco::Logger * log;
 };
 
 }

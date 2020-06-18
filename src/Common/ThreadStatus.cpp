@@ -1,9 +1,7 @@
 #include <sstream>
 
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/TaskStatsInfoGetter.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 
@@ -24,19 +22,10 @@ namespace ErrorCodes
 thread_local ThreadStatus * current_thread = nullptr;
 
 
-TasksStatsCounters TasksStatsCounters::current()
-{
-    TasksStatsCounters res;
-    CurrentThread::get().taskstats_getter->getStat(res.stat, CurrentThread::get().thread_id);
-    return res;
-}
-
 ThreadStatus::ThreadStatus()
+    : thread_id{getThreadId()}
 {
-    thread_id = getThreadId();
-
     last_rusage = std::make_unique<RUsageCounters>();
-    last_taskstats = std::make_unique<TasksStatsCounters>();
 
     memory_tracker.setDescription("(for thread)");
     log = &Poco::Logger::get("ThreadStatus");
@@ -67,46 +56,13 @@ ThreadStatus::~ThreadStatus()
     current_thread = nullptr;
 }
 
-void ThreadStatus::initPerformanceCounters()
-{
-    performance_counters_finalized = false;
-
-    /// Clear stats from previous query if a new query is started
-    /// TODO: make separate query_thread_performance_counters and thread_performance_counters
-    performance_counters.resetCounters();
-    memory_tracker.resetCounters();
-    memory_tracker.setDescription("(for thread)");
-
-    query_start_time_nanoseconds = getCurrentTimeNanoseconds();
-    query_start_time = time(nullptr);
-    ++queries_started;
-
-    *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
-
-    try
-    {
-        if (TaskStatsInfoGetter::checkPermissions())
-        {
-            if (!taskstats_getter)
-                taskstats_getter = std::make_unique<TaskStatsInfoGetter>();
-
-            *last_taskstats = TasksStatsCounters::current();
-        }
-    }
-    catch (...)
-    {
-        taskstats_getter.reset();
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
 void ThreadStatus::updatePerformanceCounters()
 {
     try
     {
         RUsageCounters::updateProfileEvents(*last_rusage, performance_counters);
-        if (taskstats_getter)
-            TasksStatsCounters::updateProfileEvents(*last_taskstats, performance_counters);
+        if (taskstats)
+            taskstats->updateCounters(performance_counters);
     }
     catch (...)
     {

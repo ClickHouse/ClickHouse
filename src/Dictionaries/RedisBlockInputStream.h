@@ -2,16 +2,11 @@
 
 #include <Core/Block.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
-
-#if USE_POCO_REDIS
-#   include <Core/ExternalResultDescription.h>
-#   include <DataStreams/IBlockInputStream.h>
-#   include "RedisDictionarySource.h"
-#   include <Poco/Redis/Array.h>
-#   include <Poco/Redis/Type.h>
+#include <Core/ExternalResultDescription.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <Poco/Redis/Array.h>
+#include <Poco/Redis/Type.h>
+#include "RedisDictionarySource.h"
 
 namespace Poco
 {
@@ -56,5 +51,3 @@ namespace DB
     };
 
 }
-
-#endif

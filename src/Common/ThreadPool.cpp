@@ -234,14 +234,6 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                     --scheduled_jobs;
                 }
 
-                DB::tryLogCurrentException("ThreadPool",
-                    std::string("Exception in ThreadPool(") +
-                    "max_threads: " + std::to_string(max_threads)
-                    + ", max_free_threads: " + std::to_string(max_free_threads)
-                    + ", queue_size: " + std::to_string(queue_size)
-                    + ", shutdown_on_exception: " + std::to_string(shutdown_on_exception)
-                    + ").");
-
                 job_finished.notify_all();
                 new_job_or_shutdown.notify_all();
                 return;

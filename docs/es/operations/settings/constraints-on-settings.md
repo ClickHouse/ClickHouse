@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 62
 toc_title: "Restricciones en la configuraci\xF3n"
 ---
 
-# Restricciones En La configuración {#constraints-on-settings}
+# Restricciones en la configuración {#constraints-on-settings}
 
 Las restricciones en los ajustes se pueden definir en el `profiles` sección de la `user.xml` el archivo de configuración y prohíba a los usuarios cambiar algunos de los ajustes `SET` consulta.
 Las restricciones se definen como las siguientes:

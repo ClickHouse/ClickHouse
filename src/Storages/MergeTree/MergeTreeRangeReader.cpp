@@ -905,7 +905,9 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             if (prewhere->remove_prewhere_column)
                 result.columns.erase(result.columns.begin() + prewhere_column_pos);
             else
-                result.columns[prewhere_column_pos] = DataTypeUInt8().createColumnConst(result.num_rows, 1u)->convertToFullColumnIfConst();
+                result.columns[prewhere_column_pos] =
+                        getSampleBlock().getByName(prewhere->prewhere_column_name).type->
+                                createColumnConst(result.num_rows, 1u)->convertToFullColumnIfConst();
         }
     }
     /// Filter in WHERE instead

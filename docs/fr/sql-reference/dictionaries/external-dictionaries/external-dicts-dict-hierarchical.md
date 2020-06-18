@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 45
 toc_title: "Dictionnaires hi\xE9rarchiques"
 ---
@@ -35,11 +35,11 @@ Cette hiérarchie peut être exprimée comme la table de dictionnaire suivante.
 | 4          | 0              | La Grande-Bretagne |
 | 5          | 4              | Londres            |
 
-Ce tableau contient une colonne `parent_region` qui contient la clé du parent le plus proche de l’élément.
+Ce tableau contient une colonne `parent_region` qui contient la clé du parent le plus proche de l'élément.
 
 Clickhouse soutient le [hiérarchique](external-dicts-dict-structure.md#hierarchical-dict-attr) propriété pour [externe dictionnaire](index.md) attribut. Cette propriété vous permet de configurer le dictionnaire hiérarchique comme décrit ci-dessus.
 
-Le [dictGetHierarchy](../../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy) la fonction vous permet d’obtenir la chaîne parent d’un élément.
+Le [dictGetHierarchy](../../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy) la fonction vous permet d'obtenir la chaîne parent d'un élément.
 
 Pour notre exemple, la structure du dictionnaire peut être la suivante:
 

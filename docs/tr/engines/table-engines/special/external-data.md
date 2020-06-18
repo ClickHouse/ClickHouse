@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 34
 toc_title: "D\u0131\u015F veri"
 ---
 
-# Sorgu işleme için Harici Veriler {#external-data-for-query-processing}
+# Sorgu işleme için harici veriler {#external-data-for-query-processing}
 
 ClickHouse bir sunucu bir SELECT sorgusu ile birlikte bir sorgu işlemek için gerekli olan verileri gönderme sağlar. Bu veriler geçici bir tabloya konur (bölüme bakın “Temporary tables”) ve sorguda kullanılabilir (örneğin, işleçlerde).
 
 Örneğin, önemli kullanıcı tanımlayıcılarına sahip bir metin dosyanız varsa, bu listeyi süzme kullanan bir sorgu ile birlikte sunucuya yükleyebilirsiniz.
 
-Büyük hacimli dış verilerle birden fazla sorgu çalıştırmanız gerekiyorsa, bu özelliği kullanmayın. Verileri vaktinden önce DB’YE yüklemek daha iyidir.
+Büyük hacimli dış verilerle birden fazla sorgu çalıştırmanız gerekiyorsa, bu özelliği kullanmayın. Verileri vaktinden önce DB'YE yüklemek daha iyidir.
 
 Harici veriler komut satırı istemcisi (etkileşimli olmayan modda) veya HTTP arabirimi kullanılarak yüklenebilir.
 
@@ -25,7 +25,7 @@ Komut satırı istemcisinde, formatta bir parametreler bölümü belirtebilirsin
 
 **–external** – Marks the beginning of a clause.
 **–file** – Path to the file with the table dump, or -, which refers to stdin.
-Stdın’den yalnızca tek bir tablo alınabilir.
+Stdın'den yalnızca tek bir tablo alınabilir.
 
 Aşağıdaki parametreler isteğe bağlıdır: **–name**– Name of the table. If omitted, \_data is used.
 **–format** – Data format in the file. If omitted, TabSeparated is used.

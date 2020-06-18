@@ -167,7 +167,7 @@ public:
         this->data(place).set.read(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
@@ -229,7 +229,7 @@ public:
         this->data(place).set.read(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }

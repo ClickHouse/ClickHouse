@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
 toc_title: SHOW
 ---
@@ -100,6 +100,70 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 │ regions      │
 │ region_names │
 └──────────────┘
+```
+
+## SHOW GRANTS {#show-grants-statement}
+
+显示用户的权限。
+
+### 语法 {#show-grants-syntax}
+
+``` sql
+SHOW GRANTS [FOR user]
+```
+
+如果未指定user，则查询返回当前用户的权限。
+
+## SHOW CREATE USER {#show-create-user-statement}
+
+显示了在使用的参数 [用户创建](create.md#create-user-statement).
+
+`SHOW CREATE USER` 不输出用户密码。
+
+### 语法 {#show-create-user-syntax}
+
+``` sql
+SHOW CREATE USER [name | CURRENT_USER]
+```
+
+## SHOW CREATE ROLE {#show-create-role-statement}
+
+显示了在使用的参数 [角色创建](create.md#create-role-statement)
+
+### 语法 {#show-create-role-syntax}
+
+``` sql
+SHOW CREATE ROLE name
+```
+
+## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
+
+显示了在使用的参数 [创建行策略](create.md#create-row-policy-statement)
+
+### 语法 {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE [ROW] POLICY name ON [database.]table
+```
+
+## SHOW CREATE QUOTA {#show-create-quota-statement}
+
+显示了在使用的参数 [创建配额](create.md#create-quota-statement)
+
+### 语法 {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE QUOTA [name | CURRENT]
+```
+
+## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
+
+显示了在使用的参数 [设置配置文件创建](create.md#create-settings-profile-statement)
+
+### 语法 {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE [SETTINGS] PROFILE name
 ```
 
 [原始文章](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

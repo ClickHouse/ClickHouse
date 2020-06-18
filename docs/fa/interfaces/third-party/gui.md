@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 28
 toc_title: "\u0631\u0627\u0628\u0637 \u0647\u0627\u06CC \u0628\u0635\u0631\u06CC"
 ---
@@ -59,7 +59,7 @@ toc_title: "\u0631\u0627\u0628\u0637 \u0647\u0627\u06CC \u0628\u0635\u0631\u06CC
 
 [قرمز](https://github.com/getredash/redash) یک پلت فرم برای تجسم داده ها است.
 
-پشتیبانی از منابع چندگانه داده ها از جمله clickhouse, redash می توانید پیوستن به نتایج حاصل از پرس و جو از داده های مختلف منابع را به یکی از نهایی مجموعه.
+پشتیبانی از منابع چندگانه داده ها از جمله ClickHouse, Redash می توانید پیوستن به نتایج حاصل از پرس و جو از داده های مختلف منابع را به یکی از نهایی مجموعه.
 
 ویژگی ها:
 
@@ -92,6 +92,10 @@ toc_title: "\u0631\u0627\u0628\u0637 \u0647\u0627\u06CC \u0628\u0635\u0631\u06CC
 ### کلیک-شق {#clickhouse-flamegraph}
 
 [کلیک-شق](https://github.com/Slach/clickhouse-flamegraph) یک ابزار تخصصی برای تجسم است `system.trace_log` به عنوان [شق](http://www.brendangregg.com/flamegraphs.html).
+
+### کارخانه کلیک {#clickhouse-plantuml}
+
+[cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) یک اسکریپت برای تولید است [PlantUML](https://plantuml.com/) نمودار طرح جداول.
 
 ## بازرگانی {#commercial}
 

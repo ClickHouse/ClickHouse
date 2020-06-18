@@ -1,8 +1,8 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
-toc_title: "Parametrik agrega fonksiyonlar\u0131"
+toc_title: Parametrik
 ---
 
 # Parametrik Agrega Fonksiyonları {#aggregate_functions_parametric}
@@ -111,7 +111,7 @@ Tür: `UInt8`.
 
 -   `(?N)` — Matches the condition argument at position `N`. Şartlar numaralandırılmıştır `[1, 32]` Aralık. Mesela, `(?1)` argü theman thela eşleş their `cond1` parametre.
 
--   `.*` — Matches any number of events. You don’t need conditional arguments to match this element of the pattern.
+-   `.*` — Matches any number of events. You don't need conditional arguments to match this element of the pattern.
 
 -   `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` birbirinden 1800 saniyeden fazla meydana gelen olayları eşleşir. Bu olaylar arasında herhangi bir olayın keyfi bir sayısı olabilir. Kullanabilirsiniz `>=`, `>`, `<`, `<=` operatörler.
 
@@ -229,7 +229,7 @@ Kayan bir zaman penceresinde olay zincirlerini arar ve zincirden meydana gelen e
 
 Fonksiyon algoritmaya göre çalışır:
 
--   İşlev, zincirdeki ilk koşulu tetikleyen ve olay sayacını 1’e ayarlayan verileri arar. Sürgülü pencerenin başladığı an budur.
+-   İşlev, zincirdeki ilk koşulu tetikleyen ve olay sayacını 1'e ayarlayan verileri arar. Sürgülü pencerenin başladığı an budur.
 
 -   Zincirdeki olaylar pencerede sırayla gerçekleşirse, sayaç artırılır. Olayların sırası bozulursa, sayaç artırılmaz.
 
@@ -246,7 +246,7 @@ windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 -   `window` — Length of the sliding window in seconds.
 -   `mode` - Bu isteğe bağlı bir argüman.
     -   `'strict'` - Zaman `'strict'` ayarlanırsa, windowFunnel () yalnızca benzersiz değerler için koşullar uygular.
--   `timestamp` — Name of the column containing the timestamp. Data types supported: [Tarihli](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) ve diğer imzasız tamsayı türleri (timestamp’ın `UInt64` yazın, değeri 2^63 - 1 olan Int64 maksimum değerini aşamaz).
+-   `timestamp` — Name of the column containing the timestamp. Data types supported: [Tarihli](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) ve diğer imzasız tamsayı türleri (timestamp'ın `UInt64` yazın, değeri 2^63 - 1 olan Int64 maksimum değerini aşamaz).
 -   `cond` — Conditions or data describing the chain of events. [Uİnt8](../../sql-reference/data-types/int-uint.md).
 
 **Döndürülen değer**
@@ -315,8 +315,8 @@ Sonuç:
 
 ## saklama {#retention}
 
-İşlev, bağımsız değişken olarak 1’den 32’ye kadar bir dizi koşul türünü alır `UInt8` bu, etkinlik için belirli bir koşulun karşılanıp karşılanmadığını gösterir.
-Herhangi bir koşul bir argüman olarak belirtilebilir (aşağıdaki gibi [WHERE](../../sql-reference/statements/select.md#select-where)).
+İşlev, bağımsız değişken olarak 1'den 32'ye kadar bir dizi koşul türünü alır `UInt8` bu, etkinlik için belirli bir koşulun karşılanıp karşılanmadığını gösterir.
+Herhangi bir koşul bir argüman olarak belirtilebilir (aşağıdaki gibi [WHERE](../../sql-reference/statements/select/where.md#select-where)).
 
 İlk hariç, koşullar çiftler halinde geçerlidir: birinci ve ikinci doğruysa, ikincinin sonucu, birinci ve fird doğruysa, üçüncüsü doğru olacaktır.
 
@@ -335,7 +335,7 @@ retention(cond1, cond2, ..., cond32);
 1 veya 0 dizisi.
 
 -   1 — condition was met for the event.
--   0 — condition wasn’t met for the event.
+-   0 — condition wasn't met for the event.
 
 Tür: `UInt8`.
 
@@ -402,7 +402,7 @@ Sonuç:
 └────────────┴─────┘
 ```
 
-**2.** Kullanıcıları benzersiz kimliğe göre grupla `uid` kullanarak `retention` işlev.
+**2.** Kullanıcıları benzersiz kimliğe göre grupla `uid` kullanarak `retention` İşlev.
 
 Sorgu:
 
@@ -476,14 +476,14 @@ Nerede:
 
 Calculates the number of different argument values ​​if it is less than or equal to N. If the number of different argument values is greater than N, it returns N + 1.
 
-Küçük Ns ile kullanım için tavsiye, kadar 10. N’nin maksimum değeri 100’dür.
+Küçük Ns ile kullanım için tavsiye, kadar 10. N'nin maksimum değeri 100'dür.
 
 Bir toplama işlevinin durumu için, 1 + n \* bir bayt değerinin boyutuna eşit bellek miktarını kullanır.
 Dizeler için, 8 baytlık kriptografik olmayan bir karma saklar. Yani, hesaplama dizeler için yaklaşık olarak hesaplanır.
 
 İşlev ayrıca birkaç argüman için de çalışır.
 
-Büyük bir N değeri kullanıldığında ve benzersiz değerlerin sayısı n’den biraz daha az olduğu durumlar dışında mümkün olduğunca hızlı çalışır.
+Büyük bir N değeri kullanıldığında ve benzersiz değerlerin sayısı n'den biraz daha az olduğu durumlar dışında mümkün olduğunca hızlı çalışır.
 
 Kullanım örneği:
 

@@ -1,15 +1,16 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Parsers/IAST_fwd.h>
 
 #include <Processors/QueryPipeline.h>
 
 namespace DB
 {
 
+class Context;
 class InterpreterSelectQuery;
 
 
@@ -27,12 +28,6 @@ public:
     ~InterpreterSelectWithUnionQuery() override;
 
     BlockIO execute() override;
-
-    /// Execute the query without union of streams.
-    BlockInputStreams executeWithMultipleStreams(QueryPipeline & parent_pipeline);
-
-    QueryPipeline executeWithProcessors() override;
-    bool canExecuteWithProcessors() const override { return true; }
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }

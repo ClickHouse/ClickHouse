@@ -19,14 +19,16 @@ namespace Memory
 
 inline ALWAYS_INLINE void trackMemory(std::size_t size)
 {
+    std::size_t actual_size = size;
+
 #if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 5
     /// The nallocx() function allocates no memory, but it performs the same size computation as the mallocx() function
     /// @note je_mallocx() != je_malloc(). It's expected they don't differ much in allocation logic.
     if (likely(size != 0))
-        CurrentMemoryTracker::alloc(nallocx(size, 0));
-#else
-    CurrentMemoryTracker::alloc(size);
+        actual_size = nallocx(size, 0);
 #endif
+
+    CurrentMemoryTracker::alloc(actual_size);
 }
 
 inline ALWAYS_INLINE bool trackMemoryNoExcept(std::size_t size) noexcept

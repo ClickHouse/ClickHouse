@@ -44,7 +44,7 @@ public:
         {
             num_rows = limit_rows;
             for (auto & column : columns)
-                column = (*column->cut(0, num_rows)).mutate();
+                column = IColumn::mutate(column->cut(0, num_rows));
         }
 
         need_flush = true;

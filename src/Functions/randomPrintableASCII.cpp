@@ -3,7 +3,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <Common/thread_local_rng.h>
+#include <pcg_random.hpp>
+#include <Common/randomSeed.h>
 
 
 namespace DB
@@ -61,6 +62,8 @@ public:
         ColumnString::Offsets & offsets_to = col_to->getOffsets();
         offsets_to.resize(input_rows_count);
 
+        pcg64_fast rng(randomSeed());
+
         const IColumn & length_column = *block.getByPosition(arguments[0]).column;
 
         IColumn::Offset offset = 0;
@@ -77,7 +80,7 @@ public:
             auto * data_to_ptr = data_to.data();    /// avoid assert on array indexing after end
             for (size_t pos = offset, end = offset + length; pos < end; pos += 4)    /// We have padding in column buffers that we can overwrite.
             {
-                UInt64 rand = thread_local_rng();
+                UInt64 rand = rng();
 
                 UInt16 rand1 = rand;
                 UInt16 rand2 = rand >> 16;

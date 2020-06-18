@@ -24,13 +24,14 @@ Some local filesystems provide snapshot functionality (for example, [ZFS](https:
 
 ## clickhouse-copier {#clickhouse-copier}
 
-[clickhouse-copier](utilities/clickhouse-copier.md) is a versatile tool that was initially created to re-shard petabyte-sized tables. It can also be used for backup and restore purposes because it reliably copies data between ClickHouse tables and clusters.
+[clickhouse-copier](../operations/utilities/clickhouse-copier.md) is a versatile tool that was initially created to re-shard petabyte-sized tables. It can also be used for backup and restore purposes because it reliably copies data between ClickHouse tables and clusters.
 
 For smaller volumes of data, a simple `INSERT INTO ... SELECT ...` to remote tables might work as well.
 
 ## Manipulations with Parts {#manipulations-with-parts}
 
 ClickHouse allows using the `ALTER TABLE ... FREEZE PARTITION ...` query to create a local copy of table partitions. This is implemented using hardlinks to the `/var/lib/clickhouse/shadow/` folder, so it usually does not consume extra disk space for old data. The created copies of files are not handled by ClickHouse server, so you can just leave them there: you will have a simple backup that doesn’t require any additional external system, but it will still be prone to hardware issues. For this reason, it’s better to remotely copy them to another location and then remove the local copies. Distributed filesystems and object stores are still a good options for this, but normal attached file servers with a large enough capacity might work as well (in this case the transfer will occur via the network filesystem or maybe [rsync](https://en.wikipedia.org/wiki/Rsync)).
+Data can be restored from backup using the `ALTER TABLE ... ATTACH PARTITION ...`
 
 For more information about queries related to partition manipulations, see the [ALTER documentation](../sql-reference/statements/alter.md#alter_manipulations-with-partitions).
 

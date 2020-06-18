@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 52
 toc_title: "Kodlam\u0131\u015F"
 ---
 
-# Kodlama fonksiyonları {#encoding-functions}
+# Kodlama Fonksiyonları {#encoding-functions}
 
 ## kömürleşmek {#char}
 
-Geçirilen bağımsız değişkenlerin sayısı olarak uzunluğu olan dizeyi döndürür ve her bayt karşılık gelen bağımsız değişken değerine sahiptir. Sayısal türlerin birden çok bağımsız değişkeni kabul eder. Bağımsız değişken değeri uint8 veri türü aralığının dışındaysa, Olası yuvarlama ve taşma ile Uint8’e dönüştürülür.
+Geçirilen bağımsız değişkenlerin sayısı olarak uzunluğu olan dizeyi döndürür ve her bayt karşılık gelen bağımsız değişken değerine sahiptir. Sayısal türlerin birden çok bağımsız değişkeni kabul eder. Bağımsız değişken değeri uint8 veri türü aralığının dışındaysa, Olası yuvarlama ve taşma ile Uint8'e dönüştürülür.
 
 **Sözdizimi**
 
@@ -107,7 +107,7 @@ Tip değerleri `Date` ve `DateTime` karşılık gelen tamsayılar olarak biçiml
 
 İçin `String` ve `FixedString`, tüm bayt sadece iki onaltılık sayı olarak kodlanır. Sıfır bayt ihmal edilmez.
 
-Kayan nokta ve ondalık türlerinin değerleri, bellekteki gösterimi olarak kodlanır. Küçük endian mimarisini desteklediğimiz için, bunlar küçük endian’da kodlanmıştır. Sıfır önde gelen / sondaki bayt ihmal edilmez.
+Kayan nokta ve ondalık türlerinin değerleri, bellekteki gösterimi olarak kodlanır. Küçük endian mimarisini desteklediğimiz için, bunlar küçük endian'da kodlanmıştır. Sıfır önde gelen / sondaki bayt ihmal edilmez.
 
 **Parametre**
 

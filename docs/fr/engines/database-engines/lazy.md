@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 31
 toc_title: Paresseux
 ---
@@ -11,7 +11,7 @@ Conserve les tables en RAM uniquement `expiration_time_in_seconds` secondes apr�
 
 Il est optimisé pour stocker de nombreuses petites tables \*Log, pour lesquelles il y a un long intervalle de temps entre les accès.
 
-## La création d’une Base De données {#creating-a-database}
+## La création d'une Base de données {#creating-a-database}
 
     CREATE DATABASE testlazy ENGINE = Lazy(expiration_time_in_seconds);
 

@@ -28,7 +28,7 @@ public:
     void exception()                        override { logException(); }
 
 private:
-    Logger * log = &Logger::get("ServerErrorHandler");
+    Poco::Logger * log = &Poco::Logger::get("ServerErrorHandler");
 
     void logException()
     {

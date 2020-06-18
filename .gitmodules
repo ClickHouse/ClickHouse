@@ -148,9 +148,23 @@
 	path = contrib/avro
 	url = https://github.com/ClickHouse-Extras/avro.git
 	ignore = untracked
-[submodule "website/images/feathericons"]
-	path = website/images/feathericons
-	url = https://github.com/feathericons/feather
 [submodule "contrib/msgpack-c"]
 	path = contrib/msgpack-c
 	url = https://github.com/msgpack/msgpack-c
+[submodule "contrib/libcpuid"]
+	path = contrib/libcpuid
+	url = https://github.com/ClickHouse-Extras/libcpuid.git
+[submodule "contrib/openldap"]
+	path = contrib/openldap
+	url = https://github.com/openldap/openldap.git
+[submodule "contrib/cassandra"]
+	path = contrib/cassandra
+	url = https://github.com/ClickHouse-Extras/cpp-driver.git
+	branch = clickhouse
+[submodule "contrib/libuv"]
+	path = contrib/libuv
+	url = https://github.com/ClickHouse-Extras/libuv.git
+	branch = clickhouse
+[submodule "contrib/fmtlib"]
+	path = contrib/fmtlib
+	url = https://github.com/fmtlib/fmt.git

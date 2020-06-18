@@ -9,6 +9,23 @@ if (ENABLE_JEMALLOC)
     option (USE_INTERNAL_JEMALLOC "Use internal jemalloc library" ${NOT_UNBUNDLED})
 
     if (USE_INTERNAL_JEMALLOC)
+        # ThreadPool select job randomly, and there can be some threads that had been
+        # performed some memory heavy task before and will be inactive for some time,
+        # but until it will became active again, the memory will not be freed since by
+        # default each thread has it's own arena, but there should be not more then
+        # 4*CPU arenas (see opt.nareans description).
+        #
+        # By enabling percpu_arena number of arenas limited to number of CPUs and hence
+        # this problem should go away.
+        set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0")
+        # CACHE variable is empty, to allow changing defaults without necessity
+        # to purge cache
+        set (JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE "" CACHE STRING "Change default configuration string of JEMalloc" )
+        if (JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE)
+            set (JEMALLOC_CONFIG_MALLOC_CONF "${JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE}")
+        endif()
+        message (STATUS "jemalloc malloc_conf: ${JEMALLOC_CONFIG_MALLOC_CONF}")
+
         set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc")
 
         set (SRCS
@@ -44,6 +61,7 @@ if (ENABLE_JEMALLOC)
             ${LIBRARY_DIR}/src/ticker.c
             ${LIBRARY_DIR}/src/tsd.c
             ${LIBRARY_DIR}/src/witness.c
+            ${LIBRARY_DIR}/src/safety_check.c
         )
         if (OS_DARWIN)
             list(APPEND SRCS ${LIBRARY_DIR}/src/zone.c)
@@ -51,12 +69,20 @@ if (ENABLE_JEMALLOC)
 
         add_library(jemalloc ${SRCS})
         target_include_directories(jemalloc PRIVATE ${LIBRARY_DIR}/include)
-        target_include_directories(jemalloc PUBLIC include)
+        target_include_directories(jemalloc SYSTEM PUBLIC include)
+
+        set(JEMALLOC_INCLUDE)
         if (ARCH_AMD64)
-            target_include_directories(jemalloc PUBLIC include_linux_x86_64)
+            set(JEMALLOC_INCLUDE_PREFIX include_linux_x86_64)
         elseif (ARCH_ARM)
-            target_include_directories(jemalloc PUBLIC include_linux_aarch64)
+            set(JEMALLOC_INCLUDE_PREFIX include_linux_aarch64)
         endif ()
+        target_include_directories(jemalloc SYSTEM PUBLIC
+            ${JEMALLOC_INCLUDE_PREFIX})
+        configure_file(${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_defs.h.in
+            ${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_defs.h)
+        target_include_directories(jemalloc SYSTEM PRIVATE
+            ${CMAKE_CURRENT_BINARY_DIR}/${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal)
 
         target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
 
@@ -69,7 +95,9 @@ if (ENABLE_JEMALLOC)
             endif ()
         endif ()
 
-        target_compile_options(jemalloc PUBLIC -Wno-redundant-decls)
+        target_compile_options(jemalloc PRIVATE -Wno-redundant-decls)
+        # for RTLD_NEXT
+        target_compile_options(jemalloc PRIVATE -D_GNU_SOURCE)
     else ()
         find_library(LIBRARY_JEMALLOC jemalloc)
         find_path(INCLUDE_JEMALLOC jemalloc/jemalloc.h)

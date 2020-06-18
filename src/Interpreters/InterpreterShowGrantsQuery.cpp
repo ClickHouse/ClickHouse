@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Parsers/ASTShowGrantsQuery.h>
 #include <Parsers/ASTGrantQuery.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnString.h>
@@ -10,8 +10,9 @@
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
 #include <Access/Role.h>
-#include <boost/range/adaptor/map.hpp>
-#include <boost/range/algorithm/copy.hpp>
+#include <Access/RolesOrUsersSet.h>
+#include <boost/range/algorithm/sort.hpp>
+#include <boost/range/algorithm_ext/push_back.hpp>
 
 
 namespace DB
@@ -23,37 +24,6 @@ namespace ErrorCodes
 
 namespace
 {
-    std::vector<AccessRightsElements> groupByTable(AccessRightsElements && elements)
-    {
-        using Key = std::tuple<String, bool, String, bool>;
-        std::map<Key, AccessRightsElements> grouping_map;
-        for (auto & element : elements)
-        {
-            Key key(element.database, element.any_database, element.table, element.any_table);
-            grouping_map[key].emplace_back(std::move(element));
-        }
-        std::vector<AccessRightsElements> res;
-        res.reserve(grouping_map.size());
-        boost::range::copy(grouping_map | boost::adaptors::map_values, std::back_inserter(res));
-        return res;
-    }
-
-
-    struct GroupedGrantsAndPartialRevokes
-    {
-        std::vector<AccessRightsElements> grants;
-        std::vector<AccessRightsElements> partial_revokes;
-    };
-
-    GroupedGrantsAndPartialRevokes groupByTable(AccessRights::Elements && elements)
-    {
-        GroupedGrantsAndPartialRevokes res;
-        res.grants = groupByTable(std::move(elements.grants));
-        res.partial_revokes = groupByTable(std::move(elements.partial_revokes));
-        return res;
-    }
-
-
     template <typename T>
     ASTs getGrantQueriesImpl(
         const T & grantee,
@@ -62,38 +32,54 @@ namespace
     {
         ASTs res;
 
-        std::shared_ptr<ASTExtendedRoleSet> to_roles = std::make_shared<ASTExtendedRoleSet>();
+        std::shared_ptr<ASTRolesOrUsersSet> to_roles = std::make_shared<ASTRolesOrUsersSet>();
         to_roles->names.push_back(grantee.getName());
 
-        for (bool grant_option : {true, false})
-        {
-            if (!grant_option && (grantee.access == grantee.access_with_grant_option))
-                continue;
-            const auto & access_rights = grant_option ? grantee.access_with_grant_option : grantee.access;
-            const auto grouped_elements = groupByTable(access_rights.getElements());
+        auto grants_and_partial_revokes = grantee.access.getGrantsAndPartialRevokes();
 
+        for (bool grant_option : {false, true})
+        {
             using Kind = ASTGrantQuery::Kind;
             for (Kind kind : {Kind::GRANT, Kind::REVOKE})
             {
-                for (const auto & elements : (kind == Kind::GRANT ? grouped_elements.grants : grouped_elements.partial_revokes))
+                AccessRightsElements * elements = nullptr;
+                if (grant_option)
+                    elements = (kind == Kind::GRANT) ? &grants_and_partial_revokes.grants_with_grant_option : &grants_and_partial_revokes.revokes_grant_option;
+                else
+                    elements = (kind == Kind::GRANT) ? &grants_and_partial_revokes.grants : &grants_and_partial_revokes.revokes;
+                elements->normalize();
+
+                std::shared_ptr<ASTGrantQuery> grant_query = nullptr;
+                for (size_t i = 0; i != elements->size(); ++i)
                 {
-                    auto grant_query = std::make_shared<ASTGrantQuery>();
-                    grant_query->kind = kind;
-                    grant_query->attach = attach_mode;
-                    grant_query->grant_option = grant_option;
-                    grant_query->to_roles = to_roles;
-                    grant_query->access_rights_elements = elements;
-                    res.push_back(std::move(grant_query));
+                    const auto & element = (*elements)[i];
+                    bool prev_element_on_same_db_and_table = false;
+                    if (grant_query)
+                    {
+                        const auto & prev_element = grant_query->access_rights_elements.back();
+                        if ((element.database == prev_element.database) && (element.any_database == prev_element.any_database)
+                            && (element.table == prev_element.table) && (element.any_table == prev_element.any_table))
+                            prev_element_on_same_db_and_table = true;
+                    }
+                    if (!prev_element_on_same_db_and_table)
+                    {
+                        grant_query = std::make_shared<ASTGrantQuery>();
+                        grant_query->kind = kind;
+                        grant_query->attach = attach_mode;
+                        grant_query->grant_option = grant_option;
+                        grant_query->to_roles = to_roles;
+                        res.push_back(grant_query);
+                    }
+                    grant_query->access_rights_elements.emplace_back(std::move(element));
                 }
             }
         }
 
-        for (bool admin_option : {true, false})
-        {
-            if (!admin_option && (grantee.granted_roles == grantee.granted_roles_with_admin_option))
-                continue;
+        auto grants_roles = grantee.granted_roles.getGrants();
 
-            const auto & roles = admin_option ? grantee.granted_roles_with_admin_option : grantee.granted_roles;
+        for (bool admin_option : {false, true})
+        {
+            const auto & roles = admin_option ? grants_roles.grants_with_admin_option : grants_roles.grants;
             if (roles.empty())
                 continue;
 
@@ -104,9 +90,9 @@ namespace
             grant_query->admin_option = admin_option;
             grant_query->to_roles = to_roles;
             if (attach_mode)
-                grant_query->roles = ExtendedRoleSet{roles}.toAST();
+                grant_query->roles = RolesOrUsersSet{roles}.toAST();
             else
-                grant_query->roles = ExtendedRoleSet{roles}.toASTWithNames(*manager);
+                grant_query->roles = RolesOrUsersSet{roles}.toASTWithNames(*manager);
             res.push_back(std::move(grant_query));
         }
 
@@ -122,7 +108,7 @@ namespace
             return getGrantQueriesImpl(*user, manager, attach_mode);
         if (const Role * role = typeid_cast<const Role *>(&entity))
             return getGrantQueriesImpl(*role, manager, attach_mode);
-        throw Exception("Unexpected type of access entity: " + entity.getTypeName(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(entity.outputTypeAndName() + " is expected to be user or role", ErrorCodes::LOGICAL_ERROR);
     }
 
 }
@@ -138,10 +124,8 @@ BlockIO InterpreterShowGrantsQuery::execute()
 
 BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
 {
-    const auto & show_query = query_ptr->as<ASTShowGrantsQuery &>();
-
     /// Build a create query.
-    ASTs grant_queries = getGrantQueries(show_query);
+    ASTs grant_queries = getGrantQueries();
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
@@ -155,6 +139,7 @@ BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
 
     /// Prepare description of the result column.
     std::stringstream desc_ss;
+    const auto & show_query = query_ptr->as<const ASTShowGrantsQuery &>();
     formatAST(show_query, desc_ss, false, true);
     String desc = desc_ss.str();
     String prefix = "SHOW ";
@@ -165,21 +150,41 @@ BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
 }
 
 
-ASTs InterpreterShowGrantsQuery::getGrantQueries(const ASTShowGrantsQuery & show_query) const
+std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
 {
+    const auto & show_query = query_ptr->as<ASTShowGrantsQuery &>();
     const auto & access_control = context.getAccessControlManager();
+    auto ids = RolesOrUsersSet{*show_query.for_roles, access_control, context.getUserID()}.getMatchingIDs(access_control);
 
-    AccessEntityPtr user_or_role;
-    if (show_query.current_user)
-        user_or_role = context.getUser();
-    else
+    std::vector<AccessEntityPtr> entities;
+    for (const auto & id : ids)
     {
-        user_or_role = access_control.tryRead<User>(show_query.name);
-        if (!user_or_role)
-            user_or_role = access_control.read<Role>(show_query.name);
+        auto entity = access_control.tryRead(id);
+        if (entity)
+            entities.push_back(entity);
     }
 
-    return getGrantQueriesImpl(*user_or_role, &access_control);
+    boost::range::sort(entities, IAccessEntity::LessByTypeAndName{});
+    return entities;
+}
+
+
+ASTs InterpreterShowGrantsQuery::getGrantQueries() const
+{
+    auto entities = getEntities();
+    const auto & access_control = context.getAccessControlManager();
+
+    ASTs grant_queries;
+    for (const auto & entity : entities)
+        boost::range::push_back(grant_queries, getGrantQueries(*entity, access_control));
+
+    return grant_queries;
+}
+
+
+ASTs InterpreterShowGrantsQuery::getGrantQueries(const IAccessEntity & user_or_role, const AccessControlManager & access_control)
+{
+    return getGrantQueriesImpl(user_or_role, &access_control, false);
 }
 
 

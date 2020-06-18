@@ -47,7 +47,8 @@ struct SummingSortedAlgorithm::AggregateDescription
 
     void init(const char * function_name, const DataTypes & argument_types)
     {
-        function = AggregateFunctionFactory::instance().get(function_name, argument_types);
+        AggregateFunctionProperties properties;
+        function = AggregateFunctionFactory::instance().get(function_name, argument_types, {}, properties);
         add_function = function->getAddressOfAddFunction();
         state.reset(function->sizeOfData(), function->alignOfData());
     }
@@ -632,10 +633,10 @@ void SummingSortedAlgorithm::initialize(Chunks chunks)
     initializeQueue(std::move(chunks));
 }
 
-void SummingSortedAlgorithm::consume(Chunk chunk, size_t source_num)
+void SummingSortedAlgorithm::consume(Chunk & chunk, size_t source_num)
 {
     preprocessChunk(chunk);
-    updateCursor(std::move(chunk), source_num);
+    updateCursor(chunk, source_num);
 }
 
 IMergingAlgorithm::Status SummingSortedAlgorithm::merge()

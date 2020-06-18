@@ -58,7 +58,7 @@
 /// Minimum revision with exactly the same set of aggregation methods and rules to select them.
 /// Two-level (bucketed) aggregation is incompatible if servers are inconsistent in these rules
 /// (keys will be placed in different buckets and result will not be fully aggregated).
-#define DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD 54408
+#define DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD 54431
 #define DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA 54410
 
 #define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
@@ -87,7 +87,7 @@
 #define DBMS_DISTRIBUTED_SIGNATURE_HEADER 0xCAFEDACEull
 #define DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT 0xCAFECABEull
 
-#if !__has_include(<sanitizer/asan_interface.h>)
+#if !__has_include(<sanitizer/asan_interface.h>) || !defined(ADDRESS_SANITIZER)
 #   define ASAN_UNPOISON_MEMORY_REGION(a, b)
 #   define ASAN_POISON_MEMORY_REGION(a, b)
 #endif

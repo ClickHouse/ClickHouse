@@ -444,13 +444,10 @@ public:
 
 private:
     friend class DataTypeFactory;
-    /** Customize this DataType
-      */
+    /// Customize this DataType
     void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 
-private:
-    /** This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
-     */
+    /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
     mutable DataTypeCustomTextSerializationPtr custom_text_serialization;
 
@@ -532,10 +529,15 @@ struct WhichDataType
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
 
-inline bool isDate(const DataTypePtr & data_type) { return WhichDataType(data_type).isDate(); }
-inline bool isDateOrDateTime(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateOrDateTime(); }
-inline bool isDateTime(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateTime(); }
-inline bool isDateTime64(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateTime64(); }
+template <typename T>
+inline bool isDate(const T & data_type) { return WhichDataType(data_type).isDate(); }
+template <typename T>
+inline bool isDateOrDateTime(const T & data_type) { return WhichDataType(data_type).isDateOrDateTime(); }
+template <typename T>
+inline bool isDateTime(const T & data_type) { return WhichDataType(data_type).isDateTime(); }
+template <typename T>
+inline bool isDateTime64(const T & data_type) { return WhichDataType(data_type).isDateTime64(); }
+
 inline bool isEnum(const DataTypePtr & data_type) { return WhichDataType(data_type).isEnum(); }
 inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data_type).isDecimal(); }
 inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_type).isTuple(); }
@@ -637,6 +639,19 @@ inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 inline bool isCompilableType(const DataTypePtr & data_type)
 {
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
+}
+
+template <TypeIndex TYPE_IDX, typename DataType>
+inline bool isDataType(const DataType & data_type)
+{
+    WhichDataType which(data_type);
+    return which.idx == TYPE_IDX;
+}
+
+template <typename ExpectedDataType, typename DataType>
+inline bool isDataType(const DataType & data_type)
+{
+    return isDataType<ExpectedDataType::type_id>(data_type);
 }
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;

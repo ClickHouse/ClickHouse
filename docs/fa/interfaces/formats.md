@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 21
 toc_title: "\u0641\u0631\u0645\u062A \u0647\u0627\u06CC \u0648\u0631\u0648\u062F\u06CC\
   \ \u0648 \u062E\u0631\u0648\u062C\u06CC"
@@ -646,7 +646,7 @@ SELECT * FROM json_each_row_nested
 
 ## بومی {#native}
 
-فرمت موثر ترین. داده ها توسط بلوک ها در فرمت باینری نوشته شده و خوانده می شوند. برای هر بلوک, تعداد ردیف, تعداد ستون, نام ستون و انواع, و بخش هایی از ستون ها در این بلوک یکی پس از دیگری ثبت. به عبارت دیگر این قالب است “columnar” – it doesn’t convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
+فرمت موثر ترین. داده ها توسط بلوک ها در فرمت باینری نوشته شده و خوانده می شوند. برای هر بلوک, تعداد ردیف, تعداد ستون, نام ستون و انواع, و بخش هایی از ستون ها در این بلوک یکی پس از دیگری ثبت. به عبارت دیگر این قالب است “columnar” – it doesn't convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
 
 شما می توانید این فرمت را به سرعت تولید افسردگی است که تنها می تواند توسط سندرم تونل کارپ به عنوان خوانده شده استفاده کنید. این حس برای کار با این فرمت خود را ندارد.
 
@@ -949,7 +949,7 @@ message MessageType {
 };
 ```
 
-برای پیدا کردن مکاتبات بین ستون های جدول و زمینه های بافر پروتکل’ نوع پیام تاتر نام خود را مقایسه می کند.
+برای پیدا کردن مکاتبات بین ستون های جدول و زمینه های بافر پروتکل' نوع پیام تاتر نام خود را مقایسه می کند.
 این مقایسه غیر حساس به حروف و شخصیت است `_` هشدار داده می شود `.` (نقطه) به عنوان برابر در نظر گرفته.
 اگر نوع ستون و زمینه پیام بافر پروتکل متفاوت تبدیل لازم اعمال می شود.
 
@@ -1031,7 +1031,7 @@ $ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avr
 برای پیدا کردن مکاتبات بین ستون های جدول و زمینه های اور طرحواره کلیک نام خود را مقایسه می کند. این مقایسه حساس به حروف است.
 زمینه های استفاده نشده قلم می شوند.
 
-انواع داده ها از ستون جدول کلیک می توانید از زمینه های مربوطه را از داده های اور قرار داده متفاوت است. در هنگام قرار دادن داده ها, تاتر تفسیر انواع داده ها با توجه به جدول بالا و سپس [کست](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) داده ها به نوع ستون مربوطه.
+انواع داده ها از ستون جدول کلیک می توانید از زمینه های مربوطه را از داده های اور قرار داده متفاوت است. در هنگام قرار دادن داده ها, تاتر تفسیر انواع داده ها با توجه به جدول بالا و سپس [کست](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) داده ها به نوع ستون مربوطه.
 
 ### انتخاب داده ها {#selecting-data-1}
 
@@ -1146,7 +1146,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 ## ORC {#data-format-orc}
 
-[آپاچی orc](https://orc.apache.org/) فرمت ذخیره سازی ستونی گسترده در اکوسیستم هادوپ است. شما فقط می توانید داده ها را در این قالب به کلیک کنید.
+[آپاچی ORC](https://orc.apache.org/) فرمت ذخیره سازی ستونی گسترده در اکوسیستم هادوپ است. شما فقط می توانید داده ها را در این قالب به کلیک کنید.
 
 ### تطبیق انواع داده ها {#data_types-matching-3}
 
@@ -1173,7 +1173,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 انواع داده های پشتیبانی نشده: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-انواع داده ها از ستون جدول کلیک هاوس لازم نیست برای مطابقت با زمینه های داده اورک مربوطه. در هنگام قرار دادن داده ها, تاتر تفسیر انواع داده ها با توجه به جدول بالا و سپس [کست](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) داده ها به نوع داده تعیین شده برای ستون جدول کلیک.
+انواع داده ها از ستون جدول کلیک هاوس لازم نیست برای مطابقت با زمینه های داده اورک مربوطه. در هنگام قرار دادن داده ها, تاتر تفسیر انواع داده ها با توجه به جدول بالا و سپس [کست](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) داده ها به نوع داده تعیین شده برای ستون جدول کلیک.
 
 ### درج داده {#inserting-data-2}
 

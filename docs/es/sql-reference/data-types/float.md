@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: "Descripci\xF3n del producto"
 ---
 
-# Descripción Del Producto {#float32-float64}
+# Descripción del producto {#float32-float64}
 
 [Números de punto flotante](https://en.wikipedia.org/wiki/IEEE_754).
 
@@ -16,7 +16,7 @@ Los tipos son equivalentes a los tipos de C:
 
 Le recomendamos que almacene los datos en formato entero siempre que sea posible. Por ejemplo, convierta números de precisión fija en valores enteros, como importes monetarios o tiempos de carga de página en milisegundos.
 
-## Uso De números De Punto Flotante {#using-floating-point-numbers}
+## Uso de números de punto flotante {#using-floating-point-numbers}
 
 -   Los cálculos con números de punto flotante pueden producir un error de redondeo.
 
@@ -82,6 +82,6 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-    See the rules for `NaN` sorting in the section [ORDER BY clause](../sql_reference/statements/select.md).
+    See the rules for `NaN` sorting in the section [ORDER BY clause](../sql_reference/statements/select/order-by.md).
 
 [Artículo Original](https://clickhouse.tech/docs/en/data_types/float/) <!--hide-->
