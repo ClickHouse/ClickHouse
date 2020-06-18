@@ -1387,20 +1387,15 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ex
 
     const Settings & settings = context->getSettingsRef();
 
-    /** Two-level aggregation is useful in two cases:
-      * 1. Parallel aggregation is done, and the results should be merged in parallel.
-      * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
-      */
-    bool allow_to_use_two_level_group_by = pipeline.getNumStreams() > 1 || settings.max_bytes_before_external_group_by != 0;
-
     Aggregator::Params params(header_before_aggregation, keys, aggregates,
                               overflow_row, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-                              allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
-                              allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
-                              settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-                              context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
-
-    auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
+                              settings.group_by_two_level_threshold,
+                              settings.group_by_two_level_threshold_bytes,
+                              settings.max_bytes_before_external_group_by,
+                              settings.empty_result_for_aggregation_by_empty_set,
+                              context->getTemporaryVolume(),
+                              settings.max_threads,
+                              settings.min_free_disk_space_for_temporary_data);
 
     SortDescription group_by_sort_description;
 
@@ -1418,7 +1413,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ex
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
             query_plan.getCurrentDataStream(),
-            std::move(transform_params),
+            params, final,
             settings.max_block_size,
             merge_threads,
             temporary_data_merge_threads,
