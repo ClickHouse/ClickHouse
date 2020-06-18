@@ -563,7 +563,7 @@ void QueryPipeline::setOutputFormat(ProcessorPtr output)
 }
 
 void QueryPipeline::unitePipelines(
-    std::vector<QueryPipeline> && pipelines, const Block & common_header)
+    std::vector<std::unique_ptr<QueryPipeline>> pipelines, const Block & common_header)
 {
     if (initialized())
     {
@@ -583,8 +583,9 @@ void QueryPipeline::unitePipelines(
     if (totals_having_port)
         totals.push_back(totals_having_port);
 
-    for (auto & pipeline : pipelines)
+    for (auto & pipeline_ptr : pipelines)
     {
+        auto & pipeline = *pipeline_ptr;
         pipeline.checkInitialized();
 
         if (!pipeline.isCompleted())

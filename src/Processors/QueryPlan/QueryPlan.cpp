@@ -35,6 +35,43 @@ const DataStream & QueryPlan::getCurrentDataStream() const
     return root->step->getOutputStream();
 }
 
+void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<QueryPlan> plans)
+{
+    if (isInitialized())
+        throw Exception("Cannot unite plans because current QueryPlan is already initialized",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    const auto & inputs = step->getInputStreams();
+    size_t num_inputs = step->getInputStreams().size();
+    if (num_inputs != plans.size())
+    {
+        throw Exception("Cannot unite QueryPlans using " + step->getName() +
+                        " because step has different number of inputs. "
+                        "Has " + std::to_string(plans.size()) + " plans "
+                        "and " + std::to_string(num_inputs) + " inputs", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    for (size_t i = 0; i < num_inputs; ++i)
+    {
+        const auto & step_header = inputs[i].header;
+        const auto & plan_header = plans[i].getCurrentDataStream().header;
+        if (!blocksHaveEqualStructure(step_header, plan_header))
+            throw Exception("Cannot unite QueryPlans using " + step->getName() + " because "
+                            "it has incompatible header with plan " + root->step->getName() + " "
+                            "plan header: " + plan_header.dumpStructure() +
+                            "step header: " + step_header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
+    }
+
+    for (auto & plan : plans)
+        nodes.insert(nodes.end(), plan.nodes.begin(), plan.nodes.end());
+
+    nodes.emplace_back(Node{.step = std::move(step)});
+    root = &nodes.back();
+
+    for (auto & plan : plans)
+        root->children.emplace_back(plan.root);
+}
+
 void QueryPlan::addStep(QueryPlanStepPtr step)
 {
     checkNotCompleted();
@@ -48,6 +85,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
                             "step has no inputs, but QueryPlan is already initialised", ErrorCodes::LOGICAL_ERROR);
 
         nodes.emplace_back(Node{.step = std::move(step)});
+        root = &nodes.back();
         return;
     }
 
@@ -100,7 +138,12 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
         size_t next_child = frame.pipelines.size();
         if (next_child == frame.node->children.size())
         {
+            bool limit_max_threads = frame.pipelines.empty();
             last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines));
+
+            if (limit_max_threads)
+                last_pipeline->setMaxThreads(max_threads);
+
             stack.pop();
         }
         else
