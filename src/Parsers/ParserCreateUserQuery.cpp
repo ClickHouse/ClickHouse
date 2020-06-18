@@ -250,7 +250,7 @@ namespace
             if (prefix && !ParserKeyword{prefix}.ignore(pos, expected))
                 return false;
 
-            if (!ParserKeyword{"PROXY"}.ignore(pos, expected))
+            if (!ParserKeyword{"PROXYING VIA"}.ignore(pos, expected))
                 return false;
 
             String name;
@@ -354,7 +354,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
 
         std::unordered_set<std::string> new_proxy_users;
-        if (parseAllowedProxyUsers(pos, expected, nullptr, new_proxy_users))
+        if (parseAllowedProxyUsers(pos, expected, "ALLOW", new_proxy_users))
         {
             if (!allowed_proxy_users)
                 allowed_proxy_users.emplace();
@@ -389,7 +389,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 continue;
             }
 
-            if (parseAllowedProxyUsers(pos, expected, "ADD", new_proxy_users))
+            if (parseAllowedProxyUsers(pos, expected, "ALLOW", new_proxy_users))
             {
                 if (!add_allowed_proxy_users)
                     add_allowed_proxy_users.emplace();
@@ -397,7 +397,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 continue;
             }
 
-            if (parseAllowedProxyUsers(pos, expected, "DROP", new_proxy_users))
+            if (parseAllowedProxyUsers(pos, expected, "DENY", new_proxy_users))
             {
                 if (!remove_allowed_proxy_users)
                     remove_allowed_proxy_users.emplace();
