@@ -32,7 +32,7 @@ class ASTSelectQuery;
 struct ASTTablesInSelectQueryElement;
 
 struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block);

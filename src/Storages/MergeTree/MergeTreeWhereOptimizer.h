@@ -17,7 +17,7 @@ class ASTSelectQuery;
 class ASTFunction;
 class MergeTreeData;
 struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /** Identifies WHERE expressions that can be placed in PREWHERE by calculating respective
  *  sizes of columns used in particular expression and identifying "good" conditions of

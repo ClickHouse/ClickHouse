@@ -14,7 +14,7 @@ class ASTSelectQuery;
 class TableJoin;
 struct SelectQueryOptions;
 struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<StorageInMemoryMetadata>;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Joined tables' columns resolver.
 /// We want to get each table structure at most once per table occurance. Or even better once per table.
