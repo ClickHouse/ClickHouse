@@ -5,7 +5,7 @@ toc_title: AggregatingMergeTree
 
 # Aggregatingmergetree {#aggregatingmergetree}
 
-The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](mergetree.md)) with a single row (within a one data part) that stores a combination of states of aggregate functions.
+The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a one data part) that stores a combination of states of aggregate functions.
 
 You can use `AggregatingMergeTree` tables for incremental data aggregation, including for aggregated materialized views.
 
@@ -36,7 +36,7 @@ For a description of request parameters, see [request description](../../../sql-
 
 **Query clauses**
 
-When creating a `AggregatingMergeTree` table the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
+When creating a `AggregatingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
 
 <details markdown="1">
 

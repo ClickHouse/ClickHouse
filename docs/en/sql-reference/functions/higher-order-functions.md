@@ -239,7 +239,7 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 └────────────────────┘
 ```
 
-For more information about the `arraySort` method, see the [Functions for Working With Arrays](array-functions.md#array_functions-sort) section.
+For more information about the `arraySort` method, see the [Functions for Working With Arrays](../../sql-reference/functions/array-functions.md#array_functions-sort) section.
 
 ### arrayReverseSort(\[func,\] arr1, …) {#arrayreversesortfunc-arr1}
 
@@ -257,6 +257,6 @@ SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 └───────────────────┘
 ```
 
-For more information about the `arrayReverseSort` method, see the [Functions for Working With Arrays](array-functions.md#array_functions-reverse-sort) section.
+For more information about the `arrayReverseSort` method, see the [Functions for Working With Arrays](../../sql-reference/functions/array-functions.md#array_functions-reverse-sort) section.
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/higher_order_functions/) <!--hide-->

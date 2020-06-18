@@ -7,8 +7,6 @@
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Core/Settings.h>
-#include <Interpreters/Cluster.h>
 #include <Parsers/ASTFunction.h>
 #include <common/logger_useful.h>
 #include <Common/ActionBlocker.h>
@@ -17,6 +15,7 @@
 namespace DB
 {
 
+struct Settings;
 class Context;
 
 class VolumeJBOD;
@@ -24,6 +23,9 @@ using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+class Cluster;
+using ClusterPtr = std::shared_ptr<Cluster>;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.

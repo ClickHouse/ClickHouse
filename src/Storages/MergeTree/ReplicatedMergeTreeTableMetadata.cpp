@@ -210,7 +210,7 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
 
 }
 
-void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk) const
+void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, const Context & context) const
 {
 
     checkImmutableFieldsEquals(from_zk);
@@ -232,20 +232,24 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
                 ErrorCodes::METADATA_MISMATCH);
     }
 
-    if (skip_indices != from_zk.skip_indices)
+    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).toString();
+    if (skip_indices != parsed_zk_skip_indices)
     {
         throw Exception(
                 "Existing table metadata in ZooKeeper differs in skip indexes."
                 " Stored in ZooKeeper: " + from_zk.skip_indices +
+                ", parsed from ZooKeeper: " + parsed_zk_skip_indices +
                 ", local: " + skip_indices,
                 ErrorCodes::METADATA_MISMATCH);
     }
 
-    if (constraints != from_zk.constraints)
+    String parsed_zk_constraints = ConstraintsDescription::parse(from_zk.constraints).toString();
+    if (constraints != parsed_zk_constraints)
     {
         throw Exception(
                 "Existing table metadata in ZooKeeper differs in constraints."
                 " Stored in ZooKeeper: " + from_zk.constraints +
+                ", parsed from ZooKeeper: " + parsed_zk_constraints +
                 ", local: " + constraints,
                        ErrorCodes::METADATA_MISMATCH);
     }
