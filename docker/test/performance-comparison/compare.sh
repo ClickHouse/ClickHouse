@@ -37,8 +37,8 @@ function configure
     while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
-    sed -i 's/>db0<\/path>/>db\/left<\/path>/g' left/config.d/perf-comparison-tweaks-config.xml
-    sed -i 's/>db0<\/path>/>db\/right<\/path>/g' right/config.d/perf-comparison-tweaks-config.xml
+    sed -i 's/>db0<\/path>/>db\/left<\/path>/g' left/config/config.d/perf-comparison-tweaks-config.xml
+    sed -i 's/>db0<\/path>/>db\/right<\/path>/g' right/config/config.d/perf-comparison-tweaks-config.xml
 
     # Remove logs etc, because they will be updated, and sharing them between
     # servers with hardlink might cause unpredictable behavior.
