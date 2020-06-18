@@ -9,7 +9,8 @@ namespace DB
 
 static ITransformingStep::DataStreamTraits getTraits()
 {
-    return ITransformingStep::DataStreamTraits{
+    return ITransformingStep::DataStreamTraits
+    {
             .preserves_distinct_columns = false /// Actually, we may check that distinct names are in aggregation keys
     };
 }
