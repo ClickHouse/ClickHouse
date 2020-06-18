@@ -5,12 +5,19 @@
 namespace DB
 {
 
+static ITransformingStep::DataStreamTraits getTraits()
+{
+    return ITransformingStep::DataStreamTraits{
+            .preserves_distinct_columns = true
+    };
+}
+
 CreatingSetsStep::CreatingSetsStep(
     const DataStream & input_stream_,
     SubqueriesForSets subqueries_for_sets_,
     SizeLimits network_transfer_limits_,
     const Context & context_)
-    : ITransformingStep(input_stream_, input_stream_)
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , subqueries_for_sets(std::move(subqueries_for_sets_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , context(context_)

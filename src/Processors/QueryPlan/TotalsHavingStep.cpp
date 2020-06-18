@@ -6,6 +6,13 @@
 namespace DB
 {
 
+static ITransformingStep::DataStreamTraits getTraits()
+{
+    return ITransformingStep::DataStreamTraits{
+            .preserves_distinct_columns = true
+    };
+}
+
 TotalsHavingStep::TotalsHavingStep(
     const DataStream & input_stream_,
     bool overflow_row_,
@@ -16,7 +23,8 @@ TotalsHavingStep::TotalsHavingStep(
     bool final_)
     : ITransformingStep(
             input_stream_,
-            DataStream{.header = TotalsHavingTransform::transformHeader(input_stream_.header, expression_, final_)})
+            TotalsHavingTransform::transformHeader(input_stream_.header, expression_, final_),
+            getTraits())
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)

@@ -4,10 +4,16 @@
 namespace DB
 {
 
-ITransformingStep::ITransformingStep(DataStream input_stream, DataStream output_stream_)
+ITransformingStep::ITransformingStep(DataStream input_stream, Block output_header, DataStreamTraits traits)
 {
     input_streams.emplace_back(std::move(input_stream));
-    output_stream = std::move(output_stream_);
+    output_stream = DataStream{.header = std::move(output_header)};
+
+    if (traits.preserves_distinct_columns)
+    {
+        output_stream->distinct_columns = input_streams.front().distinct_columns;
+        output_stream->local_distinct_columns = input_streams.front().local_distinct_columns;
+    }
 }
 
 QueryPipelinePtr ITransformingStep::updatePipeline(QueryPipelines pipelines)

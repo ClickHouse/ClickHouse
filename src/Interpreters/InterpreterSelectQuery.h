@@ -129,7 +129,7 @@ private:
     void executeLimit(QueryPipeline & pipeline);
     void executeOffset(QueryPipeline & pipeline);
     static void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
+    void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns, bool pre_distinct);
     void executeExtremes(QueryPipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit, const std::string & description);

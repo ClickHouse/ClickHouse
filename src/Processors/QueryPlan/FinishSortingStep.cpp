@@ -8,13 +8,20 @@
 namespace DB
 {
 
+static ITransformingStep::DataStreamTraits getTraits()
+{
+    return ITransformingStep::DataStreamTraits{
+            .preserves_distinct_columns = true
+    };
+}
+
 FinishSortingStep::FinishSortingStep(
     const DataStream & input_stream_,
     SortDescription prefix_description_,
     SortDescription result_description_,
     size_t max_block_size_,
     UInt64 limit_)
-    : ITransformingStep(input_stream_, input_stream_)
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , max_block_size(max_block_size_)

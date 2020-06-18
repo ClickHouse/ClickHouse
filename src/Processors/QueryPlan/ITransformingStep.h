@@ -7,7 +7,12 @@ namespace DB
 class ITransformingStep : public IQueryPlanStep
 {
 public:
-    ITransformingStep(DataStream input_stream, DataStream output_stream);
+    struct DataStreamTraits
+    {
+        bool preserves_distinct_columns;
+    };
+
+    ITransformingStep(DataStream input_stream, Block output_header, DataStreamTraits traits);
 
     QueryPipelinePtr updatePipeline(QueryPipelines pipelines) override;
 

@@ -5,6 +5,13 @@
 namespace DB
 {
 
+static ITransformingStep::DataStreamTraits getTraits()
+{
+    return ITransformingStep::DataStreamTraits{
+            .preserves_distinct_columns = true
+    };
+}
+
 MergeSortingStep::MergeSortingStep(
     const DataStream & input_stream,
     const SortDescription & description_,
@@ -14,7 +21,7 @@ MergeSortingStep::MergeSortingStep(
     size_t max_bytes_before_external_sort_,
     VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
-    : ITransformingStep(input_stream, input_stream)
+    : ITransformingStep(input_stream, input_stream.header, getTraits())
     , description(description_)
     , max_merged_block_size(max_merged_block_size_)
     , limit(limit_)

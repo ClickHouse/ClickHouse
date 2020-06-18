@@ -5,10 +5,20 @@
 namespace DB
 {
 
+static ITransformingStep::DataStreamTraits getTraits()
+{
+    return ITransformingStep::DataStreamTraits{
+            .preserves_distinct_columns = false
+    };
+}
+
 RollupStep::RollupStep(const DataStream & input_stream_, AggregatingTransformParamsPtr params_)
-    : ITransformingStep(input_stream_, DataStream{.header = params_->getHeader()})
+    : ITransformingStep(input_stream_, params_->getHeader(), getTraits())
     , params(std::move(params_))
 {
+    /// Aggregation keys are distinct
+    for (auto key : params->params.keys)
+        output_stream->distinct_columns.insert(params->params.src_header.getByPosition(key).name);
 }
 
 void RollupStep::transformPipeline(QueryPipeline & pipeline)

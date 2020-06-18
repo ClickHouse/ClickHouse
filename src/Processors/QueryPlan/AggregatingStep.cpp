@@ -7,6 +7,13 @@
 namespace DB
 {
 
+static ITransformingStep::DataStreamTraits getTraits()
+{
+    return ITransformingStep::DataStreamTraits{
+            .preserves_distinct_columns = false /// Actually, we may check that distinct names are in aggregation keys
+    };
+}
+
 AggregatingStep::AggregatingStep(
     const DataStream & input_stream_,
     AggregatingTransformParamsPtr transform_params_,
@@ -16,7 +23,7 @@ AggregatingStep::AggregatingStep(
     bool storage_has_evenly_distributed_read_,
     InputOrderInfoPtr group_by_info_,
     SortDescription group_by_sort_description_)
-    : ITransformingStep(input_stream_, DataStream{.header = transform_params_->getHeader()})
+    : ITransformingStep(input_stream_, transform_params_->getHeader(), getTraits())
     , transform_params(std::move(transform_params_))
     , max_block_size(max_block_size_)
     , merge_threads(merge_threads_)
