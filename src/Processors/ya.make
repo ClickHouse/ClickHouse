@@ -139,6 +139,7 @@ SRCS(
     Transforms/AggregatingInOrderTransform.cpp
     QueryPlan/AddingDelayedStreamStep.cpp
     QueryPlan/AggregatingStep.cpp
+    QueryPlan/ConvertingStep.cpp
     QueryPlan/CreatingSetsStep.cpp
     QueryPlan/CubeStep.cpp
     QueryPlan/DistinctStep.cpp
@@ -157,6 +158,7 @@ SRCS(
     QueryPlan/MergingSortedStep.cpp
     QueryPlan/OffsetsStep.cpp
     QueryPlan/PartialSortingStep.cpp
+    QueryPlan/UnionStep.cpp
     QueryPlan/ReadFromPreparedSource.cpp
     QueryPlan/ReadFromStorageStep.cpp
     QueryPlan/ReadNothingStep.cpp

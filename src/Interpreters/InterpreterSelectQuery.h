@@ -77,6 +77,9 @@ public:
     /// Execute a query. Get the stream of blocks to read.
     BlockIO execute() override;
 
+    /// Builds QueryPlan for current query.
+    void buildQueryPlan(QueryPlan & query_plan);
+
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 

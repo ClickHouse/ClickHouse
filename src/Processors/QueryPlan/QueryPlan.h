@@ -18,6 +18,7 @@ using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 class QueryPlan
 {
 public:
+    void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlan> plans);
     void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
@@ -25,6 +26,10 @@ public:
     const DataStream & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
 
     QueryPipelinePtr buildQueryPipeline();
+
+    /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
+    /// TODO: make it in a better way.
+    void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
 
 private:
     struct Node
@@ -40,6 +45,8 @@ private:
 
     void checkInitialized() const;
     void checkNotCompleted() const;
+
+    size_t max_threads = 0;
 };
 
 }

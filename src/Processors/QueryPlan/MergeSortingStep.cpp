@@ -40,7 +40,7 @@ void MergeSortingStep::transformPipeline(QueryPipeline & pipeline)
 
         return std::make_shared<MergeSortingTransform>(
                 header, description, max_merged_block_size, limit,
-                max_bytes_before_remerge,
+                max_bytes_before_remerge / pipeline.getNumStreams(),
                 max_bytes_before_external_sort,
                 tmp_volume,
                 min_free_disk_space);
