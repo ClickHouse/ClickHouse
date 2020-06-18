@@ -14,6 +14,7 @@ set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
 set (CLICKHOUSE_ODBC_BRIDGE_LINK
     PRIVATE
         clickhouse_parsers
+        clickhouse_aggregate_functions
         daemon
         dbms
         Poco::Data
