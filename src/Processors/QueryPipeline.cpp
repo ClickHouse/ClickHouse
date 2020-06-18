@@ -643,6 +643,8 @@ void QueryPipeline::unitePipelines(
         else
             totals_having_port = uniteTotals(totals, current_header, processors);
     }
+
+    current_header = common_header;
 }
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
