@@ -519,8 +519,8 @@ Pipes StorageDistributed::read(
         : ClusterProxy::SelectStreamFactory(
             header, processed_stage, StorageID{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
-    return ClusterProxy::executeQuery(
-        select_stream_factory, cluster, modified_query_ast, context, context.getSettingsRef(), query_info);
+    return ClusterProxy::executeQuery(select_stream_factory, cluster, log,
+        modified_query_ast, context, context.getSettingsRef(), query_info);
 }
 
 

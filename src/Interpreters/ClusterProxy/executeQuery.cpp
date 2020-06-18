@@ -15,7 +15,7 @@ namespace DB
 namespace ClusterProxy
 {
 
-Context removeUserRestrictionsFromSettings(const Context & context, const Settings & settings)
+Context removeUserRestrictionsFromSettings(const Context & context, const Settings & settings, Poco::Logger * log)
 {
     static const UInt64 OPTIMIZE_SKIP_UNUSED_SHARDS_NO_NESTED = 2;
 
@@ -34,12 +34,18 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     {
         new_settings.force_optimize_skip_unused_shards = 0;
         new_settings.force_optimize_skip_unused_shards.changed = false;
+
+        if (log)
+            LOG_TRACE(log, "Disabling force_optimize_skip_unused_shards (due to force_optimize_skip_unused_shards_no_nested)");
     }
 
     if (settings.optimize_skip_unused_shards == OPTIMIZE_SKIP_UNUSED_SHARDS_NO_NESTED)
     {
         new_settings.optimize_skip_unused_shards = 0;
         new_settings.optimize_skip_unused_shards.changed = false;
+
+        if (log)
+            LOG_TRACE(log, "Disabling optimize_skip_unused_shards (due to optimize_skip_unused_shards=2)");
     }
 
     Context new_context(context);
@@ -49,14 +55,16 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
 }
 
 Pipes executeQuery(
-    IStreamFactory & stream_factory, const ClusterPtr & cluster,
+    IStreamFactory & stream_factory, const ClusterPtr & cluster, Poco::Logger * log,
     const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info)
 {
+    assert(log);
+
     Pipes res;
 
     const std::string query = queryToString(query_ast);
 
-    Context new_context = removeUserRestrictionsFromSettings(context, settings);
+    Context new_context = removeUserRestrictionsFromSettings(context, settings, log);
 
     ThrottlerPtr user_level_throttler;
     if (auto * process_list_element = context.getProcessListElement())
