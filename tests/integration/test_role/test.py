@@ -11,7 +11,7 @@ instance = cluster.add_instance('instance')
 def started_cluster():
     try:
         cluster.start()
-
+        
         instance.query("CREATE TABLE test_table(x UInt32, y UInt32) ENGINE = MergeTree ORDER BY tuple()")
         instance.query("INSERT INTO test_table VALUES (1,5), (2,10)")
 
@@ -35,7 +35,7 @@ def test_create_role():
     instance.query('CREATE ROLE R1')
 
     assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test_table", user='A')
-
+    
     instance.query('GRANT SELECT ON test_table TO R1')
     assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test_table", user='A')
 
@@ -52,13 +52,13 @@ def test_grant_role_to_role():
     instance.query('CREATE ROLE R2')
 
     assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test_table", user='A')
-
+    
     instance.query('GRANT R1 TO A')
     assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test_table", user='A')
-
+    
     instance.query('GRANT R2 TO R1')
     assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test_table", user='A')
-
+    
     instance.query('GRANT SELECT ON test_table TO R2')
     assert instance.query("SELECT * FROM test_table", user='A') == "1\t5\n2\t10\n"
 
@@ -69,12 +69,12 @@ def test_combine_privileges():
     instance.query('CREATE ROLE R2')
 
     assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test_table", user='A')
-
+    
     instance.query('GRANT R1 TO A')
     instance.query('GRANT SELECT(x) ON test_table TO R1')
     assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test_table", user='A')
     assert instance.query("SELECT x FROM test_table", user='A') == "1\n2\n"
-
+    
     instance.query('GRANT SELECT(y) ON test_table TO R2')
     instance.query('GRANT R2 TO A')
     assert instance.query("SELECT * FROM test_table", user='A') == "1\t5\n2\t10\n"
