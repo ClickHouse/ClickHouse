@@ -94,7 +94,7 @@ std::pair<ASTs, ASTs> tryGetConst(const char * name, const ASTs & arguments)
             not_const.push_back(arg);
     }
 
-    if ((name == plus || name == mul) && const_num.size() + not_const.size() != 2)
+    if ((strcmp(name, plus) || strcmp(name, mul)) && const_num.size() + not_const.size() != 2)
     {
         throw Exception("Wrong number of arguments for function 'plus' or 'multiply' (" + toString(const_num.size() + not_const.size()) + " instead of 2)",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
