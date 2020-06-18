@@ -113,7 +113,7 @@ bool sanitizeBlock(Block & block)
                 return false;
             col.column = col.type->createColumn();
         }
-        else if (isColumnConst(*col.column) && !col.column->empty())
+        else if (!col.column->empty())
             col.column = col.column->cloneEmpty();
     }
     return true;
@@ -420,8 +420,9 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & action
             aggregate.argument_names[i] = name;
         }
 
+        AggregateFunctionProperties properties;
         aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters) : Array();
-        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters);
+        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters, properties);
 
         aggregate_descriptions.push_back(aggregate);
     }
@@ -1151,13 +1152,20 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             }
         }
 
-        bool has_stream_with_non_joined_rows = (before_join && before_join->getTableJoinAlgo()->hasStreamWithNonJoinedRows());
+        bool join_allow_read_in_order = true;
+        if (before_join)
+        {
+            /// You may find it strange but we support read_in_order for HashJoin and do not support for MergeJoin.
+            auto join = before_join->getTableJoinAlgo();
+            join_allow_read_in_order = typeid_cast<HashJoin *>(join.get()) && !join->hasStreamWithNonJoinedRows();
+        }
+
         optimize_read_in_order =
             settings.optimize_read_in_order
             && storage && query.orderBy()
             && !query_analyzer.hasAggregation()
             && !query.final()
-            && !has_stream_with_non_joined_rows;
+            && join_allow_read_in_order;
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
