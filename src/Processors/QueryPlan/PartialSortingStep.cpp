@@ -6,12 +6,19 @@
 namespace DB
 {
 
+static ITransformingStep::DataStreamTraits getTraits()
+{
+    return ITransformingStep::DataStreamTraits{
+            .preserves_distinct_columns = true
+    };
+}
+
 PartialSortingStep::PartialSortingStep(
     const DataStream & input_stream,
     SortDescription sort_description_,
     UInt64 limit_,
     SizeLimits size_limits_)
-    : ITransformingStep(input_stream, input_stream)
+    : ITransformingStep(input_stream, input_stream.header, getTraits())
     , sort_description(std::move(sort_description_))
     , limit(limit_)
     , size_limits(size_limits_)

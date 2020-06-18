@@ -5,8 +5,15 @@
 namespace DB
 {
 
+static ITransformingStep::DataStreamTraits getTraits()
+{
+    return ITransformingStep::DataStreamTraits{
+            .preserves_distinct_columns = true
+    };
+}
+
 OffsetsStep::OffsetsStep(const DataStream & input_stream_, size_t offset_)
-    : ITransformingStep(input_stream_, input_stream_)
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , offset(offset_)
 {
 }

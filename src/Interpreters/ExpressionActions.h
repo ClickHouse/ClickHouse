@@ -212,6 +212,8 @@ public:
     /// Execute the expression on the block with continuation.
     void execute(Block & block, ExtraBlockPtr & not_processed, size_t & start_action) const;
 
+    bool hasJoinOrArrayJoin() const;
+
     /// Check if joined subquery has totals.
     bool hasTotalsInJoin() const;
 

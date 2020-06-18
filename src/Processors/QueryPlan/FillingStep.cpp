@@ -5,8 +5,15 @@
 namespace DB
 {
 
+static ITransformingStep::DataStreamTraits getTraits()
+{
+    return ITransformingStep::DataStreamTraits{
+            .preserves_distinct_columns = false /// TODO: it seem to actually be true. Check it later.
+    };
+}
+
 FillingStep::FillingStep(const DataStream & input_stream_, SortDescription sort_description_)
-    : ITransformingStep(input_stream_, input_stream_)
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , sort_description(std::move(sort_description_))
 {
 }

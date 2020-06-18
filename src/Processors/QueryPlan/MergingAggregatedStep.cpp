@@ -7,18 +7,28 @@
 namespace DB
 {
 
+static ITransformingStep::DataStreamTraits getTraits()
+{
+    return ITransformingStep::DataStreamTraits{
+            .preserves_distinct_columns = false
+    };
+}
+
 MergingAggregatedStep::MergingAggregatedStep(
     const DataStream & input_stream_,
     AggregatingTransformParamsPtr params_,
     bool memory_efficient_aggregation_,
     size_t max_threads_,
     size_t memory_efficient_merge_threads_)
-    : ITransformingStep(input_stream_, DataStream{.header = params_->getHeader()})
+    : ITransformingStep(input_stream_, params_->getHeader(), getTraits())
     , params(params_)
     , memory_efficient_aggregation(memory_efficient_aggregation_)
     , max_threads(max_threads_)
     , memory_efficient_merge_threads(memory_efficient_merge_threads_)
 {
+    /// Aggregation keys are distinct
+    for (auto key : params->params.keys)
+        output_stream->distinct_columns.insert(params->params.src_header.getByPosition(key).name);
 }
 
 void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline)

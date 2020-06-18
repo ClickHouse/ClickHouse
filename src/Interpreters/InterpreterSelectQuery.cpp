@@ -786,7 +786,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
                     executeOrder(pipeline, query_info.input_order_info);
 
                 if (expressions.has_order_by && query.limitLength())
-                    executeDistinct(pipeline, false, expressions.selected_columns);
+                    executeDistinct(pipeline, false, expressions.selected_columns, true);
 
                 if (expressions.hasLimitBy())
                 {
@@ -893,7 +893,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
             else
             {
                 executeExpression(pipeline, expressions.before_order_and_select, "Before ORDER BY and SELECT");
-                executeDistinct(pipeline, true, expressions.selected_columns);
+                executeDistinct(pipeline, true, expressions.selected_columns, true);
             }
 
             preliminary_sort();
@@ -937,7 +937,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
                     executeHaving(pipeline, expressions.before_having);
 
                 executeExpression(pipeline, expressions.before_order_and_select, "Before ORDER BY and SELECT");
-                executeDistinct(pipeline, true, expressions.selected_columns);
+                executeDistinct(pipeline, true, expressions.selected_columns, true);
 
             }
             else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube)
@@ -969,16 +969,11 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
                 has_prelimit = true;
             }
 
-            bool need_merge_streams = need_second_distinct_pass || query.limitBy();
-
-            if (need_merge_streams)
-                pipeline.resize(1);
-
             /** If there was more than one stream,
               * then DISTINCT needs to be performed once again after merging all streams.
               */
             if (need_second_distinct_pass)
-                executeDistinct(pipeline, false, expressions.selected_columns);
+                executeDistinct(pipeline, false, expressions.selected_columns, false);
 
             if (expressions.hasLimitBy())
             {
@@ -1636,7 +1631,7 @@ void InterpreterSelectQuery::executeProjection(QueryPipeline & pipeline, const E
 }
 
 
-void InterpreterSelectQuery::executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns)
+void InterpreterSelectQuery::executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns, bool pre_distinct)
 {
     auto & query = getSelectQuery();
     if (query.distinct)
@@ -1654,7 +1649,10 @@ void InterpreterSelectQuery::executeDistinct(QueryPipeline & pipeline, bool befo
 
         DistinctStep distinct_step(
                 DataStream{.header = pipeline.getHeader()},
-                limits, limit_for_distinct, columns);
+                limits, limit_for_distinct, columns, pre_distinct);
+
+        if (pre_distinct)
+            distinct_step.setStepDescription("Preliminary DISTINCT");
 
         distinct_step.transformPipeline(pipeline);
     }
