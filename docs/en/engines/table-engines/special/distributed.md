@@ -150,8 +150,38 @@ When the `max_parallel_replicas` option is enabled, query processing is parallel
 By default distributed queries uses user from the cluster configuration (or `default`), however it is not always required behaviour (since there are per-user limits), to use initial user (user who issued the query), you need to do the following:
 
 - Set `proxy_user` to `true` for each `replica`/`node` from `remote_servers` (on initator node)
-- Allow the node user (`user` from the `replica`, or `default` if not set) to execute queries as initial user, you can do this with `ALTER USER initial_user ADD PROXY default` (on each remote node)
-- And the proxy user should have `PROXY` privelege, you can do this with `GRANT PROXY ON *.* TO default` (on each remote node)
+
+  ``` xml
+  <remote_servers>
+      <test_cluster>
+          <node>
+                  <host>n1</host>
+                  <port>9000</port>
+                  <user>initial_proxy_user</user><!-- or "default" if omitted -->
+                  <proxy_user>true</proxy_user>
+          </node>
+          <node>
+                  <host>n2</host>
+                  <port>9000</port>
+                  <user>initial_proxy_user</user><!-- or "default" if omitted -->
+                  <proxy_user>true</proxy_user>
+          </node>
+      </test_cluster>
+  ```
+
+- Allow the node user (`user` from the `replica`, or `default` if not set) to execute queries as initial user:
+
+  ``` sql
+  ALTER USER current_user ON CLUSTER test_cluster ADD PROXY initial_proxy_user;
+  -- or create new new
+  CREATE USER new_user PROXY initial_proxy_user;
+  ```
+
+- And the proxy user should have `PROXY` privelege:
+
+  ``` sql
+  GRANT ON CLUSTER test_cluster PROXY ON *.* TO initial_proxy_user
+  ```
 
 **See Also**
 
