@@ -53,7 +53,7 @@ std::ostream & operator<<(std::ostream & stream, const IStorage & what)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const TableStructureReadLock &)
+std::ostream & operator<<(std::ostream & stream, const TableLockHolder &)
 {
     stream << "TableStructureReadLock()";
     return stream;

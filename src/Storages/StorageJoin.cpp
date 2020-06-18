@@ -65,7 +65,7 @@ StorageJoin::StorageJoin(
 
 
 void StorageJoin::truncate(
-    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableStructureWriteLockHolder &)
+    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder&)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();

@@ -27,7 +27,7 @@ class StorageJoin final : public ext::shared_ptr_helper<StorageJoin>, public Sto
 public:
     String getName() const override { return "Join"; }
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
     /// Access the innards.
     HashJoinPtr & getJoin() { return join; }

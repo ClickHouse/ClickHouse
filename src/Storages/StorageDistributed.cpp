@@ -564,9 +564,8 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, co
     }
 }
 
-void StorageDistributed::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+void StorageDistributed::alter(const AlterCommands & params, const Context & context, TableLockHolder &)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
 
     checkAlterIsPossible(params, context.getSettingsRef());
@@ -619,7 +618,7 @@ Strings StorageDistributed::getDataPaths() const
     return paths;
 }
 
-void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
     std::lock_guard lock(cluster_nodes_mutex);
 

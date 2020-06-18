@@ -514,7 +514,7 @@ void StorageLiveView::drop()
 
 void StorageLiveView::refresh(const Context & context)
 {
-    auto alter_lock = lockAlterIntention(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto alter_lock = lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     {
         std::lock_guard lock(mutex);
         if (getNewBlocks())

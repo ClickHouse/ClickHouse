@@ -82,7 +82,7 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     /// Removes temporary data in local filesystem.
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
     void renameOnDisk(const String & new_path_to_table_data);
@@ -91,7 +91,7 @@ public:
 
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
-    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
 
     void startup() override;
     void shutdown() override;

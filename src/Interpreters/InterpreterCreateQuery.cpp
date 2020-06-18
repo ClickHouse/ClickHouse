@@ -405,7 +405,7 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(const A
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(ASTCreateQuery & create) const
 {
     TableProperties properties;
-    TableStructureReadLockHolder as_storage_lock;
+    TableLockHolder as_storage_lock;
 
     if (create.columns_list)
     {
@@ -428,8 +428,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, context);
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
-        as_storage_lock = as_storage->lockStructureForShare(
-                false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+        as_storage_lock = as_storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
         properties.columns = as_storage_metadata->getColumns();
 

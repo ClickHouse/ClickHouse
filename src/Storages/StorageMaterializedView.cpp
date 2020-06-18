@@ -116,8 +116,7 @@ Pipes StorageMaterializedView::read(
     const unsigned num_streams)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockStructureForShare(
-            false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto lock = storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     if (query_info.order_optimizer)
@@ -134,8 +133,7 @@ Pipes StorageMaterializedView::read(
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockStructureForShare(
-            true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto lock = storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
     auto stream = storage->write(query, metadata_snapshot, context);
@@ -173,7 +171,7 @@ void StorageMaterializedView::drop()
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id);
 }
 
-void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
     if (has_inner_table)
         executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_table_id);
@@ -204,9 +202,8 @@ bool StorageMaterializedView::optimize(
 void StorageMaterializedView::alter(
     const AlterCommands & params,
     const Context & context,
-    TableStructureWriteLockHolder & table_lock_holder)
+    TableLockHolder &)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();

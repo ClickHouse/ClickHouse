@@ -22,7 +22,6 @@ class Context;
 struct Settings;
 struct ConstraintsDescription;
 struct IndicesDescription;
-struct TableStructureWriteLockHolder;
 class ASTCreateQuery;
 using Dictionaries = std::vector<String>;
 

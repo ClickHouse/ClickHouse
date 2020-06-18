@@ -37,7 +37,7 @@ public:
 
     void drop() override;
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
     bool optimize(
         const ASTPtr & query,
@@ -47,7 +47,7 @@ public:
         bool deduplicate,
         const Context & context) override;
 
-    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
 

@@ -581,7 +581,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     const FutureMergedMutatedPart & future_part,
     const StorageMetadataPtr & metadata_snapshot,
     MergeList::Entry & merge_entry,
-    TableStructureReadLockHolder &,
+    TableLockHolder &,
     time_t time_of_merge,
     const ReservationPtr & space_reservation,
     bool deduplicate,
@@ -995,7 +995,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     time_t time_of_mutation,
     const Context & context,
     const ReservationPtr & space_reservation,
-    TableStructureReadLockHolder & table_lock_holder)
+    TableLockHolder &)
 {
     checkOperationIsNotCanceled(merge_entry);
 
@@ -1046,7 +1046,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     if (!for_interpreter.empty())
     {
         interpreter.emplace(storage_from_source_part, metadata_snapshot, for_interpreter, context_for_reading, true);
-        in = interpreter->execute(table_lock_holder);
+        in = interpreter->execute();
         updated_header = interpreter->getUpdatedHeader();
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
     }

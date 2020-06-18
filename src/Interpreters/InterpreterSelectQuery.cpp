@@ -255,8 +255,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        table_lock = storage->lockStructureForShare(
-                false, context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+        table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
         if (metadata_snapshot == nullptr)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
@@ -277,7 +276,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             /// Rewritten with subquery. Free storage locks here.
             storage = {};
-            table_lock.release();
+            table_lock.reset();
             table_id = StorageID::createEmpty();
         }
     }

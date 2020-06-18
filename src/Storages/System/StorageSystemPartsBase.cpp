@@ -196,7 +196,7 @@ StoragesInfo StoragesInfoStream::next()
         try
         {
             /// For table not to be dropped and set of columns to remain constant.
-            info.table_lock = info.storage->lockStructureForShare(false, query_id, settings.lock_acquire_timeout);
+            info.table_lock = info.storage->lockForShare(query_id, settings.lock_acquire_timeout);
         }
         catch (const Exception & e)
         {

@@ -43,6 +43,7 @@ BlockIO InterpreterAlterQuery::execute()
     context.checkAccess(getRequiredAccess());
     auto table_id = context.resolveStorageID(alter, Context::ResolveOrdinary);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto alter_lock = table->lockForAlter(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions,
@@ -83,10 +84,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!mutation_commands.empty())
     {
-        auto table_lock_holder = table->lockStructureForShare(
-                false /* because mutation is executed asyncronously */,
-                context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, context, false).validate(table_lock_holder);
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, context, false).validate();
         table->mutate(mutation_commands, context);
     }
 
@@ -112,13 +110,11 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!alter_commands.empty())
     {
-        auto table_lock_holder = table->lockAlterIntention(
-                context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
         alter_commands.validate(metadata, context);
         alter_commands.prepare(metadata);
         table->checkAlterIsPossible(alter_commands, context.getSettingsRef());
-        table->alter(alter_commands, context, table_lock_holder);
+        table->alter(alter_commands, context, alter_lock);
     }
 
     return {};

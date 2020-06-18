@@ -527,7 +527,7 @@ void StorageFile::truncate(
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & /* metadata_snapshot */,
     const Context & /* context */,
-    TableStructureWriteLockHolder &)
+    TableExclusiveLockHolder &)
 {
     if (paths.size() != 1)
         throw Exception("Can't truncate table '" + getStorageID().getNameForLogs() + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);

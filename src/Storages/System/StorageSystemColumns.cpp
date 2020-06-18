@@ -103,11 +103,11 @@ protected:
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-                TableStructureReadLockHolder table_lock;
+                TableLockHolder table_lock;
 
                 try
                 {
-                    table_lock = storage->lockStructureForShare(false, query_id, lock_acquire_timeout);
+                    table_lock = storage->lockForShare(query_id, lock_acquire_timeout);
                 }
                 catch (const Exception & e)
                 {

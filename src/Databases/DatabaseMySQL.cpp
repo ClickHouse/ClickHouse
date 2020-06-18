@@ -362,7 +362,7 @@ void DatabaseMySQL::cleanOutdatedTables()
                 ++iterator;
             else
             {
-                const auto table_lock = (*iterator)->lockAlterIntention(RWLockImpl::NO_QUERY, lock_acquire_timeout);
+                const auto table_lock = (*iterator)->lockExclusively(RWLockImpl::NO_QUERY, lock_acquire_timeout);
 
                 (*iterator)->shutdown();
                 (*iterator)->is_dropped = true;

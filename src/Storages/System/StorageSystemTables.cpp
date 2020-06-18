@@ -245,7 +245,7 @@ protected:
                     continue;
 
                 StoragePtr table = nullptr;
-                TableStructureReadLockHolder lock;
+                TableLockHolder lock;
 
                 if (need_lock_structure)
                 {
@@ -257,8 +257,7 @@ protected:
                     }
                     try
                     {
-                        lock = table->lockStructureForShare(
-                                false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+                        lock = table->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
                     }
                     catch (const Exception & e)
                     {
