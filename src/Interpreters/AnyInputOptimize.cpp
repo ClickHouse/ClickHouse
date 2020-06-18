@@ -30,11 +30,9 @@ ASTPtr * getExactChild(const ASTPtr & ast, const size_t ind)
 }
 
 ///recursive searching of identifiers
-void changeAllIdentifiers(ASTPtr & ast, size_t ind, int mode)
+void changeAllIdentifiers(ASTPtr & ast, size_t ind, std::string& mode)
 {
-    const char * name = any;
-    if (mode)
-        name = anyLast;
+    const char * name = mode.c_str();
     ASTPtr * exact_child = getExactChild(ast, ind);
     if (!exact_child)
         return;
@@ -68,9 +66,7 @@ void AnyInputMatcher::visit(ASTPtr & current_ast, Data data)
         && !function_node->arguments->children.empty() && function_node->arguments->children[0] &&
         function_node->arguments->children[0]->as<ASTFunction>())
     {
-        int mode = 0;
-        if (function_node->name.c_str() == anyLast)
-            mode = 1;
+        std::string mode = function_node->name;
         ///cut any or anyLast
         if (function_node->arguments->children[0]->as<ASTFunction>() &&
             !function_node->arguments->children[0]->as<ASTFunction>()->arguments->children.empty())
