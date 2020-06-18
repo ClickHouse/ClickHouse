@@ -76,41 +76,25 @@ const char * ParserTupleElementExpression::operators[] =
 
 bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    bool first = true;
+    ASTs elements;
+
+    auto parse_element = [&]
+    {
+        ASTPtr element;
+        if (!elem_parser->parse(pos, element, expected))
+            return false;
+
+        elements.push_back(element);
+        return true;
+    };
+
+    if (!parseUtil(pos, expected, parse_element, *separator_parser, allow_empty))
+        return false;
 
     auto list = std::make_shared<ASTExpressionList>(result_separator);
+    list->children = std::move(elements);
     node = list;
-
-    while (true)
-    {
-        if (first)
-        {
-            ASTPtr elem;
-            if (!elem_parser->parse(pos, elem, expected))
-                break;
-
-            list->children.push_back(elem);
-            first = false;
-        }
-        else
-        {
-            auto prev_pos = pos;
-
-            if (!separator_parser->ignore(pos, expected))
-                break;
-
-            ASTPtr elem;
-            if (!elem_parser->parse(pos, elem, expected))
-            {
-                pos = prev_pos;
-                break;
-            }
-
-            list->children.push_back(elem);
-        }
-    }
-
-    return allow_empty || !first;
+    return true;
 }
 
 

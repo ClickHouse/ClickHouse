@@ -59,7 +59,7 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 
-*See [IN operators](in.md).*
+*See [IN operators](../../sql-reference/operators/in.md).*
 
 `a IN ...` – The `in(a, b)` function.
 

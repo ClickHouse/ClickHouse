@@ -607,7 +607,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory",
+            formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setUncompressedCache(uncompressed_cache_size);
 
@@ -622,7 +623,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (mark_cache_size > max_cache_size)
     {
         mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory",
+            formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_size);
 
@@ -870,7 +872,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                     if (listen_try)
                     {
-                        LOG_ERROR(log, "{}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
+                        LOG_WARNING(log, "{}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                             "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
                             "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
                             " Example for disabled IPv4: <listen_host>::</listen_host>",
@@ -1014,7 +1016,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
 
         if (servers.empty())
-             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
+                ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
         global_context->enableNamedSessions();
 
