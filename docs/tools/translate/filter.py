@@ -160,6 +160,15 @@ def translate_filter(key, value, _format, _):
             attempts = 10
             if '#' in href:
                 href, anchor = href.split('#', 1)
+            if href.endswith('.md') and not href.startswith('/'):
+                parts = [part for part in os.environ['INPUT'].split('/') if len(part) == 2]
+                lang = parts[-1]
+                script_path = os.path.dirname(__file__)
+                base_path = os.path.abspath(f'{script_path}/../../{lang}')
+                href = os.path.join(
+                    os.path.relpath(base_path, os.path.dirname(os.environ['INPUT'])),
+                    os.path.relpath(href, base_path)
+                )
             if anchor:
                 href = f'{href}#{anchor}'
             value[2][0] = href
@@ -178,6 +187,7 @@ def translate_filter(key, value, _format, _):
 
 
 if __name__ == "__main__":
+    os.environ['INPUT'] = os.path.abspath(os.environ['INPUT'])
     pwd = os.path.dirname(filename or '.')
     if pwd:
         with util.cd(pwd):

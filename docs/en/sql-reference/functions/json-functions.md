@@ -238,15 +238,15 @@ JSONExtractKeysAndValuesRaw(json[, p, a, t, h])
 
 **Parameters**
 
-- `json` — [String](../data-types/string.md) with valid JSON.
-- `p, a, t, h` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [string](../data-types/string.md) to get the field by the key or an [integer](../data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
+-   `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+-   `p, a, t, h` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [string](../../sql-reference/data-types/string.md) to get the field by the key or an [integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
 
 **Returned values**
 
-- Array with `('key', 'value')` tuples. Both tuple members are strings.
-- Empty array if the requested object does not exist, or input JSON is invalid.
+-   Array with `('key', 'value')` tuples. Both tuple members are strings.
+-   Empty array if the requested object does not exist, or input JSON is invalid.
 
-Type: [Array](../data-types/array.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md), [String](../data-types/string.md)).
+Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), [String](../../sql-reference/data-types/string.md)).
 
 **Examples**
 
@@ -291,6 +291,5 @@ Result:
 │ [('d','"hello"'),('f','"world"')]                                                                     │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/json_functions/) <!--hide-->
