@@ -42,16 +42,7 @@ void ORCOutputStream::write(const void* buf, size_t length)
 }
 
 ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), format_settings{format_settings_}, output_stream(out_), data_types(header_.getDataTypes())
-{
-    schema = orc::createStructType();
-    size_t columns_count = header_.columns();
-    for (size_t i = 0; i != columns_count; ++i)
-    {
-        schema->addStructField(header_.safeGetByPosition(i).name, getORCType(data_types[i]));
-    }
-    writer = orc::createWriter(*schema, &output_stream, options);
-}
+    : IOutputFormat(header_, out_), format_settings{format_settings_}, output_stream(out_), data_types(header_.getDataTypes()) {}
 
 ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type)
 {
@@ -149,7 +140,10 @@ void ORCBlockOutputFormat::ORCBlockOutputFormat::writeNumbers(
             number_orc_column->notNull[i] = 0;
             continue;
         }
-        number_orc_column->data[i] = number_column.getElement(i);
+        if constexpr (std::is_same_v<NumberType, UInt8>)
+            number_orc_column->data[i] = static_cast<uint8_t>(number_column.getElement(i));
+        else
+            number_orc_column->data[i] = number_column.getElement(i);
     }
     number_orc_column->numElements = number_column.size();
 }
@@ -390,6 +384,16 @@ void ORCBlockOutputFormat::consume(Chunk chunk)
 {
     size_t columns_num = chunk.getNumColumns();
     size_t rows_num = chunk.getNumRows();
+    if (!writer)
+    {
+        const Block & header = getPort(PortKind::Main).getHeader();
+        schema = orc::createStructType();
+        for (size_t i = 0; i != columns_num; ++i)
+        {
+            schema->addStructField(header.safeGetByPosition(i).name, getORCType(data_types[i]));
+        }
+        writer = orc::createWriter(*schema, &output_stream, options);
+    }
     ORC_UNIQUE_PTR<orc::ColumnVectorBatch> batch = writer->createRowBatch(rows_num);
     orc::StructVectorBatch *root = dynamic_cast<orc::StructVectorBatch *>(batch.get());
     for (size_t i = 0; i != columns_num; ++i)
