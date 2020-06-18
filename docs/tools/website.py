@@ -145,9 +145,12 @@ def build_website(args):
             'public',
             'node_modules',
             'templates',
-            'feathericons',
             'locale'
         )
+    )
+    shutil.copy2(
+        os.path.join(args.website_dir, 'js', 'embedd.min.js'),
+        os.path.join(args.output_dir, 'js', 'embedd.min.js')
     )
 
     for root, _, filenames in os.walk(args.output_dir):

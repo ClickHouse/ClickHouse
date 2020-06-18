@@ -1,5 +1,6 @@
 #include <Parsers/ASTCreateUserQuery.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTUserNameWithHost.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Common/quoteString.h>
 
@@ -167,7 +168,7 @@ namespace
     }
 
 
-    void formatDefaultRoles(const ASTExtendedRoleSet & default_roles, const IAST::FormatSettings & settings)
+    void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT ROLE " << (settings.hilite ? IAST::hilite_none : "");
         default_roles.format(settings);
@@ -213,7 +214,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     else if (or_replace)
         format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
 
-    format.ostr << " " << backQuoteIfNeed(name);
+    format.ostr << " ";
+    names->format(format);
 
     formatOnCluster(format);
 
