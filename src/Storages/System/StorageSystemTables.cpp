@@ -267,7 +267,6 @@ protected:
                         throw;
                     }
                 }
-                auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
                 ++rows_count;
 
@@ -362,10 +361,14 @@ protected:
                 else
                     src_index += 2;
 
+                StorageMetadataPtr metadata_snapshot;
+                if (table != nullptr)
+                    metadata_snapshot = table->getInMemoryMetadataPtr();
+
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
+                    assert(metadata_snapshot != nullptr);
                     if ((expression_ptr = metadata_snapshot->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -374,7 +377,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
+                    assert(metadata_snapshot != nullptr);
                     if ((expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -383,7 +386,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
+                    assert(metadata_snapshot != nullptr);
                     if ((expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -392,7 +395,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
+                    assert(metadata_snapshot != nullptr);
                     if ((expression_ptr = metadata_snapshot->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -401,7 +404,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(table != nullptr);
+                    assert(metadata_snapshot != nullptr);
                     auto policy = table->getStoragePolicy();
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
