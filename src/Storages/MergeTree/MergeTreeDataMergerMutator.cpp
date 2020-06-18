@@ -298,7 +298,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     if (parts_to_merge.empty())
     {
         if (out_disable_reason)
-            *out_disable_reason = "There are no need to merge parts according to merge selector algorithm";
+            *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
         return false;
     }
 

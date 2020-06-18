@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Parsers/ASTShowGrantsQuery.h>
 #include <Parsers/ASTGrantQuery.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnString.h>
@@ -10,6 +10,9 @@
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
 #include <Access/Role.h>
+#include <Access/RolesOrUsersSet.h>
+#include <boost/range/algorithm/sort.hpp>
+#include <boost/range/algorithm_ext/push_back.hpp>
 
 
 namespace DB
@@ -29,7 +32,7 @@ namespace
     {
         ASTs res;
 
-        std::shared_ptr<ASTExtendedRoleSet> to_roles = std::make_shared<ASTExtendedRoleSet>();
+        std::shared_ptr<ASTRolesOrUsersSet> to_roles = std::make_shared<ASTRolesOrUsersSet>();
         to_roles->names.push_back(grantee.getName());
 
         auto grants_and_partial_revokes = grantee.access.getGrantsAndPartialRevokes();
@@ -87,9 +90,9 @@ namespace
             grant_query->admin_option = admin_option;
             grant_query->to_roles = to_roles;
             if (attach_mode)
-                grant_query->roles = ExtendedRoleSet{roles}.toAST();
+                grant_query->roles = RolesOrUsersSet{roles}.toAST();
             else
-                grant_query->roles = ExtendedRoleSet{roles}.toASTWithNames(*manager);
+                grant_query->roles = RolesOrUsersSet{roles}.toASTWithNames(*manager);
             res.push_back(std::move(grant_query));
         }
 
@@ -121,10 +124,8 @@ BlockIO InterpreterShowGrantsQuery::execute()
 
 BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
 {
-    const auto & show_query = query_ptr->as<ASTShowGrantsQuery &>();
-
     /// Build a create query.
-    ASTs grant_queries = getGrantQueries(show_query);
+    ASTs grant_queries = getGrantQueries();
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
@@ -138,6 +139,7 @@ BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
 
     /// Prepare description of the result column.
     std::stringstream desc_ss;
+    const auto & show_query = query_ptr->as<const ASTShowGrantsQuery &>();
     formatAST(show_query, desc_ss, false, true);
     String desc = desc_ss.str();
     String prefix = "SHOW ";
@@ -148,21 +150,41 @@ BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
 }
 
 
-ASTs InterpreterShowGrantsQuery::getGrantQueries(const ASTShowGrantsQuery & show_query) const
+std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
 {
+    const auto & show_query = query_ptr->as<ASTShowGrantsQuery &>();
     const auto & access_control = context.getAccessControlManager();
+    auto ids = RolesOrUsersSet{*show_query.for_roles, access_control, context.getUserID()}.getMatchingIDs(access_control);
 
-    AccessEntityPtr user_or_role;
-    if (show_query.current_user)
-        user_or_role = context.getUser();
-    else
+    std::vector<AccessEntityPtr> entities;
+    for (const auto & id : ids)
     {
-        user_or_role = access_control.tryRead<User>(show_query.name);
-        if (!user_or_role)
-            user_or_role = access_control.read<Role>(show_query.name);
+        auto entity = access_control.tryRead(id);
+        if (entity)
+            entities.push_back(entity);
     }
 
-    return getGrantQueriesImpl(*user_or_role, &access_control);
+    boost::range::sort(entities, IAccessEntity::LessByTypeAndName{});
+    return entities;
+}
+
+
+ASTs InterpreterShowGrantsQuery::getGrantQueries() const
+{
+    auto entities = getEntities();
+    const auto & access_control = context.getAccessControlManager();
+
+    ASTs grant_queries;
+    for (const auto & entity : entities)
+        boost::range::push_back(grant_queries, getGrantQueries(*entity, access_control));
+
+    return grant_queries;
+}
+
+
+ASTs InterpreterShowGrantsQuery::getGrantQueries(const IAccessEntity & user_or_role, const AccessControlManager & access_control)
+{
+    return getGrantQueriesImpl(user_or_role, &access_control, false);
 }
 
 

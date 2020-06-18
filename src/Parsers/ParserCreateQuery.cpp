@@ -152,7 +152,7 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
 
     ParserIndexDeclaration index_p;
     ParserConstraintDeclaration constraint_p;
-    ParserColumnDeclaration column_p;
+    ParserColumnDeclaration column_p{true, true};
 
     ASTPtr new_node = nullptr;
 
@@ -790,7 +790,6 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserToken s_dot(TokenType::Dot);
     ParserDictionaryAttributeDeclarationList attributes_p;
     ParserDictionary dictionary_p;
-
 
     bool if_not_exists = false;
 
