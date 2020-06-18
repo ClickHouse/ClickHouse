@@ -134,6 +134,9 @@ function run_tests
         touch "$x"
     done
 
+    # Randomize test order.
+    test_files=$(for f in $test_files; do echo "$f"; done | sort -R)
+
     # Run the tests.
     test_name="<none>"
     for test in $test_files
