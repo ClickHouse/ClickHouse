@@ -5,9 +5,9 @@
 namespace DB
 {
 
-OffsetsStep::OffsetsStep(const DataStream & input_stream_, size_t offsets_)
+OffsetsStep::OffsetsStep(const DataStream & input_stream_, size_t offset_)
     : ITransformingStep(input_stream_, input_stream_)
-    , offset(offsets_)
+    , offset(offset_)
 {
 }
 
