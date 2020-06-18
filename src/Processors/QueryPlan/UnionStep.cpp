@@ -34,6 +34,8 @@ QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines)
         // but in case of union this cannot be done.
         pipeline->setMaxThreads(std::min<UInt64>(num_pipelines, max_threads));
     }
+
+    return pipeline;
 }
 
 }
