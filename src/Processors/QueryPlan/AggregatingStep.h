@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <DataStreams/SizeLimits.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Interpreters/Aggregator.h>
 
 namespace DB
 {
@@ -14,7 +15,8 @@ class AggregatingStep : public ITransformingStep
 public:
     AggregatingStep(
         const DataStream & input_stream_,
-        AggregatingTransformParamsPtr transform_params_,
+        Aggregator::Params params_,
+        bool final_,
         size_t max_block_size_,
         size_t merge_threads_,
         size_t temporary_data_merge_threads_,
@@ -27,7 +29,8 @@ public:
     void transformPipeline(QueryPipeline & pipeline) override;
 
 private:
-    AggregatingTransformParamsPtr transform_params;
+    Aggregator::Params params;
+    bool final;
     size_t max_block_size;
     size_t merge_threads;
     size_t temporary_data_merge_threads;
