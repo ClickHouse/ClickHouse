@@ -42,7 +42,7 @@ public:
 
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
 
-    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
 protected:
     StorageStripeLog(

@@ -38,7 +38,11 @@ public:
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const Context & context) override;
 
-    void truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &) override;
+    void truncate(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /* metadata_snapshot */,
+        const Context & /* context */,
+        TableStructureWriteLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 

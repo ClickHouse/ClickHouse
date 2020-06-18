@@ -429,10 +429,10 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context
     return file_checker.check();
 }
 
-void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageTinyLog::truncate(
+    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
 
     disk->clearDirectory(table_path);
 

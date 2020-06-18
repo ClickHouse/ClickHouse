@@ -4011,7 +4011,8 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 }
 
 
-void StorageReplicatedMergeTree::truncate(const ASTPtr & query, const Context & query_context, TableStructureWriteLockHolder & table_lock)
+void StorageReplicatedMergeTree::truncate(
+    const ASTPtr & query, const StorageMetadataPtr &, const Context & query_context, TableStructureWriteLockHolder & table_lock)
 {
     table_lock.release();   /// Truncate is done asynchronously.
 

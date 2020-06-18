@@ -82,7 +82,7 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     /// Removes temporary data in local filesystem.
-    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
     void renameOnDisk(const String & new_path_to_table_data);

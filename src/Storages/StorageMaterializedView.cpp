@@ -173,7 +173,7 @@ void StorageMaterializedView::drop()
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id);
 }
 
-void StorageMaterializedView::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     if (has_inner_table)
         executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_table_id);

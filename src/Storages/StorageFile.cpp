@@ -523,7 +523,11 @@ void StorageFile::rename(const String & new_path_to_table_data, const StorageID 
     renameInMemory(new_table_id);
 }
 
-void StorageFile::truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &)
+void StorageFile::truncate(
+    const ASTPtr & /*query*/,
+    const StorageMetadataPtr & /* metadata_snapshot */,
+    const Context & /* context */,
+    TableStructureWriteLockHolder &)
 {
     if (paths.size() != 1)
         throw Exception("Can't truncate table '" + getStorageID().getNameForLogs() + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
