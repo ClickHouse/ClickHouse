@@ -183,9 +183,6 @@ MergeTreeData::MergeTreeData(
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
     }
 
-
-    setTTLExpressions(metadata_, metadata_);
-
     /// format_file always contained on any data path
     PathWithDisk version_file;
     /// Creating directories, if not exist.
@@ -514,14 +511,6 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
             }
         }
     }
-}
-
-/// Todo replace columns with TTL for columns
-void MergeTreeData::setTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata)
-{
-    checkTTLExpressions(new_metadata, old_metadata);
-    //setColumnTTLs(new_metadata.column_ttls_by_name);
-    //setTableTTLs(new_metadata.table_ttl);
 }
 
 
