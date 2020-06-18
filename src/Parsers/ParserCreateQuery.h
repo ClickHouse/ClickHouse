@@ -7,12 +7,9 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDataType.h>
 #include <Poco/String.h>
-
-#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -180,8 +177,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         else if (s_null.ignore(pos, expected))
             null_modifier.emplace(true);
     }
-
-
 
     if (s_comment.ignore(pos, expected))
     {
