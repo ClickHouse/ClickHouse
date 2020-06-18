@@ -141,11 +141,11 @@ function run_tests
     test_name="<none>"
     for test in $test_files
     do
-        # Check that both servers are alive, to fail faster if they die.
+        # Check that both servers are alive, and restart them if they die.
         clickhouse-client --port 9001 --query "select 1 format Null" \
-            || { echo $test_name >> left-server-died.log ; restart ; continue ; }
+            || { echo $test_name >> left-server-died.log ; restart ; }
         clickhouse-client --port 9002 --query "select 1 format Null" \
-            || { echo $test_name >> right-server-died.log ; restart ; continue ; }
+            || { echo $test_name >> right-server-died.log ; restart ; }
 
         test_name=$(basename "$test" ".xml")
         echo test "$test_name"
