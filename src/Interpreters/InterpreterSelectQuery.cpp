@@ -1,5 +1,4 @@
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/copyData.h>
 #include <DataStreams/materializeBlock.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -34,7 +33,6 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/QueryPlan/ReadFromStorageStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -58,7 +56,6 @@
 #include <Processors/QueryPlan/OffsetsStep.h>
 #include <Processors/QueryPlan/FinishSortingStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPipeline.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -906,8 +903,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
         if (expressions.second_stage)
         {
-            bool need_second_distinct_pass = false;
-
             if (expressions.need_aggregate)
             {
                 /// If you need to combine aggregated results from multiple servers
