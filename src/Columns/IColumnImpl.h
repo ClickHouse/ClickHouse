@@ -79,7 +79,16 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
         if constexpr (use_indexes)
             row = indexes[i];
 
-        compare_results[row] = compareAt(row, rhs_row_num, rhs, nan_direction_hint);
+        int res = compareAt(row, rhs_row_num, rhs, nan_direction_hint);
+
+        /// We need to convert int to Int8. Sometimes comparison return values which do not fit in one byte.
+        if (res < 0)
+            compare_results[row] = -1;
+        else if (res > 0)
+            compare_results[row] = 1;
+        else
+            compare_results[row] = 0;
+
         if constexpr (reversed)
             compare_results[row] = -compare_results[row];
 
