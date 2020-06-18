@@ -69,7 +69,7 @@ Returns the following `String` type columns:
 
 -   `name` — Column name.
 -   `type`— Column type.
--   `default_type` — Clause that is used in [default expression](create.md#create-default-values) (`DEFAULT`, `MATERIALIZED` or `ALIAS`). Column contains an empty string, if the default expression isn’t specified.
+-   `default_type` — Clause that is used in [default expression](../../sql-reference/statements/create.md#create-default-values) (`DEFAULT`, `MATERIALIZED` or `ALIAS`). Column contains an empty string, if the default expression isn’t specified.
 -   `default_expression` — Value specified in the `DEFAULT` clause.
 -   `comment_expression` — Comment text.
 
@@ -117,10 +117,9 @@ Deletes a user.
 
 ### Syntax {#drop-user-syntax}
 
-```sql
+``` sql
 DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
-
 
 ## DROP ROLE {#drop-role-statement}
 
@@ -130,7 +129,7 @@ Deleted role is revoked from all the entities where it was assigned.
 
 ### Syntax {#drop-role-syntax}
 
-```sql
+``` sql
 DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
@@ -146,7 +145,6 @@ Deleted row policy is revoked from all the entities where it was assigned.
 DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]
 ```
 
-
 ## DROP QUOTA {#drop-quota-statement}
 
 Deletes a quota.
@@ -159,7 +157,6 @@ Deleted quota is revoked from all the entities where it was assigned.
 DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
-
 ## DROP SETTINGS PROFILE {#drop-settings-profile-statement}
 
 Deletes a settings profile.
@@ -171,7 +168,6 @@ Deleted settings profile is revoked from all the entities where it was assigned.
 ``` sql
 DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
-
 
 ## EXISTS {#exists-statement}
 
@@ -225,7 +221,7 @@ KILL MUTATION [ON CLUSTER cluster]
   [FORMAT format]
 ```
 
-Tries to cancel and remove [mutations](alter.md#alter-mutations) that are currently executing. Mutations to cancel are selected from the [`system.mutations`](../../operations/system-tables.md#system_tables-mutations) table using the filter specified by the `WHERE` clause of the `KILL` query.
+Tries to cancel and remove [mutations](../../sql-reference/statements/alter.md#alter-mutations) that are currently executing. Mutations to cancel are selected from the [`system.mutations`](../../operations/system-tables/mutations.md#system_tables-mutations) table using the filter specified by the `WHERE` clause of the `KILL` query.
 
 A test query (`TEST`) only checks the user’s rights and displays a list of queries to stop.
 
@@ -256,7 +252,7 @@ The `OPTMIZE` query is also supported for the [MaterializedView](../../engines/t
 When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the `replication_alter_partitions_sync` setting is enabled).
 
 -   If `OPTIMIZE` doesn’t perform a merge for any reason, it doesn’t notify the client. To enable notifications, use the [optimize\_throw\_if\_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
--   If you specify a `PARTITION`, only the specified partition is optimized. [How to set partition expression](alter.md#alter-how-to-specify-part-expr).
+-   If you specify a `PARTITION`, only the specified partition is optimized. [How to set partition expression](../../sql-reference/statements/alter.md#alter-how-to-specify-part-expr).
 -   If you specify `FINAL`, optimization is performed even when all the data is already in one part.
 -   If you specify `DEDUPLICATE`, then completely identical rows will be deduplicated (all columns are compared), it makes sense only for the MergeTree engine.
 
@@ -303,15 +299,13 @@ SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
 
 Sets default roles to a user.
 
-Default roles are automatically activated at user login. You can set as default only the previously granted roles. If the role isn't granted to a user, ClickHouse throws an exception.
-
+Default roles are automatically activated at user login. You can set as default only the previously granted roles. If the role isn’t granted to a user, ClickHouse throws an exception.
 
 ### Syntax {#set-default-role-syntax}
 
 ``` sql
 SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
 ```
-
 
 ### Examples {#set-default-role-examples}
 
@@ -335,10 +329,9 @@ SET DEFAULT ROLE NONE TO user
 
 Set all the granted roles as default excepting some of them:
 
-```sql
+``` sql
 SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
 ```
-
 
 ## TRUNCATE {#truncate-statement}
 

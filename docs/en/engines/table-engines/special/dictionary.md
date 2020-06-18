@@ -7,7 +7,7 @@ toc_title: Dictionary
 
 The `Dictionary` engine displays the [dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) data as a ClickHouse table.
 
-## Example
+## Example {#example}
 
 As an example, consider a dictionary of `products` with the following configuration:
 
