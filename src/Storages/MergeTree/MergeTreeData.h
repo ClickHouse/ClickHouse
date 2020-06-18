@@ -792,7 +792,6 @@ protected:
     void initPartitionKey(const KeyDescription & new_partition_key);
 
     void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const;
-    void setTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 

@@ -816,13 +816,12 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         }
     }
 
-    auto table_id = getStorageID();
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id, new_metadata);
-
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
     setProperties(new_metadata, old_metadata);
-    setTTLExpressions(new_metadata, old_metadata);
+
+    auto table_id = getStorageID();
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id, new_metadata);
 }
 
 
