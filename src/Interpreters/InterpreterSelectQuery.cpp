@@ -57,6 +57,8 @@
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/OffsetsStep.h>
 #include <Processors/QueryPlan/FinishSortingStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPipeline.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -464,7 +466,10 @@ Block InterpreterSelectQuery::getSampleBlock()
 BlockIO InterpreterSelectQuery::execute()
 {
     BlockIO res;
-    executeImpl(res.pipeline, input, std::move(input_pipe));
+    QueryPlan query_plan;
+    executeImpl(query_plan, input, std::move(input_pipe));
+
+    res.pipeline = std::move(*query_plan.buildQueryPipeline());
     res.pipeline.addInterpreterContext(context);
     res.pipeline.addStorageHolder(storage);
 
@@ -683,7 +688,7 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
     return 0;
 }
 
-void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe)
+void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe)
 {
     /** Streams of data. When the query is executed in parallel, we have several data streams.
      *  If there is no GROUP BY, then perform all operations before ORDER BY and LIMIT in parallel, then
@@ -704,30 +709,30 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
 
     if (options.only_analyze)
     {
-        ReadNothingStep read_nothing(DataStream{.header = source_header});
-        read_nothing.initializePipeline(pipeline);
+        auto read_nothing = std::make_unique<ReadNothingStep>(source_header);
+        query_plan.addStep(std::move(read_nothing));
 
         if (expressions.prewhere_info)
         {
-            FilterStep prewhere_step(
-                    DataStream{.header = pipeline.getHeader()},
+            auto prewhere_step = std::make_unique<FilterStep>(
+                    query_plan.getCurrentDataStream(),
                     expressions.prewhere_info->prewhere_actions,
                     expressions.prewhere_info->prewhere_column_name,
                     expressions.prewhere_info->remove_prewhere_column);
 
-            prewhere_step.setStepDescription("PREWHERE");
-            prewhere_step.transformPipeline(pipeline);
+            prewhere_step->setStepDescription("PREWHERE");
+            query_plan.addStep(std::move(prewhere_step));
 
             // To remove additional columns in dry run
             // For example, sample column which can be removed in this stage
             if (expressions.prewhere_info->remove_columns_actions)
             {
-                ExpressionStep remove_columns(
-                        DataStream{.header = pipeline.getHeader()},
+                auto remove_columns = std::make_unique<ExpressionStep>(
+                        query_plan.getCurrentDataStream(),
                         expressions.prewhere_info->remove_columns_actions);
 
-                remove_columns.setStepDescription("Remove unnecessary columns after PREWHERE");
-                remove_columns.transformPipeline(pipeline);
+                remove_columns->setStepDescription("Remove unnecessary columns after PREWHERE");
+                query_plan.addStep(std::move(remove_columns));
             }
         }
     }
@@ -735,13 +740,14 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
     {
         if (prepared_input)
         {
-            ReadFromPreparedSource prepared_source_step(Pipe(std::make_shared<SourceFromInputStream>(prepared_input)));
-            prepared_source_step.initializePipeline(pipeline);
+            auto prepared_source_step = std::make_unique<ReadFromPreparedSource>(
+                    Pipe(std::make_shared<SourceFromInputStream>(prepared_input)));
+            query_plan.addStep(std::move(prepared_source_step));
         }
         else if (prepared_pipe)
         {
-            ReadFromPreparedSource prepared_source_step(std::move(*prepared_pipe));
-            prepared_source_step.initializePipeline(pipeline);
+            auto prepared_source_step = std::make_unique<ReadFromPreparedSource>(std::move(*prepared_pipe));
+            query_plan.addStep(std::move(prepared_source_step));
         }
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&
@@ -752,7 +758,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        executeFetchColumns(from_stage, pipeline, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
+        executeFetchColumns(from_stage, query_plan, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
 
         LOG_TRACE(log, "{} -> {}", QueryProcessingStage::toString(from_stage), QueryProcessingStage::toString(options.to_stage));
     }
@@ -783,19 +789,19 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
             if (!expressions.second_stage && !expressions.need_aggregate && !expressions.hasHaving())
             {
                 if (expressions.has_order_by)
-                    executeOrder(pipeline, query_info.input_order_info);
+                    executeOrder(query_plan, query_info.input_order_info);
 
                 if (expressions.has_order_by && query.limitLength())
-                    executeDistinct(pipeline, false, expressions.selected_columns, true);
+                    executeDistinct(query_plan, false, expressions.selected_columns, true);
 
                 if (expressions.hasLimitBy())
                 {
-                    executeExpression(pipeline, expressions.before_limit_by, "Before LIMIT BY");
-                    executeLimitBy(pipeline);
+                    executeExpression(query_plan, expressions.before_limit_by, "Before LIMIT BY");
+                    executeLimitBy(query_plan);
                 }
 
                 if (query.limitLength())
-                    executePreLimit(pipeline, true);
+                    executePreLimit(query_plan, true);
             }
         };
 
@@ -806,21 +812,21 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
 
             preliminary_sort();
             if (expressions.need_aggregate)
-                executeMergeAggregated(pipeline, aggregate_overflow_row, aggregate_final);
+                executeMergeAggregated(query_plan, aggregate_overflow_row, aggregate_final);
         }
 
         if (expressions.first_stage)
         {
             if (expressions.hasFilter())
             {
-                FilterStep row_level_security_step(
-                        DataStream{.header = pipeline.getHeader()},
+                auto row_level_security_step = std::make_unique<FilterStep>(
+                        query_plan.getCurrentDataStream(),
                         expressions.filter_info->actions,
                         expressions.filter_info->column_name,
                         expressions.filter_info->do_remove_column);
 
-                row_level_security_step.setStepDescription("Row-level security filter");
-                row_level_security_step.transformPipeline(pipeline);
+                row_level_security_step->setStepDescription("Row-level security filter");
+                query_plan.addStep(std::move(row_level_security_step));
             }
 
             if (expressions.hasJoin())
@@ -828,15 +834,7 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
                 Block join_result_sample;
                 JoinPtr join = expressions.before_join->getTableJoinAlgo();
 
-                join_result_sample = ExpressionTransform::transformHeader(pipeline.getHeader(), expressions.before_join);
-
-                /// In case joined subquery has totals, and we don't, add default chunk to totals.
-                bool default_totals = false;
-                if (!pipeline.hasTotals())
-                {
-                    pipeline.addDefaultTotals();
-                    default_totals = true;
-                }
+                join_result_sample = ExpressionTransform::transformHeader(query_plan.getCurrentDataStream().header, expressions.before_join);
 
                 bool inflating_join = false;
                 if (join)
@@ -846,61 +844,60 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
                         inflating_join = isCross(hash_join->getKind());
                 }
 
+                QueryPlanStepPtr before_join_step;
                 if (inflating_join)
                 {
-                    InflatingExpressionStep before_join_step(
-                            DataStream{.header = pipeline.getHeader()},
+                    before_join_step = std::make_unique<InflatingExpressionStep>(
+                            query_plan.getCurrentDataStream(),
                             expressions.before_join,
-                            default_totals);
+                            true);
 
-                    before_join_step.setStepDescription("JOIN");
-                    before_join_step.transformPipeline(pipeline);
                 }
                 else
                 {
-                    ExpressionStep before_join_step(
-                            DataStream{.header = pipeline.getHeader()},
+                    before_join_step = std::make_unique<ExpressionStep>(
+                            query_plan.getCurrentDataStream(),
                             expressions.before_join,
-                            default_totals);
-
-                    before_join_step.setStepDescription("JOIN");
-                    before_join_step.transformPipeline(pipeline);
+                            true);
                 }
+
+                before_join_step->setStepDescription("JOIN");
+                query_plan.addStep(std::move(before_join_step));
 
                 if (join)
                 {
                     if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
                     {
                         auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
-                        AddingDelayedStreamStep add_non_joined_rows_step(
-                                DataStream{.header = pipeline.getHeader()}, std::move(source));
+                        auto add_non_joined_rows_step = std::make_unique<AddingDelayedStreamStep>(
+                                query_plan.getCurrentDataStream(), std::move(source));
 
-                        add_non_joined_rows_step.setStepDescription("Add non-joined rows after JOIN");
-                        add_non_joined_rows_step.transformPipeline(pipeline);
+                        add_non_joined_rows_step->setStepDescription("Add non-joined rows after JOIN");
+                        query_plan.addStep(std::move(add_non_joined_rows_step));
                     }
                 }
             }
 
             if (expressions.hasWhere())
-                executeWhere(pipeline, expressions.before_where, expressions.remove_where_filter);
+                executeWhere(query_plan, expressions.before_where, expressions.remove_where_filter);
 
             if (expressions.need_aggregate)
             {
-                executeAggregation(pipeline, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
+                executeAggregation(query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
                 /// We need to reset input order info, so that executeOrder can't use  it
                 query_info.input_order_info.reset();
             }
             else
             {
-                executeExpression(pipeline, expressions.before_order_and_select, "Before ORDER BY and SELECT");
-                executeDistinct(pipeline, true, expressions.selected_columns, true);
+                executeExpression(query_plan, expressions.before_order_and_select, "Before ORDER BY and SELECT");
+                executeDistinct(query_plan, true, expressions.selected_columns, true);
             }
 
             preliminary_sort();
 
             // If there is no global subqueries, we can run subqueries only when receive them on server.
             if (!query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
-                executeSubqueriesInSetsAndJoins(pipeline, subqueries_for_sets);
+                executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
         }
 
         if (expressions.second_stage)
@@ -911,39 +908,37 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
             {
                 /// If you need to combine aggregated results from multiple servers
                 if (!expressions.first_stage)
-                    executeMergeAggregated(pipeline, aggregate_overflow_row, aggregate_final);
+                    executeMergeAggregated(query_plan, aggregate_overflow_row, aggregate_final);
 
                 if (!aggregate_final)
                 {
                     if (query.group_by_with_totals)
                     {
                         bool final = !query.group_by_with_rollup && !query.group_by_with_cube;
-                        executeTotalsAndHaving(pipeline, expressions.hasHaving(), expressions.before_having, aggregate_overflow_row, final);
+                        executeTotalsAndHaving(query_plan, expressions.hasHaving(), expressions.before_having, aggregate_overflow_row, final);
                     }
 
                     if (query.group_by_with_rollup)
-                        executeRollupOrCube(pipeline, Modificator::ROLLUP);
+                        executeRollupOrCube(query_plan, Modificator::ROLLUP);
                     else if (query.group_by_with_cube)
-                        executeRollupOrCube(pipeline, Modificator::CUBE);
+                        executeRollupOrCube(query_plan, Modificator::CUBE);
 
                     if ((query.group_by_with_rollup || query.group_by_with_cube) && expressions.hasHaving())
                     {
                         if (query.group_by_with_totals)
                             throw Exception("WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING", ErrorCodes::NOT_IMPLEMENTED);
-                        executeHaving(pipeline, expressions.before_having);
+                        executeHaving(query_plan, expressions.before_having);
                     }
                 }
                 else if (expressions.hasHaving())
-                    executeHaving(pipeline, expressions.before_having);
+                    executeHaving(query_plan, expressions.before_having);
 
-                executeExpression(pipeline, expressions.before_order_and_select, "Before ORDER BY and SELECT");
-                executeDistinct(pipeline, true, expressions.selected_columns, true);
+                executeExpression(query_plan, expressions.before_order_and_select, "Before ORDER BY and SELECT");
+                executeDistinct(query_plan, true, expressions.selected_columns, true);
 
             }
             else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube)
                 throw Exception("WITH TOTALS, ROLLUP or CUBE are not supported without aggregation", ErrorCodes::NOT_IMPLEMENTED);
-
-            need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
 
             if (expressions.has_order_by)
             {
@@ -953,57 +948,57 @@ void InterpreterSelectQuery::executeImpl(QueryPipeline & pipeline, const BlockIn
                   */
 
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
-                    executeMergeSorted(pipeline, "before ORDER BY");
+                    executeMergeSorted(query_plan, "before ORDER BY");
                 else    /// Otherwise, just sort.
-                    executeOrder(pipeline, query_info.input_order_info);
+                    executeOrder(query_plan, query_info.input_order_info);
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
               */
             bool has_prelimit = false;
-            if (query.limitLength() && !query.limit_with_ties && pipeline.hasMoreThanOneStream() &&
+            if (query.limitLength() && !query.limit_with_ties &&
                 !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
             {
-                executePreLimit(pipeline, false);
+                executePreLimit(query_plan, false);
                 has_prelimit = true;
             }
 
             /** If there was more than one stream,
               * then DISTINCT needs to be performed once again after merging all streams.
               */
-            if (need_second_distinct_pass)
-                executeDistinct(pipeline, false, expressions.selected_columns, false);
+            if (query.distinct)
+                executeDistinct(query_plan, false, expressions.selected_columns, false);
 
             if (expressions.hasLimitBy())
             {
-                executeExpression(pipeline, expressions.before_limit_by, "Before LIMIT BY");
-                executeLimitBy(pipeline);
+                executeExpression(query_plan, expressions.before_limit_by, "Before LIMIT BY");
+                executeLimitBy(query_plan);
             }
 
-            executeWithFill(pipeline);
+            executeWithFill(query_plan);
 
             /** We must do projection after DISTINCT because projection may remove some columns.
               */
-            executeProjection(pipeline, expressions.final_projection);
+            executeProjection(query_plan, expressions.final_projection);
 
             /** Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
               */
-            executeExtremes(pipeline);
+            executeExtremes(query_plan);
 
             if (!has_prelimit)  /// Limit is no longer needed if there is prelimit.
-                executeLimit(pipeline);
+                executeLimit(query_plan);
 
-            executeOffset(pipeline);
+            executeOffset(query_plan);
         }
     }
 
     if (query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
-        executeSubqueriesInSetsAndJoins(pipeline, subqueries_for_sets);
+        executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
 }
 
 void InterpreterSelectQuery::executeFetchColumns(
-    QueryProcessingStage::Enum processing_stage, QueryPipeline & pipeline,
+    QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan,
     const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
 {
     auto & query = getSelectQuery();
