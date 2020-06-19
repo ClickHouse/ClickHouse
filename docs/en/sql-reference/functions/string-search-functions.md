@@ -25,8 +25,8 @@ Alias: `locate(haystack, needle)`.
 
 **Parameters**
 
--   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned values**
 
@@ -83,8 +83,8 @@ positionCaseInsensitive(haystack, needle)
 
 **Parameters**
 
--   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned values**
 
@@ -125,8 +125,8 @@ positionUTF8(haystack, needle)
 
 **Parameters**
 
--   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned values**
 
@@ -197,8 +197,8 @@ positionCaseInsensitiveUTF8(haystack, needle)
 
 **Parameters**
 
--   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned value**
 
@@ -225,7 +225,7 @@ Result:
 
 ## multiSearchAllPositions {#multisearchallpositions}
 
-The same as [position](string-search-functions.md#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
+The same as [position](../../sql-reference/functions/string-search-functions.md#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
 
 The search is performed on sequences of bytes without respect to string encoding and collation.
 
@@ -241,8 +241,8 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 
 **Parameters**
 
--   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned values**
 

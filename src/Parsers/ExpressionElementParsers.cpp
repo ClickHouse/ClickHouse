@@ -352,7 +352,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected)
         && ParserExpression().parse(pos, expr_node, expected)
         && ParserKeyword("AS").ignore(pos, expected)
-        && ParserIdentifierWithOptionalParameters().parse(pos, type_node, expected)
+        && ParserDataType().parse(pos, type_node, expected)
         && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
     {
         /// Convert to canonical representation in functional form: CAST(expr, 'type')
@@ -1233,7 +1233,7 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ++pos;
 
     auto old_pos = pos;
-    ParserIdentifierWithOptionalParameters type_parser;
+    ParserDataType type_parser;
     if (!type_parser.ignore(pos, expected))
     {
         expected.add(pos, "substitution type");

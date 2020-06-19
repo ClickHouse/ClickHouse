@@ -82,7 +82,6 @@ SELECT
 ```
 
 ``` text
-
 ┌─uuid─────────────────────────────────┬─bytes────────────┐
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │
 └──────────────────────────────────────┴──────────────────┘
@@ -116,6 +115,6 @@ SELECT
 
 ## See Also {#see-also}
 
--   [dictGetUUID](ext-dict-functions.md#ext_dict_functions-other)
+-   [dictGetUUID](../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-other)
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/uuid_function/) <!--hide-->
