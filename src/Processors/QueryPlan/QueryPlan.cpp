@@ -70,6 +70,9 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<QueryPlan> plans)
 
     for (auto & plan : plans)
         root->children.emplace_back(plan.root);
+
+    for (auto & plan : plans)
+        max_threads = std::max(max_threads, plan.max_threads);
 }
 
 void QueryPlan::addStep(QueryPlanStepPtr step)
