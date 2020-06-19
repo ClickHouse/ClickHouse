@@ -480,9 +480,6 @@ BlockIO InterpreterSelectQuery::execute()
     buildQueryPlan(query_plan);
 
     res.pipeline = std::move(*query_plan.buildQueryPipeline());
-    res.pipeline.addInterpreterContext(context);
-    res.pipeline.addStorageHolder(storage);
-
     return res;
 }
 
@@ -1340,7 +1337,7 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         auto read_step = std::make_unique<ReadFromStorageStep>(
                 table_lock, options, storage,
-                required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
+                required_columns, query_info, context, processing_stage, max_block_size, max_streams);
 
         read_step->setStepDescription("Read from " + storage->getName());
         query_plan.addStep(std::move(read_step));

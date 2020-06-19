@@ -23,7 +23,7 @@ public:
         StoragePtr storage,
         const Names & required_columns,
         const SelectQueryInfo & query_info,
-        const Context & context,
+        std::shared_ptr<Context> context,
         QueryProcessingStage::Enum processing_stage,
         size_t max_block_size,
         size_t max_streams);
@@ -41,7 +41,7 @@ private:
     StoragePtr storage;
     const Names & required_columns;
     const SelectQueryInfo & query_info;
-    const Context & context;
+    std::shared_ptr<Context> context;
     QueryProcessingStage::Enum processing_stage;
     size_t max_block_size;
     size_t max_streams;
