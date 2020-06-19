@@ -19,11 +19,7 @@ public:
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
 
-    ASTPtr getSelectQuery() const { return select->clone(); }
-    ASTPtr getInnerQuery() const { return inner_query->clone(); }
     bool hasInnerTable() const { return has_inner_table; }
-
-    StorageInMemoryMetadata getInMemoryMetadata() const override;
 
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
@@ -45,7 +41,7 @@ public:
 
     void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
 
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
@@ -76,13 +72,8 @@ public:
     Strings getDataPaths() const override;
 
 private:
-    /// Can be empty if SELECT query doesn't contain table
-    StorageID select_table_id = StorageID::createEmpty();
     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();
-
-    ASTPtr select;
-    ASTPtr inner_query;
 
     Context & global_context;
     bool has_inner_table = false;

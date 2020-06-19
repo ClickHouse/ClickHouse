@@ -33,7 +33,7 @@ You may manually create this subfolder and file in server filesystem and then [A
 !!! warning "Warning"
     Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
 
-## Example
+## Example {#example}
 
 **1.** Set up the `file_engine_table` table:
 

@@ -2377,10 +2377,13 @@ public:
     using MonotonicityForRange = FunctionCast::MonotonicityForRange;
 
     static constexpr auto name = "CAST";
-    static FunctionOverloadResolverImplPtr create(const Context &) { return createImpl(); }
-    static FunctionOverloadResolverImplPtr createImpl() { return std::make_unique<CastOverloadResolver>(); }
 
-    CastOverloadResolver() {}
+    static FunctionOverloadResolverImplPtr create(const Context & context);
+    static FunctionOverloadResolverImplPtr createImpl(bool keep_nullable) { return std::make_unique<CastOverloadResolver>(keep_nullable); }
+
+    CastOverloadResolver(bool keep_nullable_)
+        : keep_nullable(keep_nullable_)
+    {}
 
     String getName() const override { return name; }
 
@@ -2415,13 +2418,18 @@ protected:
                 " Instead there is a column with the following structure: " + column->dumpStructure(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return DataTypeFactory::instance().get(type_col->getValue<String>());
+        DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
+        if (keep_nullable && arguments.front().type->isNullable())
+            return makeNullable(type);
+        return type;
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
 private:
+    bool keep_nullable;
+
     template <typename DataType>
     static auto monotonicityForType(const DataType * const)
     {
