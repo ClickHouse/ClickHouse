@@ -22,7 +22,7 @@ function configure
     echo all killed
 
     set -m # Spawn temporary in its own process groups
-    left/clickhouse-server --config-file=left/config/config.xml -- --path db0 &> setup-server-log.log &
+    left/clickhouse-server --config-file=left/config/config.xml -- --path db0 --user_files_path db0/user_files &> setup-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
@@ -59,12 +59,12 @@ function restart
 
     set -m # Spawn servers in their own process groups
 
-    left/clickhouse-server --config-file=left/config/config.xml -- --path left/db &>> left-server-log.log &
+    left/clickhouse-server --config-file=left/config/config.xml -- --path left/db --user_files_path left/db/user_files &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
 
-    right/clickhouse-server --config-file=right/config/config.xml -- --path right/db &>> right-server-log.log &
+    right/clickhouse-server --config-file=right/config/config.xml -- --path right/db --user_files_path right/db/user_files &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
