@@ -145,14 +145,6 @@ private:
 
     void executeRollupOrCube(QueryPipeline & pipeline, Modificator modificator);
 
-    /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
-      *
-      * Section SETTINGS - settings for a specific query.
-      * Normally, the settings can be passed in other ways, not inside the query.
-      * But the use of this section is justified if you need to set the settings for one subquery.
-      */
-    void initSettings();
-
     SelectQueryOptions options;
     ASTPtr query_ptr;
     std::shared_ptr<Context> context;

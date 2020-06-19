@@ -236,6 +236,53 @@ static void setQuerySpecificSettings(ASTPtr & ast, Context & context)
     }
 }
 
+static void applySettingsClausesRecursive(IAST & query, Context & context)
+{
+    /*
+     * Apply the SETTINGS clause.
+     *
+     * To get an idea about which structures are possible, look at dumpTree for
+     * something like this:
+     *      SELECT 1 SETTINGS max_memory_usage = 1
+     *      UNION ALL
+     *      SELECT 2 SETTINGS max_memory_usage = 2
+     *      SETTINGS max_memory_usage = 3
+     *
+     * We just apply all settings clauses recursively before executing anything.
+     */
+    if (auto * with_union = query.as<ASTSelectWithUnionQuery>())
+    {
+        /*
+         * Apply the subqueries' settings first. Top query's settings take
+         * priority.
+         */
+        for (const auto & subquery : with_union->list_of_selects->children)
+        {
+            applySettingsClausesRecursive(*subquery, context);
+        }
+    }
+
+    ASTPtr settings_clause = nullptr;
+
+    if (auto * insert = query.as<ASTInsertQuery>())
+    {
+        settings_clause = insert->settings_ast;
+    }
+    else if (auto * select = query.as<ASTSelectQuery>())
+    {
+        settings_clause = select->settings();
+    }
+    else if (auto * with_output = query.as<ASTQueryWithOutput>())
+    {
+        settings_clause = with_output->settings_ast;
+    }
+
+    if (settings_clause)
+    {
+        InterpreterSetQuery(settings_clause, context).executeForCurrentContext();
+    }
+}
+
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
     const char * end,
@@ -273,9 +320,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         auto * insert_query = ast->as<ASTInsertQuery>();
 
-        if (insert_query && insert_query->settings_ast)
-            InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
-
         if (insert_query && insert_query->data)
         {
             query_end = insert_query->data;
@@ -301,6 +345,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     }
 
     setQuerySpecificSettings(ast, context);
+
+    applySettingsClausesRecursive(*ast, context);
 
     /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
     String query(begin, query_end);
@@ -751,9 +797,6 @@ void executeQuery(
                 ? getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
-            if (ast_query_with_output && ast_query_with_output->settings_ast)
-                InterpreterSetQuery(ast_query_with_output->settings_ast, context).executeForCurrentContext();
-
             BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
@@ -792,9 +835,6 @@ void executeQuery(
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
                                  ? getIdentifierName(ast_query_with_output->format)
                                  : context.getDefaultFormat();
-
-            if (ast_query_with_output && ast_query_with_output->settings_ast)
-                InterpreterSetQuery(ast_query_with_output->settings_ast, context).executeForCurrentContext();
 
             if (!pipeline.isCompleted())
             {

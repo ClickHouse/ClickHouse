@@ -226,7 +226,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 {
     checkStackSize();
 
-    initSettings();
     const Settings & settings = context->getSettingsRef();
 
     if (settings.max_subquery_depth && options.subquery_depth > settings.max_subquery_depth)
@@ -2041,14 +2040,6 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pip
 void InterpreterSelectQuery::ignoreWithTotals()
 {
     getSelectQuery().group_by_with_totals = false;
-}
-
-
-void InterpreterSelectQuery::initSettings()
-{
-    auto & query = getSelectQuery();
-    if (query.settings())
-        InterpreterSetQuery(query.settings(), *context).executeForCurrentContext();
 }
 
 }
