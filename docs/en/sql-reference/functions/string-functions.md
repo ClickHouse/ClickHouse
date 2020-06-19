@@ -1,6 +1,6 @@
 ---
 toc_priority: 40
-toc_title: Working with strings
+toc_title: Strings
 ---
 
 # Functions for Working with Strings {#functions-for-working-with-strings}
