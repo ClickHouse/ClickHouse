@@ -10,6 +10,7 @@
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/SelectQueryDescription.h>
 
 #include <Common/typeid_cast.h>
 
@@ -42,7 +43,10 @@ StorageView::StorageView(
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-    inner_query = query.select->ptr();
+    SelectQueryDescription description;
+
+    description.inner_query = query.select->ptr();
+    setSelectQuery(description);
 }
 
 
@@ -56,7 +60,8 @@ Pipes StorageView::read(
 {
     Pipes pipes;
 
-    ASTPtr current_inner_query = inner_query;
+    ASTPtr current_inner_query = getSelectQuery().inner_query;
+
     if (query_info.view_query)
     {
         if (!query_info.view_query->as<ASTSelectWithUnionQuery>())
