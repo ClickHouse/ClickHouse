@@ -98,7 +98,7 @@ ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & t
         case TypeIndex::FixedString: [[fallthrough]];
         case TypeIndex::String:
         {
-            return orc::createPrimitiveType(orc::TypeKind::STRING);
+            return orc::createPrimitiveType(orc::TypeKind::BINARY);
         }
         case TypeIndex::Nullable:
         {
