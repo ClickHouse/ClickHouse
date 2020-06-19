@@ -30,6 +30,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageView.h>
 
 #include <TableFunctions/ITableFunction.h>
 
@@ -37,7 +38,7 @@
 #include <Core/Field.h>
 #include <Core/Types.h>
 #include <Columns/Collator.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <ext/map.h>
@@ -94,7 +95,8 @@ namespace ErrorCodes
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
-String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns) const
+String InterpreterSelectQuery::generateFilterActions(
+    ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns) const
 {
     const auto & db_name = table_id.getDatabaseName();
     const auto & table_name = table_id.getTableName();
@@ -185,6 +187,26 @@ static Context getSubqueryContext(const Context & context)
     return subquery_context;
 }
 
+static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
+{
+    ASTSelectQuery & select = query->as<ASTSelectQuery &>();
+
+    Aliases aliases;
+    if (ASTPtr with = select.with())
+        QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
+    QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
+
+    CrossToInnerJoinVisitor::Data cross_to_inner{tables, aliases, database};
+    CrossToInnerJoinVisitor(cross_to_inner).visit(query);
+
+    size_t rewriter_version = settings.multiple_joins_rewriter_version;
+    if (!rewriter_version || rewriter_version > 2)
+        throw Exception("Bad multiple_joins_rewriter_version setting value: " + settings.multiple_joins_rewriter_version.toString(),
+                        ErrorCodes::INVALID_SETTING_VALUE);
+    JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables, aliases, rewriter_version};
+    JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
+}
+
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
@@ -241,29 +263,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
-        ASTSelectQuery & select = getSelectQuery();
+        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), settings);
 
-        Aliases aliases;
-        if (ASTPtr with = select.with())
-            QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
-        QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
-
-        CrossToInnerJoinVisitor::Data cross_to_inner{joined_tables.tablesWithColumns(), aliases, context->getCurrentDatabase()};
-        CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
-
-        size_t rewriter_version = settings.multiple_joins_rewriter_version;
-        if (!rewriter_version || rewriter_version > 2)
-            throw Exception("Bad multiple_joins_rewriter_version setting value: " + settings.multiple_joins_rewriter_version.toString(),
-                            ErrorCodes::INVALID_SETTING_VALUE);
-        JoinToSubqueryTransformVisitor::Data join_to_subs_data{joined_tables.tablesWithColumns(), aliases, rewriter_version};
-        JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
-
-        joined_tables.reset(select);
+        joined_tables.reset(getSelectQuery());
         joined_tables.resolveTables();
 
         if (storage && joined_tables.isLeftTableSubquery())
         {
-            /// Rewritten with subquery. Free storage here locks here.
+            /// Rewritten with subquery. Free storage locks here.
             storage = {};
             table_lock.release();
             table_id = StorageID::createEmpty();
@@ -287,11 +294,27 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
 
+    StorageView * view = nullptr;
+    if (storage)
+        view = dynamic_cast<StorageView *>(storage.get());
+
     auto analyze = [&] (bool try_move_to_prewhere)
     {
+        /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
+        ASTPtr view_table;
+        if (view)
+            view->replaceWithSubquery(getSelectQuery(), view_table);
+
         syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
                 query_ptr, SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage),
                 options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
+
+        if (view)
+        {
+            /// Restore original view name. Save rewritten subquery for future usage in StorageView.
+            query_info.view_query = view->restoreViewName(getSelectQuery(), view_table);
+            view = nullptr;
+        }
 
         if (try_move_to_prewhere && storage && !row_policy_filter && query.where() && !query.prewhere() && !query.final())
         {
@@ -474,8 +497,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             second_stage,
             options.only_analyze,
             filter_info,
-            source_header
-        );
+            source_header);
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
@@ -979,10 +1001,13 @@ void InterpreterSelectQuery::executeFetchColumns(
 
     /// Optimization for trivial query like SELECT count() FROM table.
     bool optimize_trivial_count =
-        syntax_analyzer_result->optimize_trivial_count && storage &&
-        processing_stage == QueryProcessingStage::FetchColumns &&
-        query_analyzer->hasAggregation() && (query_analyzer->aggregates().size() == 1) &&
-        typeid_cast<AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
+        syntax_analyzer_result->optimize_trivial_count
+        && storage
+        && !filter_info
+        && processing_stage == QueryProcessingStage::FetchColumns
+        && query_analyzer->hasAggregation()
+        && (query_analyzer->aggregates().size() == 1)
+        && typeid_cast<AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
 
     if (optimize_trivial_count)
     {

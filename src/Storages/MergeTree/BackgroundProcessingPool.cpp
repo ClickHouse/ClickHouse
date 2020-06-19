@@ -51,20 +51,24 @@ BackgroundProcessingPool::BackgroundProcessingPool(int size_,
     , thread_name(thread_name_)
     , settings(pool_settings)
 {
-    if (settings.low_cpu_priority)
-    {
-        if (pthread_setschedparam(pthread_self(), SCHED_IDLE, &sched_param_))
-        {
-            throw Exception("Failed to set schedule parameters.", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
-        }
-    }
-
     logger = &Poco::Logger::get(log_name);
     LOG_INFO(logger, "Create {} with {} threads", log_name, size);
 
     threads.resize(size);
     for (auto & thread : threads)
-        thread = ThreadFromGlobalPool([this] { workLoopFunc(); });
+    {
+        auto func = [this, &sched_param_] {
+            if (settings.low_cpu_priority)
+            {
+                if (pthread_setschedparam(pthread_self(), SCHED_IDLE, &sched_param_))
+                {
+                    throw Exception("Failed to set schedule parameters.", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+                }
+            }
+            workLoopFunc();
+        };
+        thread = ThreadFromGlobalPool(func);
+    }
 }
 
 

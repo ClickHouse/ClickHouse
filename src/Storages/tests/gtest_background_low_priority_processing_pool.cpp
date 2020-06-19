@@ -7,27 +7,15 @@
 #include <Poco/Util/Application.h>
 #include <daemon/BaseDaemon.h>
 
-DB::BackgroundProcessingPoolTaskResult checkLow(std::vector<bool>& checks, int i, std::mutex& mut)
+DB::BackgroundProcessingPoolTaskResult checkLow(std::vector<bool> & checks, int i)
 {
-    int policy;
+    int policy = -1;
     sched_param param;
-    if (pthread_getschedparam(pthread_self(), &policy, &param))
-    {
-        mut.lock();
-        checks[i] = false;
-        mut.unlock();
-
-        return DB::BackgroundProcessingPoolTaskResult::ERROR;
-    }
+    pthread_getschedparam(pthread_self(), &policy, &param);
 
     if (policy != SCHED_IDLE)
-    {
-        mut.lock();
         checks[i] = false;
-        mut.unlock();
 
-        return DB::BackgroundProcessingPoolTaskResult::ERROR;
-    }
     return DB::BackgroundProcessingPoolTaskResult::SUCCESS;
 }
 
@@ -106,21 +94,24 @@ TEST(BackgroundLowPriorityProcessingPool, SimpleCase)
         ASSERT_EQ(i, data[i]) << "failed on " << i << " step\n";
     }
 
-    std::mutex mut;
     std::vector<bool> checks(16, true);
     std::vector<BackgroundProcessingPool::TaskHandle> handles(16);
-    for (int i = 0; i < 16; ++i) {
-        handles[i] = pool.createTask([&] { return checkLow(checks, i, mut); });
-        pool.startTask(handles[i]);
+    for (int i = 0; i < 16; ++i)
+    {
+        handles[i] = pool.createTask([&checks, i] { return checkLow(checks, i); });
+        pool.startTask(handles[i], false);
     }
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 16; ++i)
+    {
         pool.removeTask(handles[i]);
     }
-    for (bool c : checks) {
-        ASSERT_TRUE(c) << "failed on low priority checks\n";
+    ctx.shutdown();
+
+    for (bool check_idle : checks)
+    {
+        ASSERT_TRUE(check_idle) << "failed on low priority checks\n";
     }
 
-    ctx.shutdown();
 }
 

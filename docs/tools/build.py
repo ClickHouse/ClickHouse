@@ -220,7 +220,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--website-dir', default=website_dir)
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--enable-stable-releases', action='store_true')
-    arg_parser.add_argument('--stable-releases-limit', type=int, default='4')
+    arg_parser.add_argument('--stable-releases-limit', type=int, default='3')
     arg_parser.add_argument('--lts-releases-limit', type=int, default='2')
     arg_parser.add_argument('--nav-limit', type=int, default='0')
     arg_parser.add_argument('--version-prefix', type=str, default='')
