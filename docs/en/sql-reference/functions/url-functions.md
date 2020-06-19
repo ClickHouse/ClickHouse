@@ -1,6 +1,6 @@
 ---
 toc_priority: 54
-toc_title: Working with URLs
+toc_title: URLs
 ---
 
 # Functions for Working with URLs {#functions-for-working-with-urls}

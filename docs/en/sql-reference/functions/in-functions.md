@@ -1,6 +1,6 @@
 ---
 toc_priority: 60
-toc_title: Implementing the IN Operator
+toc_title: IN Operator
 ---
 
 # Functions for Implementing the IN Operator {#functions-for-implementing-the-in-operator}

@@ -5,7 +5,7 @@ toc_title: Distinctive Features
 
 # Distinctive Features of ClickHouse {#distinctive-features-of-clickhouse}
 
-## True Column-Oriented DBMS {#true-column-oriented-dbms}
+## True Column-Oriented Database Management System {#true-column-oriented-dbms}
 
 In a true column-oriented DBMS, no extra data is stored with the values. Among other things, this means that constant-length values must be supported, to avoid storing their length “number” next to the values. As an example, a billion UInt8-type values should consume around 1 GB uncompressed, or this strongly affects the CPU use. It is essential to store data compactly (without any “garbage”) even when uncompressed, since the speed of decompression (CPU usage) depends mainly on the volume of uncompressed data.
 
@@ -70,6 +70,6 @@ For more information, see the section [Data replication](../engines/table-engine
 
 1.  No full-fledged transactions.
 2.  Lack of ability to modify or delete already inserted data with high rate and low latency. There are batch deletes and updates available to clean up or modify data, for example to comply with [GDPR](https://gdpr-info.eu).
-3.  The sparse index makes ClickHouse not so suitable for point queries retrieving single rows by their keys.
+3.  The sparse index makes ClickHouse not so efficient for point queries retrieving single rows by their keys.
 
 [Original article](https://clickhouse.tech/docs/en/introduction/distinctive_features/) <!--hide-->
