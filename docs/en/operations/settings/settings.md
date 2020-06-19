@@ -1397,7 +1397,7 @@ Default value: 16.
 
 Enables equality of [NULL](../../sql-reference/syntax.md#null-literal) values for [IN](../../sql-reference/operators/in.md) operator.
 
-By default, `NULL` values can't be compared because `NULL` means undefined value. Thus, comparison `expr=NULL` must always return `false`. With this setting `NULL=NULL` returns `true`.
+By default, `NULL` values can't be compared because `NULL` means undefined value. Thus, comparison `expr = NULL` must always return `false`. With this setting `NULL = NULL` returns `true` for `IN` operator.
 
 Possible values:
 
