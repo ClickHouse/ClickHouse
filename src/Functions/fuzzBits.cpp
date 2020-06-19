@@ -23,7 +23,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-
 namespace
 {
     inline UInt8 getXorMask(UInt64 rand, double prob)
@@ -145,6 +144,9 @@ public:
         }
     }
 };
+
+// TODO: fuzzBytes will be here, and code will be common
+
 
 void registerFunctionFuzzBits(FunctionFactory & factory)
 {
