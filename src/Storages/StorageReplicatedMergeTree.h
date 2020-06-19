@@ -162,7 +162,7 @@ public:
     /// Get replica delay relative to current time.
     time_t getAbsoluteDelay() const;
 
-    /// If the absolute delay is greater than min_relative_delay_to_yield_leadership,
+    /// If the absolute delay is greater than min_relative_delay_to_measure,
     /// will also calculate the difference from the unprocessed time of the best replica.
     /// NOTE: Will communicate to ZooKeeper to calculate relative delay.
     void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay);
@@ -496,10 +496,6 @@ private:
       * NOTE: See comment about locks above.
       */
     bool waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
-
-    /// Choose leader replica, send requst to it and wait.
-    /// Only makes sense when old ClickHouse versions are working on the same cluster, because now we allow multiple leaders.
-    void sendRequestToLeaderReplica(const ASTPtr & query, const Context & query_context);
 
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;
