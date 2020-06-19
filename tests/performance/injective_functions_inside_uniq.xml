@@ -1,0 +1,7 @@
+<test>
+
+    <query>SELECT uniq(negate(negate(negate(number)))) FROM numbers(500000000)</query>
+
+    <query>SELECT uniq(hex(hex(number))) FROM numbers(500000000)</query>
+
+</test>
