@@ -43,8 +43,7 @@ public:
     using ColumnType = ColumnVector<FieldType>;
     using Value = std::pair<std::string, FieldType>;
     using Values = std::vector<Value>;
-    using NameToValueMap = HashMap<Strin
-                                       gRef, FieldType, StringRefHash>;
+    using NameToValueMap = HashMap<StringRef, FieldType, StringRefHash>;
     using ValueToNameMap = std::unordered_map<FieldType, StringRef>;
 
     static constexpr bool is_parametric = true;
