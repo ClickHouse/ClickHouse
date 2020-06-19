@@ -1,13 +1,13 @@
-#include <common/getThreadId.h>
+#include "getThreadId.h"
 
 #if defined(OS_LINUX)
-    #include <unistd.h>
-    #include <syscall.h>
+#    include <unistd.h>
+#    include <syscall.h>
 #elif defined(OS_FREEBSD)
-    #include <pthread_np.h>
+#    include <pthread_np.h>
 #else
-    #include <pthread.h>
-    #include <stdexcept>
+#    include <pthread.h>
+#    include <stdexcept>
 #endif
 
 

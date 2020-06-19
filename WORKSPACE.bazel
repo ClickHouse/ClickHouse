@@ -1,0 +1,27 @@
+workspace(name = "ClickHouse")
+
+# contribs
+
+new_local_repository(
+    name = "boost",
+    path = "contrib/boost",
+    build_file = "contrib/boost-build/BUILD.bazel",
+)
+
+new_local_repository(
+    name = "poco",
+    path = "contrib/poco",
+    build_file = "contrib/poco-build/BUILD.bazel",
+)
+
+# toolchains
+
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "clang-10.0.0-amd64-linux",
+    urls = ["https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.0/clang+llvm-10.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz"],
+    sha256 = "b25f592a0c00686f03e3b7db68ca6dc87418f681f4ead4df4745a01d9be63843",
+    strip_prefix = "clang+llvm-10.0.0-x86_64-linux-gnu-ubuntu-18.04",
+    build_file = "//bazel/toolchain/clang:clang-10.BUILD",
+)

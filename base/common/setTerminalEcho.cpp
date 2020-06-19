@@ -1,21 +1,22 @@
 // https://stackoverflow.com/questions/1413445/reading-a-password-from-stdcin
 
-#include <common/setTerminalEcho.h>
-#include <stdexcept>
+#include "setTerminalEcho.h"
+
 #include <cstring>
+#include <stdexcept>
 #include <string>
 
 #ifdef WIN32
-#include <windows.h>
+#    include <windows.h>
 #else
-#include <termios.h>
-#include <unistd.h>
-#include <errno.h>
+#    include <errno.h>
+#    include <termios.h>
+#    include <unistd.h>
 #endif
 
 void setTerminalEcho(bool enable)
 {
-#ifdef WIN32
+#if defined(WIN32)
     auto handle = GetStdHandle(STD_INPUT_HANDLE);
     DWORD mode;
     if (!GetConsoleMode(handle, &mode))

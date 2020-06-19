@@ -1,5 +1,13 @@
 #pragma once
 
+/// Detect platform (POSIX-compliant)
+
+#if defined(__linux__)
+#   define OS_LINUX
+#   define OS "linux"
+#endif
+
+
 #if defined(_MSC_VER)
 #   if !defined(likely)
 #      define likely(x)   (x)

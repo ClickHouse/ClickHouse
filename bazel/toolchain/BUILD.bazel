@@ -1,0 +1,6 @@
+cc_toolchain_suite(
+    name = "toolchain",
+    toolchains = {
+        "k8|clang": "//bazel/toolchain/clang:clang-amd64",
+    },
+)

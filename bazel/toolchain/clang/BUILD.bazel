@@ -1,0 +1,15 @@
+package(default_visibility = ["//bazel/toolchain:__pkg__"])
+
+cc_toolchain(
+    name = "clang-amd64",
+    toolchain_config = "clang-amd64-config",
+
+    all_files      = "@clang-10.0.0-amd64-linux//:all",
+    ar_files       = "@clang-10.0.0-amd64-linux//:ar",
+    as_files       = "@clang-10.0.0-amd64-linux//:as",
+    compiler_files = "@clang-10.0.0-amd64-linux//:compiler_components",
+    dwp_files      = "@clang-10.0.0-amd64-linux//:dwp",
+    linker_files   = "@clang-10.0.0-amd64-linux//:linker_components",
+    objcopy_files  = "@clang-10.0.0-amd64-linux//:objcopy",
+    strip_files    = "@clang-10.0.0-amd64-linux//:strip",
+)

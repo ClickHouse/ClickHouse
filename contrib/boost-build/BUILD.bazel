@@ -1,0 +1,15 @@
+package(
+    default_visibility = ["//visibility:public"],
+)
+
+# Headers-only
+
+cc_library(
+    name = "boost",
+    hdrs = [
+        "boost/config.hpp",
+        "boost/core/noncopyable.hpp",
+        "boost/noncopyable.hpp",
+    ],
+    strip_include_prefix = "", # changes include flag from '-iquote' to '-I'
+)

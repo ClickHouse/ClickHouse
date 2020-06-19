@@ -122,3 +122,9 @@ website/package-lock.json
 
 # Toolchains
 /cmake/toolchain/*
+
+# bazel symlinks
+/bazel-bin
+/bazel-ch
+/bazel-out
+/bazel-testlogs

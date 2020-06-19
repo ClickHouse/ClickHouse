@@ -1,13 +1,15 @@
-#include <string>
-#include <string.h>
+#include "JSON.h"
 
-#include <Poco/UTF8Encoding.h>
+#include "find_symbols.h"
+#include "preciseExp10.h"
+
 #include <Poco/NumberParser.h>
-#include <common/JSON.h>
-#include <common/find_symbols.h>
-#include <common/preciseExp10.h>
+#include <Poco/UTF8Encoding.h>
 
 #include <iostream>
+#include <string>
+
+#include <string.h>
 
 #define JSON_MAX_DEPTH 100
 

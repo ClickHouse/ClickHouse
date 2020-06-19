@@ -1,11 +1,11 @@
-#include "common/sleep.h"
+#include "sleep.h"
 
-#include <time.h>
 #include <errno.h>
+#include <time.h>
 
 #if defined(OS_DARWIN)
-#include <mach/mach.h>
-#include <mach/mach_time.h>
+#    include <mach/mach.h>
+#    include <mach/mach_time.h>
 #endif
 
 /**

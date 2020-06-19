@@ -1,4 +1,4 @@
-#include <common/demangle.h>
+#include "demangle.h"
 
 #if defined(_MSC_VER)
 
@@ -15,8 +15,8 @@ std::string demangle(const char * name, int & status)
 
 #else
 
-#include <stdlib.h>
-#include <cxxabi.h>
+#    include <stdlib.h>
+#    include <cxxabi.h>
 
 static DemangleResult tryDemangle(const char * name, int & status)
 {

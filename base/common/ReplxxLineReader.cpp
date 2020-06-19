@@ -1,11 +1,13 @@
-#include <common/ReplxxLineReader.h>
-#include <common/errnoToString.h>
+#include "ReplxxLineReader.h"
+
+#include "errnoToString.h"
+
+#include <functional>
 
 #include <errno.h>
 #include <string.h>
-#include <unistd.h>
-#include <functional>
 #include <sys/file.h>
+#include <unistd.h>
 
 namespace
 {
