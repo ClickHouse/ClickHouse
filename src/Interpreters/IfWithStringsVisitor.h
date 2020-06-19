@@ -16,7 +16,7 @@
 namespace DB
 {
 
-void transformStringsIntoEnum(ASTFunction * function_if_node)
+void transformTwoStringsIntoEnum(ASTFunction * function_if_node)
 {
     String first_literal = function_if_node->arguments->children[1]->as<ASTLiteral>()->value.get<NearestFieldType<String>>();
     String second_literal = function_if_node->arguments->children[2]->as<ASTLiteral>()->value.get<NearestFieldType<String>>();
@@ -29,6 +29,7 @@ void transformStringsIntoEnum(ASTFunction * function_if_node)
     {
         enum_result = "Enum8(\'" + second_literal + "\' = 1, \'" + first_literal + "\' = 2)";
     }
+
     auto enum_arg = std::make_shared<ASTLiteral>(enum_result);
 
     auto first_cast = makeASTFunction("CAST");
@@ -41,6 +42,39 @@ void transformStringsIntoEnum(ASTFunction * function_if_node)
 
     function_if_node->arguments->children[1] = first_cast;
     function_if_node->arguments->children[2] = second_cast;
+}
+
+void transformStringsArrayIntoEnum(ASTFunction * function_transform_node)
+{
+    Array old_arr = function_transform_node->arguments->children[2]->as<ASTLiteral>()->value.get<NearestFieldType<Array>>();
+
+    String enum_result = "Array(Enum8(";
+    for (size_t i = 0; i < old_arr.size(); ++i)
+    {
+        enum_result += "\'" + old_arr[i].get<NearestFieldType<String>>() + "\' = " + std::to_string(i + 1);
+        if (i != old_arr.size() - 1)
+        {
+            enum_result += ", ";
+        }
+    }
+
+    enum_result += ", \'" + function_transform_node->arguments->children[3]->as<ASTLiteral>()->value.get<NearestFieldType<String>>()
+        + "\' = " + std::to_string(old_arr.size() + 1) + "))";
+
+    auto array_cast = makeASTFunction("CAST");
+    auto enum_arg = std::make_shared<ASTLiteral>(enum_result);
+
+    array_cast->arguments->children.push_back(function_transform_node->arguments->children[2]);
+    array_cast->arguments->children.push_back(enum_arg);
+
+    function_transform_node->arguments->children[2] = array_cast;
+
+    String enum_result_other = enum_result.substr(6, enum_result.size() - 7);
+    auto enum_arg_other = std::make_shared<ASTLiteral>(enum_result_other);
+    auto other_cast = makeASTFunction("CAST");
+    other_cast->arguments->children.push_back(function_transform_node->arguments->children[3]);
+    other_cast->arguments->children.push_back(enum_arg_other);
+    function_transform_node->arguments->children[3] = other_cast;
 }
 
 struct GettingFunctionArgumentsAliasesMatcher
@@ -136,7 +170,68 @@ struct FindingIfWithStringsMatcher
 
                     if (!strcmp(function_node->arguments->children[1]->as<ASTLiteral>()->value.getTypeName(), "String")
                         && !strcmp(function_node->arguments->children[2]->as<ASTLiteral>()->value.getTypeName(), "String"))
-                        transformStringsIntoEnum(function_node);
+                        transformTwoStringsIntoEnum(function_node);
+                }
+            }
+            else if (function_node->name == "transform")
+            {
+                bool first_array_of_strings = false;
+                bool second_array_of_strings = false;
+
+                size_t first_size = 0;
+                size_t second_size = 0;
+
+                if (!function_node->arguments->children[1]->as<ASTLiteral>())
+                    return;
+
+                if (!function_node->arguments->children[2]->as<ASTLiteral>())
+                    return;
+
+                if (!strcmp(function_node->arguments->children[1]->as<ASTLiteral>()->value.getTypeName(), "Array"))
+                {
+                    first_array_of_strings = true;
+                    Array array_from = function_node->arguments->children[1]->as<ASTLiteral>()->value.get<NearestFieldType<Array>>();
+                    first_size = array_from.size();
+                    for (size_t i = 0; i < first_size; ++i)
+                    {
+                        if (strcmp(array_from[i].getTypeName(), "String") != 0)
+                        {
+                            first_array_of_strings = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (!strcmp(function_node->arguments->children[2]->as<ASTLiteral>()->value.getTypeName(), "Array"))
+                {
+                    second_array_of_strings = true;
+                    Array array_to = function_node->arguments->children[2]->as<ASTLiteral>()->value.get<NearestFieldType<Array>>();
+                    second_size = array_to.size();
+                    for (size_t i = 0; i < second_size; ++i)
+                    {
+                        if (strcmp(array_to[i].getTypeName(), "String") != 0)
+                        {
+                            first_array_of_strings = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (first_size != second_size)
+                    return;
+
+                if (first_array_of_strings)
+                    return;
+
+                if (!second_array_of_strings)
+                    return;
+
+                if (function_node->arguments->children.size() != 4)
+                    return;
+
+                if (!strcmp(function_node->arguments->children[3]->as<ASTLiteral>()->value.getTypeName(), "String"))
+                {
+                    transformStringsArrayIntoEnum(function_node);
                 }
             }
         }
