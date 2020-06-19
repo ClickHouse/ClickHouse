@@ -2,7 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionRankCorr.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include "registerAggregateFunctions.h"
-
+#include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 
