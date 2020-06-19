@@ -1230,6 +1230,9 @@ void InterpreterSelectQuery::executeFetchColumns(
             + ", maximum: " + settings.max_columns_to_read.toString(),
             ErrorCodes::TOO_MANY_COLUMNS);
 
+    /// General limit for then number of threads.
+    pipeline.setMaxThreads(settings.max_threads);
+
     /** With distributed query processing, almost no computations are done in the threads,
      *  but wait and receive data from remote servers.
      *  If we have 20 remote servers, and max_threads = 8, then it would not be very good
