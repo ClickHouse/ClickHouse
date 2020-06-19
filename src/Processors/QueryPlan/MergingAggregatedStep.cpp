@@ -29,7 +29,7 @@ MergingAggregatedStep::MergingAggregatedStep(
 {
     /// Aggregation keys are distinct
     for (auto key : params->params.keys)
-        output_stream->distinct_columns.insert(params->params.src_header.getByPosition(key).name);
+        output_stream->distinct_columns.insert(params->params.intermediate_header.getByPosition(key).name);
 }
 
 void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline)
