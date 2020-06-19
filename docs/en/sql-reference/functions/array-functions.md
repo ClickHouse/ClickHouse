@@ -1,6 +1,6 @@
 ---
 toc_priority: 46
-toc_title: Working with Arrays
+toc_title: Arrays
 ---
 
 # Functions for Working with Arrays {#functions-for-working-with-arrays}
@@ -187,7 +187,6 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 ```
 
 ``` text
-
 ┌─indexOf([1, 3, NULL, NULL], NULL)─┐
 │                                 3 │
 └───────────────────────────────────┘
@@ -522,7 +521,7 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);
 -   `NaN` values are right before `NULL`.
 -   `Inf` values are right before `NaN`.
 
-Note that `arraySort` is a [higher-order function](higher-order-functions.md). You can pass a lambda function to it as the first argument. In this case, sorting order is determined by the result of the lambda function applied to the elements of the array.
+Note that `arraySort` is a [higher-order function](../../sql-reference/functions/higher-order-functions.md). You can pass a lambda function to it as the first argument. In this case, sorting order is determined by the result of the lambda function applied to the elements of the array.
 
 Let’s consider the following example:
 
@@ -622,7 +621,7 @@ SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]) as res;
 -   `NaN` values are right before `NULL`.
 -   `-Inf` values are right before `NaN`.
 
-Note that the `arrayReverseSort` is a [higher-order function](higher-order-functions.md). You can pass a lambda function to it as the first argument. Example is shown below.
+Note that the `arrayReverseSort` is a [higher-order function](../../sql-reference/functions/higher-order-functions.md). You can pass a lambda function to it as the first argument. Example is shown below.
 
 ``` sql
 SELECT arrayReverseSort((x) -> -x, [1, 2, 3]) as res;
@@ -687,7 +686,7 @@ If you want to get a list of unique items in an array, you can use arrayReduce(�
 
 ## arrayJoin(arr) {#array-functions-join}
 
-A special function. See the section [“ArrayJoin function”](array-join.md#functions_arrayjoin).
+A special function. See the section [“ArrayJoin function”](../../sql-reference/functions/array-join.md#functions_arrayjoin).
 
 ## arrayDifference {#arraydifference}
 
@@ -701,13 +700,13 @@ arrayDifference(array)
 
 **Parameters**
 
--   `array` – [Array](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [Array](https://clickhouse.tech/docs/en/data_types/array/).
 
 **Returned values**
 
 Returns an array of differences between adjacent elements.
 
-Type: [UInt\*](https://clickhouse.yandex/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.yandex/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.yandex/docs/en/data_types/float/).
+Type: [UInt\*](https://clickhouse.tech/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.tech/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.tech/docs/en/data_types/float/).
 
 **Example**
 
@@ -753,7 +752,7 @@ arrayDistinct(array)
 
 **Parameters**
 
--   `array` – [Array](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [Array](https://clickhouse.tech/docs/en/data_types/array/).
 
 **Returned values**
 
@@ -999,15 +998,15 @@ arrayZip(arr1, arr2, ..., arrN)
 
 **Parameters**
 
--   `arrN` — [Array](../data-types/array.md).
+-   `arrN` — [Array](../../sql-reference/data-types/array.md).
 
 The function can take any number of arrays of different types. All the input arrays must be of equal size.
 
 **Returned value**
 
--   Array with elements from the source arrays grouped into [tuples](../data-types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed.
+-   Array with elements from the source arrays grouped into [tuples](../../sql-reference/data-types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed.
 
-Type: [Array](../data-types/array.md).
+Type: [Array](../../sql-reference/data-types/array.md).
 
 **Example**
 

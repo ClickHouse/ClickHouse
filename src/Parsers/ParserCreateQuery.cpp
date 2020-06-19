@@ -53,12 +53,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserIdentifierWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserFunction function_or_array;
-    if (function_or_array.parse(pos, node, expected))
-        return true;
-
-    ParserNestedTable nested;
-    return nested.parse(pos, node, expected);
+    return ParserFunction().parse(pos, node, expected);
 }
 
 bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -85,7 +80,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_granularity("GRANULARITY");
 
     ParserIdentifier name_p;
-    ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
+    ParserDataType data_type_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
 
@@ -103,7 +98,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!s_type.ignore(pos, expected))
         return false;
 
-    if (!ident_with_optional_params_p.parse(pos, type, expected))
+    if (!data_type_p.parse(pos, type, expected))
         return false;
 
     if (!s_granularity.ignore(pos, expected))
@@ -795,7 +790,6 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserToken s_dot(TokenType::Dot);
     ParserDictionaryAttributeDeclarationList attributes_p;
     ParserDictionary dictionary_p;
-
 
     bool if_not_exists = false;
 

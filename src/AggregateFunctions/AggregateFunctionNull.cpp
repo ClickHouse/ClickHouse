@@ -31,13 +31,11 @@ public:
     }
 
     AggregateFunctionPtr transformAggregateFunction(
-        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params) const override
+        const AggregateFunctionPtr & nested_function,
+        const AggregateFunctionProperties & properties,
+        const DataTypes & arguments,
+        const Array & params) const override
     {
-        /// Special case for 'count' function. It could be called with Nullable arguments
-        /// - that means - count number of calls, when all arguments are not NULL.
-        if (nested_function && nested_function->getName() == "count")
-            return std::make_shared<AggregateFunctionCountNotNullUnary>(arguments[0], params);
-
         bool has_nullable_types = false;
         bool has_null_types = false;
         for (const auto & arg_type : arguments)
@@ -58,15 +56,23 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (has_null_types)
-            return std::make_shared<AggregateFunctionNothing>(arguments, params);
+        {
+            /// Currently the only functions that returns not-NULL on all NULL arguments are count and uniq, and they returns UInt64.
+            if (properties.returns_default_when_only_null)
+                return std::make_shared<AggregateFunctionNothing>(DataTypes{
+                    std::make_shared<DataTypeUInt64>()}, params);
+            else
+                return std::make_shared<AggregateFunctionNothing>(DataTypes{
+                    std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())}, params);
+        }
 
         assert(nested_function);
 
         if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params))
             return adapter;
 
-        bool return_type_is_nullable = !nested_function->returnDefaultWhenOnlyNull() && nested_function->getReturnType()->canBeInsideNullable();
-        bool serialize_flag = return_type_is_nullable || nested_function->returnDefaultWhenOnlyNull();
+        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getReturnType()->canBeInsideNullable();
+        bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
 
         if (arguments.size() == 1)
         {
