@@ -178,7 +178,7 @@ BlockIO InterpreterInsertQuery::execute()
 
                     ///  INSERT SELECT query returns empty block
                     auto in_stream = std::make_shared<RemoteBlockInputStream>(std::move(connections), new_query_str, Block{}, context);
-                    pipelines.emplace_back();
+                    pipelines.emplace_back(std::make_unique<QueryPipeline>());
                     pipelines.back()->init(Pipe(std::make_shared<SourceFromInputStream>(std::move(in_stream))));
                     pipelines.back()->setSinks([](const Block & header, QueryPipeline::StreamType) -> ProcessorPtr
                     {
