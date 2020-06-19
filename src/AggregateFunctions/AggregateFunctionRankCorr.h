@@ -185,7 +185,7 @@ public:
         //sort x_values
         std::sort(std::begin(tmp_values), std::end(tmp_values), ComparePairFirst<std::greater>{});
 
-        for (size_t j = 0; j < size; )
+        for (size_t j = 0; j < size;)
         {
             //replace x_values with their ranks
             size_t rank = j + 1;
@@ -222,7 +222,7 @@ public:
         std::sort(std::begin(tmp_values), std::end(tmp_values), ComparePairSecond<std::greater>{});
 
         //replace y_values with their ranks
-        for (size_t j = 0; j < size; )
+        for (size_t j = 0; j < size;)
         {
             //replace x_values with their ranks
             size_t rank = j + 1;
