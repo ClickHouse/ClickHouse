@@ -3,7 +3,6 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include "registerAggregateFunctions.h"
 
-#include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 
