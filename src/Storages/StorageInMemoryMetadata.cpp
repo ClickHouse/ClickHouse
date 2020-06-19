@@ -16,6 +16,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TYPE_MISMATCH;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
 
@@ -69,6 +70,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
 
 void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
 {
+    if (columns_.getAllPhysical().empty())
+        throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
     columns = std::move(columns_);
 }
 
