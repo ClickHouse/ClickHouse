@@ -1183,15 +1183,14 @@ Default value: 0.
 
 ## transform_null_in {#transform_null_in}
 
-Включает или отключает преобразование NULL-to-zero в операторе `IN`.
+Разрешает сравнивать значения [NULL](../../sql-reference/syntax.md#null-literal) в операторе [IN](../../sql-reference/operators/in.md).
 
-По умолчанию оператор `IN` обрабатывает значение `NULL` как 0.  
-Если настройка `transform_null_in` включена, оператор `IN` обрабатывает `NULL` как [NULL](../../sql-reference/syntax.md#null-literal). 
+По умолчанию, значения `NULL` нельзя сравнивать, поскольку `NULL` обозначает неопределённое значение. Следовательно, сравнение `expr=NULL` должно всегда возвращать `false`. С этой настройкой `NULL=NULL` возвращает `true`.
 
-Возможные значения:
+Possible values:
 
--   0 — `NULL` обрабатывается как 0.
--   1 — `NULL` обрабатывается как [NULL](../../sql-reference/syntax.md#null-literal).
+-   0 — Сравнение значений `NULL` в операторе `IN` возвращает `false`.
+-   1 — Сравнение значений `NULL` в операторе `IN` возвращает `true`.
 
 Значение по умолчанию: 0.
 
@@ -1206,13 +1205,24 @@ Default value: 0.
 │    3 │     3 │
 └──────┴───────┘
 ```
-Если значение `transform_null_in` равно 0, запрос
 
-```sql
-SELECT idx, i FROM null_in WHERE i IN (1, NULL);
+Consider the `null_in` table:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+│    3 │     3 │
+└──────┴───────┘
 ```
 
-возвращает результат
+Запрос:
+
+```sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
+```
+
+Ответ:
 
 ```text
 ┌──idx─┬────i─┐
@@ -1220,12 +1230,13 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL);
 └──────┴──────┘
 ```
 
-Если значение `transform_null_in` равно 1, запрос 
+Запрос:
 
 ```sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 ```
-возращает результат
+
+Ответ:
 
 ```text
 ┌──idx─┬─────i─┐

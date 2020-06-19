@@ -1399,15 +1399,14 @@ Default value: 16.
 
 ## transform_null_in {#transform_null_in}
 
-Enables or disables NULL-to-zero transformation in the `IN` operator.
+Enables equality of [NULL](../../sql-reference/syntax.md#null-literal) values for [IN](../../sql-reference/operators/in.md) operator.
 
-By default, the `IN` operator processes `NULL` as 0.  
-If `transform_null_in` is enabled, the `IN` operator processes `NULL` as [NULL](../../sql-reference/syntax.md#null-literal). 
+By default, `NULL` values can't be compared because `NULL` means undefined value. Thus, comparison `expr=NULL` must always return `false`. With this setting `NULL=NULL` returns `true`.
 
 Possible values:
 
--   0 — NULL-to-zero transformation is enabled.
--   1 — NULL-to-zero transformation is disabled.
+-   0 — Comparison of `NULL` values in `IN` operator returns `false`.
+-   1 — Comparison of `NULL` values in `IN` operator returns `true`.
 
 Default value: 0.
 
@@ -1422,13 +1421,14 @@ Consider the `null_in` table:
 │    3 │     3 │
 └──────┴───────┘
 ```
-When `transform_null_in` equals 0:
+
+Query:
 
 ```sql
-SELECT idx, i FROM null_in WHERE i IN (1, NULL);
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
 ```
 
-returns:
+Result:
 
 ```text
 ┌──idx─┬────i─┐
@@ -1436,12 +1436,13 @@ returns:
 └──────┴──────┘
 ```
 
-When `transform_null_in` equals 1: 
+Query:
 
 ```sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 ```
-the result is:
+
+Result:
 
 ```text
 ┌──idx─┬─────i─┐
@@ -1450,10 +1451,10 @@ the result is:
 └──────┴───────┘
 ```
 
-
 **See Also** 
 
 -   [NULL Processing in IN Operators](../../sql-reference/operators/in.md#in-null-processing)
+
 
 ## low_cardinality_max_dictionary_size {#low_cardinality_max_dictionary_size}
 
