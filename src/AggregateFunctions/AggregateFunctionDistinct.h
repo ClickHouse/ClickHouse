@@ -6,8 +6,11 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Interpreters/AggregationCommon.h>
-
 #include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/SipHash.h>
+
+#include <Common/FieldVisitors.h>
 
 namespace DB
 {
@@ -17,21 +20,148 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+
 template <typename T>
 struct AggregateFunctionDistinctSingleNumericData
 {
     /// When creating, the hash table must be small.
     using Set = HashSetWithStackMemory<T, DefaultHash<T>, 4>;
-    Set value;
+    using Self = AggregateFunctionDistinctSingleNumericData<T>;
+    Set set;
+
+    void add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena *)
+    {
+        const auto & vec = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
+        set.insert(vec[row_num]);
+    }
+
+    void merge(const Self & rhs, Arena *)
+    {
+        set.merge(rhs.set);
+    }
+
+    void serialize(WriteBuffer & buf) const
+    {
+        set.write(buf);
+    }
+
+    void deserialize(ReadBuffer & buf, Arena *)
+    {
+        set.read(buf);
+    }
+
+    MutableColumns getArguments(const DataTypes & argument_types) const
+    {
+        MutableColumns argument_columns;
+        argument_columns.emplace_back(argument_types[0]->createColumn());
+        for (const auto & elem : set)
+            argument_columns[0]->insert(elem.getValue());
+
+        return argument_columns;
+    }
 };
 
-template <typename Data, typename Derived>
-class AggregateFunctionDistinctBase : public IAggregateFunctionDataHelper<Data, Derived>
+struct AggregateFunctionDistinctGenericData
 {
-protected:
-    static constexpr size_t prefix_size = sizeof(Data);
+    /// When creating, the hash table must be small.
+    using Set = HashSetWithSavedHashWithStackMemory<StringRef, StringRefHash, 4>;
+    using Self = AggregateFunctionDistinctGenericData;
+    Set set;
+
+    void merge(const Self & rhs, Arena * arena)
+    {
+        Set::LookupResult it;
+        bool inserted;
+        for (const auto & elem : rhs.set)
+            set.emplace(ArenaKeyHolder{elem.getValue(), *arena}, it, inserted);
+    }
+
+    void serialize(WriteBuffer & buf) const
+    {
+        writeVarUInt(set.size(), buf);
+        for (const auto & elem : set)
+            writeStringBinary(elem.getValue(), buf);
+    }
+
+    void deserialize(ReadBuffer & buf, Arena * arena)
+    {
+        size_t size;
+        readVarUInt(size, buf);
+        for (size_t i = 0; i < size; ++i)
+            set.insert(readStringBinaryInto(*arena, buf));
+    }
+};
+
+template <bool is_plain_column>
+struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDistinctGenericData
+{
+    void add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena * arena)
+    {
+        Set::LookupResult it;
+        bool inserted;
+        auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
+        set.emplace(key_holder, it, inserted);
+    }
+
+    MutableColumns getArguments(const DataTypes & argument_types) const
+    {
+        MutableColumns argument_columns;
+        argument_columns.emplace_back(argument_types[0]->createColumn());
+        for (const auto & elem : set)
+            deserializeAndInsert<is_plain_column>(elem.getValue(), *argument_columns[0]);
+
+        return argument_columns;
+    }
+};
+
+struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDistinctGenericData
+{
+    void add(const IColumn ** columns, size_t columns_num, size_t row_num, Arena * arena)
+    {
+        const char * begin = nullptr;
+        StringRef value(begin, 0);
+        SipHash hash;
+        for (size_t i = 0; i < columns_num; ++i)
+        {
+            columns[i]->updateHashWithValue(row_num, hash);
+            auto cur_ref = columns[i]->serializeValueIntoArena(row_num, *arena, begin);
+            value.data = cur_ref.data - value.size;
+            value.size += cur_ref.size;
+        }
+
+        Set::LookupResult it;
+        bool inserted;
+        auto key_holder = SerializedKeyHolder{value, *arena};
+        set.emplace(key_holder, it, inserted);
+    }
+
+    MutableColumns getArguments(const DataTypes & argument_types) const
+    {
+        MutableColumns argument_columns(argument_types.size());
+        for (size_t i = 0; i < argument_types.size(); ++i)
+            argument_columns[i] = argument_types[i]->createColumn();
+
+        for (const auto & elem : set)
+        {
+            const char * begin = elem.getValue().data;
+            for (auto & column : argument_columns)
+                begin = column->deserializeAndInsertFromArena(begin);
+        }
+
+        return argument_columns;
+    }
+};
+
+/** Adaptor for aggregate functions.
+  * Adding -Distinct suffix to aggregate function
+**/
+template <typename Data>
+class AggregateFunctionDistinct : public IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct<Data>>
+{
+private:
+    static constexpr auto prefix_size = sizeof(Data);
     AggregateFunctionPtr nested_func;
-    size_t num_arguments;
+    size_t arguments_num;
 
     AggregateDataPtr getNestedPlace(AggregateDataPtr place) const noexcept
     {
@@ -44,6 +174,46 @@ protected:
     }
 
 public:
+    AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments)
+    : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, nested_func_->getParameters())
+    , nested_func(nested_func_)
+    , arguments_num(arguments.size())
+    {
+        if (arguments.empty())
+            throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    }
+
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        this->data(place).add(columns, arguments_num, row_num, arena);
+    }
+
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        this->data(place).merge(this->data(rhs), arena);
+    }
+
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    {
+        this->data(place).serialize(buf);
+    }
+
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    {
+        this->data(place).deserialize(buf, arena);
+    }
+
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
+    {
+        auto arguments = this->data(place).getArguments(this->argument_types);
+        ColumnRawPtrs arguments_raw(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            arguments_raw[i] = arguments[i].get();
+
+        assert(!arguments.empty());
+        this->nested_func->addBatchSinglePlace(arguments[0]->size(), this->getNestedPlace(place), arguments_raw.data(), arena);
+        this->nested_func->insertResultInto(this->getNestedPlace(place), to, arena);
+    }
 
     size_t sizeOfData() const override
     {
@@ -75,134 +245,6 @@ public:
     bool allocatesMemoryInArena() const override
     {
         return true;
-    }
-
-    AggregateFunctionDistinctBase(AggregateFunctionPtr nested, const DataTypes & arguments)
-    : IAggregateFunctionDataHelper<Data, Derived>(arguments, {})
-    , nested_func(nested), num_arguments(arguments.size())
-    {
-        if (arguments.empty())
-            throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-    }
-};
-
-
-/** Adaptor for aggregate functions.
-  * Adding -Distinct suffix to aggregate function
-**/
-template <typename T>
-class AggregateFunctionDistinctSingleNumericImpl final
-    : public AggregateFunctionDistinctBase<AggregateFunctionDistinctSingleNumericData<T>,
-        AggregateFunctionDistinctSingleNumericImpl<T>>
-{
-public:
-
-    AggregateFunctionDistinctSingleNumericImpl(AggregateFunctionPtr nested, const DataTypes & arguments)
-        : AggregateFunctionDistinctBase<
-            AggregateFunctionDistinctSingleNumericData<T>,
-            AggregateFunctionDistinctSingleNumericImpl<T>>(nested, arguments) {}
-
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
-    {
-        const auto & vec = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
-        this->data(place).value.insert(vec[row_num]);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
-    {
-        this->data(place).value.merge(this->data(rhs).value);
-    }
-
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-        this->data(place).value.write(buf);
-    }
-
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
-    {
-        this->data(place).value.read(buf);
-    }
-
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
-    {
-        const auto & set = this->data(place).value;
-        auto arguments = this->argument_types[0]->createColumn();
-        for (const auto & elem : set)
-            arguments->insert(elem.getValue());
-
-        const auto * arguments_ptr = arguments.get();
-        this->nested_func->addBatchSinglePlace(arguments->size(), this->getNestedPlace(place), &arguments_ptr, arena);
-        this->nested_func->insertResultInto(this->getNestedPlace(place), to, arena);
-    }
-};
-
-struct AggregateFunctionDistinctSingleGenericData
-{
-    using Set = HashSetWithSavedHashWithStackMemory<StringRef, StringRefHash, 4>;
-    Set value;
-};
-
-template <bool is_plain_column = false>
-class AggregateFunctionDistinctSingleGenericImpl final
-    : public AggregateFunctionDistinctBase<AggregateFunctionDistinctSingleGenericData,
-        AggregateFunctionDistinctSingleGenericImpl<is_plain_column>>
-{
-public:
-    using Data = AggregateFunctionDistinctSingleGenericData;
-
-    AggregateFunctionDistinctSingleGenericImpl(AggregateFunctionPtr nested, const DataTypes & arguments)
-        : AggregateFunctionDistinctBase<
-            AggregateFunctionDistinctSingleGenericData,
-            AggregateFunctionDistinctSingleGenericImpl<is_plain_column>>(nested, arguments) {}
-
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
-    {
-        auto & set = this->data(place).value;
-
-        Data::Set::LookupResult it;
-        bool inserted;
-        auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
-        set.emplace(key_holder, it, inserted);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
-    {
-        auto & cur_set = this->data(place).value;
-        const auto & rhs_set = this->data(rhs).value;
-
-        Data::Set::LookupResult it;
-        bool inserted;
-        for (const auto & elem : rhs_set)
-            cur_set.emplace(ArenaKeyHolder{elem.getValue(), *arena}, it, inserted);
-    }
-
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-        const auto & set = this->data(place).value;
-        writeVarUInt(set.size(), buf);
-        for (const auto & elem : set)
-            writeStringBinary(elem.getValue(), buf);
-    }
-
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
-    {
-        auto & set = this->data(place).value;
-        size_t size;
-        readVarUInt(size, buf);
-        for (size_t i = 0; i < size; ++i)
-            set.insert(readStringBinaryInto(*arena, buf));
-    }
-
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
-    {
-        const auto & set = this->data(place).value;
-        auto arguments = this->argument_types[0]->createColumn();
-        for (const auto & elem : set)
-            deserializeAndInsert<is_plain_column>(elem.getValue(), *arguments);
-
-        const auto * arguments_ptr = arguments.get();
-        this->nested_func->addBatchSinglePlace(arguments->size(), this->getNestedPlace(place), &arguments_ptr, arena);
-        this->nested_func->insertResultInto(this->getNestedPlace(place), to, arena);
     }
 };
 

@@ -36,21 +36,24 @@ public:
         AggregateFunctionPtr res;
         if (arguments.size() == 1)
         {
-            res = AggregateFunctionPtr(createWithNumericType<AggregateFunctionDistinctSingleNumericImpl>(*arguments[0], nested_function, arguments));
+            res.reset(createWithNumericType<
+                AggregateFunctionDistinct,
+                AggregateFunctionDistinctSingleNumericData>(*arguments[0], nested_function, arguments));
+
             if (res)
                 return res;
 
             if (arguments[0]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-                return std::make_shared<AggregateFunctionDistinctSingleGenericImpl<true>>(nested_function, arguments);
+                return std::make_shared<
+                    AggregateFunctionDistinct<
+                        AggregateFunctionDistinctSingleGenericData<true>>>(nested_function, arguments);
             else
-                return std::make_shared<AggregateFunctionDistinctSingleGenericImpl<false>>(nested_function, arguments);
+                return std::make_shared<
+                    AggregateFunctionDistinct<
+                        AggregateFunctionDistinctSingleGenericData<false>>>(nested_function, arguments);
         }
 
-        if (!res)
-            throw Exception("Illegal type " /* + argument_type->getName() + */
-                            " of argument for aggregate function " + nested_function->getName() + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return res;
+        return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctMultipleGenericData>>(nested_function, arguments);
     }
 };
 
