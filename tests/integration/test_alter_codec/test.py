@@ -46,8 +46,7 @@ def test_alter_codec_pk(started_cluster):
         with pytest.raises(QueryRuntimeException):
             node1.query("ALTER TABLE {name} MODIFY COLUMN id UInt64 ALIAS 3 CODEC(Delta, LZ4)".format(name=name))
 
-        with pytest.raises(QueryRuntimeException):
-            node1.query("ALTER TABLE {name} MODIFY COLUMN id UInt64 MATERIALIZED 3 CODEC(Delta, LZ4)".format(name=name))
+        node1.query("ALTER TABLE {name} MODIFY COLUMN id UInt64 MATERIALIZED 3 CODEC(Delta, LZ4)".format(name=name))
 
         node1.query("ALTER TABLE {name} MODIFY COLUMN id UInt64".format(name=name))
 
@@ -76,8 +75,7 @@ def test_alter_codec_index(started_cluster):
         with pytest.raises(QueryRuntimeException):
             node1.query("ALTER TABLE {name} MODIFY COLUMN id UInt64 ALIAS 3 CODEC(Delta, LZ4)".format(name=name))
 
-        with pytest.raises(QueryRuntimeException):
-            node1.query("ALTER TABLE {name} MODIFY COLUMN id UInt64 MATERIALIZED 3 CODEC(Delta, LZ4)".format(name=name))
+        node1.query("ALTER TABLE {name} MODIFY COLUMN id UInt64 MATERIALIZED 3 CODEC(Delta, LZ4)".format(name=name))
 
         node1.query("ALTER TABLE {name} MODIFY COLUMN id UInt64".format(name=name))
 
