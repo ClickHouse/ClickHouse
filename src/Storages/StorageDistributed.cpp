@@ -290,14 +290,14 @@ StorageDistributed::StorageDistributed(
     , storage_policy(storage_policy_)
     , relative_data_path(relative_data_path_)
 {
-    StorageInMemoryMetadata metadata_;
-    metadata_.setColumns(columns_);
-    metadata_.setConstraints(constraints_);
-    setInMemoryMetadata(metadata_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 
     if (sharding_key_)
     {
-        sharding_key_expr = buildShardingKeyExpression(sharding_key_, *global_context, metadata_.getColumns().getAllPhysical(), false);
+        sharding_key_expr = buildShardingKeyExpression(sharding_key_, *global_context, storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
     }
 

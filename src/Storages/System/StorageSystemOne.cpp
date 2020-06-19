@@ -14,9 +14,9 @@ namespace DB
 StorageSystemOne::StorageSystemOne(const std::string & name_)
     : IStorage({"system", name_})
 {
-    StorageInMemoryMetadata metadata_;
-    metadata_.setColumns(ColumnsDescription({{"dummy", std::make_shared<DataTypeUInt8>()}}));
-    setInMemoryMetadata(metadata_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(ColumnsDescription({{"dummy", std::make_shared<DataTypeUInt8>()}}));
+    setInMemoryMetadata(storage_metadata);
 }
 
 

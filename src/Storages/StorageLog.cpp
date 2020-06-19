@@ -434,10 +434,10 @@ StorageLog::StorageLog(
     , max_compress_block_size(max_compress_block_size_)
     , file_checker(disk, table_path + "sizes.json")
 {
-    StorageInMemoryMetadata metadata_;
-    metadata_.setColumns(columns_);
-    metadata_.setConstraints(constraints_);
-    setInMemoryMetadata(metadata_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
@@ -445,7 +445,7 @@ StorageLog::StorageLog(
     /// create directories if they do not exist
     disk->createDirectories(table_path);
 
-    for (const auto & column : metadata_.getColumns().getAllPhysical())
+    for (const auto & column : storage_metadata.getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
     marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;

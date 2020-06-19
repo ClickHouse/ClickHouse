@@ -237,10 +237,10 @@ StorageStripeLog::StorageStripeLog(
     , file_checker(disk, table_path + "sizes.json")
     , log(&Poco::Logger::get("StorageStripeLog"))
 {
-    StorageInMemoryMetadata metadata_;
-    metadata_.setColumns(columns_);
-    metadata_.setConstraints(constraints_);
-    setInMemoryMetadata(metadata_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);

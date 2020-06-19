@@ -206,10 +206,10 @@ StorageS3::StorageS3(
     , compression_method(compression_method_)
 {
     context_global.getRemoteHostFilter().checkURL(uri_.uri);
-    StorageInMemoryMetadata metadata_;
-    metadata_.setColumns(columns_);
-    metadata_.setConstraints(constraints_);
-    setInMemoryMetadata(metadata_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 
     auto settings = context_.getStorageS3Settings().getSettings(uri.endpoint);
     Aws::Auth::AWSCredentials credentials(access_key_id_, secret_access_key_);

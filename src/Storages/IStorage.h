@@ -80,8 +80,7 @@ class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromo
 {
 public:
     IStorage() = delete;
-    /// Storage fields should be initialized in separate methods like setColumns
-    /// or setTableTTLs.
+    /// Storage metadata can be set separately in setInMemoryMetadata method
     explicit IStorage(StorageID storage_id_) : storage_id(std::move(storage_id_)), metadata(std::make_unique<StorageInMemoryMetadata>()) {} //-V730
 
     virtual ~IStorage() = default;
