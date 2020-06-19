@@ -4369,25 +4369,6 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 }
 
 
-std::optional<Cluster::Address> StorageReplicatedMergeTree::findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const
-{
-    for (auto & iter : global_context.getClusters().getContainer())
-    {
-        const auto & shards = iter.second->getShardsAddresses();
-
-        for (const auto & shard : shards)
-        {
-            for (const auto & replica : shard)
-            {
-                /// user is actually specified, not default
-                if (replica.host_name == leader_address.host && replica.port == leader_address.queries_port && replica.user_specified)
-                    return replica;
-            }
-        }
-    }
-    return {};
-}
-
 void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica_name_)
 {
     replica_name_ = replica_name;
