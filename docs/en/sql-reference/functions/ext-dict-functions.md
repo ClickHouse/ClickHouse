@@ -1,6 +1,6 @@
 ---
 toc_priority: 58
-toc_title: Working with External Dictionaries
+toc_title: External Dictionaries
 ---
 
 # Functions for Working with External Dictionaries {#ext_dict_functions}
