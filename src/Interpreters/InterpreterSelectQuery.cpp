@@ -739,12 +739,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
         if (prepared_input)
         {
             auto prepared_source_step = std::make_unique<ReadFromPreparedSource>(
-                    Pipe(std::make_shared<SourceFromInputStream>(prepared_input)));
+                    Pipe(std::make_shared<SourceFromInputStream>(prepared_input)), context);
             query_plan.addStep(std::move(prepared_source_step));
         }
         else if (prepared_pipe)
         {
-            auto prepared_source_step = std::make_unique<ReadFromPreparedSource>(std::move(*prepared_pipe));
+            auto prepared_source_step = std::make_unique<ReadFromPreparedSource>(std::move(*prepared_pipe), context);
             query_plan.addStep(std::move(prepared_source_step));
         }
 
