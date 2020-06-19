@@ -107,8 +107,13 @@ private:
 
         ReplicatedMergeTreeMutationEntryPtr entry;
 
-        /// Parts we have to mutate to complete mutation. We use ActiveDataPartSet structure
-        /// to be able to manage covering and covered parts.
+        /// Current parts we have to mutate to complete mutation.
+        ///
+        /// current_part_name =mutation> result_part_name
+        /// ^~~parts_to_do~~^            ^~virtual_parts~^
+        ///
+        /// We use ActiveDataPartSet structure to be able to manage covering and
+        /// covered parts.
         ActiveDataPartSet parts_to_do;
 
         /// Note that is_done is not equivalent to parts_to_do.size() == 0
@@ -204,11 +209,16 @@ private:
     /// Add part for mutations with block_number > part.getDataVersion()
     void addPartToMutations(const String & part_name);
 
-    /// Remove part from mutations which were assigned to mutate it
-    /// with block_number > part.getDataVersion()
-    /// and block_number == part.getDataVersion()
-    ///     ^ (this may happen if we downloaded mutated part from other replica)
-    void removePartFromMutations(const String & part_name);
+    /// Remove covered parts from mutations (parts_to_do) which were assigned
+    /// for mutation. If remove_covered_parts = true, than remove parts covered
+    /// by first argument. If remove_part == true, than also remove part itself.
+    /// Both negative flags will throw exception.
+    ///
+    /// Part removed from mutations which satisfy contitions:
+    /// block_number > part.getDataVersion()
+    /// or block_number == part.getDataVersion()
+    ///    ^ (this may happen if we downloaded mutated part from other replica)
+    void removeCoveredPartsFromMutations(const String & part_name, bool remove_part, bool remove_covered_parts);
 
     /// Update the insertion times in ZooKeeper.
     void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper,

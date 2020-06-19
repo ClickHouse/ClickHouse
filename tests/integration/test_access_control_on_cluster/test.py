@@ -38,4 +38,3 @@ def test_access_control_on_cluster():
     assert "There is no user `Alex`" in ch1.query_and_get_error("SHOW CREATE USER Alex")
     assert "There is no user `Alex`" in ch2.query_and_get_error("SHOW CREATE USER Alex")
     assert "There is no user `Alex`" in ch3.query_and_get_error("SHOW CREATE USER Alex")
-
