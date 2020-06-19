@@ -56,7 +56,7 @@ void EventConsumer::onWriteData(const String & table_name, const std::vector<Fie
     size_t prev_bytes = buffer->data.bytes();
     for (size_t column = 0; column < buffer->data.columns() - 2; ++column)
     {
-        MutableColumnPtr col_to = (*std::move(buffer->data.getByPosition(column).column)).mutate();
+        MutableColumnPtr col_to = IColumn::mutate(std::move(buffer->data.getByPosition(column).column));
 
         for (size_t index = 0; index < rows_data.size(); ++index)
             col_to->insert(DB::get<const Tuple &>(rows_data[index])[column]);
@@ -90,7 +90,7 @@ void EventConsumer::onUpdateData(const String & table_name, const std::vector<Fi
 
     for (size_t column = 0; column < buffer->data.columns() - 2; ++column)
     {
-        MutableColumnPtr col_to = (*std::move(buffer->data.getByPosition(column).column)).mutate();
+        MutableColumnPtr col_to = IColumn::mutate(std::move(buffer->data.getByPosition(column).column));
 
         for (size_t index = 0; index < rows_data.size(); index += 2)
         {
@@ -105,8 +105,8 @@ void EventConsumer::onUpdateData(const String & table_name, const std::vector<Fi
         }
     }
 
-    MutableColumnPtr sign_mutable_column = (*std::move(buffer->data.getByPosition(buffer->data.columns() - 2)).column).mutate();
-    MutableColumnPtr version_mutable_column = (*std::move(buffer->data.getByPosition(buffer->data.columns() - 1)).column).mutate();
+    MutableColumnPtr sign_mutable_column = IColumn::mutate(std::move(buffer->data.getByPosition(buffer->data.columns() - 2).column));
+    MutableColumnPtr version_mutable_column = IColumn::mutate(std::move(buffer->data.getByPosition(buffer->data.columns() - 1).column));
 
     ColumnInt8::Container & sign_column_data = assert_cast<ColumnInt8 &>(*sign_mutable_column).getData();
     ColumnUInt64::Container & version_column_data = assert_cast<ColumnUInt64 &>(*version_mutable_column).getData();
@@ -141,7 +141,7 @@ void EventConsumer::onDeleteData(const String & table_name, const std::vector<Fi
     size_t prev_bytes = buffer->data.bytes();
     for (size_t column = 0; column < buffer->data.columns() - 2; ++column)
     {
-        MutableColumnPtr col_to = (*std::move(buffer->data.getByPosition(column).column)).mutate();
+        MutableColumnPtr col_to = IColumn::mutate(std::move(buffer->data.getByPosition(column).column));
 
         for (size_t index = 0; index < rows_data.size(); ++index)
             col_to->insert(DB::get<const Tuple &>(rows_data[index])[column]);
@@ -154,7 +154,7 @@ EventConsumer::BufferPtr EventConsumer::getTableBuffer(const String & table_name
 {
     if (buffers.find(table_name) == buffers.end())
     {
-        StoragePtr storage = DatabaseCatalog::instance().getDatabase(database)->tryGetTable(table_name);
+        StoragePtr storage = DatabaseCatalog::instance().getDatabase(database)->tryGetTable(table_name, context);
 
         buffers[table_name] = std::make_shared<Buffer>();
         buffers[table_name]->data = storage->getSampleBlockNonMaterialized();
@@ -207,8 +207,8 @@ void EventConsumer::onEvent(const BinlogEventPtr & receive_event, const MySQLRep
 
 void EventConsumer::fillSignColumnsAndMayFlush(Block & data, Int8 sign_value, UInt64 version_value, size_t fill_size, size_t prev_bytes)
 {
-    MutableColumnPtr sign_mutable_column = (*std::move(data.getByPosition(data.columns() - 2)).column).mutate();
-    MutableColumnPtr version_mutable_column = (*std::move(data.getByPosition(data.columns() - 1)).column).mutate();
+    MutableColumnPtr sign_mutable_column = IColumn::mutate(std::move(data.getByPosition(data.columns() - 2).column));
+    MutableColumnPtr version_mutable_column = IColumn::mutate(std::move(data.getByPosition(data.columns() - 1).column));
 
     ColumnInt8::Container & sign_column_data = assert_cast<ColumnInt8 &>(*sign_mutable_column).getData();
     ColumnUInt64::Container & version_column_data = assert_cast<ColumnUInt64 &>(*version_mutable_column).getData();
