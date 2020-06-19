@@ -110,7 +110,7 @@ struct StorageInMemoryMetadata
     Block getSampleBlockNonMaterialized() const; /// ordinary.
     Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const; /// ordinary + materialized + virtuals.
     Block getSampleBlockForColumns(
-        const Names & column_names, const NamesAndTypesList & virtuals) const; /// ordinary + materialized + aliases + virtuals.
+        const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const; /// ordinary + materialized + aliases + virtuals.
 
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
@@ -176,7 +176,7 @@ struct StorageInMemoryMetadata
 
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.
-    void check(const Names & column_names, const NamesAndTypesList & virtuals) const;
+    void check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
 
     /// Check that all the requested names are in the table and have the correct types.
     void check(const NamesAndTypesList & columns) const;

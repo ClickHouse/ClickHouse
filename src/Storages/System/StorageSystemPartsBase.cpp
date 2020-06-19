@@ -41,7 +41,7 @@ bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const St
 
     /// Do not check if only _state column is requested
     if (!(has_state_column && real_column_names.empty()))
-        metadata_snapshot->check(real_column_names, {});
+        metadata_snapshot->check(real_column_names, {}, getStorageID());
 
     return has_state_column;
 }
