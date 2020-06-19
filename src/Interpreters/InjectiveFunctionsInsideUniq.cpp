@@ -1,0 +1,65 @@
+#include <Common/typeid_cast.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Interpreters/InjectiveFunctionsInsideUniq.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Functions/FunctionFactory.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
+///recursive searching of injective functions
+void killInjectiveFuctions(ASTPtr & ast, size_t ind, InjectiveFunctionsInsideUniqMatcher::Data & data)
+{
+    ASTPtr exact_child;
+    if (ast->as<ASTFunction>() && ast->as<ASTFunction>()->arguments->children.size() > ind)
+        exact_child = ast->as<ASTFunction>()->arguments->children[ind];
+    else
+        return;
+    const FunctionFactory & function_factory = FunctionFactory::instance();
+    const Context & context = data.context;
+    if (exact_child->as<ASTFunction>() && function_factory.get(exact_child->as<ASTFunction>()->name, context)->isInjective(Block{}))
+    {
+        if (exact_child->as<ASTFunction>()->arguments->children.size() == 1)
+            ast->as<ASTFunction>()->arguments->children[ind] = (exact_child->as<ASTFunction>()->arguments->children[0])->clone();
+        if (ast->as<ASTFunction>() && exact_child->as<ASTFunction>()->arguments->children.size() == 1)
+            killInjectiveFuctions(ast, ind, data);
+    }
+}
+
+
+///cut all injective functions in uniq
+void InjectiveFunctionsInsideUniqMatcher::visit(ASTPtr & current_ast, Data data)
+{
+    if (!current_ast)
+        return;
+
+    auto * function_node = current_ast->as<ASTFunction>();
+    if (function_node && function_node->name == "uniq")
+    {
+        size_t amount_of_children = current_ast->as<ASTFunction>()->arguments->children.size();
+        for (size_t i = 0; i < amount_of_children; ++i)
+            killInjectiveFuctions(current_ast, i, data);
+    }
+}
+
+bool InjectiveFunctionsInsideUniqMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
+{
+    if (!child)
+        throw Exception("AST item should not have nullptr in children", ErrorCodes::LOGICAL_ERROR);
+
+    if (node->as<ASTTableExpression>() || node->as<ASTArrayJoin>())
+        return false; // NOLINT
+
+    return true;
+}
+
+}
