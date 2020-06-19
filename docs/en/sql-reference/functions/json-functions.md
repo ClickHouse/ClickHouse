@@ -1,6 +1,6 @@
 ---
 toc_priority: 56
-toc_title: Working with JSON
+toc_title: JSON
 ---
 
 # Functions for Working with JSON {#functions-for-working-with-json}
