@@ -147,7 +147,7 @@ MergeTreeData::MergeTreeData(
     {
         try
         {
-            initPartitionKey(metadata_.partition_key);
+            checkPartitionKeyAndInitMinMax(metadata_.partition_key);
             if (minmax_idx_date_column_pos == -1)
                 throw Exception("Could not find Date column", ErrorCodes::BAD_TYPE_OF_FIELD);
         }
@@ -161,7 +161,7 @@ MergeTreeData::MergeTreeData(
     else
     {
         is_custom_partitioned = true;
-        initPartitionKey(metadata_.partition_key);
+        checkPartitionKeyAndInitMinMax(metadata_.partition_key);
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
@@ -415,7 +415,7 @@ ExpressionActionsPtr MergeTreeData::getSortingKeyAndSkipIndicesExpression(const 
 }
 
 
-void MergeTreeData::initPartitionKey(const KeyDescription & new_partition_key)
+void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key)
 {
     if (new_partition_key.expression_list_ast->children.empty())
         return;
