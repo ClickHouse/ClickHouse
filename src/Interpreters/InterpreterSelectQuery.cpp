@@ -1300,6 +1300,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         }
 
         interpreter_subquery->buildQueryPlan(query_plan);
+        query_plan.addInterpreterContext(context);
     }
     else if (storage)
     {
