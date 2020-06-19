@@ -309,6 +309,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 query_ptr, SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage),
                 options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
+        /// Save scalar sub queries's results in the query context
+        if (!options.only_analyze && context->hasQueryContext())
+            for (const auto & it : syntax_analyzer_result->getScalars())
+                context->getQueryContext().addScalar(it.first, it.second);
+
         if (view)
         {
             /// Restore original view name. Save rewritten subquery for future usage in StorageView.
@@ -328,11 +333,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 MergeTreeWhereOptimizer{current_info, *context, *merge_tree, syntax_analyzer_result->requiredSourceColumns(), log};
             }
         }
-
-        /// Save scalar sub queries's results in the query context
-        if (!options.only_analyze && context->hasQueryContext())
-            for (const auto & it : syntax_analyzer_result->getScalars())
-                context->getQueryContext().addScalar(it.first, it.second);
 
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
                 query_ptr, syntax_analyzer_result, *context,
