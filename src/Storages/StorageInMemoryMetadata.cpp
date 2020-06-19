@@ -19,17 +19,6 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
-
-StorageInMemoryMetadata::StorageInMemoryMetadata(
-    const ColumnsDescription & columns_,
-    const IndicesDescription & secondary_indices_,
-    const ConstraintsDescription & constraints_)
-    : columns(columns_)
-    , secondary_indices(secondary_indices_)
-    , constraints(constraints_)
-{
-}
-
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
     , secondary_indices(other.secondary_indices)

@@ -42,7 +42,6 @@ struct StorageInMemoryMetadata
     SelectQueryDescription select;
 
     StorageInMemoryMetadata() = default;
-    StorageInMemoryMetadata(const ColumnsDescription & columns_, const IndicesDescription & secondary_indices_, const ConstraintsDescription & constraints_);
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
