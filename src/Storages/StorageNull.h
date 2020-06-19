@@ -33,7 +33,7 @@ public:
     {
         Pipes pipes;
         pipes.emplace_back(
-            std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals())));
+            std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
         return pipes;
     }
 

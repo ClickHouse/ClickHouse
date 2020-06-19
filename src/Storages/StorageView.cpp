@@ -88,7 +88,7 @@ Pipes StorageView::read(
     {
         return std::make_shared<ConvertingTransform>(
             header, metadata_snapshot->getSampleBlockForColumns(
-                column_names, getVirtuals()), ConvertingTransform::MatchColumnsMode::Name);
+                column_names, getVirtuals(), getStorageID()), ConvertingTransform::MatchColumnsMode::Name);
     });
 
     pipes = std::move(pipeline).getPipes();

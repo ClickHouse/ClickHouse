@@ -150,7 +150,7 @@ MarkRanges MergeTreeReadPool::getRestMarks(const IMergeTreeDataPart & part, cons
 
 Block MergeTreeReadPool::getHeader() const
 {
-    return metadata_snapshot->getSampleBlockForColumns(column_names, data.getVirtuals());
+    return metadata_snapshot->getSampleBlockForColumns(column_names, data.getVirtuals(), data.getStorageID());
 }
 
 void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInfo info)

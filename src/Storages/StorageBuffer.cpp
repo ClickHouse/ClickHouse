@@ -90,7 +90,7 @@ class BufferSource : public SourceWithProgress
 public:
     BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage, const StorageMetadataPtr & metadata_snapshot)
         : SourceWithProgress(
-            metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals()))
+            metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
         , column_names(column_names_.begin(), column_names_.end())
         , buffer(buffer_) {}
 
@@ -468,7 +468,6 @@ bool StorageBuffer::mayBenefitFromIndexForIn(
     if (destination.get() == this)
         throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-    /// TODO alesap (check destination metadata)
     return destination->mayBenefitFromIndexForIn(left_in_operand, query_context, destination->getInMemoryMetadataPtr());
 }
 

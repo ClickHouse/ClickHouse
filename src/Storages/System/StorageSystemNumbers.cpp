@@ -132,7 +132,7 @@ Pipes StorageSystemNumbers::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals());
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     if (limit && *limit < max_block_size)
     {

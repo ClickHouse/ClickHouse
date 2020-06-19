@@ -60,7 +60,7 @@ public:
         IndexForNativeFormat::Blocks::const_iterator index_end)
     {
         if (index_begin == index_end)
-            return metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals());
+            return metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
 
         /// TODO: check if possible to always return storage.getSampleBlock()
 
@@ -276,7 +276,7 @@ Pipes StorageStripeLog::read(
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
-    metadata_snapshot->check(column_names, getVirtuals());
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     NameSet column_names_set(column_names.begin(), column_names.end());
 
@@ -285,7 +285,7 @@ Pipes StorageStripeLog::read(
     String index_file = table_path + "index.mrk";
     if (!disk->exists(index_file))
     {
-        pipes.emplace_back(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals())));
+        pipes.emplace_back(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
         return pipes;
     }
 

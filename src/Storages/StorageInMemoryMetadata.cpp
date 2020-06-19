@@ -249,7 +249,8 @@ Block StorageInMemoryMetadata::getSampleBlock() const
     return res;
 }
 
-Block StorageInMemoryMetadata::getSampleBlockForColumns(const Names & column_names, const NamesAndTypesList & virtuals) const
+Block StorageInMemoryMetadata::getSampleBlockForColumns(
+    const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
 {
     Block res;
 
@@ -274,7 +275,7 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(const Names & column_nam
         else
         {
             throw Exception(
-                "Column " + backQuote(name) + " not found in table " /*+ getStorageID().getNameForLogs() TODO(alesap)*/,
+                "Column " + backQuote(name) + " not found in table " + storage_id.getNameForLogs(),
                 ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }
@@ -442,7 +443,7 @@ namespace
     }
 }
 
-void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTypesList & virtuals) const
+void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
 {
     NamesAndTypesList available_columns = getColumns().getAllPhysical();
     available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
@@ -459,7 +460,7 @@ void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTy
     {
         if (columns_map.end() == columns_map.find(name))
             throw Exception(
-                "There is no column with name " + backQuote(name) + " in table " + /* TODO alesap getStorageID().getNameForLogs() +*/ ". There are columns: " + list_of_columns,
+                "There is no column with name " + backQuote(name) + " in table " + storage_id.getNameForLogs() + ". There are columns: " + list_of_columns,
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (unique_names.end() != unique_names.find(name))

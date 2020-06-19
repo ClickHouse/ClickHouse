@@ -426,7 +426,7 @@ Block StorageMerge::getQueryHeader(
     {
         case QueryProcessingStage::FetchColumns:
         {
-            Block header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals());
+            Block header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
             if (query_info.prewhere_info)
             {
                 query_info.prewhere_info->prewhere_actions->execute(header);
@@ -438,7 +438,7 @@ Block StorageMerge::getQueryHeader(
         case QueryProcessingStage::WithMergeableState:
         case QueryProcessingStage::Complete:
             return InterpreterSelectQuery(
-                    query_info.query, context, std::make_shared<OneBlockInputStream>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals())),
+                query_info.query, context, std::make_shared<OneBlockInputStream>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())),
                 SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
     }
     throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);

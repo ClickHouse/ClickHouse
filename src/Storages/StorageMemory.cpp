@@ -28,7 +28,7 @@ public:
         BlocksList::iterator end_,
         const StorageMemory & storage,
         const StorageMetadataPtr & metadata_snapshot)
-        : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals()))
+        : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
         , column_names(std::move(column_names_))
         , begin(begin_)
         , end(end_)
@@ -110,7 +110,7 @@ Pipes StorageMemory::read(
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals());
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     std::lock_guard lock(mutex);
 

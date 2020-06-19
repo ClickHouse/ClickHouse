@@ -94,7 +94,7 @@ Pipes StorageXDBC::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals());
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     bridge_helper->startBridgeSync();
     return IStorageURLBase::read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
@@ -130,7 +130,7 @@ BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageM
 
 Block StorageXDBC::getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const
 {
-    return metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals());
+    return metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
 }
 
 std::string StorageXDBC::getName() const

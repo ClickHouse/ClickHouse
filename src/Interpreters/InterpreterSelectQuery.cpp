@@ -381,14 +381,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (storage)
         {
-            source_header = metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals());
+            source_header = metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID());
 
             /// Fix source_header for filter actions.
             if (row_policy_filter)
             {
                 filter_info = std::make_shared<FilterInfo>();
                 filter_info->column_name = generateFilterActions(filter_info->actions, row_policy_filter, required_columns);
-                source_header = metadata_snapshot->getSampleBlockForColumns(filter_info->actions->getRequiredColumns(), storage->getVirtuals());
+                source_header = metadata_snapshot->getSampleBlockForColumns(
+                    filter_info->actions->getRequiredColumns(), storage->getVirtuals(), storage->getStorageID());
             }
         }
 
@@ -1344,7 +1345,8 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         if (pipes.empty())
         {
-            Pipe pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals())));
+            Pipe pipe(std::make_shared<NullSource>(
+                    metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID())));
 
             if (query_info.prewhere_info)
             {

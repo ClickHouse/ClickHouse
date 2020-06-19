@@ -30,7 +30,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     bool quiet)
     :
     MergeTreeBaseSelectProcessor{
-        metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals()),
+        metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
         storage_, metadata_snapshot_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
