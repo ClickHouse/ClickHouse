@@ -323,15 +323,16 @@ if args.report == 'main':
     print_test_times()
 
     def print_benchmark_results():
-        left_json = json.load(open('benchmark/website-left.json'));
-        right_json = json.load(open('benchmark/website-right.json'));
-        left_qps = next(iter(left_json.values()))["statistics"]["QPS"]
-        right_qps = next(iter(right_json.values()))["statistics"]["QPS"]
-        relative_diff = (right_qps - left_qps) / left_qps;
-        times_diff = max(right_qps, left_qps) / max(0.01, min(right_qps, left_qps))
+        json_reports = [json.load(open(f'benchmark/website-{x}.json')) for x in ['left', 'right']]
+        stats = [next(iter(x.values()))["statistics"] for x in json_reports]
+        qps = [x["QPS"] for x in stats]
+        errors = [x["num_errors"] for x in stats]
+        relative_diff = (qps[1] - qps[0]) / max(0.01, qps[0]);
+        times_diff = max(qps) / max(0.01, min(qps))
         print(tableStart('Concurrent benchmarks'))
         print(tableHeader(['Benchmark', 'Old, queries/s', 'New, queries/s', 'Relative difference', 'Times difference']))
-        row = ['website', f'{left_qps:.3f}', f'{right_qps:.3f}', f'{relative_diff:.3f}', f'x{times_diff:.3f}']
+        all_rows = []
+        row = ['website', f'{qps[0]:.3f}', f'{qps[1]:.3f}', f'{relative_diff:.3f}', f'x{times_diff:.3f}']
         attrs = ['' for r in row]
         if abs(relative_diff) > 0.1:
             # More queries per second is better.
@@ -341,7 +342,23 @@ if args.report == 'main':
                 attrs[3] = f'style="background: {color_bad}"'
         else:
             attrs[3] = ''
+        all_rows.append((rows, attrs));
         print(tableRow(row, attrs))
+
+        if max(errors):
+            attrs = ['' for r in row]
+            row[1] = f'{errors[0]:.3f}'
+            row[2] = f'{errors[1]:.3f}'
+            if errors[0]:
+                attrs[1] += f' style="background: {color_bad}" '
+            if errors[1]:
+                attrs[2] += f' style="background: {color_bad}" '
+
+            all_rows[0][1] += " colspan=2 "
+
+        for row, attrs in all_rows:
+            print(tableRow(row, attrs))
+
         print(tableEnd())
 
     try:
