@@ -55,6 +55,9 @@ private:
 
     void writeColumn(orc::ColumnVectorBatch * orc_column, const IColumn & column, DataTypePtr & type, const PaddedPODArray<UInt8> * null_bytemap);
 
+    size_t getColumnSize(const IColumn & column, DataTypePtr & ptr);
+    size_t getMaxColumnSize(Chunk & chunk);
+
     const FormatSettings format_settings;
     ORCOutputStream output_stream;
     DataTypes data_types;

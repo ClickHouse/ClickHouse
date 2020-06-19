@@ -104,13 +104,11 @@ ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & t
         {
             return getORCType(removeNullable(type));
         }
-        /*
         case TypeIndex::Array:
         {
             const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
             return orc::createListType(getORCType(array_type->getNestedType()));
         }
-         */
         case TypeIndex::Decimal32:
         {
             const auto * decimal_type = typeid_cast<const DataTypeDecimal<Decimal32> *>(type.get());
@@ -150,7 +148,10 @@ void ORCBlockOutputFormat::ORCBlockOutputFormat::writeNumbers(
             number_orc_column->notNull[i] = 0;
             continue;
         }
-        number_orc_column->data[i] = number_column.getElement(i);
+        if (std::is_same_v<NumberType, UInt8>)
+            number_orc_column->data[i] = static_cast<unsigned char>(number_column.getElement(i));
+        else
+            number_orc_column->data[i] = number_column.getElement(i);
     }
     number_orc_column->numElements = number_column.size();
 }
@@ -362,7 +363,6 @@ void ORCBlockOutputFormat::writeColumn(
             writeColumn(orc_column, nullable_column.getNestedColumn(), nested_type, &new_null_bytemap);
             break;
         }
-        /* Doesn't work for unknown reason
         case TypeIndex::Array:
         {
             orc::ListVectorBatch * list_orc_column = dynamic_cast<orc::ListVectorBatch *>(orc_column);
@@ -375,23 +375,45 @@ void ORCBlockOutputFormat::writeColumn(
             {
                 list_orc_column->offsets[i + 1] = offsets[i];
             }
-            const IColumn & nested_column = list_column.getData();
             orc::ColumnVectorBatch * nested_orc_column = list_orc_column->elements.get();
-            writeColumn(nested_orc_column, nested_column, nested_type, null_bytemap, nested_column.size());
+            writeColumn(nested_orc_column, list_column.getData(), nested_type, null_bytemap);
             list_orc_column->numElements = list_column.size();
             break;
         }
-         */
         default:
             throw Exception("Type " + type->getName() + " is not supported for ORC output format", ErrorCodes::ILLEGAL_COLUMN);
     }
+}
+
+size_t ORCBlockOutputFormat::getColumnSize(const IColumn & column, DataTypePtr & type)
+{
+    if (type->getTypeId() == TypeIndex::Array)
+    {
+        auto nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
+        const IColumn & nested_column = assert_cast<const ColumnArray &>(column).getData();
+        return getColumnSize(nested_column, nested_type);
+    }
+    return column.size();
+}
+
+size_t ORCBlockOutputFormat::getMaxColumnSize(Chunk & chunk)
+{
+    size_t columns_num = chunk.getNumColumns();
+    size_t max_column_size = 0;
+    for (size_t i = 0; i != columns_num; ++i)
+    {
+        max_column_size = std::max(max_column_size, getColumnSize(*chunk.getColumns()[i], data_types[i]));
+    }
+    return max_column_size;
 }
 
 void ORCBlockOutputFormat::consume(Chunk chunk)
 {
     size_t columns_num = chunk.getNumColumns();
     size_t rows_num = chunk.getNumRows();
-    ORC_UNIQUE_PTR<orc::ColumnVectorBatch> batch = writer->createRowBatch(rows_num);
+    /// getMaxColumnSize is needed to write arrays.
+    /// The size of the batch must be no less than total amount of array elements.
+    ORC_UNIQUE_PTR<orc::ColumnVectorBatch> batch = writer->createRowBatch(getMaxColumnSize(chunk));
     orc::StructVectorBatch *root = dynamic_cast<orc::StructVectorBatch *>(batch.get());
     for (size_t i = 0; i != columns_num; ++i)
     {
