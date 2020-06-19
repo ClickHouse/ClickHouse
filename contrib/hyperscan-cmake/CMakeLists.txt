@@ -221,6 +221,7 @@ if (ENABLE_HYPERSCAN)
         target_compile_options (hyperscan
             PRIVATE -g0 # Library has too much debug information
             -march=corei7 -O2 -fno-strict-aliasing -fno-omit-frame-pointer -fvisibility=hidden # The options from original build system
+            -fno-sanitize=undefined # Assume the library takes care of itself
         )
         target_include_directories (hyperscan
             PRIVATE
