@@ -3,9 +3,12 @@ toc_priority: 41
 toc_title: Searching in Strings
 ---
 
-# Functions for Searching Strings {#functions-for-searching-strings}
+# Functions for Searching in Strings {#functions-for-searching-strings}
 
 The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
+
+!!! note "Note"
+    Functions for [replacing](string-replace-functions.md) and [other manipulations with strings](string-functions.md) are described separately.
 
 ## position(haystack, needle), locate(haystack, needle) {#position}
 
