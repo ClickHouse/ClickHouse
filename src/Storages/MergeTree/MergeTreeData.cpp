@@ -118,7 +118,7 @@ const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
 MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
     const String & relative_data_path_,
-    StorageInMemoryMetadata metadata_,
+    const StorageInMemoryMetadata & metadata_,
     Context & context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
@@ -143,15 +143,11 @@ MergeTreeData::MergeTreeData(
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     MergeTreeDataFormatVersion min_format_version(0);
-    /// TODO(alesap) Move to register methods
     if (!date_column_name.empty())
     {
         try
         {
-            auto partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
-            metadata_.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, metadata_.columns, global_context);
             initPartitionKey(metadata_.partition_key);
-
             if (minmax_idx_date_column_pos == -1)
                 throw Exception("Could not find Date column", ErrorCodes::BAD_TYPE_OF_FIELD);
         }

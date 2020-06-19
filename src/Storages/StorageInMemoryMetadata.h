@@ -14,9 +14,6 @@
 namespace DB
 {
 
-/// Structure represent table metadata stored in memory.
-/// Only one storage engine support all fields -- MergeTree.
-/// Complete table AST can be recreated from this struct.
 struct StorageInMemoryMetadata
 {
     /// Columns of table with their names, types,
