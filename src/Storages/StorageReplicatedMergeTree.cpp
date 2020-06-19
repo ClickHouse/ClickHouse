@@ -3359,6 +3359,7 @@ void StorageReplicatedMergeTree::alter(
             changed_nodes.emplace_back(zookeeper_path, "metadata", new_metadata_str);
 
         /// Perform settings update locally
+        if (ast_to_str(metadata.settings_ast) != ast_to_str(settings_ast))
         {
             lockStructureExclusively(table_lock_holder, query_context.getCurrentQueryId());
             auto old_metadata = getInMemoryMetadata();
