@@ -1,6 +1,6 @@
 ---
 toc_priority: 39
-toc_title: Working with Dates and Times
+toc_title: Dates and Times
 ---
 
 # Functions for Working with Dates and Times {#functions-for-working-with-dates-and-times}
