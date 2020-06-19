@@ -13,6 +13,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Functions/registerFunctions.h>
 #include <DataTypes/DataTypeDate.h>
+#include <boost/filesystem.hpp>
 
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
@@ -37,7 +38,6 @@ DB::StoragePtr createStorage(DB::Context & context)
         StorageID("test", "test"), "table/", meta, false, context, "date", MergeTreeData::MergingParams{}, std::move(ptr), false);
 
     table->startup();
-    std::cerr << "KEK\n";
 
     return table;
 }
@@ -79,7 +79,12 @@ std::string writeData(size_t rows, DB::StoragePtr & table, DB::Context & context
     }
 
     BlockOutputStreamPtr out = table->write({}, context);
-    out->write(block);
+    try
+    {
+        out->write(block);
+    } catch (const Exception & e) {
+        std::cerr << e.getStackTraceString();
+    }
 
     return data;
 }
@@ -94,12 +99,11 @@ std::string readData(DB::StoragePtr & table, DB::Context & context) {
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
     BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 8192, 1)[0]));
-
     Block sample;
     {
         ColumnWithTypeAndName col1, col2;
         col1.type = std::make_shared<DataTypeUInt64>();
-        col2.type = std::make_shared<DataTypeDateTime>();
+        col2.type = std::make_shared<DataTypeDate>();
         sample.insert(std::move(col1));
         sample.insert(std::move(col2));
     }
@@ -143,6 +147,8 @@ static DB::ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 }
 
 TEST(GrabOldModifiedParts, SimpleCase) {
+    boost::filesystem::create_directory("data");
+
     using namespace DB;
     const auto & context_holder = getContext();
     Context ctx = context_holder.context;
@@ -163,8 +169,15 @@ TEST(GrabOldModifiedParts, SimpleCase) {
     StorageMergeTree *tree = dynamic_cast<StorageMergeTree *>(table.get());
     tree->grabOldModifiedParts();
 
-    //ASSERT_EQ(data, readData(table, ctx));
+    try
+    {
+        ASSERT_EQ(data, readData(table, ctx));
+    } catch (const Exception & e) {
+        std::cerr << e.getStackTraceString();
+    }
     table->shutdown();
+    boost::filesystem::remove_all("table");
     ctx.shutdown();
+    boost::filesystem::remove_all("data");
 }
 

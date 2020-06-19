@@ -286,9 +286,7 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
 
 StoragePolicyPtr StoragePolicySelector::get(const String & name) const
 {
-    std::cerr << "get\n";
     auto it = policies.find(name);
-    std::cerr << "after find\n";
     if (it == policies.end())
         throw Exception("Unknown StoragePolicy " + name, ErrorCodes::UNKNOWN_POLICY);
 
