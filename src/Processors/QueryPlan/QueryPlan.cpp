@@ -11,6 +11,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+QueryPlan::~QueryPlan() = default;
+
 void QueryPlan::checkInitialized() const
 {
     if (!isInitialized())
@@ -72,7 +74,11 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<QueryPlan> plans)
         root->children.emplace_back(plan.root);
 
     for (auto & plan : plans)
+    {
         max_threads = std::max(max_threads, plan.max_threads);
+        interpreter_context.insert(interpreter_context.end(),
+                                   plan.interpreter_context.begin(), plan.interpreter_context.end());
+    }
 }
 
 void QueryPlan::addStep(QueryPlanStepPtr step)
@@ -136,7 +142,10 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
         auto & frame = stack.top();
 
         if (last_pipeline)
+        {
             frame.pipelines.emplace_back(std::move(last_pipeline));
+            last_pipeline = nullptr;
+        }
 
         size_t next_child = frame.pipelines.size();
         if (next_child == frame.node->children.size())
@@ -153,7 +162,15 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
             stack.push(Frame{.node = frame.node->children[next_child]});
     }
 
+    for (auto & context : interpreter_context)
+        last_pipeline->addInterpreterContext(std::move(context));
+
     return last_pipeline;
+}
+
+void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
+{
+    interpreter_context.emplace_back(std::move(context));
 }
 
 }
