@@ -1,9 +1,15 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+FunctionOverloadResolverImplPtr CastOverloadResolver::create(const Context & context)
+{
+    return createImpl(context.getSettingsRef().cast_keep_nullable);
+}
 
 void registerFunctionsConversion(FunctionFactory & factory)
 {

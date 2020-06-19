@@ -196,6 +196,20 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
 }
 
 
+String getBuildIDFromProgramHeaders(dl_phdr_info * info)
+{
+    for (size_t header_index = 0; header_index < info->dlpi_phnum; ++header_index)
+    {
+        const ElfPhdr & phdr = info->dlpi_phdr[header_index];
+        if (phdr.p_type != PT_NOTE)
+            continue;
+
+        return Elf::getBuildID(reinterpret_cast<const char *>(info->dlpi_addr + phdr.p_vaddr), phdr.p_memsz);
+    }
+    return {};
+}
+
+
 void collectSymbolsFromELFSymbolTable(
     dl_phdr_info * info,
     const Elf & elf,
@@ -283,8 +297,31 @@ void collectSymbolsFromELF(dl_phdr_info * info,
 
     object_name = std::filesystem::exists(debug_info_path) ? debug_info_path : canonical_path;
 
+    /// But we have to compare Build ID to check that debug info corresponds to the same executable.
+    String our_build_id = getBuildIDFromProgramHeaders(info);
+
     SymbolIndex::Object object;
     object.elf = std::make_unique<Elf>(object_name);
+
+    String file_build_id = object.elf->getBuildID();
+
+    if (our_build_id != file_build_id)
+    {
+        /// If debug info doesn't correspond to our binary, fallback to the info in our binary.
+        if (object_name != canonical_path)
+        {
+            object_name = canonical_path;
+            object.elf = std::make_unique<Elf>(object_name);
+
+            /// But it can still be outdated, for example, if executable file was deleted from filesystem and replaced by another file.
+            file_build_id = object.elf->getBuildID();
+            if (our_build_id != file_build_id)
+                return;
+        }
+        else
+            return;
+    }
+
     object.address_begin = reinterpret_cast<const void *>(info->dlpi_addr);
     object.address_end = reinterpret_cast<const void *>(info->dlpi_addr + object.elf->size());
     object.name = object_name;
