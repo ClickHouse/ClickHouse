@@ -951,7 +951,6 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
     ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(aggregated_columns, context);
     NamesWithAliases result_columns;
     Names result_names;
-    std::cerr << "DEBUG getActions 1\n";
 
     ASTs asts;
 
@@ -959,7 +958,6 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
         asts = node->children;
     else
         asts = ASTs(1, query);
-    std::cerr << "DEBUG getActions 2\n";
 
     for (const auto & ast : asts)
     {
@@ -973,7 +971,6 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
         result_names.push_back(alias);
         getRootActions(ast, false, actions);
     }
-    std::cerr << "DEBUG getActions 3\n";
 
     if (add_aliases)
     {
@@ -982,7 +979,6 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
         else
             actions->add(ExpressionAction::addAliases(result_columns));
     }
-    std::cerr << "DEBUG getActions 4\n";
 
     if (!(add_aliases && project_result))
     {
@@ -991,7 +987,6 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
             result_names.push_back(column_name_type.name);
     }
 
-    std::cerr << "DEBUG getActions 5\n";
     actions->finalize(result_names);
 
     return actions;
