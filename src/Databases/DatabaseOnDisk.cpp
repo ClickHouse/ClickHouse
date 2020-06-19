@@ -122,7 +122,12 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     return statement_stream.str();
 }
 
-DatabaseOnDisk::DatabaseOnDisk(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context)
+DatabaseOnDisk::DatabaseOnDisk(
+    const String & name,
+    const String & metadata_path_,
+    const String & data_path_,
+    const String & logger,
+    const Context & context)
     : DatabaseWithOwnTablesBase(name, logger, context)
     , metadata_path(metadata_path_)
     , data_path(data_path_)
@@ -153,7 +158,6 @@ void DatabaseOnDisk::createTable(
 
     /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
-
 
     if (isDictionaryExist(table_name))
         throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.",

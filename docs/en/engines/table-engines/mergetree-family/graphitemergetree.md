@@ -9,7 +9,7 @@ This engine is designed for thinning and aggregating/averaging (rollup) [Graphit
 
 You can use any ClickHouse table engine to store the Graphite data if you don’t need rollup, but if you need a rollup use `GraphiteMergeTree`. The engine reduces the volume of storage and increases the efficiency of queries from Graphite.
 
-The engine inherits properties from [MergeTree](mergetree.md).
+The engine inherits properties from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md).
 
 ## Creating a Table {#creating-table}
 
@@ -50,7 +50,7 @@ The names of these columns should be set in the rollup configuration.
 
 **Query clauses**
 
-When creating a `GraphiteMergeTree` table, the same [clauses](mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
+When creating a `GraphiteMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
 
 <details markdown="1">
 

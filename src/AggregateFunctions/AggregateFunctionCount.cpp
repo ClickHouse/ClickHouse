@@ -7,6 +7,12 @@
 namespace DB
 {
 
+AggregateFunctionPtr AggregateFunctionCount::getOwnNullAdapter(
+    const AggregateFunctionPtr &, const DataTypes & types, const Array & params) const
+{
+    return std::make_shared<AggregateFunctionCountNotNullUnary>(types[0], params);
+}
+
 namespace
 {
 
@@ -22,7 +28,7 @@ AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, cons
 
 void registerAggregateFunctionCount(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("count", createAggregateFunctionCount, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("count", {createAggregateFunctionCount, {true}}, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }
