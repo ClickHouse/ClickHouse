@@ -519,9 +519,6 @@ private:
     bool dropPartsInPartition(zkutil::ZooKeeper & zookeeper, String & partition_id,
         StorageReplicatedMergeTree::LogEntry & entry, bool detach);
 
-    /// Find cluster address for host
-    std::optional<Cluster::Address> findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const;
-
     // Partition helpers
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
