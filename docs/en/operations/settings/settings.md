@@ -1393,6 +1393,65 @@ Possible values:
 
 Default value: 16.
 
+## transform_null_in {#transform_null_in}
+
+Enables equality of [NULL](../../sql-reference/syntax.md#null-literal) values for [IN](../../sql-reference/operators/in.md) operator.
+
+By default, `NULL` values can't be compared because `NULL` means undefined value. Thus, comparison `expr = NULL` must always return `false`. With this setting `NULL = NULL` returns `true` for `IN` operator.
+
+Possible values:
+
+-   0 — Comparison of `NULL` values in `IN` operator returns `false`.
+-   1 — Comparison of `NULL` values in `IN` operator returns `true`.
+
+Default value: 0.
+
+**Example** 
+
+Consider the `null_in` table:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+│    3 │     3 │
+└──────┴───────┘
+```
+
+Query:
+
+```sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
+```
+
+Result:
+
+```text
+┌──idx─┬────i─┐
+│    1 │    1 │
+└──────┴──────┘
+```
+
+Query:
+
+```sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
+```
+
+Result:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+└──────┴───────┘
+```
+
+**See Also** 
+
+-   [NULL Processing in IN Operators](../../sql-reference/operators/in.md#in-null-processing)
+
+
 ## low\_cardinality\_max\_dictionary\_size {#low_cardinality_max_dictionary_size}
 
 Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can’t be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
