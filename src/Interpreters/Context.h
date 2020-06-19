@@ -548,6 +548,8 @@ public:
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
+    std::shared_ptr<ICompressionCodec> chooseRecompressionCodec(size_t part_size, double part_size_ratio) const;
+
 
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;

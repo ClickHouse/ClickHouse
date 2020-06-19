@@ -343,6 +343,7 @@ struct ContextShared
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
+    mutable std::unique_ptr<CompressionCodecSelector> recompression_codec_selector;
     /// Storage disk chooser for MergeTree engines
     mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector;
     /// Storage policy chooser for MergeTree engines
@@ -1736,6 +1737,24 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
     }
 
     return shared->compression_codec_selector->choose(part_size, part_size_ratio);
+}
+
+CompressionCodecPtr Context::chooseRecompressionCodec(size_t part_size, double part_size_ratio) const
+{
+    auto lock = getLock();
+
+    if (!shared->recompression_codec_selector)
+    {
+        constexpr auto config_name = "recompression";
+        const auto & config = getConfigRef();
+
+        if (config.has(config_name))
+            shared->recompression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "recompression");
+        else
+            shared->recompression_codec_selector = std::make_unique<CompressionCodecSelector>();
+    }
+
+    return shared->recompression_codec_selector->choose(part_size, part_size_ratio);
 }
 
 

@@ -102,6 +102,10 @@ void StorageMergeTree::startup()
         /// Ensure that thread started only after assignment to 'merging_mutating_task_handle' is done.
         merge_pool.startTask(merging_mutating_task_handle);
 
+        auto & recompress_pool = global_context.getBackgroundLowPriorityPool();
+        recompressing_task_handle = recompress_pool.createTask([this] { return recompressTask(); });
+        recompress_pool.startTask(recompressing_task_handle);
+
         if (areBackgroundMovesNeeded())
         {
             auto & move_pool = global_context.getBackgroundMovePool();
@@ -144,6 +148,9 @@ void StorageMergeTree::shutdown()
 
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
+
+    if (recompressing_task_handle)
+        global_context.getBackgroundLowPriorityPool().removeTask(recompressing_task_handle);
 
     if (merging_mutating_task_handle)
         global_context.getBackgroundPool().removeTask(merging_mutating_task_handle);
@@ -581,6 +588,51 @@ void StorageMergeTree::loadMutations()
         increment.value = std::max(Int64(increment.value.load()), current_mutations_by_version.rbegin()->first);
 }
 
+bool StorageMergeTree::recompressOldParts()
+{
+    auto table_lock_holder = lockStructureForShare(
+            true, RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+
+    DataPartsVector parts = grabOldModifiedParts();
+
+    for (const auto & part : parts)
+    {
+        FutureMergedMutatedPart future_part;
+
+        std::optional<CurrentlyMergingPartsTagger> merging_tagger;
+        {
+            std::unique_lock lock(currently_processing_in_background_mutex);
+
+            if (!currently_merging_mutating_parts.count(part))
+            {
+                DataPartsVector tmp;
+                tmp.push_back(part);
+                future_part.assign(std::move(tmp));
+            }
+            merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, false);
+        }
+        auto table_id = getStorageID();
+        MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
+
+        MutableDataPartPtr new_part;
+        
+        try
+        {
+            new_part = merger_mutator.mergePartsToTemporaryPart(
+                future_part, *merge_entry, table_lock_holder, time(nullptr),
+                merging_tagger->reserved_space, false, false, true);
+            merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
+
+            merging_tagger->is_successful = true;
+        }
+        catch (...)
+        {
+            merging_tagger->exception_message = getCurrentExceptionMessage(false);
+            throw;
+        }
+    }
+    return true;
+}
 
 bool StorageMergeTree::merge(
     bool aggressive,
@@ -856,6 +908,30 @@ bool StorageMergeTree::tryMutatePart()
     return true;
 }
 
+
+BackgroundProcessingPoolTaskResult StorageMergeTree::recompressTask()
+{
+    if (shutdown_called)
+        return BackgroundProcessingPoolTaskResult::ERROR;
+
+    try
+    {
+        if (recompressOldParts())
+        {
+            return BackgroundProcessingPoolTaskResult::SUCCESS;
+        }
+        return BackgroundProcessingPoolTaskResult::ERROR;
+    } catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::ABORTED)
+        {
+            LOG_INFO(log, e.message());
+            return BackgroundProcessingPoolTaskResult::ERROR;
+        }
+
+        throw;
+    }
+}
 
 BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
 {

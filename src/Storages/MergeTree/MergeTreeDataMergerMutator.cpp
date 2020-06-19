@@ -579,7 +579,7 @@ public:
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const FutureMergedMutatedPart & future_part, MergeList::Entry & merge_entry, TableStructureReadLockHolder &,
-    time_t time_of_merge, const ReservationPtr & space_reservation, bool deduplicate, bool force_ttl)
+    time_t time_of_merge, const ReservationPtr & space_reservation, bool deduplicate, bool force_ttl, bool recompress)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
@@ -645,9 +645,18 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
-    auto compression_codec = data.global_context.chooseCompressionCodec(
-        merge_entry->total_size_bytes_compressed,
-        static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
+    CompressionCodecPtr compression_codec;
+    if (recompress)
+    {
+        compression_codec = data.global_context.chooseRecompressionCodec(
+            merge_entry->total_size_bytes_compressed,
+            static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
+    } else
+    {
+        compression_codec = data.global_context.chooseCompressionCodec(
+            merge_entry->total_size_bytes_compressed,
+            static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
+    }
 
     /// TODO: Should it go through IDisk interface?
     String rows_sources_file_path;

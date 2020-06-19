@@ -110,6 +110,7 @@ private:
     /// Task handler for merges, mutations and moves.
     BackgroundProcessingPool::TaskHandle merging_mutating_task_handle;
     BackgroundProcessingPool::TaskHandle moving_task_handle;
+    BackgroundProcessingPool::TaskHandle recompressing_task_handle;
 
     void loadMutations();
 
@@ -118,6 +119,8 @@ private:
       * Returns true if merge is finished successfully.
       */
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
+
+    bool recompressOldParts();
 
     BackgroundProcessingPoolTaskResult movePartsTask();
 
@@ -131,6 +134,7 @@ private:
     bool tryMutatePart();
 
     BackgroundProcessingPoolTaskResult mergeMutateTask();
+    BackgroundProcessingPoolTaskResult recompressTask();
 
     Int64 getCurrentMutationVersion(
         const DataPartPtr & part,
