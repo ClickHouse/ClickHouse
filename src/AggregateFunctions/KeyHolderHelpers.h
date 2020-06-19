@@ -6,7 +6,7 @@
 namespace DB
 {
 
-template <bool is_plain_column>
+template <bool is_plain_column = false>
 static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
 {
     if constexpr (is_plain_column)
