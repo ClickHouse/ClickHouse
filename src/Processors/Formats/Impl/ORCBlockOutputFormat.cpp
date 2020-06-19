@@ -46,7 +46,7 @@ ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, const Block & hea
 {
     schema = orc::createStructType();
     options.setCompression(orc::CompressionKind::CompressionKind_NONE);
-    size_t columns_count = header_.columns();
+    const size_t columns_count = header_.columns();
     for (size_t i = 0; i != columns_count; ++i)
     {
         schema->addStructField(header_.safeGetByPosition(i).name, getORCType(data_types[i]));
@@ -134,7 +134,7 @@ ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & t
 }
 
 template <typename NumberType, typename NumberVectorBatch>
-void ORCBlockOutputFormat::ORCBlockOutputFormat::writeNumbers(
+void ORCBlockOutputFormat::writeNumbers(
         orc::ColumnVectorBatch * orc_column,
         const IColumn & column,
         const PaddedPODArray<UInt8> * null_bytemap)
@@ -150,13 +150,13 @@ void ORCBlockOutputFormat::ORCBlockOutputFormat::writeNumbers(
             number_orc_column->notNull[i] = 0;
             continue;
         }
-        number_orc_column->data[i] = number_column.getElement(i);
+        number_orc_column->data[i] = static_cast<int64_t>(number_column.getElement(i));
     }
     number_orc_column->numElements = number_column.size();
 }
 
 template <typename Decimal, typename DecimalVectorBatch, typename ConvertFunc>
-void ORCBlockOutputFormat::ORCBlockOutputFormat::writeDecimals(
+void ORCBlockOutputFormat::writeDecimals(
         orc::ColumnVectorBatch * orc_column,
         const IColumn & column,
         DataTypePtr & type,
@@ -182,7 +182,7 @@ void ORCBlockOutputFormat::ORCBlockOutputFormat::writeDecimals(
 }
 
 template <typename ColumnType>
-void ORCBlockOutputFormat::ORCBlockOutputFormat::writeStrings(
+void ORCBlockOutputFormat::writeStrings(
         orc::ColumnVectorBatch * orc_column,
         const IColumn & column,
         const PaddedPODArray<UInt8> * null_bytemap)
@@ -206,7 +206,7 @@ void ORCBlockOutputFormat::ORCBlockOutputFormat::writeStrings(
 }
 
 template <typename ColumnType, typename GetSecondsFunc, typename GetNanosecondsFunc>
-void ORCBlockOutputFormat::ORCBlockOutputFormat::writeDateTimes(
+void ORCBlockOutputFormat::writeDateTimes(
         orc::ColumnVectorBatch * orc_column,
         const IColumn & column,
         const PaddedPODArray<UInt8> * null_bytemap,

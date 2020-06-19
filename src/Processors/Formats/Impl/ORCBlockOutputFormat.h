@@ -1,4 +1,6 @@
 #pragma once
+#include "config_formats.h"
+#if USE_ORC
 
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -13,7 +15,7 @@ class WriteBuffer;
 class ORCOutputStream : public orc::OutputStream
 {
 public:
-    ORCOutputStream(WriteBuffer & out_);
+    explicit ORCOutputStream(WriteBuffer & out_);
 
     uint64_t getLength() const override;
     uint64_t getNaturalWriteSize() const override;
@@ -64,3 +66,5 @@ private:
 };
 
 }
+
+#endif
