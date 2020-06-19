@@ -107,7 +107,7 @@ namespace
         using TypeToVisit = ASTFunction;
         bool is_tumble;
 
-        void visit(const ASTFunction & node, ASTPtr & node_ptr)
+        void visit(const ASTFunction & node, ASTPtr & node_ptr) const
         {
             if (node.name == "WINDOW_ID")
             {
