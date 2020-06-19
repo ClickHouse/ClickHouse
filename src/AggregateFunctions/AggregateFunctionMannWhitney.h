@@ -147,10 +147,11 @@ public:
         a.values.push_back(x, arena);
     }
 
-    void insert_y(Data & a, const std::pair<X, UInt8> & y, Arena * arena) const
+    void insert_y(Data & a, const std::pair<Y, UInt8> & y, Arena * arena) const
     {
         a.size_y += 1;
-        a.values.push_back(y, arena);
+        X new_y = static_cast<X>(y.first);
+        a.values.push_back(std::make_pair(new_y, 2), arena);
     }
 
     void add(
@@ -163,7 +164,7 @@ public:
         auto & a = this->data(place);
 
         auto new_x = assert_cast<const ColumnVector<X> *>(columns[0])->getData()[row_num];
-        auto new_y = assert_cast<const ColumnVector<X> *>(columns[1])->getData()[row_num];
+        auto new_y = assert_cast<const ColumnVector<Y> *>(columns[1])->getData()[row_num];
 
         auto new_arg_x = std::make_pair(new_x, 1);
         auto new_arg_y = std::make_pair(new_y, 2);
@@ -184,18 +185,15 @@ public:
         auto & a = this->data(place);
         auto & b = this->data(rhs);
 
-        if (b.size_x || b.size_y)
+        for (size_t i = 0; i < b.size_x + b.size_y; ++i)
         {
-            for (size_t i = 0; i < b.size_x + b.size_y; ++i)
+            if (b.values[i].second == 1)
             {
-                if (b.values[i].second == 1)
-                {
-                    insert_x(a, b.values[i], arena);
-                }
-                else
-                {
-                    insert_y(a, b.values[i], arena);
-                }
+                insert_x(a, b.values[i], arena);
+            }
+            else
+            {
+                insert_y(a, b.values[i], arena);
             }
         }
     }
@@ -249,11 +247,6 @@ public:
         if (size_x < 2 || size_y < 2)
         {
             throw Exception("Aggregate function " + getName() + " requires samples to be of size > 1", ErrorCodes::BAD_ARGUMENTS);
-        }
-
-        if (significance_level != 0.05 || significance_level != 0.01)
-        {
-            throw Exception("Aggregate function " + getName() + " requires parameter to bo 0.01 or 0.05", ErrorCodes::BAD_ARGUMENTS);
         }
 
         //create a copy of values not to format data
@@ -320,7 +313,7 @@ public:
         y_answ = (static_cast<Float64>(size_x) * size_y) + static_cast<Float64>(size_x) * (size_x + 1) / 2 - y_answ;
 
 
-        if (x_answ < y_answ)
+        if (x_answ > y_answ)
         {
             x_answ = y_answ;
         }
@@ -328,7 +321,7 @@ public:
         auto & column = static_cast<ColumnVector<Int8> &>(to);
         if (significance_level == 0.01)
         {
-            if (x_answ >= static_cast<Float64>(CriticalValuesTableFirst[size_x - 1][size_y - 1]))
+            if (x_answ > static_cast<Float64>(CriticalValuesTableFirst[size_x - 1][size_y - 1]))
             {
                 column.getData().push_back(static_cast<Int8>(1));
             }
@@ -339,7 +332,7 @@ public:
         }
         else
         {
-            if (x_answ >= CriticalValuesTableSecond[size_x - 1][size_y - 1])
+            if (x_answ > CriticalValuesTableSecond[size_x - 1][size_y - 1])
             {
                 column.getData().push_back(static_cast<Int8>(1));
             }

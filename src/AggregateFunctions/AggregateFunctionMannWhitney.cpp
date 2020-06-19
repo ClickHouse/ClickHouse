@@ -39,6 +39,11 @@ AggregateFunctionPtr createAggregateFunctionMannWhitney(const std::string & name
         significance_level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[0]);
     }
 
+    if (significance_level != 0.05 && significance_level != 0.01)
+    {
+        throw Exception("Aggregate function " + name + " requires parameter to bo 0.01 or 0.05", ErrorCodes::BAD_ARGUMENTS);
+    }
+
     AggregateFunctionPtr res;
 
     if (isDecimal(argument_types[0]))
