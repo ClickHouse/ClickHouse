@@ -1,6 +1,6 @@
 ---
 toc_priority: 53
-toc_title: Working with UUID
+toc_title: UUID
 ---
 
 # Functions for Working with UUID {#functions-for-working-with-uuid}
