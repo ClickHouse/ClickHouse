@@ -18,7 +18,7 @@ ReadFromStorageStep::ReadFromStorageStep(
     StoragePtr storage_,
     const Names & required_columns_,
     const SelectQueryInfo & query_info_,
-    const Context & context_,
+    std::shared_ptr<Context> context_,
     QueryProcessingStage::Enum processing_stage_,
     size_t max_block_size_,
     size_t max_streams_)
@@ -27,7 +27,7 @@ ReadFromStorageStep::ReadFromStorageStep(
     , storage(std::move(storage_))
     , required_columns(required_columns_)
     , query_info(query_info_)
-    , context(context_)
+    , context(std::move(context_))
     , processing_stage(processing_stage_)
     , max_block_size(max_block_size_)
     , max_streams(max_streams_)
@@ -35,7 +35,7 @@ ReadFromStorageStep::ReadFromStorageStep(
     /// Note: we read from storage in constructor of step because we don't know real header before reading.
     /// It will be fixed when storage return QueryPlanStep itself.
 
-    Pipes pipes = storage->read(required_columns, query_info, context, processing_stage, max_block_size, max_streams);
+    Pipes pipes = storage->read(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
 
     if (pipes.empty())
     {
@@ -72,7 +72,7 @@ ReadFromStorageStep::ReadFromStorageStep(
 
     /// Set the limits and quota for reading data, the speed and time of the query.
     {
-        const Settings & settings = context.getSettingsRef();
+        const Settings & settings = context->getSettingsRef();
 
         IBlockInputStream::LocalLimits limits;
         limits.mode = IBlockInputStream::LIMITS_TOTAL;
@@ -99,7 +99,7 @@ ReadFromStorageStep::ReadFromStorageStep(
         limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
         limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
 
-        auto quota = context.getQuota();
+        auto quota = context->getQuota();
 
         for (auto & pipe : pipes)
         {
@@ -118,6 +118,9 @@ ReadFromStorageStep::ReadFromStorageStep(
         pipe.enableQuota();
 
     pipeline->init(std::move(pipes));
+
+    pipeline->addInterpreterContext(std::move(context));
+    pipeline->addStorageHolder(std::move(storage));
 
     output_stream = DataStream{.header = pipeline->getHeader()};
 }
