@@ -105,10 +105,10 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const Context & context_)
     : IStorage(table_id_)
 {
-    StorageInMemoryMetadata metadata_;
-    metadata_.setColumns(columns_);
-    metadata_.setConstraints(constraints_);
-    setInMemoryMetadata(metadata_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 
 
     if (relative_path_.empty())

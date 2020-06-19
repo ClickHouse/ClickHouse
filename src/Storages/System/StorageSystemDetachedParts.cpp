@@ -30,8 +30,8 @@ protected:
     explicit StorageSystemDetachedParts()
         : IStorage({"system", "detached_parts"})
     {
-        StorageInMemoryMetadata metadata_;
-        metadata_.setColumns(ColumnsDescription{{
+        StorageInMemoryMetadata storage_metadata;
+        storage_metadata.setColumns(ColumnsDescription{{
             {"database", std::make_shared<DataTypeString>()},
             {"table", std::make_shared<DataTypeString>()},
             {"partition_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
@@ -42,7 +42,7 @@ protected:
             {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
             {"level", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())}
         }});
-        setInMemoryMetadata(metadata_);
+        setInMemoryMetadata(storage_metadata);
     }
 
     Pipes read(

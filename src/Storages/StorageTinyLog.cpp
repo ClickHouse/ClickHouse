@@ -339,10 +339,10 @@ StorageTinyLog::StorageTinyLog(
     , file_checker(disk, table_path + "sizes.json")
     , log(&Poco::Logger::get("StorageTinyLog"))
 {
-    StorageInMemoryMetadata metadata_;
-    metadata_.setColumns(columns_);
-    metadata_.setConstraints(constraints_);
-    setInMemoryMetadata(metadata_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
@@ -353,7 +353,7 @@ StorageTinyLog::StorageTinyLog(
         disk->createDirectories(table_path);
     }
 
-    for (const auto & col : metadata_.getColumns().getAllPhysical())
+    for (const auto & col : storage_metadata.getColumns().getAllPhysical())
         addFiles(col.name, *col.type);
 }
 

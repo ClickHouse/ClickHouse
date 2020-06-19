@@ -38,8 +38,8 @@ StorageView::StorageView(
     const ColumnsDescription & columns_)
     : IStorage(table_id_)
 {
-    StorageInMemoryMetadata metadata_;
-    metadata_.setColumns(columns_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -47,8 +47,8 @@ StorageView::StorageView(
     SelectQueryDescription description;
 
     description.inner_query = query.select->ptr();
-    metadata_.setSelectQuery(description);
-    setInMemoryMetadata(metadata_);
+    storage_metadata.setSelectQuery(description);
+    setInMemoryMetadata(storage_metadata);
 }
 
 
