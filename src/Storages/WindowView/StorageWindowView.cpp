@@ -1,14 +1,11 @@
 #include <numeric>
 #include <regex>
-#include <Columns/ColumnsNumber.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsWindow.h>
@@ -32,7 +29,6 @@
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
-#include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AddingConstColumnTransform.h>
@@ -81,11 +77,13 @@ namespace
 
         void visit(const ASTFunction & node, ASTPtr & node_ptr)
         {
-            if (node.name == "TUMBLE")
+            if (node.name == "TUMBLE" || node.name == "HOP")
             {
+                is_tumble = node.name == "TUMBLE";
+                is_hop = node.name == "HOP";
                 if (!window_function)
                 {
-                    is_tumble = true;
+                    std::static_pointer_cast<ASTFunction>(node_ptr)->name = "WINDOW_ID";
                     window_id_name = node.getColumnName();
                     window_id_alias = node.alias;
                     window_function = node.clone();
@@ -101,32 +99,10 @@ namespace
                         throw Exception("WINDOW VIEW only support ONE WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
                 }
             }
-            else if (node.name == "HOP")
-            {
-                is_hop = true;
-                std::static_pointer_cast<ASTFunction>(node_ptr)->name = "WINDOW_ID";
-                if (!window_function)
-                {
-                    window_function = node.clone();
-                    window_function->setAlias("");
-                    serialized_window_function = serializeAST(*window_function);
-                }
-                else if (serializeAST(node) != serializeAST(*window_function))
-                {
-                    auto temp_node = node.clone();
-                    temp_node->setAlias("");
-                    if (serializeAST(*temp_node) != serialized_window_function)
-                        throw Exception("WINDOW VIEW only support ONE WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
-                }
-
-                timestamp_column_name = node.arguments->children[0]->getColumnName();
-                window_id_name = node.getColumnName();
-                window_id_alias = node.alias;
-            }
         }
     };
 
-    struct ReplaceFunctionWindowIdVisitorData
+    struct ReplaceWindowIdVisitorData
     {
         using TypeToVisit = ASTFunction;
         bool is_tumble;
@@ -152,7 +128,7 @@ namespace
 
         void visit(ASTFunction & node, ASTPtr & node_ptr)
         {
-            if (node.name == "TUMBLE" || node.name == "HOP" || node.name == "WINDOW_ID")
+            if (node.name == "WINDOW_ID")
             {
                 if (const auto * t = node.arguments->children[0]->as<ASTFunction>(); t && t->name == "now")
                 {
@@ -164,13 +140,13 @@ namespace
         }
     };
 
-    struct ReplaceFunctionHopVisitorData
+    struct ReplaceFunctionWindowVisitorData
     {
         using TypeToVisit = ASTFunction;
 
         static void visit(ASTFunction & node, ASTPtr & node_ptr)
         {
-            if (node.name == "HOP")
+            if (node.name == "HOP" || node.name == "TUMBLE")
                 std::static_pointer_cast<ASTFunction>(node_ptr)->name = "WINDOW_ID";
         }
     };
@@ -279,14 +255,7 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
 ASTPtr StorageWindowView::generateCleanCacheQuery(UInt32 timestamp)
 {
     ASTPtr function_equal;
-    if (is_tumble)
-    {
-        auto function_tuple = makeASTFunction(
-            "tupleElement", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(Field{UInt8(2)}));
-        function_equal = makeASTFunction("less", function_tuple, std::make_shared<ASTLiteral>(timestamp));
-    }
-    else
-        function_equal = makeASTFunction("less", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(timestamp));
+    function_equal = makeASTFunction("less", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(timestamp));
 
     auto alter_command = std::make_shared<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
@@ -457,11 +426,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
     {
         auto column_window = std::make_shared<ASTColumnDeclaration>();
         column_window->name = window_id_name;
-        if (is_tumble)
-            column_window->type
-                = makeASTFunction("Tuple", std::make_shared<ASTIdentifier>("DateTime"), std::make_shared<ASTIdentifier>("DateTime"));
-        else
-            column_window->type = std::make_shared<ASTIdentifier>("UInt32");
+        column_window->type = std::make_shared<ASTIdentifier>("UInt32");
         columns_list->children.push_back(column_window);
     }
 
@@ -483,9 +448,9 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
     ReplaceFunctionWindowMatcher::Visitor visitor(query_data);
 
     ReplaceFunctionNowVisitorData time_now_data;
-    ReplaceFunctionHopVisitorData func_hop_data;
+    ReplaceFunctionWindowVisitorData func_hop_data;
     InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionNowVisitorData>, true> time_now_visitor(time_now_data);
-    InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionHopVisitorData>, true> func_hop_visitor(func_hop_data);
+    InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionWindowVisitorData>, true> func_window_visitor(func_hop_data);
 
     auto new_storage = std::make_shared<ASTStorage>();
     if (storage == nullptr)
@@ -534,8 +499,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
             auto partition_by = storage->partition_by->clone();
             if (is_time_column_func_now)
                 time_now_visitor.visit(partition_by);
-            if (!is_tumble)
-                func_hop_visitor.visit(partition_by);
+            func_window_visitor.visit(partition_by);
             visitor.visit(partition_by);
             new_storage->set(new_storage->partition_by, partition_by);
         }
@@ -544,8 +508,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
             auto tmp_primary_key = storage->primary_key->clone();
             if (is_time_column_func_now)
                 time_now_visitor.visit(tmp_primary_key);
-            if (!is_tumble)
-                func_hop_visitor.visit(tmp_primary_key);
+            func_window_visitor.visit(tmp_primary_key);
             visitor.visit(tmp_primary_key);
             new_storage->set(new_storage->primary_key, tmp_primary_key);
         }
@@ -554,8 +517,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
             auto order_by = storage->order_by->clone();
             if (is_time_column_func_now)
                 time_now_visitor.visit(order_by);
-            if (!is_tumble)
-                func_hop_visitor.visit(order_by);
+            func_window_visitor.visit(order_by);
             visitor.visit(order_by);
             new_storage->set(new_storage->order_by, order_by);
         }
@@ -564,8 +526,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
             auto sample_by = storage->sample_by->clone();
             if (is_time_column_func_now)
                 time_now_visitor.visit(sample_by);
-            if (!is_tumble)
-                func_hop_visitor.visit(sample_by);
+            func_window_visitor.visit(sample_by);
             visitor.visit(sample_by);
             new_storage->set(new_storage->sample_by, sample_by);
         }
@@ -694,7 +655,7 @@ inline void StorageWindowView::updateMaxWatermark(UInt32 watermark)
     std::lock_guard lock(fire_signal_mutex);
     if (max_watermark == 0)
     {
-        max_watermark = watermark;
+        max_watermark = getWindowUpperBound(watermark - 1);
         return;
     }
 
@@ -706,10 +667,8 @@ inline void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         {
             fire_signal.push_back(max_watermark);
             max_fired_watermark = max_watermark;
-            if (is_tumble)
-                max_watermark = addTime(max_watermark, window_kind, window_num_units);
-            else
-                max_watermark = addTime(max_watermark, hop_kind, hop_num_units);
+            max_watermark
+                = is_tumble ? addTime(max_watermark, window_kind, window_num_units) : addTime(max_watermark, hop_kind, hop_num_units);
         }
     }
     else // strictly || bounded
@@ -871,9 +830,9 @@ StorageWindowView::StorageWindowView(
 
     final_query = mergeable_query->clone();
 
-    ReplaceFunctionWindowIdVisitorData final_query_data;
+    ReplaceWindowIdVisitorData final_query_data;
     final_query_data.is_tumble = is_tumble;
-    InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionWindowIdVisitorData>, true>(final_query_data).visit(final_query);
+    InDepthNodeVisitor<OneTypeMatcher<ReplaceWindowIdVisitorData>, true>(final_query_data).visit(final_query);
 
     is_watermark_strictly_ascending = query.is_watermark_strictly_ascending;
     is_watermark_ascending = query.is_watermark_ascending;
@@ -1051,19 +1010,19 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
         UInt32 t_max_fired_watermark = 0;
         if (window_view.allowed_lateness)
         {
-            UInt32 t_max_timstamp = 0;
+            UInt32 t_max_timestamp = 0;
             UInt32 t_max_watermark = 0;
             {
                 std::lock_guard lock(window_view.fire_signal_mutex);
                 t_max_fired_watermark = window_view.max_fired_watermark;
                 t_max_watermark = window_view.max_watermark;
-                t_max_timstamp = window_view.max_timestamp;
+                t_max_timestamp = window_view.max_timestamp;
             }
 
-            if (t_max_timstamp!= 0)
+            if (t_max_timestamp!= 0)
             {
                 UInt32 lateness_bound
-                    = window_view.addTime(t_max_timstamp, window_view.lateness_kind, -1 * window_view.lateness_num_units);
+                    = window_view.addTime(t_max_timestamp, window_view.lateness_kind, -1 * window_view.lateness_num_units);
                 if (window_view.is_watermark_bounded)
                 {
                     UInt32 watermark_lower_bound = window_view.is_tumble
@@ -1087,37 +1046,28 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
             }
         }
 
-        UInt32 t_max_timstamp = 0;
-        if (!window_view.is_tumble || window_view.is_watermark_bounded || window_view.allowed_lateness)
-        {
-            const auto & column_timestamp = block.getByName(window_view.timestamp_column_name).column;
-            const ColumnUInt32::Container & timestamp_data = static_cast<const ColumnUInt32 &>(*column_timestamp).getData();
-            for (const auto & timestamp : timestamp_data)
-            {
-                if (timestamp > t_max_timstamp)
-                    t_max_timstamp = timestamp;
-            }
-        }
-
         InterpreterSelectQuery select_block(window_view.getMergeableQuery(), context, {std::move(pipe)}, QueryProcessingStage::WithMergeableState);
 
         source_stream = select_block.execute().getInputStream();
         source_stream = std::make_shared<SquashingBlockInputStream>(
             source_stream, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-
-        if (window_view.is_tumble)
-        {
-            source_stream = std::make_shared<WatermarkBlockInputStream>(source_stream, window_view, window_view.window_id_name);
-        }
-        else
-        {
-            source_stream
-                = std::make_shared<WatermarkBlockInputStream>(source_stream, window_view, window_view.window_id_name, window_view.getWindowUpperBound(t_max_timstamp));
-            std::static_pointer_cast<WatermarkBlockInputStream>(source_stream)->setHopWindow();
-        }
+        source_stream = std::make_shared<WatermarkBlockInputStream>(source_stream, window_view, window_view.window_id_name);
 
         if (window_view.is_watermark_bounded || window_view.allowed_lateness)
-            std::static_pointer_cast<WatermarkBlockInputStream>(source_stream)->setMaxTimestamp(t_max_timstamp);
+        {
+            UInt32 t_max_timestamp = 0;
+            if (window_view.is_watermark_bounded || window_view.allowed_lateness)
+            {
+                const auto & column_timestamp = block.getByName(window_view.timestamp_column_name).column;
+                const ColumnUInt32::Container & timestamp_data = static_cast<const ColumnUInt32 &>(*column_timestamp).getData();
+                for (const auto & timestamp : timestamp_data)
+                {
+                    if (timestamp > t_max_timestamp)
+                        t_max_timestamp = timestamp;
+                }
+            }
+            std::static_pointer_cast<WatermarkBlockInputStream>(source_stream)->setMaxTimestamp(t_max_timestamp);
+        }
 
         if (window_view.allowed_lateness && t_max_fired_watermark != 0)
             std::static_pointer_cast<WatermarkBlockInputStream>(source_stream)->setAllowedLateness(t_max_fired_watermark);
@@ -1195,10 +1145,8 @@ ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) cons
 
     if (is_tumble)
     {
-        auto func_tuple
-            = makeASTFunction("tupleElement", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(Field{UInt8(2)}));
-        auto func_equals = makeASTFunction("equals", func_tuple, std::make_shared<ASTLiteral>(w_end));
-        res_query->setExpression(ASTSelectQuery::Expression::WHERE, func_equals);
+        auto func_equals = makeASTFunction("equals", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(w_end));
+        res_query->setExpression(ASTSelectQuery::Expression::PREWHERE, func_equals);
     }
     else
     {
@@ -1209,7 +1157,7 @@ ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) cons
             w_end = addTime(w_end, window_kind, -1 * slice_num_units);
         }
         auto func_has = makeASTFunction("has", func_array, std::make_shared<ASTIdentifier>(window_id_name));
-        res_query->setExpression(ASTSelectQuery::Expression::WHERE, func_has);
+        res_query->setExpression(ASTSelectQuery::Expression::PREWHERE, func_has);
     }
 
     return res_query;
@@ -1229,8 +1177,7 @@ BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr(UInt32 waterma
     InterpreterSelectQuery fetch(getFetchColumnQuery(w_start, watermark), *wv_context, getInnerStorage(), SelectQueryOptions(QueryProcessingStage::FetchColumns));
     BlockInputStreamPtr in_stream = fetch.execute().getInputStream();
 
-    if (!is_tumble)
-        in_stream = std::make_shared<ReplaceWindowColumnBlockInputStream>(in_stream, window_column_name, w_start, watermark);
+    in_stream = std::make_shared<ReplaceWindowColumnBlockInputStream>(in_stream, window_column_name, w_start, watermark);
 
     Pipes pipes;
     pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(in_stream)));

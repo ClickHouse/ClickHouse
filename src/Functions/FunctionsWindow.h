@@ -261,9 +261,10 @@ namespace
         {
             if (arguments.size() == 1)
             {
-                if (!WhichDataType(arguments[0].type).isTuple())
+                auto type_ = WhichDataType(arguments[0].type);
+                if (!type_.isTuple() && !type_.isUInt32())
                     throw Exception(
-                        "Illegal type of first argument of function " + function_name + " should be tuple", ErrorCodes::ILLEGAL_COLUMN);
+                        "Illegal type of first argument of function " + function_name + " should be tuple or UInt32", ErrorCodes::ILLEGAL_COLUMN);
                 return std::make_shared<DataTypeDateTime>();
             }
             else if (arguments.size() == 2 || arguments.size() == 3)
@@ -577,12 +578,16 @@ namespace
         [[maybe_unused]] static ColumnPtr
         dispatchForColumns(Block & block, const ColumnNumbers & arguments, const String & function_name)
         {
-            const auto & third_column = block.getByPosition(arguments[2]);
-
-            if (arguments.size() == 2 || (arguments.size() == 3 && WhichDataType(third_column.type).isString()))
+            if (arguments.size() == 2)
                 return dispatchForTumbleColumns(block, arguments, function_name);
             else
-                return dispatchForHopColumns(block, arguments, function_name);
+            {
+                const auto & third_column = block.getByPosition(arguments[2]);
+                if (arguments.size() == 3 && WhichDataType(third_column.type).isString())
+                    return dispatchForTumbleColumns(block, arguments, function_name);
+                else
+                    return dispatchForHopColumns(block, arguments, function_name);
+            }
         }
     };
 
