@@ -219,7 +219,8 @@ if (ENABLE_HYPERSCAN)
 
         target_compile_definitions (hyperscan PUBLIC USE_HYPERSCAN=1)
         target_compile_options (hyperscan
-            PRIVATE -g0 -march=corei7 # library has too much debug information
+            PRIVATE -g0 # Library has too much debug information
+            -march=corei7 -O2 -std=c++11 -fno-strict-aliasing -fno-omit-frame-pointer -fvisibility=hidden # The options from original build system
         )
         target_include_directories (hyperscan
             PRIVATE
