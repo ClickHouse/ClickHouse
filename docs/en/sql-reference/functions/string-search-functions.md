@@ -1,6 +1,6 @@
 ---
 toc_priority: 41
-toc_title: For Searching Strings
+toc_title: Searching in Strings
 ---
 
 # Functions for Searching Strings {#functions-for-searching-strings}
@@ -153,7 +153,7 @@ Result:
 └───────────────────────────────────┘
 ```
 
-The phrase “Salut, étudiante!”, where character `é` can be represented using a one point (`U+00E9`) or two points (`U+0065U+0301`) the function can be returned some unexpected result:
+The phrase “Salut, étudiante!”, where character `é` can be represented using a one point (`U+00E9`) or two points (`U+0065U+0301`) the function can be returned some unexpected result:
 
 Query for the letter `é`, which is represented one Unicode point `U+00E9`:
 
@@ -169,16 +169,16 @@ Result:
 └────────────────────────────────────────┘
 ```
 
-Query for the letter `é`, which is represented two Unicode points `U+0065U+0301`:
+Query for the letter `é`, which is represented two Unicode points `U+0065U+0301`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!')
+SELECT positionUTF8('Salut, étudiante!', '!')
 ```
 
 Result:
 
 ``` text
-┌─positionUTF8('Salut, étudiante!', '!')─┐
+┌─positionUTF8('Salut, étudiante!', '!')─┐
 │                                     18 │
 └────────────────────────────────────────┘
 ```
