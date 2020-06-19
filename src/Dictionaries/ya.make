@@ -17,9 +17,6 @@ SRCS(
     CacheDictionary_generate1.cpp
     CacheDictionary_generate2.cpp
     CacheDictionary_generate3.cpp
-    CassandraBlockInputStream.cpp
-    CassandraDictionarySource.cpp
-    CassandraHelpers.cpp
     ClickHouseDictionarySource.cpp
     ComplexKeyCacheDictionary.cpp
     ComplexKeyCacheDictionary_createAttributeWithType.cpp

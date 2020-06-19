@@ -18,8 +18,7 @@ void registerFunctionMultiFuzzyMatchAny(FunctionFactory &);
 void registerFunctionMultiFuzzyMatchAnyIndex(FunctionFactory &);
 void registerFunctionMultiFuzzyMatchAllIndices(FunctionFactory &);
 void registerFunctionExtractGroups(FunctionFactory &);
-void registerFunctionExtractAllGroupsVertical(FunctionFactory &);
-void registerFunctionExtractAllGroupsHorizontal(FunctionFactory &);
+void registerFunctionExtractAllGroups(FunctionFactory &);
 
 void registerFunctionsStringRegexp(FunctionFactory & factory)
 {
@@ -38,8 +37,7 @@ void registerFunctionsStringRegexp(FunctionFactory & factory)
     registerFunctionMultiFuzzyMatchAnyIndex(factory);
     registerFunctionMultiFuzzyMatchAllIndices(factory);
     registerFunctionExtractGroups(factory);
-    registerFunctionExtractAllGroupsVertical(factory);
-    registerFunctionExtractAllGroupsHorizontal(factory);
+    registerFunctionExtractAllGroups(factory);
 }
 
 }

@@ -3,17 +3,15 @@ toc_priority: 35
 toc_title: Dictionary
 ---
 
-# Dictionary Table Engine {#dictionary}
+# Dictionary {#dictionary}
 
 The `Dictionary` engine displays the [dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) data as a ClickHouse table.
-
-## Example {#example}
 
 As an example, consider a dictionary of `products` with the following configuration:
 
 ``` xml
 <dictionaries>
-    <dictionary>
+<dictionary>
         <name>products</name>
         <source>
             <odbc>
@@ -38,7 +36,7 @@ As an example, consider a dictionary of `products` with the following configurat
                 <null_value></null_value>
             </attribute>
         </structure>
-    </dictionary>
+</dictionary>
 </dictionaries>
 ```
 

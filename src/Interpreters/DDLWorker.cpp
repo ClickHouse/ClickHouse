@@ -422,7 +422,7 @@ void DDLWorker::processTasks()
             }
             catch (const Coordination::Exception & e)
             {
-                if (server_startup && e.code == Coordination::Error::ZNONODE)
+                if (server_startup && e.code == Coordination::ZNONODE)
                 {
                     LOG_WARNING(log, "ZooKeeper NONODE error during startup. Ignoring entry {} ({}) : {}", task.entry_name, task.entry.query, getCurrentExceptionMessage(true));
                 }
@@ -481,7 +481,6 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     const auto & shards = task.cluster->getShardsAddresses();
 
     bool found_exact_match = false;
-    String default_database;
     for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
     {
         for (size_t replica_num = 0; replica_num < shards[shard_num].size(); ++replica_num)
@@ -492,38 +491,14 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
             {
                 if (found_exact_match)
                 {
-                    if (default_database == address.default_database)
-                    {
-                        throw Exception(
-                            "There are two exactly the same ClickHouse instances " + address.readableString() + " in cluster "
-                                + task.cluster_name,
-                            ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
-                    }
-                    else
-                    {
-                        /* Circular replication is used.
-                         * It is when every physical node contains
-                         * replicas of different shards of the same table.
-                         * To distinguish one replica from another on the same node,
-                         * every shard is placed into separate database.
-                         * */
-                        is_circular_replicated = true;
-                        auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get());
-                        if (!query_with_table || query_with_table->database.empty())
-                        {
-                            throw Exception(
-                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.",
-                                ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
-                        }
-                        if (default_database == query_with_table->database)
-                            return;
-                    }
+                    throw Exception("There are two exactly the same ClickHouse instances " + address.readableString()
+                        + " in cluster " + task.cluster_name, ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
                 }
+
                 found_exact_match = true;
                 task.host_shard_num = shard_num;
                 task.host_replica_num = replica_num;
                 task.address_in_cluster = address;
-                default_database = address.default_database;
             }
         }
     }
@@ -628,15 +603,15 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
 
     auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
 
-    if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
+    if (code == Coordination::ZOK || code == Coordination::ZNODEEXISTS)
     {
         // Ok
     }
-    else if (code == Coordination::Error::ZNONODE)
+    else if (code == Coordination::ZNONODE)
     {
         /// There is no parent
         createStatusDirs(task.entry_path, zookeeper);
-        if (Coordination::Error::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
+        if (Coordination::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
             throw Coordination::Exception(code, active_node_path);
     }
     else
@@ -646,7 +621,6 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
     {
         try
         {
-            is_circular_replicated = false;
             parseQueryAndResolveHost(task);
 
             ASTPtr rewritten_ast = task.query_on_cluster->getRewrittenASTWithoutOnCluster(task.address_in_cluster.default_database);
@@ -669,7 +643,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
                 if (storage && query_with_table->as<ASTAlterQuery>())
                     checkShardConfig(query_with_table->table, task, storage);
 
-                if (storage && taskShouldBeExecutedOnLeader(rewritten_ast, storage)  && !is_circular_replicated)
+                if (storage && taskShouldBeExecutedOnLeader(rewritten_ast, storage))
                     tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper);
                 else
                     tryExecuteQuery(rewritten_query, task, task.execution_status);
@@ -941,9 +915,8 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
         ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
     }
     Coordination::Responses responses;
-    Coordination::Error code = zookeeper->tryMulti(ops, responses);
-    if (code != Coordination::Error::ZOK
-        && code != Coordination::Error::ZNODEEXISTS)
+    int code = zookeeper->tryMulti(ops, responses);
+    if (code && code != Coordination::ZNODEEXISTS)
         throw Coordination::Exception(code);
 }
 
@@ -1040,7 +1013,7 @@ void DDLWorker::runMainThread()
                     }
                 }
             }
-            else if (e.code == Coordination::Error::ZNONODE)
+            else if (e.code == Coordination::ZNONODE)
             {
                 LOG_ERROR(log, "ZooKeeper error: {}", getCurrentExceptionMessage(true));
             }
@@ -1228,8 +1201,8 @@ private:
     static Strings getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path)
     {
         Strings res;
-        Coordination::Error code = zookeeper->tryGetChildren(node_path, res);
-        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+        int code = zookeeper->tryGetChildren(node_path, res);
+        if (code && code != Coordination::ZNONODE)
             throw Coordination::Exception(code, node_path);
         return res;
     }

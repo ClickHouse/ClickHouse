@@ -34,22 +34,23 @@ namespace ErrorCodes
 
 const ColumnsDescription & IStorage::getColumns() const
 {
-    return metadata.columns;
+    return columns;
 }
 
 const IndicesDescription & IStorage::getSecondaryIndices() const
 {
-    return metadata.secondary_indices;
+    return secondary_indices;
 }
+
 
 bool IStorage::hasSecondaryIndices() const
 {
-    return !metadata.secondary_indices.empty();
+    return !secondary_indices.empty();
 }
 
 const ConstraintsDescription & IStorage::getConstraints() const
 {
-    return metadata.constraints;
+    return constraints;
 }
 
 Block IStorage::getSampleBlock() const
@@ -291,17 +292,17 @@ void IStorage::setColumns(ColumnsDescription columns_)
 {
     if (columns_.getOrdinary().empty())
         throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-    metadata.columns = std::move(columns_);
+    columns = std::move(columns_);
 }
 
 void IStorage::setSecondaryIndices(IndicesDescription secondary_indices_)
 {
-    metadata.secondary_indices = std::move(secondary_indices_);
+    secondary_indices = std::move(secondary_indices_);
 }
 
 void IStorage::setConstraints(ConstraintsDescription constraints_)
 {
-    metadata.constraints = std::move(constraints_);
+    constraints = std::move(constraints_);
 }
 
 bool IStorage::isVirtualColumn(const String & column_name) const
@@ -372,6 +373,11 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id,
     return result;
 }
 
+StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
+{
+    return StorageInMemoryMetadata(getColumns(), getSecondaryIndices(), getConstraints());
+}
+
 void IStorage::alter(
     const AlterCommands & params,
     const Context & context,
@@ -379,14 +385,14 @@ void IStorage::alter(
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    params.apply(new_metadata, context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
-    setColumns(std::move(new_metadata.columns));
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    params.apply(metadata, context);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
+    setColumns(std::move(metadata.columns));
 }
 
 
-void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
+void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
 {
     for (const auto & command : commands)
     {
@@ -415,139 +421,137 @@ NamesAndTypesList IStorage::getVirtuals() const
     return {};
 }
 
-const KeyDescription & IStorage::getPartitionKey() const
+const StorageMetadataKeyField & IStorage::getPartitionKey() const
 {
-    return metadata.partition_key;
+    return partition_key;
 }
 
-void IStorage::setPartitionKey(const KeyDescription & partition_key_)
+void IStorage::setPartitionKey(const StorageMetadataKeyField & partition_key_)
 {
-    metadata.partition_key = partition_key_;
+    partition_key = partition_key_;
 }
 
 bool IStorage::isPartitionKeyDefined() const
 {
-    return metadata.partition_key.definition_ast != nullptr;
+    return partition_key.definition_ast != nullptr;
 }
 
 bool IStorage::hasPartitionKey() const
 {
-    return !metadata.partition_key.column_names.empty();
+    return !partition_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForPartitionKey() const
 {
     if (hasPartitionKey())
-        return metadata.partition_key.expression->getRequiredColumns();
+        return partition_key.expression->getRequiredColumns();
     return {};
 }
 
-const KeyDescription & IStorage::getSortingKey() const
+const StorageMetadataKeyField & IStorage::getSortingKey() const
 {
-    return metadata.sorting_key;
+    return sorting_key;
 }
 
-void IStorage::setSortingKey(const KeyDescription & sorting_key_)
+void IStorage::setSortingKey(const StorageMetadataKeyField & sorting_key_)
 {
-    metadata.sorting_key = sorting_key_;
+    sorting_key = sorting_key_;
 }
 
 bool IStorage::isSortingKeyDefined() const
 {
-    return metadata.sorting_key.definition_ast != nullptr;
+    return sorting_key.definition_ast != nullptr;
 }
 
 bool IStorage::hasSortingKey() const
 {
-    return !metadata.sorting_key.column_names.empty();
+    return !sorting_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForSortingKey() const
 {
     if (hasSortingKey())
-        return metadata.sorting_key.expression->getRequiredColumns();
+        return sorting_key.expression->getRequiredColumns();
     return {};
 }
 
 Names IStorage::getSortingKeyColumns() const
 {
     if (hasSortingKey())
-        return metadata.sorting_key.column_names;
+        return sorting_key.column_names;
     return {};
 }
 
-const KeyDescription & IStorage::getPrimaryKey() const
+const StorageMetadataKeyField & IStorage::getPrimaryKey() const
 {
-    return metadata.primary_key;
+    return primary_key;
 }
 
-void IStorage::setPrimaryKey(const KeyDescription & primary_key_)
+void IStorage::setPrimaryKey(const StorageMetadataKeyField & primary_key_)
 {
-    metadata.primary_key = primary_key_;
+    primary_key = primary_key_;
 }
 
 bool IStorage::isPrimaryKeyDefined() const
 {
-    return metadata.primary_key.definition_ast != nullptr;
+    return primary_key.definition_ast != nullptr;
 }
 
 bool IStorage::hasPrimaryKey() const
 {
-    return !metadata.primary_key.column_names.empty();
+    return !primary_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForPrimaryKey() const
 {
     if (hasPrimaryKey())
-        return metadata.primary_key.expression->getRequiredColumns();
+        return primary_key.expression->getRequiredColumns();
     return {};
 }
 
 Names IStorage::getPrimaryKeyColumns() const
 {
-    if (!metadata.primary_key.column_names.empty())
-        return metadata.primary_key.column_names;
+    if (hasSortingKey())
+        return primary_key.column_names;
     return {};
 }
 
-const KeyDescription & IStorage::getSamplingKey() const
+const StorageMetadataKeyField & IStorage::getSamplingKey() const
 {
-    return metadata.sampling_key;
+    return sampling_key;
 }
 
-void IStorage::setSamplingKey(const KeyDescription & sampling_key_)
+void IStorage::setSamplingKey(const StorageMetadataKeyField & sampling_key_)
 {
-    metadata.sampling_key = sampling_key_;
+    sampling_key = sampling_key_;
 }
 
 
 bool IStorage::isSamplingKeyDefined() const
 {
-    return metadata.sampling_key.definition_ast != nullptr;
+    return sampling_key.definition_ast != nullptr;
 }
 
 bool IStorage::hasSamplingKey() const
 {
-    return !metadata.sampling_key.column_names.empty();
+    return !sampling_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForSampling() const
 {
     if (hasSamplingKey())
-        return metadata.sampling_key.expression->getRequiredColumns();
+        return sampling_key.expression->getRequiredColumns();
     return {};
 }
 
-TTLTableDescription IStorage::getTableTTLs() const
+const TTLTableDescription & IStorage::getTableTTLs() const
 {
-    std::lock_guard lock(ttl_mutex);
-    return metadata.table_ttl;
+    return table_ttl;
 }
 
 void IStorage::setTableTTLs(const TTLTableDescription & table_ttl_)
 {
-    std::lock_guard lock(ttl_mutex);
-    metadata.table_ttl = table_ttl_;
+    table_ttl = table_ttl_;
 }
 
 bool IStorage::hasAnyTableTTL() const
@@ -555,46 +559,39 @@ bool IStorage::hasAnyTableTTL() const
     return hasAnyMoveTTL() || hasRowsTTL();
 }
 
-TTLColumnsDescription IStorage::getColumnTTLs() const
+const TTLColumnsDescription & IStorage::getColumnTTLs() const
 {
-    std::lock_guard lock(ttl_mutex);
-    return metadata.column_ttls_by_name;
+    return column_ttls_by_name;
 }
 
 void IStorage::setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_)
 {
-    std::lock_guard lock(ttl_mutex);
-    metadata.column_ttls_by_name = column_ttls_by_name_;
+    column_ttls_by_name = column_ttls_by_name_;
 }
 
 bool IStorage::hasAnyColumnTTL() const
 {
-    std::lock_guard lock(ttl_mutex);
-    return !metadata.column_ttls_by_name.empty();
+    return !column_ttls_by_name.empty();
 }
 
-TTLDescription IStorage::getRowsTTL() const
+const TTLDescription & IStorage::getRowsTTL() const
 {
-    std::lock_guard lock(ttl_mutex);
-    return metadata.table_ttl.rows_ttl;
+    return table_ttl.rows_ttl;
 }
 
 bool IStorage::hasRowsTTL() const
 {
-    std::lock_guard lock(ttl_mutex);
-    return metadata.table_ttl.rows_ttl.expression != nullptr;
+    return table_ttl.rows_ttl.expression != nullptr;
 }
 
-TTLDescriptions IStorage::getMoveTTLs() const
+const TTLDescriptions & IStorage::getMoveTTLs() const
 {
-    std::lock_guard lock(ttl_mutex);
-    return metadata.table_ttl.move_ttl;
+    return table_ttl.move_ttl;
 }
 
 bool IStorage::hasAnyMoveTTL() const
 {
-    std::lock_guard lock(ttl_mutex);
-    return !metadata.table_ttl.move_ttl.empty();
+    return !table_ttl.move_ttl.empty();
 }
 
 
@@ -629,8 +626,7 @@ ColumnDependencies IStorage::getColumnDependencies(const NameSet & updated_colum
 
     if (hasRowsTTL())
     {
-        auto rows_expression = getRowsTTL().expression;
-        if (add_dependent_columns(rows_expression, required_ttl_columns))
+        if (add_dependent_columns(getRowsTTL().expression, required_ttl_columns))
         {
             /// Filter all columns, if rows TTL expression have to be recalculated.
             for (const auto & column : getColumns().getAllPhysical())
@@ -656,36 +652,6 @@ ColumnDependencies IStorage::getColumnDependencies(const NameSet & updated_colum
 
     return res;
 
-}
-
-ASTPtr IStorage::getSettingsChanges() const
-{
-    if (metadata.settings_changes)
-        return metadata.settings_changes->clone();
-    return nullptr;
-}
-
-void IStorage::setSettingsChanges(const ASTPtr & settings_changes_)
-{
-    if (settings_changes_)
-        metadata.settings_changes = settings_changes_->clone();
-    else
-        metadata.settings_changes = nullptr;
-}
-
-const SelectQueryDescription & IStorage::getSelectQuery() const
-{
-    return metadata.select;
-}
-
-void IStorage::setSelectQuery(const SelectQueryDescription & select_)
-{
-    metadata.select = select_;
-}
-
-bool IStorage::hasSelectQuery() const
-{
-    return metadata.select.select_query != nullptr;
 }
 
 }

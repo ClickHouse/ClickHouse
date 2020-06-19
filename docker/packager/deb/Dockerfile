@@ -54,8 +54,6 @@ RUN apt-get --allow-unauthenticated update -y \
             libboost-system-dev \
             libboost-filesystem-dev \
             libboost-thread-dev \
-            libboost-iostreams-dev \
-            libboost-regex-dev \
             zlib1g-dev \
             liblz4-dev \
             libdouble-conversion-dev \

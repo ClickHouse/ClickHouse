@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
 #include <memory>
@@ -71,7 +70,6 @@ using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 struct SelectQueryInfo
 {
     ASTPtr query;
-    ASTPtr view_query; /// Optimized VIEW query
 
     SyntaxAnalyzerResultPtr syntax_analyzer_result;
 

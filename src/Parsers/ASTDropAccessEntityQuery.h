@@ -7,7 +7,6 @@
 
 namespace DB
 {
-class ASTRowPolicyNames;
 
 /** DROP USER [IF EXISTS] name [,...]
   * DROP ROLE [IF EXISTS] name [,...]
@@ -23,13 +22,11 @@ public:
     EntityType type;
     bool if_exists = false;
     Strings names;
-    std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    std::vector<RowPolicy::NameParts> row_policies_name_parts;
 
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTDropAccessEntityQuery>(clone()); }
-
-    void replaceEmptyDatabaseWithCurrent(const String & current_database) const;
 };
 }

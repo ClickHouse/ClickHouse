@@ -481,8 +481,7 @@ void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
     M(RANDOM, "random") \
     M(NEAREST_HOSTNAME, "nearest_hostname") \
     M(IN_ORDER, "in_order") \
-    M(FIRST_OR_RANDOM, "first_or_random") \
-    M(ROUND_ROBIN, "round_robin")
+    M(FIRST_OR_RANDOM, "first_or_random")
 IMPLEMENT_SETTING_ENUM(LoadBalancing, LOAD_BALANCING_LIST_OF_NAMES, ErrorCodes::UNKNOWN_LOAD_BALANCING)
 
 

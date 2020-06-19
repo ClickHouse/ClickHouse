@@ -20,7 +20,7 @@ namespace DB
 class ParserCreateUserQuery : public IParserBase
 {
 public:
-    ParserCreateUserQuery & useAttachMode(bool attach_mode_ = true) { attach_mode = attach_mode_; return *this; }
+    ParserCreateUserQuery & enableAttachMode(bool enable) { attach_mode = enable; return *this; }
 
 protected:
     const char * getName() const override { return "CREATE USER or ALTER USER query"; }

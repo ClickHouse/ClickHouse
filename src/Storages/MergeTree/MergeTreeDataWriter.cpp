@@ -139,6 +139,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
         return result;
 
     data.check(block, true);
+    block.checkNumberOfRows();
 
     if (!data.hasPartitionKey()) /// Table is not partitioned.
     {

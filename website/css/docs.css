@@ -37,7 +37,7 @@ summary {
     margin-left: .5rem;
 }
 
-body[data-spy] #content {
+#content {
     overflow-x: scroll;
 }
 
@@ -169,7 +169,7 @@ body[data-spy] #content {
 }
 
 @media (prefers-color-scheme: dark) {
-    body[data-spy], body.amp, body.blog, #to-full-website {
+    body[data-spy], body.amp, #to-full-website {
         background: #1c1c1c;
         color: #efefef;
     }
@@ -194,7 +194,12 @@ body[data-spy] #content {
         border: 1px solid #444451;
     }
 
-    #content code, #content pre, .blog .tag, .blog .dropdown-menu {
+    #content code {
+        background: #444;
+        color: #eee;
+    }
+
+    #content pre {
         background: #444;
         color: #eee;
     }

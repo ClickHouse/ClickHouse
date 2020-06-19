@@ -85,7 +85,7 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
         */
 
     auto quorum_status = quorum_status_future.get();
-    if (quorum_status.error != Coordination::Error::ZNONODE)
+    if (quorum_status.error != Coordination::ZNONODE)
         throw Exception("Quorum for previous write has not been satisfied yet. Status: " + quorum_status.data, ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
 
     /// Both checks are implicitly made also later (otherwise there would be a race condition).
@@ -93,7 +93,7 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
     auto is_active = is_active_future.get();
     auto host = host_future.get();
 
-    if (is_active.error == Coordination::Error::ZNONODE || host.error == Coordination::Error::ZNONODE)
+    if (is_active.error == Coordination::ZNONODE || host.error == Coordination::ZNONODE)
         throw Exception("Replica is not active right now", ErrorCodes::READONLY);
 
     quorum_info.is_active_node_value = is_active.data;
@@ -198,8 +198,7 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
 }
 
 
-void ReplicatedMergeTreeBlockOutputStream::commitPart(
-    zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id)
+void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id)
 {
     storage.check(part->getColumns());
     assertSessionIsNotExpired(zookeeper);
@@ -300,9 +299,9 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
     storage.renameTempPartAndAdd(part, nullptr, &transaction);
 
     Coordination::Responses responses;
-    Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
+    int32_t multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
 
-    if (multi_code == Coordination::Error::ZOK)
+    if (multi_code == Coordination::ZOK)
     {
         transaction.commit();
         storage.merge_selecting_task->schedule();
@@ -310,8 +309,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         /// Lock nodes have been already deleted, do not delete them in destructor
         block_number_lock->assumeUnlocked();
     }
-    else if (multi_code == Coordination::Error::ZCONNECTIONLOSS
-        || multi_code == Coordination::Error::ZOPERATIONTIMEOUT)
+    else if (multi_code == Coordination::ZCONNECTIONLOSS
+        || multi_code == Coordination::ZOPERATIONTIMEOUT)
     {
         /** If the connection is lost, and we do not know if the changes were applied, we can not delete the local part
           *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
@@ -327,7 +326,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
     {
         String failed_op_path = zkutil::KeeperMultiException(multi_code, ops, responses).getPathForFirstFailedOp();
 
-        if (multi_code == Coordination::Error::ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
+        if (multi_code == Coordination::ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
         {
             /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
             LOG_INFO(log, "Block with ID {} already exists; ignoring it (removing part {})", block_id, part->name);
@@ -337,7 +336,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             last_block_is_duplicate = true;
             ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
         }
-        else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
+        else if (multi_code == Coordination::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
         {
             transaction.rollback();
 
@@ -348,7 +347,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             /// NOTE: We could be here if the node with the quorum existed, but was quickly removed.
             transaction.rollback();
             throw Exception("Unexpected logical error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
-                            + Coordination::errorMessage(multi_code) + ", path " + failed_op_path,
+                            + zkutil::ZooKeeper::error2string(multi_code) + ", path " + failed_op_path,
                             ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
         }
     }
@@ -356,13 +355,13 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
     {
         transaction.rollback();
         throw Exception("Unrecoverable network error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
-                        + Coordination::errorMessage(multi_code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+                        + zkutil::ZooKeeper::error2string(multi_code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
     }
     else
     {
         transaction.rollback();
         throw Exception("Unexpected ZooKeeper error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
-                        + Coordination::errorMessage(multi_code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+                        + zkutil::ZooKeeper::error2string(multi_code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
     }
 
     if (quorum)

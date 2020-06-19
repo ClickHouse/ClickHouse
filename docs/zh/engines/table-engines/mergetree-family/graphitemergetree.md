@@ -1,16 +1,17 @@
 ---
+machine_translated: true
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
 toc_title: GraphiteMergeTree
 ---
 
 # GraphiteMergeTree {#graphitemergetree}
 
-该引擎用来对 [Graphite](http://graphite.readthedocs.io/en/latest/index.html)数据进行瘦身及汇总。对于想使用CH来存储Graphite数据的开发者来说可能有用。
+此引擎专为细化和聚合/平均（rollup) [石墨](http://graphite.readthedocs.io/en/latest/index.html) 戴达 对于想要使用ClickHouse作为Graphite的数据存储的开发人员来说，这可能会有所帮助。
 
+您可以使用任何ClickHouse表引擎来存储石墨数据，如果你不需要汇总，但如果你需要一个汇总使用 `GraphiteMergeTree`. 该引擎减少了存储量，并提高了Graphite查询的效率。
 
-如果不需要对Graphite数据做汇总，那么可以使用任意的CH表引擎；但若需要，那就采用 `GraphiteMergeTree` 引擎。它能减少存储空间，同时能提高Graphite数据的查询效率。
-
-该引擎继承自 [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md).
+引擎继承从属性 [MergeTree](mergetree.md).
 
 ## 创建表 {#creating-table}
 
@@ -29,32 +30,36 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-建表语句的详细说明请参见 [创建表](../../../sql-reference/statements/create.md#create-table-query)
+请参阅的详细说明 [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) 查询。
 
-含有Graphite数据集的表应该包含以下的数据列：
-- 指标名称(Graphite sensor)，数据类型：`String`
-- 指标的时间度量，数据类型： `DateTime`
-- 指标的值，数据类型：任意数值类型
-- 指标的版本号，数据类型： 任意数值类型
+Graphite数据的表应具有以下数据的列:
 
-    CH以最大的版本号保存行记录，若版本号相同，保留最后写入的数据。
+-   公制名称（石墨传感器）。 数据类型: `String`.
 
-以上列必须设置在汇总参数配置中。
+-   测量度量的时间。 数据类型: `DateTime`.
 
+-   度量值。 数据类型：任何数字。
 
-**GraphiteMergeTree 参数**
--  `config_section` - 配置文件中标识汇总规则的节点名称
+-   指标的版本。 数据类型：任何数字。
 
-**建表语句**
+    如果版本相同，ClickHouse会保存版本最高或最后写入的行。 其他行在数据部分合并期间被删除。
 
-在创建 `GraphiteMergeTree` 表时，需要采用和 [clauses](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) 相同的语句，就像创建 `MergeTree` 一样。
+应在汇总配置中设置这些列的名称。
+
+**GraphiteMergeTree参数**
+
+-   `config_section` — Name of the section in the configuration file, where are the rules of rollup set.
+
+**查询子句**
+
+当创建一个 `GraphiteMergeTree` 表，相同 [条款](mergetree.md#table_engine-mergetree-creating-a-table) 是必需的，因为当创建 `MergeTree` 桌子
 
 <details markdown="1">
 
-<summary>已废弃的建表语句</summary>
+<summary>不推荐使用的创建表的方法</summary>
 
-!!! 注意 "Attention"
-    请不要在新项目中使用；如有可能，请将旧的项目按上述的方法进行替换。
+!!! attention "注意"
+    不要在新项目中使用此方法，如果可能的话，请将旧项目切换到上述方法。
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -68,30 +73,31 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE [=] GraphiteMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, config_section)
 ```
 
-除了`config_section`，其它所有参数和`MergeTree`的相应参数一样.
+所有参数除外 `config_section` 具有相同的含义 `MergeTree`.
 
--   `config_section` —配置文件中设置汇总规则的节点 
+-   `config_section` — Name of the section in the configuration file, where are the rules of rollup set.
 
 </details>
 
-## 汇总配置的参数 {#rollup-configuration}
-汇总的配置参数由服务器配置的 [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) 参数定义。参数名称可以是任意的。允许为多个不同表创建多组配置并使用。
+## 汇总配置 {#rollup-configuration}
 
+汇总的设置由 [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) 服务器配置中的参数。 参数的名称可以是any。 您可以创建多个配置并将它们用于不同的表。
 
-汇总配置的结构如下：
-    所需的列
-    模式Patterns
+汇总配置结构:
 
+      required-columns
+      patterns
 
-### 所需的列 {#required-columns}
--   `path_column_name` — 保存指标名称的列名 (Graphite sensor). 默认值: `Path`.
--   `time_column_name` — 保存指标时间度量的列名. Default value: `Time`.
--   `value_column_name` —  The name of the column storing the value of the metric at the time set in `time_column_name`.默认值: `Value`.
--   `version_column_name` - 保存指标的版本号列. 默认值: `Timestamp`.
+### 必填列 {#required-columns}
 
+-   `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
+-   `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
+-   `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. 默认值: `Value`.
+-   `version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
 
-### 模式Patterns {#patterns}
-`patterns` 的结构：
+### 模式 {#patterns}
+
+的结构 `patterns` 科:
 
 ``` text
 pattern
@@ -114,20 +120,21 @@ default
     ...
 ```
 
-!!! 注意 "Attention"
-    模式必须严格按顺序配置：
-      1. 不含`function` or `retention`的Patterns
-      1. 同时含有`function` and `retention`的Patterns
-      1. `default`的Patterns.
+!!! warning "注意"
+    模式必须严格排序:
 
-CH在处理行记录时，会检查 `pattern`节点的规则。每个 `pattern`（含`default`）节点可以包含 `function` 用于聚合操作，或`retention`参数，或者两者都有。如果指标名称和 `regexp`相匹配，相应 `pattern`的规则会生效；否则，使用 `default` 节点的规则。
+      1. Patterns without `function` or `retention`.
+      1. Patterns with both `function` and `retention`.
+      1. Pattern `default`.
 
-`pattern` 和 `default` 节点的字段设置:
+在处理行时，ClickHouse会检查以下内容中的规则 `pattern` 部分。 每个 `pattern` （包括 `default`）部分可以包含 `function` 聚合参数, `retention` 参数或两者兼而有之。 如果指标名称匹配 `regexp`，从规则 `pattern` 部分（sections节）的应用;否则，从规则 `default` 部分被使用。
 
--   `regexp`– 指标名的pattern.
--   `age` – 数据的最小存活时间(按秒算).
--   `precision`– 按秒来衡量数据存活时间时的精确程度. 必须能被86400整除 (一天的秒数).
--   `function` – 对于存活时间在 `[age, age + precision]`之内的数据，需要使用的聚合函数
+字段为 `pattern` 和 `default` 科:
+
+-   `regexp`– A pattern for the metric name.
+-   `age` – The minimum age of the data in seconds.
+-   `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).
+-   `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`.
 
 ### 配置示例 {#configuration-example}
 
@@ -164,4 +171,4 @@ CH在处理行记录时，会检查 `pattern`节点的规则。每个 `pattern`�
 </graphite_rollup>
 ```
 
-[原始文档](https://clickhouse.tech/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->

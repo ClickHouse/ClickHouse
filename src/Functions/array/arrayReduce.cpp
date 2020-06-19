@@ -97,8 +97,7 @@ DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName 
         getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
                                                    aggregate_function_name, params_row, "function " + getName());
 
-        AggregateFunctionProperties properties;
-        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
+        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row);
     }
 
     return aggregate_function->getReturnType();

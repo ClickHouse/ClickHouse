@@ -1,5 +1,4 @@
 #include <Columns/ColumnTuple.h>
-#include <Columns/IColumnImpl.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -277,14 +276,6 @@ int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_dire
             return res;
 
     return 0;
-}
-
-void ColumnTuple::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnTuple>(assert_cast<const ColumnTuple &>(rhs), rhs_row_num, row_indexes,
-                                        compare_results, direction, nan_direction_hint);
 }
 
 template <bool positive>

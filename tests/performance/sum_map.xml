@@ -7,14 +7,13 @@
         <substitution>
            <name>scale</name>
            <values>
+               <value>100000</value>
                <value>1000000</value>
            </values>
        </substitution>
         <substitution>
            <name>func</name>
            <values>
-               <value>minMap</value>
-               <value>maxMap</value>
                <value>sumMap</value>
                <value>sumMapWithOverflow</value>
            </values>

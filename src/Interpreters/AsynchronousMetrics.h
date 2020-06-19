@@ -14,9 +14,6 @@ namespace DB
 
 class Context;
 
-typedef double AsynchronousMetricValue;
-typedef std::unordered_map<std::string, AsynchronousMetricValue> AsynchronousMetricValues;
-
 
 /** Periodically (each minute, starting at 30 seconds offset)
   *  calculates and updates some metrics,
@@ -32,17 +29,21 @@ public:
 
     ~AsynchronousMetrics();
 
+    using Value = double;
+    using Container = std::unordered_map<std::string, Value>;
 
     /// Returns copy of all values.
-    AsynchronousMetricValues getValues() const;
+    Container getValues() const;
 
 private:
     Context & context;
 
-    mutable std::mutex mutex;
-    std::condition_variable wait_cond;
     bool quit {false};
-    AsynchronousMetricValues values;
+    std::mutex wait_mutex;
+    std::condition_variable wait_cond;
+
+    Container container;
+    mutable std::mutex container_mutex;
 
 #if defined(OS_LINUX)
     MemoryStatisticsOS memory_stat;
@@ -52,6 +53,8 @@ private:
 
     void run();
     void update();
+
+    void set(const std::string & name, Value value);
 };
 
 }

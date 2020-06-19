@@ -44,6 +44,10 @@ endif()
 
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
+if (NOT USE_INTERNAL_BOOST_LIBRARY)
+    target_include_directories (common SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
+endif ()
+
 # Allow explicit fallback to readline
 if (NOT ENABLE_REPLXX AND ENABLE_READLINE)
     message (STATUS "Attempt to fallback to readline explicitly")
@@ -69,8 +73,7 @@ endif ()
 target_link_libraries (common
     PUBLIC
         ${CITYHASH_LIBRARIES}
-        boost::headers_only
-        boost::system
+        ${Boost_SYSTEM_LIBRARY}
         FastMemcpy
         Poco::Net
         Poco::Net::SSL

@@ -8,7 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTRolesOrUsersSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
 #include <Access/AccessFlags.h>
@@ -80,7 +80,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
                        const String & storage_name,
                        const Authentication & authentication,
                        const AllowedClientHosts & allowed_hosts,
-                       const RolesOrUsersSet & default_roles)
+                       const ExtendedRoleSet & default_roles)
     {
         column_name.insertData(name.data(), name.length());
         column_id.push_back(id);

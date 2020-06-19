@@ -7,7 +7,7 @@
 namespace DB
 {
 class ASTSettingsProfileElements;
-class ASTRolesOrUsersSet;
+class ASTExtendedRoleSet;
 
 
 /** CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name
@@ -29,12 +29,12 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    Strings names;
+    String name;
     String new_name;
 
     std::shared_ptr<ASTSettingsProfileElements> settings;
 
-    std::shared_ptr<ASTRolesOrUsersSet> to_roles;
+    std::shared_ptr<ASTExtendedRoleSet> to_roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;

@@ -4,7 +4,6 @@
 #include <IO/AIOContextPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <Common/MemorySanitizer.h>
 #include <Core/Defines.h>
 
 #include <sys/types.h>
@@ -96,8 +95,11 @@ bool ReadBufferAIO::nextImpl()
     if (profile_callback)
         watch.emplace(clock_type);
 
-    if (!is_pending_read)
+    if (!is_aio)
+    {
         synchronousRead();
+        is_aio = true;
+    }
     else
         receive();
 
@@ -213,9 +215,7 @@ void ReadBufferAIO::synchronousRead()
 void ReadBufferAIO::receive()
 {
     if (!waitForAIOCompletion())
-    {
-        throw Exception("Trying to receive data from AIO, but nothing was queued. It's a bug", ErrorCodes::LOGICAL_ERROR);
-    }
+        return;
     finalize();
 }
 
@@ -223,6 +223,8 @@ void ReadBufferAIO::skip()
 {
     if (!waitForAIOCompletion())
         return;
+
+    is_aio = false;
 
     /// @todo I presume this assignment is redundant since waitForAIOCompletion() performs a similar one
 //    bytes_read = future_bytes_read.get();
@@ -272,9 +274,6 @@ void ReadBufferAIO::prepare()
     region_aligned_size = region_aligned_end - region_aligned_begin;
 
     buffer_begin = fill_buffer.internalBuffer().begin();
-
-    /// Unpoison because msan doesn't instrument linux AIO
-    __msan_unpoison(buffer_begin, fill_buffer.internalBuffer().size());
 }
 
 void ReadBufferAIO::finalize()

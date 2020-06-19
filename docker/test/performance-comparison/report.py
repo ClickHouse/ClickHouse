@@ -207,8 +207,7 @@ if args.report == 'main':
             'p&nbsp;<&nbsp;0.001 threshold',                   # 3
             # Failed                                           # 4
             'Test',                                            # 5
-            '#',                                               # 6
-            'Query',                                           # 7
+            'Query',                                           # 6
             ]
 
         print(tableHeader(columns))
@@ -249,8 +248,7 @@ if args.report == 'main':
             'p&nbsp;<&nbsp;0.001 threshold', #3
             # Failed #4
             'Test', #5
-            '#',    #6
-            'Query' #7
+            'Query' #6
         ]
 
         print(tableStart('Unstable queries'))
@@ -274,9 +272,9 @@ if args.report == 'main':
     skipped_tests_rows = tsvRows('analyze/skipped-tests.tsv')
     printSimpleTable('Skipped tests', ['Test', 'Reason'], skipped_tests_rows)
 
-    printSimpleTable('Test performance changes',
-        ['Test', 'Queries', 'Unstable', 'Changed perf', 'Total not OK', 'Avg relative time diff'],
-        tsvRows('report/test-perf-changes.tsv'))
+    printSimpleTable('Tests with most unstable queries',
+        ['Test', 'Unstable', 'Changed perf', 'Total not OK'],
+        tsvRows('report/bad-tests.tsv'))
 
     def print_test_times():
         global slow_average_tests
@@ -359,7 +357,7 @@ if args.report == 'main':
     error_tests += slow_average_tests
     if error_tests:
         status = 'failure'
-        message_array.insert(0, str(error_tests) + ' errors')
+        message_array.append(str(error_tests) + ' errors')
 
     if message_array:
         message = ', '.join(message_array)
@@ -393,8 +391,7 @@ elif args.report == 'all-queries':
             'Times speedup / slowdown',                 #5
             'p&nbsp;<&nbsp;0.001 threshold',          #6
             'Test',                                   #7
-            '#',                                      #8
-            'Query',                                  #9
+            'Query',                                  #8
             ]
 
         print(tableStart('All query times'))

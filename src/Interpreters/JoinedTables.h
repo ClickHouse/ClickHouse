@@ -34,8 +34,7 @@ public:
     void makeFakeTable(StoragePtr storage, const Block & source_header);
     std::shared_ptr<TableJoin> makeTableJoin(const ASTSelectQuery & select_query);
 
-    const TablesWithColumns & tablesWithColumns() const { return tables_with_columns; }
-    TablesWithColumns moveTablesWithColumns() { return std::move(tables_with_columns); }
+    const std::vector<TableWithColumnNamesAndTypes> & tablesWithColumns() const { return tables_with_columns; }
 
     bool isLeftTableSubquery() const;
     bool isLeftTableFunction() const;
@@ -50,7 +49,7 @@ public:
 private:
     Context context;
     std::vector<const ASTTableExpression *> table_expressions;
-    TablesWithColumns tables_with_columns;
+    std::vector<TableWithColumnNamesAndTypes> tables_with_columns;
 
     /// Legacy (duplicated left table values)
     ASTPtr left_table_expression;

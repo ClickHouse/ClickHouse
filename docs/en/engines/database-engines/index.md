@@ -12,8 +12,8 @@ By default, ClickHouse uses its native database engine, which provides configura
 
 You can also use the following database engines:
 
--   [MySQL](../../engines/database-engines/mysql.md)
+-   [MySQL](mysql.md)
 
--   [Lazy](../../engines/database-engines/lazy.md)
+-   [Lazy](lazy.md)
 
 [Original article](https://clickhouse.tech/docs/en/database_engines/) <!--hide-->

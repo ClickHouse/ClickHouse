@@ -10,7 +10,6 @@
 #include <common/StringRef.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageDistributed.h>
 #include <IO/ReadBufferFromFile.h>

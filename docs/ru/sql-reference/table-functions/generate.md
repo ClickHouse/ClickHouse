@@ -1,4 +1,4 @@
-# generateRandom {#generaterandom}
+# generateRandom {#generateRandom}
 
 Генерирует случайные данные с заданной схемой.
 Позволяет заполнять тестовые таблицы данными.

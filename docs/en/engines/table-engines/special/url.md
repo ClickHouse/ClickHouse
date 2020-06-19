@@ -3,13 +3,12 @@ toc_priority: 41
 toc_title: URL
 ---
 
-# URL Table Engine {#table_engines-url}
+# URL(URL, Format) {#table_engines-url}
 
-Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
+Manages data on a remote HTTP/HTTPS server. This engine is similar
+to the [File](file.md) engine.
 
-Syntax: `URL(URL, Format)`
-
-## Usage {#using-the-engine-in-the-clickhouse-server}
+## Using the Engine in the ClickHouse Server {#using-the-engine-in-the-clickhouse-server}
 
 The `format` must be one that ClickHouse can use in
 `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see
@@ -25,7 +24,7 @@ respectively. For processing `POST` requests, the remote server must support
 
 You can limit the maximum number of HTTP GET redirect hops using the [max\_http\_get\_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects) setting.
 
-## Example {#example}
+**Example:**
 
 **1.** Create a `url_engine_table` table on the server :
 

@@ -1,6 +1,5 @@
 #pragma once
 #include <Columns/IColumnUnique.h>
-#include <Columns/IColumnImpl.h>
 #include <Columns/ReverseIndex.h>
 
 #include <Columns/ColumnVector.h>

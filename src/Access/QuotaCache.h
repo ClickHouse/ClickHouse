@@ -39,7 +39,7 @@ private:
 
         QuotaPtr quota;
         UUID quota_id;
-        const RolesOrUsersSet * roles = nullptr;
+        const ExtendedRoleSet * roles = nullptr;
         std::unordered_map<String /* quota key */, boost::shared_ptr<const Intervals>> key_to_intervals;
     };
 

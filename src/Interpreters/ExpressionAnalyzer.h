@@ -208,9 +208,7 @@ struct ExpressionAnalysisResult
         const FilterInfoPtr & filter_info,
         const Block & source_header);
 
-    /// Filter for row-level security.
     bool hasFilter() const { return filter_info.get(); }
-
     bool hasJoin() const { return before_join.get(); }
     bool hasPrewhere() const { return prewhere_info.get(); }
     bool hasWhere() const { return before_where.get(); }

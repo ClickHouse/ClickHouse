@@ -30,7 +30,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static const std::vector<String> supported_functions{"any", "anyLast", "min", "max", "sum", "groupBitAnd", "groupBitOr", "groupBitXor", "sumMap", "groupArrayArray", "groupUniqArrayArray"};
+static const std::vector<String> supported_functions{"any", "anyLast", "min", "max", "sum", "groupBitAnd", "groupBitOr", "groupBitXor", "sumMap"};
 
 
 String DataTypeCustomSimpleAggregateFunction::getName() const
@@ -110,8 +110,7 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
     if (function_name.empty())
         throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);
 
-    AggregateFunctionProperties properties;
-    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
+    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row);
 
     // check function
     if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getName()) == std::end(supported_functions))

@@ -5,7 +5,7 @@
 #include <Access/AllowedClientHosts.h>
 #include <Access/GrantedAccess.h>
 #include <Access/GrantedRoles.h>
-#include <Access/RolesOrUsersSet.h>
+#include <Access/ExtendedRoleSet.h>
 #include <Access/SettingsProfileElement.h>
 
 
@@ -19,7 +19,7 @@ struct User : public IAccessEntity
     AllowedClientHosts allowed_client_hosts = AllowedClientHosts::AnyHostTag{};
     GrantedAccess access;
     GrantedRoles granted_roles;
-    RolesOrUsersSet default_roles = RolesOrUsersSet::AllTag{};
+    ExtendedRoleSet default_roles = ExtendedRoleSet::AllTag{};
     SettingsProfileElements settings;
 
     bool equal(const IAccessEntity & other) const override;

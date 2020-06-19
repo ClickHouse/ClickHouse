@@ -1,11 +1,13 @@
 ---
+machine_translated: true
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
-toc_title: 聚合函数
+toc_title: "\u53C2\u8003\u8D44\u6599"
 ---
 
 # 聚合函数引用 {#aggregate-functions-reference}
 
-## count {#agg_function-count}
+## 计数 {#agg_function-count}
 
 计数行数或非空值。
 
@@ -71,7 +73,7 @@ SELECT count(DISTINCT num) FROM t
 
 这个例子表明 `count(DISTINCT num)` 由执行 `uniqExact` 根据功能 `count_distinct_implementation` 设定值。
 
-## any(x) {#agg_function-any}
+## 任何(x) {#agg_function-any}
 
 选择第一个遇到的值。
 查询可以以任何顺序执行，甚至每次都以不同的顺序执行，因此此函数的结果是不确定的。
@@ -113,7 +115,7 @@ FROM ontime
 选择遇到的最后一个值。
 其结果是一样不确定的 `any` 功能。
 
-## groupBitAnd {#groupbitand}
+## 集团比特 {#groupbitand}
 
 按位应用 `AND` 对于一系列的数字。
 
@@ -335,7 +337,7 @@ SELECT argMin(user, salary) FROM salary
 总计 ‘value’ 数组根据在指定的键 ‘key’ 阵列。
 传递键和值数组的元组与传递两个键和值数组是同义的。
 元素的数量 ‘key’ 和 ‘value’ 总计的每一行必须相同。
-返回两个数组的一个二元组： key是排好序的，value是对应key的求和。
+Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
 示例:
 
@@ -372,7 +374,7 @@ GROUP BY timeslot
 
 ## skewPop {#skewpop}
 
-计算的序列[偏度](https://en.wikipedia.org/wiki/Skewness)。
+计算 [歪斜](https://en.wikipedia.org/wiki/Skewness) 的序列。
 
 ``` sql
 skewPop(expr)
@@ -384,7 +386,7 @@ skewPop(expr)
 
 **返回值**
 
-给定序列的偏度。类型 — [Float64](../../sql-reference/data-types/float.md)
+The skewness of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md)
 
 **示例**
 
@@ -408,7 +410,7 @@ skewSamp(expr)
 
 **返回值**
 
-给定序列的偏度。 类型 — [Float64](../../sql-reference/data-types/float.md). 如果 `n <= 1` (`n` 是样本的大小），则该函数返回 `nan`.
+The skewness of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md). 如果 `n <= 1` (`n` 是样本的大小），则该函数返回 `nan`.
 
 **示例**
 
@@ -430,7 +432,7 @@ kurtPop(expr)
 
 **返回值**
 
-给定序列的峰度。 类型 — [Float64](../../sql-reference/data-types/float.md)
+The kurtosis of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md)
 
 **示例**
 
@@ -454,7 +456,7 @@ kurtSamp(expr)
 
 **返回值**
 
-给定序列的峰度。类型 — [Float64](../../sql-reference/data-types/float.md). 如果 `n <= 1` (`n` 是样本的大小），则该函数返回 `nan`.
+The kurtosis of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md). 如果 `n <= 1` (`n` 是样本的大小），则该函数返回 `nan`.
 
 **示例**
 
@@ -531,7 +533,7 @@ FROM (
 只适用于数字。
 结果总是Float64。
 
-## avgWeighted {#avgweighted}
+## 平均加权 {#avgweighted}
 
 计算 [加权算术平均值](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
 
@@ -543,10 +545,10 @@ avgWeighted(x, weight)
 
 **参数**
 
--   `x` — 值。 [整数](../data-types/int-uint.md) 或 [浮点](../data-types/float.md).
--   `weight` — 值的加权。 [整数](../data-types/int-uint.md) 或 [浮点](../data-types/float.md).
+-   `x` — Values. [整数](../data-types/int-uint.md) 或 [浮点](../data-types/float.md).
+-   `weight` — Weights of the values. [整数](../data-types/int-uint.md) 或 [浮点](../data-types/float.md).
 
-`x` 和 `weight` 的类型一定是一样的
+类型 `x` 和 `weight` 一定是一样的
 
 **返回值**
 
@@ -588,7 +590,7 @@ uniq(x[, ...])
 
 -   A [UInt64](../../sql-reference/data-types/int-uint.md)-键入号码。
 
-**实现细节**
+**实施细节**
 
 功能:
 
@@ -596,7 +598,7 @@ uniq(x[, ...])
 
 -   使用自适应采样算法。 对于计算状态，该函数使用最多65536个元素哈希值的样本。
 
-        这个算法是非常精确的，并且对于CPU来说非常高效。如果查询包含一些这样的函数，那和其他聚合函数相比 `uniq` 将是几乎一样快。
+        This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
 -   确定性地提供结果（它不依赖于查询处理顺序）。
 
@@ -627,17 +629,17 @@ uniqCombined(HLL_precision)(x[, ...])
 
 **返回值**
 
--   一个[UInt64](../../sql-reference/data-types/int-uint.md)类型的数字。
+-   一个数字 [UInt64](../../sql-reference/data-types/int-uint.md)-键入号码。
 
-**实现细节**
+**实施细节**
 
 功能:
 
 -   计算散列（64位散列 `String` 否则32位）对于聚合中的所有参数，然后在计算中使用它。
 
--   使用三种算法的组合：数组、哈希表和包含错误修正表的HyperLogLog。
+-   使用三种算法的组合：数组、哈希表和HyperLogLog与error错表。
 
-        少量的不同的值，使用数组。 值再多一些，使用哈希表。对于大量的数据来说，使用HyperLogLog，HyperLogLog占用一个固定的内存空间。
+        For a small number of distinct elements, an array is used. When the set size is larger, a hash table is used. For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
 
 -   确定性地提供结果（它不依赖于查询处理顺序）。
 
@@ -648,7 +650,7 @@ uniqCombined(HLL_precision)(x[, ...])
 
 -   消耗少几倍的内存。
 -   计算精度高出几倍。
--   通常具有略低的性能。 在某些情况下, `uniqCombined` 可以表现得比 `uniq` 好，例如，使用通过网络传输大量聚合状态的分布式查询。
+-   通常具有略低的性能。 在某些情况下, `uniqCombined` 可以表现得比 `uniq`，例如，使用通过网络传输大量聚合状态的分布式查询。
 
 **另请参阅**
 
@@ -677,7 +679,7 @@ uniqHLL12(x[, ...])
 
 -   A [UInt64](../../sql-reference/data-types/int-uint.md)-键入号码。
 
-**实现细节**
+**实施细节**
 
 功能:
 
@@ -705,9 +707,9 @@ uniqHLL12(x[, ...])
 uniqExact(x[, ...])
 ```
 
-如果你绝对需要一个确切的结果，使用 `uniqExact` 功能。 否则使用 [uniq](#agg_function-uniq) 功能。
+使用 `uniqExact` 功能，如果你绝对需要一个确切的结果。 否则使用 [uniq](#agg_function-uniq) 功能。
 
-`uniqExact` 比 `uniq` 使用更多的内存，因为状态的大小随着不同值的数量的增加而无界增长。
+该 `uniqExact` 功能使用更多的内存比 `uniq`，因为状态的大小随着不同值的数量的增加而无界增长。
 
 **参数**
 
@@ -719,7 +721,7 @@ uniqExact(x[, ...])
 -   [uniqCombined](#agg_function-uniqcombined)
 -   [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray(x), groupArray(max\_size)(x) {#agg_function-grouparray}
+## 群交(x),群交(max\_size)(x) {#agg_function-grouparray}
 
 创建参数值的数组。
 值可以按任何（不确定）顺序添加到数组中。
@@ -746,10 +748,10 @@ groupArrayInsertAt(default_x, size)(x, pos);
 
 **参数**
 
--   `x` — 被插入的值。[表达式](../syntax.md#syntax-expressions) 导致的一个 [支持的数据类型](../../sql-reference/data-types/index.md).
--   `pos` — `x` 将被插入的位置。 数组中的索引编号从零开始。 [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
--   `default_x`— 如果代入值为空，则使用默认值。可选参数。[表达式](../syntax.md#syntax-expressions) 为 `x` 数据类型的数据。 如果 `default_x` 未定义，则 [默认值](../../sql-reference/statements/create.md#create-default-values) 被使用。
--   `size`— 结果数组的长度。可选参数。如果使用该参数，`default_x` 必须指定。 [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `x` — Value to be inserted. [表达式](../syntax.md#syntax-expressions) 导致的一个 [支持的数据类型](../../sql-reference/data-types/index.md).
+-   `pos` — Position at which the specified element `x` 将被插入。 数组中的索引编号从零开始。 [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `default_x`— Default value for substituting in empty positions. Optional parameter. [表达式](../syntax.md#syntax-expressions) 导致为配置的数据类型 `x` 参数。 如果 `default_x` 未定义，则 [默认值](../../sql-reference/statements/create.md#create-default-values) 被使用。
+-   `size`— Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` 必须指定。 [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **返回值**
 
@@ -801,7 +803,7 @@ SELECT groupArrayInsertAt('-', 5)(toString(number), number * 2) FROM numbers(5);
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-在一个位置多线程插入数据。
+元件的多线程插入到一个位置。
 
 查询:
 
@@ -830,8 +832,8 @@ groupArrayMovingSum(window_size)(numbers_for_summing)
 
 **参数**
 
--   `numbers_for_summing` — [表达式](../syntax.md#syntax-expressions) 为数值数据类型值。
--   `window_size` — 窗口大小。
+-   `numbers_for_summing` — [表达式](../syntax.md#syntax-expressions) 生成数值数据类型值。
+-   `window_size` — Size of the calculation window.
 
 **返回值**
 
@@ -904,13 +906,13 @@ groupArrayMovingAvg(window_size)(numbers_for_summing)
 **参数**
 
 -   `numbers_for_summing` — [表达式](../syntax.md#syntax-expressions) 生成数值数据类型值。
--   `window_size` — 窗口大小。
+-   `window_size` — Size of the calculation window.
 
 **返回值**
 
 -   与输入数据大小和类型相同的数组。
 
-该函数使用 [四舍五入到零](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). 它截断无意义的小数位来保证结果的数据类型。
+该函数使用 [四舍五入到零](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). 它截断结果数据类型的小数位数。
 
 **示例**
 
@@ -965,20 +967,20 @@ FROM t
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-## groupUniqArray(x), groupUniqArray(max\_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
+## 禄,赂麓ta脌麓,):脡,,拢脢,group媒group)galaxy s8碌胫脢)禄煤)酶脱脩) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
 从不同的参数值创建一个数组。 内存消耗是一样的 `uniqExact` 功能。
 
-第二个版本（`max_size` 参数）将结果数组的大小限制为 `max_size` 元素。
+第二个版本（与 `max_size` 参数）将结果数组的大小限制为 `max_size` 元素。
 例如, `groupUniqArray(1)(x)` 相当于 `[any(x)]`.
 
-## quantile {#quantile}
+## 分位数 {#quantile}
 
-计算数字序列的近似[分位数](https://en.wikipedia.org/wiki/Quantile)。
+计算近似值 [分位数](https://en.wikipedia.org/wiki/Quantile) 的数字数据序列。
 
-此功能适用 [水塘抽样(](https://en.wikipedia.org/wiki/Reservoir_sampling)，使用储存器最大到8192和随机数发生器进行采样。 结果是非确定性的。 要获得精确的分位数，请使用 [quantileExact](#quantileexact) 功能。
+此功能适用 [油藏采样](https://en.wikipedia.org/wiki/Reservoir_sampling) 随着储存器大小高达8192和随机数发生器进行采样。 结果是非确定性的。 要获得精确的分位数，请使用 [quantileExact](#quantileexact) 功能。
 
-当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用[分位数](#quantiles)功能。
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
 **语法**
 
@@ -990,12 +992,12 @@ quantile(level)(expr)
 
 **参数**
 
--   `level` — 分位数层次。可选参数。 从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
--   `expr` — 求职表达式，类型为：数值[数据类型](../../sql-reference/data-types/index.md#data_types),[日期](../../sql-reference/data-types/date.md)数据类型或[时间](../../sql-reference/data-types/datetime.md)数据类型。
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [数据类型](../../sql-reference/data-types/index.md#data_types), [日期](../../sql-reference/data-types/date.md) 或 [日期时间](../../sql-reference/data-types/datetime.md).
 
 **返回值**
 
--   指定层次的近似分位数。
+-   指定电平的近似分位数。
 
 类型:
 
@@ -1035,13 +1037,13 @@ SELECT quantile(val) FROM t
 -   [中位数](#median)
 -   [分位数](#quantiles)
 
-## quantileDeterministic {#quantiledeterministic}
+## 量化确定 {#quantiledeterministic}
 
-计算数字序列的近似[分位数](https://en.wikipedia.org/wiki/Quantile)。
+计算近似值 [分位数](https://en.wikipedia.org/wiki/Quantile) 的数字数据序列。
 
-此功能适用 [水塘抽样(](https://en.wikipedia.org/wiki/Reservoir_sampling)，使用储存器最大到8192和随机数发生器进行采样。 结果是非确定性的。 要获得精确的分位数，请使用 [quantileExact](#quantileexact) 功能。
+此功能适用 [油藏采样](https://en.wikipedia.org/wiki/Reservoir_sampling) 与储层大小高达8192和采样的确定性算法。 结果是确定性的。 要获得精确的分位数，请使用 [quantileExact](#quantileexact) 功能。
 
-当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用[分位数](#quantiles)功能。
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
 **语法**
 
@@ -1053,13 +1055,13 @@ quantileDeterministic(level)(expr, determinator)
 
 **参数**
 
--   `level` — 分位数层次。可选参数。 从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
--   `expr` — 求职表达式，类型为：数值[数据类型](../../sql-reference/data-types/index.md#data_types),[日期](../../sql-reference/data-types/date.md)数据类型或[时间](../../sql-reference/data-types/datetime.md)数据类型。
--   `determinator` — 一个数字，其hash被用来代替在水塘抽样中随机生成的数字，这样可以保证取样的确定性。你可以使用用户ID或者事件ID等任何正数，但是如果相同的 `determinator` 出现多次，那结果很可能不正确。
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [数据类型](../../sql-reference/data-types/index.md#data_types), [日期](../../sql-reference/data-types/date.md) 或 [日期时间](../../sql-reference/data-types/datetime.md).
+-   `determinator` — Number whose hash is used instead of a random number generator in the reservoir sampling algorithm to make the result of sampling deterministic. As a determinator you can use any deterministic positive number, for example, a user id or an event id. If the same determinator value occures too often, the function works incorrectly.
 
 **返回值**
 
--   指定层次的近似分位数。
+-   指定电平的近似分位数。
 
 类型:
 
@@ -1101,11 +1103,11 @@ SELECT quantileDeterministic(val, 1) FROM t
 
 ## quantileExact {#quantileexact}
 
-准确计算数字序列的[分位数](https://en.wikipedia.org/wiki/Quantile)。
+正是计算 [分位数](https://en.wikipedia.org/wiki/Quantile) 的数字数据序列。
 
-为了准确计算，所有输入的数据被合并为一个数组，并且部分的排序。因此该函数需要 `O(n)` 的内存，n为输入数据的个数。但是对于少量数据来说，该函数还是非常有效的。
+To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` 内存，其中 `n` 是传递的多个值。 然而，对于少量的值，该函数是非常有效的。
 
-当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用[分位数](#quantiles)功能。
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
 **语法**
 
@@ -1117,12 +1119,12 @@ quantileExact(level)(expr)
 
 **参数**
 
--   `level` — 分位数层次。可选参数。 从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
--   `expr` — 求职表达式，类型为：数值[数据类型](../../sql-reference/data-types/index.md#data_types),[日期](../../sql-reference/data-types/date.md)数据类型或[时间](../../sql-reference/data-types/datetime.md)数据类型。
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [数据类型](../../sql-reference/data-types/index.md#data_types), [日期](../../sql-reference/data-types/date.md) 或 [日期时间](../../sql-reference/data-types/datetime.md).
 
 **返回值**
 
--   指定层次的分位数。
+-   指定电平的分位数。
 
 类型:
 
@@ -1151,13 +1153,13 @@ SELECT quantileExact(number) FROM numbers(10)
 -   [中位数](#median)
 -   [分位数](#quantiles)
 
-## quantileExactWeighted {#quantileexactweighted}
+## 分位数加权 {#quantileexactweighted}
 
-考虑到每个元素的权重，然后准确计算数值序列的[分位数](https://en.wikipedia.org/wiki/Quantile)。
+正是计算 [分位数](https://en.wikipedia.org/wiki/Quantile) 数值数据序列，考虑到每个元素的权重。
 
-为了准确计算，所有输入的数据被合并为一个数组，并且部分的排序。每个输入值需要根据 `weight` 计算求和。该算法使用哈希表。正因为如此，在数据重复较多的时候使用的内存是少于[quantileExact](#quantileexact)的。 您可以使用此函数代替 `quantileExact` 并指定重量1。
+To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Each value is counted with its weight, as if it is present `weight` times. A hash table is used in the algorithm. Because of this, if the passed values ​​are frequently repeated, the function consumes less RAM than [quantileExact](#quantileexact). 您可以使用此功能，而不是 `quantileExact` 并指定重量1。
 
-当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用[分位数](#quantiles)功能。
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
 **语法**
 
@@ -1169,13 +1171,13 @@ quantileExactWeighted(level)(expr, weight)
 
 **参数**
 
--   `level` — 分位数层次。可选参数。 从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
--   `expr` — 求职表达式，类型为：数值[数据类型](../../sql-reference/data-types/index.md#data_types),[日期](../../sql-reference/data-types/date.md)数据类型或[时间](../../sql-reference/data-types/datetime.md)数据类型。
--   `weight` — 权重序列。 权重是一个数据出现的数值。
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [数据类型](../../sql-reference/data-types/index.md#data_types), [日期](../../sql-reference/data-types/date.md) 或 [日期时间](../../sql-reference/data-types/datetime.md).
+-   `weight` — Column with weights of sequence members. Weight is a number of value occurrences.
 
 **返回值**
 
--   指定层次的分位数。
+-   指定电平的分位数。
 
 类型:
 
@@ -1215,13 +1217,13 @@ SELECT quantileExactWeighted(n, val) FROM t
 -   [中位数](#median)
 -   [分位数](#quantiles)
 
-## quantileTiming {#quantiletiming}
+## 分位定时 {#quantiletiming}
 
-使用确定的精度计算数字数据序列的[分位数](https://en.wikipedia.org/wiki/Quantile)。
+随着确定的精度计算 [分位数](https://en.wikipedia.org/wiki/Quantile) 的数字数据序列。
 
 结果是确定性的（它不依赖于查询处理顺序）。 该函数针对描述加载网页时间或后端响应时间等分布的序列进行了优化。
 
-当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用[分位数](#quantiles)功能。
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
 **语法**
 
@@ -1233,12 +1235,12 @@ quantileTiming(level)(expr)
 
 **参数**
 
--   `level` — 分位数层次。可选参数。 从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
 
--   `expr` — [表达式](../syntax.md#syntax-expressions)，返回 [浮动\*](../../sql-reference/data-types/float.md)类型数据。
+-   `expr` — [表达式](../syntax.md#syntax-expressions) 在一个列值返回 [浮动\*](../../sql-reference/data-types/float.md)-键入号码。
 
-        - 如果输入负值，那结果是不可预期的。
-        - 如果输入值大于30000（页面加载时间大于30s），那我们假设为30000。
+        - If negative values are passed to the function, the behavior is undefined.
+        - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
 **精度**
 
@@ -1250,16 +1252,16 @@ quantileTiming(level)(expr)
 否则，计算结果将四舍五入到16毫秒的最接近倍数。
 
 !!! note "注"
-    对于计算页面加载时间分位数，此函数比 [分位数](#quantile)更有效和准确。
+    对于计算页面加载时间分位数，此函数比 [分位数](#quantile).
 
 **返回值**
 
--   指定层次的分位数。
+-   指定电平的分位数。
 
 类型: `Float32`.
 
 !!! note "注"
-    如果没有值传递给函数（当使用 `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 看 [ORDER BY clause](../statements/select/order-by.md#select-order-by) 对于 `NaN` 值排序注意事项。
+    如果没有值传递给函数（当使用 `quantileTimingIf`), [阿南](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 看 [按条款订购](../statements/select/order-by.md#select-order-by) 对于排序注意事项 `NaN` 值。
 
 **示例**
 
@@ -1298,13 +1300,13 @@ SELECT quantileTiming(response_time) FROM t
 -   [中位数](#median)
 -   [分位数](#quantiles)
 
-## quantileTimingWeighted {#quantiletimingweighted}
+## 分位时间加权 {#quantiletimingweighted}
 
-根据每个序列成员的权重，使用确定的精度计算数字序列的[分位数](https://en.wikipedia.org/wiki/Quantile)。
+随着确定的精度计算 [分位数](https://en.wikipedia.org/wiki/Quantile) 根据每个序列成员的权重对数字数据序列进行处理。
 
 结果是确定性的（它不依赖于查询处理顺序）。 该函数针对描述加载网页时间或后端响应时间等分布的序列进行了优化。
 
-当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用[分位数](#quantiles)功能。
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
 **语法**
 
@@ -1316,14 +1318,14 @@ quantileTimingWeighted(level)(expr, weight)
 
 **参数**
 
--   `level` — 分位数层次。可选参数。 从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
 
--   `expr` — [表达式](../syntax.md#syntax-expressions)，返回 [浮动\*](../../sql-reference/data-types/float.md)类型数据。
+-   `expr` — [表达式](../syntax.md#syntax-expressions) 在一个列值返回 [浮动\*](../../sql-reference/data-types/float.md)-键入号码。
 
-        - 如果输入负值，那结果是不可预期的。
-        - 如果输入值大于30000（页面加载时间大于30s），那我们假设为30000。
+        - If negative values are passed to the function, the behavior is undefined.
+        - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
--   `weight` — 权重序列。 权重是一个数据出现的数值。
+-   `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
 
 **精度**
 
@@ -1335,16 +1337,16 @@ quantileTimingWeighted(level)(expr, weight)
 否则，计算结果将四舍五入到16毫秒的最接近倍数。
 
 !!! note "注"
-    对于计算页面加载时间分位数，此函数比 [分位数](#quantile)更高效和准确。
+    对于计算页面加载时间分位数，此函数比 [分位数](#quantile).
 
 **返回值**
 
--   指定层次的分位数。
+-   指定电平的分位数。
 
 类型: `Float32`.
 
 !!! note "注"
-    如果没有值传递给函数（当使用 `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 被返回。 这样做的目的是将这些案例与导致零的案例区分开来。看 [ORDER BY clause](../statements/select/order-by.md#select-order-by) 对于 `NaN` 值排序注意事项。
+    如果没有值传递给函数（当使用 `quantileTimingIf`), [阿南](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 看 [按条款订购](../statements/select/order-by.md#select-order-by) 对于排序注意事项 `NaN` 值。
 
 **示例**
 
@@ -1382,13 +1384,13 @@ SELECT quantileTimingWeighted(response_time, weight) FROM t
 
 ## quantileTDigest {#quantiletdigest}
 
-使用[t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) 算法计算近似[分位数](https://en.wikipedia.org/wiki/Quantile)。
+计算近似值 [分位数](https://en.wikipedia.org/wiki/Quantile) 使用的数字数据序列 [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) 算法。
 
-最大误差为1%。 内存消耗 `log(n)`，这里 `n` 是值的个数。 结果取决于运行查询的顺序，并且是不确定的。
+最大误差为1%。 内存消耗 `log(n)`，哪里 `n` 是多个值。 结果取决于运行查询的顺序，并且是不确定的。
 
-该功能的性能低于性能 [分位数](#quantile) 或 [时间分位](#quantiletiming). 在状态大小与精度的比率方面，这个函数比 `quantile`更优秀。
+该功能的性能低于性能 [分位数](#quantile) 或 [分位定时](#quantiletiming). 在状态大小与精度的比率方面，这个函数比 `quantile`.
 
-当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用[分位数](#quantiles)功能。
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
 **语法**
 
@@ -1400,12 +1402,12 @@ quantileTDigest(level)(expr)
 
 **参数**
 
--   `level` — 分位数层次。可选参数。 从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
--   `expr` — 求职表达式，类型为：数值[数据类型](../../sql-reference/data-types/index.md#data_types),[日期](../../sql-reference/data-types/date.md)数据类型或[时间](../../sql-reference/data-types/datetime.md)数据类型。
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [数据类型](../../sql-reference/data-types/index.md#data_types), [日期](../../sql-reference/data-types/date.md) 或 [日期时间](../../sql-reference/data-types/datetime.md).
 
 **回值**
 
--   指定层次的分位数。
+-   指定电平的近似分位数。
 
 类型:
 
@@ -1436,13 +1438,13 @@ SELECT quantileTDigest(number) FROM numbers(10)
 
 ## quantileTDigestWeighted {#quantiletdigestweighted}
 
-使用[t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) 算法计算近似[分位数](https://en.wikipedia.org/wiki/Quantile)。 该函数考虑了每个序列成员的权重。最大误差为1%。 内存消耗 `log(n)`，这里 `n` 是值的个数。
+计算近似值 [分位数](https://en.wikipedia.org/wiki/Quantile) 使用的数字数据序列 [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) 算法。 该函数考虑了每个序列成员的权重。 最大误差为1%。 内存消耗 `log(n)`，哪里 `n` 是多个值。
 
-该功能的性能低于性能 [分位数](#quantile) 或 [时间分位](#quantiletiming). 在状态大小与精度的比率方面，这个函数比 `quantile`更优秀。
+该功能的性能低于性能 [分位数](#quantile) 或 [分位定时](#quantiletiming). 在状态大小与精度的比率方面，这个函数比 `quantile`.
 
 结果取决于运行查询的顺序，并且是不确定的。
 
-当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用[分位数](#quantiles)功能
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
 **语法**
 
@@ -1454,13 +1456,13 @@ quantileTDigest(level)(expr)
 
 **参数**
 
--   `level` — 分位数层次。可选参数。 从0到1的一个float类型的常量。 我们推荐 `level` 值的范围为 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
--   `expr` — 求职表达式，类型为：数值[数据类型](../../sql-reference/data-types/index.md#data_types),[日期](../../sql-reference/data-types/date.md)数据类型或[时间](../../sql-reference/data-types/datetime.md)数据类型。
--   `weight` — 权重序列。 权重是一个数据出现的数值。
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [数据类型](../../sql-reference/data-types/index.md#data_types), [日期](../../sql-reference/data-types/date.md) 或 [日期时间](../../sql-reference/data-types/datetime.md).
+-   `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
 
 **返回值**
 
--   指定层次的分位数。
+-   指定电平的近似分位数。
 
 类型:
 
@@ -1489,20 +1491,20 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 -   [中位数](#median)
 -   [分位数](#quantiles)
 
-## median {#median}
+## 中位数 {#median}
 
-`median*` 函数是 `quantile*` 函数的别名。 它们计算数字数据样本的中位数。
+该 `median*` 函数是相应的别名 `quantile*` 功能。 它们计算数字数据样本的中位数。
 
-函数:
+功能:
 
--   `median` — [quantile](#quantile)别名。
--   `medianDeterministic` — [quantileDeterministic](#quantiledeterministic)别名。
--   `medianExact` — [quantileExact](#quantileexact)别名。
--   `medianExactWeighted` — [quantileExactWeighted](#quantileexactweighted)别名。
--   `medianTiming` — [quantileTiming](#quantiletiming)别名。
--   `medianTimingWeighted` — [quantileTimingWeighted](#quantiletimingweighted)别名。
--   `medianTDigest` — [quantileTDigest](#quantiletdigest)别名。
--   `medianTDigestWeighted` — [quantileTDigestWeighted](#quantiletdigestweighted)别名。
+-   `median` — Alias for [分位数](#quantile).
+-   `medianDeterministic` — Alias for [量化确定](#quantiledeterministic).
+-   `medianExact` — Alias for [quantileExact](#quantileexact).
+-   `medianExactWeighted` — Alias for [分位数加权](#quantileexactweighted).
+-   `medianTiming` — Alias for [分位定时](#quantiletiming).
+-   `medianTimingWeighted` — Alias for [分位时间加权](#quantiletimingweighted).
+-   `medianTDigest` — Alias for [quantileTDigest](#quantiletdigest).
+-   `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](#quantiletdigestweighted).
 
 **示例**
 
@@ -1533,11 +1535,11 @@ SELECT medianDeterministic(val, 1) FROM t
 
 ## quantiles(level1, level2, …)(x) {#quantiles}
 
-所有分位数函数也有相应的函数: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`。这些函数一次计算所列层次的所有分位数，并返回结果值的数组。
+所有分位数函数也具有相应的分位数函数: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`. 这些函数在一遍中计算所列电平的所有分位数，并返回结果值的数组。
 
 ## varSamp(x) {#varsampx}
 
-计算 `Σ((x - x̅)^2) / (n - 1)`，这里 `n` 是样本大小， `x̅`是`x`的平均值。
+计算金额 `Σ((x - x̅)^2) / (n - 1)`，哪里 `n` 是样本大小和 `x̅`是平均值 `x`.
 
 它表示随机变量的方差的无偏估计，如果传递的值形成其样本。
 
@@ -1548,23 +1550,23 @@ SELECT medianDeterministic(val, 1) FROM t
 
 ## varPop(x) {#varpopx}
 
-计算 `Σ((x - x̅)^2) / n`，这里 `n` 是样本大小， `x̅`是`x`的平均值。
+计算金额 `Σ((x - x̅)^2) / n`，哪里 `n` 是样本大小和 `x̅`是平均值 `x`.
 
-换句话说，计算一组数据的离差。 返回 `Float64`。
+换句话说，分散为一组值。 返回 `Float64`.
 
 !!! note "注"
     该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `varPopStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
 
 ## stddevSamp(x) {#stddevsampx}
 
-结果等于平方根 `varSamp(x)`。
+结果等于平方根 `varSamp(x)`.
 
 !!! note "注"
     该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `stddevSampStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
 
 ## stddevPop(x) {#stddevpopx}
 
-结果等于平方根 `varPop(x)`。
+结果等于平方根 `varPop(x)`.
 
 !!! note "注"
     该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `stddevPopStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
@@ -1573,15 +1575,15 @@ SELECT medianDeterministic(val, 1) FROM t
 
 返回指定列中近似最常见值的数组。 生成的数组按值的近似频率降序排序（而不是值本身）。
 
-实现了[过滤节省空间](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf)算法， 使用基于reduce-and-combine的算法，借鉴[并行节省空间](https://arxiv.org/pdf/1401.0702.pdf).
+实现了 [过滤节省空间](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) 基于reduce-and-combine算法的TopK分析算法 [并行节省空间](https://arxiv.org/pdf/1401.0702.pdf).
 
 ``` sql
 topK(N)(column)
 ```
 
-此函数不提供保证的结果。 在某些情况下，可能会发生错误，并且可能会返回不是最高频的值。
+此函数不提供保证的结果。 在某些情况下，可能会发生错误，并且可能会返回不是最常见值的常见值。
 
-我们建议使用 `N < 10` 值，`N` 值越大，性能越低。最大值 `N = 65536`。
+我们建议使用 `N < 10` 值;性能降低了大 `N` 值。 的最大值 `N = 65536`.
 
 **参数**
 
@@ -1591,11 +1593,11 @@ topK(N)(column)
 
 **参数**
 
--   ' x ' – 计算的频率值。
+-   ' x ' – The value to calculate frequency.
 
 **示例**
 
-就拿 [OnTime](../../getting-started/example-datasets/ontime.md) 数据集来说，选择`AirlineID` 列中出现最频繁的三个。
+就拿 [时间](../../getting-started/example-datasets/ontime.md) 数据集，并选择在三个最频繁出现的值 `AirlineID` 列。
 
 ``` sql
 SELECT topK(3)(AirlineID) AS res
@@ -1610,7 +1612,7 @@ FROM ontime
 
 ## topKWeighted {#topkweighted}
 
-类似于 `topK` 但需要一个整数类型的附加参数 - `weight`. 每个输入都被记入 `weight` 次频率计算。
+类似于 `topK` 但需要一个整数类型的附加参数 - `weight`. 每个价值都被记入 `weight` 次频率计算。
 
 **语法**
 
@@ -1620,12 +1622,12 @@ topKWeighted(N)(x, weight)
 
 **参数**
 
--   `N` — 返回值个数。
+-   `N` — The number of elements to return.
 
 **参数**
 
--   `x` – 输入值。
--   `weight` — 权重。 [UInt8](../../sql-reference/data-types/int-uint.md)类型。
+-   `x` – The value.
+-   `weight` — The weight. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **返回值**
 
@@ -1649,36 +1651,36 @@ SELECT topKWeighted(10)(number, number) FROM numbers(1000)
 
 ## covarSamp(x,y) {#covarsampx-y}
 
-计算 `Σ((x - x̅)(y - y̅)) / (n - 1)`。
+计算的值 `Σ((x - x̅)(y - y̅)) / (n - 1)`.
 
-返回Float64。 当 `n <= 1`, returns +∞。
+返回Float64。 当 `n <= 1`, returns +∞.
 
 !!! note "注"
     该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `covarSampStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
 
 ## covarPop(x,y) {#covarpopx-y}
 
-计算 `Σ((x - x̅)(y - y̅)) / n`。
+计算的值 `Σ((x - x̅)(y - y̅)) / n`.
 
 !!! note "注"
     该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `covarPopStable` 功能。 它的工作速度较慢，但提供了较低的计算错误。
 
 ## corr(x,y) {#corrx-y}
 
-计算Pearson相关系数: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`。
+计算Pearson相关系数: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
 !!! note "注"
     该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `corrStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
 
 ## categoricalInformationValue {#categoricalinformationvalue}
 
-对于每个类别计算 `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)))` 。
+计算的值 `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)))` 对于每个类别。
 
 ``` sql
 categoricalInformationValue(category1, category2, ..., tag)
 ```
 
-结果指示离散（分类）要素如何使用 `[category1, category2, ...]` 有助于使用学习模型预测`tag`的值。
+结果指示离散（分类）要素如何使用 `[category1, category2, ...]` 有助于预测的价值的学习模型 `tag`.
 
 ## simpleLinearRegression {#simplelinearregression}
 
@@ -1690,12 +1692,12 @@ simpleLinearRegression(x, y)
 
 参数:
 
--   `x` — x轴。
--   `y` — y轴。
+-   `x` — Column with dependent variable values.
+-   `y` — Column with explanatory variable values.
 
 返回值:
 
-符合`y = a*x + b`的常量 `(a, b)` 。
+常量 `(a, b)` 结果行的 `y = a*x + b`.
 
 **例**
 
@@ -1719,9 +1721,9 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
+## 随机指标线上回归 {#agg_functions-stochasticlinearregression}
 
-该函数实现随机线性回归。 它支持自定义参数的学习率、L2正则化系数、微批，并且具有少量更新权重的方法（[Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) （默认）， [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent)， [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum)， [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)）。
+该函数实现随机线性回归。 它支持自定义参数的学习率，L2正则化系数，迷你批量大小，并具有更新权重的方法很少 ([亚当](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) （默认使用), [简单SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [动量](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
 ### 参数 {#agg_functions-stochasticlinearregression-parameters}
 
@@ -1736,14 +1738,14 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 3.  `mini-batch size` 设置元素的数量，这些元素将被计算和求和以执行梯度下降的一个步骤。 纯随机下降使用一个元素，但是具有小批量（约10个元素）使梯度步骤更稳定。 默认值为 `15`.
 4.  `method for updating weights` 他们是: `Adam` （默认情况下), `SGD`, `Momentum`, `Nesterov`. `Momentum` 和 `Nesterov` 需要更多的计算和内存，但是它们恰好在收敛速度和随机梯度方法的稳定性方面是有用的。
 
-### 用法 {#agg_functions-stochasticlinearregression-usage}
+### 用途 {#agg_functions-stochasticlinearregression-usage}
 
 `stochasticLinearRegression` 用于两个步骤：拟合模型和预测新数据。 为了拟合模型并保存其状态以供以后使用，我们使用 `-State` combinator，它基本上保存了状态（模型权重等）。
 为了预测我们使用函数 [evalMLMethod](../functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod)，这需要一个状态作为参数以及特征来预测。
 
 <a name="stochasticlinearregression-usage-fitting"></a>
 
-**1.** 安装
+**1.** 适合
 
 可以使用这种查询。
 
@@ -1805,28 +1807,28 @@ evalMLMethod(model, param1, param2) FROM test_data
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-**1.** 安装
+1.  适合
 
 <!-- -->
 
-    参考stochasticLinearRegression相关文档
+    See the `Fitting` section in the [stochasticLinearRegression](#stochasticlinearregression-usage-fitting) description.
 
-    预测标签的取值范围为[-1, 1]
+    Predicted labels have to be in \[-1, 1\].
 
-**2.** 预测
+1.  预测
 
 <!-- -->
 
-    使用已经保存的state我们可以预测标签为 `1` 的对象的概率。
+    Using saved state we can predict probability of object having label `1`.
 
     ``` sql
     WITH (SELECT state FROM your_model) AS model SELECT
     evalMLMethod(model, param1, param2) FROM test_data
     ```
 
-    查询结果返回一个列的概率。注意 `evalMLMethod` 的第一个参数是 `AggregateFunctionState` 对象，接下来的参数是列的特性。
+    The query will return a column of probabilities. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
 
-    我们也可以设置概率的范围， 这样需要给元素指定不同的标签。
+    We can also set a bound of probability, which assigns elements to different labels.
 
     ``` sql
     SELECT ans < 1.1 AND ans > 0.5 FROM
@@ -1834,14 +1836,14 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
     evalMLMethod(model, param1, param2) AS ans FROM test_data)
     ```
 
-    结果是标签。
+    Then the result will be labels.
 
-    `test_data` 是一个像 `train_data` 一样的表，但是不包含目标值。
+    `test_data` is a table like `train_data` but may not contain target value.
 
 **另请参阅**
 
 -   [随机指标线上回归](#agg_functions-stochasticlinearregression)
--   [线性回归和逻辑回归之间的差异](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+-   [线性回归和逻辑回归之间的差异。](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
 ## groupBitmapAnd {#groupbitmapand}
 

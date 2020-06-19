@@ -693,12 +693,11 @@ private:
 
     static ColumnPtr makeNullableColumnIfNot(const ColumnPtr & column)
     {
-        auto materialized = materializeColumnIfConst(column);
+        if (isColumnNullable(*column))
+            return column;
 
-        if (isColumnNullable(*materialized))
-            return materialized;
-
-        return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), 0));
+        return ColumnNullable::create(
+            materializeColumnIfConst(column), ColumnUInt8::create(column->size(), 0));
     }
 
     static ColumnPtr getNestedColumn(const ColumnPtr & column)

@@ -1,6 +1,5 @@
 #include <Parsers/ASTCreateUserQuery.h>
-#include <Parsers/ASTUserNameWithHost.h>
-#include <Parsers/ASTRolesOrUsersSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Common/quoteString.h>
 
@@ -66,8 +65,7 @@ namespace
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH " << authentication_type_name
                       << (settings.hilite ? IAST::hilite_none : "");
         if (password)
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " BY " << (settings.hilite ? IAST::hilite_none : "")
-                << quoteString(*password);
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " BY " << quoteString(*password);
     }
 
 
@@ -168,7 +166,7 @@ namespace
     }
 
 
-    void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, const IAST::FormatSettings & settings)
+    void formatDefaultRoles(const ASTExtendedRoleSet & default_roles, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT ROLE " << (settings.hilite ? IAST::hilite_none : "");
         default_roles.format(settings);
@@ -214,8 +212,7 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     else if (or_replace)
         format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
 
-    format.ostr << " ";
-    names->format(format);
+    format.ostr << " " << backQuoteIfNeed(name);
 
     formatOnCluster(format);
 

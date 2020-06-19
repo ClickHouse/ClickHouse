@@ -25,20 +25,19 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 template <typename T>
-struct AggregateFunctionMapData
+struct AggregateFunctionSumMapData
 {
     // Map needs to be ordered to maintain function properties
     std::map<T, Array> merged_maps;
 };
 
 /** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of of at least 2 arrays -
-  * ordered keys and variable number of argument values aggregated by corresponding keys.
+  * ordered keys and variable number of argument values summed up by corresponding keys.
   *
-  * sumMap function is the most useful when using SummingMergeTree to sum Nested columns, which name ends in "Map".
+  * This function is the most useful when using SummingMergeTree to sum Nested columns, which name ends in "Map".
   *
   * Example: sumMap(k, v...) of:
   *  k           v
@@ -50,27 +49,24 @@ struct AggregateFunctionMapData
   *  [8,9,10]    [20,20,20]
   * will return:
   *  ([1,2,3,4,5,6,7,8,9,10],[10,10,45,20,35,20,15,30,20,20])
-  *
-  * minMap and maxMap share the same idea, but calculate min and max correspondingly.
   */
 
-template <typename T, typename Derived, typename Visitor, bool overflow, bool tuple_argument>
-class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
-    AggregateFunctionMapData<NearestFieldType<T>>, Derived>
+template <typename T, typename Derived, bool overflow, bool tuple_argument>
+class AggregateFunctionSumMapBase : public IAggregateFunctionDataHelper<
+    AggregateFunctionSumMapData<NearestFieldType<T>>, Derived>
 {
 private:
     DataTypePtr keys_type;
     DataTypes values_types;
 
 public:
-    using Base = IAggregateFunctionDataHelper<
-        AggregateFunctionMapData<NearestFieldType<T>>, Derived>;
+    AggregateFunctionSumMapBase(
+        const DataTypePtr & keys_type_, const DataTypes & values_types_,
+        const DataTypes & argument_types_, const Array & params_)
+        : IAggregateFunctionDataHelper<AggregateFunctionSumMapData<NearestFieldType<T>>, Derived>(argument_types_, params_)
+        , keys_type(keys_type_), values_types(values_types_) {}
 
-    AggregateFunctionMapBase(const DataTypePtr & keys_type_,
-            const DataTypes & values_types_, const DataTypes & argument_types_)
-        : Base(argument_types_, {} /* parameters */), keys_type(keys_type_),
-          values_types(values_types_)
-    {}
+    String getName() const override { return "sumMap"; }
 
     DataTypePtr getReturnType() const override
     {
@@ -92,7 +88,7 @@ public:
                 // No overflow, meaning we promote the types if necessary.
                 if (!value_type->canBePromoted())
                 {
-                    throw Exception{"Values for " + getName() + " are expected to be Numeric, Float or Decimal.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    throw Exception{"Values to be summed are expected to be Numeric, Float or Decimal.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
                 }
 
                 result_type = value_type->promoteNumericType();
@@ -165,7 +161,7 @@ public:
 
                 if (it != merged_maps.end())
                 {
-                    applyVisitor(Visitor(value), it->second[col]);
+                    applyVisitor(FieldVisitorSum(value), it->second[col]);
                 }
                 else
                 {
@@ -202,7 +198,7 @@ public:
             if (it != merged_maps.end())
             {
                 for (size_t col = 0; col < values_types.size(); ++col)
-                    applyVisitor(Visitor(elem.second[col]), it->second[col]);
+                    applyVisitor(FieldVisitorSum(elem.second[col]), it->second[col]);
             }
             else
                 merged_maps[elem.first] = elem.second;
@@ -304,27 +300,20 @@ public:
     }
 
     bool keepKey(const T & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
-    String getName() const override { return static_cast<const Derived &>(*this).getName(); }
 };
 
 template <typename T, bool overflow, bool tuple_argument>
 class AggregateFunctionSumMap final :
-    public AggregateFunctionMapBase<T, AggregateFunctionSumMap<T, overflow, tuple_argument>, FieldVisitorSum, overflow, tuple_argument>
+    public AggregateFunctionSumMapBase<T, AggregateFunctionSumMap<T, overflow, tuple_argument>, overflow, tuple_argument>
 {
 private:
     using Self = AggregateFunctionSumMap<T, overflow, tuple_argument>;
-    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument>;
+    using Base = AggregateFunctionSumMapBase<T, Self, overflow, tuple_argument>;
 
 public:
-    AggregateFunctionSumMap(const DataTypePtr & keys_type_,
-            DataTypes & values_types_, const DataTypes & argument_types_,
-            const Array & params_)
-        : Base{keys_type_, values_types_, argument_types_}
-    {
-        // The constructor accepts parameters to have a uniform interface with
-        // sumMapFiltered, but this function doesn't have any parameters.
-        assertNoParameters(getName(), params_);
-    }
+    AggregateFunctionSumMap(const DataTypePtr & keys_type_, DataTypes & values_types_, const DataTypes & argument_types_)
+        : Base{keys_type_, values_types_, argument_types_, {}}
+    {}
 
     String getName() const override { return "sumMap"; }
 
@@ -333,35 +322,23 @@ public:
 
 template <typename T, bool overflow, bool tuple_argument>
 class AggregateFunctionSumMapFiltered final :
-    public AggregateFunctionMapBase<T,
+    public AggregateFunctionSumMapBase<T,
         AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>,
-        FieldVisitorSum,
         overflow,
         tuple_argument>
 {
 private:
     using Self = AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>;
-    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument>;
+    using Base = AggregateFunctionSumMapBase<T, Self, overflow, tuple_argument>;
 
     std::unordered_set<T> keys_to_keep;
 
 public:
-    AggregateFunctionSumMapFiltered(const DataTypePtr & keys_type_,
-            const DataTypes & values_types_, const DataTypes & argument_types_,
-            const Array & params_)
-        : Base{keys_type_, values_types_, argument_types_}
+    AggregateFunctionSumMapFiltered(
+        const DataTypePtr & keys_type_, const DataTypes & values_types_, const Array & keys_to_keep_,
+        const DataTypes & argument_types_, const Array & params_)
+        : Base{keys_type_, values_types_, argument_types_, params_}
     {
-        if (params_.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Aggregate function '{}' requires exactly one parameter "
-                "of Array type", getName());
-
-        Array keys_to_keep_;
-        if (!params_.front().tryGet<Array>(keys_to_keep_))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Aggregate function {} requires an Array as a parameter",
-                getName());
-
         keys_to_keep.reserve(keys_to_keep_.size());
         for (const Field & f : keys_to_keep_)
         {
@@ -369,58 +346,9 @@ public:
         }
     }
 
-    String getName() const override
-    { return overflow ? "sumMapFilteredWithOverflow" : "sumMapFiltered"; }
+    String getName() const override { return "sumMapFiltered"; }
 
     bool keepKey(const T & key) const { return keys_to_keep.count(key); }
-};
-
-template <typename T, bool tuple_argument>
-class AggregateFunctionMinMap final :
-    public AggregateFunctionMapBase<T, AggregateFunctionMinMap<T, tuple_argument>, FieldVisitorMin, true, tuple_argument>
-{
-private:
-    using Self = AggregateFunctionMinMap<T, tuple_argument>;
-    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorMin, true, tuple_argument>;
-
-public:
-    AggregateFunctionMinMap(const DataTypePtr & keys_type_,
-            DataTypes & values_types_, const DataTypes & argument_types_,
-            const Array & params_)
-        : Base{keys_type_, values_types_, argument_types_}
-    {
-        // The constructor accepts parameters to have a uniform interface with
-        // sumMapFiltered, but this function doesn't have any parameters.
-        assertNoParameters(getName(), params_);
-    }
-
-    String getName() const override { return "minMap"; }
-
-    bool keepKey(const T &) const { return true; }
-};
-
-template <typename T, bool tuple_argument>
-class AggregateFunctionMaxMap final :
-    public AggregateFunctionMapBase<T, AggregateFunctionMaxMap<T, tuple_argument>, FieldVisitorMax, true, tuple_argument>
-{
-private:
-    using Self = AggregateFunctionMaxMap<T, tuple_argument>;
-    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorMax, true, tuple_argument>;
-
-public:
-    AggregateFunctionMaxMap(const DataTypePtr & keys_type_,
-            DataTypes & values_types_, const DataTypes & argument_types_,
-            const Array & params_)
-        : Base{keys_type_, values_types_, argument_types_}
-    {
-        // The constructor accepts parameters to have a uniform interface with
-        // sumMapFiltered, but this function doesn't have any parameters.
-        assertNoParameters(getName(), params_);
-    }
-
-    String getName() const override { return "maxMap"; }
-
-    bool keepKey(const T &) const { return true; }
 };
 
 }

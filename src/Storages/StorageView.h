@@ -29,13 +29,12 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name) const
-    {
-        replaceWithSubquery(select_query, getSelectQuery().inner_query->clone(), view_name);
-    }
+    ASTPtr getRuntimeViewQuery(const ASTSelectQuery & outer_query, const Context & context);
 
-    static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name);
-    static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
+    ASTPtr getRuntimeViewQuery(ASTSelectQuery * outer_query, const Context & context, bool normalize);
+
+private:
+    ASTPtr inner_query;
 
 protected:
     StorageView(

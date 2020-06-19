@@ -107,9 +107,8 @@ void FillingTransform::transform(Chunk & chunk)
     {
         for (size_t pos : positions)
         {
-            auto old_column = old_columns[pos]->convertToFullColumnIfConst();
-            new_columns.push_back(old_column);
-            new_mutable_columns.push_back(old_column->cloneEmpty()->assumeMutable());
+            new_columns.push_back(old_columns[pos]);
+            new_mutable_columns.push_back(old_columns[pos]->cloneEmpty()->assumeMutable());
         }
     };
 

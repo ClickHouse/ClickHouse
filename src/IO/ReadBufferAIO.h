@@ -100,6 +100,8 @@ private:
     bool is_eof = false;
     /// At least one read request was sent.
     bool is_started = false;
+    /// Is the operation asynchronous?
+    bool is_aio = false;
     /// Did the asynchronous operation fail?
     bool aio_failed = false;
 

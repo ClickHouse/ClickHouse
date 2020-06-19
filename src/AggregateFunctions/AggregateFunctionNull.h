@@ -28,10 +28,7 @@ namespace ErrorCodes
 /// If all rows had NULL, the behaviour is determined by "result_is_nullable" template parameter.
 ///  true - return NULL; false - return value from empty aggregation state of nested function.
 
-/// When serialize_flag is set to true, the flag about presense of values is serialized
-///  regardless to the "result_is_nullable" even if it's unneeded - for protocol compatibility.
-
-template <bool result_is_nullable, bool serialize_flag, typename Derived>
+template <bool result_is_nullable, typename Derived>
 class AggregateFunctionNullBase : public IAggregateFunctionHelper<Derived>
 {
 protected:
@@ -132,7 +129,7 @@ public:
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         bool flag = getFlag(place);
-        if constexpr (serialize_flag)
+        if constexpr (result_is_nullable)
             writeBinary(flag, buf);
         if (flag)
             nested_function->serialize(nestedPlace(place), buf);
@@ -141,7 +138,7 @@ public:
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
         bool flag = 1;
-        if constexpr (serialize_flag)
+        if constexpr (result_is_nullable)
             readBinary(flag, buf);
         if (flag)
         {
@@ -186,15 +183,12 @@ public:
 /** There are two cases: for single argument and variadic.
   * Code for single argument is much more efficient.
   */
-template <bool result_is_nullable, bool serialize_flag>
-class AggregateFunctionNullUnary final
-    : public AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-        AggregateFunctionNullUnary<result_is_nullable, serialize_flag>>
+template <bool result_is_nullable>
+class AggregateFunctionNullUnary final : public AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullUnary<result_is_nullable>>
 {
 public:
     AggregateFunctionNullUnary(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-            AggregateFunctionNullUnary<result_is_nullable, serialize_flag>>(std::move(nested_function_), arguments, params)
+        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullUnary<result_is_nullable>>(std::move(nested_function_), arguments, params)
     {
     }
 
@@ -224,15 +218,12 @@ public:
 };
 
 
-template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped>
-class AggregateFunctionNullVariadic final
-    : public AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-        AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>
+template <bool result_is_nullable, bool null_is_skipped>
+class AggregateFunctionNullVariadic final : public AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable, null_is_skipped>>
 {
 public:
     AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-            AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>(std::move(nested_function_), arguments, params),
+        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable, null_is_skipped>>(std::move(nested_function_), arguments, params),
         number_of_arguments(arguments.size())
     {
         if (number_of_arguments == 1)
@@ -270,6 +261,11 @@ public:
 
         this->setFlag(place);
         this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
+    }
+
+    bool allocatesMemoryInArena() const override
+    {
+        return this->nested_function->allocatesMemoryInArena();
     }
 
 private:

@@ -144,8 +144,7 @@ SRCS(
     exp10.cpp
     exp2.cpp
     exp.cpp
-    extractAllGroupsHorizontal.cpp
-    extractAllGroupsVertical.cpp
+    extractAllGroups.cpp
     extract.cpp
     extractGroups.cpp
     extractTimeZoneFromFunctionArguments.cpp

@@ -109,8 +109,7 @@ public:
             uri.setPath(IDENTIFIER_QUOTE_HANDLER);
             uri.addQueryParameter("connection_string", getConnectionString());
 
-            ReadWriteBufferFromHTTP buf(
-                uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, nullptr);
             std::string character;
             readStringBinary(character, buf);
             if (character.length() > 1)
@@ -209,8 +208,7 @@ private:
     {
         try
         {
-            ReadWriteBufferFromHTTP buf(
-                ping_url, Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+            ReadWriteBufferFromHTTP buf(ping_url, Poco::Net::HTTPRequest::HTTP_GET, nullptr);
             return checkString(XDBCBridgeHelper::PING_OK_ANSWER, buf);
         }
         catch (...)
@@ -274,11 +272,11 @@ struct ODBCBridgeMixin
         return AccessType::ODBC;
     }
 
-    static std::unique_ptr<ShellCommand> startBridge(
-        const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
+    static std::unique_ptr<ShellCommand> startBridge(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
     {
         /// Path to executable folder
         Poco::Path path{config.getString("application.dir", "/usr/bin")};
+
 
         std::vector<std::string> cmd_args;
         path.setFileName("clickhouse-odbc-bridge");

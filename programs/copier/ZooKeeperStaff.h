@@ -178,7 +178,7 @@ public:
                 [stale = stale] (const Coordination::WatchResponse & rsp)
                 {
                     auto logger = &Poco::Logger::get("ClusterCopier");
-                    if (rsp.error == Coordination::Error::ZOK)
+                    if (rsp.error == Coordination::ZOK)
                     {
                         switch (rsp.type)
                         {

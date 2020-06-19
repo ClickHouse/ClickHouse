@@ -139,11 +139,8 @@ String Cluster::Address::toFullString(bool use_compact_format) const
 {
     if (use_compact_format)
     {
-        if (shard_index == 0 || replica_index == 0)
-            // shard_num/replica_num like in system.clusters table
-            throw Exception("shard_num/replica_num cannot be zero", ErrorCodes::LOGICAL_ERROR);
-
-        return "shard" + std::to_string(shard_index) + "_replica" + std::to_string(replica_index);
+        return ((shard_index == 0) ? "" : "shard" + std::to_string(shard_index))
+            + ((replica_index == 0) ? "" : "_replica" + std::to_string(replica_index));
     }
     else
     {
@@ -287,7 +284,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
             const auto & prefix = config_prefix + key;
             const auto weight = config.getInt(prefix + ".weight", default_weight);
 
-            addresses.emplace_back(config, prefix, current_shard_num, 1);
+            addresses.emplace_back(config, prefix);
             const auto & address = addresses.back();
 
             ShardInfo info;

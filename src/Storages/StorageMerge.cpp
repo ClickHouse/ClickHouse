@@ -372,7 +372,7 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & cont
 }
 
 
-void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
+void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
 {
     for (const auto & command : commands)
     {
@@ -407,6 +407,7 @@ Block StorageMerge::getQueryHeader(
             if (query_info.prewhere_info)
             {
                 query_info.prewhere_info->prewhere_actions->execute(header);
+                header = materializeBlock(header);
                 if (query_info.prewhere_info->remove_prewhere_column)
                     header.erase(query_info.prewhere_info->prewhere_column_name);
             }
@@ -414,9 +415,9 @@ Block StorageMerge::getQueryHeader(
         }
         case QueryProcessingStage::WithMergeableState:
         case QueryProcessingStage::Complete:
-            return InterpreterSelectQuery(
+            return materializeBlock(InterpreterSelectQuery(
                 query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
-                SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+                SelectQueryOptions(processed_stage).analyze()).getSampleBlock());
     }
     throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);
 }

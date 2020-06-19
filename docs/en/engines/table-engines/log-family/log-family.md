@@ -9,9 +9,9 @@ These engines were developed for scenarios when you need to quickly write many s
 
 Engines of the family:
 
--   [StripeLog](../../../engines/table-engines/log-family/stripelog.md)
--   [Log](../../../engines/table-engines/log-family/log.md)
--   [TinyLog](../../../engines/table-engines/log-family/tinylog.md)
+-   [StripeLog](stripelog.md)
+-   [Log](log.md)
+-   [TinyLog](tinylog.md)
 
 ## Common Properties {#common-properties}
 

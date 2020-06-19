@@ -48,6 +48,13 @@ protected:
 };
 
 
+class ParserBareWord : public IParserBase
+{
+protected:
+    const char * getName() const override { return "bare word"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 /** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
  *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
   */
@@ -356,7 +363,7 @@ protected:
     bool brackets_can_be_omitted;
 };
 
-/** Table engine, possibly with parameters. See examples from ParserIdentifierWithParameters
+/** Data type or table engine, possibly with parameters. For example, UInt8 or see examples from ParserIdentifierWithParameters
   * Parse result is ASTFunction, with or without arguments.
   */
 class ParserIdentifierWithOptionalParameters : public IParserBase
