@@ -554,6 +554,10 @@ void ColumnNullable::applyNullMap(const ColumnNullable & other)
     applyNullMap(other.getNullMapColumn());
 }
 
+ColumnPtr ColumnNullable::getNestedColumnCopy() const
+{
+    return nested_column->setDefaults(getNullMapData(), false);
+}
 
 void ColumnNullable::checkConsistency() const
 {

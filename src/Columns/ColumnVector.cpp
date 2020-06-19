@@ -409,6 +409,38 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 }
 
 template <typename T>
+ColumnPtr ColumnVector<T>::setDefaults(const IColumn::Filter & filt, bool inverted) const
+{
+    size_t size = data.size();
+    if (size != filt.size())
+        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    auto res = this->create();
+    Container & res_data = res->getData();
+    res_data.resize_fill(size);
+
+    const UInt8 * filt_pos = filt.data();
+    const UInt8 * filt_end = filt_pos + size;
+    const T * src_pos = data.data();
+    T * dst_pos = res_data.data();
+
+    if (inverted)
+    {
+        for (; filt_pos < filt_end; ++filt_pos, ++src_pos, ++dst_pos)
+            if (*filt_pos)
+                *dst_pos = *src_pos;
+    }
+    else
+    {
+        for (; filt_pos < filt_end; ++filt_pos, ++src_pos, ++dst_pos)
+            if (!*filt_pos)
+                *dst_pos = *src_pos;
+    }
+
+    return res;
+}
+
+template <typename T>
 ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
     size_t size = data.size();

@@ -656,30 +656,66 @@ private:
         block.getByPosition(result).column = std::move(result_column);
     }
 
-    bool executeForNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+    bool executeForConstAndNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
         const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
         bool cond_is_null = arg_cond.column->onlyNull();
 
-        if (cond_is_null)
+        bool cond_is_true = false;
+        bool cond_is_false = false;
+        if (const auto * const_arg = checkAndGetColumn<ColumnConst>(*arg_cond.column))
         {
-            block.getByPosition(result).column = std::move(block.getByPosition(arguments[2]).column);
-            return true;
+            ColumnPtr data_column = const_arg->getDataColumnPtr();
+            if (auto const_nullable_arg = checkAndGetColumn<ColumnNullable>(*data_column))
+            {
+                data_column = const_nullable_arg->getNestedColumnPtr();
+                if (data_column->size())
+                    cond_is_null = const_nullable_arg->getNullMapData()[0];
+            }
+
+            if (data_column->size())
+            {
+                cond_is_true = !cond_is_null && checkAndGetColumn<ColumnUInt8>(*data_column)->getBool(0);
+                cond_is_false = !cond_is_true;
+            }
         }
 
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*arg_cond.column))
+        const auto & column1 = block.getByPosition(arguments[1]);
+        const auto & column2 = block.getByPosition(arguments[2]);
+        auto & result_column = block.getByPosition(result);
+
+        if (cond_is_true)
         {
+            if (result_column.type->equals(*column1.type))
+            {
+                result_column.column = std::move(column1.column);
+                return true;
+            }
+        }
+        else if (cond_is_false || cond_is_null)
+        {
+            if (result_column.type->equals(*column2.type))
+            {
+                result_column.column = std::move(column2.column);
+                return true;
+            }
+        }
+
+        ColumnPtr materialized_arg = materializeColumnIfConst(arg_cond.column);
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*materialized_arg))
+        {
+            /// Use getNestedColumnCopy() instead of getNestedColumnPtr() cause we need zeroes at NULL places.
             Block temporary_block
             {
-                { nullable->getNestedColumnPtr(), removeNullable(arg_cond.type), arg_cond.name },
-                block.getByPosition(arguments[1]),
-                block.getByPosition(arguments[2]),
-                block.getByPosition(result)
+                { nullable->getNestedColumnCopy(), removeNullable(arg_cond.type), arg_cond.name },
+                column1,
+                column2,
+                result_column
             };
 
             executeImpl(temporary_block, {0, 1, 2}, 3, temporary_block.rows());
 
-            block.getByPosition(result).column = std::move(temporary_block.getByPosition(3).column);
+            result_column.column = std::move(temporary_block.getByPosition(3).column);
             return true;
         }
 
@@ -916,7 +952,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        if (executeForNullableCondition(block, arguments, result, input_rows_count)
+        if (executeForConstAndNullableCondition(block, arguments, result, input_rows_count)
             || executeForNullThenElse(block, arguments, result, input_rows_count)
             || executeForNullableThenElse(block, arguments, result, input_rows_count))
             return;

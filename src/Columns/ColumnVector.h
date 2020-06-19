@@ -245,6 +245,7 @@ public:
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+    ColumnPtr setDefaults(const IColumn::Filter & filt, bool inverted) const override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 
