@@ -981,7 +981,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             /// because in that case columns from 'ORDER BY' are used.
             if (query.limit_with_ties)
             {
-                executeLimit(pipeline);
+                executeLimit(query_plan);
                 has_prelimit = true;
             }
 
