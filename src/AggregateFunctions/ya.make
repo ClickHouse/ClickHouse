@@ -45,6 +45,7 @@ SRCS(
     AggregateFunctionUniqCombined.cpp
     AggregateFunctionUniqUpTo.cpp
     AggregateFunctionWindowFunnel.cpp
+    AggregateFunctionMannWhitney.cpp
     parseAggregateFunctionParameters.cpp
     registerAggregateFunctions.cpp
     UniqCombinedBiasData.cpp
