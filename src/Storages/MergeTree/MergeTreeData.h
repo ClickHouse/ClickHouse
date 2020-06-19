@@ -324,7 +324,7 @@ public:
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const StorageID & table_id_,
                   const String & relative_data_path_,
-                  StorageInMemoryMetadata metadata_,
+                  const StorageInMemoryMetadata & metadata_,
                   Context & context_,
                   const String & date_column_name,
                   const MergingParams & merging_params_,

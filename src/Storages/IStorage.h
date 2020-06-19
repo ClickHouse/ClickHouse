@@ -138,7 +138,9 @@ public:
 public:
 
     StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata.get(); }
+
     StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
+
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
