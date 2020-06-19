@@ -371,7 +371,7 @@ private:
             }
             catch (...)
             {
-                std::cerr << "An error occurred while processing the query '\n"
+                std::cerr << "An error occurred while processing the query '"
                           << query << "'.\n";
                 if (!continue_on_errors)
                 {
