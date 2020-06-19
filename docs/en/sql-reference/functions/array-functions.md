@@ -1,6 +1,6 @@
 ---
 toc_priority: 46
-toc_title: Working with Arrays
+toc_title: Arrays
 ---
 
 # Functions for Working with Arrays {#functions-for-working-with-arrays}

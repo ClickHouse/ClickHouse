@@ -1,13 +1,11 @@
-#include "config_functions.h"
-#if USE_H3
-#    include <Columns/ColumnsNumber.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/IFunction.h>
-#    include <Common/typeid_cast.h>
-#    include <ext/range.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Common/typeid_cast.h>
+#include <ext/range.h>
 
-#    include <h3api.h>
+#include <h3api.h>
 
 
 namespace DB
@@ -67,4 +65,3 @@ void registerFunctionH3GetBaseCell(FunctionFactory & factory)
 }
 
 }
-#endif
