@@ -1,6 +1,6 @@
 ---
 toc_priority: 51
-toc_title: GPseudo-Random Numbers
+toc_title: Pseudo-Random Numbers
 ---
 
 # Functions for Generating Pseudo-Random Numbers {#functions-for-generating-pseudo-random-numbers}
