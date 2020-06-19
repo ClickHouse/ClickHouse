@@ -1,6 +1,6 @@
 ---
 toc_priority: 41
-toc_title: Searching in Strings
+toc_title: For Searching in Strings
 ---
 
 # Functions for Searching in Strings {#functions-for-searching-strings}
