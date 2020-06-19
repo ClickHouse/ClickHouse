@@ -978,7 +978,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
               */
             bool has_prelimit = false;
             if (query.limitLength() && !query.limit_with_ties && !hasWithTotalsInAnySubqueryInFromClause(query) &&
-                !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
+                !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
             {
                 executePreLimit(query_plan, false);
                 has_prelimit = true;
