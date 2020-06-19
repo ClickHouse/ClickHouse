@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Azure DS3v2 4vcpu 14GB RAM 1TB Standard SSD",
+        "system":       "Azure DS3v2",
+        "system_full":  "Azure DS3v2 4vcpu 14GB RAM 1TB Standard SSD",
         "time":         "2020-01-15 00:00:00",
+        "kind":         "cloud",
         "result":
         [
             [0.709, 0.004, 0.004],
@@ -50,8 +52,10 @@
         ]
     },
     {
-        "system":       "Azure DS3v2 4vcpu 14GB RAM 1TB Premium SSD",
+        "system":       "Azure DS3v2",
+        "system_full":       "Azure DS3v2 4vcpu 14GB RAM 1TB Premium SSD",
         "time":         "2020-01-15 00:00:00",
+        "kind":         "cloud",
         "result":
         [
             [0.047, 0.004, 0.003],

@@ -1,7 +1,9 @@
 [
     {
-        "system":       "E5-2650 v2 @ 2.60GHz, 2 sockets, 16 threads, 8xHDD RAID-5",
+        "system":       "Xeon E5-2650",
+        "system_full":      "Xeon E5-2650 v2 @ 2.60GHz, 2 sockets, 16 threads, 8xHDD RAID-5",
         "time":         "2020-01-12 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.101, 0.002, 0.002],
