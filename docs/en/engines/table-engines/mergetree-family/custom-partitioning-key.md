@@ -5,11 +5,11 @@ toc_title: Custom Partitioning Key
 
 # Custom Partitioning Key {#custom-partitioning-key}
 
-Partitioning is available for the [MergeTree](mergetree.md) family tables (including [replicated](replication.md) tables). [Materialized views](../special/materializedview.md#materializedview) based on MergeTree tables support partitioning, as well.
+Partitioning is available for the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family tables (including [replicated](../../../engines/table-engines/mergetree-family/replication.md) tables). [Materialized views](../../../engines/table-engines/special/materializedview.md#materializedview) based on MergeTree tables support partitioning, as well.
 
 A partition is a logical combination of records in a table by a specified criterion. You can set a partition by an arbitrary criterion, such as by month, by day, or by event type. Each partition is stored separately to simplify manipulations of this data. When accessing the data, ClickHouse uses the smallest subset of partitions possible.
 
-The partition is specified in the `PARTITION BY expr` clause when [creating a table](mergetree.md#table_engine-mergetree-creating-a-table). The partition key can be any expression from the table columns. For example, to specify partitioning by month, use the expression `toYYYYMM(date_column)`:
+The partition is specified in the `PARTITION BY expr` clause when [creating a table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table). The partition key can be any expression from the table columns. For example, to specify partitioning by month, use the expression `toYYYYMM(date_column)`:
 
 ``` sql
 CREATE TABLE visits
@@ -23,7 +23,7 @@ PARTITION BY toYYYYMM(VisitDate)
 ORDER BY Hour;
 ```
 
-The partition key can also be a tuple of expressions (similar to the [primary key](mergetree.md#primary-keys-and-indexes-in-queries)). For example:
+The partition key can also be a tuple of expressions (similar to the [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries)). For example:
 
 ``` sql
 ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
@@ -38,7 +38,7 @@ When inserting new data to a table, this data is stored as a separate part (chun
 !!! info "Info"
     A merge only works for data parts that have the same value for the partitioning expression. This means **you shouldn’t make overly granular partitions** (more than about a thousand partitions). Otherwise, the `SELECT` query performs poorly because of an unreasonably large number of files in the file system and open file descriptors.
 
-Use the [system.parts](../../../operations/system-tables.md#system_tables-parts) table to view the table parts and partitions. For example, let’s assume that we have a `visits` table with partitioning by month. Let’s perform the `SELECT` query for the `system.parts` table:
+Use the [system.parts](../../../operations/system-tables/parts.md#system_tables-parts) table to view the table parts and partitions. For example, let’s assume that we have a `visits` table with partitioning by month. Let’s perform the `SELECT` query for the `system.parts` table:
 
 ``` sql
 SELECT

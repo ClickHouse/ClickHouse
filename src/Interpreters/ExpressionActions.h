@@ -163,6 +163,8 @@ public:
 
     ~ExpressionActions();
 
+    ExpressionActions(const ExpressionActions & other) = default;
+
     /// Add the input column.
     /// The name of the column must not match the names of the intermediate columns that occur when evaluating the expression.
     /// The expression must not have any PROJECT actions.

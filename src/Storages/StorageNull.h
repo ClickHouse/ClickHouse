@@ -40,7 +40,7 @@ public:
         return std::make_shared<NullBlockOutputStream>(getSampleBlock());
     }
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
 
     void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
