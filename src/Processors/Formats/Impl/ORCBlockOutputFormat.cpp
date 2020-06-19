@@ -148,7 +148,7 @@ void ORCBlockOutputFormat::ORCBlockOutputFormat::writeNumbers(
             number_orc_column->notNull[i] = 0;
             continue;
         }
-        if (std::is_same_v<NumberType, UInt8>)
+        if constexpr (std::is_same<NumberType, UInt8>::value)
             number_orc_column->data[i] = static_cast<unsigned char>(number_column.getElement(i));
         else
             number_orc_column->data[i] = number_column.getElement(i);
