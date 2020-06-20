@@ -294,13 +294,13 @@ static void sanitizerDeathCallback()
 
     if (query_id.size == 0)
     {
-        LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Sanitizer trap.",
-            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num);
+        LOG_FATAL(log, "(version {}{}) (from thread {}) (no query) Sanitizer trap.",
+            VERSION_STRING, VERSION_OFFICIAL, thread_num);
     }
     else
     {
-        LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) Sanitizer trap.",
-            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, query_id);
+        LOG_FATAL(log, "(version {}{}) (from thread {}) (query_id: {}) Sanitizer trap.",
+            VERSION_STRING, VERSION_OFFICIAL, thread_num, query_id);
     }
 
     /// Just in case print our own stack trace. In case when llvm-symbolizer does not work.
