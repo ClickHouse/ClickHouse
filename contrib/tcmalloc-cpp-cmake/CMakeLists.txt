@@ -69,10 +69,10 @@ if (${ENABLE_TCMALLOC_CPP})
         ${LIBRARY_DIR}/tcmalloc/runtime_size_classes.cc
     )
 
-    add_library(tcmalloc-cpp ${SRCS})
+    add_library (tcmalloc-cpp ${SRCS})
     # use PUBLIC linkage to allow target that is linked with tcmalloc-cpp use
     # tcmalloc functions.
-    target_link_libraries(tcmalloc-cpp PUBLIC
+    target_link_libraries (tcmalloc-cpp PUBLIC
         # abseil
         absl_algorithm
         absl_container
@@ -94,10 +94,10 @@ if (${ENABLE_TCMALLOC_CPP})
         # absl_flags
     )
 
-    set(DEFINITIONS)
+    set (DEFINITIONS)
     # for RSEQ (restartable sequences) support
     # define that we have __thread support
-    list(APPEND DEFINITIONS -D_GLIBCXX_HAVE_TLS)
+    list (APPEND DEFINITIONS -D_GLIBCXX_HAVE_TLS)
 
     # XXX: disable new/delete overrides
     #
@@ -105,15 +105,15 @@ if (${ENABLE_TCMALLOC_CPP})
     # version of tcmalloc, in upstream version both new/delete and C allocation
     # API will be overidden, but new/delete should not be overwritten due to
     # they are overwritten in new_delete.cpp
-    list(APPEND DEFINITIONS -DTCMALLOC_NO_NEW_DELETE_OVERRIDES)
+    list (APPEND DEFINITIONS -DTCMALLOC_NO_NEW_DELETE_OVERRIDES)
 
-    target_include_directories(tcmalloc-cpp PUBLIC ${LIBRARY_DIR})
+    target_include_directories (tcmalloc-cpp PUBLIC ${LIBRARY_DIR})
 
     # jemalloc compatibility
-    list(APPEND DEFINITIONS -DUSE_JEMALLOC=0)
-    list(APPEND DEFINITIONS -DUSE_TCMALLOC_CPP=1)
+    list (APPEND DEFINITIONS -DUSE_JEMALLOC=0)
+    list (APPEND DEFINITIONS -DUSE_TCMALLOC_CPP=1)
 
-    target_compile_definitions(tcmalloc-cpp PUBLIC ${DEFINITIONS})
+    target_compile_definitions (tcmalloc-cpp PUBLIC ${DEFINITIONS})
 
     target_link_libraries (allocator INTERFACE tcmalloc-cpp)
 
