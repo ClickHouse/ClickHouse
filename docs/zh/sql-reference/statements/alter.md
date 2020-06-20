@@ -1,48 +1,47 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: ALTER
 ---
 
 ## ALTER {#query_language_queries_alter}
 
-该 `ALTER` 查询仅支持 `*MergeTree` 表，以及 `Merge`和`Distributed`. 查询有几个变体。
+ `ALTER` 仅支持 `*MergeTree` ，`Merge`以及`Distributed`等引擎表。
+ 该操作有多种形式。
 
 ### 列操作 {#column-manipulations}
 
-更改表结构。
+改变表结构：
 
 ``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN ...
 ```
 
-在查询中，指定一个或多个逗号分隔操作的列表。
-每个操作都是对列的操作。
+在语句中，配置一个或多个用逗号分隔的动作。每个动作是对某个列实施的操作行为。
 
-支持以下操作:
+支持下列动作：
 
--   [ADD COLUMN](#alter_add-column) — Adds a new column to the table.
--   [DROP COLUMN](#alter_drop-column) — Deletes the column.
--   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
--   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
--   [MODIFY COLUMN](#alter_modify-column) — Changes column's type, default expression and TTL.
+-   [ADD COLUMN](#alter_add-column) — 添加列
+-   [DROP COLUMN](#alter_drop-column) — 删除列
+-   [CLEAR COLUMN](#alter_clear-column) — 重置列的值
+-   [COMMENT COLUMN](#alter_comment-column) — 给列增加注释说明
+-   [MODIFY COLUMN](#alter_modify-column) — 改变列的值类型，默认表达式以及TTL
 
-下面详细描述这些动作。
+这些动作将在下文中进行详述。
 
-#### ADD COLUMN {#alter_add-column}
+#### 增加列 {#alter_add-column}
 
 ``` sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 ```
 
-将一个新列添加到表中，并指定 `name`, `type`, [`codec`](create.md#codecs) 和 `default_expr` （请参阅部分 [默认表达式](create.md#create-default-values)).
+使用指定的`name`, `type`, [`codec`](../../sql-reference/statements/create.md#codecs) 以及 `default_expr` (请参见 [Default expressions](../../sql-reference/statements/create.md#create-default-values))，往表中增加新的列。
 
-如果 `IF NOT EXISTS` 如果列已经存在，则查询不会返回错误。 如果您指定 `AFTER name_after` （另一列的名称），该列被添加在表列表中指定的一列之后。 否则，该列将添加到表的末尾。 请注意，没有办法将列添加到表的开头。 为了一系列的行动, `name_after` 可以是在以前的操作之一中添加的列的名称。
 
-添加列只是更改表结构，而不对数据执行任何操作。 数据不会出现在磁盘上后 `ALTER`. 如果从表中读取某一列的数据缺失，则将使用默认值填充该列（如果存在默认表达式，则执行默认表达式，或使用零或空字符串）。 合并数据部分后，该列将出现在磁盘上（请参阅 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)).
+如果sql中包含 `IF NOT EXISTS` ，执行语句时如果列已经存在，CH不会报错。如果指定`AFTER name_after`（表中另一个列的名称），则新的列会加在指定列的后面。否则，新的列将被添加到表的末尾。注意，不能讲新的列添加到表的开始位置， `name_after` 可以是执行该动作时已经在表中存在的任意列。
 
-这种方法使我们能够完成 `ALTER` 即时查询，不增加旧数据量。
+添加列仅仅是改变原有表的结构不会对已有数据产生影响。执行完 `ALTER`后磁盘中也不会出现新的数据。如果查询表时列的数据为空，那么CH会使用列的默认值来进行填充（如果有默认表达式，则使用这个；或者用0或空字符串）。当数据块完成合并(参见[MergeTree](../../engines/table-engines/mergetree-family/mergetree.md))后，磁盘中会出现该列的数据。
+
+这种方式允许 `ALTER` 语句能马上执行。不需要增加原有数据的大小。
 
 示例:
 
@@ -50,15 +49,16 @@ ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 ALTER TABLE visits ADD COLUMN browser String AFTER user_id
 ```
 
-#### DROP COLUMN {#alter_drop-column}
+#### 删除列 {#alter_drop-column}
 
 ``` sql
 DROP COLUMN [IF EXISTS] name
 ```
 
-删除具有名称的列 `name`. 如果 `IF EXISTS` 如果指定了子句，如果该列不存在，则查询不会返回错误。
+通过指定 `name`删除列。如果语句包含 `IF EXISTS`，执行时遇到不存在的列也不会报错。
 
-从文件系统中删除数据。 由于这将删除整个文件，查询几乎立即完成。
+从文件系统中删除数据。由于是删除列的整个文件，该语句几乎是立即执行完成的。
+
 
 示例:
 
@@ -66,15 +66,16 @@ DROP COLUMN [IF EXISTS] name
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-#### CLEAR COLUMN {#alter_clear-column}
+#### 清空列 {#alter_clear-column}
 
 ``` sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 
-重置指定分区的列中的所有数据。 了解有关设置分区名称的详细信息 [如何指定分区表达式](#alter-how-to-specify-part-expr).
+重置指定分区中列的值。 分区名称 `partition_name` 请参见 [怎样设置分区表达式](#alter-how-to-specify-part-expr)
 
-如果 `IF EXISTS` 如果指定了子句，如果该列不存在，则查询不会返回错误。
+如果语句中包含 `IF EXISTS` ，遇到不存在的列，sql执行不会报错。
+
 
 示例:
 
@@ -82,17 +83,16 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-#### COMMENT COLUMN {#alter_comment-column}
+#### 增加注释 {#alter_comment-column}
 
 ``` sql
 COMMENT COLUMN [IF EXISTS] name 'comment'
 ```
 
-向列添加注释。 如果 `IF EXISTS` 如果指定了子句，如果该列不存在，则查询不会返回错误。
+给列增加注释说明。如果语句中包含 `IF EXISTS` ，遇到不存在的列，sql执行不会报错。
 
-每列可以有一个注释。 如果列的注释已存在，则新注释将复盖以前的注释。
-
-注释存储在 `comment_expression` 由返回的列 [DESCRIBE TABLE](misc.md#misc-describe-table) 查询。
+每个列都可以包含注释。如果列的注释已经存在，新的注释会替换旧的。
+注释信息保存在 [DESCRIBE TABLE](../../sql-reference/statements/misc.md#misc-describe-table)查询的 `comment_expression` 字段中。
 
 示例:
 
@@ -100,25 +100,24 @@ COMMENT COLUMN [IF EXISTS] name 'comment'
 ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for accessing the site.'
 ```
 
-#### MODIFY COLUMN {#alter_modify-column}
+#### 修改列 {#alter_modify-column}
 
 ``` sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
 ```
+该语句可以改变 `name` 列的属性：
 
-此查询更改 `name` 列属性:
+-   Type
 
--   类型
-
--   默认表达式
+-   Default expression
 
 -   TTL
 
-        For examples of columns TTL modifying, see [Column TTL](../engines/table_engines/mergetree_family/mergetree.md#mergetree-column-ttl).
+有关修改列TTL的示例，请参见 [Column TTL](../engines/table_engines/mergetree_family/mergetree.md#mergetree-column-ttl).
 
-如果 `IF EXISTS` 如果指定了子句，如果该列不存在，则查询不会返回错误。
+如果语句中包含 `IF EXISTS` ，遇到不存在的列，sql执行不会报错。
 
-更改类型时，值将被转换为 [toType](../../sql-reference/functions/type-conversion-functions.md) 函数被应用到它们。 如果仅更改默认表达式，则查询不会执行任何复杂的操作，并且几乎立即完成。
+当改变列的类型时，列的值也被转换了，如同对列使用 [toType](../../sql-reference/functions/type-conversion-functions.md)函数一样。如果只改变了默认表达式，该语句几乎不会做任何复杂操作，并且几乎是立即执行完成的。
 
 示例:
 
@@ -126,205 +125,198 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
-Changing the column type is the only complex action – it changes the contents of files with data. For large tables, this may take a long time.
+改变列的类型是唯一的复杂型动作 - 它改变了数据文件的内容。对于大型表，执行起来要花费较长的时间。
+该操作分为如下处理步骤：
 
-有几个处理阶段:
+-   为修改的数据准备新的临时文件
+-   重命名原来的文件
+-   将新的临时文件改名为原来的数据文件名
+-   删除原来的文件
 
--   准备具有修改数据的临时（新）文件。
--   重命名旧文件。
--   将临时（新）文件重命名为旧名称。
--   删除旧文件。
+仅仅在第一步是耗费时间的。如果该阶段执行失败，那么数据没有变化。如果执行后续的步骤中失败了，数据可以手动恢复。例外的情形是，当原来的文件从文件系统中被删除了，但是新的数据没有写入到临时文件中并且丢失了。
 
-只有第一阶段需要时间。 如果在此阶段出现故障，则不会更改数据。
-如果在其中一个连续阶段中出现故障，可以手动恢复数据。 例外情况是，如果旧文件从文件系统中删除，但新文件的数据没有写入磁盘并丢失。
 
-该 `ALTER` 复制更改列的查询。 这些指令保存在ZooKeeper中，然后每个副本应用它们。 全部 `ALTER` 查询以相同的顺序运行。 查询等待对其他副本完成适当的操作。 但是，更改复制表中的列的查询可能会中断，并且所有操作都将异步执行。
+列操作的 `ALTER`行为是可以被复制的。这些指令会保存在ZooKeeper中，这样每个副本节点都能执行它们。所有的 `ALTER` 将按相同的顺序执行。
+ The query waits for the appropriate actions to be completed on the other replicas.
+然而，改变可复制表的列是可以被中断的，并且所有动作都以异步方式执行。
 
-#### 更改查询限制 {#alter-query-limitations}
 
-该 `ALTER` query允许您在嵌套数据结构中创建和删除单独的元素（列），但不能创建整个嵌套数据结构。 要添加嵌套数据结构，可以添加名称如下的列 `name.nested_name` 和类型 `Array(T)`. 嵌套数据结构等效于名称在点之前具有相同前缀的多个数组列。
+#### ALTER 操作限制 {#alter-query-limitations}
 
-不支持删除主键或采样键中的列（在主键中使用的列 `ENGINE` 表达式）。 只有在此更改不会导致数据被修改时，才可以更改主键中包含的列的类型（例如，允许您向枚举添加值或更改类型 `DateTime` 到 `UInt32`).
+ `ALTER` 操作允许在嵌套的数据结构中创建和删除单独的元素（列），但是不是整个嵌套结构。添加一个嵌套数据结构的列时，你可以用类似这样的名称 `name.nested_name` 及类型 `Array(T)` 来操作。嵌套数据结构等同于
+列名前带有同样前缀的多个数组列。
 
-如果 `ALTER` 查询不足以使您需要的表更改，您可以创建一个新的表，使用 [INSERT SELECT](insert-into.md#insert_query_insert-select) 查询，然后使用切换表 [RENAME](misc.md#misc_operations-rename) 查询并删除旧表。 您可以使用 [ﾂ环板-ｮﾂ嘉ｯﾂ偲](../../operations/utilities/clickhouse-copier.md) 作为替代 `INSERT SELECT` 查询。
 
-该 `ALTER` 查询阻止对表的所有读取和写入。 换句话说，如果长 `SELECT` 正在运行的时间 `ALTER` 查询，该 `ALTER` 查询将等待它完成。 同时，对同一个表的所有新查询将等待 `ALTER` 正在运行。
+不支持对primary key或者sampling key中的列（在 `ENGINE` 表达式中用到的列）进行删除操作。改变包含在primary key中的列的类型时，如果操作不会导致数据的变化（例如，往Enum中添加一个值，或者将`DateTime` 类型改成 `UInt32`），那么这种操作是可行的。
 
-对于本身不存储数据的表（例如 `Merge` 和 `Distributed`), `ALTER` 只是改变了表结构，并且不改变从属表的结构。 例如，当运行ALTER时 `Distributed` 表，你还需要运行 `ALTER` 对于所有远程服务器上的表。
+如果 `ALTER` 操作不足以完成你想要的表变动操作，你可以创建一张新的表，通过 [INSERT SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select)将数据拷贝进去，然后通过  [RENAME](../../sql-reference/statements/misc.md#misc_operations-rename)将新的表改成和原有表一样的名称，并删除原有的表。你可以使用 [clickhouse-copier](../../operations/utilities/clickhouse-copier.md) 代替 `INSERT SELECT`。
 
-### 使用键表达式进行操作 {#manipulations-with-key-expressions}
+ `ALTER` 操作会阻塞对表的所有读写操作。换句话说，当一个大的 `SELECT` 语句和 `ALTER`同时执行时，`ALTER`会等待，直到 `SELECT` 执行结束。与此同时，当 `ALTER` 运行时，新的 sql 语句将会等待。
 
-支持以下命令:
+
+对于不存储数据的表（例如 `Merge` 及 `Distributed` 表）， `ALTER` 仅仅改变了自身的表结构，不会改变从属的表结构。例如，对 `Distributed` 表执行 ALTER 操作时，需要对其它包含该表的服务器执行该操作。
+
+### key表达式的修改 {#manipulations-with-key-expressions}
+
+支持下列表达式：
 
 ``` sql
 MODIFY ORDER BY new_expression
 ```
 
-它只适用于在表 [`MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) 家庭（包括
-[复制](../../engines/table-engines/mergetree-family/replication.md) 表）。 该命令更改
-[排序键](../../engines/table-engines/mergetree-family/mergetree.md) 表
-到 `new_expression` （表达式或表达式元组）。 主键保持不变。
+该操作仅支持 [`MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) 系列表 (含 [replicated](../../engines/table-engines/mergetree-family/replication.md) 表)。它会将表的 [排序键](../../engines/table-engines/mergetree-family/mergetree.md)变成 `new_expression` (元组表达式)。主键仍保持不变。
 
-该命令是轻量级的，因为它只更改元数据。 要保持该数据部分的属性
-行按排序键表达式排序您不能添加包含现有列的表达式
-到排序键（仅由列添加 `ADD COLUMN` 命令在同一个 `ALTER` 查询）。
+该操作时轻量级的，仅会改变元数据。
 
-### 使用数据跳过索引进行操作 {#manipulations-with-data-skipping-indices}
 
-它只适用于在表 [`*MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) 家庭（包括
-[复制](../../engines/table-engines/mergetree-family/replication.md) 表）。 以下操作
-可用:
+### 跳过索引来更改数据 {#manipulations-with-data-skipping-indices}
 
--   `ALTER TABLE [db].name ADD INDEX name expression TYPE type GRANULARITY value AFTER name [AFTER name2]` -将索引描述添加到表元数据。
+该操作仅支持 [`MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) 系列表 (含 [replicated](../../engines/table-engines/mergetree-family/replication.md) 表)。
+下列操作是允许的：
 
--   `ALTER TABLE [db].name DROP INDEX name` -从表元数据中删除索引描述并从磁盘中删除索引文件。
+-   `ALTER TABLE [db].name ADD INDEX name expression TYPE type GRANULARITY value AFTER name [AFTER name2]` - 在表的元数据中增加索引说明
 
-这些命令是轻量级的，因为它们只更改元数据或删除文件。
-此外，它们被复制（通过ZooKeeper同步索引元数据）。
+-   `ALTER TABLE [db].name DROP INDEX name` - 从表的元数据中删除索引描述，并从磁盘上删除索引文件
 
-### 使用约束进行操作 {#manipulations-with-constraints}
+由于只改变表的元数据或者删除文件，因此该操作是轻量级的，也可以被复制到其它节点（通过Zookeeper同步索引元数据）
 
-查看更多 [制约因素](create.md#constraints)
+### 更改约束 {#manipulations-with-constraints}
 
-可以使用以下语法添加或删除约束:
+参见 [constraints](../../sql-reference/statements/create.md#constraints)查看更多信息。
+
+通过下面的语法，可以添加或删除约束：
 
 ``` sql
 ALTER TABLE [db].name ADD CONSTRAINT constraint_name CHECK expression;
 ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 ```
 
-查询将从表中添加或删除有关约束的元数据，以便立即处理它们。
+上述语句会从表中增加或删除约束的元数据，因此会被立即处理。
+对已有数据的约束检查 *将不会执行* 。
 
-约束检查 *不会被执行* 在现有数据上，如果它被添加。
+对可复制表的操作可通过Zookeeper传播到其它副本节点。
 
-复制表上的所有更改都广播到ZooKeeper，因此将应用于其他副本。
+### 更改分区及文件块 {#alter_manipulations-with-partitions}
 
-### 操作与分区和零件 {#alter_manipulations-with-partitions}
+允许进行下列关于 [partitions](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) 的操作：
 
-下面的操作与 [分区](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) 可用:
-
--   [DETACH PARTITION](#alter_detach-partition) – Moves a partition to the `detached` 目录和忘记它。
--   [DROP PARTITION](#alter_drop-partition) – Deletes a partition.
--   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` 目录到表。
--   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
--   [REPLACE PARTITION](#alter_replace-partition) -将数据分区从一个表复制到另一个表并替换。
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(\#alter\_move\_to\_table-partition)-将数据分区从一个表移动到另一个表。
--   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) -重置分区中指定列的值。
--   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) -重置分区中指定的二级索引。
--   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
--   [FETCH PARTITION](#alter_fetch-partition) – Downloads a partition from another server.
--   [MOVE PARTITION\|PART](#alter_move-partition) – Move partition/data part to another disk or volume.
+-   [DETACH PARTITION](#alter_detach-partition) — 将分区数据移动到 `detached` ，并且忘记它
+-   [DROP PARTITION](#alter_drop-partition) — 删除一个partition.
+-   [ATTACH PART\|PARTITION](#alter_attach-partition) — 将`detached` 目录中的分区重新添加到表中.
+-   [ATTACH PARTITION FROM](#alter_attach-partition-from) —  从表中复制数据分区到另一张表，并添加分区
+-   [REPLACE PARTITION](#alter_replace-partition) — 从表中复制数据分区到其它表及副本
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) —   从表中复制数据分区到其它表.
+-   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) —  重置分区中某个列的值
+-   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) —  重置分区中指定的二级索引
+-   [FREEZE PARTITION](#alter_freeze-partition) —  创建分区的备份 
+-   [FETCH PARTITION](#alter_fetch-partition) —  从其它服务器上下载分
+-   [MOVE PARTITION\|PART](#alter_move-partition) —  将分区/数据块移动到另外的磁盘/卷
 
 <!-- -->
 
-#### DETACH PARTITION {#alter_detach-partition}
+#### 分区剥离 {#alter_detach-partition}
 
 ``` sql
 ALTER TABLE table_name DETACH PARTITION partition_expr
 ```
-
-将指定分区的所有数据移动到 `detached` 目录。 服务器会忘记分离的数据分区，就好像它不存在一样。 服务器不会知道这个数据，直到你做 [ATTACH](#alter_attach-partition) 查询。
+将指定分区的数据移动到 `detached` 目录。服务器会忽略被分离的数据分区。只有当你使用 [ATTACH](#alter_attach-partition) 时，服务器才会知晓这部分数据。
 
 示例:
 
 ``` sql
 ALTER TABLE visits DETACH PARTITION 201901
 ```
+从 [如何设置分区表达式](#alter-how-to-specify-part-expr)章节中获取分区表达式的设置说明。
 
-阅读有关在一节中设置分区表达式的信息 [如何指定分区表达式](#alter-how-to-specify-part-expr).
+当执行操作以后，可以对 `detached` 目录的数据进行任意操作，例如删除文件，或者放着不管。
 
-执行查询后，您可以对查询中的数据进行任何操作 `detached` directory — delete it from the file system, or just leave it.
+该操作是可以复制的，它会将所有副本节点上的数据移动到 `detached` 目录。注意仅能在副本的leader节点上执行该操作。想了解副本是否是leader节点，需要在 [system.replicas](../../operations/system-tables/replicas.md#system_tables-replicas) 表执行 `SELECT` 操作。或者，可以很方便的在所有副本节点上执行 `DETACH`操作，但除leader外其它的副本节点会抛出异常。
 
-This query is replicated – it moves the data to the `detached` 所有副本上的目录。 请注意，您只能对领导副本执行此查询。 要确定副本是否为领导者，请执行 `SELECT` 查询到 [系统。副本](../../operations/system-tables.md#system_tables-replicas) 桌子 或者，它更容易使 `DETACH` 对所有副本进行查询-除了领导副本之外，所有副本都会引发异常。
 
-#### DROP PARTITION {#alter_drop-partition}
+#### 删除分区 {#alter_drop-partition}
 
 ``` sql
 ALTER TABLE table_name DROP PARTITION partition_expr
 ```
 
-从表中删除指定的分区。 此查询将分区标记为非活动分区，并在大约10分钟内完全删除数据。
+从表中删除指定分区。该操作会将分区标记为不活跃的，然后在大约10分钟内删除全部数据。
 
-阅读有关在一节中设置分区表达式的信息 [如何指定分区表达式](#alter-how-to-specify-part-expr).
+在 [如何设置分区表达式](#alter-how-to-specify-part-expr)中获取分区表达式的设置说明。
+该操作是可复制的，副本节点的数据也将被删除。
 
-The query is replicated – it deletes data on all replicas.
 
-#### DROP DETACHED PARTITION\|PART {#alter_drop-detached}
+#### 删除已剥离的分区\|数据块 {#alter_drop-detached}
 
 ``` sql
 ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
 ```
 
-从中删除指定分区的指定部分或所有部分 `detached`.
-了解有关在一节中设置分区表达式的详细信息 [如何指定分区表达式](#alter-how-to-specify-part-expr).
+从`detached`目录中删除指定分区的特定部分或所有数据。访问 [如何设置分区表达式](#alter-how-to-specify-part-expr)可获取设置分区表达式的详细信息。
 
-#### ATTACH PARTITION\|PART {#alter_attach-partition}
+#### 关联分区\|数据块 {#alter_attach-partition}
 
 ``` sql
 ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
 ```
-
-将数据从 `detached` 目录。 可以为整个分区或单独的部分添加数据。 例:
+从`detached`目录中添加数据到数据表。可以添加整个分区的数据，或者单独的数据块。例如：
 
 ``` sql
 ALTER TABLE visits ATTACH PARTITION 201901;
 ALTER TABLE visits ATTACH PART 201901_2_2_0;
 ```
 
-了解有关在一节中设置分区表达式的详细信息 [如何指定分区表达式](#alter-how-to-specify-part-expr).
+访问 [如何设置分区表达式](#alter-how-to-specify-part-expr)可获取设置分区表达式的详细信息。
 
-此查询被复制。 副本发起程序检查是否有数据在 `detached` 目录。 如果数据存在，则查询将检查其完整性。 如果一切正确，则查询将数据添加到表中。 所有其他副本都从副本发起程序下载数据。
+该操作是可以复制的。副本启动器检查 `detached`目录是否有数据。如果有，该操作会检查数据的完整性。如果一切正常，该操作将数据添加到表中。其它副本节点通过副本启动器下载这些数据。
 
-所以你可以把数据到 `detached` 在一个副本上的目录，并使用 `ALTER ... ATTACH` 查询以将其添加到所有副本上的表中。
+因此可以在某个副本上将数据放到 `detached`目录，然后通过 `ALTER ... ATTACH` 操作将这部分数据添加到该表的所有副本。
 
-#### ATTACH PARTITION FROM {#alter_attach-partition-from}
+#### 从...关联分区 {#alter_attach-partition-from}
 
 ``` sql
 ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
 ```
+该操作将 `table1` 表的数据分区复制到 `table2` 表的已有分区。注意`table1`表的数据不会被删除。
 
-此查询将数据分区从 `table1` 到 `table2` 将数据添加到存在 `table2`. 请注意，数据不会从中删除 `table1`.
+为保证该操作能成功运行，下列条件必须满足：
 
-要使查询成功运行，必须满足以下条件:
+-   2张表必须有相同的结构
+-    2张表必须有相同的分区键
 
--   两个表必须具有相同的结构。
--   两个表必须具有相同的分区键。
-
-#### REPLACE PARTITION {#alter_replace-partition}
+#### 替换分区 {#alter_replace-partition}
 
 ``` sql
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
+该操作将 `table1` 表的数据分区复制到 `table2`表，并替换 `table2`表的已有分区。注意`table1`表的数据不会被删除。
 
-此查询将数据分区从 `table1` 到 `table2` 并替换在现有的分区 `table2`. 请注意，数据不会从中删除 `table1`.
+为保证该操作能成功运行，下列条件必须满足：
 
-要使查询成功运行，必须满足以下条件:
+-   2张表必须有相同的结构
+-   2张表必须有相同的分区键
 
--   两个表必须具有相同的结构。
--   两个表必须具有相同的分区键。
-
-#### MOVE PARTITION TO TABLE {#alter_move_to_table-partition}
+#### 将分区移动到表 {#alter_move_to_table-partition}
 
 ``` sql
 ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
 ```
 
-此查询将数据分区从 `table_source` 到 `table_dest` 删除数据 `table_source`.
+该操作将 `table_source`表的数据分区移动到 `table_dest`表，并删除`table_source`表的数据。
 
-要使查询成功运行，必须满足以下条件:
+为保证该操作能成功运行，下列条件必须满足：
 
--   两个表必须具有相同的结构。
--   两个表必须具有相同的分区键。
--   两个表必须是相同的引擎系列。 （已复制或未复制)
--   两个表必须具有相同的存储策略。
+-   2张表必须有相同的结构
+-   2张表必须有相同的分区键
+-   2张表必须属于相同的引擎系列（可复制表或不可复制表）
+-   2张表必须有相同的存储方式
 
-#### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
+#### 清空分区的列 {#alter_clear-column-partition}
 
 ``` sql
 ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
 ```
 
-重置分区中指定列中的所有值。 如果 `DEFAULT` 创建表时确定了子句，此查询将列值设置为指定的默认值。
+重置指定分区的特定列的值。如果建表时使用了 `DEFAULT` 语句，该操作会将列的值重置为该默认值。
 
 示例:
 
@@ -332,95 +324,93 @@ ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
 
-#### FREEZE PARTITION {#alter_freeze-partition}
+#### 冻结分区 {#alter_freeze-partition}
 
 ``` sql
 ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 ```
 
-此查询创建指定分区的本地备份。 如果 `PARTITION` 子句被省略，查询一次创建所有分区的备份。
+该操作为指定分区创建一个本地备份。如果 `PARTITION` 语句省略，该操作会一次性为所有分区创建备份。
 
-!!! note "注"
-    在不停止服务器的情况下执行整个备份过程。
+!!! 注意 "Note"
+    整个备份过程不需要停止服务
 
-请注意，对于旧式表，您可以指定分区名称的前缀（例如, ‘2019’)-然后查询为所有相应的分区创建备份。 阅读有关在一节中设置分区表达式的信息 [如何指定分区表达式](#alter-how-to-specify-part-expr).
+注意对于老式的表，可以指定分区名前缀（例如，‘2019’），然后该操作会创建所有对应分区的备份。访问 [如何设置分区表达式](#alter-how-to-specify-part-expr)可获取设置分区表达式的详细信息。
 
-在执行时，对于数据快照，查询将创建指向表数据的硬链接。 硬链接被放置在目录中 `/var/lib/clickhouse/shadow/N/...`，哪里:
+在执行操作的同时，对于数据快照，该操作会创建到表数据的硬链接。硬链接放置在  `/var/lib/clickhouse/shadow/N/...`，也就是：
+-   `/var/lib/clickhouse/` 服务器配置文件中指定的CH工作目录
+-   `N` 备份的增长序号
 
--   `/var/lib/clickhouse/` 是配置中指定的工作ClickHouse目录。
--   `N` 是备份的增量编号。
 
-!!! note "注"
-    如果您使用 [用于在表中存储数据的一组磁盘](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)，该 `shadow/N` 目录出现在每个磁盘上，存储由匹配的数据部分 `PARTITION` 表达。
+!!! 注意 "Note"
+    如果你使用 [多个磁盘存储数据表](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)，
+    那么每个磁盘上都有 `shadow/N`目录，用来保存`PARTITION` 表达式对应的数据块。
 
-在备份内部创建的目录结构与在备份内部创建的目录结构相同 `/var/lib/clickhouse/`. 查询执行 ‘chmod’ 对于所有文件，禁止写入它们。
+备份内部也会创建和 `/var/lib/clickhouse/` 内部一样的目录结构。该操作在所有文件上执行‘chmod’，禁止往里写入数据
 
-创建备份后，您可以从以下位置复制数据 `/var/lib/clickhouse/shadow/` 然后将其从本地服务器中删除。 请注意， `ALTER t FREEZE PARTITION` 不复制查询。 它仅在本地服务器上创建本地备份。
+当备份创建完毕，你可以从 `/var/lib/clickhouse/shadow/`复制数据到远端服务器，然后删除本地数据。注意 `ALTER t FREEZE PARTITION`操作是不能复制的，它仅在本地服务器上创建本地备份。
 
-查询几乎立即创建备份（但首先它会等待对相应表的当前查询完成运行）。
+该操作创建备份几乎是即时的（但是首先它会等待相关表的当前操作执行完成）
 
-`ALTER TABLE t FREEZE PARTITION` 仅复制数据，而不复制表元数据。 若要备份表元数据，请复制该文件 `/var/lib/clickhouse/metadata/database/table.sql`
 
-要从备份还原数据，请执行以下操作:
+`ALTER TABLE t FREEZE PARTITION` 仅仅复制数据, 而不是元数据信息. 要复制表的元数据信息, 拷贝这个文件 `/var/lib/clickhouse/metadata/database/table.sql`
 
-1.  如果表不存在，则创建该表。 要查看查询，请使用。sql文件（替换 `ATTACH` 在它与 `CREATE`).
-2.  从复制数据 `data/database/table/` 目录内的备份到 `/var/lib/clickhouse/data/database/table/detached/` 目录。
-3.  快跑 `ALTER TABLE t ATTACH PARTITION` 将数据添加到表的查询。
+从备份中恢复数据，按如下步骤操作：
+1. 如果表不存在，先创建。 查看.sql 文件获取执行语句 (将`ATTACH` 替换成 `CREATE`).
+2. 从 备份的 `data/database/table/`目录中将数据复制到 `/var/lib/clickhouse/data/database/table/detached/`目录
+3. 运行 `ALTER TABLE t ATTACH PARTITION`操作，将数据添加到表中
 
-从备份还原不需要停止服务器。
+恢复数据不需要停止服务进程。
+想了解备份及数据恢复的更多信息，请参见 [数据备份](../../operations/backup.md) 。
 
-有关备份和还原数据的详细信息，请参阅 [数据备份](../../operations/backup.md) 科。
-
-#### CLEAR INDEX IN PARTITION {#alter_clear-index-partition}
+#### 删除分区的索引 {#alter_clear-index-partition}
 
 ``` sql
 ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 ```
 
-查询的工作原理类似于 `CLEAR COLUMN`，但它重置索引而不是列数据。
+该操作和 `CLEAR COLUMN`类似，但是它重置的是索引而不是列的数据。
 
-#### FETCH PARTITION {#alter_fetch-partition}
+#### 获取分区 {#alter_fetch-partition}
 
 ``` sql
 ALTER TABLE table_name FETCH PARTITION partition_expr FROM 'path-in-zookeeper'
 ```
 
-从另一台服务器下载分区。 此查询仅适用于复制的表。
+从另一服务器上下载分区数据。仅支持可复制引擎表。
+该操作做了如下步骤：
+1.  从指定数据分片上下载分区。在 path-in-zookeeper 这一参数你必须设置Zookeeper中该分片的path值。
+2.  然后将已下载的数据放到 `table_name` 表的 `detached` 目录下。通过 [ATTACH PARTITION\|PART](#alter_attach-partition)将数据加载到表中。 
 
-查询执行以下操作:
-
-1.  从指定的分片下载分区。 在 ‘path-in-zookeeper’ 您必须在ZooKeeper中指定分片的路径。
-2.  然后查询将下载的数据放到 `detached` 的目录 `table_name` 桌子 使用 [ATTACH PARTITION\|PART](#alter_attach-partition) 查询将数据添加到表中。
-
-例如:
+示例:
 
 ``` sql
 ALTER TABLE users FETCH PARTITION 201902 FROM '/clickhouse/tables/01-01/visits';
 ALTER TABLE users ATTACH PARTITION 201902;
 ```
 
-请注意:
+注意:
 
--   该 `ALTER ... FETCH PARTITION` 查询不被复制。 它将分区放置在 `detached` 仅在本地服务器上的目录。
--   该 `ALTER TABLE ... ATTACH` 复制查询。 它将数据添加到所有副本。 数据被添加到从副本之一 `detached` 目录，以及其他-从相邻的副本。
+-   `ALTER ... FETCH PARTITION` 操作不支持复制，它仅在本地服务器上将分区移动到 `detached`目录。
+-   `ALTER TABLE ... ATTACH`操作是可复制的。它将数据添加到所有副本。数据从某个副本的`detached` 目录中添加进来，然后添加到邻近的副本
 
-在下载之前，系统会检查分区是否存在并且表结构匹配。 从正常副本中自动选择最合适的副本。
+在开始下载之前，系统检查分区是否存在以及和表结构是否匹配。然后从健康的副本集中自动选择最合适的副本。
 
-虽然查询被调用 `ALTER TABLE`，它不会更改表结构，并且不会立即更改表中可用的数据。
+虽然操作叫做 `ALTER TABLE`，但是它并不能改变表结构，也不会立即改变表中可用的数据。
 
-#### MOVE PARTITION\|PART {#alter_move-partition}
+#### 移动分区\|数据块 {#alter_move-partition}
 
-将分区或数据部分移动到另一个卷或磁盘 `MergeTree`-发动机表。 看 [使用多个块设备进行数据存储](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes).
+将 `MergeTree`引擎表的分区或数据块移动到另外的卷/磁盘中。参见 [使用多个块设备存储数据](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
 
 ``` sql
 ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
 ```
 
-该 `ALTER TABLE t MOVE` 查询:
+ `ALTER TABLE t MOVE` 操作:
 
--   不复制，因为不同的副本可能具有不同的存储策略。
--   如果未配置指定的磁盘或卷，则返回错误。 如果无法应用存储策略中指定的数据移动条件，Query还会返回错误。
--   可以在返回错误的情况下，当要移动的数据已经被后台进程移动时，并发 `ALTER TABLE t MOVE` 查询或作为后台数据合并的结果。 在这种情况下，用户不应该执行任何其他操作。
+-   不支持复制，因为不同副本可以有不同的存储方式
+-   如果指定的磁盘或卷没有配置，返回错误。如果存储方式中设定的数据移动条件不能满足，该操作同样报错。
+-   这种情况也会报错：即将移动的数据已经由后台进程在进行移动操作时，并行的 `ALTER TABLE t MOVE`操作或者作为后台数据合并的结果。这种情形下用户不能任何额外的动作。
 
 示例:
 
@@ -431,79 +421,75 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 
 #### 如何设置分区表达式 {#alter-how-to-specify-part-expr}
 
-您可以在以下内容中指定分区表达式 `ALTER ... PARTITION` 以不同方式查询:
+通过不同方式在 `ALTER ... PARTITION` 操作中设置分区表达式：
 
--   作为从值 `partition` 列 `system.parts` 桌子 例如, `ALTER TABLE visits DETACH PARTITION 201901`.
--   作为来自表列的表达式。 支持常量和常量表达式。 例如, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
--   使用分区ID。 分区ID是用作文件系统和ZooKeeper中分区名称的分区的字符串标识符（如果可能的话，人类可读）。 分区ID必须在指定 `PARTITION ID` 子句，用单引号。 例如, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
--   在 [ALTER ATTACH PART](#alter_attach-partition) 和 [DROP DETACHED PART](#alter_drop-detached) 查询时，要指定部件的名称，请将字符串文字与来自 `name` 列 [系统。detached\_parts](../../operations/system-tables.md#system_tables-detached_parts) 桌子 例如, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+-   `system.parts`表  `partition`列的某个值，例如， `ALTER TABLE visits DETACH PARTITION 201901`
+-   表的列表达式。支持常量及常量表达式。例如， `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`
+-   使用分区ID。分区ID是字符串变量（可能的话有较好的可读性），在文件系统和ZooKeeper中作为分区名称。分区ID必须配置在 `PARTITION ID`中，用单引号包含，例如， `ALTER TABLE visits DETACH PARTITION ID '201901'`
+-   在 [ALTER ATTACH PART](#alter_attach-partition) 和 [DROP DETACHED PART](#alter_drop-detached) 操作中，要配置块的名称，使用 [system.detached\_parts](../../operations/system-tables/detached_parts.md#system_tables-detached_parts)表中 `name`列的字符串值，例如： `ALTER TABLE visits ATTACH PART '201901_1_1_0'`
 
-指定分区时引号的使用取决于分区表达式的类型。 例如，对于 `String` 类型，你必须在引号中指定其名称 (`'`). 为 `Date` 和 `Int*` 类型不需要引号。
 
-对于旧式表，您可以将分区指定为数字 `201901` 或者一个字符串 `'201901'`. 对于类型，新样式表的语法更严格（类似于值输入格式的解析器）。
+设置分区时，引号使用要看分区表达式的类型。例如，对于 `String`类型，需要设置用引号(`'`)包含的名称。对于 `Date` 和 `Int*`引号就不需要了。
+对于老式的表，可以用数值`201901` 或字符串 `'201901'`来设置分区。新式的表语法严格和类型一致（类似于VALUES输入的解析）
 
-上述所有规则也适用于 [OPTIMIZE](misc.md#misc_operations-optimize) 查询。 如果在优化非分区表时需要指定唯一的分区，请设置表达式 `PARTITION tuple()`. 例如:
+上述所有规则同样适用于 [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) 操作。在对未分区的表进行 OPTIMIZE 操作时，如果需要指定唯一的分区，这样设置表达式`PARTITION tuple()`。例如：
 
 ``` sql
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 
-的例子 `ALTER ... PARTITION` 查询在测试中演示 [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) 和 [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
+ `ALTER ... PARTITION` 操作的示例在 [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) 和 [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql) 提供了演示。
 
-### 使用表TTL进行操作 {#manipulations-with-table-ttl}
+### 更改表的TTL {#manipulations-with-table-ttl}
 
-你可以改变 [表TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) 请填写以下表格:
+通过以下形式的请求可以修改 [table TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl)
 
 ``` sql
 ALTER TABLE table-name MODIFY TTL ttl-expression
 ```
 
-### ALTER查询的同步性 {#synchronicity-of-alter-queries}
+### ALTER操作的同步性 {#synchronicity-of-alter-queries}
 
-对于不可复制的表，所有 `ALTER` 查询是同步执行的。 对于可复制的表，查询仅添加相应操作的说明 `ZooKeeper`，并尽快执行操作本身。 但是，查询可以等待在所有副本上完成这些操作。
+对于不可复制的表，所有 `ALTER`操作都是同步执行的。对于可复制的表，ALTER操作会将指令添加到ZooKeeper中，然后会尽快的执行它们。然而，该操作可以等待其它所有副本将指令执行完毕。
 
-为 `ALTER ... ATTACH|DETACH|DROP` 查询，您可以使用 `replication_alter_partitions_sync` 设置设置等待。
-可能的值: `0` – do not wait; `1` – only wait for own execution (default); `2` – wait for all.
+对于 `ALTER ... ATTACH|DETACH|DROP`操作，可以通过设置 `replication_alter_partitions_sync` 来启用等待。可用参数值： `0` – 不需要等待; `1` – 仅等待自己执行(默认); `2` – 等待所有节点
 
-### 突变 {#alter-mutations}
+### Mutations {#alter-mutations}
 
-突变是允许更改或删除表中的行的ALTER查询变体。 与标准相比 `UPDATE` 和 `DELETE` 用于点数据更改的查询，mutations适用于更改表中大量行的繁重操作。 支持的 `MergeTree` 表引擎系列，包括具有复制支持的引擎。
+Mutations是一类允许对表的行记录进行删除或更新的ALTER操作。相较于标准的 `UPDATE` 和 `DELETE` 用于少量行操作而言，Mutations用来对表的很多行进行重量级的操作。该操作支持 `MergeTree`系列表，包含支持复制功能的表。
 
-现有表可以按原样进行突变（无需转换），但是在将第一次突变应用于表之后，其元数据格式将与以前的服务器版本不兼容，并且无法回退到以前的版本。
+已有的表已经支持mutations操作（不需要转换）。但是在首次对表进行mutation操作以后，它的元数据格式变得和和之前的版本不兼容，并且不能回退到之前版本。
 
-当前可用的命令:
+目前可用的命令:
 
 ``` sql
 ALTER TABLE [db.]table DELETE WHERE filter_expr
 ```
-
-该 `filter_expr` 必须是类型 `UInt8`. 查询删除表中此表达式采用非零值的行。
+`filter_expr`必须是 `UInt8`型。该操作将删除表中 `filter_expr`表达式值为非0的列
 
 ``` sql
 ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
-
-该 `filter_expr` 必须是类型 `UInt8`. 此查询将指定列的值更新为行中相应表达式的值。 `filter_expr` 取非零值。 使用以下命令将值转换为列类型 `CAST` 接线员 不支持更新用于计算主键或分区键的列。
+`filter_expr`必须是 `UInt8`型。该操作将更新表中各行 `filter_expr`表达式值为非0的指定列的值。通过 `CAST` 操作将值转换成对应列的类型。不支持对用于主键或分区键表达式的列进行更新操作。
 
 ``` sql
 ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 ```
 
-查询将重新生成二级索引 `name` 在分区中 `partition_name`.
+该操作更新 `partition_name`分区中的二级索引 `name`.
+单次操作可以包含多个逗号分隔的命令。
 
-一个查询可以包含多个用逗号分隔的命令。
+对于 \*MergeTree引擎表，mutation操作通过重写整个数据块来实现。没有原子性保证 - 被mutation操作的数据会被替换，在mutation期间开始执行的`SELECT`查询能看到所有已经完成mutation的数据，以及还没有被mutation替换的数据。
 
-For\*MergeTree表的突变通过重写整个数据部分来执行。 没有原子性-部分被取代为突变的部分，只要他们准备好和 `SELECT` 在突变期间开始执行的查询将看到来自已经突变的部件的数据以及来自尚未突变的部件的数据。
+mutation总是按照它们的创建顺序来排序并以同样顺序在每个数据块中执行。mutation操作也会部分的和Insert操作一起排序 - 在mutation提交之前插入的数据会参与mutation操作，在mutation提交之后的插入的数据则不会参与mutation。注意mutation从来不会阻塞插入操作。
 
-突变完全按其创建顺序排序，并以该顺序应用于每个部分。 突变也使用插入进行部分排序-在提交突变之前插入到表中的数据将被突变，之后插入的数据将不会被突变。 请注意，突变不会以任何方式阻止插入。
+mutation操作在提交后（对于可复制表，添加到Zookeeper,对于不可复制表，添加到文件系统）立即返回。mutation操作本身是根据系统的配置参数异步执行的。要跟踪mutation的进度，可以使用系统表 [`system.mutations`](../../operations/system-tables/mutations.md#system_tables-mutations)。已经成功提交的mutation操作在服务重启后仍会继续执行。一旦mutation完成提交，就不能回退了，但是如果因为某种原因操作被卡住了，可以通过 [`KILL MUTATION`](../../sql-reference/statements/misc.md#kill-mutation)操作来取消它的执行。
 
-Mutation查询在添加mutation条目后立即返回（如果将复制的表复制到ZooKeeper，则将非复制的表复制到文件系统）。 突变本身使用系统配置文件设置异步执行。 要跟踪突变的进度，您可以使用 [`system.mutations`](../../operations/system-tables.md#system_tables-mutations) 桌子 即使重新启动ClickHouse服务器，成功提交的突变仍将继续执行。 一旦提交，没有办法回滚突变，但如果突变由于某种原因被卡住，可以使用 [`KILL MUTATION`](misc.md#kill-mutation) 查询。
+已完成的mutations记录不会立即删除（要保留的记录数量由 `finished_mutations_to_keep` 这一参数决定）。之前的mutation记录会被删除。
 
-已完成突变的条目不会立即删除（保留条目的数量由 `finished_mutations_to_keep` 存储引擎参数）。 旧的突变条目将被删除。
+## 修改用户 {#alter-user-statement}
 
-## ALTER USER {#alter-user-statement}
-
-更改ClickHouse用户帐户.
+修改CH的用户账号
 
 ### 语法 {#alter-user-syntax}
 
@@ -516,37 +502,37 @@ ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
-### 产品描述 {#alter-user-dscr}
+### 说明 {#alter-user-dscr}
 
-使用 `ALTER USER` 你必须有 [ALTER USER](grant.md#grant-access-management) 特权
+要使用 `ALTER USER`，你必须拥有 [ALTER USER](../../sql-reference/statements/grant.md#grant-access-management) 操作的权限
 
-### 例 {#alter-user-examples}
+### Examples {#alter-user-examples}
 
-将授予的角色设置为默认值:
+设置默认角色：
 
 ``` sql
 ALTER USER user DEFAULT ROLE role1, role2
 ```
 
-如果以前未向用户授予角色，ClickHouse将引发异常。
+如果角色之前没分配给用户，CH会抛出异常。
 
-将所有授予的角色设置为默认值:
+将所有分配的角色设为默认
 
 ``` sql
 ALTER USER user DEFAULT ROLE ALL
 ```
 
-如果将来将某个角色授予某个用户，它将自动成为默认值。
+如果以后给用户分配了某个角色，它将自动成为默认角色
 
-将所有授予的角色设置为默认值，除非 `role1` 和 `role2`:
+将除了 `role1` 和 `role2`之外的其它角色 设为默认
 
 ``` sql
 ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
 ```
 
-## ALTER ROLE {#alter-role-statement}
+## 修改角色 {#alter-role-statement}
 
-更改角色。
+修改角色.
 
 ### 语法 {#alter-role-syntax}
 
@@ -556,9 +542,10 @@ ALTER ROLE [IF EXISTS] name [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
-## ALTER ROW POLICY {#alter-row-policy-statement}
+## 修改row policy {#alter-row-policy-statement}
 
-更改行策略。
+
+修改row policy.
 
 ### 语法 {#alter-row-policy-syntax}
 
@@ -571,9 +558,9 @@ ALTER [ROW] POLICY [IF EXISTS] name [ON CLUSTER cluster_name] ON [database.]tabl
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
-## ALTER QUOTA {#alter-quota-statement}
+## 修改配额quotas {#alter-quota-statement}
 
-更改配额。
+修改配额quotas.
 
 ### 语法 {#alter-quota-syntax}
 
@@ -587,9 +574,9 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
-## ALTER SETTINGS PROFILE {#alter-settings-profile-statement}
+## 修改settings配置 {#alter-settings-profile-statement}
 
-更改配额。
+修改settings配置.
 
 ### 语法 {#alter-settings-profile-syntax}
 
@@ -599,4 +586,4 @@ ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->
