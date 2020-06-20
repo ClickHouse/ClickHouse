@@ -109,10 +109,10 @@ public:
     /// if fallback_to_stale_replicas is false and it is unable to get min_entries connections to up-to-date replicas.
     std::vector<TryResult> getMany(
             size_t min_entries, size_t max_entries, size_t max_tries,
+            size_t max_ignored_errors,
+            bool fallback_to_stale_replicas,
             const TryGetEntryFunc & try_get_entry,
-            const GetPriorityFunc & get_priority = GetPriorityFunc(),
-            bool fallback_to_stale_replicas = true,
-            size_t max_ignored_errors = 0);
+            const GetPriorityFunc & get_priority = GetPriorityFunc());
 
 protected:
     struct PoolState;
@@ -140,7 +140,7 @@ template <typename TNestedPool>
 typename TNestedPool::Entry
 PoolWithFailoverBase<TNestedPool>::get(const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
 {
-    std::vector<TryResult> results = getMany(1, 1, 1, try_get_entry, get_priority);
+    std::vector<TryResult> results = getMany(1, 1, 1, 0, true, try_get_entry, get_priority);
     if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(
                 "PoolWithFailoverBase::getMany() returned less than min_entries entries.",
@@ -152,10 +152,10 @@ template <typename TNestedPool>
 std::vector<typename PoolWithFailoverBase<TNestedPool>::TryResult>
 PoolWithFailoverBase<TNestedPool>::getMany(
         size_t min_entries, size_t max_entries, size_t max_tries,
-        const TryGetEntryFunc & try_get_entry,
-        const GetPriorityFunc & get_priority,
+        size_t max_ignored_errors,
         bool fallback_to_stale_replicas,
-        size_t max_ignored_errors)
+        const TryGetEntryFunc & try_get_entry,
+        const GetPriorityFunc & get_priority)
 {
     /// Update random numbers and error counts.
     PoolStates pool_states = updatePoolStates(max_ignored_errors);

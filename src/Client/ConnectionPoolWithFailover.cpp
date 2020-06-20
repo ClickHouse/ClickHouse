@@ -206,12 +206,12 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         break;
     }
 
-    bool fallback_to_stale_replicas = settings ? bool(settings->fallback_to_stale_replicas_for_distributed_queries) : true;
+    bool fallback_to_stale_replicas = settings ? settings->fallback_to_stale_replicas_for_distributed_queries.value : true;
+    UInt64 max_ignored_errors = settings ? settings->distributed_replica_max_ignored_errors.value : 0;
 
     return Base::getMany(min_entries, max_entries, max_tries,
-        try_get_entry, get_priority,
-        fallback_to_stale_replicas,
-        settings ? settings->distributed_replica_max_ignored_errors.value : 0);
+        max_ignored_errors, fallback_to_stale_replicas,
+        try_get_entry, get_priority);
 }
 
 ConnectionPoolWithFailover::TryResult
