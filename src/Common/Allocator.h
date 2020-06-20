@@ -57,7 +57,7 @@
   * third-party applications which may already use own allocator doing mmaps
   * in the implementation of alloc/realloc.
   */
-__attribute__((__weak__)) extern const size_t MMAP_THRESHOLD;
+extern const size_t MMAP_THRESHOLD;
 
 static constexpr size_t MMAP_MIN_ALIGNMENT = 4096;
 static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
