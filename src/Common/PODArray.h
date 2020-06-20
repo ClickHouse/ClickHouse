@@ -241,8 +241,8 @@ public:
         if (unlikely(required_capacity > capacity()))
             reserve(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
 
-        size_t items_bytes_size = byte_size(number_of_items);
-        memcpy(c_end, ptr, items_bytes_size);
+        size_t items_byte_size = byte_size(number_of_items);
+        memcpy(c_end, ptr, items_byte_size);
         c_end += items_byte_size;
     }
 
