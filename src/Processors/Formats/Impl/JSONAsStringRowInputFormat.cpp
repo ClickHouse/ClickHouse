@@ -21,6 +21,12 @@ JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(const Block & header_, Re
     }
 }
 
+void JSONAsStringRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    buf.reset();
+}
+
 void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
 {
     PeekableReadBufferCheckpoint checkpoint{buf};
