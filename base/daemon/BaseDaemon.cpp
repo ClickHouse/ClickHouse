@@ -292,7 +292,7 @@ static void sanitizerDeathCallback()
 
     StringRef query_id = DB::CurrentThread::getQueryId();   /// This is signal safe.
 
-    if (query_id.empty())
+    if (query_id.size == 0)
     {
         LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Sanitizer trap.",
             VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num);
