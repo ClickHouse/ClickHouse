@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Intel NUC, 4 cores (Intel i7-6770HQ), 32 GiB RAM, 1 TB NVMe SSD",
+        "system":       "Intel NUC",
+        "system_full":  "Intel NUC, 4 cores (Intel i7-6770HQ), 32 GiB RAM, 1 TB NVMe SSD",
         "time":         "2020-04-15 00:00:00",
+        "kind":         "desktop",
         "result":
         [
             [0.003, 0.002, 0.001],

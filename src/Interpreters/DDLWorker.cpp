@@ -821,7 +821,6 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
                 executed_by_leader = true;
                 break;
             }
-
         }
 
         /// Does nothing if wasn't previously locked
