@@ -1019,7 +1019,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     std::optional<MutationsInterpreter> interpreter;
 
     const auto data_settings = data.getSettings();
-    MutationCommands for_interpreter, for_file_renames;
+    MutationCommands for_interpreter;
+    MutationCommands for_file_renames;
 
     splitMutationCommands(source_part, commands_for_part, for_interpreter, for_file_renames);
 
