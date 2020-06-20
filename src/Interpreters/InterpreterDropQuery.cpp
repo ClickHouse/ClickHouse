@@ -129,7 +129,8 @@ BlockIO InterpreterDropQuery::executeToTable(
             if (database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-            if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
+            // Prevents recursive drop from drop database query. The original query must specify a table.
+            if (!query_ptr->as<ASTDropQuery &>().table.empty() && database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
                 database->propose(query_ptr);
             } else {
                 database->dropTable(context, table_id.table_name, query.no_delay);
