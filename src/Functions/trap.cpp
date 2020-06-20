@@ -1,4 +1,4 @@
-#if 0
+#if 1
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -63,6 +63,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
+        std::cerr << "executeImpl: " << !!CurrentThread::getInternalTextLogsQueue() << "\n";
+
         if (const ColumnConst * column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             String mode = column->getValue<String>();
