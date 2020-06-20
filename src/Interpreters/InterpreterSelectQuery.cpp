@@ -451,7 +451,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Blocks used in expression analysis contains size 1 const columns for constant folding and
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
-    sanitizeBlock(result_header);
+    sanitizeBlock(result_header, true);
 }
 
 
