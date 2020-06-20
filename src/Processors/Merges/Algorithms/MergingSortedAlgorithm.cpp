@@ -22,7 +22,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , description(std::move(description_))
     , limit(limit_)
     , out_row_sources_buf(out_row_sources_buf_)
-    , source_chunks(num_inputs)
+    , current_inputs(num_inputs)
     , cursors(num_inputs)
 {
     /// Replace column names in description to positions.
@@ -39,7 +39,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
 
 void MergingSortedAlgorithm::addInput()
 {
-    source_chunks.emplace_back();
+    current_inputs.emplace_back();
     cursors.emplace_back();
 }
 
@@ -53,13 +53,13 @@ static void prepareChunk(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
-void MergingSortedAlgorithm::initialize(Chunks chunks)
+void MergingSortedAlgorithm::initialize(Inputs inputs)
 {
-    source_chunks = std::move(chunks);
+    current_inputs = std::move(inputs);
 
-    for (size_t source_num = 0; source_num < source_chunks.size(); ++source_num)
+    for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
     {
-        auto & chunk = source_chunks[source_num];
+        auto & chunk = current_inputs[source_num].chunk;
 
         if (!chunk)
             continue;
@@ -74,11 +74,11 @@ void MergingSortedAlgorithm::initialize(Chunks chunks)
         queue_without_collation = SortingHeap<SortCursor>(cursors);
 }
 
-void MergingSortedAlgorithm::consume(Chunk & chunk, size_t source_num)
+void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    prepareChunk(chunk);
-    source_chunks[source_num].swap(chunk);
-    cursors[source_num].reset(source_chunks[source_num].getColumns(), {});
+    prepareChunk(input.chunk);
+    current_inputs[source_num].swap(input);
+    cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), {});
 
     if (has_collation)
         queue_with_collation.push(cursors[source_num]);
@@ -105,10 +105,18 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
 
         auto current = queue.current();
 
+        if (current.impl->isLast() && current_inputs[current.impl->order].skip_last_row)
+        {
+            /// Get the next block from the corresponding source, if there is one.
+            queue.removeTop();
+            return Status(current.impl->order);
+        }
+
         /** And what if the block is totally less or equal than the rest for the current cursor?
             * Or is there only one data source left in the queue? Then you can take the entire block on current cursor.
             */
         if (current.impl->isFirst()
+            && !current_inputs[current.impl->order].skip_last_row /// Ignore optimization if last row should be skipped.
             && (queue.size() == 1
                 || (queue.size() >= 2 && current.totallyLessOrEquals(queue.nextChild()))))
         {
@@ -167,7 +175,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::insertFromChunk(size_t source_
 
     //std::cerr << "copied columns\n";
 
-    auto num_rows = source_chunks[source_num].getNumRows();
+    auto num_rows = current_inputs[source_num].chunk.getNumRows();
 
     UInt64 total_merged_rows_after_insertion = merged_data.mergedRows() + num_rows;
     bool is_finished = limit && total_merged_rows_after_insertion >= limit;
@@ -175,12 +183,12 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::insertFromChunk(size_t source_
     if (limit && total_merged_rows_after_insertion > limit)
     {
         num_rows -= total_merged_rows_after_insertion - limit;
-        merged_data.insertFromChunk(std::move(source_chunks[source_num]), num_rows);
+        merged_data.insertFromChunk(std::move(current_inputs[source_num].chunk), num_rows);
     }
     else
-        merged_data.insertFromChunk(std::move(source_chunks[source_num]), 0);
+        merged_data.insertFromChunk(std::move(current_inputs[source_num].chunk), 0);
 
-    source_chunks[source_num] = Chunk();
+    current_inputs[source_num].chunk = Chunk();
 
     /// Write order of rows for other columns
     /// this data will be used in gather stream
