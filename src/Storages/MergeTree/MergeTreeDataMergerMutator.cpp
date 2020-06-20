@@ -1061,7 +1061,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         source_part->getBytesOnDisk(),
         static_cast<double>(source_part->getBytesOnDisk()) / data.getTotalActiveSizeInBytes());
 
-
     disk->createDirectories(new_part_tmp_path);
 
     /// Don't change granularity type while mutating subset of columns
