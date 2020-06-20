@@ -18,7 +18,7 @@ namespace ErrorCodes
 /// Use 'digits' input as max allowed meaning decimal digits in result. Place actual number of meaning digits in 'digits' output.
 /// Do not care about decimal scale, only about meaning digits in decimal text representation.
 template <bool _throw_on_error, typename T>
-inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exponent, bool digits_only = false)
+static inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exponent, bool digits_only, bool cut_excessive_digits)
 {
     x = 0;
     exponent = 0;
@@ -83,7 +83,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 ++places; // num zeroes before + current digit
                 if (digits + places > max_digits)
                 {
-                    if (after_point)
+                    if (after_point && cut_excessive_digits)
                     {
                         /// Simply cut excessive digits.
                         break;
@@ -146,11 +146,11 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
 }
 
 template <typename T>
-inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale, bool digits_only = false)
+inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale, bool digits_only, bool cut_excessive_digits)
 {
     uint32_t digits = precision;
     int32_t exponent;
-    readDigits<true>(buf, x, digits, exponent, digits_only);
+    readDigits<true>(buf, x, digits, exponent, digits_only, cut_excessive_digits);
 
     if (static_cast<int32_t>(digits) + exponent > static_cast<int32_t>(precision - scale))
         throw Exception(fmt::format(
@@ -160,24 +160,32 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
 
     if (static_cast<int32_t>(scale) + exponent < 0)
     {
-        /// Too many digits after point. Just cut off excessive digits.
-        x.value /= intExp10OfSize<T>(-exponent - static_cast<int32_t>(scale));
-        scale = 0;
-        return;
+        if (cut_excessive_digits)
+        {
+            /// Too many digits after point. Just cut off excessive digits.
+            x.value /= intExp10OfSize<T>(-exponent - static_cast<int32_t>(scale));
+            scale = 0;
+            return;
+        }
+        else
+            throw Exception(fmt::format(
+                "Decimal value has too large number of digits after point: {} digits were read: {}e{}."
+                " Expected to read decimal with scale {} and precision {}",
+                digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
     scale += exponent;
 }
 
 template <typename T>
-inline bool tryReadDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale)
+inline bool tryReadDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale, bool cut_excessive_digits)
 {
     uint32_t digits = precision;
     int32_t exponent;
 
-    if (!readDigits<false>(buf, x, digits, exponent, true) ||
-        static_cast<int32_t>(digits) + exponent > static_cast<int32_t>(precision - scale) ||
-        static_cast<int32_t>(scale) + exponent < 0)
+    if (!readDigits<false>(buf, x, digits, exponent, true, false)
+        || static_cast<int32_t>(digits) + exponent > static_cast<int32_t>(precision - scale)
+        || (!cut_excessive_digits && static_cast<int32_t>(scale) + exponent < 0))
         return false;
 
     scale += exponent;
@@ -185,7 +193,7 @@ inline bool tryReadDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint
 }
 
 template <typename T>
-inline void readCSVDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale)
+inline void readCSVDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale, bool cut_excessive_digits)
 {
     if (buf.eof())
         throwReadAfterEOF();
@@ -195,7 +203,7 @@ inline void readCSVDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint
     if (maybe_quote == '\'' || maybe_quote == '\"')
         ++buf.position();
 
-    readDecimalText(buf, x, precision, scale, false);
+    readDecimalText(buf, x, precision, scale, false, cut_excessive_digits);
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, buf);

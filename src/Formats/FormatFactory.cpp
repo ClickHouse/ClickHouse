@@ -75,6 +75,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
     format_settings.regexp.regexp = settings.format_regexp;
     format_settings.regexp.escaping_rule = settings.format_regexp_escaping_rule;
     format_settings.regexp.skip_unmatched = settings.format_regexp_skip_unmatched;
+    format_settings.decimal_read_cut_excessive_digits = settings.decimal_read_cut_excessive_digits;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER))

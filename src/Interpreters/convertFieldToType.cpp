@@ -88,7 +88,7 @@ template <typename T>
 static Field convertStringToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
     const String & str_value = from.get<String>();
-    T value = type.parseFromString(str_value);
+    T value = type.parseFromString(str_value, true);
     return DecimalField<T>(value, type.getScale());
 }
 

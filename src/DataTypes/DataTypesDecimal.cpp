@@ -58,10 +58,10 @@ void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, W
 }
 
 template <typename T>
-bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
+bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool cut_excessive_digits)
 {
     UInt32 unread_scale = scale;
-    if (!tryReadDecimalText(istr, x, precision, unread_scale))
+    if (!tryReadDecimalText(istr, x, precision, unread_scale, cut_excessive_digits))
         return false;
 
     if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
@@ -71,41 +71,41 @@ bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision,
 }
 
 template <typename T>
-void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
+void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv, bool cut_excessive_digits)
 {
     UInt32 unread_scale = scale;
     if (csv)
-        readCSVDecimalText(istr, x, precision, unread_scale);
+        readCSVDecimalText(istr, x, precision, unread_scale, cut_excessive_digits);
     else
-        readDecimalText(istr, x, precision, unread_scale);
+        readDecimalText(istr, x, precision, unread_scale, false, cut_excessive_digits);
 
     if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 }
 
 template <typename T>
-void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     T x;
-    readText(x, istr);
+    readText(x, istr, false, settings.decimal_read_cut_excessive_digits);
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 template <typename T>
-void DataTypeDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void DataTypeDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     T x;
-    readText(x, istr, true);
+    readText(x, istr, true, settings.decimal_read_cut_excessive_digits);
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 template <typename T>
-T DataTypeDecimal<T>::parseFromString(const String & str) const
+T DataTypeDecimal<T>::parseFromString(const String & str, bool cut_excessive_digits) const
 {
     ReadBufferFromMemory buf(str.data(), str.size());
     T x;
     UInt32 unread_scale = this->scale;
-    readDecimalText(buf, x, this->precision, unread_scale, true);
+    readDecimalText(buf, x, this->precision, unread_scale, true, cut_excessive_digits);
 
     if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);

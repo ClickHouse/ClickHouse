@@ -141,6 +141,7 @@ struct FormatSettings
 
     Regexp regexp;
 
+    bool decimal_read_cut_excessive_digits = true;
 };
 
 }

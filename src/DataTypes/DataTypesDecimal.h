@@ -50,11 +50,15 @@ public:
 
     bool equals(const IDataType & rhs) const override;
 
-    T parseFromString(const String & str) const;
-    void readText(T & x, ReadBuffer & istr, bool csv = false) const { readText(x, istr, this->precision, this->scale, csv); }
+    T parseFromString(const String & str, bool cut_excessive_digits) const;
 
-    static void readText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_, bool csv = false);
-    static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_);
+    void readText(T & x, ReadBuffer & istr, bool csv, bool cut_excessive_digits) const
+    {
+        readText(x, istr, this->precision, this->scale, csv, cut_excessive_digits);
+    }
+
+    static void readText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_, bool csv, bool cut_excessive_digits);
+    static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_, bool cut_excessive_digits);
 };
 
 template <typename T>

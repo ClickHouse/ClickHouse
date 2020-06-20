@@ -455,7 +455,9 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, format_regexp_skip_unmatched, false, "Skip lines unmatched by regular expression (for Regexp format", 0) \
     \
     M(SettingBool, output_format_enable_streaming, false, "Enable streaming in output formats that support it.", 0) \
-    M(SettingBool, output_format_write_statistics, true, "Write statistics about read rows, bytes, time elapsed in suitable output formats.", 0)
+    M(SettingBool, output_format_write_statistics, true, "Write statistics about read rows, bytes, time elapsed in suitable output formats.", 0) \
+    \
+    M(SettingBool, decimal_read_cut_excessive_digits, true, "When there are excessive digits (precision) after decimal point, just cut to precision while reading Decimal from text. If the setting disabled, throw exception.", 0) \
 
     #define LIST_OF_SETTINGS(M)    \
         COMMON_SETTINGS(M)         \

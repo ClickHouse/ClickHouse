@@ -686,7 +686,7 @@ private:
         if (!readTempString())
             return false;
         ReadBufferFromString buf(temp_string);
-        DataTypeDecimal<Decimal<T>>::readText(decimal, buf, precision, scale);
+        DataTypeDecimal<Decimal<T>>::readText(decimal, buf, precision, scale, false, true);
         return true;
     }
 
