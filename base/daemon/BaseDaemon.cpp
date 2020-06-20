@@ -710,11 +710,15 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_listener = std::make_unique<SignalListener>(*this);
     signal_listener_thread.start(*signal_listener);
 
+#if defined(__ELF__) && !defined(__FreeBSD__)
     String build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
     if (build_id_hex.empty())
         build_id_info = "no build id";
     else
         build_id_info = "build id: " + build_id_hex;
+#else
+    build_id_info = "no build id";
+#endif
 }
 
 void BaseDaemon::logRevision() const
