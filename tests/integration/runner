@@ -98,7 +98,7 @@ if __name__ == "__main__":
         tty = "-it"
 
     cmd = "docker run {net} {tty} --rm --name {name} --privileged --volume={bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
-        --volume={cfg}:/clickhouse-config --volume={pth}:/ClickHouse --volume={name}_volume:/var/lib/docker -e PYTEST_OPTS='{opts}' {img} {command}".format(
+        --volume={cfg}:/clickhouse-config --volume={pth}:/ClickHouse --volume={name}_volume:/var/lib/docker -e PYTHONWARNINGS=ignore:urllib3:RequestsDependencyWarning,ignore:psycopg2:UserWarning -e PYTEST_OPTS='{opts}' {img} {command}".format(
         net=net,
         tty=tty,
         bin=args.binary,
