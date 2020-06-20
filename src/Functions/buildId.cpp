@@ -12,13 +12,13 @@ namespace DB
 
 /** buildId() - returns the compiler build id of the running binary.
   */
-class FunctionVersion : public IFunction
+class FunctionBuildId : public IFunction
 {
 public:
     static constexpr auto name = "buildId";
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionVersion>();
+        return std::make_shared<FunctionBuildId>();
     }
 
     String getName() const override
@@ -43,9 +43,9 @@ public:
 };
 
 
-void registerFunctionVersion(FunctionFactory & factory)
+void registerFunctionBuildId(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionVersion>();
+    factory.registerFunction<FunctionBuildId>();
 }
 
 }
