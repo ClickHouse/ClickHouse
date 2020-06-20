@@ -180,7 +180,7 @@ Block KafkaBlockInputStream::readImpl()
         }
         else if (buffer->isStalled())
         {
-            failed_poll_attempts++;
+            ++failed_poll_attempts;
         }
         else if (buffer->polledDataUnusable())
         {
