@@ -38,6 +38,7 @@
 #include <common/argsToConfig.h>
 #include <common/getThreadId.h>
 #include <common/coverage.h>
+#include <common/sleep.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
@@ -134,17 +135,14 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     DB::writePODBinary(stack_trace, out);
     DB::writeBinary(UInt32(getThreadId()), out);
     DB::writeStringBinary(query_id, out);
-//    DB::writePODBinary(DB::current_thread, out);
+    DB::writePODBinary(DB::current_thread, out);
 
     out.next();
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
-        ::sleep(10);
-
-        //std::cerr << "signalHandler: " << static_cast<void*>(DB::current_thread) << ", " << !!DB::current_thread->getInternalTextLogsQueue() << "\n";
-
+        sleepForSeconds(10);
         call_default_signal_handler(sig);
     }
 
@@ -221,16 +219,14 @@ public:
                 StackTrace stack_trace(NoCapture{});
                 UInt32 thread_num;
                 std::string query_id;
-                const DB::CurrentThread * thread_ptr{};
+                DB::ThreadStatus * thread_ptr{};
 
                 DB::readPODBinary(info, in);
                 DB::readPODBinary(context, in);
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
                 DB::readBinary(query_id, in);
-//                DB::readPODBinary(thread_ptr, in);
-
-                std::cerr << "Read " << static_cast<const void*>(thread_ptr) << "\n";
+                DB::readPODBinary(thread_ptr, in);
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
@@ -255,17 +251,17 @@ private:
         const StackTrace & stack_trace,
         UInt32 thread_num,
         const std::string & query_id,
-        const DB::CurrentThread * /*thread_ptr*/) const
+        DB::ThreadStatus * thread_ptr) const
     {
+        DB::ThreadStatus thread_status;
+
         /// Send logs from this thread to client if possible.
         /// It will allow client to see failure messages directly.
-/*        if (thread_ptr)
+        if (thread_ptr)
         {
-            std::cerr << static_cast<const void*>(thread_ptr) << ", " << !!thread_ptr->getInternalTextLogsQueue() << "\n";
-
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
                 DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
-        }*/
+        }
 
         LOG_FATAL(log, "########################################");
 
@@ -299,6 +295,10 @@ private:
 
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+
+        /// When everything is done, we will try to send these error messages to client.
+        if (thread_ptr)
+            thread_ptr->onFatalError();
     }
 };
 
