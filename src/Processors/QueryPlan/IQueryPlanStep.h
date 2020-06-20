@@ -14,8 +14,8 @@ class DataStream
 public:
     Block header;
 
-    NameSet distinct_columns;
-    NameSet local_distinct_columns; /// Those columns are distinct in separate thread, but not in general.
+    NameSet distinct_columns = {};
+    NameSet local_distinct_columns = {}; /// Those columns are distinct in separate thread, but not in general.
 
     /// Things which may be added:
     /// * sort description
