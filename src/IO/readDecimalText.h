@@ -12,7 +12,7 @@ namespace ErrorCodes
 
 /// Try to read Decimal into underlying type T from ReadBuffer. Throws if 'digits_only' is set and there's unexpected symbol in input.
 /// Returns integer 'exponent' factor that x should be muntiplyed by to get correct Decimal value: result = x * 10^exponent.
-/// Use 'digits' input as max allowed meaning decimal digits in result. Place actual meanin digits in 'digits' output.
+/// Use 'digits' input as max allowed meaning decimal digits in result. Place actual number of meaning digits in 'digits' output.
 /// Do not care about decimal scale, only about meaning digits in decimal text representation.
 template <bool _throw_on_error, typename T>
 inline bool readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exponent, bool digits_only = false)
@@ -138,9 +138,16 @@ inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, uns
     readDigits<true>(buf, x, digits, exponent, digits_only);
 
     if (static_cast<int>(digits) + exponent > static_cast<int>(precision - scale))
-        throw Exception("Decimal value is too big", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(fmt::format(
+            "Decimal value is too big: {} digits were read: {}e{}."
+            " Expected to read decimal with scale {} and precision {}",
+            digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
     if (static_cast<int>(scale) + exponent < 0)
-        throw Exception("Decimal value is too small", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(fmt::format(
+            "Decimal value has too large number of digits after point: {} digits were read: {}e{}."
+            " Expected to read decimal with scale {} and precision {}",
+            digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     scale += exponent;
 }
