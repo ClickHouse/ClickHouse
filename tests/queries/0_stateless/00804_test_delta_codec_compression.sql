@@ -1,4 +1,4 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 SET joined_subquery_requires_alias = 0;
 
 DROP TABLE IF EXISTS delta_codec_synthetic;
