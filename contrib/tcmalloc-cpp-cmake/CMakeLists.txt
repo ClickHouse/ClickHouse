@@ -111,6 +111,7 @@ if (${ENABLE_TCMALLOC_CPP})
 
     # jemalloc compatibility
     list(APPEND DEFINITIONS -DUSE_JEMALLOC=0)
+    list(APPEND DEFINITIONS -DUSE_TCMALLOC_CPP=1)
 
     target_compile_definitions(tcmalloc-cpp PUBLIC ${DEFINITIONS})
 
