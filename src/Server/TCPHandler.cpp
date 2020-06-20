@@ -189,6 +189,7 @@ void TCPHandler::runImpl()
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
+                CurrentThread::setFatalErrorCallback([this]{ sendLogs(); });
             }
 
             query_context->setExternalTablesInitializer([&connection_settings, this] (Context & context)
