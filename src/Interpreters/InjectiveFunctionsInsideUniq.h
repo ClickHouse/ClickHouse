@@ -9,7 +9,8 @@ namespace DB
 class InjectiveFunctionsInsideUniqMatcher
 {
 public:
-    struct Data {
+    struct Data
+    {
         const Context & context;
     };
 

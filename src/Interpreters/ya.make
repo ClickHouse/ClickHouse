@@ -60,6 +60,7 @@ SRCS(
     HashJoin.cpp
     IdentifierSemantic.cpp
     IExternalLoadable.cpp
+    InjectiveFunctionsInsideUniq.cpp
     InJoinSubqueriesPreprocessor.cpp
     inplaceBlockConversions.cpp
     InternalTextLogsQueue.cpp
