@@ -57,16 +57,7 @@
   * third-party applications which may already use own allocator doing mmaps
   * in the implementation of alloc/realloc.
   */
-#ifdef NDEBUG
-    __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
-#else
-    /**
-      * In debug build, use small mmap threshold to reproduce more memory
-      * stomping bugs. Along with ASLR it will hopefully detect more issues than
-      * ASan. The program may fail due to the limit on number of memory mappings.
-      */
-    __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 4096;
-#endif
+__attribute__((__weak__)) extern const size_t MMAP_THRESHOLD;
 
 static constexpr size_t MMAP_MIN_ALIGNMENT = 4096;
 static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
