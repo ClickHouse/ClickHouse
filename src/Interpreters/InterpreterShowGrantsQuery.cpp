@@ -35,44 +35,33 @@ namespace
         std::shared_ptr<ASTRolesOrUsersSet> to_roles = std::make_shared<ASTRolesOrUsersSet>();
         to_roles->names.push_back(grantee.getName());
 
-        auto grants_and_partial_revokes = grantee.access.getGrantsAndPartialRevokes();
+        std::shared_ptr<ASTGrantQuery> current_query = nullptr;
 
-        for (bool grant_option : {false, true})
+        auto elements = grantee.access.getElements();
+        for (const auto & element : elements)
         {
-            using Kind = ASTGrantQuery::Kind;
-            for (Kind kind : {Kind::GRANT, Kind::REVOKE})
+            if (current_query)
             {
-                AccessRightsElements * elements = nullptr;
-                if (grant_option)
-                    elements = (kind == Kind::GRANT) ? &grants_and_partial_revokes.grants_with_grant_option : &grants_and_partial_revokes.revokes_grant_option;
-                else
-                    elements = (kind == Kind::GRANT) ? &grants_and_partial_revokes.grants : &grants_and_partial_revokes.revokes;
-                elements->normalize();
-
-                std::shared_ptr<ASTGrantQuery> grant_query = nullptr;
-                for (size_t i = 0; i != elements->size(); ++i)
-                {
-                    const auto & element = (*elements)[i];
-                    bool prev_element_on_same_db_and_table = false;
-                    if (grant_query)
-                    {
-                        const auto & prev_element = grant_query->access_rights_elements.back();
-                        if ((element.database == prev_element.database) && (element.any_database == prev_element.any_database)
-                            && (element.table == prev_element.table) && (element.any_table == prev_element.any_table))
-                            prev_element_on_same_db_and_table = true;
-                    }
-                    if (!prev_element_on_same_db_and_table)
-                    {
-                        grant_query = std::make_shared<ASTGrantQuery>();
-                        grant_query->kind = kind;
-                        grant_query->attach = attach_mode;
-                        grant_query->grant_option = grant_option;
-                        grant_query->to_roles = to_roles;
-                        res.push_back(grant_query);
-                    }
-                    grant_query->access_rights_elements.emplace_back(std::move(element));
-                }
+                const auto & prev_element = current_query->access_rights_elements.back();
+                bool continue_using_current_query = (element.database == prev_element.database)
+                    && (element.any_database == prev_element.any_database) && (element.table == prev_element.table)
+                    && (element.any_table == prev_element.any_table) && (element.grant_option == current_query->grant_option)
+                    && (element.kind == current_query->kind);
+                if (!continue_using_current_query)
+                    current_query = nullptr;
             }
+
+            if (!current_query)
+            {
+                current_query = std::make_shared<ASTGrantQuery>();
+                current_query->kind = element.kind;
+                current_query->attach = attach_mode;
+                current_query->grant_option = element.grant_option;
+                current_query->to_roles = to_roles;
+                res.push_back(current_query);
+            }
+
+            current_query->access_rights_elements.emplace_back(std::move(element));
         }
 
         auto grants_roles = grantee.granted_roles.getGrants();
