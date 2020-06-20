@@ -1128,7 +1128,8 @@ public:
         const DataTypePtr & right_type = col_with_type_and_name_right.type;
 
         /// The case when arguments are the same (tautological comparison). Return constant.
-        /// NOTE: Nullable types are special case. (BTW, this function use default implementation for Nullable, so Nullable types cannot be here. Check just in case.)
+        /// NOTE: Nullable types are special case.
+        /// (BTW, this function use default implementation for Nullable, so Nullable types cannot be here. Check just in case.)
         /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are sometimes equal sometimes not).
         if (left_type->equals(*right_type) && !left_type->isNullable() && col_left_untyped == col_right_untyped)
         {
