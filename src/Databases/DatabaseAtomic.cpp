@@ -40,6 +40,13 @@ DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, Context & co
     Poco::File(path_to_table_symlinks).createDirectories();
 }
 
+DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, const String & data_path_, const String & logger, Context & context_)
+    : DatabaseOrdinary(name_, std::move(metadata_path_), data_path_, logger, context_)
+    , path_to_table_symlinks(context_.getPath() + "data/" + escapeForFileName(name_) + "/")
+{
+    Poco::File(path_to_table_symlinks).createDirectories();
+}
+
 String DatabaseAtomic::getTableDataPath(const String & table_name) const
 {
     std::lock_guard lock(mutex);
