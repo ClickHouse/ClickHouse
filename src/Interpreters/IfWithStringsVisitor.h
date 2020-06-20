@@ -229,6 +229,9 @@ struct FindingIfWithStringsMatcher
                 if (function_node->arguments->children.size() != 4)
                     return;
 
+                if (!function_node->arguments->children[3]->as<ASTLiteral>())
+                    return;
+
                 if (!strcmp(function_node->arguments->children[3]->as<ASTLiteral>()->value.getTypeName(), "String"))
                 {
                     transformStringsArrayIntoEnum(function_node);
