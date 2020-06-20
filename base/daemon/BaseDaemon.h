@@ -198,6 +198,8 @@ protected:
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
+
+    String build_id_info;
 };
 
 
