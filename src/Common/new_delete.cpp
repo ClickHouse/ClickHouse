@@ -38,6 +38,19 @@ struct InitializeJemallocZoneAllocatorForOSX
 /// @sa https://en.cppreference.com/w/cpp/memory/new/operator_new
 ///     https://en.cppreference.com/w/cpp/memory/new/operator_delete
 
+#ifdef USE_TCMALLOC_CPP
+#include <tcmalloc/malloc_extension.h>
+struct ClickhouseTCMallocBootstrap
+{
+    ClickhouseTCMallocBootstrap()
+    {
+        /// See tests/allocator.cpp for information
+        tcmalloc::MallocExtension::SetProfileSamplingRate(SIZE_MAX);
+        tcmalloc::MallocExtension::SetGuardedSamplingRate(SIZE_MAX);
+    }
+} bootstrap;
+#endif
+
 namespace Memory
 {
 
