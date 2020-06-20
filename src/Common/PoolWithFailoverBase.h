@@ -117,7 +117,8 @@ protected:
     using PoolStates = std::vector<PoolState>;
 
     /// Returns a single connection.
-    Entry get(const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority = GetPriorityFunc());
+    Entry get(size_t max_ignored_errors, bool fallback_to_stale_replicas,
+        const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority = GetPriorityFunc());
 
     /// This function returns a copy of pool states to avoid race conditions when modifying shared pool states.
     PoolStates updatePoolStates(size_t max_ignored_errors);
@@ -138,9 +139,13 @@ protected:
 
 template <typename TNestedPool>
 typename TNestedPool::Entry
-PoolWithFailoverBase<TNestedPool>::get(const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
+PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_to_stale_replicas,
+    const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
 {
-    std::vector<TryResult> results = getMany(1, 1, 1, 0, true, try_get_entry, get_priority);
+    std::vector<TryResult> results = getMany(
+        1 /* min entries */, 1 /* max entries */, 1 /* max tries */,
+        max_ignored_errors, fallback_to_stale_replicas,
+        try_get_entry, get_priority);
     if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(
                 "PoolWithFailoverBase::getMany() returned less than min_entries entries.",
