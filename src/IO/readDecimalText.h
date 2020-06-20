@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <Common/intExp.h>
 
 
 namespace DB
@@ -80,21 +81,33 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 ++places; // num zeroes before + current digit
                 if (digits + places > max_digits)
                 {
-                    if constexpr (_throw_on_error)
-                        throw Exception("Too many digits (" + std::to_string(digits + places) + " > " + std::to_string(max_digits)
-                            + ") in decimal value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-                    return false;
+                    if (after_point)
+                    {
+                        /// Simply cut excessive digits.
+                        break;
+                    }
+                    else
+                    {
+                        if constexpr (_throw_on_error)
+                            throw Exception("Too many digits (" + std::to_string(digits + places) + " > " + std::to_string(max_digits)
+                                + ") in decimal value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+                        return false;
+                    }
                 }
+                else
+                {
+                    digits += places;
+                    if (after_point)
+                        exponent -= places;
 
-                digits += places;
-                if (after_point)
-                    exponent -= places;
+                    // TODO: accurate shift10 for big integers
+                    x *= intExp10OfSize<T>(places);
+                    places = 0;
 
-                // TODO: accurate shift10 for big integers
-                for (; places; --places)
-                    x *= 10;
-                x += (byte - '0');
-                break;
+                    x += (byte - '0');
+                    break;
+                }
             }
             case 'e': [[fallthrough]];
             case 'E':
@@ -144,10 +157,12 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
             digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (static_cast<int32_t>(scale) + exponent < 0)
-        throw Exception(fmt::format(
-            "Decimal value has too large number of digits after point: {} digits were read: {}e{}."
-            " Expected to read decimal with scale {} and precision {}",
-            digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    {
+        /// Too many digits after point. Just cut off excessive digits.
+        x.value /= intExp10OfSize<T>(-exponent - scale);
+        scale = 0;
+        return;
+    }
 
     scale += exponent;
 }
