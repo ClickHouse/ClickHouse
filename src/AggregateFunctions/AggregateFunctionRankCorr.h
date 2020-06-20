@@ -195,7 +195,7 @@ public:
 
             while (j < size - 1)
             {
-                if (value[j].first == value[j + 1].first)
+                if (tmp_values[j].first == tmp_values[j + 1].first)
                 {
                     // rank of (j + 1)th number
                     rank += 1;
@@ -232,7 +232,7 @@ public:
 
             while (j < size - 1)
             {
-                if (value[j].second == value[j + 1].second)
+                if (tmp_values[j].second == tmp_values[j + 1].second)
                 {
                     // rank of (j + 1)th number
                     rank += 1;
