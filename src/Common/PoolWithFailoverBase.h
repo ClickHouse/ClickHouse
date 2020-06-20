@@ -100,9 +100,6 @@ public:
     /// this functor. The pools with lower result value will be tried first.
     using GetPriorityFunc = std::function<size_t(size_t index)>;
 
-    /// Returns a single connection.
-    Entry get(const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority = GetPriorityFunc());
-
 
     /// Returns at least min_entries and at most max_entries connections (at most one connection per nested pool).
     /// The method will throw if it is unable to get min_entries alive connections or
@@ -118,6 +115,9 @@ protected:
     struct PoolState;
 
     using PoolStates = std::vector<PoolState>;
+
+    /// Returns a single connection.
+    Entry get(const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority = GetPriorityFunc());
 
     /// This function returns a copy of pool states to avoid race conditions when modifying shared pool states.
     PoolStates updatePoolStates(size_t max_ignored_errors);
