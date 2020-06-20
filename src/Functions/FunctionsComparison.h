@@ -262,7 +262,7 @@ struct StringComparisonImpl
         {
             size_t size = a_data.size();
             for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-                c[j] = Op::apply(0, memcmpSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i, a_n, b_data.data(), b_size));
+                c[j] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i, a_n, b_data.data(), b_size), 0);
         }
     }
 
