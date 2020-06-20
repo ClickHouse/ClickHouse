@@ -79,6 +79,7 @@ SRCS(
     ParserCreateSettingsProfileQuery.cpp
     ParserCreateUserQuery.cpp
     ParserDescribeTableQuery.cpp
+    ParserDataType.cpp
     ParserDictionary.cpp
     ParserDictionaryAttributeDeclaration.cpp
     ParserDropAccessEntityQuery.cpp

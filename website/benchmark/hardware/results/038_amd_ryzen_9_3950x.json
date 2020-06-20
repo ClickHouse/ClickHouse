@@ -1,7 +1,9 @@
 [
     {
-        "system":       "AMD Ryzen 9 3950X 16-Core Processor, 64 GiB RAM, Intel Optane 900P 280 GB",
+        "system":       "AMD Ryzen 9",
+        "system_full":       "AMD Ryzen 9 3950X 16-Core Processor, 64 GiB RAM, Intel Optane 900P 280 GB",
         "time":         "2020-03-14 00:00:00",
+        "kind":         "desktop",
         "result":
         [
             [0.002, 0.001, 0.001],
