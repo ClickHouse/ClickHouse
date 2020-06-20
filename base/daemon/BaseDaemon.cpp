@@ -83,7 +83,8 @@ static const size_t signal_pipe_buf_size =
     + sizeof(ucontext_t)
     + sizeof(StackTrace)
     + sizeof(UInt32)
-    + max_query_id_size + 1;    /// query_id + varint encoded length
+    + max_query_id_size + 1    /// query_id + varint encoded length
+    + sizeof(void*);
 
 
 using signal_function = void(int, siginfo_t*, void*);
@@ -133,6 +134,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     DB::writePODBinary(stack_trace, out);
     DB::writeBinary(UInt32(getThreadId()), out);
     DB::writeStringBinary(query_id, out);
+//    DB::writePODBinary(DB::current_thread, out);
 
     out.next();
 
@@ -140,6 +142,9 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     {
         /// The time that is usually enough for separate thread to print info into log.
         ::sleep(10);
+
+        //std::cerr << "signalHandler: " << static_cast<void*>(DB::current_thread) << ", " << !!DB::current_thread->getInternalTextLogsQueue() << "\n";
+
         call_default_signal_handler(sig);
     }
 
@@ -216,16 +221,20 @@ public:
                 StackTrace stack_trace(NoCapture{});
                 UInt32 thread_num;
                 std::string query_id;
+                const DB::CurrentThread * thread_ptr{};
 
                 DB::readPODBinary(info, in);
                 DB::readPODBinary(context, in);
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
                 DB::readBinary(query_id, in);
+//                DB::readPODBinary(thread_ptr, in);
+
+                std::cerr << "Read " << static_cast<const void*>(thread_ptr) << "\n";
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, query_id); }).detach();
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, query_id, thread_ptr); }).detach();
             }
         }
     }
@@ -245,8 +254,19 @@ private:
         const ucontext_t & context,
         const StackTrace & stack_trace,
         UInt32 thread_num,
-        const std::string & query_id) const
+        const std::string & query_id,
+        const DB::CurrentThread * /*thread_ptr*/) const
     {
+        /// Send logs from this thread to client if possible.
+        /// It will allow client to see failure messages directly.
+/*        if (thread_ptr)
+        {
+            std::cerr << static_cast<const void*>(thread_ptr) << ", " << !!thread_ptr->getInternalTextLogsQueue() << "\n";
+
+            if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
+                DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
+        }*/
+
         LOG_FATAL(log, "########################################");
 
         {
