@@ -1,3 +1,5 @@
+#pragma once
+
 #include <IO/ReadHelpers.h>
 #include <Common/intExp.h>
 
@@ -159,7 +161,7 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
     if (static_cast<int32_t>(scale) + exponent < 0)
     {
         /// Too many digits after point. Just cut off excessive digits.
-        x.value /= intExp10OfSize<T>(-exponent - scale);
+        x.value /= intExp10OfSize<T>(-exponent - static_cast<int32_t>(scale));
         scale = 0;
         return;
     }
