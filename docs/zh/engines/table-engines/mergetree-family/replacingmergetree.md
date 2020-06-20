@@ -1,4 +1,4 @@
-# 更换麦树 {#replacingmergetree}
+# 替换合并树 {#replacingmergetree}
 
 该引擎和[MergeTree](mergetree.md)的不同之处在于它会删除具有相同主键的重复项。
 

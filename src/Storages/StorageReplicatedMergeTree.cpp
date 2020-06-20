@@ -71,11 +71,10 @@ namespace ProfileEvents
     extern const Event ReplicatedPartFetches;
     extern const Event DataAfterMergeDiffersFromReplica;
     extern const Event DataAfterMutationDiffersFromReplica;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric LeaderReplica;
+    extern const Event CreatedLogEntryForMerge;
+    extern const Event NotCreatedLogEntryForMerge;
+    extern const Event CreatedLogEntryForMutation;
+    extern const Event NotCreatedLogEntryForMutation;
 }
 
 
@@ -98,7 +97,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
     extern const int NOT_FOUND_NODE;
     extern const int NO_ACTIVE_REPLICAS;
-    extern const int LEADERSHIP_CHANGED;
+    extern const int NOT_A_LEADER;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int PARTITION_ALREADY_EXISTS;
     extern const int TOO_MANY_RETRIES_TO_FETCH_PARTS;
@@ -160,7 +159,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     bool attach,
     const StorageID & table_id_,
     const String & relative_data_path_,
-    const StorageInMemoryMetadata & metadata,
+    const StorageInMemoryMetadata & metadata_,
     Context & context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
@@ -168,7 +167,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     bool has_force_restore_data_flag)
     : MergeTreeData(table_id_,
                     relative_data_path_,
-                    metadata,
+                    metadata_,
                     context_,
                     date_column_name,
                     merging_params_,
@@ -483,7 +482,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists()
         LOG_DEBUG(log, "Creating table {}", zookeeper_path);
 
         /// We write metadata of table so that the replicas can check table parameters with them.
-        String metadata = ReplicatedMergeTreeTableMetadata(*this).toString();
+        String metadata_str = ReplicatedMergeTreeTableMetadata(*this).toString();
 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
@@ -492,7 +491,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists()
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/dropped", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/dropped", -1));
 
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata,
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata_str,
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/columns", getColumns().toString(),
             zkutil::CreateMode::Persistent));
@@ -527,7 +526,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists()
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/is_lost", "0",
             zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata", metadata,
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata", metadata_str,
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", getColumns().toString(),
             zkutil::CreateMode::Persistent));
@@ -737,7 +736,7 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(zookeeper_prefix + "/metadata", &metadata_stat);
     auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
-    old_metadata.checkEquals(metadata_from_zk);
+    old_metadata.checkEquals(metadata_from_zk, getColumns(), global_context);
 
     Coordination::Stat columns_stat;
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(zookeeper_prefix + "/columns", &columns_stat));
@@ -751,9 +750,18 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
 
 void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    if (new_columns != metadata.columns)
-        metadata.columns = new_columns;
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    if (new_columns != new_metadata.columns)
+    {
+        new_metadata.columns = new_columns;
+
+        new_metadata.column_ttls_by_name.clear();
+        for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
+        {
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, global_context, new_metadata.primary_key);
+            new_metadata.column_ttls_by_name[name] = new_ttl_entry;
+        }
+    }
 
     if (!metadata_diff.empty())
     {
@@ -762,43 +770,51 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
             ParserNotEmptyExpressionList parser(false);
             auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
+            ASTPtr order_by_ast;
             if (new_sorting_key_expr_list->children.size() == 1)
-                metadata.order_by_ast = new_sorting_key_expr_list->children[0];
+                order_by_ast = new_sorting_key_expr_list->children[0];
             else
             {
                 auto tuple = makeASTFunction("tuple");
                 tuple->arguments->children = new_sorting_key_expr_list->children;
-                metadata.order_by_ast = tuple;
+                order_by_ast = tuple;
             }
+            auto & sorting_key = new_metadata.sorting_key;
+            auto & primary_key = new_metadata.primary_key;
 
-            if (!isPrimaryKeyDefined())
+            sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, global_context);
+
+            if (primary_key.definition_ast == nullptr)
             {
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
-                metadata.primary_key_ast = getSortingKeyAST()->clone();
+                auto old_sorting_key_ast = getSortingKey().definition_ast;
+                primary_key = KeyDescription::getKeyFromAST(
+                    old_sorting_key_ast, new_metadata.columns, global_context);
             }
         }
 
         if (metadata_diff.skip_indices_changed)
-            metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, global_context);
+            new_metadata.secondary_indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, global_context);
 
         if (metadata_diff.constraints_changed)
-            metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
+            new_metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
 
         if (metadata_diff.ttl_table_changed)
         {
             ParserTTLExpressionList parser;
-            metadata.ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            auto ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl_for_table_ast, new_metadata.columns, global_context, new_metadata.primary_key);
         }
     }
 
     auto table_id = getStorageID();
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id, new_metadata);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    setProperties(metadata);
-    setTTLExpressions(new_columns, metadata.ttl_for_table_ast);
+    setProperties(new_metadata);
+    setTTLExpressions(new_metadata);
 }
 
 
@@ -2585,10 +2601,12 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
         String path_created = dynamic_cast<const Coordination::CreateResponse &>(*responses.front()).path_created;
         entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 
+        ProfileEvents::increment(ProfileEvents::CreatedLogEntryForMerge);
         LOG_TRACE(log, "Created log entry {} for merge {}", path_created, merged_name);
     }
     else if (code == Coordination::Error::ZBADVERSION)
     {
+        ProfileEvents::increment(ProfileEvents::NotCreatedLogEntryForMerge);
         LOG_TRACE(log, "Log entry is not created for merge {} because log was updated", merged_name);
         return CreateMergeEntryResult::LogUpdated;
     }
@@ -2649,12 +2667,14 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
 
     if (code == Coordination::Error::ZBADVERSION)
     {
+        ProfileEvents::increment(ProfileEvents::NotCreatedLogEntryForMutation);
         LOG_TRACE(log, "Log entry is not created for mutation {} because log was updated", new_part_name);
         return CreateMergeEntryResult::LogUpdated;
     }
 
     zkutil::KeeperMultiException::check(code, ops, responses);
 
+    ProfileEvents::increment(ProfileEvents::CreatedLogEntryForMutation);
     LOG_TRACE(log, "Created log entry for mutation {}", new_part_name);
     return CreateMergeEntryResult::Ok;
 }
@@ -2711,7 +2731,6 @@ void StorageReplicatedMergeTree::enterLeaderElection()
 {
     auto callback = [this]()
     {
-        CurrentMetrics::add(CurrentMetrics::LeaderReplica);
         LOG_INFO(log, "Became leader");
 
         is_leader = true;
@@ -2746,7 +2765,6 @@ void StorageReplicatedMergeTree::exitLeaderElection()
 
     if (is_leader)
     {
-        CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
         LOG_INFO(log, "Stopped being leader");
 
         is_leader = false;
@@ -3439,15 +3457,12 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
 
 
 bool StorageReplicatedMergeTree::optimize(
-    const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context)
+    const ASTPtr &, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context)
 {
     assertNotReadonly();
 
     if (!is_leader)
-    {
-        sendRequestToLeaderReplica(query, query_context);
-        return true;
-    }
+        throw Exception("OPTIMIZE cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
 
     constexpr size_t max_retries = 10;
 
@@ -3595,8 +3610,9 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     zookeeper->multi(requests);
 
     {
-        /// TODO (relax this lock and remove this action lock)
+        /// TODO (relax this lock and remove this action locks)
         auto merges_block = getActionLock(ActionLocks::PartsMerge);
+        auto fetchers_block = getActionLock(ActionLocks::PartsFetch);
         auto table_lock = lockExclusively(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
@@ -3628,13 +3644,13 @@ void StorageReplicatedMergeTree::alter(
                 table_lock_holder, query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
-        StorageInMemoryMetadata metadata = getInMemoryMetadata();
-        params.apply(metadata, query_context);
+        StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
+        params.apply(future_metadata, query_context);
 
 
-        changeSettings(metadata.settings_ast, table_lock_holder);
+        changeSettings(future_metadata.settings_changes, table_lock_holder);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
         return;
     }
 
@@ -3667,11 +3683,11 @@ void StorageReplicatedMergeTree::alter(
         params.apply(future_metadata, query_context);
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this);
-        if (ast_to_str(future_metadata.order_by_ast) != ast_to_str(current_metadata.order_by_ast))
-            future_metadata_in_zk.sorting_key = serializeAST(*extractKeyExpressionList(future_metadata.order_by_ast));
+        if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata.sorting_key.definition_ast))
+            future_metadata_in_zk.sorting_key = serializeAST(*future_metadata.sorting_key.expression_list_ast);
 
-        if (ast_to_str(future_metadata.ttl_for_table_ast) != ast_to_str(current_metadata.ttl_for_table_ast))
-            future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.ttl_for_table_ast);
+        if (ast_to_str(future_metadata.table_ttl.definition_ast) != ast_to_str(current_metadata.table_ttl.definition_ast))
+            future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.table_ttl.definition_ast);
 
         String new_indices_str = future_metadata.secondary_indices.toString();
         if (new_indices_str != current_metadata.secondary_indices.toString())
@@ -3689,13 +3705,13 @@ void StorageReplicatedMergeTree::alter(
         String new_columns_str = future_metadata.columns.toString();
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/columns", new_columns_str, -1));
 
-        if (ast_to_str(current_metadata.settings_ast) != ast_to_str(future_metadata.settings_ast))
+        if (ast_to_str(current_metadata.settings_changes) != ast_to_str(future_metadata.settings_changes))
         {
             lockStructureExclusively(
                     table_lock_holder, query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
             /// Just change settings
-            current_metadata.settings_ast = future_metadata.settings_ast;
-            changeSettings(current_metadata.settings_ast, table_lock_holder);
+            current_metadata.settings_changes = future_metadata.settings_changes;
+            changeSettings(current_metadata.settings_changes, table_lock_holder);
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, current_metadata);
         }
 
@@ -3931,19 +3947,13 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 }
 
 
-void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context)
+void StorageReplicatedMergeTree::dropPartition(const ASTPtr &, const ASTPtr & partition, bool detach, const Context & query_context)
 {
     assertNotReadonly();
+    if (!is_leader)
+        throw Exception("DROP PARTITION cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
-
-    if (!is_leader)
-    {
-        // TODO: we can manually reconstruct the query from outside the |dropPartition()| and remove the |query| argument from interface.
-        //       It's the only place where we need this argument.
-        sendRequestToLeaderReplica(query, query_context);
-        return;
-    }
 
     String partition_id = getPartitionIDFromQuery(partition, query_context);
 
@@ -3965,19 +3975,15 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 }
 
 
-void StorageReplicatedMergeTree::truncate(const ASTPtr & query, const Context & query_context, TableStructureWriteLockHolder & table_lock)
+void StorageReplicatedMergeTree::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder & table_lock)
 {
     table_lock.release();   /// Truncate is done asynchronously.
 
     assertNotReadonly();
+    if (!is_leader)
+        throw Exception("TRUNCATE cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
-
-    if (!is_leader)
-    {
-        sendRequestToLeaderReplica(query, query_context);
-        return;
-    }
 
     Strings partitions = zookeeper->getChildren(zookeeper_path + "/block_numbers");
 
@@ -4363,93 +4369,6 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 }
 
 
-/// TODO: Probably it is better to have queue in ZK with tasks for leader (like DDL)
-void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query, const Context & query_context)
-{
-    auto live_replicas = getZooKeeper()->getChildren(zookeeper_path + "/leader_election");
-    if (live_replicas.empty())
-        throw Exception("No active replicas", ErrorCodes::NO_ACTIVE_REPLICAS);
-
-    std::sort(live_replicas.begin(), live_replicas.end());
-    const auto leader = getZooKeeper()->get(zookeeper_path + "/leader_election/" + live_replicas.front());
-
-    if (leader == replica_name)
-        throw Exception("Leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
-
-    /// SECONDARY_QUERY here means, that we received query from DDLWorker
-    /// there is no sense to send query to leader, because he will receive it from own DDLWorker
-    if (query_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        throw Exception("Cannot execute DDL query, because leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
-    }
-
-    ReplicatedMergeTreeAddress leader_address(getZooKeeper()->get(zookeeper_path + "/replicas/" + leader + "/host"));
-
-    /// TODO: add setters and getters interface for database and table fields of AST
-    auto new_query = query->clone();
-    if (auto * alter = new_query->as<ASTAlterQuery>())
-    {
-        alter->database = leader_address.database;
-        alter->table = leader_address.table;
-    }
-    else if (auto * optimize = new_query->as<ASTOptimizeQuery>())
-    {
-        optimize->database = leader_address.database;
-        optimize->table = leader_address.table;
-    }
-    else if (auto * drop = new_query->as<ASTDropQuery>(); drop->kind == ASTDropQuery::Kind::Truncate)
-    {
-        drop->database = leader_address.database;
-        drop->table    = leader_address.table;
-    }
-    else
-        throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);
-
-    const auto & query_settings = query_context.getSettingsRef();
-    const auto & query_client_info = query_context.getClientInfo();
-    String user = query_client_info.current_user;
-    String password = query_client_info.current_password;
-
-    if (auto address = findClusterAddress(leader_address); address)
-    {
-        user = address->user;
-        password = address->password;
-    }
-
-    Connection connection(
-        leader_address.host,
-        leader_address.queries_port,
-        leader_address.database,
-        user, password, "Follower replica");
-
-    std::stringstream new_query_ss;
-    formatAST(*new_query, new_query_ss, false, true);
-    RemoteBlockInputStream stream(connection, new_query_ss.str(), {}, global_context, &query_settings);
-    NullBlockOutputStream output({});
-
-    copyData(stream, output);
-}
-
-
-std::optional<Cluster::Address> StorageReplicatedMergeTree::findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const
-{
-    for (auto & iter : global_context.getClusters().getContainer())
-    {
-        const auto & shards = iter.second->getShardsAddresses();
-
-        for (const auto & shard : shards)
-        {
-            for (const auto & replica : shard)
-            {
-                /// user is actually specified, not default
-                if (replica.host_name == leader_address.host && replica.port == leader_address.queries_port && replica.user_specified)
-                    return replica;
-            }
-        }
-    }
-    return {};
-}
-
 void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica_name_)
 {
     replica_name_ = replica_name;
@@ -4509,7 +4428,7 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
       * Calculated only if the absolute delay is large enough.
       */
 
-    if (out_absolute_delay < static_cast<time_t>(storage_settings_ptr->min_relative_delay_to_yield_leadership))
+    if (out_absolute_delay < static_cast<time_t>(storage_settings_ptr->min_relative_delay_to_measure))
         return;
 
     auto zookeeper = getZooKeeper();
@@ -5643,9 +5562,16 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
 
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeper());
-    /// This is significant, because the execution of this task could be delayed at BackgroundPool.
-    /// And we force it to be executed.
-    queue_task_handle->signalReadyToRun();
+
+    {
+        auto lock = queue.lockQueue();
+        if (!queue_task_handle)
+            return false;
+
+        /// This is significant, because the execution of this task could be delayed at BackgroundPool.
+        /// And we force it to be executed.
+        queue_task_handle->signalReadyToRun();
+    }
 
     Poco::Event target_size_event;
     auto callback = [&target_size_event, queue_size] (size_t new_queue_size)

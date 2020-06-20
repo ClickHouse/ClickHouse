@@ -88,6 +88,8 @@ public:
 
     size_t getMaxStreams() const { return max_streams; }
 
+    const SelectQueryInfo & getQueryInfo() const { return query_info; }
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,

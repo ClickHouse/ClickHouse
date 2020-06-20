@@ -30,6 +30,7 @@ SRCS(
     Config/configReadClient.cpp
     Config/ConfigReloader.cpp
     createHardLink.cpp
+    clearPasswordFromCommandLine.cpp
     CurrentMetrics.cpp
     CurrentThread.cpp
     DNSResolver.cpp

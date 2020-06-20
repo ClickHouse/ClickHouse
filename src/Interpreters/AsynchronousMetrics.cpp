@@ -63,15 +63,45 @@ void AsynchronousMetrics::run()
 {
     setThreadName("AsyncMetrics");
 
-    /// Next minute + 30 seconds. To be distant with moment of transmission of metrics, see MetricsTransmitter.
-    const auto get_next_minute = []
+    const auto get_next_update_time = []
     {
-        return std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
-            std::chrono::system_clock::now() + std::chrono::minutes(1)) + std::chrono::seconds(30);
+        using namespace std::chrono;
+
+        // The period doesn't really have to be configurable, but sometimes you
+        // need to change it by recompilation to debug something. The generic
+        // code is left here so that you don't have to ruin your mood by touching
+        // std::chrono.
+        const seconds period(60);
+
+        const auto now = time_point_cast<seconds>(system_clock::now());
+
+        // Use seconds since the start of the hour, because we don't know when
+        // the epoch started, maybe on some weird fractional time.
+        const auto start_of_hour = time_point_cast<seconds>(time_point_cast<hours>(now));
+        const auto seconds_passed = now - start_of_hour;
+
+        // Rotate time forward by half a period -- e.g. if a period is a minute,
+        // we'll collect metrics on start of minute + 30 seconds. This is to
+        // achieve temporal separation with MetricTransmitter. Don't forget to
+        // rotate it back.
+        const auto rotation = period / 2;
+
+        const auto periods_passed = (seconds_passed + rotation) / period;
+        const auto seconds_next = (periods_passed + 1) * period - rotation;
+        const auto time_next = start_of_hour + seconds_next;
+
+        return time_next;
     };
 
     while (true)
     {
+        {
+            // Wait first, so that the first metric collection is also on even time.
+            std::unique_lock lock{mutex};
+            if (wait_cond.wait_until(lock, get_next_update_time(), [this] { return quit; }))
+                break;
+        }
+
         try
         {
             update();
@@ -80,10 +110,6 @@ void AsynchronousMetrics::run()
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-
-        std::unique_lock lock{mutex};
-        if (wait_cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
-            break;
     }
 }
 
@@ -103,6 +129,44 @@ static void calculateMaxAndSum(Max & max, Sum & sum, T x)
         max = x;
 }
 
+#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
+uint64_t updateJemallocEpoch()
+{
+    uint64_t value = 0;
+    size_t size = sizeof(value);
+    mallctl("epoch", &value, &size, &value, size);
+    return value;
+}
+
+template <typename Value>
+static void saveJemallocMetricImpl(AsynchronousMetricValues & values,
+    const std::string & jemalloc_full_name,
+    const std::string & clickhouse_full_name)
+{
+    Value value{};
+    size_t size = sizeof(value);
+    mallctl(jemalloc_full_name.c_str(), &value, &size, nullptr, 0);
+    values[clickhouse_full_name] = value;
+}
+
+template<typename Value>
+static void saveJemallocMetric(AsynchronousMetricValues & values,
+    const std::string & metric_name)
+{
+    saveJemallocMetricImpl<Value>(values,
+        fmt::format("stats.{}", metric_name),
+        fmt::format("jemalloc.{}", metric_name));
+}
+
+template<typename Value>
+static void saveAllArenasMetric(AsynchronousMetricValues & values,
+    const std::string & metric_name)
+{
+    saveJemallocMetricImpl<Value>(values,
+        fmt::format("stats.arenas.{}.{}", MALLCTL_ARENAS_ALL, metric_name),
+        fmt::format("jemalloc.arenas.all.{}", metric_name));
+}
+#endif
 
 void AsynchronousMetrics::update()
 {
@@ -241,33 +305,28 @@ void AsynchronousMetrics::update()
     }
 
 #if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
-    {
-#    define FOR_EACH_METRIC(M) \
-        M("allocated", size_t) \
-        M("active", size_t) \
-        M("metadata", size_t) \
-        M("metadata_thp", size_t) \
-        M("resident", size_t) \
-        M("mapped", size_t) \
-        M("retained", size_t) \
-        M("background_thread.num_threads", size_t) \
-        M("background_thread.num_runs", uint64_t) \
-        M("background_thread.run_interval", uint64_t)
+    // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
+    // the following calls will return stale values. It increments and returns
+    // the current epoch number, which might be useful to log as a sanity check.
+    auto epoch = updateJemallocEpoch();
+    new_values["jemalloc.epoch"] = epoch;
 
-#    define GET_METRIC(NAME, TYPE) \
-        do \
-        { \
-            TYPE value{}; \
-            size_t size = sizeof(value); \
-            mallctl("stats." NAME, &value, &size, nullptr, 0); \
-            new_values["jemalloc." NAME] = value; \
-        } while (false);
-
-        FOR_EACH_METRIC(GET_METRIC)
-
-#    undef GET_METRIC
-#    undef FOR_EACH_METRIC
-    }
+    // Collect the statistics themselves.
+    saveJemallocMetric<size_t>(new_values, "allocated");
+    saveJemallocMetric<size_t>(new_values, "active");
+    saveJemallocMetric<size_t>(new_values, "metadata");
+    saveJemallocMetric<size_t>(new_values, "metadata_thp");
+    saveJemallocMetric<size_t>(new_values, "resident");
+    saveJemallocMetric<size_t>(new_values, "mapped");
+    saveJemallocMetric<size_t>(new_values, "retained");
+    saveJemallocMetric<size_t>(new_values, "background_thread.num_threads");
+    saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
+    saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
+    saveAllArenasMetric<size_t>(new_values, "pactive");
+    saveAllArenasMetric<size_t>(new_values, "pdirty");
+    saveAllArenasMetric<size_t>(new_values, "pmuzzy");
+    saveAllArenasMetric<size_t>(new_values, "dirty_purged");
+    saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
 #endif
 
     /// Add more metrics as you wish.
