@@ -28,6 +28,9 @@ FinishSortingStep::FinishSortingStep(
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
+    /// Streams are merged together, only global distinct keys remain distinct.
+    /// Note: we can not clear it if know that there will be only one stream in pipeline. Should we add info about it?
+    output_stream->local_distinct_columns.clear();
 }
 
 void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
