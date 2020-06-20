@@ -146,6 +146,7 @@ SRCS(
     exp10.cpp
     exp2.cpp
     exp.cpp
+    extractAllGroups.cpp
     extractAllGroupsHorizontal.cpp
     extractAllGroupsVertical.cpp
     extract.cpp
@@ -374,6 +375,7 @@ SRCS(
     toDayOfMonth.cpp
     toDayOfWeek.cpp
     toDayOfYear.cpp
+    toFixedString.cpp
     toHour.cpp
     toISOWeek.cpp
     toISOYear.cpp
