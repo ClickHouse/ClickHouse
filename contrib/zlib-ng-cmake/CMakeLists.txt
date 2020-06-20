@@ -51,6 +51,10 @@ target_compile_definitions(zlib PRIVATE
     -DWITH_GZFILEOP
     -DZLIB_COMPAT -D_LARGEFILE64_SOURCE=1 -D__USE_LARGEFILE64)
 
+if (NOT SANITIZE) # Disable under UBSan
+    target_compile_definitions(zlib PRIVATE -DUNALIGNED_OK)
+endif ()
+
 if (ARCH_AMD64)
     target_compile_definitions(zlib PRIVATE
         -DX86_64 -DX86_CPUID -DX86_PCLMULQDQ_CRC -DX86_QUICK_STRATEGY -DX86_SSE2 -DX86_SSE42_CRC_HASH -DX86_SSE42_CRC_INTRIN)
