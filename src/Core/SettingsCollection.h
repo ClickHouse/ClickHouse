@@ -302,6 +302,7 @@ using SettingDateTimeInputFormat = SettingEnum<FormatSettings::DateTimeInputForm
 enum class LogsLevel
 {
     none = 0,    /// Disable
+    fatal,
     error,
     warning,
     information,
