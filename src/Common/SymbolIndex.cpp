@@ -53,6 +53,19 @@ Otherwise you will get only exported symbols from program headers.
 
 */
 
+#if defined(__clang__)
+#   pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   pragma clang diagnostic ignored "-Wunused-macros"
+#endif
+
+#define __msan_unpoison_string(X)
+#if defined(__has_feature)
+#   if __has_feature(memory_sanitizer)
+#       undef __msan_unpoison_string
+#       include <sanitizer/msan_interface.h>
+#   endif
+#endif
+
 
 namespace DB
 {
@@ -278,6 +291,9 @@ void collectSymbolsFromELF(dl_phdr_info * info,
     std::vector<SymbolIndex::Symbol> & symbols,
     std::vector<SymbolIndex::Object> & objects)
 {
+    /// MSan does not know that the program segments in memory are initialized.
+    __msan_unpoison_string(info->dlpi_name);
+
     std::string object_name = info->dlpi_name;
 
     /// If the name is empty - it's main executable.
