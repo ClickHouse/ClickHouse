@@ -201,6 +201,7 @@ SRCS(
     getMacro.cpp
     getScalar.cpp
     getSizeOfEnumType.cpp
+    globalVariable.cpp
     greatCircleDistance.cpp
     greater.cpp
     greaterOrEquals.cpp
