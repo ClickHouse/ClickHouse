@@ -50,4 +50,8 @@ void registerFunctionBuildId(FunctionFactory & factory)
 
 }
 
+#else
+
+void registerFunctionBuildId(FunctionFactory &) {}
+
 #endif
