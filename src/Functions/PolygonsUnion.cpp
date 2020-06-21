@@ -94,6 +94,9 @@ public:
                 boost::get<Float64MultiPolygon>(second_container),
                 boost::get<Float64MultiPolygon>(polygons_union));
 
+            boost::get<Float64MultiPolygon>(polygons_union).erase(
+                boost::get<Float64MultiPolygon>(polygons_union).begin());
+
             serializer.add(polygons_union);
         }
 
