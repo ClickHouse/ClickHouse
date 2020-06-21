@@ -14,6 +14,7 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
+#include <Processors/Formats/Impl/PostgreSQLOutputFormat.h>
 #include <Poco/URI.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -394,6 +395,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorNull(*this);
     registerOutputFormatProcessorMySQLWrite(*this);
     registerOutputFormatProcessorMarkdown(*this);
+    registerOutputFormatProcessorPostgreSQLWrite(*this);
 }
 
 FormatFactory & FormatFactory::instance()
