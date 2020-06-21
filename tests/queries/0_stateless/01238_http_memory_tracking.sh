@@ -3,6 +3,9 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
+# Don't even try to do run under sanitizers, since they are too slow.
+${CLICKHOUSE_LOCAL} --query "SELECT max(value LIKE '%sanitize%') FROM system.build_options" | grep -q '1' && echo 'Skip test for sanitizer build' && exit
+
 # TODO: the test can be way more optimal
 
 set -o pipefail
