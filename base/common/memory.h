@@ -11,6 +11,9 @@
 #    include <cstdlib>
 #endif
 
+#if USE_TCMALLOC_CPP
+#    include <tcmalloc/tcmalloc.h>
+#endif
 
 namespace Memory
 {
@@ -43,6 +46,13 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
         return;
 
     sdallocx(ptr, size, 0);
+}
+
+#elif USE_TCMALLOC_CPP
+
+inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
+{
+    TCMallocInternalDeleteSized(ptr, size);
 }
 
 #else
