@@ -19,6 +19,7 @@
 #include <IO/WriteBufferAIO.h>
 #include <list>
 #include <pcg_random.hpp>
+#include <Poco/Logger.h
 #include <shared_mutex>
 #include <variant>
 #include <vector>
@@ -279,7 +280,7 @@ private:
     std::list<SSDCachePartitionPtr> partitions;
     std::list<SSDCachePartitionPtr> partition_delete_queue;
 
-    Logger * const log;
+    Poco::Logger * const log;
 
     mutable pcg64 rnd_engine;
 
@@ -460,7 +461,7 @@ private:
     std::map<std::string, size_t> attribute_index_by_name;
     std::vector<AttributeValueVariant> null_values;
     mutable SSDCacheStorage storage;
-    Logger * const log;
+    Poco::Logger * const log;
 
     mutable size_t bytes_allocated = 0;
 };
