@@ -52,7 +52,10 @@ void registerFunctionBuildId(FunctionFactory & factory)
 
 #else
 
+namespace DB
+{
 class FunctionFactory;
 void registerFunctionBuildId(FunctionFactory &) {}
+}
 
 #endif
