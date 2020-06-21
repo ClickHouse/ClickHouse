@@ -52,6 +52,7 @@ void registerFunctionBuildId(FunctionFactory & factory)
 
 #else
 
+class FunctionFactory;
 void registerFunctionBuildId(FunctionFactory &) {}
 
 #endif
