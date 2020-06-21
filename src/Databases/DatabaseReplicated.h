@@ -1,12 +1,8 @@
 #pragma once
 
 #include <Databases/DatabaseAtomic.h>
-#include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
-
-#include <atomic>
-#include <thread>
 
 namespace DB
 {

@@ -1,46 +1,18 @@
-#include <iomanip>
-
-#include <Core/Settings.h>
-#include <Databases/DatabaseOnDisk.h>
-#include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Databases/DatabasesCommon.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/executeQuery.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
-#include <Storages/StorageFactory.h>
-#include <TableFunctions/TableFunctionFactory.h>
-
 #include <Parsers/queryToString.h>
-
-#include <Poco/DirectoryIterator.h>
-#include <Poco/Event.h>
-#include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
-#include <Common/ThreadPool.h>
-#include <Common/escapeForFileName.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
-#include <common/logger_useful.h>
 #include <Common/Exception.h>
-
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/Lock.h>
 
-#include <ext/scope_guard.h>
-#include <common/sleep.h>
 
 namespace DB
 {
