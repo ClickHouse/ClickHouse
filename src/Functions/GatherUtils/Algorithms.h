@@ -402,11 +402,12 @@ template <
     bool (*isEqualSecond)(const SecondSliceType &, size_t, size_t)>
 bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
-    if constexpr (search_type == ArraySearchType::SubStr)
-        return sliceHasImplSubStr<FirstSliceType, SecondSliceType, isEqual, isEqualSecond>(first, second, first_null_map, second_null_map);
+    if constexpr (search_type == ArraySearchType::Substr)
+        return sliceHasImplSubstr<FirstSliceType, SecondSliceType, isEqual, isEqualSecond>(first, second, first_null_map, second_null_map);
     else
         return sliceHasImplAnyAll<search_type, FirstSliceType, SecondSliceType, isEqual>(first, second, first_null_map, second_null_map);
 }
+
 
 /// Methods to check if first array has elements from second array, overloaded for various combinations of types.
 template <
@@ -443,31 +444,45 @@ bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & se
     return search_type == ArraySearchType::All;
 }
 
+
 template < typename FirstSliceType,
            typename SecondSliceType,
            bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t),
            bool (*isEqualUnary)(const SecondSliceType &, size_t, size_t)>
-bool sliceHasImplSubStr(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
+bool sliceHasImplSubstr(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
-    const bool has_first_null_map = first_null_map != nullptr;
-    const bool has_second_null_map = second_null_map != nullptr;
-
     if (second.size == 0)
         return true;
 
-    const auto aux = buildKMPFailureArray<SecondSliceType, isEqualUnary>(second, second_null_map);
+    const bool has_first_null_map = first_null_map != nullptr;
+    const bool has_second_null_map = second_null_map != nullptr;
 
-    size_t secondCur = 0;
+    std::vector<size_t> prefix_function;
+    if (has_second_null_map)
+    {
+        prefix_function = buildKMPPrefixFunction(
+                [null_map = second_null_map](const SecondSliceType & pattern, size_t i, size_t j)
+                {
+                    return !!null_map[i] == !!null_map[j] && (!!null_map[i] || isEqualUnary(pattern, i, j));
+                }
+                , second);
+    }
+    else
+    {
+        prefix_function = buildKMPPrefixFunction(
+                [](const SecondSliceType & pattern, size_t i, size_t j) { return isEqualUnary(pattern, i, j); }
+                , second);
+    }
+
     size_t firstCur = 0;
-
+    size_t secondCur = 0;
     while (firstCur < first.size && secondCur < second.size)
     {
         const bool is_first_null = has_first_null_map && first_null_map[firstCur];
         const bool is_second_null = has_second_null_map && second_null_map[secondCur];
 
-
-        auto cond_both_null_match = is_first_null && is_second_null;
-        auto cond_both_not_null = !is_first_null && !is_second_null;
+        const bool cond_both_null_match = is_first_null && is_second_null;
+        const bool cond_both_not_null = !is_first_null && !is_second_null;
         if (cond_both_null_match || (cond_both_not_null && isEqual(first, second, firstCur, secondCur)))
         {
             ++firstCur;
@@ -475,52 +490,44 @@ bool sliceHasImplSubStr(const FirstSliceType & first, const SecondSliceType & se
         }
         else if (secondCur > 0)
         {
-            secondCur = aux.get()[secondCur - 1];
-            }
+            secondCur = prefix_function[secondCur - 1];
+        }
         else
         {
             ++firstCur;
         }
     }
-    if (secondCur == second.size)
-    {
-        return true;
-    }
-    return false;
+
+    return secondCur == second.size;
 }
 
-template <typename SliceType, bool (*isEqual)(const SliceType &, size_t, size_t)>
-std::unique_ptr<size_t[]> buildKMPFailureArray(const SliceType & pattern, const UInt8 * pattern_null_map)
+
+/// For details of Knuth-Morris-Pratt string matching algorithm see
+/// https://en.wikipedia.org/wiki/Knuth%E2%80%93Morris%E2%80%93Pratt_algorithm.
+/// A "prefix-function" is defined as: i-th element is the length of the longest of all prefixes that end in i-th position
+template <typename EqualityFunc, typename SliceType>
+std::vector<size_t> buildKMPPrefixFunction(const EqualityFunc & isEqualFunc, const SliceType & pattern)
 {
-    auto aux = std::make_unique<size_t[]>(pattern.size);
-    auto has_null_map = pattern_null_map != nullptr;
-    aux[0] = 0;
+    std::vector<size_t> result(pattern.size);
+    result[0] = 0;
+
     for (size_t i = 1; i < pattern.size; ++i)
     {
-        auto length = aux[i - 1];
-        while (length > 0)
+        result[i] = 0;
+        for (auto length = i; length > 0;)
         {
-            auto cond_null_map_match = (has_null_map && pattern_null_map[i] == pattern_null_map[length]);
-            auto cond_both_non_null = (!has_null_map || (pattern_null_map[i] == 0 && pattern_null_map[length] == 0));
-            if (cond_null_map_match || (cond_both_non_null && isEqual(pattern, i, length)))
+            length = result[length - 1];
+            if (isEqualFunc(pattern, i, length))
             {
-                aux[i] = length + 1;
+                result[i] = length + 1;
                 break;
             }
-            else
-            {
-                length = aux[length - 1];
-            }
-        }
-        auto cond_null_map_match = (has_null_map && pattern_null_map[i] == pattern_null_map[0]);
-        auto cond_both_non_null = (!has_null_map || (pattern_null_map[i] == 0 && pattern_null_map[0] == 0));
-        if (length == 0)
-        {
-            aux[i] = static_cast<size_t>(cond_null_map_match || (cond_both_non_null && isEqual(pattern, i, 0)));
         }
     }
-    return aux;
+
+    return result;
 }
+
 
 template <typename T, typename U>
 bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
