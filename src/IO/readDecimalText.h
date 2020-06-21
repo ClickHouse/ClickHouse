@@ -12,16 +12,16 @@ namespace ErrorCodes
 
 /// Try to read Decimal into underlying type T from ReadBuffer. Throws if 'digits_only' is set and there's unexpected symbol in input.
 /// Returns integer 'exponent' factor that x should be muntiplyed by to get correct Decimal value: result = x * 10^exponent.
-/// Use 'digits' input as max allowed meaning decimal digits in result. Place actual meanin digits in 'digits' output.
+/// Use 'digits' input as max allowed meaning decimal digits in result. Place actual number of meaning digits in 'digits' output.
 /// Do not care about decimal scale, only about meaning digits in decimal text representation.
 template <bool _throw_on_error, typename T>
-inline bool readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exponent, bool digits_only = false)
+inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exponent, bool digits_only = false)
 {
     x = 0;
     exponent = 0;
-    unsigned int max_digits = digits;
+    uint32_t max_digits = digits;
     digits = 0;
-    unsigned int places = 0;
+    uint32_t places = 0;
     typename T::NativeType sign = 1;
     bool leading_zeroes = true;
     bool after_point = false;
@@ -131,29 +131,36 @@ inline bool readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exp
 }
 
 template <typename T>
-inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, unsigned int & scale, bool digits_only = false)
+inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale, bool digits_only = false)
 {
-    unsigned int digits = precision;
-    int exponent;
+    uint32_t digits = precision;
+    int32_t exponent;
     readDigits<true>(buf, x, digits, exponent, digits_only);
 
-    if (static_cast<int>(digits) + exponent > static_cast<int>(precision - scale))
-        throw Exception("Decimal value is too big", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-    if (static_cast<int>(scale) + exponent < 0)
-        throw Exception("Decimal value is too small", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    if (static_cast<int32_t>(digits) + exponent > static_cast<int32_t>(precision - scale))
+        throw Exception(fmt::format(
+            "Decimal value is too big: {} digits were read: {}e{}."
+            " Expected to read decimal with scale {} and precision {}",
+            digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    if (static_cast<int32_t>(scale) + exponent < 0)
+        throw Exception(fmt::format(
+            "Decimal value has too large number of digits after point: {} digits were read: {}e{}."
+            " Expected to read decimal with scale {} and precision {}",
+            digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     scale += exponent;
 }
 
 template <typename T>
-inline bool tryReadDecimalText(ReadBuffer & buf, T & x, unsigned int precision, unsigned int & scale)
+inline bool tryReadDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale)
 {
-    unsigned int digits = precision;
-    int exponent;
+    uint32_t digits = precision;
+    int32_t exponent;
 
     if (!readDigits<false>(buf, x, digits, exponent, true) ||
-        static_cast<int>(digits) + exponent > static_cast<int>(precision - scale) ||
-        static_cast<int>(scale) + exponent < 0)
+        static_cast<int32_t>(digits) + exponent > static_cast<int32_t>(precision - scale) ||
+        static_cast<int32_t>(scale) + exponent < 0)
         return false;
 
     scale += exponent;
@@ -161,7 +168,7 @@ inline bool tryReadDecimalText(ReadBuffer & buf, T & x, unsigned int precision, 
 }
 
 template <typename T>
-inline void readCSVDecimalText(ReadBuffer & buf, T & x, unsigned int precision, unsigned int & scale)
+inline void readCSVDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale)
 {
     if (buf.eof())
         throwReadAfterEOF();

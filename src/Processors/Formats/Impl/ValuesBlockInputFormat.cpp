@@ -416,6 +416,7 @@ void ValuesBlockInputFormat::resetParser()
     IInputFormat::resetParser();
     // I'm not resetting parser modes here.
     // There is a good chance that all messages have the same format.
+    buf.reset();
     total_rows = 0;
 }
 
