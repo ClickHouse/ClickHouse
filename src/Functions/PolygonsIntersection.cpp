@@ -5,6 +5,8 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
+#include <common/logger_useful.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -72,13 +74,17 @@ public:
             // return makeGeometryFromColumnParser(polygon);
         // };
 
-        const ColumnWithTypeAndName polygon = block.getByPosition(arguments[0]);
-        auto first_parser = makeGeometryFromColumnParser(polygon);
+        LOG_FATAL(&Poco::Logger::get("PI"), "KEK");
+
+        auto first_parser = makeGeometryFromColumnParser(block.getByPosition(arguments[0]));
         auto first_container = createContainer(first_parser);
 
-        const ColumnWithTypeAndName polygon2 = block.getByPosition(arguments[1]);
-        auto second_parser = makeGeometryFromColumnParser(polygon2);
+        LOG_FATAL(&Poco::Logger::get("PI"), "LOL");
+
+        auto second_parser = makeGeometryFromColumnParser(block.getByPosition(arguments[1]));
         auto second_container = createContainer(second_parser);
+
+        LOG_FATAL(&Poco::Logger::get("PI"), "MEM");
 
         Float64MultiPolygonSerializer serializer;
 
@@ -87,7 +93,7 @@ public:
             get(first_parser, first_container, i);
             get(second_parser, second_container, i);
 
-            Float64Geometry intersection;
+            Float64Geometry intersection = Float64MultiPolygon({{{{}}}});
             boost::geometry::intersection(
                 boost::get<Float64MultiPolygon>(first_container),
                 boost::get<Float64MultiPolygon>(second_container),
@@ -96,7 +102,16 @@ public:
             serializer.add(intersection);
         }
 
+        LOG_FATAL(&Poco::Logger::get("PI"), "NE MEM");
+
         block.getByPosition(result).column = std::move(serializer.finalize());
+
+        LOG_FATAL(&Poco::Logger::get("PI"), "THE END");
+    }
+
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
     }
 };
 
