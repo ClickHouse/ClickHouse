@@ -15,6 +15,7 @@
 #include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
+#include <common/logger_useful.h>
 
 namespace DB {
 
@@ -309,7 +310,7 @@ public:
     }
 
 private:
-    size_t size;
+    size_t size = 0;
     Float64PointSerializerVisitor pointSerializer;
     ColumnUInt64::MutablePtr offsets;
 };
@@ -364,7 +365,7 @@ public:
     }
 
 private:
-    size_t size;
+    size_t size = 0;
     Float64RingSerializerVisitor ringSerializer;
     ColumnUInt64::MutablePtr offsets;
 };
@@ -413,11 +414,12 @@ public:
 
     ColumnPtr finalize()
     {
+        LOG_FATAL(&Poco::Logger::get("PI"), "MultiPolygon Offsets: " + toString(size));
         return ColumnArray::create(polygonSerializer.finalize(), std::move(offsets));
     }
 
 private:
-    size_t size;
+    size_t size = 0;
     Float64PolygonSerializerVisitor polygonSerializer;
     ColumnUInt64::MutablePtr offsets;
 };
