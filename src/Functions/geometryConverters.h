@@ -100,8 +100,6 @@ public:
         container.reserve(r - l + 1);
         container.resize(r - l);
 
-        LOG_FATAL(&Poco::Logger::get("geoconv"), "ring: l = {}, r = {}", l, r);
-
         for (size_t j = l; j < r; j++) {
             pointParser.get(container[j - l], j);
         }

@@ -292,6 +292,7 @@ SRCS(
     randomString.cpp
     randomStringUTF8.cpp
     regexpQuoteMeta.cpp
+    readWkt.cpp
     registerFunctionsArithmetic.cpp
     registerFunctionsComparison.cpp
     registerFunctionsConditional.cpp
@@ -346,6 +347,7 @@ SRCS(
     subtractSeconds.cpp
     subtractWeeks.cpp
     subtractYears.cpp
+    svg.cpp
     tan.cpp
     tanh.cpp
     tgamma.cpp
