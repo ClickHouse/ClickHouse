@@ -199,9 +199,9 @@ void registerOutputFormatProcessorXML(FormatFactory & factory);
 void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
 void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
 void registerOutputFormatProcessorNull(FormatFactory & factory);
-void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory);
+void registerOutputFormatProcessorMySQLWire(FormatFactory & factory);
 void registerOutputFormatProcessorMarkdown(FormatFactory & factory);
-void registerOutputFormatProcessorPostgreSQLWrite(FormatFactory & factory);
+void registerOutputFormatProcessorPostgreSQLWire(FormatFactory & factory);
 
 /// Input only formats.
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);

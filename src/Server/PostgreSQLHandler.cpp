@@ -54,7 +54,7 @@ void PostgreSQLHandler::run()
 
     try
     {
-        if (!startUp())
+        if (!startup())
             return;
 
         while (true)
@@ -104,7 +104,7 @@ void PostgreSQLHandler::run()
 
 }
 
-bool PostgreSQLHandler::startUp()
+bool PostgreSQLHandler::startup()
 {
     Int32 payload_size;
     Int32 info;
@@ -117,7 +117,7 @@ bool PostgreSQLHandler::startUp()
         return false;
     }
 
-    std::unique_ptr<PostgreSQLProtocol::Messaging::StartUpMessage> start_up_msg = receiveStartUpMessage(payload_size);
+    std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> start_up_msg = receiveStartupMessage(payload_size);
     authentication_manager.authenticate(start_up_msg->user, connection_context, *message_transport, socket().peerAddress());
 
     std::random_device rd;
@@ -145,7 +145,7 @@ bool PostgreSQLHandler::startUp()
     message_transport->send(
         PostgreSQLProtocol::Messaging::BackendKeyData(connection_id, secret_key), true);
 
-    LOG_INFO(log, "Successfully finished StartUp stage");
+    LOG_INFO(log, "Successfully finished Startup stage");
     return true;
 }
 
@@ -190,7 +190,7 @@ void PostgreSQLHandler::makeSecureConnectionSSL()
 void PostgreSQLHandler::makeSecureConnectionSSL() {}
 #endif
 
-void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::StartUpMessage & start_up_message)
+void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::StartupMessage & start_up_message)
 {
     std::unordered_map<String, String> & parameters = start_up_message.parameters;
 
@@ -224,23 +224,23 @@ void PostgreSQLHandler::cancelRequest()
     );
 }
 
-inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartUpMessage> PostgreSQLHandler::receiveStartUpMessage(int payload_size)
+inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
 {
-    std::unique_ptr<PostgreSQLProtocol::Messaging::StartUpMessage> message;
+    std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> message;
     try
     {
-        message = message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::StartUpMessage>(payload_size - 8);
+        message = message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::StartupMessage>(payload_size - 8);
     }
     catch (const Exception &)
     {
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "08P01", "Can't correctly handle StartUp message"),
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "08P01", "Can't correctly handle Startup message"),
             true);
         throw;
     }
 
-    LOG_INFO(log, "Successfully received StartUp message");
+    LOG_INFO(log, "Successfully received Startup message");
     return message;
 }
 

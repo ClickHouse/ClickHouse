@@ -56,17 +56,17 @@ private:
 
     void changeIO(Poco::Net::StreamSocket & socket);
 
-    bool startUp();
+    bool startup();
 
     void establishSecureConnection(Int32 & payload_size, Int32 & info);
 
     void makeSecureConnectionSSL();
 
-    void sendParameterStatusData(PostgreSQLProtocol::Messaging::StartUpMessage & start_up_message);
+    void sendParameterStatusData(PostgreSQLProtocol::Messaging::StartupMessage & start_up_message);
 
     void cancelRequest();
 
-    std::unique_ptr<PostgreSQLProtocol::Messaging::StartUpMessage> receiveStartUpMessage(int payload_size);
+    std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> receiveStartupMessage(int payload_size);
 
     void processQuery();
 

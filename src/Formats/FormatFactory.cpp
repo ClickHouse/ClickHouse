@@ -393,9 +393,9 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
-    registerOutputFormatProcessorMySQLWrite(*this);
+    registerOutputFormatProcessorMySQLWire(*this);
     registerOutputFormatProcessorMarkdown(*this);
-    registerOutputFormatProcessorPostgreSQLWrite(*this);
+    registerOutputFormatProcessorPostgreSQLWire(*this);
 }
 
 FormatFactory & FormatFactory::instance()
