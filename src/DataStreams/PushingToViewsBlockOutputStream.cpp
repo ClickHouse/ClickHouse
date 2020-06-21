@@ -72,7 +72,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
-            query = materialized_view->getInnerQuery();
+            query = materialized_view->getSelectQuery().inner_query;
 
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->table_id = inner_table_id;

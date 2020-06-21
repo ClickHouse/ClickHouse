@@ -24,7 +24,7 @@ If dictionary is configured using xml-file, the configuration looks like this:
 </yandex>
 ```
 
-In case of [DDL-query](../../statements/create.md#create-dictionary-query), equal configuration will looks like:
+In case of [DDL-query](../../../sql-reference/statements/create.md#create-dictionary-query), equal configuration will looks like:
 
 ``` sql
 CREATE DICTIONARY dict_name (...)
@@ -95,7 +95,7 @@ Setting fields:
 
 ## Executable File {#dicts-external_dicts_dict_sources-executable}
 
-Working with executable files depends on [how the dictionary is stored in memory](external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
+Working with executable files depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
 
 Example of settings:
 
@@ -121,7 +121,7 @@ Setting fields:
 
 ## Http(s) {#dicts-external_dicts_dict_sources-http}
 
-Working with an HTTP(s) server depends on [how the dictionary is stored in memory](external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
+Working with an HTTP(s) server depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
 Example of settings:
 
@@ -202,7 +202,7 @@ Setting fields:
 -   `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
 -   `table` – Name of the table and schema if exists.
 -   `connection_string` – Connection string.
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external-dicts-dict-lifetime.md).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
 ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
 
@@ -474,7 +474,7 @@ Setting fields:
 
 -   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional parameter.
 
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external-dicts-dict-lifetime.md).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
@@ -551,7 +551,7 @@ Setting fields:
 -   `db` – Name of the database.
 -   `table` – Name of the table.
 -   `where` – The selection criteria. May be omitted.
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external-dicts-dict-lifetime.md).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
 ### Mongodb {#dicts-external_dicts_dict_sources-mongodb}
 
@@ -629,7 +629,7 @@ Setting fields:
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <cassandra>
         <host>localhost</host>
@@ -648,20 +648,19 @@ Example of settings:
 ```
 
 Setting fields:
--   `host` – The Cassandra host or comma-separated list of hosts.
--   `port` – The port on the Cassandra servers. If not specified, default port is used.
--   `user` – Name of the Cassandra user.
--   `password` – Password of the Cassandra user.
--   `keyspace` – Name of the keyspace (database).
--   `column_family` – Name of the column family (table).
--   `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
--   `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table.
-        Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra.
-        Default value is 1 (the first key column is a partition key and other key columns are clustering key).
--   `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`,
-        `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default is `One`.
--   `where` – Optional selection criteria.
--   `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
-
+- `host` – The Cassandra host or comma-separated list of hosts.
+- `port` – The port on the Cassandra servers. If not specified, default port is used.
+- `user` – Name of the Cassandra user.
+- `password` – Password of the Cassandra user.
+- `keyspace` – Name of the keyspace (database).
+- `column_family` – Name of the column family (table).
+- `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
+- `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table.
+Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra.
+Default value is 1 (the first key column is a partition key and other key columns are clustering key).
+- `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`,
+`All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default is `One`.
+- `where` – Optional selection criteria.
+- `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
 
 [Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

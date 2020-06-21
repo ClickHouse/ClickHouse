@@ -20,6 +20,19 @@ PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_
     checkStateCorrect();
 }
 
+void PeekableReadBuffer::reset()
+{
+    peeked_size = 0;
+    checkpoint = nullptr;
+    checkpoint_in_own_memory = false;
+
+    if (!currentlyReadFromOwnMemory())
+        sub_buf.position() = pos;
+
+    Buffer & sub_working = sub_buf.buffer();
+    BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
+}
+
 bool PeekableReadBuffer::peekNext()
 {
     checkStateCorrect();

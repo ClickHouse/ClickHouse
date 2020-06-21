@@ -66,7 +66,7 @@ También puede descargar e instalar paquetes manualmente desde [aqui](https://re
 
 Se recomienda utilizar pre-compilado oficial `tgz` para todas las distribuciones de Linux, donde la instalación de `deb` o `rpm` paquetes no es posible.
 
-La versión requerida se puede descargar con `curl` o `wget` desde el repositorio https://repo.yandex.ru/clickhouse/tgz/.
+La versión requerida se puede descargar con `curl` o `wget` desde el repositorio https://repo.clickhouse.tech/tgz/.
 Después de eso, los archivos descargados deben desempaquetarse e instalarse con scripts de instalación. Ejemplo para la última versión:
 
 ``` bash

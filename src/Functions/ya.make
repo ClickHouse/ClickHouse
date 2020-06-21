@@ -2,12 +2,13 @@
 LIBRARY()
 
 CFLAGS(
-    -DUSE_SSL -DUSE_XXHASH
+    -DUSE_H3 -DUSE_SSL -DUSE_XXHASH
 )
 
 ADDINCL(
     library/cpp/consistent_hashing
     contrib/libs/farmhash
+    contrib/libs/h3/h3lib/include
     contrib/libs/hyperscan/src
     contrib/libs/icu/common
     contrib/libs/libdivide
@@ -20,6 +21,7 @@ PEERDIR(
     clickhouse/src/Dictionaries
     contrib/libs/farmhash
     contrib/libs/fastops/fastops
+    contrib/libs/h3
     contrib/libs/hyperscan
     contrib/libs/icu
     contrib/libs/libdivide
@@ -144,7 +146,8 @@ SRCS(
     exp10.cpp
     exp2.cpp
     exp.cpp
-    extractAllGroups.cpp
+    extractAllGroupsHorizontal.cpp
+    extractAllGroupsVertical.cpp
     extract.cpp
     extractGroups.cpp
     extractTimeZoneFromFunctionArguments.cpp
@@ -193,6 +196,7 @@ SRCS(
     geohashDecode.cpp
     geohashEncode.cpp
     geohashesInBox.cpp
+    geoToH3.cpp
     getMacro.cpp
     getScalar.cpp
     getSizeOfEnumType.cpp
@@ -200,6 +204,17 @@ SRCS(
     greater.cpp
     greaterOrEquals.cpp
     greatest.cpp
+    h3EdgeAngle.cpp
+    h3EdgeLengthM.cpp
+    h3GetBaseCell.cpp
+    h3GetResolution.cpp
+    h3HexAreaM2.cpp
+    h3IndexesAreNeighbors.cpp
+    h3IsValid.cpp
+    h3kRing.cpp
+    h3ToChildren.cpp
+    h3ToParent.cpp
+    h3ToString.cpp
     hasColumnInTable.cpp
     hasTokenCaseInsensitive.cpp
     hasToken.cpp
@@ -336,6 +351,7 @@ SRCS(
     sleepEachRow.cpp
     sqrt.cpp
     startsWith.cpp
+    stringToH3.cpp
     substring.cpp
     subtractDays.cpp
     subtractHours.cpp
