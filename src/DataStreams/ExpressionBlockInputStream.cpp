@@ -55,10 +55,14 @@ Block InflatingExpressionBlockInputStream::readImpl()
     }
 
     Block res;
-    if (likely(!not_processed))
+    bool keep_going = not_processed && not_processed->empty(); /// There's data inside expression.
+
+    if (!not_processed || keep_going)
     {
+        not_processed.reset();
+
         res = children.back()->read();
-        if (res)
+        if (res || keep_going)
             expression->execute(res, not_processed, action_number);
     }
     else

@@ -16,6 +16,7 @@ class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 
+
 class MergeJoin : public IJoin
 {
 public:
@@ -58,6 +59,7 @@ private:
     Block right_columns_to_add;
     SortedBlocksWriter::Blocks right_blocks;
     Blocks min_max_right_blocks;
+    std::shared_ptr<SortedBlocksBuffer> left_blocks_buffer;
     std::unique_ptr<Cache> cached_right_blocks;
     std::vector<std::shared_ptr<Block>> loaded_right_blocks;
     std::unique_ptr<SortedBlocksWriter> disk_writer;
@@ -70,7 +72,7 @@ private:
     const bool is_semi_join;
     const bool is_inner;
     const bool is_left;
-    const bool skip_not_intersected;
+    static constexpr const bool skip_not_intersected = true; /// skip index for right blocks
     const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;
     const size_t max_files_to_merge;
@@ -103,6 +105,8 @@ private:
 
     void mergeInMemoryRightBlocks();
     void mergeFlushedRightBlocks();
+
+    void initRightTableWriter();
 };
 
 }

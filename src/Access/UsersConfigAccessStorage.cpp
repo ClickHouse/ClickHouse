@@ -353,16 +353,17 @@ namespace
         for (const String & name : names)
         {
             SettingsProfileElement profile_element;
-            profile_element.setting_index = Settings::findIndexStrict(name);
+            size_t setting_index = Settings::findIndexStrict(name);
+            profile_element.setting_index = setting_index;
             Poco::Util::AbstractConfiguration::Keys constraint_types;
             String path_to_name = path_to_constraints + "." + name;
             config.keys(path_to_name, constraint_types);
             for (const String & constraint_type : constraint_types)
             {
                 if (constraint_type == "min")
-                    profile_element.min_value = config.getString(path_to_name + "." + constraint_type);
+                    profile_element.min_value = Settings::valueToCorrespondingType(setting_index, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
-                    profile_element.max_value = config.getString(path_to_name + "." + constraint_type);
+                    profile_element.max_value = Settings::valueToCorrespondingType(setting_index, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "readonly")
                     profile_element.readonly = true;
                 else
@@ -402,8 +403,9 @@ namespace
             }
 
             SettingsProfileElement profile_element;
-            profile_element.setting_index = Settings::findIndexStrict(key);
-            profile_element.value = config.getString(profile_config + "." + key);
+            size_t setting_index = Settings::findIndexStrict(key);
+            profile_element.setting_index = setting_index;
+            profile_element.value = Settings::valueToCorrespondingType(setting_index, config.getString(profile_config + "." + key));
             profile->elements.emplace_back(std::move(profile_element));
         }
 

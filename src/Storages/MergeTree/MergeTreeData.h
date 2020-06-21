@@ -21,6 +21,7 @@
 #include <Interpreters/PartLog.h>
 #include <Disks/StoragePolicy.h>
 #include <Interpreters/Aggregator.h>
+#include <Storages/extractKeyExpressionList.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -323,7 +324,7 @@ public:
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const StorageID & table_id_,
                   const String & relative_data_path_,
-                  const StorageInMemoryMetadata & metadata,
+                  const StorageInMemoryMetadata & metadata_,
                   Context & context_,
                   const String & date_column_name,
                   const MergingParams & merging_params_,
@@ -332,9 +333,6 @@ public:
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
-
-    /// See comments about methods below in IStorage interface
-    StorageInMemoryMetadata getInMemoryMetadata() const override;
 
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -499,7 +497,7 @@ public:
     /// - all type conversions can be done.
     /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
 
     /// Change MergeTreeSettings
     void changeSettings(
@@ -515,11 +513,12 @@ public:
         broken_part_callback(name);
     }
 
-    /** Get the key expression AST as an ASTExpressionList. It can be specified
-     *  in the tuple: (CounterID, Date), or as one column: CounterID.
-     */
-    static ASTPtr extractKeyExpressionList(const ASTPtr & node);
-
+    /// TODO (alesap) Duplicate method required for compatibility.
+    /// Must be removed.
+    static ASTPtr extractKeyExpressionList(const ASTPtr & node)
+    {
+        return DB::extractKeyExpressionList(node);
+    }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const;
@@ -650,11 +649,6 @@ public:
 
     std::optional<TTLDescription> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
-    /// This mutex is required for background move operations which do not
-    /// obtain global locks.
-    /// TODO (alesap) It will be removed after metadata became atomic
-    mutable std::mutex move_ttl_entries_mutex;
-
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
 
@@ -680,8 +674,6 @@ protected:
     friend class MergeTreeDataMergerMutator;
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
-
-    ASTPtr settings_ast;
 
     bool require_part_metadata;
 
@@ -789,12 +781,14 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false, bool attach = false);
+    void checkProperties(const StorageInMemoryMetadata & new_metadata, bool attach = false) const;
 
-    void initPartitionKey(ASTPtr partition_by_ast);
+    void setProperties(const StorageInMemoryMetadata & new_metadata, bool attach = false);
 
-    void setTTLExpressions(const ColumnsDescription & columns,
-        const ASTPtr & new_ttl_table_ast, bool only_check = false);
+    void initPartitionKey(const KeyDescription & new_partition_key);
+
+    void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata) const;
+    void setTTLExpressions(const StorageInMemoryMetadata & new_metadata);
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
