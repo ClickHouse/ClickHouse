@@ -14,7 +14,7 @@
 namespace DB
 {
 
-///recursive traversal and check for optimizeAggregateFunctionsOfGroupByKeys
+/// Recursive traversal and check for optimizeAggregateFunctionsOfGroupByKeys
 struct KeepAggregateFunctionMatcher
 {
     struct Data
@@ -91,7 +91,7 @@ public:
 
     static void visit(ASTPtr & ast, Data & data)
     {
-        ///check if function is min/max/any
+        /// Check if function is min/max/any
         auto * function_node = ast->as<ASTFunction>();
         if (function_node && (function_node->name == "min" || function_node->name == "max" ||
                               function_node->name == "any" || function_node->name == "anyLast"))
@@ -100,10 +100,12 @@ public:
             KeepAggregateFunctionVisitor::Data keep_data{data.group_by_keys, keep_aggregator};
             KeepAggregateFunctionVisitor(keep_data).visit(function_node->arguments);
 
+            /// Place argument of an aggregate function instead of function
             if (!keep_aggregator)
             {
-                ///place argument of an aggregate function instead of function
+                String alias = function_node->alias;
                 ast = (function_node->arguments->children[0])->clone();
+                ast->setAlias(alias);
             }
         }
     }
