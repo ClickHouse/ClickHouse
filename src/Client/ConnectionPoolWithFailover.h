@@ -97,6 +97,7 @@ private:
 
 private:
     std::vector<size_t> hostname_differences; /// Distances from name of this host to the names of hosts of pools.
+    size_t last_used = 0; /// Last used for round_robin policy.
     LoadBalancing default_load_balancing;
 };
 

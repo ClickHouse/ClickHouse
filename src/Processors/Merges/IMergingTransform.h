@@ -36,19 +36,19 @@ protected:
     virtual void onNewInput(); /// Is called when new input is added. Only if have_all_inputs = false.
     virtual void onFinish() {} /// Is called when all data is processed.
 
-    bool filterChunks(); /// Filter chunks if selector position was set. For parallel final.
+    void filterChunks(); /// Filter chunks if selector position was set. For parallel final.
 
     /// Processor state.
     struct State
     {
         Chunk output_chunk;
-        Chunk input_chunk;
+        IMergingAlgorithm::Input input_chunk;
         bool has_input = false;
         bool is_finished = false;
         bool need_data = false;
         size_t next_input_to_read = 0;
 
-        Chunks init_chunks;
+        IMergingAlgorithm::Inputs init_chunks;
         ssize_t selector_position = -1;
     };
 
@@ -61,7 +61,6 @@ private:
 
         InputPort & port;
         bool is_initialized = false;
-        bool is_filtered = false;
     };
 
     std::vector<InputState> input_states;
@@ -90,8 +89,7 @@ public:
 
     void work() override
     {
-        if (!filterChunks())
-            return;
+        filterChunks();
 
         if (!state.init_chunks.empty())
             algorithm.initialize(std::move(state.init_chunks));
