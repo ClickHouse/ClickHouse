@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeCustomGeo.h>
 
 #include <memory>
+#include <string>
 
 namespace DB
 {
@@ -69,22 +70,16 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        // auto get_parser = [&block, &arguments] (size_t i) {
-            // const ColumnWithTypeAndName polygon = block.getByPosition(arguments[i]);
-            // return makeGeometryFromColumnParser(polygon);
-        // };
+        auto get_parser = [&block, &arguments] (size_t i) {
+            const ColumnWithTypeAndName polygon = block.getByPosition(arguments[i]);
+            return makeGeometryFromColumnParser(polygon);
+        };
 
-        LOG_FATAL(&Poco::Logger::get("PI"), "KEK");
-
-        auto first_parser = makeGeometryFromColumnParser(block.getByPosition(arguments[0]));
+        auto first_parser = get_parser(0);
         auto first_container = createContainer(first_parser);
 
-        LOG_FATAL(&Poco::Logger::get("PI"), "LOL");
-
-        auto second_parser = makeGeometryFromColumnParser(block.getByPosition(arguments[1]));
+        auto second_parser = get_parser(1);
         auto second_container = createContainer(second_parser);
-
-        LOG_FATAL(&Poco::Logger::get("PI"), "MEM");
 
         Float64MultiPolygonSerializer serializer;
 
@@ -99,14 +94,13 @@ public:
                 boost::get<Float64MultiPolygon>(second_container),
                 boost::get<Float64MultiPolygon>(intersection));
 
+            boost::get<Float64MultiPolygon>(intersection).erase(
+                boost::get<Float64MultiPolygon>(intersection).begin());
+
             serializer.add(intersection);
         }
 
-        LOG_FATAL(&Poco::Logger::get("PI"), "NE MEM");
-
         block.getByPosition(result).column = std::move(serializer.finalize());
-
-        LOG_FATAL(&Poco::Logger::get("PI"), "THE END");
     }
 
     bool useDefaultImplementationForConstants() const override
