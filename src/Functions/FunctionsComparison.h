@@ -879,6 +879,9 @@ private:
         if (0 == tuple_size)
             throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 
+        if (tuple_size != typeid_cast<const DataTypeTuple &>(*c1.type).getElements().size())
+            throw Exception("Cannot compare tuples of different sizes.", ErrorCodes::BAD_ARGUMENTS);
+
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
 
@@ -1178,7 +1181,8 @@ public:
                     + " of first argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (checkAndGetDataType<DataTypeTuple>(left_type.get()))
+        else if (checkAndGetDataType<DataTypeTuple>(left_type.get())
+            && checkAndGetDataType<DataTypeTuple>(right_type.get()))
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
