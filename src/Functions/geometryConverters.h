@@ -15,7 +15,6 @@
 #include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
-#include <common/logger_useful.h>
 
 namespace DB {
 
@@ -404,7 +403,7 @@ public:
 
     void operator()(const Float64MultiPolygon & multi_polygon)
     {
-        size += 1 + multi_polygon.size();
+        size += multi_polygon.size();
         offsets->insertValue(size);
         for (const auto & polygon : multi_polygon)
         {
@@ -414,7 +413,6 @@ public:
 
     ColumnPtr finalize()
     {
-        LOG_FATAL(&Poco::Logger::get("PI"), "MultiPolygon Offsets: " + toString(size));
         return ColumnArray::create(polygonSerializer.finalize(), std::move(offsets));
     }
 
