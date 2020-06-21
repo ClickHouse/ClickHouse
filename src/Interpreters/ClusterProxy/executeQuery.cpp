@@ -32,7 +32,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     {
         if (new_settings.force_optimize_skip_unused_shards_nesting == 1)
         {
-            new_settings.force_optimize_skip_unused_shards = 0;
+            new_settings.force_optimize_skip_unused_shards = false;
             new_settings.force_optimize_skip_unused_shards.changed = false;
 
             if (log)
@@ -40,7 +40,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
         }
         else
         {
-            new_settings.force_optimize_skip_unused_shards_nesting.value--;
+            --new_settings.force_optimize_skip_unused_shards_nesting.value;
             new_settings.force_optimize_skip_unused_shards_nesting.changed = true;
 
             if (log)
@@ -52,7 +52,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     {
         if (new_settings.optimize_skip_unused_shards_nesting == 1)
         {
-            new_settings.optimize_skip_unused_shards = 0;
+            new_settings.optimize_skip_unused_shards = false;
             new_settings.optimize_skip_unused_shards.changed = false;
 
             if (log)
@@ -60,7 +60,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
         }
         else
         {
-            new_settings.optimize_skip_unused_shards_nesting.value--;
+            --new_settings.optimize_skip_unused_shards_nesting.value;
             new_settings.optimize_skip_unused_shards_nesting.changed = true;
 
             if (log)
