@@ -5,7 +5,7 @@
 namespace DB
 {
 
-UInt32 GetSupportedArches()
+UInt32 getSupportedArchs()
 {
     UInt32 result = 0;
     if (Cpu::CpuFlagsCache::have_SSE42)
@@ -19,13 +19,13 @@ UInt32 GetSupportedArches()
     return result;
 }
 
-bool IsArchSupported(TargetArch arch)
+bool isArchSupported(TargetArch arch)
 {
-    static UInt32 arches = GetSupportedArches();
+    static UInt32 arches = getSupportedArchs();
     return arch == TargetArch::Default || (arches & static_cast<UInt32>(arch));
 }
 
-String ToString(TargetArch arch)
+String toString(TargetArch arch)
 {
     switch (arch)
     {

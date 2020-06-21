@@ -3,54 +3,54 @@
 #include <Core/Types.h>
 
 /* This file contains macros and helpers for writing platform-dependent code.
- * 
- * Macros DECLARE_<Arch>_SPECIFIC_CODE will wrap code inside it into the 
+ *
+ * Macros DECLARE_<Arch>_SPECIFIC_CODE will wrap code inside it into the
  * namespace TargetSpecific::<Arch> and enable Arch-specific compile options.
  * Thus, it's allowed to call functions inside these namespaces only after
- * checking platform in runtime (see IsArchSupported() below).
+ * checking platform in runtime (see isArchSupported() below).
  *
  * If compiler is not gcc/clang or target isn't x86_64 or ENABLE_MULTITARGET_CODE
  * was set to OFF in cmake, all code inside these macroses will be removed and
  * USE_MUTLITARGE_CODE will be set to 0. Use #if USE_MUTLITARGE_CODE whenever you
  * use anything from this namespaces.
- * 
+ *
  * For similarities there is a macros DECLARE_DEFAULT_CODE, which wraps code
  * into the namespace TargetSpecific::Default but dosn't specify any additional
  * copile options. Functions and classes inside this macros are available regardless
  * of USE_MUTLITARGE_CODE.
- * 
+ *
  * Example of usage:
- * 
+ *
  * DECLARE_DEFAULT_CODE (
  * int funcImpl() {
  *     return 1;
  * }
  * ) // DECLARE_DEFAULT_CODE
- * 
+ *
  * DECLARE_AVX2_SPECIFIC_CODE (
  * int funcImpl() {
  *     return 2;
  * }
  * ) // DECLARE_DEFAULT_CODE
- * 
+ *
  * int func() {
  * #if USE_MULTITARGET_CODE
- *     if (IsArchSupported(TargetArch::AVX2)) 
+ *     if (isArchSupported(TargetArch::AVX2))
  *         return TargetSpecifc::AVX2::funcImpl();
  * #endif
  *     return TargetSpecifc::Default::funcImpl();
- * } 
- * 
+ * }
+ *
  * Sometimes code may benefit from compiling with different options.
  * For these purposes use DECLARE_MULTITARGET_CODE macros. It will create a copy
  * of the code for every supported target and compile it with different options.
  * These copies are available via TargetSpecifc namespaces described above.
- * 
- * Inside every TargetSpecific namespace there is a constexpr variable BuildArch, 
+ *
+ * Inside every TargetSpecific namespace there is a constexpr variable BuildArch,
  * which indicates the target platform for current code.
- * 
+ *
  * Example:
- * 
+ *
  * DECLARE_MULTITARGET_CODE(
  * int funcImpl(int size, ...) {
  *     int iteration_size = 1;
@@ -83,9 +83,9 @@ enum class TargetArch : UInt32
 };
 
 /// Runtime detection.
-bool IsArchSupported(TargetArch arch);
+bool isArchSupported(TargetArch arch);
 
-String ToString(TargetArch arch);
+String toString(TargetArch arch);
 
 #if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
 
