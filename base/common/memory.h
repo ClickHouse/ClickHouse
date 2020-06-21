@@ -52,6 +52,9 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
 
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
 {
+    if (unlikely(ptr == nullptr))
+        return;
+
     TCMallocInternalDeleteSized(ptr, size);
 }
 
