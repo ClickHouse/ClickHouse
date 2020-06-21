@@ -149,25 +149,25 @@ namespace detail
     String getImplementationTag(TargetArch arch)
     {
         if constexpr (has_implementation_tag<T>)
-            return ToString(arch) + "_" + T::getImplementationTag();
+            return toString(arch) + "_" + T::getImplementationTag();
         else
-            return ToString(arch);
+            return toString(arch);
     }
 }
 
 /* Class which is used to store implementations for the function and to select the best one to run
  * based on processor architecture and statistics from previous runs.
- * 
+ *
  * FunctionInterface is typically IFunction or IExecutableFunctionImpl, but practically it can be
  * any interface that contains "execute" method (IFunction is an exception and is supported as well).
- * 
+ *
  * Example of usage:
- * 
+ *
  * class MyDefaulImpl : public IFunction {...};
  * DECLARE_AVX2_SPECIFIC_CODE(
  * class MyAVX2Impl : public IFunction {...};
  * )
- * 
+ *
  * /// All methods but execute/executeImpl are usually not bottleneck, so just use them from
  * /// default implementation.
  * class MyFunction : public MyDefaultImpl
@@ -232,17 +232,17 @@ public:
 
     /* Register new implementation for function.
      *
-     * Arch - required instruction set for running the implementation. It's guarantied that no one method would
+     * Arch - required instruction set for running the implementation. It's guarantied that no method would
      * be called (even the constructor and static methods) if the processor doesn't support this instruction set.
-     * 
+     *
      * FunctionImpl - implementation, should be inherited from template argument FunctionInterface.
-     * 
+     *
      * All function arguments will be forwarded to the implementation constructor.
      */
     template <TargetArch Arch, typename FunctionImpl, typename ...Args>
     void registerImplementation(Args&&... args)
     {
-        if (IsArchSupported(Arch))
+        if (isArchSupported(Arch))
         {
             // TODO(dakovalkov): make this option better.
             const auto & choose_impl = context.getSettingsRef().function_implementation.value;

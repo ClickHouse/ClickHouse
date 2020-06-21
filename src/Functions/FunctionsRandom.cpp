@@ -101,7 +101,7 @@ using namespace VectorExtension;
 /* Takes 2 vectors with LinearCongruentialGenerator states and combines them into vector with random values.
  * From every rand-state we use only bits 15...47 to generate random vector.
  */
-inline UInt64x4 CombineValues(UInt64x4 a, UInt64x4 b)
+inline UInt64x4 combineValues(UInt64x4 a, UInt64x4 b)
 {
     auto xa = reinterpret_cast<__m256i>(a);
     auto xb = reinterpret_cast<__m256i>(b);
@@ -156,16 +156,16 @@ void RandImpl::execute(char * output, size_t size)
     {
         gens1 = gens1 * a + c;
         gens2 = gens2 * a + c;
-        unalignedStore<UInt64x4>(output, CombineValues(gens1, gens2));
+        unalignedStore<UInt64x4>(output, combineValues(gens1, gens2));
         gens3 = gens3 * a + c;
         gens4 = gens4 * a + c;
-        unalignedStore<UInt64x4>(output + sizeof(UInt64x4), CombineValues(gens3, gens4));
+        unalignedStore<UInt64x4>(output + sizeof(UInt64x4), combineValues(gens3, gens4));
         gens1 = gens1 * a + c;
         gens2 = gens2 * a + c;
-        unalignedStore<UInt64x4>(output + 2 * sizeof(UInt64x4), CombineValues(gens1, gens2));
+        unalignedStore<UInt64x4>(output + 2 * sizeof(UInt64x4), combineValues(gens1, gens2));
         gens3 = gens3 * a + c;
         gens4 = gens4 * a + c;
-        unalignedStore<UInt64x4>(output + 3 * sizeof(UInt64x4), CombineValues(gens3, gens4));
+        unalignedStore<UInt64x4>(output + 3 * sizeof(UInt64x4), combineValues(gens3, gens4));
         output += bytes_per_write;
     }
 
@@ -174,7 +174,7 @@ void RandImpl::execute(char * output, size_t size)
     {
         gens1 = gens1 * a + c;
         gens2 = gens2 * a + c;
-        UInt64x4 values = CombineValues(gens1, gens2);
+        UInt64x4 values = combineValues(gens1, gens2);
         for (int i = 0; i < vec_size && (end - output) > 0; ++i)
         {
             unalignedStore<UInt64>(output, values[i]);
