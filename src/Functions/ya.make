@@ -147,7 +147,6 @@ SRCS(
     exp10.cpp
     exp2.cpp
     exp.cpp
-    extractAllGroups.cpp
     extractAllGroupsHorizontal.cpp
     extractAllGroupsVertical.cpp
     extract.cpp
