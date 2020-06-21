@@ -379,7 +379,7 @@ public:
     }
 };
 
-class StartUpMessage : FirstMessage
+class StartupMessage : FirstMessage
 {
 public:
     String user;
@@ -387,7 +387,7 @@ public:
     // includes username, may also include database and other runtime parameters
     std::unordered_map<String, String> parameters;
 
-    StartUpMessage(Int32 payload_size_) : FirstMessage(payload_size_) {}
+    StartupMessage(Int32 payload_size_) : FirstMessage(payload_size_) {}
 
     void deserialize(ReadBuffer & in) override
     {
