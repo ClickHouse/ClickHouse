@@ -1000,8 +1000,8 @@ inline String toString(const T & x)
 
 inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
 {
-    buffer.write(s.data(), s.size());
-    buffer.write(0);
+    /// c_str is guaranteed to return zero-terminated string
+    buffer.write(s.с_str(), s.size() + 1);
 }
 
 template <typename T>
