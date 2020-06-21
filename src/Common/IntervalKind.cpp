@@ -83,6 +83,23 @@ const char * IntervalKind::toKeyword() const
 }
 
 
+const char * IntervalKind::toLowercasedKeyword() const
+{
+    switch (kind)
+    {
+        case IntervalKind::Second: return "second";
+        case IntervalKind::Minute: return "minute";
+        case IntervalKind::Hour: return "hour";
+        case IntervalKind::Day: return "day";
+        case IntervalKind::Week: return "week";
+        case IntervalKind::Month: return "month";
+        case IntervalKind::Quarter: return "quarter";
+        case IntervalKind::Year: return "year";
+    }
+    __builtin_unreachable();
+}
+
+
 const char * IntervalKind::toDateDiffUnit() const
 {
     switch (kind)

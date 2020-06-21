@@ -8,7 +8,8 @@
 
 namespace DB
 {
-class ASTExtendedRoleSet;
+class ASTUserNamesWithHost;
+class ASTRolesOrUsersSet;
 class ASTSettingsProfileElements;
 
 /** CREATE USER [IF NOT EXISTS | OR REPLACE] name
@@ -34,7 +35,7 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    String name;
+    std::shared_ptr<ASTUserNamesWithHost> names;
     String new_name;
 
     std::optional<Authentication> authentication;
@@ -44,7 +45,7 @@ public:
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
 
-    std::shared_ptr<ASTExtendedRoleSet> default_roles;
+    std::shared_ptr<ASTRolesOrUsersSet> default_roles;
 
     std::shared_ptr<ASTSettingsProfileElements> settings;
 

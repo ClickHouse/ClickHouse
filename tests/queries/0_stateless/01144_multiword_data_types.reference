@@ -1,0 +1,3 @@
+CREATE TABLE default.multiword_types\n(\n    `a` Float64,\n    `b` Float64,\n    `c` String DEFAULT \'str\',\n    `d` String,\n    `e` String COMMENT \'comment\',\n    `f` String,\n    `g` String,\n    `h` String DEFAULT toString(a) COMMENT \'comment\',\n    `i` String,\n    `j` String,\n    `k` String,\n    `l` String,\n    `m` String,\n    `n` String,\n    `o` String,\n    `p` String\n)\nENGINE = Memory
+Tuple(Float64, Float64, String, String, String, String, String, String, String, String, String, String, String, String, String, String)
+42	42
