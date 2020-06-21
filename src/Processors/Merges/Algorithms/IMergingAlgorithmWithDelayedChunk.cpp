@@ -8,36 +8,36 @@ IMergingAlgorithmWithDelayedChunk::IMergingAlgorithmWithDelayedChunk(
     size_t num_inputs,
     SortDescription description_)
     : description(std::move(description_))
-    , source_chunks(num_inputs)
+    , current_inputs(num_inputs)
     , cursors(num_inputs)
 {
 }
 
-void IMergingAlgorithmWithDelayedChunk::initializeQueue(Chunks chunks)
+void IMergingAlgorithmWithDelayedChunk::initializeQueue(Inputs inputs)
 {
-    source_chunks = std::move(chunks);
+    current_inputs = std::move(inputs);
 
-    for (size_t source_num = 0; source_num < source_chunks.size(); ++source_num)
+    for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
     {
-        if (!source_chunks[source_num])
+        if (!current_inputs[source_num].chunk)
             continue;
 
-        cursors[source_num] = SortCursorImpl(source_chunks[source_num].getColumns(), description, source_num);
+        cursors[source_num] = SortCursorImpl(current_inputs[source_num].chunk.getColumns(), description, source_num);
     }
 
     queue = SortingHeap<SortCursor>(cursors);
 }
 
-void IMergingAlgorithmWithDelayedChunk::updateCursor(Chunk & chunk, size_t source_num)
+void IMergingAlgorithmWithDelayedChunk::updateCursor(Input & input, size_t source_num)
 {
-    auto & source_chunk = source_chunks[source_num];
+    auto & current_input = current_inputs[source_num];
 
     /// Extend lifetime of last chunk.
-    last_chunk.swap(source_chunk);
+    last_chunk.swap(current_input.chunk);
     last_chunk_sort_columns = std::move(cursors[source_num].sort_columns);
 
-    source_chunk.swap(chunk);
-    cursors[source_num].reset(source_chunk.getColumns(), {});
+    current_input.swap(input);
+    cursors[source_num].reset(current_input.chunk.getColumns(), {});
 
     queue.push(cursors[source_num]);
 }

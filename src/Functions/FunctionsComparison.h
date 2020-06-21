@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/getLeastSupertype.h>
 
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 
 #include <Functions/IFunctionAdaptors.h>
@@ -51,7 +52,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_LARGE_STRING_SIZE;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
@@ -262,7 +262,7 @@ struct StringComparisonImpl
         {
             size_t size = a_data.size();
             for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-                c[j] = Op::apply(0, memcmpSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i, a_n, b_data.data(), b_size));
+                c[j] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i, a_n, b_data.data(), b_size), 0);
         }
     }
 
@@ -812,92 +812,49 @@ private:
         }
     }
 
-    bool executeDateOrDateTimeOrEnumOrUUIDWithConstString(
+    bool executeWithConstString(
         Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
-        const DataTypePtr & left_type, const DataTypePtr & right_type, bool left_is_num, size_t input_rows_count)
+        const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count)
     {
-        /// This is no longer very special case - comparing dates, datetimes, and enumerations with a string constant.
-        const IColumn * column_string_untyped = !left_is_num ? col_left_untyped : col_right_untyped;
-        const IColumn * column_number = left_is_num ? col_left_untyped : col_right_untyped;
-        const IDataType * number_type = left_is_num ? left_type.get() : right_type.get();
+        /// To compare something with const string, we cast constant to appropriate type and compare as usual.
+        /// It is ok to throw exception if value is not convertible.
+        /// We should deal with possible overflows, e.g. toUInt8(1) = '257' should return false.
 
-        WhichDataType which(number_type);
+        const ColumnConst * left_const = checkAndGetColumnConstStringOrFixedString(col_left_untyped);
+        const ColumnConst * right_const = checkAndGetColumnConstStringOrFixedString(col_right_untyped);
 
-        const bool legal_types = which.isDateOrDateTime() || which.isEnum() || which.isUUID();
-
-        const auto column_string = checkAndGetColumnConst<ColumnString>(column_string_untyped);
-        if (!column_string || !legal_types)
+        if (!left_const && !right_const)
             return false;
 
-        StringRef string_value = column_string->getDataAt(0);
+        const IDataType * type_string = left_const ? left_type.get() : right_type.get();
+        const DataTypePtr & type_to_compare = !left_const ? left_type : right_type;
 
-        if (which.isDate())
+        Field string_value = left_const ? left_const->getField() : right_const->getField();
+        Field converted = convertFieldToType(string_value, *type_to_compare, type_string);
+
+        /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
+        if (converted.isNull())
         {
-            DayNum date;
-            ReadBufferFromMemory in(string_value.data, string_value.size);
-            readDateText(date, in);
-            if (!in.eof())
-                throw Exception("String is too long for Date: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
-
-            ColumnPtr parsed_const_date_holder = DataTypeDate().createColumnConst(input_rows_count, date);
-            const ColumnConst * parsed_const_date = assert_cast<const ColumnConst *>(parsed_const_date_holder.get());
-            executeNumLeftType<DataTypeDate::FieldType>(block, result,
-                left_is_num ? col_left_untyped : parsed_const_date,
-                left_is_num ? parsed_const_date : col_right_untyped);
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count,
+                std::is_same_v<Op<int, int>, NotEqualsOp<int, int>>);
         }
-        else if (which.isDateTime())
+        else
         {
-            time_t date_time;
-            ReadBufferFromMemory in(string_value.data, string_value.size);
-            readDateTimeText(date_time, in, dynamic_cast<const DataTypeDateTime &>(*number_type).getTimeZone());
-            if (!in.eof())
-                throw Exception("String is too long for DateTime: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
+            auto column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
 
-            ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createColumnConst(input_rows_count, UInt64(date_time));
-            const ColumnConst * parsed_const_date_time = assert_cast<const ColumnConst *>(parsed_const_date_time_holder.get());
-            executeNumLeftType<DataTypeDateTime::FieldType>(block, result,
-                left_is_num ? col_left_untyped : parsed_const_date_time,
-                left_is_num ? parsed_const_date_time : col_right_untyped);
+            Block tmp_block
+            {
+                { left_const ? column_converted : col_left_untyped->getPtr(), type_to_compare, "" },
+                { !left_const ? column_converted : col_right_untyped->getPtr(), type_to_compare, "" },
+                block.getByPosition(result)
+            };
+
+            executeImpl(tmp_block, {0, 1}, 2, input_rows_count);
+
+            block.getByPosition(result).column = std::move(tmp_block.getByPosition(2).column);
         }
-        else if (which.isUUID())
-        {
-            UUID uuid;
-            ReadBufferFromMemory in(string_value.data, string_value.size);
-            readText(uuid, in);
-            if (!in.eof())
-                throw Exception("String is too long for UUID: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
-
-            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createColumnConst(input_rows_count, uuid);
-            const ColumnConst * parsed_const_uuid = assert_cast<const ColumnConst *>(parsed_const_uuid_holder.get());
-            executeNumLeftType<DataTypeUUID::FieldType>(block, result,
-                left_is_num ? col_left_untyped : parsed_const_uuid,
-                left_is_num ? parsed_const_uuid : col_right_untyped);
-        }
-
-        else if (which.isEnum8())
-            executeEnumWithConstString<DataTypeEnum8>(block, result, column_number, column_string,
-                number_type, left_is_num, input_rows_count);
-        else if (which.isEnum16())
-            executeEnumWithConstString<DataTypeEnum16>(block, result, column_number, column_string,
-                number_type, left_is_num, input_rows_count);
 
         return true;
-    }
-
-    /// Comparison between DataTypeEnum<T> and string constant containing the name of an enum element
-    template <typename EnumType>
-    void executeEnumWithConstString(
-        Block & block, const size_t result, const IColumn * column_number, const ColumnConst * column_string,
-        const IDataType * type_untyped, const bool left_is_num, size_t input_rows_count)
-    {
-        const auto type = static_cast<const EnumType *>(type_untyped);
-
-        const Field x = castToNearestFieldType(type->getValue(column_string->getValue<String>()));
-        const auto enum_col = type->createColumnConst(input_rows_count, x);
-
-        executeNumLeftType<typename EnumType::FieldType>(block, result,
-            left_is_num ? column_number : enum_col.get(),
-            left_is_num ? enum_col.get() : column_number);
     }
 
     void executeTuple(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1,
@@ -1124,17 +1081,11 @@ public:
         bool has_date = left.isDate() || right.isDate();
 
         if (!((both_represented_by_number && !has_date)   /// Do not allow compare date and number.
-            || (left.isStringOrFixedString() && right.isStringOrFixedString())
+            || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
-            || (left.isString() && right.isDateOrDateTime())
-            || (left.isDateOrDateTime() && right.isString())
             || (left.isDateOrDateTime() && right.isDateOrDateTime() && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
-            || (left.isUUID() && right.isString())
-            || (left.isString() && right.isUUID())
             || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
-            || (left.isEnum() && right.isString())
-            || (left.isString() && right.isEnum())
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
         {
@@ -1151,7 +1102,8 @@ public:
 
         if (left_tuple && right_tuple)
         {
-            auto adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(FunctionComparison<Op, Name>::create(context)));
+            auto adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(
+                FunctionComparison<Op, Name>::create(context)));
 
             size_t size = left_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)
@@ -1176,7 +1128,8 @@ public:
         const DataTypePtr & right_type = col_with_type_and_name_right.type;
 
         /// The case when arguments are the same (tautological comparison). Return constant.
-        /// NOTE: Nullable types are special case. (BTW, this function use default implementation for Nullable, so Nullable types cannot be here. Check just in case.)
+        /// NOTE: Nullable types are special case.
+        /// (BTW, this function use default implementation for Nullable, so Nullable types cannot be here. Check just in case.)
         /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are sometimes equal sometimes not).
         if (left_type->equals(*right_type) && !left_type->isNullable() && col_left_untyped == col_right_untyped)
         {
@@ -1200,6 +1153,9 @@ public:
 
         const bool left_is_num = col_left_untyped->isNumeric();
         const bool right_is_num = col_right_untyped->isNumeric();
+
+        const bool left_is_string = isStringOrFixedString(which_left);
+        const bool right_is_string = isStringOrFixedString(which_right);
 
         bool date_and_datetime = (left_type != right_type) &&
             which_left.isDateOrDateTime() && which_right.isDateOrDateTime();
@@ -1226,64 +1182,14 @@ public:
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
-        else if (which_left.idx != which_right.idx
-                 && (which_left.isDateTime64() || which_right.isDateTime64())
-                 && (which_left.isStringOrFixedString() || which_right.isStringOrFixedString()))
+        else if (left_is_string && right_is_string && executeString(block, result, col_left_untyped, col_right_untyped))
         {
-            /** Special case of comparing DateTime64 against a string.
-             *
-             * Can't be moved to executeDateOrDateTimeOrEnumOrUUIDWithConstString()
-             * since DateTime64 is basically a Decimal, but we do similar things, except type inference.
-             * Outline:
-             * - Extract string content
-             * - Parse it as a ColumnDateTime64 value (same type as DateTime64, means same precision)
-             * - Fabricate a column with type and name
-             * - Compare left and right comlumns as DateTime64 columns.
-             */
-
-            const size_t datetime64_col_index = which_left.isDateTime64() ? 0 : 1;
-            const size_t string_col_index = which_left.isStringOrFixedString() ? 0 : 1;
-
-            const auto & datetime64_col_with_type_and_name = block.getByPosition(arguments[datetime64_col_index]);
-            const auto & string_col_with_type_and_name = block.getByPosition(arguments[string_col_index]);
-
-            if (!isColumnConst(*string_col_with_type_and_name.column))
-                throw Exception(getName() + ", illegal column type of argument #" + std::to_string(string_col_index)
-                        + " '" + string_col_with_type_and_name.name + "'"
-                        " expected const String or const FixedString,"
-                        " got " + string_col_with_type_and_name.type->getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
-
-            if (datetime64_col_with_type_and_name.column->size() == 0 || string_col_with_type_and_name.column->size() == 0)
-            {
-                // For some reason, when both left and right columns are empty (dry run while building a header block)
-                // executeDecimal() fills result column with bogus value.
-                block.getByPosition(result).column = ColumnUInt8::create();
-                return;
-            }
-
-            auto parsed_tmp_column_holder = datetime64_col_with_type_and_name.type->createColumn();
-
-            {
-                const StringRef string_value = string_col_with_type_and_name.column->getDataAt(0);
-                ReadBufferFromMemory in(string_value.data, string_value.size);
-                datetime64_col_with_type_and_name.type->deserializeAsWholeText(*parsed_tmp_column_holder, in, FormatSettings{});
-
-                if (!in.eof())
-                    throw Exception(getName() + ": String is too long for " + datetime64_col_with_type_and_name.type->getName() + " : " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
-            }
-
-            // It is necessary to wrap tmp column in ColumnConst to avoid overflow when comparing.
-            // (non-const columns are expected to have same number of rows as every other column in block).
-            const ColumnWithTypeAndName parsed_tmp_col_with_type_and_name{
-                    ColumnConst::create(std::move(parsed_tmp_column_holder), 1),
-                    datetime64_col_with_type_and_name.type,
-                    string_col_with_type_and_name.name};
-
-            executeDecimal(block, result,
-                which_left.isDateTime64() ? datetime64_col_with_type_and_name : parsed_tmp_col_with_type_and_name,
-                which_right.isDateTime64() ? datetime64_col_with_type_and_name : parsed_tmp_col_with_type_and_name);
-
+        }
+        else if (executeWithConstString(
+                block, result, col_left_untyped, col_right_untyped,
+                left_type, right_type,
+                input_rows_count))
+        {
         }
         else if (isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
         {
@@ -1294,18 +1200,9 @@ public:
 
             executeDecimal(block, result, col_with_type_and_name_left, col_with_type_and_name_right);
         }
-        else if (!left_is_num && !right_is_num && executeString(block, result, col_left_untyped, col_right_untyped))
-        {
-        }
         else if (left_type->equals(*right_type))
         {
             executeGenericIdenticalTypes(block, result, col_left_untyped, col_right_untyped);
-        }
-        else if (executeDateOrDateTimeOrEnumOrUUIDWithConstString(
-                block, result, col_left_untyped, col_right_untyped,
-                left_type, right_type,
-                left_is_num, input_rows_count))
-        {
         }
         else
         {

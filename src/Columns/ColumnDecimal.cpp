@@ -40,6 +40,15 @@ int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) c
 }
 
 template <typename T>
+void ColumnDecimal<T>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                                     PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                                     int direction, int nan_direction_hint) const
+{
+    return this->template doCompareColumn<ColumnDecimal<T>>(static_cast<const Self &>(rhs), rhs_row_num, row_indexes,
+                                                         compare_results, direction, nan_direction_hint);
+}
+
+template <typename T>
 StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     auto * pos = arena.allocContinue(sizeof(T), begin);

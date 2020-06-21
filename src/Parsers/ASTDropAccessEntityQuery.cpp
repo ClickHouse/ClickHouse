@@ -1,10 +1,25 @@
 #include <Parsers/ASTDropAccessEntityQuery.h>
+#include <Parsers/ASTRowPolicyName.h>
 #include <Common/quoteString.h>
 
 
 namespace DB
 {
-using EntityTypeInfo = IAccessEntity::TypeInfo;
+namespace
+{
+    using EntityTypeInfo = IAccessEntity::TypeInfo;
+
+    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    {
+        bool need_comma = false;
+        for (const auto & name : names)
+        {
+            if (std::exchange(need_comma, true))
+                settings.ostr << ',';
+            settings.ostr << ' ' << backQuoteIfNeed(name);
+        }
+    }
+}
 
 
 String ASTDropAccessEntityQuery::getID(char) const
@@ -28,32 +43,19 @@ void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, Forma
 
     if (type == EntityType::ROW_POLICY)
     {
-        bool need_comma = false;
-        for (const auto & name_parts : row_policies_name_parts)
-        {
-            if (need_comma)
-                settings.ostr << ',';
-            need_comma = true;
-            const String & database = name_parts.database;
-            const String & table_name = name_parts.table_name;
-            const String & short_name = name_parts.short_name;
-            settings.ostr << ' ' << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
-                          << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".")
-                          << backQuoteIfNeed(table_name);
-        }
+        settings.ostr << " ";
+        row_policy_names->format(settings);
     }
     else
-    {
-        bool need_comma = false;
-        for (const auto & name : names)
-        {
-            if (need_comma)
-                settings.ostr << ',';
-            need_comma = true;
-            settings.ostr << ' ' << backQuoteIfNeed(name);
-        }
-    }
+        formatNames(names, settings);
 
     formatOnCluster(settings);
+}
+
+
+void ASTDropAccessEntityQuery::replaceEmptyDatabaseWithCurrent(const String & current_database) const
+{
+    if (row_policy_names)
+        row_policy_names->replaceEmptyDatabaseWithCurrent(current_database);
 }
 }

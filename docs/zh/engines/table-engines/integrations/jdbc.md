@@ -1,19 +1,19 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 34
-toc_title: JDBC
+toc_title: JDBC表引擎
 ---
 
 # JDBC {#table-engine-jdbc}
 
-允许ClickHouse通过以下方式连接到外部数据库 [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
+允许CH通过 [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity) 连接到外部数据库。
 
-要实现JDBC连接，ClickHouse使用单独的程序 [ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人](https://github.com/alex-krash/clickhouse-jdbc-bridge) 这应该作为守护进程运行。
 
-该引擎支持 [可为空](../../../sql-reference/data-types/nullable.md) 数据类型。
+要实现JDBC连接，CH需要使用以后台进程运行的程序 [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge)。
 
-## 创建表 {#creating-a-table}
+该引擎支持 [Nullable](../../../sql-reference/data-types/nullable.md) 数据类型。
+
+
+## 建表 {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -23,20 +23,22 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 ENGINE = JDBC(dbms_uri, external_database, external_table)
 ```
 
-**发动机参数**
+**引擎参数**
 
--   `dbms_uri` — URI of an external DBMS.
+-   `dbms_uri` — 外部DBMS的uri.
 
     格式: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
-    Mysql的示例: `jdbc:mysql://localhost:3306/?user=root&password=root`.
+    MySQL示例: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
--   `external_database` — Database in an external DBMS.
+-   `external_database` — 外部DBMS的数据库名.
 
--   `external_table` — Name of the table in `external_database`.
+-   `external_table` — `external_database`中的外部表名.
 
 ## 用法示例 {#usage-example}
 
-通过直接与它的控制台客户端连接在MySQL服务器中创建一个表:
+通过mysql控制台客户端来创建表
+
+Creating a table in MySQL server by connecting directly with it’s console client:
 
 ``` text
 mysql> CREATE TABLE `test`.`test` (
@@ -59,7 +61,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-在ClickHouse服务器中创建表并从中选择数据:
+在CH服务端创建表，并从中查询数据：
 
 ``` sql
 CREATE TABLE jdbc_table
@@ -83,8 +85,8 @@ FROM jdbc_table
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-## 另请参阅 {#see-also}
+## 参见 {#see-also}
 
 -   [JDBC表函数](../../../sql-reference/table-functions/jdbc.md).
 
-[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/jdbc/) <!--hide-->
+[原始文档](https://clickhouse.tech/docs/en/operations/table_engines/jdbc/) <!--hide-->

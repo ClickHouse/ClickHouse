@@ -5,14 +5,12 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/IAST_fwd.h>
 
-#include <Processors/QueryPipeline.h>
-
 namespace DB
 {
 
 class Context;
 class InterpreterSelectQuery;
-
+class QueryPlan;
 
 /** Interprets one or multiple SELECT queries inside UNION ALL chain.
   */
@@ -26,6 +24,9 @@ public:
         const Names & required_result_column_names = {});
 
     ~InterpreterSelectWithUnionQuery() override;
+
+    /// Builds QueryPlan for current query.
+    void buildQueryPlan(QueryPlan & query_plan);
 
     BlockIO execute() override;
 
