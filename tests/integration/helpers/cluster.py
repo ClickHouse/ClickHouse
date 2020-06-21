@@ -668,6 +668,8 @@ services:
             - {env_file}
         security_opt:
             - label:disable
+        links:
+            - postgres1:postgre-sql.local
         {networks}
             {app_net}
                 {ipv4_address}

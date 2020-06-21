@@ -222,11 +222,15 @@ def test_postgres_odbc_hached_dictionary_no_tty_pipe_overflow(started_cluster):
 def test_postgres_insert(started_cluster):
     conn = get_postgres_conn()
     conn.cursor().execute("truncate table clickhouse.test_table")
-    node1.query("create table pg_insert (column1 UInt8, column2 String) engine=ODBC('DSN=postgresql_odbc;', 'clickhouse', 'test_table')")
+
+    # Also test with Servername containing '.' and '-' symbols (see links in docker-compose template in helpers/cluster.py)
+    # This is needed to check parsing, validation and reconstruction of connection string.
+
+    node1.query("create table pg_insert (column1 UInt8, column2 String) engine=ODBC('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')")
     node1.query("insert into pg_insert values (1, 'hello'), (2, 'world')")
     assert node1.query("select * from pg_insert") == '1\thello\n2\tworld\n'
     node1.query("insert into table function odbc('DSN=postgresql_odbc;', 'clickhouse', 'test_table') format CSV 3,test")
-    node1.query("insert into table function odbc('DSN=postgresql_odbc;', 'clickhouse', 'test_table') select number, 's' || toString(number) from numbers (4, 7)")
+    node1.query("insert into table function odbc('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table') select number, 's' || toString(number) from numbers (4, 7)")
     assert node1.query("select sum(column1), count(column1) from pg_insert") == "55\t10\n"
     assert node1.query("select sum(n), count(n) from (select (*,).1 as n from (select * from odbc('DSN=postgresql_odbc;', 'clickhouse', 'test_table')))") == "55\t10\n"
 
