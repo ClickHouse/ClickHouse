@@ -17,8 +17,6 @@ namespace ClusterProxy
 
 Context removeUserRestrictionsFromSettings(const Context & context, const Settings & settings, Poco::Logger * log)
 {
-    static const UInt64 OPTIMIZE_SKIP_UNUSED_SHARDS_NO_NESTED = 2;
-
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
 
@@ -30,22 +28,44 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     new_settings.max_concurrent_queries_for_user.changed = false;
     new_settings.max_memory_usage_for_user.changed = false;
 
-    if (settings.force_optimize_skip_unused_shards_no_nested)
+    if (settings.force_optimize_skip_unused_shards_nesting)
     {
-        new_settings.force_optimize_skip_unused_shards = 0;
-        new_settings.force_optimize_skip_unused_shards.changed = false;
+        if (new_settings.force_optimize_skip_unused_shards_nesting == 1)
+        {
+            new_settings.force_optimize_skip_unused_shards = 0;
+            new_settings.force_optimize_skip_unused_shards.changed = false;
 
-        if (log)
-            LOG_TRACE(log, "Disabling force_optimize_skip_unused_shards (due to force_optimize_skip_unused_shards_no_nested)");
+            if (log)
+                LOG_TRACE(log, "Disabling force_optimize_skip_unused_shards for nested queries (force_optimize_skip_unused_shards_nesting exceeded)");
+        }
+        else
+        {
+            new_settings.force_optimize_skip_unused_shards_nesting.value--;
+            new_settings.force_optimize_skip_unused_shards_nesting.changed = true;
+
+            if (log)
+                LOG_TRACE(log, "force_optimize_skip_unused_shards_nesting is now {}", new_settings.force_optimize_skip_unused_shards_nesting);
+        }
     }
 
-    if (settings.optimize_skip_unused_shards == OPTIMIZE_SKIP_UNUSED_SHARDS_NO_NESTED)
+    if (settings.optimize_skip_unused_shards_nesting)
     {
-        new_settings.optimize_skip_unused_shards = 0;
-        new_settings.optimize_skip_unused_shards.changed = false;
+        if (new_settings.optimize_skip_unused_shards_nesting == 1)
+        {
+            new_settings.optimize_skip_unused_shards = 0;
+            new_settings.optimize_skip_unused_shards.changed = false;
 
-        if (log)
-            LOG_TRACE(log, "Disabling optimize_skip_unused_shards (due to optimize_skip_unused_shards=2)");
+            if (log)
+                LOG_TRACE(log, "Disabling optimize_skip_unused_shards for nested queries (optimize_skip_unused_shards_nesting exceeded)");
+        }
+        else
+        {
+            new_settings.optimize_skip_unused_shards_nesting.value--;
+            new_settings.optimize_skip_unused_shards_nesting.changed = true;
+
+            if (log)
+                LOG_TRACE(log, "optimize_skip_unused_shards_nesting is now {}", new_settings.optimize_skip_unused_shards_nesting);
+        }
     }
 
     Context new_context(context);
