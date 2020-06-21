@@ -69,17 +69,17 @@ namespace ErrorCodes
 
 namespace
 {
-    constexpr size_t DEFAULT_SSD_BLOCK_SIZE = DEFAULT_AIO_FILE_BLOCK_SIZE;
-    constexpr size_t DEFAULT_FILE_SIZE = 4 * 1024 * 1024 * 1024ULL;
+    constexpr size_t DEFAULT_SSD_BLOCK_SIZE_BYTES = DEFAULT_AIO_FILE_BLOCK_SIZE;
+    constexpr size_t DEFAULT_FILE_SIZE_BYTES = 4 * 1024 * 1024 * 1024ULL;
     constexpr size_t DEFAULT_PARTITIONS_COUNT = 16;
-    constexpr size_t DEFAULT_READ_BUFFER_SIZE = 16 * DEFAULT_SSD_BLOCK_SIZE;
-    constexpr size_t DEFAULT_WRITE_BUFFER_SIZE = DEFAULT_SSD_BLOCK_SIZE;
+    constexpr size_t DEFAULT_READ_BUFFER_SIZE_BYTES = 16 * DEFAULT_SSD_BLOCK_SIZE_BYTES;
+    constexpr size_t DEFAULT_WRITE_BUFFER_SIZE_BYTES = DEFAULT_SSD_BLOCK_SIZE_BYTES;
 
     constexpr size_t DEFAULT_MAX_STORED_KEYS = 100000;
 
     constexpr size_t BUFFER_ALIGNMENT = DEFAULT_AIO_FILE_BLOCK_SIZE;
-    constexpr size_t BLOCK_CHECKSUM_SIZE = 8;
-    constexpr size_t BLOCK_SPECIAL_FIELDS_SIZE = 4;
+    constexpr size_t BLOCK_CHECKSUM_SIZE_BYTES = 8;
+    constexpr size_t BLOCK_SPECIAL_FIELDS_SIZE_BYTES = 4;
 
     constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
     constexpr UInt64 KEY_METADATA_IS_DEFAULT_MASK = ~KEY_METADATA_EXPIRES_AT_MASK;
@@ -256,8 +256,8 @@ size_t SSDComplexKeyCachePartition::append(
     {
         write_buffer.emplace(memory->data() + current_memory_block_id * block_size, block_size);
         uint64_t tmp = 0;
-        write_buffer->write(reinterpret_cast<char*>(&tmp), BLOCK_CHECKSUM_SIZE);
-        write_buffer->write(reinterpret_cast<char*>(&tmp), BLOCK_SPECIAL_FIELDS_SIZE);
+        write_buffer->write(reinterpret_cast<char*>(&tmp), BLOCK_CHECKSUM_SIZE_BYTES);
+        write_buffer->write(reinterpret_cast<char*>(&tmp), BLOCK_SPECIAL_FIELDS_SIZE_BYTES);
         keys_in_block = 0;
     };
 
@@ -270,8 +270,8 @@ size_t SSDComplexKeyCachePartition::append(
     auto finish_block = [&]()
     {
         write_buffer.reset();
-        std::memcpy(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, &keys_in_block, sizeof(keys_in_block)); // set count
-        uint64_t checksum = CityHash_v1_0_2::CityHash64(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE); // checksum
+        std::memcpy(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE_BYTES, &keys_in_block, sizeof(keys_in_block)); // set count
+        uint64_t checksum = CityHash_v1_0_2::CityHash64(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE_BYTES, block_size - BLOCK_CHECKSUM_SIZE_BYTES); // checksum
         std::memcpy(memory->data() + block_size * current_memory_block_id, &checksum, sizeof(checksum));
         if (++current_memory_block_id == write_buffer_size)
             flush();
@@ -689,7 +689,7 @@ void SSDComplexKeyCachePartition::getValueFromStorage(const PaddedPODArray<Index
             uint64_t checksum = 0;
             ReadBufferFromMemory buf_special(buf_ptr, block_size);
             readBinary(checksum, buf_special);
-            uint64_t calculated_checksum = CityHash_v1_0_2::CityHash64(buf_ptr + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE);
+            uint64_t calculated_checksum = CityHash_v1_0_2::CityHash64(buf_ptr + BLOCK_CHECKSUM_SIZE_BYTES, block_size - BLOCK_CHECKSUM_SIZE_BYTES);
             if (checksum != calculated_checksum)
             {
                 throw Exception("Cache data corrupted. From block = " + std::to_string(checksum) + " calculated = " + std::to_string(calculated_checksum) + ".", ErrorCodes::CORRUPTED_DATA);
@@ -779,7 +779,7 @@ void SSDComplexKeyCachePartition::clearOldestBlocks()
 
         uint64_t checksum = 0;
         readBinary(checksum, read_buffer);
-        uint64_t calculated_checksum = CityHash_v1_0_2::CityHash64(read_buffer_memory.data() + i * block_size + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE);
+        uint64_t calculated_checksum = CityHash_v1_0_2::CityHash64(read_buffer_memory.data() + i * block_size + BLOCK_CHECKSUM_SIZE_BYTES, block_size - BLOCK_CHECKSUM_SIZE_BYTES);
         if (checksum != calculated_checksum)
         {
             throw Exception("Cache data corrupted. From block = " + std::to_string(checksum) + " calculated = " + std::to_string(calculated_checksum) + ".", ErrorCodes::CORRUPTED_DATA);
@@ -1745,23 +1745,23 @@ void registerDictionarySSDComplexKeyCache(DictionaryFactory & factory)
         if (max_partitions_count <= 0)
             throw Exception{name + ": dictionary of layout 'complex_key_ssd_cache' cannot have 0 (or less) max_partitions_count", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto block_size = config.getInt(layout_prefix + ".complex_key_ssd_cache.block_size", DEFAULT_SSD_BLOCK_SIZE);
+        const auto block_size = config.getInt(layout_prefix + ".complex_key_ssd_cache.block_size", DEFAULT_SSD_BLOCK_SIZE_BYTES);
         if (block_size <= 0)
             throw Exception{name + ": dictionary of layout 'complex_key_ssd_cache' cannot have 0 (or less) block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto file_size = config.getInt64(layout_prefix + ".complex_key_ssd_cache.file_size", DEFAULT_FILE_SIZE);
+        const auto file_size = config.getInt64(layout_prefix + ".complex_key_ssd_cache.file_size", DEFAULT_FILE_SIZE_BYTES);
         if (file_size <= 0)
             throw Exception{name + ": dictionary of layout 'complex_key_ssd_cache' cannot have 0 (or less) file_size", ErrorCodes::BAD_ARGUMENTS};
         if (file_size % block_size != 0)
             throw Exception{name + ": file_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto read_buffer_size = config.getInt64(layout_prefix + ".complex_key_ssd_cache.read_buffer_size", DEFAULT_READ_BUFFER_SIZE);
+        const auto read_buffer_size = config.getInt64(layout_prefix + ".complex_key_ssd_cache.read_buffer_size", DEFAULT_READ_BUFFER_SIZE_BYTES);
         if (read_buffer_size <= 0)
             throw Exception{name + ": dictionary of layout 'complex_key_ssd_cache' cannot have 0 (or less) read_buffer_size", ErrorCodes::BAD_ARGUMENTS};
         if (read_buffer_size % block_size != 0)
             throw Exception{name + ": read_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto write_buffer_size = config.getInt64(layout_prefix + ".complex_key_ssd_cache.write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE);
+        const auto write_buffer_size = config.getInt64(layout_prefix + ".complex_key_ssd_cache.write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE_BYTES);
         if (write_buffer_size <= 0)
             throw Exception{name + ": dictionary of layout 'complex_key_ssd_cache' cannot have 0 (or less) write_buffer_size", ErrorCodes::BAD_ARGUMENTS};
         if (write_buffer_size % block_size != 0)
