@@ -240,7 +240,7 @@ public:
      * All function arguments will be forwarded to the implementation constructor.
      */
     template <TargetArch Arch, typename FunctionImpl, typename ...Args>
-    void registerImplementation(Args&&... args)
+    void registerImplementation(Args &&... args)
     {
         if (isArchSupported(Arch))
         {
