@@ -43,6 +43,11 @@ using AttributeValueVariant = std::variant<
         Float64,
         String>;
 
+
+/*
+    Class for operations with cache file and index.
+    Supports GET/SET operations.
+*/
 class SSDCachePartition
 {
 public:
@@ -144,8 +149,6 @@ public:
 
     size_t appendDefaults(const Attribute & new_keys, const PaddedPODArray<Metadata> & metadata, const size_t begin);
 
-    void clearOldestBlocks();
-
     void flush();
 
     void remove();
@@ -161,6 +164,8 @@ public:
     size_t getBytesAllocated() const;
 
 private:
+    void clearOldestBlocks();
+
     template <typename SetFunc>
     void getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, std::vector<bool> & found) const;
 
@@ -192,7 +197,6 @@ private:
     std::optional<Memory<>> memory;
     std::optional<WriteBuffer> write_buffer;
     uint32_t keys_in_block = 0;
-    //CompressionCodecPtr codec;
 
     size_t current_memory_block_id = 0;
     size_t current_file_block_id = 0;
@@ -201,6 +205,9 @@ private:
 using SSDCachePartitionPtr = std::shared_ptr<SSDCachePartition>;
 
 
+/*
+    Class for managing SSDCachePartition and getting data from source.
+*/
 class SSDCacheStorage
 {
 public:
@@ -285,6 +292,9 @@ private:
 };
 
 
+/*
+    Dictionary interface
+*/
 class SSDCacheDictionary final : public IDictionary
 {
 public:

@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int AIO_WRITE_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int CANNOT_CREATE_DIRECTORY;
     extern const int CANNOT_FSYNC;
     extern const int CANNOT_IO_GETEVENTS;
     extern const int CANNOT_IO_SUBMIT;
@@ -185,7 +186,8 @@ SSDComplexKeyCachePartition::SSDComplexKeyCachePartition(
     , key_to_index(max_stored_keys, KeyDeleter(keys_pool))
     , attributes_structure(attributes_structure_)
 {
-    std::filesystem::create_directories(std::filesystem::path{dir_path});
+    if (!std::filesystem::create_directories(std::filesystem::path{dir_path}))
+        throw Exception{"Failed to create directories.", ErrorCodes::CANNOT_CREATE_DIRECTORY};
 
     {
         ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -199,9 +201,7 @@ SSDComplexKeyCachePartition::SSDComplexKeyCachePartition(
         }
 
         if (preallocateDiskSpace(fd, max_size * block_size) < 0)
-        {
             throwFromErrnoWithPath("Cannot preallocate space for the file " + filename, filename, ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-        }
     }
 }
 
@@ -219,9 +219,8 @@ size_t SSDComplexKeyCachePartition::appendDefaults(
     std::unique_lock lock(rw_lock);
     KeyRefs keys(keys_in.size());
     for (size_t i = 0; i < keys_in.size(); ++i)
-    {
         keys[i] = keys_pool.copyKeyFrom(keys_in[i]);
-    }
+
     return append(keys, Attributes{}, metadata, begin);
 }
 
@@ -238,9 +237,7 @@ size_t SSDComplexKeyCachePartition::appendBlock(
     {
         StringRefs tmp_keys_refs(keys_size);
         for (size_t i = 0; i < key_columns.front()->size(); ++i)
-        {
             keys[i] = keys_pool.allocKey(i, key_columns, tmp_keys_refs);
-        }
     }
 
     return append(keys, new_attributes, metadata, begin);
@@ -265,13 +262,9 @@ size_t SSDComplexKeyCachePartition::append(
     };
 
     if (!write_buffer)
-    {
         init_write_buffer();
-    }
     if (!keys_buffer_pool)
-    {
         keys_buffer_pool.emplace();
-    }
 
     bool flushed = false;
     auto finish_block = [&]()
@@ -380,8 +373,6 @@ void SSDComplexKeyCachePartition::flush()
 
     if (keys_buffer.empty())
         return;
-
-    //Poco::Logger::get("paritiiton").information("@@@@@@@@@@@@@@@@@@@@ FLUSH!!! " + std::to_string(file_id) + " block: " + std::to_string(current_file_block_id));
 
     AIOContext aio_context{1};
 
@@ -760,16 +751,12 @@ void SSDComplexKeyCachePartition::clearOldestBlocks()
         AIOContext aio_context(1);
 
         while (io_submit(aio_context.ctx, 1, &request_ptr) != 1)
-        {
             if (errno != EINTR)
                 throwFromErrno("io_submit: Failed to submit a request for asynchronous IO", ErrorCodes::CANNOT_IO_SUBMIT);
-        }
 
         while (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) != 1)
-        {
             if (errno != EINTR)
                 throwFromErrno("io_getevents: Failed to get an event for asynchronous IO", ErrorCodes::CANNOT_IO_GETEVENTS);
-        }
 
 #if defined(__FreeBSD__)
         if (aio_return(reinterpret_cast<struct aiocb *>(event.udata)) != static_cast<ssize_t>(request.aio.aio_nbytes))
