@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 
-void TableFunctionFactory::registerFunction(const std::string & name, Creator creator, CaseSensitiveness case_sensitiveness)
+void TableFunctionFactory::registerFunction(const std::string & name, Value creator, CaseSensitiveness case_sensitiveness)
 {
     if (!table_functions.emplace(name, creator).second)
         throw Exception("TableFunctionFactory: the table function name '" + name + "' is not unique",

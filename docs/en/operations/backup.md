@@ -24,7 +24,7 @@ Some local filesystems provide snapshot functionality (for example, [ZFS](https:
 
 ## clickhouse-copier {#clickhouse-copier}
 
-[clickhouse-copier](utilities/clickhouse-copier.md) is a versatile tool that was initially created to re-shard petabyte-sized tables. It can also be used for backup and restore purposes because it reliably copies data between ClickHouse tables and clusters.
+[clickhouse-copier](../operations/utilities/clickhouse-copier.md) is a versatile tool that was initially created to re-shard petabyte-sized tables. It can also be used for backup and restore purposes because it reliably copies data between ClickHouse tables and clusters.
 
 For smaller volumes of data, a simple `INSERT INTO ... SELECT ...` to remote tables might work as well.
 

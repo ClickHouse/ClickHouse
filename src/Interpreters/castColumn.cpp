@@ -29,7 +29,8 @@ ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type
         }
     };
 
-    FunctionOverloadResolverPtr func_builder_cast = std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver::createImpl());
+    FunctionOverloadResolverPtr func_builder_cast =
+        std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver::createImpl(false));
 
     ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
     auto func_cast = func_builder_cast->build(arguments);

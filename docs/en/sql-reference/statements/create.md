@@ -44,7 +44,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ```
 
 Creates a table named ‘name’ in the ‘db’ database or the current database if ‘db’ is not set, with the structure specified in brackets and the ‘engine’ engine.
-The structure of the table is a list of column descriptions. If indexes are supported by the engine, they are indicated as parameters for the table engine.
+The structure of the table is a list of column descriptions, secondary indexes and constraints . If primary key is supported by the engine, it will be indicated as parameter for the table engine.
 
 A column description is `name type` in the simplest case. Example: `RegionID UInt32`.
 Expressions can also be defined for default values (see below).
@@ -59,7 +59,7 @@ Creates a table with the same structure as another table. You can specify a diff
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
-Creates a table with the structure and data returned by a [table function](../table-functions/index.md#table-functions).
+Creates a table with the structure and data returned by a [table function](../../sql-reference/table-functions/index.md#table-functions).
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
@@ -73,7 +73,7 @@ There can be other clauses after the `ENGINE` clause in the query. See detailed 
 
 ### Default Values {#create-default-values}
 
-The column description can specify an expression for a default value, in one of the following ways:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
+The column description can specify an expression for a default value, in one of the following ways: `DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Example: `URLDomain String DEFAULT domain(URL)`.
 
 If an expression for the default value is not defined, the default values will be set to zeros for numbers, empty strings for strings, empty arrays for arrays, and `0000-00-00` for dates or `0000-00-00 00:00:00` for dates with time. NULLs are not supported.
@@ -298,7 +298,7 @@ External dictionary structure consists of attributes. Dictionary attributes are 
 
 Depending on dictionary [layout](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) one or more attributes can be specified as dictionary keys.
 
-For more information, see [External Dictionaries](../dictionaries/external-dictionaries/external-dicts.md) section.
+For more information, see [External Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) section.
 
 ## CREATE USER {#create-user-statement}
 
@@ -306,7 +306,7 @@ Creates a [user account](../../operations/access-rights.md#user-account-manageme
 
 ### Syntax {#create-user-syntax}
 
-```sql
+``` sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
@@ -314,44 +314,42 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
-#### Identification
+#### Identification {#identification}
 
 There are multiple ways of user identification:
 
-- `IDENTIFIED WITH no_password`
-- `IDENTIFIED WITH plaintext_password BY 'qwerty'`
-- `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password'`
-- `IDENTIFIED WITH sha256_hash BY 'hash'`
-- `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
-- `IDENTIFIED WITH double_sha1_hash BY 'hash'`
+-   `IDENTIFIED WITH no_password`
+-   `IDENTIFIED WITH plaintext_password BY 'qwerty'`
+-   `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password'`
+-   `IDENTIFIED WITH sha256_hash BY 'hash'`
+-   `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
+-   `IDENTIFIED WITH double_sha1_hash BY 'hash'`
 
-#### User Host
+#### User Host {#user-host}
 
 User host is a host from which a connection to ClickHouse server could be established. The host can be specified in the `HOST` query section in the following ways:
 
-- `HOST IP 'ip_address_or_subnetwork'` — User can connect to ClickHouse server only from the specified IP address or a [subnetwork](https://en.wikipedia.org/wiki/Subnetwork). Examples: `HOST IP '192.168.0.0/16'`, `HOST IP '2001:DB8::/32'`. For use in production, only specify `HOST IP` elements (IP addresses and their masks), since using `host` and `host_regexp` might cause extra latency.
-- `HOST ANY` — User can connect from any location. This is a default option.
-- `HOST LOCAL` — User can connect only locally.
-- `HOST NAME 'fqdn'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
-- `HOST NAME REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST NAME REGEXP '.*\.mysite\.com'`.
-- `HOST LIKE 'template'` — Allows you to use the [LIKE](../functions/string-search-functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '%.mysite.com'` filters all the hosts in the `mysite.com` domain.
+-   `HOST IP 'ip_address_or_subnetwork'` — User can connect to ClickHouse server only from the specified IP address or a [subnetwork](https://en.wikipedia.org/wiki/Subnetwork). Examples: `HOST IP '192.168.0.0/16'`, `HOST IP '2001:DB8::/32'`. For use in production, only specify `HOST IP` elements (IP addresses and their masks), since using `host` and `host_regexp` might cause extra latency.
+-   `HOST ANY` — User can connect from any location. This is a default option.
+-   `HOST LOCAL` — User can connect only locally.
+-   `HOST NAME 'fqdn'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
+-   `HOST NAME REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST NAME REGEXP '.*\.mysite\.com'`.
+-   `HOST LIKE 'template'` — Allows you to use the [LIKE](../../sql-reference/functions/string-search-functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '%.mysite.com'` filters all the hosts in the `mysite.com` domain.
 
 Another way of specifying host is to use `@` syntax following the username. Examples:
 
-- `CREATE USER mira@'127.0.0.1'` — Equivalent to the `HOST IP` syntax.
-- `CREATE USER mira@'localhost'` — Equivalent to the `HOST LOCAL` syntax.
-- `CREATE USER mira@'192.168.%.%'` — Equivalent to the `HOST LIKE` syntax.
+-   `CREATE USER mira@'127.0.0.1'` — Equivalent to the `HOST IP` syntax.
+-   `CREATE USER mira@'localhost'` — Equivalent to the `HOST LOCAL` syntax.
+-   `CREATE USER mira@'192.168.%.%'` — Equivalent to the `HOST LIKE` syntax.
 
 !!! info "Warning"
-    ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we don't recommend to do so.
-
+    ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we don’t recommend to do so.
 
 ### Examples {#create-user-examples}
 
-
 Create the user account `mira` protected by the password `qwerty`:
 
-```sql
+``` sql
 CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
 ```
 
@@ -377,33 +375,32 @@ Create the user account `john` and make all his future roles default excepting `
 ALTER USER john DEFAULT ROLE ALL EXCEPT role1, role2
 ```
 
-
 ## CREATE ROLE {#create-role-statement}
 
 Creates a [role](../../operations/access-rights.md#role-management).
 
 ### Syntax {#create-role-syntax}
 
-```sql
+``` sql
 CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
 ### Description {#create-role-description}
 
-Role is a set of [privileges](grant.md#grant-privileges). A user assigned a role gets all the privileges of this role. 
+Role is a set of [privileges](../../sql-reference/statements/grant.md#grant-privileges). A user assigned a role gets all the privileges of this role.
 
-A user can be assigned multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](misc.md#set-role-statement) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges granted directly to it's user account, they are also combined with the privileges granted by roles.
+A user can be assigned multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](../../sql-reference/statements/misc.md#set-role-statement) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges granted directly to it’s user account, they are also combined with the privileges granted by roles.
 
-User can have default roles which apply at user login. To set default roles, use the [SET DEFAULT ROLE](misc.md#set-default-role-statement) statement or the [ALTER USER](alter.md#alter-user-statement) statement.
+User can have default roles which apply at user login. To set default roles, use the [SET DEFAULT ROLE](../../sql-reference/statements/misc.md#set-default-role-statement) statement or the [ALTER USER](../../sql-reference/statements/alter.md#alter-user-statement) statement.
 
-To revoke a role, use the [REVOKE](revoke.md) statement.
+To revoke a role, use the [REVOKE](../../sql-reference/statements/revoke.md) statement.
 
-To delete role, use the [DROP ROLE](misc.md#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
+To delete role, use the [DROP ROLE](../../sql-reference/statements/misc.md#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
 
 ### Examples {#create-role-examples}
 
-```sql
+``` sql
 CREATE ROLE accountant;
 GRANT SELECT ON db.* TO accountant;
 ```
@@ -412,13 +409,13 @@ This sequence of queries creates the role `accountant` that has the privilege of
 
 Assigning the role to the user `mira`:
 
-```sql
+``` sql
 GRANT accountant TO mira;
 ```
 
 After the role is assigned, the user can apply it and execute the allowed queries. For example:
 
-```sql
+``` sql
 SET ROLE accountant;
 SELECT * FROM db.*;
 ```
@@ -445,7 +442,7 @@ Permissive policy grants access to rows. Permissive policies which apply to the 
 
 Restrictive policy restricts access to rows. Restrictive policies which apply to the same table are combined together using the boolean `AND` operator.
 
-Restrictive policies apply to rows that passed the permissive filters. If you set restrictive policies but no permissive policies, the user can't get any row from the table.
+Restrictive policies apply to rows that passed the permissive filters. If you set restrictive policies but no permissive policies, the user can’t get any row from the table.
 
 #### Section TO {#create-row-policy-to}
 
@@ -453,11 +450,10 @@ In the section `TO` you can provide a mixed list of roles and users, for example
 
 Keyword `ALL` means all the ClickHouse users including current user. Keywords `ALL EXCEPT` allow to exclude some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
-### Examples
+### Examples {#examples}
 
-- `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO accountant, john@localhost`
-- `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO ALL EXCEPT mira`
-
+-   `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO accountant, john@localhost`
+-   `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO ALL EXCEPT mira`
 
 ## CREATE QUOTA {#create-quota-statement}
 
@@ -482,7 +478,6 @@ Limit the maximum number of queries for the current user with 123 queries in 15 
 CREATE QUOTA qA FOR INTERVAL 15 MONTH MAX QUERIES 123 TO CURRENT_USER
 ```
 
-
 ## CREATE SETTINGS PROFILE {#create-settings-profile-statement}
 
 Creates a [settings profile](../../operations/access-rights.md#settings-profiles-management) that can be assigned to a user or a role.
@@ -501,6 +496,5 @@ Create the `max_memory_usage_profile` settings profile with value and constraint
 ``` sql
 CREATE SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin
 ```
-
 
 [Original article](https://clickhouse.tech/docs/en/query_language/create/) <!--hide-->
