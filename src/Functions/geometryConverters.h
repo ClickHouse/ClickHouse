@@ -16,6 +16,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 
+#include <common/logger_useful.h>
+
 namespace DB {
 
 namespace ErrorCodes
@@ -98,6 +100,8 @@ public:
         container.reserve(r - l + 1);
         container.resize(r - l);
 
+        LOG_FATAL(&Poco::Logger::get("geoconv"), "ring: l = {}, r = {}", l, r);
+
         for (size_t j = l; j < r; j++) {
             pointParser.get(container[j - l], j);
         }
@@ -140,6 +144,8 @@ public:
 
         ringParser.get(container.outer(), l);
 
+        LOG_FATAL(&Poco::Logger::get("geoconv"), "polygon: l = {}, r = {}", l, r);
+
         container.inners().resize(r - l - 1);
         for (size_t j = l + 1; j < r; j++)
         {
@@ -172,10 +178,12 @@ public:
         size_t l = offsets[i - 1];
         size_t r = offsets[i];
 
+        LOG_FATAL(&Poco::Logger::get("geoconv"), "multipolygon: l = {}, r = {}", l, r);
+
         multi_polygon.resize(r - l);
         for (size_t j = l; j < r; j++)
         {
-            polygonParser.get(multi_polygon[j - l], j - l);
+            polygonParser.get(multi_polygon[j - l], j);
         }
     }
 
