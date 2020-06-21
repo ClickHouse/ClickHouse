@@ -130,6 +130,9 @@ using AttributeValueVariant = std::variant<
         Float64,
         String>;
 
+/*
+    The pool for storing complex keys.
+*/
 template <typename A>
 class ComplexKeysPoolImpl
 {
@@ -243,6 +246,11 @@ struct KeyDeleter
     ComplexKeysPool & keys_pool;
 };
 
+
+/*
+    Class for operations with cache file and index.
+    Supports GET/SET operations.
+*/
 class SSDComplexKeyCachePartition
 {
 public:
@@ -418,6 +426,9 @@ private:
 using SSDComplexKeyCachePartitionPtr = std::shared_ptr<SSDComplexKeyCachePartition>;
 
 
+/*
+    Class for managing SSDCachePartition and getting data from source.
+*/
 class SSDComplexKeyCacheStorage
 {
 public:
@@ -503,6 +514,9 @@ private:
 };
 
 
+/*
+    Dictionary interface
+*/
 class SSDComplexKeyCacheDictionary final : public IDictionaryBase
 {
 public:

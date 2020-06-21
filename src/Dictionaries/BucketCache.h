@@ -10,7 +10,7 @@ namespace DB
 
 namespace
 {
-    inline size_t nearestPowTwo(size_t x)
+    inline size_t roundUpToPowerOfTwoOrZero(size_t x)
     {
         size_t r = 8;
         while (x > r)
@@ -29,6 +29,13 @@ struct Int64Hasher
     }
 };
 
+
+/*
+    Class for storing cache index.
+    It consists of two arrays.
+    The first one is splitted into buckets (each stores 8 elements (cells)) determined by hash of the element key.
+    The second one is splitted into 4bit numbers, which are positions in bucket for next element write (So cache uses FIFO eviction algorithm inside each bucket).
+*/
 template <typename K, typename V, typename Hasher, typename Deleter = EmptyDeleter>
 class BucketCacheIndex
 {
@@ -41,7 +48,7 @@ class BucketCacheIndex
 public:
     template <typename = std::enable_if<std::is_same_v<EmptyDeleter, Deleter>>>
     BucketCacheIndex(size_t cells_)
-        : buckets(nearestPowTwo(cells_) / bucket_size)
+        : buckets(roundUpToPowerOfTwoOrZero(cells_) / bucket_size)
         , bucket_mask(buckets - 1)
         , cells(buckets * bucket_size)
         , positions((buckets / 2) + 1)
@@ -55,7 +62,7 @@ public:
     template <typename = std::enable_if<!std::is_same_v<EmptyDeleter, Deleter>>>
     BucketCacheIndex(size_t cells_, Deleter deleter_)
         : deleter(deleter_)
-        , buckets(nearestPowTwo(cells_) / bucket_size)
+        , buckets(roundUpToPowerOfTwoOrZero(cells_) / bucket_size)
         , bucket_mask(buckets - 1)
         , cells(buckets * bucket_size)
         , positions((buckets / 2) + 1)
@@ -159,6 +166,8 @@ public:
     }
 
 private:
+    /// Searches for the key in the bucket.
+    /// Returns index of cell with provided key.
     size_t getCellIndex(const K key, const size_t bucket) const
     {
         const size_t pos = getPosition(bucket);
@@ -175,6 +184,7 @@ private:
         return bucket * bucket_size + pos;
     }
 
+    /// Returns current position for write in the bucket.
     size_t getPosition(const size_t bucket) const
     {
         const size_t idx = (bucket >> 1);
@@ -183,6 +193,7 @@ private:
         return (positions[idx] & pos_mask);
     }
 
+    /// Sets current posiotion in the bucket.
     void setPosition(const size_t bucket, const size_t pos)
     {
         const size_t idx = bucket >> 1;
