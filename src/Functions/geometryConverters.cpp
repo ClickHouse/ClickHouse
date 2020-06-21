@@ -1,6 +1,7 @@
 #include <Functions/geometryConverters.h>
 #include <DataTypes/DataTypeCustomGeo.h>
 
+#include <common/logger_useful.h>
 
 namespace DB {
 
@@ -8,12 +9,15 @@ namespace {
 
 size_t getArrayDepth(DataTypePtr data_type, size_t max_depth)
 {
+    LOG_FATAL(&Poco::Logger::get("geoconv"), "getting depth");
     size_t depth = 0;
     while (data_type && isArray(data_type) && depth != max_depth + 1)
     {
         depth++;
         data_type = static_cast<const DataTypeArray &>(*data_type).getNestedType();
     }
+    LOG_FATAL(&Poco::Logger::get("geoconv"), "got depth");
+
     return depth;
 }
 
@@ -62,6 +66,7 @@ Parser makeParser(const ColumnWithTypeAndName & col)
 
 GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col)
 {
+    LOG_FATAL(&Poco::Logger::get("geoconv"), "Fine");
     switch (getArrayDepth(col.type, 3)) {
         case 0: return makeParser<DataTypeCustomPointSerialization, Float64PointFromColumnParser>(col);
         case 1: return makeParser<DataTypeCustomRingSerialization, Float64RingFromColumnParser>(col);
