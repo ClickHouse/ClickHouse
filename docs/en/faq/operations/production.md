@@ -21,9 +21,9 @@ So how to properly choose which ClickHouse version to upgrade to? Or how to choo
 Here’re some key points to get reasonable fidelity in a pre-production environment with not so high costs:
 
 -   Pre-production environment needs to run an as close set of queries as you intend to run in production:
-    - Don’t make it read-only with some frozen data.
-    - Don’t make it write-only with just copying data without building some typical reports.
-    - Don’t wipe it clean instead of applying schema migrations.
+    -   Don’t make it read-only with some frozen data.
+    -   Don’t make it write-only with just copying data without building some typical reports.
+    -   Don’t wipe it clean instead of applying schema migrations.
 -   Use a sample of real production data and queries. Try to choose a sample that’s still representative and makes `SELECT` queries return reasonable results. Use obfuscation if your data is sensitive and internal policies don’t allow it to leave the production environment.
 -   Make sure that pre-production is covered by your monitoring and alerting software the same way as your production environment does.
 -   If your production spans across multiple datacenters or regions, make your pre-production does the same.
