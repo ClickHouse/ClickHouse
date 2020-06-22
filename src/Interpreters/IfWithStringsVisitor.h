@@ -198,7 +198,6 @@ struct FindingIfWithStringsMatcher
                     first_array_of_strings = true;
                     Array array_from = function_node->arguments->children[1]->as<ASTLiteral>()->value.get<NearestFieldType<Array>>();
                     first_size = array_from.size();
-                    std::cerr << "\n kek\n" << first_size << "\n";
                     for (size_t i = 0; i < first_size; ++i)
                     {
                         if (strcmp(array_from[i].getTypeName(), "String") != 0)
