@@ -77,6 +77,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int ILLEGAL_PREWHERE;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -103,14 +104,20 @@ bool allowEarlyConstantFolding(const ExpressionActions & actions, const Settings
 
 }
 
-bool sanitizeBlock(Block & block)
+bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
 {
     for (auto & col : block)
     {
         if (!col.column)
         {
             if (isNotCreatable(col.type->getTypeId()))
+            {
+                if (throw_if_cannot_create_column)
+                    throw Exception("Cannot create column of type " + col.type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
                 return false;
+            }
+
             col.column = col.type->createColumn();
         }
         else if (!col.column->empty())

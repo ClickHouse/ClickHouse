@@ -5,6 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -12,17 +13,24 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+// with default poll timeout (500ms) it will give about 5 sec delay for doing 10 retries
+// when selecting from empty topic
+const auto MAX_FAILED_POLL_ATTEMPTS = 10;
+
 KafkaBlockInputStream::KafkaBlockInputStream(
     StorageKafka & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const std::shared_ptr<Context> & context_,
     const Names & columns,
+    Poco::Logger * log_,
     size_t max_block_size_,
     bool commit_in_suffix_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
     , column_names(columns)
+    , log(log_)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
@@ -124,68 +132,75 @@ Block KafkaBlockInputStream::readImpl()
     };
 
     size_t total_rows = 0;
+    size_t failed_poll_attempts = 0;
 
     while (true)
     {
-        // some formats (like RowBinaryWithNamesAndTypes / CSVWithNames)
-        // throw an exception from readPrefix when buffer in empty
-        if (buffer->eof())
+        auto new_rows = buffer->poll() ? read_kafka_message() : 0;
+
+        if (new_rows)
+        {
+            buffer->storeLastReadMessageOffset();
+
+            auto topic         = buffer->currentTopic();
+            auto key           = buffer->currentKey();
+            auto offset        = buffer->currentOffset();
+            auto partition     = buffer->currentPartition();
+            auto timestamp_raw = buffer->currentTimestamp();
+            auto header_list   = buffer->currentHeaderList();
+
+            Array headers_names;
+            Array headers_values;
+
+            if (!header_list.empty())
+            {
+                headers_names.reserve(header_list.size());
+                headers_values.reserve(header_list.size());
+                for (const auto & header : header_list)
+                {
+                    headers_names.emplace_back(header.get_name());
+                    headers_values.emplace_back(static_cast<std::string>(header.get_value()));
+                }
+            }
+
+            for (size_t i = 0; i < new_rows; ++i)
+            {
+                virtual_columns[0]->insert(topic);
+                virtual_columns[1]->insert(key);
+                virtual_columns[2]->insert(offset);
+                virtual_columns[3]->insert(partition);
+                if (timestamp_raw)
+                {
+                    auto ts = timestamp_raw->get_timestamp();
+                    virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(ts).count());
+                    virtual_columns[5]->insert(DecimalField<Decimal64>(std::chrono::duration_cast<std::chrono::milliseconds>(ts).count(),3));
+                }
+                else
+                {
+                    virtual_columns[4]->insertDefault();
+                    virtual_columns[5]->insertDefault();
+                }
+                virtual_columns[6]->insert(headers_names);
+                virtual_columns[7]->insert(headers_values);
+            }
+
+            total_rows = total_rows + new_rows;
+        }
+        else if (buffer->isStalled())
+        {
+            ++failed_poll_attempts;
+        }
+        else if (buffer->polledDataUnusable())
+        {
             break;
-
-        auto new_rows = read_kafka_message();
-
-        buffer->storeLastReadMessageOffset();
-
-        auto topic         = buffer->currentTopic();
-        auto key           = buffer->currentKey();
-        auto offset        = buffer->currentOffset();
-        auto partition     = buffer->currentPartition();
-        auto timestamp_raw = buffer->currentTimestamp();
-        auto header_list   = buffer->currentHeaderList();
-
-        Array headers_names;
-        Array headers_values;
-
-        if (!header_list.empty())
+        }
+        else
         {
-            headers_names.reserve(header_list.size());
-            headers_values.reserve(header_list.size());
-            for (const auto & header : header_list)
-            {
-                headers_names.emplace_back(header.get_name());
-                headers_values.emplace_back(static_cast<std::string>(header.get_value()));
-            }
+            LOG_WARNING(log, "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.", buffer->currentTopic(), buffer->currentPartition(), buffer->currentOffset());
         }
 
-        for (size_t i = 0; i < new_rows; ++i)
-        {
-            virtual_columns[0]->insert(topic);
-            virtual_columns[1]->insert(key);
-            virtual_columns[2]->insert(offset);
-            virtual_columns[3]->insert(partition);
-            if (timestamp_raw)
-            {
-                auto ts = timestamp_raw->get_timestamp();
-                virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(ts).count());
-                virtual_columns[5]->insert(DecimalField<Decimal64>(std::chrono::duration_cast<std::chrono::milliseconds>(ts).count(),3));
-            }
-            else
-            {
-                virtual_columns[4]->insertDefault();
-                virtual_columns[5]->insertDefault();
-            }
-            virtual_columns[6]->insert(headers_names);
-            virtual_columns[7]->insert(headers_values);
-        }
-
-        total_rows = total_rows + new_rows;
-        buffer->allowNext();
-
-        if (buffer->hasMorePolledMessages())
-        {
-            continue;
-        }
-        if (total_rows >= max_block_size || !checkTimeLimit())
+        if (!buffer->hasMorePolledMessages()
+            && (total_rows >= max_block_size || !checkTimeLimit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             break;
         }

@@ -301,6 +301,16 @@ protected:
 };
 
 
+/** MySQL-style global variable: @@var
+  */
+class ParserMySQLGlobalVariable : public IParserBase
+{
+protected:
+    const char * getName() const override { return "MySQL-style global variable"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 /** The expression element is one of: an expression in parentheses, an array, a literal, a function, an identifier, an asterisk.
   */
 class ParserExpressionElement : public IParserBase

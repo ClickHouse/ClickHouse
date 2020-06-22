@@ -398,6 +398,7 @@ private:
             { TokenType::GreaterOrEquals, Replxx::Color::INTENSE },
             { TokenType::Concatenation, Replxx::Color::INTENSE },
             { TokenType::At, Replxx::Color::INTENSE },
+            { TokenType::DoubleAt, Replxx::Color::MAGENTA },
 
             { TokenType::EndOfStream, Replxx::Color::DEFAULT },
 

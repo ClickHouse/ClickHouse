@@ -14,14 +14,16 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNEXPECTED_AST_STRUCTURE;
 }
+
 namespace
 {
-    constexpr const char * min = "min";
-    constexpr const char * max = "max";
-    constexpr const char * mul = "multiply";
-    constexpr const char * plus = "plus";
-    constexpr const char * sum = "sum";
-}
+
+constexpr const char * min = "min";
+constexpr const char * max = "max";
+constexpr const char * mul = "multiply";
+constexpr const char * plus = "plus";
+constexpr const char * sum = "sum";
+
 
 bool isConstantField(const Field & field)
 {
@@ -128,8 +130,11 @@ std::pair<ASTs, ASTs> findAllConsts(const ASTFunction * func_node, const char * 
         else if (second_child_is_const)
             return {{func_node->arguments->children[1]}, {func_node->arguments->children[0]}};
 
-        if (isInappropriate(func_node->arguments->children[0], inter_func_name) && isInappropriate(func_node->arguments->children[1], inter_func_name))
+        if (isInappropriate(func_node->arguments->children[0], inter_func_name)
+            && isInappropriate(func_node->arguments->children[1], inter_func_name))
+        {
             return {{}, {func_node->arguments->children[0], func_node->arguments->children[1]}};
+        }
         else if (isInappropriate(func_node->arguments->children[0], inter_func_name))
         {
             std::pair<ASTs, ASTs> ans = findAllConsts(func_node->arguments->children[1]->as<ASTFunction>(), inter_func_name);
@@ -288,15 +293,17 @@ void maxOptimize(ASTFunction * f_n)
     }
 }
 
+}
+
 /// optimize for min, max, sum is ready, ToDo: groupBitAnd, groupBitOr, groupBitXor
 void ArithmeticOperationsInAgrFuncMatcher::visit(ASTFunction * function_node, Data data)
 {
     data = {};
-    if (function_node->name == "sum")
+    if (function_node->name == sum)
         sumOptimize(function_node);
-    else if (function_node->name == "min")
+    else if (function_node->name == min)
         minOptimize(function_node);
-    else if (function_node->name == "max")
+    else if (function_node->name == max)
         maxOptimize(function_node);
 }
 
@@ -314,10 +321,7 @@ bool ArithmeticOperationsInAgrFuncMatcher::needChildVisit(const ASTPtr & node, c
     if (!child)
         throw Exception("AST item should not have nullptr in children", ErrorCodes::LOGICAL_ERROR);
 
-    if (node->as<ASTTableExpression>() || node->as<ASTArrayJoin>())
-        return false; // NOLINT
-
-    return true;
+    return !(node->as<ASTTableExpression>() || node->as<ASTArrayJoin>());
 }
 
 }
