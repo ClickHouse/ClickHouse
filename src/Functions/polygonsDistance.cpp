@@ -98,7 +98,7 @@ public:
             if (!is_second_polygon_const || i == 0)
                 get(second_parser, second_container, i);
 
-            bool distance = boost::geometry::distance(
+            Float64 distance = boost::geometry::distance(
                 boost::get<Float64MultiPolygon>(first_container),
                 boost::get<Float64MultiPolygon>(second_container));
 
