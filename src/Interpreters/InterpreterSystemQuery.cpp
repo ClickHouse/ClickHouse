@@ -405,6 +405,9 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
 
 void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
 {
+    StorageReplicatedMergeTree::Status status;
+    auto zookeeper = context.getZooKeeper();
+
     if (!table_id.empty())
     {
         context.checkAccess(AccessType::SYSTEM_DROP_REPLICA, table_id);
@@ -412,7 +415,10 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
 
         if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
         {
-            storage_replicated->dropReplica(query.replica, false);
+            storage_replicated->getStatus(status);
+            if (query.replica == status.replica_name)
+                throw Exception("We can't drop local replica, please use `DROP TABLE` if you want to clean the data and drop this replica", ErrorCodes::LOGICAL_ERROR);
+            storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, status.is_readonly ,false);
             LOG_TRACE(log, "DROP REPLICA " + table_id.getNameForLogs() +  " [" + query.replica + "]: OK");
         }
         else
@@ -428,7 +434,10 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                 if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
                 {
                     context.checkAccess(AccessType::SYSTEM_DROP_REPLICA, iterator->table()->getStorageID());
-                    storage_replicated->dropReplica(query.replica, false);
+                    storage_replicated->getStatus(status);
+                    if (query.replica == status.replica_name)
+                        throw Exception("We can't drop local replica, please use `DROP TABLE` if you want to clean the data and drop this replica", ErrorCodes::LOGICAL_ERROR);
+                    storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, status.is_readonly ,false);
                 }
             }
             LOG_TRACE(log, "DROP REPLICA " + query.replica + " DATABSE " +  database->getDatabaseName() + ": OK");
@@ -438,7 +447,36 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     }
     else if (!query.replica_zk_path.empty())
     {
-        StorageReplicatedMergeTree::dropReplicaByZkPath(context, query.replica_zk_path, query.replica);
+        auto remote_replica_path = query.replica_zk_path  + "/replicas/" + query.replica;
+        auto & catalog = DatabaseCatalog::instance();
+
+        for (auto & elem : catalog.getDatabases())
+        {
+            DatabasePtr & database = elem.second;
+            for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+            {
+                if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
+                {
+                    storage_replicated->getStatus(status);
+                    if (status.replica_path.compare(remote_replica_path) == 0)
+                        throw Exception("We can't drop local replica, please use `DROP TABLE` if you want to clean the data and drop this replica",
+                            ErrorCodes::LOGICAL_ERROR);
+                    if (status.replica_path.compare(query.replica_zk_path + "/replicas/" + status.replica_name) == 0)
+                    {
+                        storage_replicated->dropReplica(zookeeper, query.replica_zk_path, query.replica, status.is_readonly ,false);
+                        return;
+                    }
+                }
+            }
+        }
+
+        /// It may left some garbage if replica_path subtree are concurently modified
+        /// check if is active replica if we drop other replicas
+        if (zookeeper->exists(remote_replica_path + "/is_active"))
+            throw Exception("Can't remove replica: " + query.replica + ", because it's active",
+                ErrorCodes::LOGICAL_ERROR);
+
+        zookeeper->tryRemoveRecursive(remote_replica_path);
         LOG_INFO(log, "Removing replica {}", query.replica_zk_path  + "/replicas/" + query.replica);
     }
     else if (query.is_drop_whole_replica)
@@ -453,7 +491,10 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                 if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
                 {
                     context.checkAccess(AccessType::SYSTEM_DROP_REPLICA, iterator->table()->getStorageID());
-                    storage_replicated->dropReplica(query.replica, false);
+                    storage_replicated->getStatus(status);
+                    if (query.replica == status.replica_name)
+                        throw Exception("We can't drop local replica, please use `DROP TABLE` if you want to clean the data and drop this replica", ErrorCodes::LOGICAL_ERROR);
+                    storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, status.is_readonly ,false);
                 }
             }
             LOG_TRACE(log, "DROP REPLICA " + query.replica + " DATABSE " +  database->getDatabaseName() + ": OK");

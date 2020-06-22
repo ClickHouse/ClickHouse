@@ -620,15 +620,19 @@ void StorageReplicatedMergeTree::createReplica()
 
 void StorageReplicatedMergeTree::drop()
 {
+    /// There is also the case when user has configured ClickHouse to wrong ZooKeeper cluster,
+    /// in this case, has_metadata_in_zookeeper = false, and we also permit to drop the table.
+
     if (has_metadata_in_zookeeper)
     {
         auto zookeeper = tryGetZooKeeper();
+
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (is_readonly || !zookeeper)
             throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
         shutdown();
-        dropReplica(replica_name, true);
+        dropReplica(zookeeper, zookeeper_path, replica_name, is_readonly ,true);
     }
 
     dropAllData();
@@ -746,10 +750,11 @@ static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const Strin
     return res;
 }
 
-void StorageReplicatedMergeTree::dropReplica(const String & replica, bool is_drop_table)
+void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, bool is_readonly, bool is_drop_table)
 {
-    auto zookeeper = tryGetZooKeeper();
+    static Poco::Logger * log = &Poco::Logger::get("StorageReplicatedMergeTree::dropReplica");
 
+    /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
     if (is_readonly || !zookeeper)
         throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
@@ -758,8 +763,6 @@ void StorageReplicatedMergeTree::dropReplica(const String & replica, bool is_dro
 
     if (!is_drop_table)
     {
-        if (replica == replica_name)
-            throw Exception("We can't drop local replica, please use `DROP TABLE` if you want to clean the data and drop this replica", ErrorCodes::LOGICAL_ERROR);
         if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
             throw Exception("Can't drop replica: " + replica + ", because it's active",
             ErrorCodes::LOGICAL_ERROR);
@@ -847,43 +850,6 @@ void StorageReplicatedMergeTree::dropReplica(const String & replica, bool is_dro
             }
         }
     }
-}
-
-void StorageReplicatedMergeTree::dropReplicaByZkPath(Context & context, const String & replica_zk_path, const String & replica)
-{
-    auto remote_replica_path = replica_zk_path  + "/replicas/" + replica;
-    auto & catalog = DatabaseCatalog::instance();
-    StorageReplicatedMergeTree::Status status;
-
-    for (auto & elem : catalog.getDatabases())
-    {
-        DatabasePtr & database = elem.second;
-        for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
-        {
-            if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
-            {
-                storage_replicated->getStatus(status);
-                if (status.replica_path.compare(remote_replica_path) == 0)
-                    throw Exception("We can't drop local replica, please use `DROP TABLE` if you want to clean the data and drop this replica",
-                        ErrorCodes::LOGICAL_ERROR);
-                if (status.replica_path.compare(replica_zk_path + "/replicas/" + status.replica_name) == 0)
-                {
-                    storage_replicated->dropReplica(replica, false);
-                    return;
-                }
-            }
-        }
-    }
-
-    /// It may left some garbage if replica_path subtree are concurently modified
-    auto zookeeper = context.getZooKeeper();
-
-    //check if is active replica if we drop other replicas
-    if (zookeeper->exists(remote_replica_path + "/is_active"))
-        throw Exception("Can't remove replica: " + replica + ", because it's active",
-            ErrorCodes::LOGICAL_ERROR);
-
-    zookeeper->tryRemoveRecursive(remote_replica_path);
 }
 
 void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
