@@ -2,12 +2,13 @@
 LIBRARY()
 
 CFLAGS(
-    -DUSE_SSL -DUSE_XXHASH
+    -DUSE_H3 -DUSE_SSL -DUSE_XXHASH
 )
 
 ADDINCL(
-    library/consistent_hashing
+    library/cpp/consistent_hashing
     contrib/libs/farmhash
+    contrib/libs/h3/h3lib/include
     contrib/libs/hyperscan/src
     contrib/libs/icu/common
     contrib/libs/libdivide
@@ -20,13 +21,14 @@ PEERDIR(
     clickhouse/src/Dictionaries
     contrib/libs/farmhash
     contrib/libs/fastops/fastops
+    contrib/libs/h3
     contrib/libs/hyperscan
     contrib/libs/icu
     contrib/libs/libdivide
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash
-    library/consistent_hashing
+    library/cpp/consistent_hashing
 )
 
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
@@ -144,7 +146,8 @@ SRCS(
     exp10.cpp
     exp2.cpp
     exp.cpp
-    extractAllGroups.cpp
+    extractAllGroupsHorizontal.cpp
+    extractAllGroupsVertical.cpp
     extract.cpp
     extractGroups.cpp
     extractTimeZoneFromFunctionArguments.cpp
@@ -172,6 +175,7 @@ SRCS(
     FunctionsRound.cpp
     FunctionsStringArray.cpp
     FunctionsStringSimilarity.cpp
+    fuzzBits.cpp
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
@@ -192,13 +196,26 @@ SRCS(
     geohashDecode.cpp
     geohashEncode.cpp
     geohashesInBox.cpp
+    geoToH3.cpp
     getMacro.cpp
     getScalar.cpp
     getSizeOfEnumType.cpp
+    globalVariable.cpp
     greatCircleDistance.cpp
     greater.cpp
     greaterOrEquals.cpp
     greatest.cpp
+    h3EdgeAngle.cpp
+    h3EdgeLengthM.cpp
+    h3GetBaseCell.cpp
+    h3GetResolution.cpp
+    h3HexAreaM2.cpp
+    h3IndexesAreNeighbors.cpp
+    h3IsValid.cpp
+    h3kRing.cpp
+    h3ToChildren.cpp
+    h3ToParent.cpp
+    h3ToString.cpp
     hasColumnInTable.cpp
     hasTokenCaseInsensitive.cpp
     hasToken.cpp
@@ -335,6 +352,7 @@ SRCS(
     sleepEachRow.cpp
     sqrt.cpp
     startsWith.cpp
+    stringToH3.cpp
     substring.cpp
     subtractDays.cpp
     subtractHours.cpp
@@ -357,6 +375,7 @@ SRCS(
     toDayOfMonth.cpp
     toDayOfWeek.cpp
     toDayOfYear.cpp
+    toFixedString.cpp
     toHour.cpp
     toISOWeek.cpp
     toISOYear.cpp
@@ -422,6 +441,7 @@ SRCS(
     URL/extractURLParameters.cpp
     URL/firstSignificantSubdomain.cpp
     URL/fragment.cpp
+    URL/netloc.cpp
     URL/path.cpp
     URL/pathFull.cpp
     URL/port.cpp

@@ -39,9 +39,7 @@ namespace std
 }
 #endif
 
-#include <DataStreams/CollapsingFinalBlockInputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
-#include <DataStreams/ReverseBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -548,11 +546,13 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     RangesInDataParts parts_with_ranges;
 
     std::vector<std::pair<MergeTreeIndexPtr, MergeTreeIndexConditionPtr>> useful_indices;
-    for (const auto & index : data.skip_indices)
+
+    for (const auto & index : data.getSecondaryIndices())
     {
-        auto condition = index->createIndexCondition(query_info, context);
+        auto index_helper = MergeTreeIndexFactory::instance().get(index);
+        auto condition = index_helper->createIndexCondition(query_info, context);
         if (!condition->alwaysUnknownOrTrue())
-            useful_indices.emplace_back(index, condition);
+            useful_indices.emplace_back(index_helper, condition);
     }
 
     /// Let's find what range to read from each part.
@@ -637,9 +637,9 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             reader_settings,
             result_projection);
     }
-    else if (settings.optimize_read_in_order && query_info.input_sorting_info)
+    else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.input_order_info)
     {
-        size_t prefix_size = query_info.input_sorting_info->order_key_prefix_descr.size();
+        size_t prefix_size = query_info.input_order_info->order_key_prefix_descr.size();
         auto order_key_prefix_ast = data.getSortingKey().expression_list_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
@@ -855,7 +855,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     ExpressionActionsPtr & out_projection) const
 {
     size_t sum_marks = 0;
-    const InputSortingInfoPtr & input_sorting_info = query_info.input_sorting_info;
+    const InputOrderInfoPtr & input_order_info = query_info.input_order_info;
+
     size_t adaptive_parts = 0;
     std::vector<size_t> sum_marks_in_parts(parts.size());
     const auto data_settings = data.getSettings();
@@ -998,10 +999,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                 }
                 parts.emplace_back(part);
             }
+            ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
 
-            ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_sorting_info->direction);
-
-            if (input_sorting_info->direction == 1)
+            if (input_order_info->direction == 1)
             {
                 pipes.emplace_back(std::make_shared<MergeTreeSelectProcessor>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
@@ -1024,9 +1024,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         if (pipes.size() > 1)
         {
             SortDescription sort_description;
-            for (size_t j = 0; j < input_sorting_info->order_key_prefix_descr.size(); ++j)
+            for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
                 sort_description.emplace_back(data.getSortingKey().column_names[j],
-                    input_sorting_info->direction, 1);
+                      input_order_info->direction, 1);
 
             /// Drop temporary columns, added by 'sorting_key_prefix_expr'
             out_projection = createProjection(pipes.back(), data);
@@ -1377,17 +1377,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 }
 
 MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
-    MergeTreeIndexPtr index,
+    MergeTreeIndexPtr index_helper,
     MergeTreeIndexConditionPtr condition,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const Settings & settings) const
 {
-    if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index->getFileName() + ".idx"))
+    if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index_helper->getFileName() + ".idx"))
     {
-        LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index->name));
+        LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index_helper->index.name));
         return ranges;
     }
+
+    auto index_granularity = index_helper->index.granularity;
 
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
         settings.merge_tree_min_rows_for_seek,
@@ -1399,10 +1401,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
     size_t marks_count = part->getMarksCount();
     size_t final_mark = part->index_granularity.hasFinalMark();
-    size_t index_marks_count = (marks_count - final_mark + index->granularity - 1) / index->granularity;
+    size_t index_marks_count = (marks_count - final_mark + index_granularity - 1) / index_granularity;
 
     MergeTreeIndexReader reader(
-            index, part,
+            index_helper, part,
             index_marks_count,
             ranges);
 
@@ -1415,8 +1417,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     for (const auto & range : ranges)
     {
         MarkRange index_range(
-                range.begin / index->granularity,
-                (range.end + index->granularity - 1) / index->granularity);
+                range.begin / index_granularity,
+                (range.end + index_granularity - 1) / index_granularity);
 
         if (last_index_mark != index_range.begin || !granule)
             reader.seek(index_range.begin);
@@ -1427,8 +1429,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 granule = reader.read();
 
             MarkRange data_range(
-                    std::max(range.begin, index_mark * index->granularity),
-                    std::min(range.end, (index_mark + 1) * index->granularity));
+                    std::max(range.begin, index_mark * index_granularity),
+                    std::min(range.end, (index_mark + 1) * index_granularity));
 
             if (!condition->mayBeTrueOnGranule(granule))
             {
@@ -1445,7 +1447,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         last_index_mark = index_range.end - 1;
     }
 
-    LOG_DEBUG(log, "Index {} has dropped {} granules.", backQuote(index->name), granules_dropped);
+    LOG_DEBUG(log, "Index {} has dropped {} granules.", backQuote(index_helper->index.name), granules_dropped);
 
     return res;
 }

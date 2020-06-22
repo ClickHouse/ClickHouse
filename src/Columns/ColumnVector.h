@@ -188,6 +188,14 @@ public:
         return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
     }
 
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override
+    {
+        return this->template doCompareColumn<Self>(static_cast<const Self &>(rhs), rhs_row_num, row_indexes,
+                                                    compare_results, direction, nan_direction_hint);
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
     void getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
                                IColumn::SpecialSort) const override;
@@ -199,7 +207,8 @@ public:
         data.reserve(n);
     }
 
-    const char * getFamilyName() const override;
+    const char * getFamilyName() const override { return TypeName<T>::get(); }
+    TypeIndex getDataType() const override { return TypeId<T>::value; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -319,7 +328,5 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
 
     return res;
 }
-
-TypeIndex columnVectorDataType(const IColumn * column);
 
 }

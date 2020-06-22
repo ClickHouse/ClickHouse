@@ -1,6 +1,5 @@
 #include <random>
 #include <Common/thread_local_rng.h>
-#include <DataStreams/ConcatBlockInputStream.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Pipe.h>
 #include "narrowBlockInputStreams.h"
@@ -22,26 +21,6 @@ namespace
         std::shuffle(distribution.begin(), distribution.end(), thread_local_rng);
         return distribution;
     }
-}
-
-BlockInputStreams narrowBlockInputStreams(BlockInputStreams & inputs, size_t width)
-{
-    size_t size = inputs.size();
-    if (size <= width)
-        return inputs;
-
-    std::vector<BlockInputStreams> partitions(width);
-
-    auto distribution = getDistribution(size, width);
-
-    for (size_t i = 0; i < size; ++i)
-        partitions[distribution[i]].push_back(inputs[i]);
-
-    BlockInputStreams res(width);
-    for (size_t i = 0; i < width; ++i)
-        res[i] = std::make_shared<ConcatBlockInputStream>(partitions[i]);
-
-    return res;
 }
 
 Pipes narrowPipes(Pipes pipes, size_t width)

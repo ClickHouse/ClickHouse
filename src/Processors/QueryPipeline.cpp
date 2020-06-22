@@ -20,6 +20,7 @@
 #include <Common/CurrentThread.h>
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
+#include <Processors/Sources/RemoteSource.h>
 
 namespace DB
 {
@@ -562,7 +563,7 @@ void QueryPipeline::setOutputFormat(ProcessorPtr output)
 }
 
 void QueryPipeline::unitePipelines(
-    std::vector<QueryPipeline> && pipelines, const Block & common_header)
+    std::vector<std::unique_ptr<QueryPipeline>> pipelines, const Block & common_header)
 {
     if (initialized())
     {
@@ -582,8 +583,9 @@ void QueryPipeline::unitePipelines(
     if (totals_having_port)
         totals.push_back(totals_having_port);
 
-    for (auto & pipeline : pipelines)
+    for (auto & pipeline_ptr : pipelines)
     {
+        auto & pipeline = *pipeline_ptr;
         pipeline.checkInitialized();
 
         if (!pipeline.isCompleted())
@@ -641,6 +643,8 @@ void QueryPipeline::unitePipelines(
         else
             totals_having_port = uniteTotals(totals, current_header, processors);
     }
+
+    current_header = common_header;
 }
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
@@ -673,8 +677,10 @@ void QueryPipeline::initRowsBeforeLimit()
 {
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
+    /// TODO: add setRowsBeforeLimitCounter as virtual method to IProcessor.
     std::vector<LimitTransform *> limits;
     std::vector<SourceFromInputStream *> sources;
+    std::vector<RemoteSource *> remote_sources;
 
     std::unordered_set<IProcessor *> visited;
 
@@ -705,6 +711,9 @@ void QueryPipeline::initRowsBeforeLimit()
 
             if (auto * source = typeid_cast<SourceFromInputStream *>(processor))
                 sources.emplace_back(source);
+
+            if (auto * source = typeid_cast<RemoteSource *>(processor))
+                remote_sources.emplace_back(source);
         }
         else if (auto * sorting = typeid_cast<PartialSortingTransform *>(processor))
         {
@@ -735,7 +744,7 @@ void QueryPipeline::initRowsBeforeLimit()
         }
     }
 
-    if (!rows_before_limit_at_least && (!limits.empty() || !sources.empty()))
+    if (!rows_before_limit_at_least && (!limits.empty() || !sources.empty() || !remote_sources.empty()))
     {
         rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
 
@@ -743,6 +752,9 @@ void QueryPipeline::initRowsBeforeLimit()
             limit->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
         for (auto & source : sources)
+            source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
+
+        for (auto & source : remote_sources)
             source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
     }
 

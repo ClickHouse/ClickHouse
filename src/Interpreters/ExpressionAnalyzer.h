@@ -33,7 +33,7 @@ class ASTSelectQuery;
 struct ASTTablesInSelectQueryElement;
 
 /// Create columns in block or return false if not possible
-bool sanitizeBlock(Block & block);
+bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
@@ -174,6 +174,7 @@ struct ExpressionAnalysisResult
 
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
+    bool optimize_aggregation_in_order = false;
 
     ExpressionActionsPtr before_join;   /// including JOIN
     ExpressionActionsPtr before_where;
@@ -195,6 +196,7 @@ struct ExpressionAnalysisResult
     ConstantFilterDescription where_constant_filter_description;
     /// Actions by every element of ORDER BY
     ManyExpressionActions order_by_elements_actions;
+    ManyExpressionActions group_by_elements_actions;
 
     ExpressionAnalysisResult() = default;
 
@@ -206,7 +208,9 @@ struct ExpressionAnalysisResult
         const FilterInfoPtr & filter_info,
         const Block & source_header);
 
+    /// Filter for row-level security.
     bool hasFilter() const { return filter_info.get(); }
+
     bool hasJoin() const { return before_join.get(); }
     bool hasPrewhere() const { return prewhere_info.get(); }
     bool hasWhere() const { return before_where.get(); }
@@ -303,7 +307,7 @@ private:
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
-    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
+    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     /// After aggregation:

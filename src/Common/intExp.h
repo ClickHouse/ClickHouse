@@ -134,3 +134,14 @@ inline __int128 exp10_i128(int x)
 }
 
 }
+
+
+/// intExp10 returning the type T.
+template <typename T>
+inline T intExp10OfSize(int x)
+{
+    if constexpr (sizeof(T) <= 8)
+        return intExp10(x);
+    else
+        return common::exp10_i128(x);
+}

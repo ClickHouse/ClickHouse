@@ -67,11 +67,15 @@ public:
     {
         data(place).count = new_count;
     }
+
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr &, const DataTypes & types, const Array & params) const override;
 };
 
 
 /// Simply count number of not-NULL values.
-class AggregateFunctionCountNotNullUnary final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>
+class AggregateFunctionCountNotNullUnary final
+    : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>
 {
 public:
     AggregateFunctionCountNotNullUnary(const DataTypePtr & argument, const Array & params)

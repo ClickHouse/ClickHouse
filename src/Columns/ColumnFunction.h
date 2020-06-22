@@ -29,6 +29,7 @@ private:
 
 public:
     const char * getFamilyName() const override { return "Function"; }
+    TypeIndex getDataType() const override { return TypeIndex::Function; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -114,6 +115,11 @@ public:
     int compareAt(size_t, size_t, const IColumn &, int) const override
     {
         throw Exception("compareAt is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
+    {
+        throw Exception("compareColumn is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void getPermutation(bool, size_t, int, Permutation &) const override

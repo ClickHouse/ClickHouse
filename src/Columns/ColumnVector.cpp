@@ -289,13 +289,6 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
     equal_range = std::move(new_ranges);
 }
 
-
-template <typename T>
-const char * ColumnVector<T>::getFamilyName() const
-{
-    return TypeName<T>::get();
-}
-
 template <typename T>
 MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 {
@@ -515,33 +508,6 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 
     min = NearestFieldType<T>(cur_min);
     max = NearestFieldType<T>(cur_max);
-}
-
-TypeIndex columnVectorDataType(const IColumn * column)
-{
-    if (checkColumn<ColumnVector<UInt8>>(column))
-        return TypeIndex::UInt8;
-    else if (checkColumn<ColumnVector<UInt16>>(column))
-        return TypeIndex::UInt16;
-    else if (checkColumn<ColumnVector<UInt32>>(column))
-        return TypeIndex::UInt32;
-    else if (checkColumn<ColumnVector<UInt64>>(column))
-        return TypeIndex::UInt64;
-    else if (checkColumn<ColumnVector<Int8>>(column))
-        return TypeIndex::Int8;
-    else if (checkColumn<ColumnVector<Int16>>(column))
-        return TypeIndex::Int16;
-    else if (checkColumn<ColumnVector<Int32>>(column))
-        return TypeIndex::Int32;
-    else if (checkColumn<ColumnVector<Int64>>(column))
-        return TypeIndex::Int64;
-    else if (checkColumn<ColumnVector<Int128>>(column))
-        return TypeIndex::Int128;
-    else if (checkColumn<ColumnVector<Float32>>(column))
-        return TypeIndex::Float32;
-    else if (checkColumn<ColumnVector<Float64>>(column))
-        return TypeIndex::Float64;
-    return TypeIndex::Nothing;
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.

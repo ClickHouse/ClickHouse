@@ -62,11 +62,14 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, const
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            if (!dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+            const auto & table = iterator->table();
+            if (!table)
+                continue;
+            if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
                 continue;
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
                 continue;
-            replicated_tables[db.first][iterator->name()] = iterator->table();
+            replicated_tables[db.first][iterator->name()] = table;
         }
     }
 

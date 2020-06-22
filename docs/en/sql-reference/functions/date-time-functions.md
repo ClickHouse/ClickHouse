@@ -1,6 +1,6 @@
 ---
 toc_priority: 39
-toc_title: Working with Dates and Times
+toc_title: Dates and Times
 ---
 
 # Functions for Working with Dates and Times {#functions-for-working-with-dates-and-times}
@@ -364,7 +364,7 @@ dateDiff('unit', startdate, enddate, [timezone])
 
 **Parameters**
 
--   `unit` — Time unit, in which the returned value is expressed. [String](../syntax.md#syntax-string-literal).
+-   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
         Supported values:
 

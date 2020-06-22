@@ -525,7 +525,7 @@ CREATE TABLE IF NOT EXISTS example_table
 -   Если `input_format_defaults_for_omitted_fields = 1`, то значение по умолчанию для `x` равно `0`, а значение по умолчанию `a` равно `x * 2`.
 
 !!! note "Предупреждение"
-    Если `insert_sample_with_metadata = 1`, то при обработке запросов ClickHouse потребляет больше вычислительных ресурсов, чем если `insert_sample_with_metadata = 0`.
+    Если `input_format_defaults_for_omitted_fields = 1`, то при обработке запросов ClickHouse потребляет больше вычислительных ресурсов, чем если `input_format_defaults_for_omitted_fields = 0`.
 
 ### Выборка данных {#vyborka-dannykh}
 
