@@ -21,7 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NO_ZOOKEEPER;
-    extern const int FILE_DOESNT_EXIST;
+    extern const int LOGICAL_ERROR;
 }
 
 void DatabaseReplicated::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
@@ -74,6 +74,8 @@ DatabaseReplicated::DatabaseReplicated(
         createDatabaseZKNodes();
     // Old replica recovery
     } else if (current_zookeeper->exists(zookeeper_path + "/replicas/" + replica_name, {}, NULL)) {
+        String remote_last_entry = current_zookeeper->get(zookeeper_path + "/replicas/" + replica_name, {}, NULL);
+
         String local_last_entry;
         try
         {
@@ -82,28 +84,21 @@ DatabaseReplicated::DatabaseReplicated(
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST) {
-                // that is risky cause 
-                // if replica name is the same
-                // than the last one wins
-                saveState();
-            } else {
-                throw;
-            }
+                // Metadata is corrupted.
+                // Replica erases the previous zk last executed log entry
+                // and behaves like a new clean replica.
+                writeLastExecutedToDiskAndZK();
         }
 
-        String remote_last_entry = current_zookeeper->get(zookeeper_path + "/replicas/" + replica_name, {}, NULL);
-        if (local_last_entry == remote_last_entry) {
+        if (!local_last_entry.empty() && local_last_entry == remote_last_entry) {
             last_executed_log_entry = local_last_entry;
         } else {
-            LOG_DEBUG(log, "LOCAL: " << local_last_entry);
-            LOG_DEBUG(log, "ZK: " << remote_last_entry);
-            throw Exception("Can't create replicated database MISCONFIGURATION or something", ErrorCodes::NO_ZOOKEEPER);
+            throw Exception("Replica name might be in use by a different node. Please check replica_name parameter. Remove .last_entry file from metadata to create a new replica.", ErrorCodes::LOGICAL_ERROR);
         }
     }
 
     snapshot_period = context_.getConfigRef().getInt("database_replicated_snapshot_period", 10);
-    LOG_DEBUG(log, "Snapshot period is set to " << snapshot_period);
+    LOG_DEBUG(log, "Snapshot period is set to " << snapshot_period << " log entries per one snapshot");
 
     background_log_executor = global_context.getReplicatedSchedulePool().createTask(database_name + "(DatabaseReplicated::background_executor)", [this]{ runBackgroundLogExecutor();} );
 
@@ -176,12 +171,12 @@ void DatabaseReplicated::runBackgroundLogExecutor() {
         String log_entry_path = zookeeper_path + "/log/" + log_entry_name;
         executeFromZK(log_entry_path);
         last_executed_log_entry = log_entry_name;
-        saveState();
+        writeLastExecutedToDiskAndZK();
 
         int log_n = parse<int>(log_entry_name.substr(4));
         int last_log_n = parse<int>(log_entry_names.back().substr(4));
 
-        // The third condition gurantees at most one snapshot per batch
+        // The third condition gurantees at most one snapshot creation per batch
         if (log_n > 0 && snapshot_period > 0 && (last_log_n - log_n) / snapshot_period == 0 && log_n % snapshot_period == 0) {
             createSnapshot();
         }
@@ -190,7 +185,7 @@ void DatabaseReplicated::runBackgroundLogExecutor() {
     background_log_executor->scheduleAfter(500);
 }
 
-void DatabaseReplicated::saveState() {
+void DatabaseReplicated::writeLastExecutedToDiskAndZK() {
     current_zookeeper = getZooKeeper();
     current_zookeeper->createOrUpdate(zookeeper_path + "/replicas/" + replica_name, last_executed_log_entry, zkutil::CreateMode::Persistent);
 
@@ -230,7 +225,7 @@ void DatabaseReplicated::executeFromZK(String & path) {
 void DatabaseReplicated::propose(const ASTPtr & query) {
     current_zookeeper = getZooKeeper();
 
-    LOG_DEBUG(log, "Writing the query to log: " << queryToString(query));
+    LOG_DEBUG(log, "Proposing query: " << queryToString(query));
     current_zookeeper->create(zookeeper_path + "/log/log-", queryToString(query), zkutil::CreateMode::PersistentSequential);
 
     background_log_executor->schedule();
@@ -255,6 +250,8 @@ void DatabaseReplicated::createSnapshot() {
 }
 
 void DatabaseReplicated::loadMetadataFromSnapshot() {
+    // Executes the latest snapshot.
+    // Used by new replicas only.
     current_zookeeper = getZooKeeper();
 
     Strings snapshots;
@@ -270,13 +267,15 @@ void DatabaseReplicated::loadMetadataFromSnapshot() {
     if (current_zookeeper->tryGetChildren(zookeeper_path + "/snapshots/" + *latest_snapshot, metadatas) != Coordination::ZOK)
         return;
 
+    LOG_DEBUG(log, "Executing " << *latest_snapshot << " snapshot");
     for (auto t = metadatas.begin(); t != metadatas.end(); ++t) {
         String path = zookeeper_path + "/snapshots/" + *latest_snapshot + "/" + *t;
+
         executeFromZK(path);
     }
 
     last_executed_log_entry = *latest_snapshot;
-    saveState();
+    writeLastExecutedToDiskAndZK();
 }
 
 void DatabaseReplicated::drop(const Context & context_)
