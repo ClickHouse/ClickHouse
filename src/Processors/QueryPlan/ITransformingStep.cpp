@@ -9,9 +9,7 @@ ITransformingStep::ITransformingStep(DataStream input_stream, Block output_heade
     output_stream = DataStream{.header = std::move(output_header)};
 
     if (traits.preserves_distinct_columns)
-    {
-        output_stream->distinct_columns = input_streams.front().distinct_columns;
-    }
+        output_stream->distinct_columns = input_stream.distinct_columns;
 
     output_stream->has_single_port = traits.returns_single_stream
                                      || (input_stream.has_single_port && traits.preserves_number_of_streams);
