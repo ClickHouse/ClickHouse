@@ -1,6 +1,7 @@
 #if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/SymbolIndex.h>
+#include <Common/hex.h>
 
 #include <algorithm>
 #include <optional>
@@ -52,6 +53,19 @@ Otherwise you will get only symbol names. If your binary contains symbol table i
 Otherwise you will get only exported symbols from program headers.
 
 */
+
+#if defined(__clang__)
+#   pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   pragma clang diagnostic ignored "-Wunused-macros"
+#endif
+
+#define __msan_unpoison_string(X)
+#if defined(__has_feature)
+#   if __has_feature(memory_sanitizer)
+#       undef __msan_unpoison_string
+#       include <sanitizer/msan_interface.h>
+#   endif
+#endif
 
 
 namespace DB
@@ -276,15 +290,24 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
 
 void collectSymbolsFromELF(dl_phdr_info * info,
     std::vector<SymbolIndex::Symbol> & symbols,
-    std::vector<SymbolIndex::Object> & objects)
+    std::vector<SymbolIndex::Object> & objects,
+    String & build_id)
 {
+    /// MSan does not know that the program segments in memory are initialized.
+    __msan_unpoison_string(info->dlpi_name);
+
     std::string object_name = info->dlpi_name;
+
+    String our_build_id = getBuildIDFromProgramHeaders(info);
 
     /// If the name is empty - it's main executable.
     /// Find a elf file for the main executable.
 
     if (object_name.empty())
+    {
         object_name = "/proc/self/exe";
+        build_id = our_build_id;
+    }
 
     std::error_code ec;
     std::filesystem::path canonical_path = std::filesystem::canonical(object_name, ec);
@@ -298,7 +321,6 @@ void collectSymbolsFromELF(dl_phdr_info * info,
     object_name = std::filesystem::exists(debug_info_path) ? debug_info_path : canonical_path;
 
     /// But we have to compare Build ID to check that debug info corresponds to the same executable.
-    String our_build_id = getBuildIDFromProgramHeaders(info);
 
     SymbolIndex::Object object;
     object.elf = std::make_unique<Elf>(object_name);
@@ -343,7 +365,7 @@ int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
     collectSymbolsFromProgramHeaders(info, data.symbols);
-    collectSymbolsFromELF(info, data.symbols, data.objects);
+    collectSymbolsFromELF(info, data.symbols, data.objects, data.build_id);
 
     /* Continue iterations */
     return 0;
@@ -394,6 +416,22 @@ const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
 const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
 {
     return find(address, data.objects);
+}
+
+String SymbolIndex::getBuildIDHex() const
+{
+    String build_id_binary = getBuildID();
+    String build_id_hex;
+    build_id_hex.resize(build_id_binary.size() * 2);
+
+    char * pos = build_id_hex.data();
+    for (auto c : build_id_binary)
+    {
+        writeHexByteUppercase(c, pos);
+        pos += 2;
+    }
+
+    return build_id_hex;
 }
 
 SymbolIndex & SymbolIndex::instance()
