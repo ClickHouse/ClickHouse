@@ -138,7 +138,7 @@ SRCS(
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
     Transforms/AggregatingInOrderTransform.cpp
-    QueryPlan/AddingDelayedStreamSource.cpp
+    QueryPlan/AddingDelayedSourceStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ConvertingStep.cpp
     QueryPlan/CreatingSetsStep.cpp

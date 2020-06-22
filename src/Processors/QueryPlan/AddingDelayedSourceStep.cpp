@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/AddingDelayedStreamSource.h>
+#include <Processors/QueryPlan/AddingDelayedSourceStep.h>
 #include <Processors/QueryPipeline.h>
 
 namespace DB
@@ -14,7 +14,7 @@ static ITransformingStep::DataStreamTraits getTraits()
     };
 }
 
-AddingDelayedStreamSource::AddingDelayedStreamSource(
+AddingDelayedSourceStep::AddingDelayedSourceStep(
     const DataStream & input_stream_,
     ProcessorPtr source_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
@@ -22,7 +22,7 @@ AddingDelayedStreamSource::AddingDelayedStreamSource(
 {
 }
 
-void AddingDelayedStreamSource::transformPipeline(QueryPipeline & pipeline)
+void AddingDelayedSourceStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addDelayedStream(source);
 }
