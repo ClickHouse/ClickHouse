@@ -13,6 +13,14 @@ void registerFunctionPointInPolygon(FunctionFactory & factory);
 void registerFunctionPolygonsIntersection(FunctionFactory & factory);
 void registerFunctionPolygonsUnion(FunctionFactory & factory);
 void registerFunctionPolygonArea(FunctionFactory & factory);
+void registerFunctionPolygonConvexHull(FunctionFactory & factory);
+
+void registerFunctionPolygonsSymDifference(FunctionFactory & factory);
+void registerFunctionPolygonsEquals(FunctionFactory & factory);
+void registerFunctionPolygonConvexHull(FunctionFactory & factory);
+void registerFunctionPolygonConvexHull(FunctionFactory & factory);
+void registerFunctionPolygonConvexHull(FunctionFactory & factory);
+
 void registerFunctionGeohashEncode(FunctionFactory & factory);
 void registerFunctionGeohashDecode(FunctionFactory & factory);
 void registerFunctionGeohashesInBox(FunctionFactory & factory);
@@ -45,6 +53,14 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionPolygonsIntersection(factory);
     registerFunctionPolygonsUnion(factory);
     registerFunctionPolygonArea(factory);
+    registerFunctionPolygonConvexHull(factory);
+
+    registerFunctionPolygonsSymDifference(factory);
+    registerFunctionPolygonsEquals(factory);
+    registerFunctionPolygonConvexHull(factory);
+    registerFunctionPolygonConvexHull(factory);
+    registerFunctionPolygonConvexHull(factory);
+
     registerFunctionGeohashEncode(factory);
     registerFunctionGeohashDecode(factory);
     registerFunctionGeohashesInBox(factory);
