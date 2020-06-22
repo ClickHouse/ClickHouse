@@ -1,3 +1,5 @@
+# Add testcase here to skip it in Arcadia CI (Yandex synchronization check)
+# It is useful for tests with not supported features in Arcadia build
 00105_shard_collations
 00436_convert_charset
 00490_special_line_separators_and_characters_outside_of_bmp
