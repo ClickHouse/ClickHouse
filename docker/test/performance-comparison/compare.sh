@@ -265,25 +265,54 @@ create view right_query_log as select *
     from file('right-query-log.tsv', TSVWithNamesAndTypes,
         '$(cat "right-query-log.tsv.columns")');
 
-create table query_metrics engine File(TSV, -- do not add header -- will parse with grep
-        'analyze/query-run-metrics.tsv')
-    as select
-        test, query_index, 0 run, version,
-        [
-            -- server-reported time
-            query_duration_ms / toFloat64(1000)
-            , toFloat64(memory_usage)
-            -- client-reported time
-            , query_runs.time
-        ] metrics
-    from (
-        select query_duration_ms, memory_usage, query_id, 0 version from left_query_log
-        union all
-        select query_duration_ms, memory_usage, query_id, 1 version from right_query_log
-    ) query_logs
+create view query_logs as
+    select *, 0 version from left_query_log
+    union all
+    select *, 1 version from right_query_log
+    ;
+
+create table query_run_metrics_full engine File(TSV, 'analyze/query-run-metrics-full.tsv')
+    as
+    with (
+        -- sumMapState with the list of all keys with '-0.' values. Negative zero is because
+        -- sumMap removes keys with positive zeros.
+        with (select groupUniqArrayArray(ProfileEvents.Names) from query_logs) as all_names
+            select arrayReduce('sumMapState', [(all_names, arrayMap(x->-0., all_names))])
+        ) as all_metrics
+    select test, query_index, version, query_id,
+        (finalizeAggregation(
+            arrayReduce('sumMapMergeState',
+                [
+                    all_metrics,
+                    arrayReduce('sumMapState',
+                        [(ProfileEvents.Names,
+                            arrayMap(x->toFloat64(x), ProfileEvents.Values))]
+                    ),
+                    arrayReduce('sumMapState', [(
+                        ['client_time', 'server_time'],
+                        arrayMap(x->if(x != 0., x, -0.), [
+                            toFloat64(query_runs.time),
+                            toFloat64(query_duration_ms / 1000.)]))])
+                ]
+            )) as metrics_tuple).1 metric_names,
+        metrics_tuple.2 metric_values
+    from query_logs
     right join query_runs
-    using (query_id, version)
-    order by test, query_index
+        on query_logs.query_id = query_runs.query_id
+            and query_logs.version = query_runs.version
+    ;
+
+create table query_run_metrics engine File(
+        TSV, -- do not add header -- will parse with grep
+        'analyze/query-run-metrics.tsv')
+    as select test, query_index, 0 run, version, metric_values
+    from query_run_metrics_full
+    where test = 'arithmetic'
+    order by test, query_index, run, version
+    ;
+
+create table query_run_metric_names engine File(TSV, 'analyze/query-run-metric-names.tsv')
+    as select metric_names from query_run_metrics_full limit 1
     ;
 "
 
@@ -332,18 +361,32 @@ create view query_display_names as select * from
         'test text, query_index int, query_display_name text')
     ;
 
-create table query_metric_stats engine File(TSVWithNamesAndTypes,
-        'report/query-metric-stats.tsv') as
+-- WITH, ARRAY JOIN and CROSS JOIN do not like each other:
+--  https://github.com/ClickHouse/ClickHouse/issues/11868
+--  https://github.com/ClickHouse/ClickHouse/issues/11757
+-- Because of this, we make a view with arrays first, and then apply all the
+-- array joins.
+
+create view query_metric_stat_arrays as
+    with (select * from file('analyze/query-run-metric-names.tsv',
+        TSV, 'n Array(String)')) as metric_name
     select metric_name, left, right, diff, stat_threshold, test, query_index,
         query_display_name
     from file ('analyze/query-reports.tsv', TSV, 'left Array(float),
         right Array(float), diff Array(float), stat_threshold Array(float),
         test text, query_index int') reports
-    left array join ['server_time', 'memory', 'client_time'] as metric_name,
-        left, right, diff, stat_threshold
     left join query_display_names
         on reports.test = query_display_names.test
             and reports.query_index = query_display_names.query_index
+    ;
+
+create table query_metric_stats engine File(TSVWithNamesAndTypes,
+        'report/query-metric-stats.tsv')
+    as
+    select metric_name, left, right, diff, stat_threshold, test, query_index,
+        query_display_name
+    from query_metric_stat_arrays
+    left array join metric_name, left, right, diff, stat_threshold
     ;
 
 -- Main statistics for queries -- query time as reported in query log.

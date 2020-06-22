@@ -53,6 +53,8 @@ namespace ProfileEvents
     extern const Event PerfCpuMigrations;
     extern const Event PerfAlignmentFaults;
     extern const Event PerfEmulationFaults;
+    extern const Event PerfPageFaultsMinor;
+    extern const Event PerfPageFaultsMajor;
 #endif
 }
 
