@@ -7,6 +7,7 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+/// Calculates specified expression. See ExpressionTransform.
 class ExpressionStep : public ITransformingStep
 {
 public:
@@ -25,7 +26,7 @@ class InflatingExpressionStep : public ITransformingStep
 {
 public:
     explicit InflatingExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_, bool default_totals_ = false);
-    String getName() const override { return "Expression"; }
+    String getName() const override { return "InflatingExpression"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
