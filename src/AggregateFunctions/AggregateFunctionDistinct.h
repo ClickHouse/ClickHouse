@@ -15,11 +15,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 
 template <typename T>
 struct AggregateFunctionDistinctSingleNumericData
@@ -177,11 +172,7 @@ public:
     AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments)
     : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, nested_func_->getParameters())
     , nested_func(nested_func_)
-    , arguments_num(arguments.size())
-    {
-        if (arguments.empty())
-            throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-    }
+    , arguments_num(arguments.size()) {}
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -211,8 +202,8 @@ public:
             arguments_raw[i] = arguments[i].get();
 
         assert(!arguments.empty());
-        this->nested_func->addBatchSinglePlace(arguments[0]->size(), this->getNestedPlace(place), arguments_raw.data(), arena);
-        this->nested_func->insertResultInto(this->getNestedPlace(place), to, arena);
+        nested_func->addBatchSinglePlace(arguments[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
+        nested_func->insertResultInto(getNestedPlace(place), to, arena);
     }
 
     size_t sizeOfData() const override
