@@ -95,8 +95,6 @@ if (ENABLE_JEMALLOC)
             message (FATAL_ERROR "This arch is not supported")
         endif ()
 
-        target_include_directories(jemalloc SYSTEM PUBLIC
-            ${JEMALLOC_INCLUDE_PREFIX})
         configure_file(${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_defs.h.in
             ${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_defs.h)
         target_include_directories(jemalloc SYSTEM PRIVATE
