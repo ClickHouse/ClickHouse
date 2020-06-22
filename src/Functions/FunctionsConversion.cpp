@@ -11,6 +11,8 @@ FunctionOverloadResolverImplPtr CastOverloadResolver::create(const Context & con
     return createImpl(context.getSettingsRef().cast_keep_nullable);
 }
 
+void registerFunctionFixedString(FunctionFactory & factory);
+
 void registerFunctionsConversion(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToUInt8>();
@@ -33,7 +35,8 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDateTime64>();
     factory.registerFunction<FunctionToUUID>();
     factory.registerFunction<FunctionToString>();
-    factory.registerFunction<FunctionToFixedString>();
+
+    registerFunctionFixedString(factory);
 
     factory.registerFunction<FunctionToUnixTimestamp>();
     factory.registerFunction<CastOverloadResolver>(FunctionFactory::CaseInsensitive);
