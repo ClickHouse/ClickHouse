@@ -90,7 +90,7 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, cons
     size_t i = 0;
     for (const auto & table : selected_tables)
     {
-        auto storage_ptr = std::get<0>(table);
+        const auto & storage_ptr = std::get<0>(table);
         auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
         if (storage_ptr->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot))
             return true;

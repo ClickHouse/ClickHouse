@@ -1531,7 +1531,7 @@ std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalculate(
     BlockInputStreamPtr & input_stream,
     const NamesAndTypesList & updated_columns,
     const StorageMetadataPtr & metadata_snapshot,
-    const Context & context) const
+    const Context & context)
 {
     /// Checks if columns used in skipping indexes modified.
     const auto & index_factory = MergeTreeIndexFactory::instance();

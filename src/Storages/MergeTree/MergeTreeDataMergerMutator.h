@@ -174,11 +174,11 @@ private:
 
     /// Return set of indices which should be recalculated during mutation also
     /// wraps input stream into additional expression stream
-    std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
+    static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         BlockInputStreamPtr & input_stream,
         const NamesAndTypesList & updated_columns,
         const StorageMetadataPtr & metadata_snapshot,
-        const Context & context) const;
+        const Context & context);
 
     /// Override all columns of new part using mutating_stream
     void mutateAllPartColumns(
