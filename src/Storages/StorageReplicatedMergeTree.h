@@ -117,10 +117,6 @@ public:
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    /** Remove a specific replica from zookeeper.
-     */
-    void dropReplica(const String & replica, bool is_drop_table);
-
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     bool supportsIndexForIn() const override { return true; }
@@ -184,9 +180,9 @@ public:
 
     int getMetadataVersion() const { return metadata_version; }
 
-    /** Remove a specific replica from zookeeper by zkpath.
+    /** Remove a specific replica from zookeeper.
      */
-    static void dropReplicaByZkPath(Context & context, const String & replica_zk_path, const String & replica);
+    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, bool is_readonly, bool is_drop_table);
 
 private:
 
