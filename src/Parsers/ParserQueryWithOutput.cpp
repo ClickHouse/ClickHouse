@@ -109,6 +109,17 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query_with_output.children.push_back(query_with_output.settings_ast);
     }
 
+    if (auto * ast = query->as<ASTExplainQuery>())
+    {
+        /// Set default format TSV, because output is a single string column.
+        if (!ast->format)
+        {
+            ast->format = std::make_shared<ASTIdentifier>("TSV");
+            ast->children.push_back(ast->format);
+        }
+    }
+
+    node = std::move(query);
     return true;
 }
 

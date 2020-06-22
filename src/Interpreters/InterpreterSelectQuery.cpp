@@ -968,7 +968,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                   */
 
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
-                    executeMergeSorted(query_plan, "before ORDER BY");
+                    executeMergeSorted(query_plan, "for ORDER BY");
                 else    /// Otherwise, just sort.
                     executeOrder(query_plan, query_info.input_order_info);
             }
@@ -1596,7 +1596,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
             limit,
             SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode));
 
-    partial_sorting->setStepDescription("Sort each block before ORDER BY");
+    partial_sorting->setStepDescription("Sort each block for ORDER BY");
     query_plan.addStep(std::move(partial_sorting));
 
     /// Merge the sorted blocks.
@@ -1607,11 +1607,11 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
             settings.max_bytes_before_external_sort, context->getTemporaryVolume(),
             settings.min_free_disk_space_for_temporary_data);
 
-    merge_sorting_step->setStepDescription("Merge sorted blocks before ORDER BY");
+    merge_sorting_step->setStepDescription("Merge sorted blocks for ORDER BY");
     query_plan.addStep(std::move(merge_sorting_step));
 
     /// If there are several streams, we merge them into one
-    executeMergeSorted(query_plan, output_order_descr, limit, "before ORDER BY");
+    executeMergeSorted(query_plan, output_order_descr, limit, "for ORDER BY");
 }
 
 
