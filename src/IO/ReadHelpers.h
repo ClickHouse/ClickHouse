@@ -35,6 +35,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 
 #include <double-conversion/double-conversion.h>
+#include <Common/hex.h>
 
 
 /// 1 GiB
@@ -487,10 +488,66 @@ struct NullSink
     void push_back(char) {}
 };
 
+template <typename IteratorSrc, typename IteratorDst>
+void parseHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes)
+{
+    size_t src_pos = 0;
+    size_t dst_pos = 0;
+    for (; dst_pos < num_bytes; ++dst_pos)
+    {
+        dst[dst_pos] = UInt8(unhex(src[src_pos])) * 16 + UInt8(unhex(src[src_pos + 1]));
+        src_pos += 2;
+    }
+}
+
 template <bool with_separator>
-void parseUUID(const UInt8 * src36, UInt8 * dst16);
+void parseUUID(const UInt8 * src36, UInt8 * dst16)
+{
+    /// If string is not like UUID - implementation specific behaviour.
+    if constexpr (with_separator)
+    {
+        parseHex(&src36[0], &dst16[0], 4);
+        parseHex(&src36[9], &dst16[4], 2);
+        parseHex(&src36[14], &dst16[6], 2);
+        parseHex(&src36[19], &dst16[8], 2);
+        parseHex(&src36[24], &dst16[10], 6);
+    }
+    else
+    {
+        parseHex(&src36[0], &dst16[0], 4);
+        parseHex(&src36[8], &dst16[4], 2);
+        parseHex(&src36[12], &dst16[6], 2);
+        parseHex(&src36[16], &dst16[8], 2);
+        parseHex(&src36[20], &dst16[10], 6);
+    }
+}
+
+/** Function used when byte ordering is important when parsing uuid
+ *  ex: When we create an UUID type
+ */
 template <bool with_separator>
-void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
+void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
+{
+    /// If string is not like UUID - implementation specific behaviour.
+
+    /// FIXME This code looks like trash.
+    if constexpr (with_separator)
+    {
+        parseHex(&src36[0], dst16 + 8, 4);
+        parseHex(&src36[9], dst16 + 12, 2);
+        parseHex(&src36[14], dst16 + 14, 2);
+        parseHex(&src36[19], dst16, 2);
+        parseHex(&src36[24], dst16 + 2, 6);
+    }
+    else
+    {
+        parseHex(&src36[0], dst16 + 8, 4);
+        parseHex(&src36[8], dst16 + 12, 2);
+        parseHex(&src36[12], dst16 + 14, 2);
+        parseHex(&src36[16], dst16, 2);
+        parseHex(&src36[20], dst16 + 2, 6);
+    }
+}
 
 template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
