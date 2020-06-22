@@ -1,6 +1,6 @@
 ---
-toc_priority: 10
 toc_hidden: true
+toc_priority: 10
 ---
 
 # How Do I Export Data from ClickHouse to a File? {#how-to-export-to-file}
