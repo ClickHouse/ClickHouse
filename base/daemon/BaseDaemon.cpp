@@ -39,6 +39,7 @@
 #include <common/argsToConfig.h>
 #include <common/getThreadId.h>
 #include <common/coverage.h>
+#include <common/sleep.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
@@ -140,7 +141,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
-        ::sleep(10);
+        sleepForSeconds(10);
         call_default_signal_handler(sig);
     }
 

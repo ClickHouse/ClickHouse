@@ -1,7 +1,9 @@
 [
     {
-        "system":       "AWS a1.4xlarge (Graviton) 16 vCPU, 2.3 GHz, 32 GiB RAM, EBS",
+        "system":       "AWS a1.4xlarge",
+        "system_full":       "AWS a1.4xlarge (Graviton) 16 vCPU, 2.3 GHz, 32 GiB RAM, EBS",
         "time":         "2020-02-13 00:00:00",
+        "kind":         "cloud",
         "result":
         [
             [0.012, 0.003, 0.003],

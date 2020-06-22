@@ -398,6 +398,7 @@ private:
             { TokenType::GreaterOrEquals, Replxx::Color::INTENSE },
             { TokenType::Concatenation, Replxx::Color::INTENSE },
             { TokenType::At, Replxx::Color::INTENSE },
+            { TokenType::DoubleAt, Replxx::Color::MAGENTA },
 
             { TokenType::EndOfStream, Replxx::Color::DEFAULT },
 
@@ -986,7 +987,10 @@ private:
     /// Process the query that doesn't require transferring data blocks to the server.
     void processOrdinaryQuery()
     {
-        /// We will always rewrite query (even if there are no query_parameters) because it will help to find errors in query formatter.
+        /// Rewrite query only when we have query parameters.
+        /// Note that if query is rewritten, comments in query are lost.
+        /// But the user often wants to see comments in server logs, query log, processlist, etc.
+        if (!query_parameters.empty())
         {
             /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
             ReplaceQueryParameterVisitor visitor(query_parameters);

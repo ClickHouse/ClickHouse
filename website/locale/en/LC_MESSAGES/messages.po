@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-06-16 13:35+0300\n"
+"POT-Creation-Date: 2020-06-17 12:20+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -77,7 +77,12 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr "Yandex LLC"
 
-#: templates/blog/content.html:16
+#: templates/blog/content.html:20 templates/blog/content.html:25
+#: templates/blog/content.html:30
+msgid "Share on"
+msgstr "Share on"
+
+#: templates/blog/content.html:37
 msgid "Published date"
 msgstr "Published date"
 

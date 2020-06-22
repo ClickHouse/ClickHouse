@@ -26,6 +26,8 @@
 #include <Interpreters/DuplicateDistinctVisitor.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
+#include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
+#include <Interpreters/AnyInputOptimize.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -347,12 +349,53 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
         appendUnusedGroupByColumn(select_query, source_columns);
 }
 
-///eliminate functions of other GROUP BY keys
-void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query, bool optimize_group_by_function_keys)
+struct GroupByKeysInfo
 {
-    if (!optimize_group_by_function_keys)
-        return;
+    std::unordered_set<String> key_names; ///set of keys' short names
+    bool has_identifier = false;
+    bool has_function = false;
+    bool has_possible_collision = false;
+};
 
+GroupByKeysInfo getGroupByKeysInfo(ASTs & group_keys)
+{
+    GroupByKeysInfo data;
+
+    ///filling set with short names of keys
+    for (auto & group_key : group_keys)
+    {
+        if (group_key->as<ASTFunction>())
+            data.has_function = true;
+
+        if (auto * group_key_ident = group_key->as<ASTIdentifier>())
+        {
+            data.has_identifier = true;
+            if (data.key_names.count(group_key_ident->shortName()))
+            {
+                ///There may be a collision between different tables having similar variables.
+                ///Due to the fact that we can't track these conflicts yet,
+                ///it's better to disable some optimizations to avoid elimination necessary keys.
+                data.has_possible_collision = true;
+            }
+
+            data.key_names.insert(group_key_ident->shortName());
+        }
+        else if (auto * group_key_func = group_key->as<ASTFunction>())
+        {
+            data.key_names.insert(group_key_func->getColumnName());
+        }
+        else
+        {
+            data.key_names.insert(group_key->getColumnName());
+        }
+    }
+
+    return data;
+}
+
+///eliminate functions of other GROUP BY keys
+void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
+{
     if (!select_query->groupBy())
         return;
 
@@ -360,44 +403,13 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query, bool optimize_gr
     auto & group_keys = grp_by->children;
 
     ASTs modified; ///result
-    std::unordered_set<String> key_names_to_keep; ///set of keys' short names
 
-    ///check if optimization is needed while building set
-    bool need_optimization = false;
-    ///filling set with short names of keys
-    for (auto & group_key : group_keys)
-    {
-        if (!need_optimization && group_key->as<ASTFunction>())
-            need_optimization = true;
+    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_keys);
 
-        if (auto * group_key_ident = group_key->as<ASTIdentifier>())
-        {
-            if (key_names_to_keep.count(group_key_ident->shortName()))
-            {
-                ///There may be a collision between different tables having similar variables.
-                ///Due to the fact that we can't track these conflicts yet,
-                ///it's better to disable optimization to avoid elimination necessary keys.
-                need_optimization = false;
-                break;
-            }
-
-            key_names_to_keep.insert(group_key_ident->shortName());
-            continue;
-        }
-        if (auto * group_key_func = group_key->as<ASTFunction>())
-        {
-            key_names_to_keep.insert(group_key_func->getColumnName());
-            continue;
-        }
-        else
-        {
-            key_names_to_keep.insert(group_key->getColumnName());
-        }
-    }
-    if (!need_optimization)
+    if (!group_by_keys_data.has_function || group_by_keys_data.has_possible_collision)
         return;
 
-    GroupByFunctionKeysVisitor::Data visitor_data{key_names_to_keep};
+    GroupByFunctionKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
     GroupByFunctionKeysVisitor(visitor_data).visit(grp_by);
 
     modified.reserve(group_keys.size());
@@ -407,27 +419,44 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query, bool optimize_gr
     {
         if (auto * group_key_func = group_key->as<ASTFunction>())
         {
-            if (key_names_to_keep.count(group_key_func->getColumnName()))
+            if (group_by_keys_data.key_names.count(group_key_func->getColumnName()))
                 modified.push_back(group_key);
 
             continue;
         }
         if (auto * group_key_ident = group_key->as<ASTIdentifier>())
         {
-            if (key_names_to_keep.count(group_key_ident->shortName()))
+            if (group_by_keys_data.key_names.count(group_key_ident->shortName()))
                 modified.push_back(group_key);
 
             continue;
         }
         else
         {
-            if (key_names_to_keep.count(group_key->getColumnName()))
+            if (group_by_keys_data.key_names.count(group_key->getColumnName()))
                 modified.push_back(group_key);
         }
     }
 
     ///modifying the input
     grp_by->children = modified;
+}
+
+/// Eliminates min/max/any-aggregators of functions of GROUP BY keys
+void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query)
+{
+    if (!select_query->groupBy())
+        return;
+
+    auto grp_by = select_query->groupBy();
+    auto & group_keys = grp_by->children;
+
+    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_keys);
+
+    auto select = select_query->select();
+
+    SelectAggregateFunctionOfGroupByKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
+    SelectAggregateFunctionOfGroupByKeysVisitor(visitor_data).visit(select);
 }
 
 /// Remove duplicate items from ORDER BY.
@@ -458,15 +487,12 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
 }
 
 /// Optimize duplicate ORDER BY and DISTINCT
-void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, bool optimize_duplicate_order_by_and_distinct, const Context & context)
+void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, const Context & context)
 {
-    if (optimize_duplicate_order_by_and_distinct)
-    {
-        DuplicateOrderByVisitor::Data order_by_data{context, false};
-        DuplicateOrderByVisitor(order_by_data).visit(query);
-        DuplicateDistinctVisitor::Data distinct_data{};
-        DuplicateDistinctVisitor(distinct_data).visit(query);
-    }
+    DuplicateOrderByVisitor::Data order_by_data{context, false};
+    DuplicateOrderByVisitor(order_by_data).visit(query);
+    DuplicateDistinctVisitor::Data distinct_data{};
+    DuplicateDistinctVisitor(distinct_data).visit(query);
 }
 
 /// Remove duplicate items from LIMIT BY.
@@ -537,6 +563,13 @@ void optimizeArithmeticOperationsInAgr(ASTPtr & query, bool optimize_arithmetic_
         ArithmeticOperationsInAgrFuncVisitor::Data data = {};
         ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
     }
+}
+
+void optimizeAnyInput(ASTPtr & query)
+{
+    /// Removing arithmetic operations from functions
+    AnyInputVisitor::Data data = {};
+    AnyInputVisitor(data).visit(query);
 }
 
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
@@ -928,13 +961,23 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeGroupBy(select_query, source_columns_set, context);
 
         /// GROUP BY functions of other keys elimination.
-        optimizeGroupByFunctionKeys(select_query, settings.optimize_group_by_function_keys);
+        if (settings.optimize_group_by_function_keys)
+            optimizeGroupByFunctionKeys(select_query);
+
+        ///Move all operations out of any function
+        if (settings.optimize_move_functions_out_of_any)
+            optimizeAnyInput(query);
+
+        /// Eliminate min/max/any aggregators of functions of GROUP BY keys
+        if (settings.optimize_aggregators_of_group_by_keys)
+            optimizeAggregateFunctionsOfGroupByKeys(select_query);
 
         /// Remove duplicate items from ORDER BY.
         optimizeOrderBy(select_query);
 
         /// Remove duplicate ORDER BY and DISTINCT from subqueries.
-        optimizeDuplicateOrderByAndDistinct(query, settings.optimize_duplicate_order_by_and_distinct, context);
+        if (settings.optimize_duplicate_order_by_and_distinct)
+            optimizeDuplicateOrderByAndDistinct(query, context);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
