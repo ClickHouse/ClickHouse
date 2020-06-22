@@ -18,8 +18,8 @@ struct ArrayHasSelectArraySourcePair : public ArraySourcePairSelector<ArrayHasSe
             case ArraySearchType::Any:
                 arrayAllAny<ArraySearchType::Any>(first, second, result);
                 break;
-            case ArraySearchType::SubStr:
-                arrayAllAny<ArraySearchType::SubStr>(first, second, result);
+            case ArraySearchType::Substr:
+                arrayAllAny<ArraySearchType::Substr>(first, second, result);
                 break;
 
         }
