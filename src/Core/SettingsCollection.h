@@ -330,7 +330,7 @@ using SettingLogQueriesType = SettingEnum<QueryLogElementType>;
 
 enum class SettingsBinaryFormat
 {
-    OLD,     /// Part of the settings are serialized as strings, and other part as varints. This is the old behaviour.
+    OLD,     /// Part of the settings are serialized as strings, and other part as variants. This is the old behaviour.
     STRINGS, /// All settings are serialized as strings. Before each value the flag `is_ignorable` is serialized.
     DEFAULT = STRINGS,
 };

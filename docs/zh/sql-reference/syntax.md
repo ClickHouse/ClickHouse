@@ -38,7 +38,7 @@ CH支持SQL风格或C语言风格的注释：
 - 在某些流行的RDBMS中被实现的关键字，例如，`DateTime` 和 `datetime`是一样的
 
 
-你可以在系统表 [system.data_type_families](../operations/system-tables.md#system_tables-data_type_families) 中检查某个数据类型的名称是否是大小写敏感型。
+你可以在系统表 [system.data_type_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families) 中检查某个数据类型的名称是否是大小写敏感型。
 
 和标准SQL相反，所有其它的关键字都是 **大小写敏感的**，包括函数名称。
 In contrast to standard SQL, all other keywords (including functions names) are **case-sensitive**.

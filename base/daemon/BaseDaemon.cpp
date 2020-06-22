@@ -51,6 +51,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/SymbolIndex.h>
 
 #if !defined(ARCADIA_BUILD)
 #   include <Common/config_version.h>
@@ -237,7 +238,8 @@ private:
 
     void onTerminate(const std::string & message, UInt32 thread_num) const
     {
-        LOG_FATAL(log, "(version {}{}) (from thread {}) {}", VERSION_STRING, VERSION_OFFICIAL, thread_num, message);
+        LOG_FATAL(log, "(version {}{}, {}) (from thread {}) {}",
+            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message);
     }
 
     void onFault(
@@ -250,17 +252,15 @@ private:
     {
         LOG_FATAL(log, "########################################");
 
+        if (query_id.empty())
         {
-            std::stringstream message;
-            message << "(version " << VERSION_STRING << VERSION_OFFICIAL << ")";
-            message << " (from thread " << thread_num << ")";
-            if (query_id.empty())
-                message << " (no query)";
-            else
-                message << " (query_id: " << query_id << ")";
-            message << " Received signal " << strsignal(sig) << " (" << sig << ").";
-
-            LOG_FATAL(log, message.str());
+            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})",
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, strsignal(sig), sig);
+        }
+        else
+        {
+            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) Received signal {} ({})",
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, query_id, strsignal(sig), sig);
         }
 
         LOG_FATAL(log, signalToErrorMessage(sig, info, context));
@@ -293,17 +293,15 @@ static void sanitizerDeathCallback()
 
     StringRef query_id = DB::CurrentThread::getQueryId();   /// This is signal safe.
 
+    if (query_id.size == 0)
     {
-        std::stringstream message;
-        message << "(version " << VERSION_STRING << VERSION_OFFICIAL << ")";
-        message << " (from thread " << getThreadId() << ")";
-        if (query_id.size == 0)
-            message << " (no query)";
-        else
-            message << " (query_id: " << query_id << ")";
-        message << " Sanitizer trap.";
-
-        LOG_FATAL(log, message.str());
+        LOG_FATAL(log, "(version {}{}) (from thread {}) (no query) Sanitizer trap.",
+            VERSION_STRING, VERSION_OFFICIAL, getThreadId());
+    }
+    else
+    {
+        LOG_FATAL(log, "(version {}{}) (from thread {}) (query_id: {}) Sanitizer trap.",
+            VERSION_STRING, VERSION_OFFICIAL, getThreadId(), query_id);
     }
 
     /// Just in case print our own stack trace. In case when llvm-symbolizer does not work.
@@ -712,12 +710,23 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
     signal_listener = std::make_unique<SignalListener>(*this);
     signal_listener_thread.start(*signal_listener);
+
+#if defined(__ELF__) && !defined(__FreeBSD__)
+    String build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
+    if (build_id_hex.empty())
+        build_id_info = "no build id";
+    else
+        build_id_info = "build id: " + build_id_hex;
+#else
+    build_id_info = "no build id";
+#endif
 }
 
 void BaseDaemon::logRevision() const
 {
     Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
         + " with revision " + std::to_string(ClickHouseRevision::get())
+        + ", " + build_id_info
         + ", PID " + std::to_string(getpid()));
 }
 
