@@ -87,7 +87,10 @@ public:
             Float64Geometry convex_hull = Float64Polygon({{{}}});
             boost::geometry::convex_hull(
                 boost::get<Float64MultiPolygon>(container),
-                boost::get<Float64MultiPolygon>(convex_hull));
+                boost::get<Float64Polygon>(convex_hull));
+
+            boost::get<Float64Polygon>(convex_hull).outer().erase(
+                boost::get<Float64Polygon>(convex_hull).outer().begin());
 
             serializer.add(convex_hull);
         }
