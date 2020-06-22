@@ -223,8 +223,9 @@ def test_postgres_insert(started_cluster):
     conn = get_postgres_conn()
     conn.cursor().execute("truncate table clickhouse.test_table")
 
-    # Also test with Servername containing '.' and '-' symbols (see links in docker-compose template in helpers/cluster.py)
-    # This is needed to check parsing, validation and reconstruction of connection string.
+    # Also test with Servername containing '.' and '-' symbols (defined in
+    # postgres .yml file). This is needed to check parsing, validation and
+    # reconstruction of connection string.
 
     node1.query("create table pg_insert (column1 UInt8, column2 String) engine=ODBC('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')")
     node1.query("insert into pg_insert values (1, 'hello'), (2, 'world')")
