@@ -10,6 +10,13 @@ namespace DB
 
 class MergeTreeData;
 
+/** WAL stores addditions and removals of data parts in in-memory format.
+  * Format of data in WAL:
+  * - version
+  * - type of action (ADD or DROP)
+  * - part name
+  * - part's block in Native format. (for ADD action)
+  */
 class MergeTreeWriteAheadLog
 {
 public:
@@ -22,10 +29,10 @@ public:
 
     constexpr static auto WAL_FILE_NAME = "wal";
     constexpr static auto WAL_FILE_EXTENSION = ".bin";
-    constexpr static auto DEFAULT_WAL_FILE = "wal.bin";
+    constexpr static auto DEFAULT_WAL_FILE_NAME = "wal.bin";
 
     MergeTreeWriteAheadLog(const MergeTreeData & storage_, const DiskPtr & disk_,
-        const String & name = DEFAULT_WAL_FILE);
+        const String & name = DEFAULT_WAL_FILE_NAME);
 
     void addPart(const Block & block, const String & part_name);
     void dropPart(const String & part_name);
@@ -36,7 +43,7 @@ public:
 
 private:
     void init();
-    void rotate();
+    void rotate(const std::lock_guard<std::mutex> & lock);
 
     const MergeTreeData & storage;
     DiskPtr disk;

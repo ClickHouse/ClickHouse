@@ -149,8 +149,8 @@ void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuf
     /// We'll take a list of files from the list of checksums.
     MergeTreeData::DataPart::Checksums checksums = part->checksums;
     /// Add files that are not in the checksum list.
-    checksums.files["checksums.txt"];
-    checksums.files["columns.txt"];
+    checksums.files["checksums.txt"] = {};
+    checksums.files["columns.txt"] = {};
 
     MergeTreeData::DataPart::Checksums data_checksums;
 

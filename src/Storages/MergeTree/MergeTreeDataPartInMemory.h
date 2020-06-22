@@ -48,6 +48,9 @@ public:
     bool waitUntilMerged(size_t timeout_ms) const;
     void notifyMerged() const;
 
+    /// Returns hash of parts's block
+    Checksum calculateBlockChecksum() const;
+
     mutable Block block;
 
 private:

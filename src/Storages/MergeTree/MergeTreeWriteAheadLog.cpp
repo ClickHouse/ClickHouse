@@ -53,7 +53,7 @@ void MergeTreeWriteAheadLog::addPart(const Block & block, const String & part_na
 
     auto max_wal_bytes = storage.getSettings()->write_ahead_log_max_bytes;
     if (out->count() > max_wal_bytes)
-        rotate();
+        rotate(lock);
 }
 
 void MergeTreeWriteAheadLog::dropPart(const String & part_name)
@@ -65,7 +65,7 @@ void MergeTreeWriteAheadLog::dropPart(const String & part_name)
     writeStringBinary(part_name, *out);
 }
 
-void MergeTreeWriteAheadLog::rotate()
+void MergeTreeWriteAheadLog::rotate(const std::lock_guard<std::mutex> &)
 {
     String new_name = String(WAL_FILE_NAME) + "_"
         + toString(min_block_number) + "_"
@@ -138,8 +138,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore()
                 /// But if it contains any part rotate and save them.
                 if (max_block_number == -1)
                     disk->remove(path);
-                else if (name == DEFAULT_WAL_FILE)
-                    rotate();
+                else if (name == DEFAULT_WAL_FILE_NAME)
+                    rotate(lock);
 
                 break;
             }
