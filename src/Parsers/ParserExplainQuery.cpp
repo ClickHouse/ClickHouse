@@ -41,7 +41,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     auto explain_query = std::make_shared<ASTExplainQuery>(kind, old_syntax);
 
     ParserSelectWithUnionQuery select_p;
-    if (!select_p.parse(pos, explain_query->getExplainedQuery(), expected))
+    if (!select_p.parse(pos, explain_query->children.at(0), expected))
         return false;
 
     node = std::move(explain_query);

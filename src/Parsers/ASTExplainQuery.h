@@ -35,7 +35,7 @@ public:
         return res;
     }
 
-    ASTPtr & getExplainedQuery() { return children.at(0); }
+    const ASTPtr & getExplainedQuery() const { return children.at(0); }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPipeline.h>
+#include <IO/WriteBuffer.h>
 #include <stack>
 
 namespace DB
@@ -11,6 +12,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
 
 void QueryPlan::checkInitialized() const
@@ -171,6 +173,57 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
 void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
 {
     interpreter_context.emplace_back(std::move(context));
+}
+
+void QueryPlan::explain(WriteBuffer & buffer)
+{
+    checkInitialized();
+
+    size_t ident = 2;
+
+    struct Frame
+    {
+        Node * node;
+        bool is_description_printed = false;
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> stack;
+    stack.push(Frame{.node = root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+
+        if (!frame.is_description_printed)
+        {
+            std::string prefix((stack.size() - 1) * ident, ' ');
+            buffer.write(prefix.data(), prefix.size());
+
+            auto name = frame.node->step->getName();
+            buffer.write(name.data(), name.size());
+
+            auto description = frame.node->step->getStepDescription();
+            if (!description.empty())
+            {
+                buffer.write(" (", 2);
+                buffer.write(description.data(), description.size());
+                buffer.write(')');
+            }
+
+            buffer.write('\n');
+
+            frame.is_description_printed = true;
+        }
+
+        if (frame.next_child < frame.node->children.size())
+        {
+            stack.push(Frame{frame.node->children[frame.next_child]});
+            ++frame.next_child;
+        }
+        else
+            stack.pop();
+    }
 }
 
 }

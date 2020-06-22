@@ -12,13 +12,19 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <IO/WriteBufferFromOStream.h>
 
 #include <Storages/StorageView.h>
 #include <sstream>
-
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_QUERY;
+}
 
 namespace
 {
@@ -79,10 +85,31 @@ Block InterpreterExplainQuery::getSampleBlock()
     return block;
 }
 
+static void fillColumn(IColumn & column, const std::string & str)
+{
+    size_t start = 0;
+    size_t end = 0;
+    size_t size = str.size();
+
+    while (end < size)
+    {
+        if (str[end] == '\n')
+        {
+            column.insertData(str.data() + start, end - start);
+            start = end + 1;
+        }
+
+        ++end;
+    }
+
+    if (start < end)
+        column.insertData(str.data() + start, end - start);
+}
 
 BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 {
     const auto & ast = query->as<ASTExplainQuery &>();
+
     Block sample_block = getSampleBlock();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
@@ -99,8 +126,21 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
         ast.children.at(0)->format(IAST::FormatSettings(ss, false));
     }
+    else if (ast.getKind() == ASTExplainQuery::QueryPlan)
+    {
+        if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+            throw Exception("Only SELECT is supported for EXPLAIN query", ErrorCodes::INCORRECT_QUERY);
 
-    res_columns[0]->insert(ss.str());
+        QueryPlan plan;
+
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
+        interpreter.buildQueryPlan(plan);
+
+        WriteBufferFromOStream buffer(ss);
+        plan.explain(buffer);
+    }
+
+    fillColumn(*res_columns[0], ss.str());
 
     return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
 }
