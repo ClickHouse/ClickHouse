@@ -8,7 +8,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/TableStructureLockHolder.h>
+#include <Storages/TableLockHolder.h>
 #include <Storages/CheckResults.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ColumnDependency.h>
@@ -138,10 +138,19 @@ public:
 
 public:
 
+    /// Get mutable version (snapshot) of storage metadata. Metadata object is
+    /// multiversion, so it can be concurrently chaged, but returned copy can be
+    /// used without any locks.
     StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata.get(); }
 
+    /// Get immutable version (snapshot) of storage metadata. Metadata object is
+    /// multiversion, so it can be concurrently chaged, but returned copy can be
+    /// used without any locks.
     StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
 
+    /// Update storage metadata. Used in ALTER or initialization of Storage.
+    /// Metadata object is multiversion, so this method can be called without
+    /// any locks.
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
@@ -171,16 +180,31 @@ private:
     StorageID storage_id;
     mutable std::mutex id_mutex;
 
+    /// Multiversion storage metadata. Allows to read/write storage metadata
+    /// without locks.
     MultiVersionStorageMetadataPtr metadata;
 private:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
 
 public:
+    /// Lock table for share. This lock must be acuqired if you want to be sure,
+    /// that table will be not dropped while you holding this lock. It's used in
+    /// variety of cases starting from SELECT queries to background merges in
+    /// MergeTree.
     TableLockHolder lockForShare(const String & query_id, const SettingSeconds & acquire_timeout);
 
+    /// Lock table for alter. This lock must be acuqired in ALTER queries to be
+    /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
     TableLockHolder lockForAlter(const String & query_id, const SettingSeconds & acquire_timeout);
 
+    /// Lock table exclusively. This lock must be acuired if you want to be
+    /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
+    /// with table. For example it allows to wait all threads before DROP or
+    /// truncate query.
+    ///
+    /// NOTE: You have to be 100% sure that you need this lock. It's extremely
+    /// heavyweight and makes table irresponsive.
     TableExclusiveLockHolder lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout);
 
     /** Returns stage to which query is going to be processed in read() function.
@@ -247,7 +271,10 @@ public:
       * num_streams - a recommendation, how many streams to return,
       *  if the storage can return a different number of streams.
       *
-      * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
+      * metadata_snapshot is consistent snapshot of table metadata, it should be
+      * passed in all parts of the returned pipeline. Storage metadata can be
+      * changed during lifetime of the returned pipeline, but the snapshot is
+      * guaranteed to be immutable.
       */
     virtual Pipes read(
         const Names & /*column_names*/,
@@ -265,7 +292,10 @@ public:
       * Receives a description of the query, which can contain information about the data write method.
       * Returns an object by which you can write data sequentially.
       *
-      * It is guaranteed that the table structure will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
+      * metadata_snapshot is consistent snapshot of table metadata, it should be
+      * passed in all parts of the returned streams. Storage metadata can be
+      * changed during lifetime of the returned streams, but the snapshot is
+      * guaranteed to be immutable.
       */
     virtual BlockOutputStreamPtr write(
         const ASTPtr & /*query*/,
@@ -284,7 +314,7 @@ public:
     virtual void drop() {}
 
     /** Clear the table data and leave it empty.
-      * Must be called under lockForAlter.
+      * Must be called under exclusive lock (lockExclusively).
       */
     virtual void truncate(
         const ASTPtr & /*query*/,
@@ -312,9 +342,8 @@ public:
      */
     virtual void renameInMemory(const StorageID & new_table_id);
 
-    /** ALTER tables in the form of column changes that do not affect the change to Storage or its parameters.
-      * This method must fully execute the ALTER query, taking care of the locks itself.
-      * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata->
+    /** ALTER tables in the form of column changes that do not affect the change
+      * to Storage or its parameters. Executes under alter lock (lockForAlter).
       */
     virtual void alter(const AlterCommands & params, const Context & context, TableLockHolder & alter_lock_holder);
 
@@ -434,8 +463,17 @@ public:
     }
 
 private:
+    /// Lock required for alter queries (lockForAlter). Always taken for write
+    /// (actually can be replaced with std::mutex, but for consistency we use
+    /// RWLock). Allows to execute only one simultaneous alter query. Also it
+    /// should be taken by DROP-like queries, to be sure, that all alters are
+    /// finished.
     mutable RWLock alter_lock = RWLockImpl::create();
 
+    /// Lock required for drop queries. Every thread that want to ensure, that
+    /// table is not dropped have to tabke this lock for read (lockForShare).
+    /// DROP-like queries take this lock for write (lockExclusively), to be sure
+    /// that all table threads finished.
     mutable RWLock drop_lock = RWLockImpl::create();
 };
 

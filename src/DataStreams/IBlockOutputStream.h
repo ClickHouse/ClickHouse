@@ -2,7 +2,7 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IBlockStream_fwd.h>
-#include <Storages/TableStructureLockHolder.h>
+#include <Storages/TableLockHolder.h>
 
 #include <boost/noncopyable.hpp>
 

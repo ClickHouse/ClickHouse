@@ -10,7 +10,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/TableStructureLockHolder.h>
+#include <Storages/TableLockHolder.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Interpreters/StorageID.h>
 

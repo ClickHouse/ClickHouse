@@ -5,6 +5,10 @@
 namespace DB
 {
 
+using TableLockHolder = RWLockImpl::LockHolder;
+
+/// Table exclusive lock, holds both alter and drop locks. Useful for DROP-like
+/// queries.
 struct TableExclusiveLockHolder
 {
     void release() { *this = TableExclusiveLockHolder(); }
@@ -13,9 +17,8 @@ private:
     friend class IStorage;
 
     /// Order is important.
-    RWLockImpl::LockHolder alter_lock;
-    RWLockImpl::LockHolder drop_lock;
+    TableLockHolder alter_lock;
+    TableLockHolder drop_lock;
 };
 
-using TableLockHolder = RWLockImpl::LockHolder;
 }

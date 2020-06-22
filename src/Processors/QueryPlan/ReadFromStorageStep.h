@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Core/QueryProcessingStage.h>
-#include <Storages/TableStructureLockHolder.h>
+#include <Storages/TableLockHolder.h>
 #include <Interpreters/SelectQueryOptions.h>
 
 namespace DB

@@ -6,7 +6,7 @@
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/ExecutionSpeedLimits.h>
 #include <IO/Progress.h>
-#include <Storages/TableStructureLockHolder.h>
+#include <Storages/TableLockHolder.h>
 #include <Common/TypePromotion.h>
 
 #include <atomic>
