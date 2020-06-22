@@ -854,7 +854,8 @@ void Context::calculateUserSettings()
         setProfile(default_profile_name);
 
     /// 3) Apply settings from current user
-    setProfile(profile);
+    if (!profile.empty())
+        setProfile(profile);
 
     /// 4) Recalculate access rights if it's necessary.
     if ((settings.readonly != old_readonly) || (settings.allow_ddl != old_allow_ddl) || (settings.allow_introspection_functions != old_allow_introspection_functions))
