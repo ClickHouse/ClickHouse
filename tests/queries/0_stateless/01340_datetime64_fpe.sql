@@ -49,7 +49,7 @@ SELECT toDateTime64('2011-11-11 11:11:11.-11111111111111111111', 0); -- { server
 SELECT toDateTime64('2011-11-11 11:11:11.-111111111111111111111', 0); -- { serverError 6 }
 
 SELECT toDateTime64('2011-11-11 11:11:11.+1', 0); -- { serverError 6 }
-SELECT toDateTime64('2011-11-11 11:11:11.++11', 10); -- { serverError 407 }
+SELECT toDateTime64('2011-11-11 11:11:11.++11', 10); -- { serverError 69 }
 SELECT toDateTime64('2011-11-11 11:11:11.+111', 3); -- { serverError 6 }
 SELECT toDateTime64('2011-11-11 11:11:11.+++1111', 5); -- { serverError 6 }
 SELECT toDateTime64('2011-11-11 11:11:11.+11111', 7); -- { serverError 6 }
@@ -59,13 +59,13 @@ SELECT toDateTime64('2011-11-11 11:11:11.++++++11111111', 8); -- { serverError 6
 SELECT toDateTime64('2011-11-11 11:11:11.+111111111', 9); -- { serverError 6 }
 SELECT toDateTime64('2011-11-11 11:11:11.+++++++1111111111', 6); -- { serverError 6 }
 SELECT toDateTime64('2011-11-11 11:11:11.+11111111111', 4); -- { serverError 6 }
-SELECT toDateTime64('2011-11-11 11:11:11.++++++++111111111111', 11);  -- { serverError 407 }
-SELECT toDateTime64('2011-11-11 11:11:11.+1111111111111', 15); -- { serverError 407 }
-SELECT toDateTime64('2011-11-11 11:11:11.+++++++++11111111111111', 13); -- { serverError 407 }
-SELECT toDateTime64('2011-11-11 11:11:11.+111111111111111', 12); -- { serverError 407 }
-SELECT toDateTime64('2011-11-11 11:11:11.++++++++++1111111111111111', 16); -- { serverError 407 }
-SELECT toDateTime64('2011-11-11 11:11:11.+11111111111111111', 14); -- { serverError 407 }
-SELECT toDateTime64('2011-11-11 11:11:11.+++++++++++111111111111111111', 15); -- { serverError 407 }
-SELECT toDateTime64('2011-11-11 11:11:11.+1111111111111111111', 17); -- { serverError 407 }
+SELECT toDateTime64('2011-11-11 11:11:11.++++++++111111111111', 11);  -- { serverError 69 }
+SELECT toDateTime64('2011-11-11 11:11:11.+1111111111111', 15); -- { serverError 69 }
+SELECT toDateTime64('2011-11-11 11:11:11.+++++++++11111111111111', 13); -- { serverError 69 }
+SELECT toDateTime64('2011-11-11 11:11:11.+111111111111111', 12); -- { serverError 69 }
+SELECT toDateTime64('2011-11-11 11:11:11.++++++++++1111111111111111', 16); -- { serverError 69 }
+SELECT toDateTime64('2011-11-11 11:11:11.+11111111111111111', 14); -- { serverError 69 }
+SELECT toDateTime64('2011-11-11 11:11:11.+++++++++++111111111111111111', 15); -- { serverError 69 }
+SELECT toDateTime64('2011-11-11 11:11:11.+1111111111111111111', 17); -- { serverError 69 }
 SELECT toDateTime64('2011-11-11 11:11:11.++++++++++++11111111111111111111', 19); -- { serverError 69 }
-SELECT toDateTime64('2011-11-11 11:11:11.+111111111111111111111', 18); -- { serverError 407 }
+SELECT toDateTime64('2011-11-11 11:11:11.+111111111111111111111', 18); -- { serverError 69 }
