@@ -70,7 +70,7 @@ extern "C"
 #endif
 int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data)
 {
-    auto current_phdr_cache = phdr_cache.load();
+    auto * current_phdr_cache = phdr_cache.load();
     if (!current_phdr_cache)
     {
         // Cache is not yet populated, pass through to the original function.

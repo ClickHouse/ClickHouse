@@ -71,7 +71,7 @@ private:
     {
         ParserSelectQuery parser;
         std::string message;
-        auto text = query.data();
+        const auto * text = query.data();
         if (ASTPtr ast = tryParseQuery(parser, text, text + query.size(), message, false, "", false, 0))
             return ast;
         throw Exception(message, ErrorCodes::SYNTAX_ERROR);
