@@ -289,7 +289,7 @@ void IStorage::check(const Block & block, bool need_all) const
 
 void IStorage::setColumns(ColumnsDescription columns_)
 {
-    if (columns_.getOrdinary().empty())
+    if (columns_.getAllPhysical().empty())
         throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
     metadata.columns = std::move(columns_);
 }
