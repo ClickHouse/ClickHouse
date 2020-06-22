@@ -14,6 +14,8 @@
 namespace DB
 {
 
+/// Common metadata for all storages. Contains all possible parts of CREATE
+/// query from all storages, but only some subset used.
 struct StorageInMemoryMetadata
 {
     /// Columns of table with their names, types,
@@ -46,12 +48,17 @@ struct StorageInMemoryMetadata
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 
+    /// NOTE: Thread unsafe part. You should modify same StorageInMemoryMetadata
+    /// structure from different threads. It should be used as MultiVersion
+    /// object. See example in IStorage.
 
-    ////////////////////////////////////////////////////////////////////////
-    void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
+    /// Sets only real columns, possibly overwrites virtual ones.
+    void setColumns(ColumnsDescription columns_);
 
+    /// Sets secondary indices
     void setSecondaryIndices(IndicesDescription secondary_indices_);
 
+    /// Sets constraints
     void setConstraints(ConstraintsDescription constraints_);
 
     /// Set partition key for storage (methods bellow, are just wrappers for this
@@ -67,19 +74,28 @@ struct StorageInMemoryMetadata
     /// struct).
     void setSamplingKey(const KeyDescription & sampling_key_);
 
+    /// Set common table TTLs
     void setTableTTLs(const TTLTableDescription & table_ttl_);
 
+    /// TTLs for seperate columns
     void setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_);
 
+    /// Set settings changes in metadata (some settings exlicetely specified in
+    /// CREATE query)
     void setSettingsChanges(const ASTPtr & settings_changes_);
 
+    /// Set SELECT query for (Materialized)View
     void setSelectQuery(const SelectQueryDescription & select_);
 
-    const ColumnsDescription & getColumns() const; /// returns combined set of columns
+    /// Returns combined set of columns
+    const ColumnsDescription & getColumns() const;
+    /// Returns secondary indices
+
     const IndicesDescription & getSecondaryIndices() const;
     /// Has at least one non primary index
     bool hasSecondaryIndices() const;
 
+    /// Return table constraints
     const ConstraintsDescription & getConstraints() const;
 
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
@@ -106,11 +122,24 @@ struct StorageInMemoryMetadata
     /// indices, TTL expressions) if we update @updated_columns set of columns.
     ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
 
-    Block getSampleBlock() const; /// ordinary + materialized.
-    Block getSampleBlockNonMaterialized() const; /// ordinary.
-    Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const; /// ordinary + materialized + virtuals.
+    /// Block with ordinary + materialized columns.
+    Block getSampleBlock() const;
+
+    /// Block with ordinary columns.
+    Block getSampleBlockNonMaterialized() const;
+
+    /// Block with ordinary + materialized + virtuals. Virtuals have to be
+    /// explicitely specified, because they are part of Storage type, not
+    /// Storage metadata.
+    Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const;
+
+
+    /// Block with ordinary + materialized + aliases + virtuals. Virtuals have
+    /// to be explicitely specified, because they are part of Storage type, not
+    /// Storage metadata. StorageID required only for more clear exception
+    /// message.
     Block getSampleBlockForColumns(
-        const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const; /// ordinary + materialized + aliases + virtuals.
+        const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
 
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
