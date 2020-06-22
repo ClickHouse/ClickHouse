@@ -8,14 +8,16 @@ namespace DB
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 
-class AddingDelayedStreamStep : public ITransformingStep
+/// Adds another source to pipeline. Data from this source will be read after data from all other sources.
+/// NOTE: tis step is needed because of non-joined data from JOIN. Remove this step after adding JoinStep.
+class AddingDelayedStreamSource : public ITransformingStep
 {
 public:
-    AddingDelayedStreamStep(
+    AddingDelayedStreamSource(
             const DataStream & input_stream_,
             ProcessorPtr source_);
 
-    String getName() const override { return "AddingDelayedStream"; }
+    String getName() const override { return "AddingDelayedSource"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
