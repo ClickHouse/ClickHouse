@@ -487,7 +487,9 @@ struct NullSink
     void push_back(char) {}
 };
 
+template <bool with_separator>
 void parseUUID(const UInt8 * src36, UInt8 * dst16);
+template <bool with_separator>
 void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -577,13 +579,18 @@ inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
     char s[36];
     size_t size = buf.read(s, 36);
 
-    if (size != 36)
+    if (size >= 32)
+    {
+        if (s[8] == '-')
+            parseUUID<true>(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
+        else
+            parseUUID<false>(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
+    }
+    else
     {
         s[size] = 0;
         throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
     }
-
-    parseUUID(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
 }
 
 
