@@ -7,6 +7,7 @@ import csv
 import itertools
 import json
 import os
+import pprint
 import sys
 import traceback
 
@@ -102,7 +103,7 @@ def tableRow(cell_values, cell_attributes = []):
         for v, a in itertools.zip_longest(
             cell_values, cell_attributes,
             fillvalue = '')
-        if a is not None]))
+        if a is not None and v is not None]))
 
 def tableHeader(r):
     return tr(''.join([th(f) for f in r]))
@@ -326,39 +327,53 @@ if args.report == 'main':
         json_reports = [json.load(open(f'benchmark/website-{x}.json')) for x in ['left', 'right']]
         stats = [next(iter(x.values()))["statistics"] for x in json_reports]
         qps = [x["QPS"] for x in stats]
+        queries = [x["num_queries"] for x in stats]
         errors = [x["num_errors"] for x in stats]
         relative_diff = (qps[1] - qps[0]) / max(0.01, qps[0]);
         times_diff = max(qps) / max(0.01, min(qps))
-        print(tableStart('Concurrent benchmarks'))
-        print(tableHeader(['Benchmark', 'Old, queries/s', 'New, queries/s', 'Relative difference', 'Times difference']))
+
         all_rows = []
-        row = ['website', f'{qps[0]:.3f}', f'{qps[1]:.3f}', f'{relative_diff:.3f}', f'x{times_diff:.3f}']
-        attrs = ['' for r in row]
+        header = ['Benchmark', 'Metric', 'Old', 'New', 'Relative difference', 'Times difference'];
+
+        attrs = ['' for x in header]
+        row = ['website', 'queries', f'{queries[0]:d}', f'{queries[1]:d}', '--', '--']
+        attrs[0] = 'rowspan=2'
+        all_rows.append([row, attrs])
+
+        attrs = ['' for x in header]
+        row = [None, 'queries/s', f'{qps[0]:.3f}', f'{qps[1]:.3f}', f'{relative_diff:.3f}', f'x{times_diff:.3f}']
         if abs(relative_diff) > 0.1:
             # More queries per second is better.
             if relative_diff > 0.:
-                attrs[3] = f'style="background: {color_good}"'
+                attrs[4] = f'style="background: {color_good}"'
             else:
-                attrs[3] = f'style="background: {color_bad}"'
+                attrs[4] = f'style="background: {color_bad}"'
         else:
-            attrs[3] = ''
-        all_rows.append((rows, attrs));
-        print(tableRow(row, attrs))
+            attrs[4] = ''
+        all_rows.append([row, attrs]);
 
         if max(errors):
-            attrs = ['' for r in row]
-            row[1] = f'{errors[0]:.3f}'
-            row[2] = f'{errors[1]:.3f}'
+            all_rows[0][1][0] = "rowspan=3"
+            row = [''] * (len(header))
+            attrs = ['' for x in header]
+
+            attrs[0] = None
+            row[1] = 'errors'
+            row[2] = f'{errors[0]:d}'
+            row[3] = f'{errors[1]:d}'
+            row[4] = '--'
+            row[5] = '--'
             if errors[0]:
-                attrs[1] += f' style="background: {color_bad}" '
-            if errors[1]:
                 attrs[2] += f' style="background: {color_bad}" '
+            if errors[1]:
+                attrs[3] += f' style="background: {color_bad}" '
 
-            all_rows[0][1] += " colspan=2 "
+            all_rows.append([row, attrs])
 
+        print(tableStart('Concurrent benchmarks'))
+        print(tableHeader(header))
         for row, attrs in all_rows:
             print(tableRow(row, attrs))
-
         print(tableEnd())
 
     try:
