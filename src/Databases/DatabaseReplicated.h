@@ -49,7 +49,7 @@ private:
     
     void executeFromZK(String & path);
 
-    void saveState();
+    void writeLastExecutedToDiskAndZK();
 
     void loadMetadataFromSnapshot();
     void createSnapshot();
