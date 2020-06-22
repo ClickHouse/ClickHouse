@@ -100,5 +100,11 @@ toc_title: Entegrasyonlar
 -   İksir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
         -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
+-   Ruby
+    -   [Ruby on Rails](https://rubyonrails.org/)
+        -   [activecube](https://github.com/bitquery/activecube)
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
+    -   [GraphQL](https://github.com/graphql)
+        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
 [Orijinal makale](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

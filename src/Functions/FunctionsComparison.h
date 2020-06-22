@@ -56,6 +56,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -262,7 +263,7 @@ struct StringComparisonImpl
         {
             size_t size = a_data.size();
             for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-                c[j] = Op::apply(0, memcmpSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i, a_n, b_data.data(), b_size));
+                c[j] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i, a_n, b_data.data(), b_size), 0);
         }
     }
 
@@ -879,6 +880,9 @@ private:
         if (0 == tuple_size)
             throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 
+        if (tuple_size != typeid_cast<const DataTypeTuple &>(*c1.type).getElements().size())
+            throw Exception("Cannot compare tuples of different sizes.", ErrorCodes::BAD_ARGUMENTS);
+
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
 
@@ -1178,7 +1182,8 @@ public:
                     + " of first argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (checkAndGetDataType<DataTypeTuple>(left_type.get()))
+        else if (checkAndGetDataType<DataTypeTuple>(left_type.get())
+            && checkAndGetDataType<DataTypeTuple>(right_type.get()))
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
