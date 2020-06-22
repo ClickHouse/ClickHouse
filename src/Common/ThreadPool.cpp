@@ -1,6 +1,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
 
+#include <cassert>
 #include <type_traits>
 
 #include <Poco/Util/Application.h>
@@ -11,6 +12,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int CANNOT_SCHEDULE_TASK;
+        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -263,17 +265,25 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 template class ThreadPoolImpl<std::thread>;
 template class ThreadPoolImpl<ThreadFromGlobalPool>;
 
+std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
+
+void GlobalThreadPool::initialize(size_t max_threads)
+{
+    // There should be an assert, but we can't add it because of the unit tests...
+    // assert(!the_instance);
+
+    the_instance.reset(new GlobalThreadPool(max_threads,
+        1000 /*max_free_threads*/, 10000 /*max_queue_size*/,
+        false /*shutdown_on_exception*/));
+}
 
 GlobalThreadPool & GlobalThreadPool::instance()
 {
-    const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
+    if (!the_instance)
+    {
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
+            "The global thread pool is not initalized");
+    }
 
-    UInt64 max_threads = config.getUInt64("max_thread_pool_size", 10000);
-    size_t max_free_threads = 1000;
-    size_t max_queue_size = 10000;
-    const bool shutdown_on_exception = false;
-
-    static GlobalThreadPool ret(max_threads, max_free_threads, max_queue_size, shutdown_on_exception);
-
-    return ret;
+    return *the_instance;
 }

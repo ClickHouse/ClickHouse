@@ -128,10 +128,16 @@ using FreeThreadPool = ThreadPoolImpl<std::thread>;
   */
 class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
 {
+    static std::unique_ptr<GlobalThreadPool> the_instance;
+
+    GlobalThreadPool(size_t max_threads_, size_t max_free_threads_,
+            size_t queue_size_, const bool shutdown_on_exception_)
+        : FreeThreadPool(max_threads_, max_free_threads_, queue_size_,
+            shutdown_on_exception_)
+    {}
+
 public:
-    GlobalThreadPool(size_t max_threads_, size_t max_free_threads_, size_t queue_size_,
-                     const bool shutdown_on_exception_) :
-            FreeThreadPool(max_threads_, max_free_threads_, queue_size_, shutdown_on_exception_) {}
+    static void initialize(size_t max_threads = 10000);
     static GlobalThreadPool & instance();
 };
 

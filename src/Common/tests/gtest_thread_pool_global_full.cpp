@@ -13,6 +13,8 @@
 
 TEST(ThreadPool, GlobalFull1)
 {
+    GlobalThreadPool::initialize();
+
     GlobalThreadPool & global_pool = GlobalThreadPool::instance();
 
     static constexpr size_t capacity = 5;
@@ -49,6 +51,8 @@ TEST(ThreadPool, GlobalFull1)
 
 TEST(ThreadPool, GlobalFull2)
 {
+    GlobalThreadPool::initialize();
+
     GlobalThreadPool & global_pool = GlobalThreadPool::instance();
 
     static constexpr size_t capacity = 5;
