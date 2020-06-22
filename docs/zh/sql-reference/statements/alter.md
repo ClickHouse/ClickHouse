@@ -113,7 +113,7 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
 
 -   TTL
 
-有关修改列TTL的示例，请参见 [Column TTL](../engines/table_engines/mergetree_family/mergetree.md#mergetree-column-ttl).
+有关修改列TTL的示例，请参见 [Column TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
 
 如果语句中包含 `IF EXISTS` ，遇到不存在的列，sql执行不会报错。
 
