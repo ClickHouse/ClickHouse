@@ -439,6 +439,9 @@ private:
         registerFunctions();
         registerAggregateFunctions();
 
+        // Needed for parallel parsing.
+        GlobalThreadPool::initialize();
+
         /// Batch mode is enabled if one of the following is true:
         /// - -e (--query) command line option is present.
         ///   The value of the option is used as the text of query (or of multiple queries).
