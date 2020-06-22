@@ -685,35 +685,34 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         return ReturnType(false);
     }
 
-    DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> c{static_cast<DateTime64::NativeType>(whole), 0};
+    DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> components{static_cast<DateTime64::NativeType>(whole), 0};
 
     if (!buf.eof() && *buf.position() == '.')
     {
-        buf.ignore(1); // skip separator
-        const auto pos_before_fractional = buf.count();
-        if (!tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(c.fractional, buf))
-            return ReturnType(false);
+        ++buf.position();
 
-        // Adjust fractional part to the scale, since decimalFromComponents knows nothing
-        // about convention of ommiting trailing zero on fractional part
-        // and assumes that fractional part value is less than 10^scale.
-
-        // If scale is 3, but we read '12', promote fractional part to '120'.
-        // And vice versa: if we read '1234', denote it to '123'.
-        const auto fractional_length = static_cast<Int32>(buf.count() - pos_before_fractional);
-
-        const auto adjust_scale = static_cast<Int32>(scale) - fractional_length;
-        if (adjust_scale > 0)
+        /// Read digits, up to 'scale' positions.
+        for (size_t i = 0; i < scale; ++i)
         {
-            c.fractional *= common::exp10_i64(adjust_scale);
+            if (!buf.eof() && isNumericASCII(*buf.position()))
+            {
+                components.fractional *= 10;
+                components.fractional += *buf.position() - '0';
+                ++buf.position();
+            }
+            else
+            {
+                /// Adjust to scale.
+                components.fractional *= 10;
+            }
         }
-        else if (adjust_scale < 0)
-        {
-            c.fractional /= common::exp10_i64(-adjust_scale);
-        }
+
+        /// Ignore digits that are out of precision.
+        while (!buf.eof() && isNumericASCII(*buf.position()))
+            ++buf.position();
     }
 
-    datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(c, scale);
+    datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
 
     return ReturnType(true);
 }
