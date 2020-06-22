@@ -9,13 +9,13 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeCustomGeo.h>
 
 #include <memory>
-#include <string>
+#include <utility>
 
 namespace DB
 {
@@ -71,22 +71,30 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         auto get_parser = [&block, &arguments] (size_t i) {
-            const ColumnWithTypeAndName polygon = block.getByPosition(arguments[i]);
-            return makeGeometryFromColumnParser(polygon);
+            const auto * const_col =
+                checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get());
+
+            bool is_const = static_cast<bool>(const_col);
+
+            return std::pair<bool, GeometryFromColumnParser>{is_const, is_const ?
+                makeGeometryFromColumnParser(ColumnWithTypeAndName(const_col->getDataColumnPtr(), block.getByPosition(arguments[i]).type, block.getByPosition(arguments[i]).name)) :
+                makeGeometryFromColumnParser(block.getByPosition(arguments[i]))};
         };
 
-        auto first_parser = get_parser(0);
+        auto [is_first_polygon_const, first_parser] = get_parser(0);
         auto first_container = createContainer(first_parser);
 
-        auto second_parser = get_parser(1);
+        auto [is_second_polygon_const, second_parser] = get_parser(1);
         auto second_container = createContainer(second_parser);
 
         Float64MultiPolygonSerializer serializer;
 
         for (size_t i = 0; i < input_rows_count; i++)
         {
-            get(first_parser, first_container, i);
-            get(second_parser, second_container, i);
+            if (!is_first_polygon_const || i == 0)
+                get(first_parser, first_container, i);
+            if (!is_second_polygon_const || i == 0)
+                get(second_parser, second_container, i);
 
             Float64Geometry intersection = Float64MultiPolygon({{{{}}}});
             boost::geometry::intersection(

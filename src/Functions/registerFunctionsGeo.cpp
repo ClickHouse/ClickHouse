@@ -12,6 +12,7 @@ void registerFunctionPointInEllipses(FunctionFactory & factory);
 void registerFunctionPointInPolygon(FunctionFactory & factory);
 void registerFunctionPolygonsIntersection(FunctionFactory & factory);
 void registerFunctionPolygonsUnion(FunctionFactory & factory);
+void registerFunctionPolygonArea(FunctionFactory & factory);
 void registerFunctionGeohashEncode(FunctionFactory & factory);
 void registerFunctionGeohashDecode(FunctionFactory & factory);
 void registerFunctionGeohashesInBox(FunctionFactory & factory);
@@ -43,6 +44,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionPointInPolygon(factory);
     registerFunctionPolygonsIntersection(factory);
     registerFunctionPolygonsUnion(factory);
+    registerFunctionPolygonArea(factory);
     registerFunctionGeohashEncode(factory);
     registerFunctionGeohashDecode(factory);
     registerFunctionGeohashesInBox(factory);
