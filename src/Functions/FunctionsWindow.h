@@ -460,6 +460,13 @@ namespace
 
         [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
+            if (arguments.size() < 2)
+            {
+                throw Exception(
+                    "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
+                        + ", should not smaller than 2.",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            }
             if (!WhichDataType(arguments[0].type).isDateTime())
                 throw Exception(
                     "Illegal type of first argument of function " + function_name + " should be DateTime", ErrorCodes::ILLEGAL_COLUMN);
