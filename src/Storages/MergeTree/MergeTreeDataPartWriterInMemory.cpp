@@ -69,14 +69,6 @@ void MergeTreeDataPartWriterInMemory::calculateAndSerializePrimaryIndex(const Bl
     }
 }
 
-static MergeTreeDataPartChecksum createUncompressedChecksum(size_t size, SipHash & hash)
-{
-    MergeTreeDataPartChecksum checksum;
-    checksum.uncompressed_size = size;
-    hash.get128(checksum.uncompressed_hash.first, checksum.uncompressed_hash.second);
-    return checksum;
-}
-
 void MergeTreeDataPartWriterInMemory::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
 {
     /// If part is empty we still need to initialize block by empty columns.
@@ -84,10 +76,7 @@ void MergeTreeDataPartWriterInMemory::finishDataSerialization(IMergeTreeDataPart
         for (const auto & column : columns_list)
             part_in_memory->block.insert(ColumnWithTypeAndName{column.type, column.name});
 
-    SipHash hash;
-    for (const auto & column : part_in_memory->block)
-        column.column->updateHashFast(hash);
-    checksums.files["data.bin"] = createUncompressedChecksum(part_in_memory->block.bytes(), hash);
+    checksums.files["data.bin"] = part_in_memory->calculateBlockChecksum();
 }
 
 }

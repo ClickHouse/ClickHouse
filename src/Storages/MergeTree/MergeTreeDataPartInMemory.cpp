@@ -126,10 +126,21 @@ void MergeTreeDataPartInMemory::calculateEachColumnSizesOnDisk(ColumnSizeByName 
         each_columns_size[column.name].data_uncompressed += block.getByName(column.name).column->byteSize();
 }
 
+IMergeTreeDataPart::Checksum MergeTreeDataPartInMemory::calculateBlockChecksum() const
+{
+    SipHash hash;
+    IMergeTreeDataPart::Checksum checksum;
+    for (const auto & column : block)
+        column.column->updateHashFast(hash);
+
+    checksum.uncompressed_size = block.bytes();
+    hash.get128(checksum.uncompressed_hash.first, checksum.uncompressed_hash.second);
+    return checksum;
+}
+
 DataPartInMemoryPtr asInMemoryPart(const MergeTreeDataPartPtr & part)
 {
     return std::dynamic_pointer_cast<const MergeTreeDataPartInMemory>(part);
 }
-
 
 }
