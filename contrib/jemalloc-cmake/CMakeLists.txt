@@ -1,11 +1,15 @@
 option (ENABLE_JEMALLOC "Enable jemalloc allocator" ${ENABLE_LIBRARIES})
 
-if (SANITIZE OR NOT OS_LINUX OR NOT (ARCH_AMD64 OR ARCH_ARM))
+if (SANITIZE OR NOT (ARCH_AMD64 OR ARCH_ARM))
     set (ENABLE_JEMALLOC OFF)
-    message (STATUS "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used on Linux with x86_64 or aarch64.")
+    message (STATUS "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64 or aarch64.")
 endif ()
 
 if (ENABLE_JEMALLOC)
+    if (NOT OS_LINUX)
+        message (WARNING "jemalloc support on non-linux is EXPERIMENTAL")
+    endif()
+
     option (USE_INTERNAL_JEMALLOC "Use internal jemalloc library" ${NOT_UNBUNDLED})
 
     if (USE_INTERNAL_JEMALLOC)
@@ -71,12 +75,26 @@ if (ENABLE_JEMALLOC)
         target_include_directories(jemalloc PRIVATE ${LIBRARY_DIR}/include)
         target_include_directories(jemalloc SYSTEM PUBLIC include)
 
-        set(JEMALLOC_INCLUDE)
-        if (ARCH_AMD64)
-            set(JEMALLOC_INCLUDE_PREFIX include_linux_x86_64)
-        elseif (ARCH_ARM)
-            set(JEMALLOC_INCLUDE_PREFIX include_linux_aarch64)
+        set (JEMALLOC_INCLUDE_PREFIX)
+        # OS_
+        if (OS_LINUX)
+            set (JEMALLOC_INCLUDE_PREFIX "include_linux")
+        elseif (OS_FREEBSD)
+            set (JEMALLOC_INCLUDE_PREFIX "include_freebsd")
+        elseif (OS_DARWIN)
+            set (JEMALLOC_INCLUDE_PREFIX "include_darwin")
+        else ()
+            message (FATAL_ERROR "This OS is not supported")
         endif ()
+        # ARCH_
+        if (ARCH_AMD64)
+            set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_x86_64")
+        elseif (ARCH_ARM)
+            set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_aarch64")
+        else ()
+            message (FATAL_ERROR "This arch is not supported")
+        endif ()
+
         target_include_directories(jemalloc SYSTEM PUBLIC
             ${JEMALLOC_INCLUDE_PREFIX})
         configure_file(${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_defs.h.in
