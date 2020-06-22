@@ -5,7 +5,7 @@
 /// In order to implement a new function you can choose one of two options:
 ///  * Implement interface for IFunction (old function interface, which is planned to be removed sometimes)
 ///  * Implement three interfaces for IExecutableFunctionImpl, IFunctionBaseImpl and IFunctionOverloadResolverImpl
-/// Generally saying, IFunction represents a union of tree new interfaces. However, it can't be used for all cases.
+/// Generally saying, IFunction represents a union of three new interfaces. However, it can't be used for all cases.
 /// Examples:
 ///  * Function properties may depend on arguments type (e.g. toUInt32(UInt8) is globally monotonic, toUInt32(UInt64) - only on intervals)
 ///  * In implementation of lambda functions DataTypeFunction needs an functional object with known arguments and return type
@@ -194,7 +194,7 @@ using FunctionOverloadResolverImplPtr = std::unique_ptr<IFunctionOverloadResolve
 
 
 /// Previous function interface.
-class IFunction : public std::enable_shared_from_this<IFunction>
+class IFunction
 {
 public:
     virtual ~IFunction() = default;

@@ -340,8 +340,9 @@ void TabSeparatedRowInputFormat::syncAfterError()
 void TabSeparatedRowInputFormat::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
+    const auto & sample = getPort().getHeader();
+    read_columns.assign(sample.columns(), false);
     column_indexes_for_input_fields.clear();
-    read_columns.clear();
     columns_to_fill_with_default_values.clear();
 }
 
