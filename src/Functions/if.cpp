@@ -670,7 +670,7 @@ private:
             cond_is_const = true;
             not_const_condition = const_arg->getDataColumnPtr();
             ColumnPtr data_column = const_arg->getDataColumnPtr();
-            if (const auto const_nullable_arg = checkAndGetColumn<ColumnNullable>(*data_column))
+            if (const auto * const_nullable_arg = checkAndGetColumn<ColumnNullable>(*data_column))
             {
                 data_column = const_nullable_arg->getNestedColumnPtr();
                 if (!data_column->empty())
