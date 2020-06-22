@@ -35,7 +35,7 @@ struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Create columns in block or return false if not possible
-bool sanitizeBlock(Block & block);
+bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData

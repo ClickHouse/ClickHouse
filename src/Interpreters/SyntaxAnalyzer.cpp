@@ -394,11 +394,8 @@ GroupByKeysInfo getGroupByKeysInfo(ASTs & group_keys)
 }
 
 ///eliminate functions of other GROUP BY keys
-void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query, bool optimize_group_by_function_keys)
+void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 {
-    if (!optimize_group_by_function_keys)
-        return;
-
     if (!select_query->groupBy())
         return;
 
@@ -446,11 +443,8 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query, bool optimize_gr
 }
 
 /// Eliminates min/max/any-aggregators of functions of GROUP BY keys
-void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query, bool optimize_aggregators_of_group_by_keys)
+void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query)
 {
-    if (!optimize_aggregators_of_group_by_keys)
-        return;
-
     if (!select_query->groupBy())
         return;
 
@@ -493,15 +487,12 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
 }
 
 /// Optimize duplicate ORDER BY and DISTINCT
-void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, bool optimize_duplicate_order_by_and_distinct, const Context & context)
+void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, const Context & context)
 {
-    if (optimize_duplicate_order_by_and_distinct)
-    {
-        DuplicateOrderByVisitor::Data order_by_data{context, false};
-        DuplicateOrderByVisitor(order_by_data).visit(query);
-        DuplicateDistinctVisitor::Data distinct_data{};
-        DuplicateDistinctVisitor(distinct_data).visit(query);
-    }
+    DuplicateOrderByVisitor::Data order_by_data{context, false};
+    DuplicateOrderByVisitor(order_by_data).visit(query);
+    DuplicateDistinctVisitor::Data distinct_data{};
+    DuplicateDistinctVisitor(distinct_data).visit(query);
 }
 
 /// Remove duplicate items from LIMIT BY.
@@ -574,14 +565,11 @@ void optimizeArithmeticOperationsInAgr(ASTPtr & query, bool optimize_arithmetic_
     }
 }
 
-void optimizeAnyInput(ASTPtr & query, bool optimize_any_input)
+void optimizeAnyInput(ASTPtr & query)
 {
-    if (optimize_any_input)
-    {
-        /// Removing arithmetic operations from functions
-        AnyInputVisitor::Data data = {};
-        AnyInputVisitor(data).visit(query);
-    }
+    /// Removing arithmetic operations from functions
+    AnyInputVisitor::Data data = {};
+    AnyInputVisitor(data).visit(query);
 }
 
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
@@ -973,19 +961,23 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeGroupBy(select_query, source_columns_set, context);
 
         /// GROUP BY functions of other keys elimination.
-        optimizeGroupByFunctionKeys(select_query, settings.optimize_group_by_function_keys);
+        if (settings.optimize_group_by_function_keys)
+            optimizeGroupByFunctionKeys(select_query);
 
         ///Move all operations out of any function
-        optimizeAnyInput(query, settings.optimize_any_input);
+        if (settings.optimize_move_functions_out_of_any)
+            optimizeAnyInput(query);
 
         /// Eliminate min/max/any aggregators of functions of GROUP BY keys
-        optimizeAggregateFunctionsOfGroupByKeys(select_query, settings.optimize_aggregators_of_group_by_keys);
+        if (settings.optimize_aggregators_of_group_by_keys)
+            optimizeAggregateFunctionsOfGroupByKeys(select_query);
 
         /// Remove duplicate items from ORDER BY.
         optimizeOrderBy(select_query);
 
         /// Remove duplicate ORDER BY and DISTINCT from subqueries.
-        optimizeDuplicateOrderByAndDistinct(query, settings.optimize_duplicate_order_by_and_distinct, context);
+        if (settings.optimize_duplicate_order_by_and_distinct)
+            optimizeDuplicateOrderByAndDistinct(query, context);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);

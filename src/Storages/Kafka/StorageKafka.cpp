@@ -69,7 +69,10 @@ namespace
         for (const auto & key : keys)
         {
             const String key_path = path + "." + key;
-            const String key_name = boost::replace_all_copy(key, "_", ".");
+            // log_level has valid underscore, rest librdkafka setting use dot.separated.format
+            // which is not acceptable for XML.
+            // See also https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+            const String key_name = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
             conf.set(key_name, config.getString(key_path));
         }
     }
@@ -224,7 +227,7 @@ Pipes StorageKafka::read(
         /// TODO: probably that leads to awful performance.
         /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
         /// TODO: rewrite KafkaBlockInputStream to KafkaSource. Now it is used in other place.
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, modified_context, column_names, 1)));
+        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, modified_context, column_names, log, 1)));
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -538,8 +541,7 @@ bool StorageKafka::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto stream
-            = std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, kafka_context, block_io.out->getHeader().getNames(), block_size, false);
+        auto stream = std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, kafka_context, block_io.out->getHeader().getNames(), log, block_size, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
@@ -670,6 +672,16 @@ void registerStorageKafka(StorageFactory & factory)
         else if (num_consumers < 1)
         {
             throw Exception("Number of consumers can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        if (kafka_settings->kafka_max_block_size.changed && kafka_settings->kafka_max_block_size.value < 1)
+        {
+            throw Exception("kafka_max_block_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        if (kafka_settings->kafka_poll_max_batch_size.changed && kafka_settings->kafka_poll_max_batch_size.value < 1)
+        {
+            throw Exception("kafka_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
         }
 
         return StorageKafka::create(args.table_id, args.context, args.columns, std::move(kafka_settings));

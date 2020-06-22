@@ -8,11 +8,13 @@
 #include <Columns/ColumnFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 class ExecutableFunctionExpression : public IExecutableFunctionImpl
@@ -203,6 +205,11 @@ public:
             const String & expression_return_name_)
         : expression_actions(std::move(expression_actions_))
     {
+        /// Check that expression does not contain unusual actions that will break blocks structure.
+        for (const auto & action : expression_actions->getActions())
+            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
+                throw Exception("Expression with arrayJoin or other unusual action cannot be captured", ErrorCodes::BAD_ARGUMENTS);
+
         std::unordered_map<std::string, DataTypePtr> arguments_map;
 
         const auto & all_arguments = expression_actions->getRequiredColumnsWithTypes();

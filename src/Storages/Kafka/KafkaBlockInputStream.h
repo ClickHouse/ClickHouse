@@ -7,6 +7,10 @@
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
 
+namespace Poco
+{
+    class Logger;
+}
 namespace DB
 {
 
@@ -18,6 +22,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const std::shared_ptr<Context> & context_,
         const Names & columns,
+        Poco::Logger * log_,
         size_t max_block_size_,
         bool commit_in_suffix = true);
     ~KafkaBlockInputStream() override;
@@ -37,6 +42,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     const std::shared_ptr<Context> context;
     Names column_names;
+    Poco::Logger * log;
     UInt64 max_block_size;
 
     ConsumerBufferPtr buffer;
