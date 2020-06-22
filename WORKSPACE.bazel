@@ -16,12 +16,17 @@ new_local_repository(
 
 # toolchains
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("//bazel/toolchain:helpers.bzl", "clang_archive")
 
-http_archive(
-    name = "clang-10.0.0-amd64-linux",
-    urls = ["https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.0/clang+llvm-10.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz"],
-    sha256 = "b25f592a0c00686f03e3b7db68ca6dc87418f681f4ead4df4745a01d9be63843",
-    strip_prefix = "clang+llvm-10.0.0-x86_64-linux-gnu-ubuntu-18.04",
-    build_file = "//bazel/toolchain/clang:clang-10.BUILD",
+clang_archive(
+    name = "clang-11.0.0-amd64-linux",
+    url = "https://commondatastorage.googleapis.com/chromium-browser-clang/Linux_x64/clang-n356902-4e813bbd-1.tgz",
+    sha256 = "06028e29a32631c3d7c64b66b22607c6b87494588de017424c613f1bcf804487",
+    build_file = "//bazel/toolchain/clang:clang-11.BUILD",
+    toolchain_file = "//bazel/toolchain/clang:config.bzl",
+)
+
+bind(
+    name = "clang-toolchains",
+    actual = "@clang-11.0.0-amd64-linux//:toolchains",
 )

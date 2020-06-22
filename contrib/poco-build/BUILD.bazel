@@ -114,6 +114,9 @@ cc_library(
     deps = [
         ":FoundationIncludeSources",
     ],
+    copts = [
+        "-Wno-everything",  # FIXME: make it common to all contribs
+    ],
     local_defines = [
         "POCO_UNBUNDLED",
         "POCO_UNBUNDLED_ZLIB",
