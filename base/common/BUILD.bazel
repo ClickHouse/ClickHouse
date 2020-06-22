@@ -2,8 +2,19 @@ cc_library(
     name = "common",
     deps = [
         "@boost//:boost",
+        "@cctz//:cctz",
+        "@fmt//:fmt",
+        "@poco//:Net",
         "@poco//:Util",
+
+        "//contrib/cityhash102:cityhash",
     ],
+
+    # FIXME: put global config options here for now.
+    defines = [
+        "WITH_COVERAGE=0",
+    ],
+
     srcs = [
         "argsToConfig.cpp",
         "argsToConfig.h",
@@ -45,10 +56,10 @@ cc_library(
         "phdr_cache.h",
         "preciseExp10.cpp",
         "preciseExp10.h",
-        "ReadlineLineReader.cpp",
-        "ReadlineLineReader.h",
-        "ReplxxLineReader.cpp",
-        "ReplxxLineReader.h",
+        # "ReadlineLineReader.cpp",
+        # "ReadlineLineReader.h",
+        # "ReplxxLineReader.cpp",
+        # "ReplxxLineReader.h",
         "setTerminalEcho.cpp",
         "setTerminalEcho.h",
         "shift10.cpp",

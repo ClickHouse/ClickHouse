@@ -36,14 +36,14 @@ void sleepForNanoseconds(uint64_t nanoseconds)
     struct timespec current_time;
     clock_gettime(clock_type, &current_time);
 
-    constexpr uint64_t resolution = 1'000'000'000;
+    constexpr long resolution = 1'000'000'000;
     struct timespec finish_time = current_time;
 
     finish_time.tv_nsec += nanoseconds % resolution;
-    const uint64_t extra_second = finish_time.tv_nsec / resolution;
+    const auto extra_second = finish_time.tv_nsec / resolution;
     finish_time.tv_nsec %= resolution;
 
-    finish_time.tv_sec += (nanoseconds / resolution) + extra_second;
+    finish_time.tv_sec += static_cast<time_t>(nanoseconds / resolution) + extra_second;
 
     while (clock_nanosleep(clock_type, TIMER_ABSTIME, &finish_time, nullptr) == EINTR);
 #endif

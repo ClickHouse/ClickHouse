@@ -1,5 +1,7 @@
 #include "getThreadId.h"
 
+#include "defines.h"
+
 #if defined(OS_LINUX)
 #    include <unistd.h>
 #    include <syscall.h>
@@ -17,7 +19,7 @@ uint64_t getThreadId()
     if (!current_tid)
     {
 #if defined(OS_LINUX)
-        current_tid = syscall(SYS_gettid); /// This call is always successful. - man gettid
+        current_tid = static_cast<uint64_t>(syscall(SYS_gettid)); /// This call is always successful. - man gettid
 #elif defined(OS_FREEBSD)
         current_tid = pthread_getthreadid_np();
 #else

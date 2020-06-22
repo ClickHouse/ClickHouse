@@ -13,8 +13,16 @@
 
 #define JSON_MAX_DEPTH 100
 
+#if defined(__clang__)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
+#endif
 
 POCO_IMPLEMENT_EXCEPTION(JSONException, Poco::Exception, "JSONException")
+
+#if defined(__clang__)
+#    pragma clang diagnostic pop
+#endif
 
 
 /// Прочитать беззнаковое целое в простом формате из не-0-terminated строки.
@@ -42,7 +50,7 @@ static UInt64 readUIntText(const char * buf, const char * end)
             case '8':
             case '9':
                 x *= 10;
-                x += *buf - '0';
+                x += static_cast<UInt64>(*buf - '0');
                 break;
             default:
                 return x;
@@ -58,7 +66,7 @@ static UInt64 readUIntText(const char * buf, const char * end)
 static Int64 readIntText(const char * buf, const char * end)
 {
     bool negative = false;
-    UInt64 x = 0;
+    Int64 x = 0;
 
     if (buf == end)
         throw JSONException("JSON: cannot parse signed integer: unexpected end of data.");
@@ -146,8 +154,8 @@ static double readFloatText(const char * buf, const char * end)
             case 'E':
             {
                 ++buf;
-                Int32 exponent = readIntText(buf, end);
-                x *= preciseExp10(exponent);
+                Int64 exponent = readIntText(buf, end);
+                x *= preciseExp10(static_cast<double>(exponent));
 
                 run = false;
                 break;
@@ -233,7 +241,7 @@ JSON::Pos JSON::skipString() const
     ++pos;
 
     /// fast path: находим следующую двойную кавычку. Если перед ней нет бэкслеша - значит это конец строки (при допущении корректности JSON).
-    Pos closing_quote = reinterpret_cast<const char *>(memchr(reinterpret_cast<const void *>(pos), '\"', ptr_end - pos));
+    Pos closing_quote = reinterpret_cast<const char *>(memchr(reinterpret_cast<const void *>(pos), '\"', static_cast<size_t>(ptr_end - pos)));
     if (nullptr != closing_quote && closing_quote[-1] != '\\')
         return closing_quote + 1;
 

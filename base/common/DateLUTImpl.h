@@ -236,7 +236,7 @@ public:
 
     /** Round to start of day, then shift for specified amount of days.
       */
-    inline time_t toDateAndShift(time_t t, Int32 days) const
+    inline time_t toDateAndShift(time_t t, UInt16 days) const
     {
         return lut[DayNum(findIndex(t) + days)].date;
     }
@@ -256,7 +256,7 @@ public:
         return res - offset_at_start_of_epoch; /// Starting at 1970-01-01 00:00:00 local time.
     }
 
-    inline unsigned toHour(time_t t) const
+    inline UInt8 toHour(time_t t) const
     {
         DayNum index = findIndex(t);
 
@@ -322,11 +322,11 @@ public:
     inline time_t fromDayNum(DayNum d) const { return lut[d].date; }
 
     inline time_t toDate(DayNum d) const { return lut[d].date; }
-    inline unsigned toMonth(DayNum d) const { return lut[d].month; }
+    inline UInt8 toMonth(DayNum d) const { return lut[d].month; }
     inline unsigned toQuarter(DayNum d) const { return (lut[d].month - 1) / 3 + 1; }
     inline unsigned toYear(DayNum d) const { return lut[d].year; }
-    inline unsigned toDayOfWeek(DayNum d) const { return lut[d].day_of_week; }
-    inline unsigned toDayOfMonth(DayNum d) const { return lut[d].day_of_month; }
+    inline UInt16 toDayOfWeek(DayNum d) const { return lut[d].day_of_week; }
+    inline UInt8 toDayOfMonth(DayNum d) const { return lut[d].day_of_month; }
     inline unsigned toDayOfYear(DayNum d) const { return d + 1 - toFirstDayNumOfYear(d); }
 
     inline unsigned toDayOfYear(time_t t) const { return toDayOfYear(toDayNum(t)); }
@@ -641,26 +641,26 @@ public:
         return lut[d / days * days].date;
     }
 
-    inline time_t toStartOfHourInterval(time_t t, UInt64 hours) const
+    inline time_t toStartOfHourInterval(time_t t, Int64 hours) const
     {
         if (hours == 1)
             return toStartOfHour(t);
-        UInt64 seconds = hours * 3600;
+        Int64 seconds = hours * 3600;
         t = t / seconds * seconds;
         if (offset_is_whole_number_of_hours_everytime)
             return t;
         return toStartOfHour(t);
     }
 
-    inline time_t toStartOfMinuteInterval(time_t t, UInt64 minutes) const
+    inline time_t toStartOfMinuteInterval(time_t t, Int64 minutes) const
     {
         if (minutes == 1)
             return toStartOfMinute(t);
-        UInt64 seconds = 60 * minutes;
+        Int64 seconds = 60 * minutes;
         return t / seconds * seconds;
     }
 
-    inline time_t toStartOfSecondInterval(time_t t, UInt64 seconds) const
+    inline time_t toStartOfSecondInterval(time_t t, Int64 seconds) const
     {
         if (seconds == 1)
             return t;

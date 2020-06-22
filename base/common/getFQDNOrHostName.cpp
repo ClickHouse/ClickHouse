@@ -1,5 +1,6 @@
+#include "getFQDNOrHostName.h"
+
 #include <Poco/Net/DNS.h>
-#include <common/getFQDNOrHostName.h>
 
 
 namespace

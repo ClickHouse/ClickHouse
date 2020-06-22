@@ -1,9 +1,11 @@
 #pragma once
 
-#include <typeinfo>
+#include "StringRef.h"
+#include "types.h"
+
 #include <Poco/Exception.h>
-#include <common/StringRef.h>
-#include <common/types.h>
+
+#include <typeinfo>
 
 
 /** Очень простой класс для чтения JSON (или его кусочков).
@@ -37,8 +39,16 @@
   * Все методы immutable, кроме operator++.
   */
 
+#if defined(__clang__)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
+#endif
 
 POCO_DECLARE_EXCEPTION(Foundation_API, JSONException, Poco::Exception)
+
+#if defined(__clang__)
+#    pragma clang diagnostic pop
+#endif
 
 
 class JSON
@@ -168,7 +178,7 @@ public:
     /// Есть ли в строке escape-последовательности
     bool hasEscapes() const;
 
-    /// Есть ли в строке спец-символы из набора \, ', \0, \b, \f, \r, \n, \t, возможно, заэскейпленные.
+    // Есть ли в строке спец-символы из набора \, ', \0, \b, \f, \r, \n, \t, возможно, заэскейпленные.
     bool hasSpecialChars() const;
 
 private:

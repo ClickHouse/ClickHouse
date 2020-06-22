@@ -60,6 +60,13 @@ def _impl(ctx):
                             "-no-canonical-prefixes",
                             "-Wall",
                             "-Werror",
+                            "-Weverything",
+                            "-Wno-exit-time-destructors",
+                            "-Wno-implicit-int-conversion",
+                            "-Wno-missing-prototypes",
+                            "-Wno-padded",
+                            "-Wno-sign-conversion",
+                            "-Wno-switch-enum",
                         ],
                     ),
                 ],
@@ -67,10 +74,31 @@ def _impl(ctx):
         ],
     )
 
+    default_cxx_flags_feature = feature(
+        name = "default_cxx_flags",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = [ACTION_NAMES.cpp_compile],
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-std=c++20",
+                            "-Wno-c++98-c++11-c++14-compat",
+                            "-Wno-c++98-compat",
+                            "-Wno-c++98-compat-pedantic",
+                        ]
+                    )
+                ]
+            )
+        ]
+    )
+
     return cc_common.create_cc_toolchain_config_info(
         ctx = ctx,
         features = [
             default_compile_flags_feature,
+            default_cxx_flags_feature,
         ],
         toolchain_identifier = "clang-amd64-config",
         host_system_name = "unknown",

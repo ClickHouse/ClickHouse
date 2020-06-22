@@ -1,22 +1,22 @@
 #pragma once
 
-#include <string>
-#include <vector>
-#include <functional>
-#include <ostream>
-
-#include <common/types.h>
-#include <common/unaligned.h>
+#include "types.h"
+#include "unaligned.h"
 
 #include <city.h>
 
+#include <functional>
+#include <ostream>
+#include <string>
+#include <vector>
+
 #if defined(__SSE2__)
-    #include <emmintrin.h>
+#    include <emmintrin.h>
 #endif
 
 #if defined(__SSE4_2__)
-    #include <smmintrin.h>
-    #include <nmmintrin.h>
+#    include <nmmintrin.h>
+#    include <smmintrin.h>
 #endif
 
 
@@ -309,7 +309,7 @@ inline bool operator==(StringRef lhs, const char * rhs)
 inline std::ostream & operator<<(std::ostream & os, const StringRef & str)
 {
     if (str.data)
-        os.write(str.data, str.size);
+        os.write(str.data, static_cast<std::streamsize>(str.size));
 
     return os;
 }

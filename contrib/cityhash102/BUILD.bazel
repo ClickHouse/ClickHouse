@@ -1,0 +1,18 @@
+package(default_visibility=["//visibility:public"])
+
+cc_library(
+    name = "cityhash",
+    copts = [
+        "-Wno-shorten-64-to-32",
+        "-Wno-sign-conversion",
+        "-Wno-zero-as-null-pointer-constant",
+    ],
+    includes = ["include"],
+    srcs = [
+        "src/city.cc",
+        "src/config.h",
+    ],
+    hdrs = [
+        "include/city.h",
+    ],
+)

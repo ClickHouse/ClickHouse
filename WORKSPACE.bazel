@@ -9,6 +9,18 @@ new_local_repository(
 )
 
 new_local_repository(
+    name = "cctz",
+    path = "contrib/cctz",
+    build_file = "contrib/cctz-build/BUILD.bazel",
+)
+
+new_local_repository(
+    name = "fmt",
+    path = "contrib/fmtlib",
+    build_file = "contrib/fmtlib-build/BUILD.bazel",
+)
+
+new_local_repository(
     name = "poco",
     path = "contrib/poco",
     build_file = "contrib/poco-build/BUILD.bazel",

@@ -175,7 +175,7 @@ obstacle to adoption, that text has been removed.
 
 double preciseExp10(double x)
 {
-    if (isnan(x)) return NAN;
+    if (isnan(x)) return SNAN;
 
     // ranging between DBL_TRUE_MIN and DBL_MAX. Outsiders are treated as zeros or infinities
     static const double p10[]
@@ -219,7 +219,7 @@ double preciseExp10(double x)
            1e+306, 1e+307, 1e+308};
 
     double n, y = modf(x, &n);
-    if (n > 308) return INFINITY;
+    if (n > 308) return static_cast<double>(INFINITY);
     if (n < -323) return 0;
 
     // Using lookup table based formula to get accurate results for integer arguments.

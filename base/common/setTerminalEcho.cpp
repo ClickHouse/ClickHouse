@@ -34,7 +34,7 @@ void setTerminalEcho(bool enable)
     if (tcgetattr(STDIN_FILENO, &tty))
         throw std::runtime_error(std::string("setTerminalEcho failed get: ") + strerror(errno));
     if (!enable)
-        tty.c_lflag &= ~ECHO;
+        tty.c_lflag &= ~static_cast<tcflag_t>(ECHO);
     else
         tty.c_lflag |= ECHO;
 

@@ -1,0 +1,20 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "fmt",
+    copts = [
+        "-Wno-disabled-macro-expansion",
+        "-Wno-missing-variable-declarations",
+    ],
+    includes = ["include"],
+    srcs = [
+        "src/format.cc",
+        "src/os.cc",
+    ],
+    hdrs = [
+        "include/fmt/core.h",
+        "include/fmt/format.h",
+        "include/fmt/format-inl.h",
+        "include/fmt/os.h",
+    ],
+)

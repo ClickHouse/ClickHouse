@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include "types.h"
 
 /** Almost the same as x = x * exp10(exponent), but gives more accurate result.
   * Example:
@@ -9,8 +9,8 @@
   *  5e-11 = shift10(5.0, -11)
   */
 
-double shift10(double x, int exponent);
+long double shift10(double x, int exponent);
 float shift10(float x, int exponent);
 
-double shift10(UInt64 x, int exponent);
-double shift10(Int64 x, int exponent);
+long double shift10(UInt64 x, int exponent);
+long double shift10(Int64 x, int exponent);

@@ -1,6 +1,4 @@
-package(
-    default_visibility = ["//visibility:public"],
-)
+package(default_visibility = ["//visibility:public"])
 
 # Foundation (private included sources)
 
@@ -114,9 +112,11 @@ cc_library(
     deps = [
         ":FoundationIncludeSources",
     ],
+    defines = ["POCO_HAVE_STD_ATOMICS"],
     copts = [
         "-Wno-everything",  # FIXME: make it common to all contribs
     ],
+    includes = ["Foundation/include"],
     local_defines = [
         "POCO_UNBUNDLED",
         "POCO_UNBUNDLED_ZLIB",
@@ -632,13 +632,15 @@ cc_library(
         "Foundation/include/Poco/Windows1252Encoding.h",
         "Foundation/include/Poco/WindowsConsoleChannel.h",
     ],
-    strip_include_prefix = "Foundation/include",
 )
 
 # JSON
 
 cc_library(
     name = "JSON",
+    copts = [
+        "-Wno-everything",  # FIXME: make it common to all contribs
+    ],
     deps = [":Foundation"],
     srcs = [
         # pdjson
@@ -680,8 +682,12 @@ cc_library(
 
 cc_library(
     name = "Net",
+    copts = [
+        "-Wno-everything",  # FIXME: make it common to all contribs
+    ],
     deps = [":Foundation"],
     defines = ["POCO_HAVE_FD_EPOLL"], # TODO: use select() function
+    includes = ["Net/include"],
     srcs = [
         "Net/src/AbstractHTTPRequestHandler.cpp",
         "Net/src/DatagramSocket.cpp",
@@ -892,18 +898,21 @@ cc_library(
         "Net/include/Poco/Net/WebSocket.h",
         "Net/include/Poco/Net/WebSocketImpl.h",
     ],
-    strip_include_prefix = "Net/include",
 )
 
 # Util
 
 cc_library(
     name = "Util",
+    copts = [
+        "-Wno-everything",  # FIXME: make it common to all contribs
+    ],
     deps = [
         ":Foundation",
         ":JSON",
         ":XML",
     ],
+    includes = ["Util/include"],
     srcs = [
         "Util/src/AbstractConfiguration.cpp",
         "Util/src/Application.cpp",
@@ -963,13 +972,15 @@ cc_library(
         "Util/include/Poco/Util/Validator.h",
         "Util/include/Poco/Util/XMLConfiguration.h",
     ],
-    strip_include_prefix = "Util/include",
 )
 
 # XML
 
 cc_library(
     name = "XML",
+    copts = [
+        "-Wno-everything",  # FIXME: make it common to all contribs
+    ],
     deps = [":Foundation"],
     srcs = [
         "XML/src/AbstractContainerNode.cpp",

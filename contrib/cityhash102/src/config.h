@@ -5,7 +5,7 @@
 /* #undef AC_APPLE_UNIVERSAL_BUILD */
 
 /* Define to 1 if the compiler supports __builtin_expect. */
-#if _MSC_VER
+#if defined(_MSC_VER)
 #define HAVE_BUILTIN_EXPECT 0
 #else
 #define HAVE_BUILTIN_EXPECT 1
