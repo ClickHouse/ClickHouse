@@ -1,198 +1,195 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
-
-#if USE_MYSQL
-
 #include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 
-#    include <cstdlib>
-#    include <Columns/ColumnTuple.h>
-#    include <DataStreams/AddingVersionsBlockOutputStream.h>
-#    include <DataStreams/copyData.h>
-#    include <Databases/MySQL/queryConvert.h>
-#    include <Databases/MySQL/EventConsumer.h>
-#    include <Databases/MySQL/MaterializeMetadata.h>
-#    include <Formats/MySQLBlockInputStream.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <Interpreters/Context.h>
-#    include <Interpreters/MySQL/CreateQueryVisitor.h>
-#    include <Interpreters/executeQuery.h>
-#    include <Parsers/parseQuery.h>
-#    include <Common/quoteString.h>
-#    include <Common/setThreadName.h>
-#    include <common/sleep.h>
+#include <Databases/DatabaseOrdinary.h>
+#include <Databases/MySQL/DatabaseMaterializeTablesIterator.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/StorageMaterializeMySQL.h>
+#include <Poco/Logger.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {
 
+static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
+
 namespace ErrorCodes
 {
-    extern const int INCORRECT_QUERY;
-}
-
-static inline BlockIO tryToExecuteQuery(const String & query_to_execute, const Context & context_, const String & comment)
-{
-    try
-    {
-        Context context = context_;
-        context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        context.setCurrentQueryId(""); // generate random query_id
-        return executeQuery("/*" + comment + "*/ " + query_to_execute, context, true);
-    }
-    catch (...)
-    {
-        tryLogCurrentException("DatabaseMaterializeMySQL", "Query " + query_to_execute + " wasn't finished successfully");
-        throw;
-    }
-
-    LOG_DEBUG(&Logger::get("DatabaseMaterializeMySQL"), "Executed query: " << query_to_execute);
+    extern const int NOT_IMPLEMENTED;
 }
 
 DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
-    const Context & context, const String & database_name_, const String & metadata_path_
-    , const ASTStorage * database_engine_define_, const String & mysql_database_name_, mysqlxx::Pool && pool_
-    , MySQLClient && client_ , std::unique_ptr<MaterializeModeSettings> settings_)
-    : DatabaseMaterializeMySQLWrap(std::make_shared<DatabaseOrdinary>(database_name_, metadata_path_, context), database_engine_define_->clone(), "DatabaseMaterializeMySQL")
-    , global_context(context.getGlobalContext()), metadata_path(metadata_path_), mysql_database_name(mysql_database_name_)
-    , pool(std::move(pool_)), client(std::move(client_)), settings(std::move(settings_))
+    const Context & context, const String & database_name_, const String & metadata_path_, const IAST * database_engine_define_
+    , const String & mysql_database_name_, mysqlxx::Pool && pool_, MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_)
+    : IDatabase(database_name_), engine_define(database_engine_define_->clone())
+    , nested_database(std::make_shared<DatabaseOrdinary>(database_name_, metadata_path_, context))
+    , settings(std::move(settings_)), log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
+    , materialize_thread(context, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
 {
-    /// TODO: 做简单的check, 失败即报错
-    scheduleSynchronized();
 }
 
-BlockOutputStreamPtr DatabaseMaterializeMySQL::getTableOutput(const String & table_name)
+void DatabaseMaterializeMySQL::setException(const std::exception_ptr & exception_)
 {
-    String with_database_table_name = backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name);
-    BlockIO res = tryToExecuteQuery("INSERT INTO " + with_database_table_name + " VALUES", global_context, "");
-
-    if (!res.out)
-        throw Exception("LOGICAL ERROR:", ErrorCodes::LOGICAL_ERROR);
-
-    return res.out;
+    std::unique_lock<std::mutex> lock(mutex);
+    exception = exception_;
 }
 
-void DatabaseMaterializeMySQL::cleanOutdatedTables()
+DatabasePtr DatabaseMaterializeMySQL::getNestedDatabase() const
 {
-    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
-    const DatabasePtr & clean_database = DatabaseCatalog::instance().getDatabase(database_name);
+    std::unique_lock<std::mutex> lock(mutex);
 
-    for (auto iterator = clean_database->getTablesIterator(); iterator->isValid(); iterator->next())
-    {
-        String table = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(iterator->name());
-        String comment = String("Clean ") + table + " for dump mysql.";
-        tryToExecuteQuery("DROP TABLE " + table, global_context, comment);
-    }
+    if (exception)
+        std::rethrow_exception(exception);
+
+    return nested_database;
 }
 
-void DatabaseMaterializeMySQL::dumpDataForTables(mysqlxx::Pool::Entry & connection, MaterializeMetadata & master_info, const std::function<bool()> & is_cancelled)
+ASTPtr DatabaseMaterializeMySQL::getCreateDatabaseQuery() const
 {
-    auto iterator = master_info.need_dumping_tables.begin();
-    for (; iterator != master_info.need_dumping_tables.end() && !is_cancelled(); ++iterator)
-    {
-        const auto & table_name = iterator->first;
-        MySQLTableStruct table_struct = visitCreateQuery(iterator->second, global_context, database_name);
-        String comment = String("Dumping ") + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name);
-        tryToExecuteQuery(toCreateQuery(table_struct, global_context), global_context, comment);
-
-        BlockOutputStreamPtr out = std::make_shared<AddingVersionsBlockOutputStream>(master_info.version, getTableOutput(table_name));
-        MySQLBlockInputStream input(connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name), out->getHeader(), DEFAULT_BLOCK_SIZE);
-        copyData(input, *out, is_cancelled);
-    }
+    const auto & create_query = std::make_shared<ASTCreateQuery>();
+    create_query->database = database_name;
+    create_query->set(create_query->storage, engine_define);
+    return create_query;
 }
-
-std::optional<MaterializeMetadata> DatabaseMaterializeMySQL::prepareSynchronized(std::unique_lock<std::mutex> & lock, const std::function<bool()> & is_cancelled)
-{
-    while (!is_cancelled())
-    {
-        try
-        {
-            LOG_DEBUG(log, "Checking " + database_name + " database status.");
-            while (!is_cancelled && !DatabaseCatalog::instance().isDatabaseExist(database_name))
-                sync_cond.wait_for(lock, std::chrono::seconds(1));
-
-            LOG_DEBUG(log, database_name + " database status is OK.");
-
-            mysqlxx::PoolWithFailover::Entry connection = pool.get();
-            MaterializeMetadata metadata(connection, getMetadataPath() + "/.metadata", mysql_database_name);
-
-            if (!metadata.need_dumping_tables.empty())
-            {
-                metadata.transaction(Position(metadata.binlog_position, metadata.binlog_file), [&]()
-                {
-                    cleanOutdatedTables();
-                    dumpDataForTables(connection, metadata, is_cancelled);
-                });
-            }
-
-            client.connect();
-            client.startBinlogDump(std::rand(), mysql_database_name, metadata.binlog_file, metadata.binlog_position);
-            return metadata;
-        }
-        catch (mysqlxx::Exception & )
-        {
-            tryLogCurrentException(log);
-
-            /// Avoid busy loop when MySQL is not available.
-            sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
-        }
-    }
-
-    return {};
-}
-
-void DatabaseMaterializeMySQL::scheduleSynchronized()
-{
-    background_thread_pool.scheduleOrThrowOnError([&]()
-    {
-        ThreadStatus thread_status;
-        setThreadName("MySQLDBSync");
-
-        std::unique_lock<std::mutex> lock(sync_mutex);
-        const auto quit_requested = [this] { return sync_quit.load(std::memory_order_relaxed); };
-
-        try
-        {
-            std::optional<MaterializeMetadata> metadata = prepareSynchronized(lock, quit_requested);
-
-            if (!quit_requested() && metadata)
-            {
-                EventConsumer consumer(getDatabaseName(), global_context, *metadata, *settings);
-
-                while (!quit_requested())
-                {
-                    const auto & event = client.readOneBinlogEvent();
-                    consumer.onEvent(event, client.getPosition());
-                }
-            }
-        }
-        catch(...)
-        {
-            setException(std::current_exception());
-        }
-    });
-}
-DatabaseMaterializeMySQL::~DatabaseMaterializeMySQL()
+void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_force_restore_data_flag)
 {
     try
     {
-        if (!sync_quit)
-        {
-            {
-                sync_quit = true;
-                std::lock_guard<std::mutex> lock(sync_mutex);
-            }
-
-            sync_cond.notify_one();
-            background_thread_pool.wait();
-        }
+        LOG_DEBUG(log, "Loading MySQL nested database stored objects.");
+        getNestedDatabase()->loadStoredObjects(context, has_force_restore_data_flag);
+        LOG_DEBUG(log, "Loaded MySQL nested database stored objects.");
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log, "Cannot load MySQL nested database stored objects.");
+        throw;
     }
 }
 
+void DatabaseMaterializeMySQL::shutdown()
+{
+    getNestedDatabase()->shutdown();
 }
 
-#endif
+bool DatabaseMaterializeMySQL::empty() const
+{
+    return getNestedDatabase()->empty();
+}
+
+String DatabaseMaterializeMySQL::getDataPath() const
+{
+    return getNestedDatabase()->getDataPath();
+}
+
+String DatabaseMaterializeMySQL::getMetadataPath() const
+{
+    return getNestedDatabase()->getMetadataPath();
+}
+
+String DatabaseMaterializeMySQL::getTableDataPath(const String & table_name) const
+{
+    return getNestedDatabase()->getTableDataPath(table_name);
+}
+
+String DatabaseMaterializeMySQL::getTableDataPath(const ASTCreateQuery & query) const
+{
+    return getNestedDatabase()->getTableDataPath(query);
+}
+
+String DatabaseMaterializeMySQL::getObjectMetadataPath(const String & table_name) const
+{
+    return getNestedDatabase()->getObjectMetadataPath(table_name);
+}
+
+UUID DatabaseMaterializeMySQL::tryGetTableUUID(const String & table_name) const
+{
+    return getNestedDatabase()->tryGetTableUUID(table_name);
+}
+
+time_t DatabaseMaterializeMySQL::getObjectMetadataModificationTime(const String & name) const
+{
+    return getNestedDatabase()->getObjectMetadataModificationTime(name);
+}
+
+void DatabaseMaterializeMySQL::createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query)
+{
+    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+        throw Exception("MySQL database in locality_data mode does not support create table.", ErrorCodes::NOT_IMPLEMENTED);
+
+    getNestedDatabase()->createTable(context, name, table, query);
+}
+
+void DatabaseMaterializeMySQL::dropTable(const Context & context, const String & name, bool no_delay)
+{
+    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+        throw Exception("MySQL database in locality_data mode does not support drop table.", ErrorCodes::NOT_IMPLEMENTED);
+
+    getNestedDatabase()->dropTable(context, name, no_delay);
+}
+
+void DatabaseMaterializeMySQL::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
+{
+    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+        throw Exception("MySQL database in locality_data mode does not support attach table.", ErrorCodes::NOT_IMPLEMENTED);
+
+    getNestedDatabase()->attachTable(name, table, relative_table_path);
+}
+
+StoragePtr DatabaseMaterializeMySQL::detachTable(const String & name)
+{
+    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+        throw Exception("MySQL database in locality_data mode does not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
+
+    return getNestedDatabase()->detachTable(name);
+}
+
+void DatabaseMaterializeMySQL::renameTable(const Context & context, const String & name, IDatabase & to_database, const String & to_name, bool exchange)
+{
+    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+        throw Exception("MySQL database in locality_data mode does not support rename table.", ErrorCodes::NOT_IMPLEMENTED);
+
+    getNestedDatabase()->renameTable(context, name, to_database, to_name, exchange);
+}
+
+void DatabaseMaterializeMySQL::alterTable(const Context & context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+{
+    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+        throw Exception("MySQL database in locality_data mode does not support alter table.", ErrorCodes::NOT_IMPLEMENTED);
+
+    getNestedDatabase()->alterTable(context, table_id, metadata);
+}
+
+bool DatabaseMaterializeMySQL::shouldBeEmptyOnDetach() const
+{
+    return getNestedDatabase()->shouldBeEmptyOnDetach();
+}
+
+void DatabaseMaterializeMySQL::drop(const Context & context)
+{
+    getNestedDatabase()->drop(context);
+}
+
+bool DatabaseMaterializeMySQL::isTableExist(const String & name, const Context & context) const
+{
+    return getNestedDatabase()->isTableExist(name, context);
+}
+
+StoragePtr DatabaseMaterializeMySQL::tryGetTable(const String & name, const Context & context) const
+{
+    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+        return std::make_shared<StorageMaterializeMySQL>(getNestedDatabase()->tryGetTable(name, context));
+
+    return getNestedDatabase()->tryGetTable(name, context);
+}
+
+DatabaseTablesIteratorPtr DatabaseMaterializeMySQL::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
+{
+    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+    {
+        DatabaseTablesIteratorPtr iterator = getNestedDatabase()->getTablesIterator(context, filter_by_table_name);
+        return std::make_unique<DatabaseMaterializeTablesIterator>(std::move(iterator));
+    }
+
+    return getNestedDatabase()->getTablesIterator(context, filter_by_table_name);
+}
+
+}

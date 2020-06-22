@@ -1,4 +1,4 @@
-#include <Databases/MySQL/MaterializeModeSettings.h>
+#include <Databases/MySQL/MaterializeMySQLSettings.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -13,9 +13,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-IMPLEMENT_SETTINGS_COLLECTION(MaterializeModeSettings, LIST_OF_MATERIALIZE_MODE_SETTINGS)
+IMPLEMENT_SETTINGS_COLLECTION(MaterializeMySQLSettings, LIST_OF_MATERIALIZE_MODE_SETTINGS)
 
-void MaterializeModeSettings::loadFromQuery(ASTStorage & storage_def)
+void MaterializeMySQLSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {
