@@ -269,7 +269,6 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     else
     {
         /// Skip excessive stack frames that we have created while finding stack trace.
-
         for (size_t i = 0; i < size; ++i)
         {
             if (frame_pointers[i] == caller_address)
@@ -309,54 +308,77 @@ const StackTrace::FramePointers & StackTrace::getFramePointers() const
     return frame_pointers;
 }
 
-static void
-toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offset, size_t size, std::function<void(const std::string &)> callback)
+static void toStringEveryLineImpl(const void * const * frame_pointers, size_t offset, size_t size, std::function<void(const std::string &)> callback)
 {
     if (size == 0)
         return callback("<Empty trace>");
+
+#if defined(__ELF__) && !defined(__FreeBSD__)
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
     std::stringstream out;
 
     for (size_t i = offset; i < size; ++i)
     {
-        const StackTrace::Frame & current_frame = frames[i];
+        const void * virtual_addr = frame_pointers[i];
+        const auto * object = symbol_index.findObject(virtual_addr);
+        uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
+        const void * physical_addr = reinterpret_cast<const void *>(uintptr_t(virtual_addr) - virtual_offset);
+
         out << i << ". ";
 
-        if (current_frame.file.has_value() && current_frame.line.has_value())
+        if (object)
         {
-            out << current_frame.file.value() << ":" << current_frame.line.value() << ": ";
+            if (std::filesystem::exists(object->name))
+            {
+                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
+
+                DB::Dwarf::LocationInfo location;
+                if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, DB::Dwarf::LocationInfoMode::FAST))
+                    out << location.file.toString() << ":" << location.line << ": ";
+            }
         }
 
-        if (current_frame.symbol.has_value())
+        const auto * symbol = symbol_index.findSymbol(virtual_addr);
+        if (symbol)
         {
-            out << current_frame.symbol.value();
+            int status = 0;
+            out << demangle(symbol->name, status);
         }
+        else
+            out << "?";
 
-        out << " @ " << current_frame.physical_addr;
-        if (current_frame.object.has_value())
-        {
-            out << " in " << current_frame.object.value();
-        }
+        out << " @ " << physical_addr;
+        out << " in " << (object ? object->name : "?");
 
         callback(out.str());
         out.str({});
     }
+#else
+    std::stringstream out;
+
+    for (size_t i = offset; i < size; ++i)
+    {
+        const void * addr = frame_pointers[i];
+        out << i << ". " << addr;
+
+        callback(out.str());
+        out.str({});
+    }
+#endif
 }
 
 static std::string toStringImpl(const void * const * frame_pointers, size_t offset, size_t size)
 {
     std::stringstream out;
-    StackTrace::Frames frames;
-    StackTrace::symbolize(frame_pointers, offset, size, frames);
-    toStringEveryLineImpl(frames, offset, size, [&](const std::string & str) { out << str << '\n'; });
+    toStringEveryLineImpl(frame_pointers, offset, size, [&](const std::string & str) { out << str << '\n'; });
     return out.str();
 }
 
 void StackTrace::toStringEveryLine(std::function<void(const std::string &)> callback) const
 {
-    Frames frames;
-    StackTrace::symbolize(frame_pointers.data(), offset, size, frames);
-    toStringEveryLineImpl(frames, offset, size, std::move(callback));
+    toStringEveryLineImpl(frame_pointers.data(), offset, size, std::move(callback));
 }
 
 
