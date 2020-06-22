@@ -121,11 +121,11 @@ void DatabaseReplicated::RemoveOutdatedSnapshotsAndLog() {
     // that no longer will be in use by current replicas or
     // new coming ones.
     // Each registered replica has its state in ZooKeeper.
-    // Therefore removed snapshots and logged queries are less
-    // than a least advanced replica.
+    // Therefore, snapshots and logged queries that are less
+    // than a least advanced replica are removed.
     // It does not interfere with a new coming replica
     // metadata loading from snapshot
-    // because the replica will use the last snapshot available
+    // because the replica will use the latest snapshot available
     // and this snapshot will set the last executed log query
     // to a greater one than the least advanced current replica.
     current_zookeeper = getZooKeeper();
