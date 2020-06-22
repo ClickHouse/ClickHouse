@@ -156,9 +156,9 @@ void AccessRightsContext::setUser(const UserPtr & user_) const
         current_roles.reserve(params.current_roles.size());
         for (const auto & id : params.current_roles)
         {
-            if (user->granted_roles.contains(id))
+            if (user->granted_roles.count(id))
                 current_roles.push_back(id);
-            if (user->granted_roles_with_admin_option.contains(id))
+            if (user->granted_roles_with_admin_option.count(id))
                 current_roles_with_admin_option.push_back(id);
         }
     }
@@ -380,7 +380,7 @@ void AccessRightsContext::checkAdminOption(const UUID & role_id) const
         }
     }
 
-    if (enabled_roles->contains(role_id))
+    if (enabled_roles->count(role_id))
         return;
 
     std::optional<String> role_name = manager->readName(role_id);

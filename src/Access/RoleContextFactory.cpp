@@ -29,7 +29,7 @@ RoleContextPtr RoleContextFactory::createContext(
     boost::container::flat_set<UUID> roles_with_admin_option_set{roles_with_admin_option.begin(), roles_with_admin_option.end()};
     for (const auto & role : roles)
     {
-        if (!roles_with_admin_option_set.contains(role))
+        if (!roles_with_admin_option_set.count(role))
             children.push_back(createContextImpl(role, false));
     }
 
