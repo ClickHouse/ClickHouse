@@ -33,7 +33,8 @@ namespace ErrorCodes
   * arrayMap(x1,...,xn -> expression, array1,...,arrayn) - apply the expression to each element of the array (or set of parallel arrays).
   * arrayFilter(x -> predicate, array) - leave in the array only the elements for which the expression is true.
   *
-  * For some functions arrayCount, arrayExists, arrayAll, an overload of the form f(array) is available, which works in the same way as f(x -> x, array).
+  * For some functions arrayCount, arrayExists, arrayAll, an overload of the form f(array) is available,
+  *  which works in the same way as f(x -> x, array).
   *
   * See the example of Impl template parameter in arrayMap.cpp
   */
