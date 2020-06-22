@@ -1,64 +1,80 @@
 #pragma once
 
-#include "config_core.h"
-
-#if USE_MYSQL
-
-#    include <mutex>
-#    include <Core/MySQLClient.h>
-#    include <DataStreams/BlockIO.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Databases/DatabaseOrdinary.h>
-#    include <Databases/IDatabase.h>
-#    include <Databases/MySQL/DatabaseMaterializeMySQLWrap.h>
-#    include <Databases/MySQL/MaterializeMetadata.h>
-#    include <Databases/MySQL/MaterializeModeSettings.h>
-#    include <Interpreters/MySQL/CreateQueryVisitor.h>
-#    include <Parsers/ASTCreateQuery.h>
-#    include <mysqlxx/Pool.h>
-#    include <mysqlxx/PoolWithFailover.h>
+#include <mysqlxx/Pool.h>
+#include <Core/MySQLClient.h>
+#include <Databases/IDatabase.h>
+#include <Databases/MySQL/MaterializeMySQLSettings.h>
+#include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 
 namespace DB
 {
 
-class DatabaseMaterializeMySQL : public DatabaseMaterializeMySQLWrap
+class DatabaseMaterializeMySQL : public IDatabase
 {
 public:
-    ~DatabaseMaterializeMySQL() override;
-
     DatabaseMaterializeMySQL(
         const Context & context, const String & database_name_, const String & metadata_path_,
-        const ASTStorage * database_engine_define_, const String & mysql_database_name_, mysqlxx::Pool && pool_,
-        MySQLClient && client_, std::unique_ptr<MaterializeModeSettings> settings_);
+        const IAST * database_engine_define_, const String & mysql_database_name_, mysqlxx::Pool && pool_,
+        MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_);
 
-    String getEngineName() const override { return "MySQL"; }
+    void setException(const std::exception_ptr & exception);
+protected:
+    ASTPtr engine_define;
+    DatabasePtr nested_database;
+    std::unique_ptr<MaterializeMySQLSettings> settings;
 
-private:
-    const Context & global_context;
-    String metadata_path;
-    String mysql_database_name;
+    Poco::Logger * log;
+    MaterializeMySQLSyncThread materialize_thread;
 
-    mutable mysqlxx::Pool pool;
-    mutable MySQLClient client;
-    std::unique_ptr<MaterializeModeSettings> settings;
+    mutable std::mutex mutex;
+    std::exception_ptr exception;
 
-    void cleanOutdatedTables();
+    DatabasePtr getNestedDatabase() const;
 
-    void scheduleSynchronized();
+public:
+    ASTPtr getCreateDatabaseQuery() const override;
 
-    BlockOutputStreamPtr getTableOutput(const String & table_name);
+    void loadStoredObjects(Context & context, bool has_force_restore_data_flag) override;
 
-    std::optional<MaterializeMetadata> prepareSynchronized(std::unique_lock<std::mutex> & lock, const std::function<bool()> & is_cancelled);
+    void shutdown() override;
 
-    void dumpDataForTables(mysqlxx::Pool::Entry & connection, MaterializeMetadata & master_info, const std::function<bool()> & is_cancelled);
+    bool empty() const override;
 
-    std::mutex sync_mutex;
-    std::atomic<bool> sync_quit{false};
-    std::condition_variable sync_cond;
-    ThreadPool background_thread_pool{1};
+    String getDataPath() const override;
+
+    String getTableDataPath(const String & table_name) const override;
+
+    String getTableDataPath(const ASTCreateQuery & query) const override;
+
+    UUID tryGetTableUUID(const String & table_name) const override;
+
+    void createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query) override;
+
+    void dropTable(const Context & context, const String & name, bool no_delay) override;
+
+    void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path) override;
+
+    StoragePtr detachTable(const String & name) override;
+
+    void renameTable(const Context & context, const String & name, IDatabase & to_database, const String & to_name, bool exchange) override;
+
+    void alterTable(const Context & context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
+
+    time_t getObjectMetadataModificationTime(const String & name) const override;
+
+    String getMetadataPath() const override;
+
+    String getObjectMetadataPath(const String & table_name) const override;
+
+    bool shouldBeEmptyOnDetach() const override;
+
+    void drop(const Context & context) override;
+
+    bool isTableExist(const String & name, const Context & context) const override;
+
+    StoragePtr tryGetTable(const String & name, const Context & context) const override;
+
+    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
 };
 
 }
-
-#endif

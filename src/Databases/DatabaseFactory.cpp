@@ -20,8 +20,8 @@
 #if USE_MYSQL
 #    include <Core/MySQLClient.h>
 #    include <Databases/MySQL/DatabaseConnectionMySQL.h>
+#    include <Databases/MySQL/MaterializeMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
-#    include <Databases/MySQL/MaterializeModeSettings.h>
 #    include <Interpreters/evaluateConstantExpression.h>
 #    include <Common/parseAddress.h>
 #    include <mysqlxx/Pool.h>
@@ -119,7 +119,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             const auto & [remote_host_name, remote_port] = parseAddress(host_name_and_port, 3306);
             auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
 
-            auto materialize_mode_settings = std::make_unique<MaterializeModeSettings>();
+            auto materialize_mode_settings = std::make_unique<MaterializeMySQLSettings>();
 
             if (engine_define->settings)
                 materialize_mode_settings->loadFromQuery(*engine_define);

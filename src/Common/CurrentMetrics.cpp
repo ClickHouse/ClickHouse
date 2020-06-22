@@ -13,6 +13,7 @@
     M(BackgroundMovePoolTask, "Number of active tasks in BackgroundProcessingPool for moves") \
     M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundBufferFlushSchedulePoolTask, "Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes") \
+    M(BackgroundMySQLSyncSchedulePoolTask, "Number of active tasks in BackgroundMySQLSyncSchedulePoolTask. This pool is used for MySQL Materialize Database sync.") \
     M(BackgroundDistributedSchedulePoolTask, "Number of active tasks in BackgroundDistributedSchedulePool. This pool is used for distributed sends that is done in background.") \
     M(CacheDictionaryUpdateQueueBatches, "Number of 'batches' (a set of keys) in update queue in CacheDictionaries.") \
     M(CacheDictionaryUpdateQueueKeys, "Exact number of keys in update queue in CacheDictionaries.") \

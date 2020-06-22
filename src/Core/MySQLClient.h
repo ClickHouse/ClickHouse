@@ -11,6 +11,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
+#include <Common/ConcurrentBoundedQueue.h>
 
 
 namespace DB
@@ -35,8 +36,8 @@ public:
     void ping();
 
     void startBinlogDump(UInt32 slave_id, String replicate_db, String binlog_file_name, UInt64 binlog_pos);
-    BinlogEventPtr readOneBinlogEvent();
-    Position getPosition() const { return replication.getPosition(); }
+    BinlogEventPtr readOneBinlogEvent(UInt64 milliseconds = 0);
+    Position getPosition() const { return last_position; }
 
 private:
     String host;
@@ -58,6 +59,9 @@ private:
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::optional<Poco::Net::SocketAddress> address;
     std::shared_ptr<PacketSender> packet_sender;
+    Position last_position;
+    std::optional<ThreadFromGlobalPool> dump_thread;
+    ConcurrentBoundedQueue<std::pair<BinlogEventPtr, Position>> events{1};
 
     void handshake();
     void registerSlaveOnMaster(UInt32 slave_id);
