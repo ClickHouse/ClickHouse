@@ -1370,7 +1370,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         }
 
         auto read_step = std::make_unique<ReadFromStorageStep>(
-                table_lock, options, storage,
+            table_lock, metadata_snapshot, options, storage,
                 required_columns, query_info, context, processing_stage, max_block_size, max_streams);
 
         read_step->setStepDescription("Read from " + storage->getName());

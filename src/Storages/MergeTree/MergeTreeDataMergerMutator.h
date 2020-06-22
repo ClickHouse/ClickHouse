@@ -170,7 +170,7 @@ private:
         const IndicesDescription & all_indices,
         const MutationCommands & commands_for_removes);
 
-    bool shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const Names & columns, const MutationCommands & commands) const;
+    static bool shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const Names & columns, const MutationCommands & commands);
 
     /// Return set of indices which should be recalculated during mutation also
     /// wraps input stream into additional expression stream

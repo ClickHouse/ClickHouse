@@ -95,11 +95,11 @@ private:
         const KeyCondition & key_condition,
         const Settings & settings) const;
 
-    MarkRanges markRangesFromPKRange(
+    static MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
-        const Settings & settings) const;
+        const Settings & settings);
 
     MarkRanges filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
