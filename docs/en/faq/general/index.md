@@ -12,7 +12,7 @@ Questions:
 -   [What does “Не тормозит” mean?](../../faq/general/ne-tormozit.md)
 -   [Why not use something like MapReduce?](../../faq/general/mapreduce.md)
 
-!!! info "Not see what you were locking for?"
+!!! info "Don’t see what you were looking for?"
     Check out [other F.A.Q. categories](../../faq/index.md) or browse around main documentation articles found in the left sidebar.
 
 {## [Original article](https://clickhouse.tech/docs/en/faq/general/) ##}

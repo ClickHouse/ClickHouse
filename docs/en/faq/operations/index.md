@@ -10,7 +10,7 @@ Questions:
 
 -   [Which ClickHouse version to use in production?](../../faq/operations/production.md)
 
-!!! info "Not see what you were locking for?"
+!!! info "Don’t see what you were looking for?"
     Check out [other F.A.Q. categories](../../faq/index.md) or browse around main documentation articles found in the left sidebar.
 
 {## [Original article](https://clickhouse.tech/docs/en/faq/production/) ##}
