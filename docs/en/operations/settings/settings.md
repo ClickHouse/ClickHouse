@@ -1531,4 +1531,34 @@ Possible values:
 
 Default value: 0.
 
+## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
+
+Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create.md#create-view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+
+Possible values:
+
+-   Any positive integer.
+-   0 — Squashing disabled.
+
+Default value: 1048576.
+
+**See Also**
+
+-   [min_insert_block_size_rows](#min-insert-block-size-rows)
+
+## min_insert_block_size_bytes_for_materialized_views {#min-insert-block-size-bytes-for-materialized-views}
+
+Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create.md#create-view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+
+Possible values:
+
+-   Any positive integer.
+-   0 — Squashing disabled.
+
+Default value: 268435456.
+
+**See also**
+
+-   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
