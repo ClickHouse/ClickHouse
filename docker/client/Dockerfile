@@ -17,7 +17,6 @@ RUN apt-get update \
             clickhouse-client=$version \
             clickhouse-common-static=$version \
             locales \
-            tzdata \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf \
     && apt-get clean
 
