@@ -670,14 +670,14 @@ private:
             cond_is_const = true;
             not_const_condition = const_arg->getDataColumnPtr();
             ColumnPtr data_column = const_arg->getDataColumnPtr();
-            if (auto const_nullable_arg = checkAndGetColumn<ColumnNullable>(*data_column))
+            if (const auto const_nullable_arg = checkAndGetColumn<ColumnNullable>(*data_column))
             {
                 data_column = const_nullable_arg->getNestedColumnPtr();
-                if (data_column->size())
+                if (!data_column->empty())
                     cond_is_null = const_nullable_arg->getNullMapData()[0];
             }
 
-            if (data_column->size())
+            if (!data_column->empty())
             {
                 cond_is_true = !cond_is_null && checkAndGetColumn<ColumnUInt8>(*data_column)->getBool(0);
                 cond_is_false = !cond_is_null && !cond_is_true;
@@ -719,7 +719,8 @@ private:
                     new_cond_column = ColumnConst::create(new_cond_column, column_size);
             }
             else
-                Exception("Illegal column " + arg_cond.column->getName() + " of " + getName() + " condition", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception("Illegal column " + arg_cond.column->getName() + " of " + getName() + " condition",
+                                ErrorCodes::ILLEGAL_COLUMN);
 
             Block temporary_block
             {
