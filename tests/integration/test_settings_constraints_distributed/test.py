@@ -35,6 +35,7 @@ def started_cluster():
         cluster.shutdown()
 
 
+@pytest.mark.skip(reason="CREATE USER statement doesn't support SETTINGS clause in 20.3")
 def test_select_clamps_settings(started_cluster):
     distributed.query("CREATE USER normal DEFAULT ROLE admin SETTINGS max_memory_usage = 80000000")
     distributed.query("CREATE USER wasteful DEFAULT ROLE admin SETTINGS max_memory_usage = 2000000000")
@@ -89,6 +90,7 @@ def test_select_clamps_settings(started_cluster):
                                                                                                  'node2\tmax_memory_usage\t10000000000\n'\
                                                                                                  'node2\treadonly\t1\n'
 
+@pytest.mark.skip(reason="ALTER USER statement doesn't support SETTINGS clause in 20.3")
 def test_insert_clamps_settings(started_cluster):
     node1.query("ALTER USER shard SETTINGS max_memory_usage = 50000000 MIN 11111111 MAX 99999999")
     node2.query("ALTER USER shard SETTINGS max_memory_usage = 50000000 MIN 11111111 MAX 99999999")
