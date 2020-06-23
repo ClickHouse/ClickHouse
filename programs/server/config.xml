@@ -136,7 +136,6 @@
       -->
     <max_server_memory_usage>0</max_server_memory_usage>
 
-    <!-- Maximum thread pool size -->
     <!-- Maximum number of threads in the Global thread pool.
     This will default to a maximum of 10000 threads if not specified.
     This setting will be useful in scenarios where there are a large number
