@@ -181,7 +181,7 @@ void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & c
             ssize_t offset = stack_trace.getOffset();
             char instruction_addr[100];
             StackTrace::Frames frames;
-            StackTrace::symbolize(stack_trace.getFramePointers().data(), offset, stack_size, frames);
+            StackTrace::symbolize(stack_trace.getFramePointers(), offset, stack_size, frames);
             for (ssize_t i = stack_size - 1; i >= offset; --i)
             {
                 const StackTrace::Frame & current_frame = frames[i];

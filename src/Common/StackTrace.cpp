@@ -190,7 +190,7 @@ static void * getCallerAddress(const ucontext_t & context)
 #endif
 }
 
-void StackTrace::symbolize(const void * const * frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames)
+void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames)
 {
 #if defined(__ELF__) && !defined(__FreeBSD__) && !defined(ARCADIA_BUILD)
 
@@ -369,7 +369,7 @@ static void toStringEveryLineImpl(const void * const * frame_pointers, size_t of
 #endif
 }
 
-static std::string toStringImpl(const void * const * frame_pointers, size_t offset, size_t size)
+static std::string toStringImpl(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
 {
     std::stringstream out;
     toStringEveryLineImpl(frame_pointers, offset, size, [&](const std::string & str) { out << str << '\n'; });
@@ -378,7 +378,7 @@ static std::string toStringImpl(const void * const * frame_pointers, size_t offs
 
 void StackTrace::toStringEveryLine(std::function<void(const std::string &)> callback) const
 {
-    toStringEveryLineImpl(frame_pointers.data(), offset, size, std::move(callback));
+    toStringEveryLineImpl(frame_pointers, offset, size, std::move(callback));
 }
 
 
@@ -388,7 +388,7 @@ std::string StackTrace::toString() const
     /// We use simple cache because otherwise the server could be overloaded by trash queries.
 
     static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
-    return func_cached(frame_pointers.data(), offset, size);
+    return func_cached(frame_pointers, offset, size);
 }
 
 std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t size)
@@ -400,5 +400,5 @@ std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t 
         frame_pointers_copy[i] = frame_pointers_[i];
 
     static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
-    return func_cached(frame_pointers_copy.data(), offset, size);
+    return func_cached(frame_pointers_copy, offset, size);
 }
