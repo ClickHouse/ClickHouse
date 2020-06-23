@@ -52,8 +52,14 @@ public:
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << toString(kind, old_syntax) << (settings.hilite ? hilite_none : "") << " ";
-        ast_settings->formatImpl(settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << toString(kind, old_syntax) << (settings.hilite ? hilite_none : "");
+
+        if (ast_settings)
+        {
+            settings.ostr << ' ';
+            ast_settings->formatImpl(settings, state, frame);
+        }
+
         settings.ostr << settings.nl_or_ws;
         query->formatImpl(settings, state, frame);
     }
