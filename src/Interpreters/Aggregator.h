@@ -869,8 +869,8 @@ public:
           *  two-level aggregation begins to be used. Enough to reach of at least one of the thresholds.
           * 0 - the corresponding threshold is not specified.
           */
-        const size_t group_by_two_level_threshold;
-        const size_t group_by_two_level_threshold_bytes;
+        size_t group_by_two_level_threshold;
+        size_t group_by_two_level_threshold_bytes;
 
         /// Settings to flush temporary data to the filesystem (external aggregation).
         const size_t max_bytes_before_external_group_by;        /// 0 - do not use external aggregation.
@@ -910,6 +910,18 @@ public:
             : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0)
         {
             intermediate_header = intermediate_header_;
+        }
+
+        static Block getHeader(
+            const Block & src_header,
+            const Block & intermediate_header,
+            const ColumnNumbers & keys,
+            const AggregateDescriptions & aggregates,
+            bool final);
+
+        Block getHeader(bool final) const
+        {
+            return getHeader(src_header, intermediate_header, keys, aggregates, final);
         }
     };
 
@@ -1002,6 +1014,7 @@ protected:
     friend class MergingAndConvertingBlockInputStream;
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
+    friend class AggregatingInOrderTransform;
 
     Params params;
 
@@ -1033,12 +1046,13 @@ protected:
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
+    using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
 
     // add info to track alignment requirement
-    // If there are states whose alignmentment are v1, ..vn, align_aggregate_states will be max(v1, ... vn)
+    // If there are states whose alignment are v1, ..vn, align_aggregate_states will be max(v1, ... vn)
     size_t align_aggregate_states = 1;
 
     bool all_aggregates_has_trivial_destructor = false;
@@ -1105,6 +1119,13 @@ protected:
         AggregateFunctionInstruction * aggregate_instructions,
         Arena * arena);
 
+    static void executeOnIntervalWithoutKeyImpl(
+        AggregatedDataWithoutKey & res,
+        size_t row_begin,
+        size_t row_end,
+        AggregateFunctionInstruction * aggregate_instructions,
+        Arena * arena);
+
     template <typename Method>
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
@@ -1156,6 +1177,11 @@ protected:
         AggregateColumnsData & aggregate_columns,
         MutableColumns & final_aggregate_columns,
         bool final) const;
+
+    template <typename Mapped>
+    void insertAggregatesIntoColumns(
+        Mapped & mapped,
+        MutableColumns & final_aggregate_columns) const;
 
     template <typename Method, typename Table>
     void convertToBlockImplFinal(
@@ -1250,6 +1276,22 @@ protected:
       * - sets the variable no_more_keys to true.
       */
     bool checkLimits(size_t result_size, bool & no_more_keys) const;
+
+    void prepareAggregateInstructions(
+        Columns columns,
+        AggregateColumns & aggregate_columns,
+        Columns & materialized_columns,
+        AggregateFunctionInstructions & instructions,
+        NestedColumnsHolder & nested_columns_holder);
+
+    void fillAggregateColumnsWithSingleKey(
+        AggregatedDataVariants & data_variants,
+        MutableColumns & final_aggregate_columns);
+
+    void createStatesAndFillKeyColumnsWithSingleKey(
+        AggregatedDataVariants & data_variants,
+        Columns & key_columns, size_t key_row,
+        MutableColumns & final_key_columns);
 };
 
 

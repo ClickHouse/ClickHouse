@@ -637,9 +637,9 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             reader_settings,
             result_projection);
     }
-    else if (settings.optimize_read_in_order && query_info.input_sorting_info)
+    else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.input_order_info)
     {
-        size_t prefix_size = query_info.input_sorting_info->order_key_prefix_descr.size();
+        size_t prefix_size = query_info.input_order_info->order_key_prefix_descr.size();
         auto order_key_prefix_ast = data.getSortingKey().expression_list_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
@@ -855,7 +855,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     ExpressionActionsPtr & out_projection) const
 {
     size_t sum_marks = 0;
-    const InputSortingInfoPtr & input_sorting_info = query_info.input_sorting_info;
+    const InputOrderInfoPtr & input_order_info = query_info.input_order_info;
+
     size_t adaptive_parts = 0;
     std::vector<size_t> sum_marks_in_parts(parts.size());
     const auto data_settings = data.getSettings();
@@ -998,10 +999,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                 }
                 parts.emplace_back(part);
             }
+            ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
 
-            ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_sorting_info->direction);
-
-            if (input_sorting_info->direction == 1)
+            if (input_order_info->direction == 1)
             {
                 pipes.emplace_back(std::make_shared<MergeTreeSelectProcessor>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
@@ -1024,9 +1024,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         if (pipes.size() > 1)
         {
             SortDescription sort_description;
-            for (size_t j = 0; j < input_sorting_info->order_key_prefix_descr.size(); ++j)
+            for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
                 sort_description.emplace_back(data.getSortingKey().column_names[j],
-                    input_sorting_info->direction, 1);
+                      input_order_info->direction, 1);
 
             /// Drop temporary columns, added by 'sorting_key_prefix_expr'
             out_projection = createProjection(pipes.back(), data);

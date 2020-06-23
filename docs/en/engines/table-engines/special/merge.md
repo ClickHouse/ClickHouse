@@ -3,13 +3,17 @@ toc_priority: 36
 toc_title: Merge
 ---
 
-# Merge {#merge}
+# Merge Table Engine {#merge}
 
 The `Merge` engine (not to be confused with `MergeTree`) does not store data itself, but allows reading from any number of other tables simultaneously.
+
 Reading is automatically parallelized. Writing to a table is not supported. When reading, the indexes of tables that are actually being read are used, if they exist.
+
 The `Merge` engine accepts parameters: the database name and a regular expression for tables.
 
-Example:
+## Examples {#examples}
+
+Example 1:
 
 ``` sql
 Merge(hits, '^WatchLog')
@@ -63,6 +67,6 @@ FROM WatchLog
 
 **See Also**
 
--   [Virtual columns](index.md#table_engines-virtual_columns)
+-   [Virtual columns](../../../engines/table-engines/special/index.md#table_engines-virtual_columns)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/merge/) <!--hide-->

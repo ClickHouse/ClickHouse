@@ -172,12 +172,12 @@ Pipes StorageMerge::read(
     num_streams *= num_streams_multiplier;
     size_t remaining_streams = num_streams;
 
-    InputSortingInfoPtr input_sorting_info;
-    if (query_info.order_by_optimizer)
+    InputOrderInfoPtr input_sorting_info;
+    if (query_info.order_optimizer)
     {
         for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
         {
-            auto current_info = query_info.order_by_optimizer->getInputOrder(std::get<0>(*it));
+            auto current_info = query_info.order_optimizer->getInputOrder(std::get<0>(*it));
             if (it == selected_tables.begin())
                 input_sorting_info = current_info;
             else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
@@ -187,7 +187,7 @@ Pipes StorageMerge::read(
                 break;
         }
 
-        query_info.input_sorting_info = input_sorting_info;
+        query_info.input_order_info = input_sorting_info;
     }
 
     for (const auto & table : selected_tables)
@@ -372,7 +372,7 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & cont
 }
 
 
-void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
 {
     for (const auto & command : commands)
     {
@@ -407,7 +407,6 @@ Block StorageMerge::getQueryHeader(
             if (query_info.prewhere_info)
             {
                 query_info.prewhere_info->prewhere_actions->execute(header);
-                header = materializeBlock(header);
                 if (query_info.prewhere_info->remove_prewhere_column)
                     header.erase(query_info.prewhere_info->prewhere_column_name);
             }
@@ -415,9 +414,9 @@ Block StorageMerge::getQueryHeader(
         }
         case QueryProcessingStage::WithMergeableState:
         case QueryProcessingStage::Complete:
-            return materializeBlock(InterpreterSelectQuery(
+            return InterpreterSelectQuery(
                 query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
-                SelectQueryOptions(processed_stage).analyze()).getSampleBlock());
+                SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
     }
     throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);
 }

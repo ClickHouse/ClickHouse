@@ -28,10 +28,9 @@ There are several ways to do this.
 ### Install from Repository {#install-from-repository}
 
 On Ubuntu 19.10 or newer:
-```
-$ sudo apt-get update
-$ sudo apt-get install gcc-9 g++-9
-```
+
+    $ sudo apt-get update
+    $ sudo apt-get install gcc-9 g++-9
 
 ### Install from a PPA Package {#install-from-a-ppa-package}
 

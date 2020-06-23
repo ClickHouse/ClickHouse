@@ -15,20 +15,20 @@ Main features:
 
     This allows you to create a small sparse index that helps find data faster.
 
--   Partitions can be used if the [partitioning key](custom-partitioning-key.md) is specified.
+-   Partitions can be used if the [partitioning key](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md) is specified.
 
     ClickHouse supports certain operations with partitions that are more effective than general operations on the same data with the same result. ClickHouse also automatically cuts off the partition data where the partitioning key is specified in the query. This also improves query performance.
 
 -   Data replication support.
 
-    The family of `ReplicatedMergeTree` tables provides data replication. For more information, see [Data replication](replication.md).
+    The family of `ReplicatedMergeTree` tables provides data replication. For more information, see [Data replication](../../../engines/table-engines/mergetree-family/replication.md).
 
 -   Data sampling support.
 
     If necessary, you can set the data sampling method in the table.
 
 !!! info "Info"
-    The [Merge](../special/merge.md#merge) engine does not belong to the `*MergeTree` family.
+    The [Merge](../../../engines/table-engines/special/merge.md#merge) engine does not belong to the `*MergeTree` family.
 
 ## Creating a Table {#table_engine-mergetree-creating-a-table}
 
@@ -41,8 +41,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
     INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2
 ) ENGINE = MergeTree()
+ORDER BY expr
 [PARTITION BY expr]
-[ORDER BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
 [TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
@@ -51,30 +51,31 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of parameters, see the [CREATE query description](../../../sql-reference/statements/create.md).
 
-!!! note "Note"
-    `INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
-
 ### Query Clauses {#mergetree-query-clauses}
 
 -   `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine does not have parameters.
 
--   `PARTITION BY` — The [partitioning key](custom-partitioning-key.md).
+-   `ORDER BY` — The sorting key.
+
+    A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
+
+    ClickHouse uses the sorting key as a primary key if the primary key is not defined obviously by the `PRIMARY KEY` clause.
+
+    Use the `ORDER BY tuple()` syntax, if you don’t need sorting. See [Selecting the Primary Key](#selecting-the-primary-key).
+
+-   `PARTITION BY` — The [partitioning key](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md). Optional.
 
     For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](../../../sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
--   `ORDER BY` — The sorting key.
-
-    A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
-
--   `PRIMARY KEY` — The primary key if it [differs from the sorting key](#choosing-a-primary-key-that-differs-from-the-sorting-key).
+-   `PRIMARY KEY` — The primary key if it [differs from the sorting key](#choosing-a-primary-key-that-differs-from-the-sorting-key). Optional.
 
     By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause). Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
 
--   `SAMPLE BY` — An expression for sampling.
+-   `SAMPLE BY` — An expression for sampling. Optional.
 
     If a sampling expression is used, the primary key must contain it. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
--   `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes).
+-   `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes). Optional.
 
     Expression must have one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
@@ -83,7 +84,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
     For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
--   `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
+-   `SETTINGS` — Additional parameters that control the behavior of the `MergeTree` (optional):
 
     -   `index_granularity` — Maximum number of data rows between the marks of an index. Default value: 8192. See [Data Storage](#mergetree-data-storage).
     -   `index_granularity_bytes` — Maximum size of data granules in bytes. Default value: 10Mb. To restrict the granule size only by number of rows, set to 0 (not recommended). See [Data Storage](#mergetree-data-storage).
@@ -192,18 +193,22 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
     ClickHouse sorts data by primary key, so the higher the consistency, the better the compression.
 
--   Provide additional logic when merging data parts in the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](summingmergetree.md) engines.
+-   Provide additional logic when merging data parts in the [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](../../../engines/table-engines/mergetree-family/summingmergetree.md) engines.
 
     In this case it makes sense to specify the *sorting key* that is different from the primary key.
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
+You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max\_insert\_threads = 1](../../../operations/settings/settings.md#settings-max-insert-threads).
+
+To select data in the initial order, use [single-threaded](../../../operations/settings/settings.md#settings-max_threads) `SELECT` queries.
+
 ### Choosing a Primary Key that Differs from the Sorting Key {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
 It is possible to specify a primary key (an expression with values that are written in the index file for each mark) that is different from the sorting key (an expression for sorting the rows in data parts). In this case the primary key expression tuple must be a prefix of the sorting key expression tuple.
 
-This feature is helpful when using the [SummingMergeTree](summingmergetree.md) and
-[AggregatingMergeTree](aggregatingmergetree.md) table engines. In a common case when using these engines, the table has two types of columns: *dimensions* and *measures*. Typical queries aggregate values of measure columns with arbitrary `GROUP BY` and filtering by dimensions. Because SummingMergeTree and AggregatingMergeTree aggregate rows with the same value of the sorting key, it is natural to add all dimensions to it. As a result, the key expression consists of a long list of columns and this list must be frequently updated with newly added dimensions.
+This feature is helpful when using the [SummingMergeTree](../../../engines/table-engines/mergetree-family/summingmergetree.md) and
+[AggregatingMergeTree](../../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engines. In a common case when using these engines, the table has two types of columns: *dimensions* and *measures*. Typical queries aggregate values of measure columns with arbitrary `GROUP BY` and filtering by dimensions. Because SummingMergeTree and AggregatingMergeTree aggregate rows with the same value of the sorting key, it is natural to add all dimensions to it. As a result, the key expression consists of a long list of columns and this list must be frequently updated with newly added dimensions.
 
 In this case it makes sense to leave only a few columns in the primary key that will provide efficient range scans and add the remaining dimension columns to the sorting key tuple.
 
@@ -249,7 +254,7 @@ ClickHouse cannot use an index if the values of the primary key in the query par
 
 ClickHouse uses this logic not only for days of the month sequences, but for any primary key that represents a partially-monotonic sequence.
 
-### Data Skipping Indexes (experimental) {#table_engine-mergetree-data_skipping-indexes}
+### Data Skipping Indexes {#table_engine-mergetree-data_skipping-indexes}
 
 The index declaration is in the columns section of the `CREATE` query.
 
@@ -332,8 +337,8 @@ The `set` index can be used with all functions. Function subsets for other index
 |------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
 | [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [notEquals(!=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✗           | ✗             |
-| [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✗           | ✗             |
+| [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [endsWith](../../../sql-reference/functions/string-functions.md#endswith)                                  | ✗           | ✗      | ✔           | ✔           | ✗             |
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
@@ -349,7 +354,8 @@ The `set` index can be used with all functions. Function subsets for other index
 
 Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
 
-Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can’t be used for optimizing queries where the result of a function is expected to be false, for example:
+!!! note "Note"
+    Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can’t be used for optimizing queries where the result of a function is expected to be false, for example:
 
 -   Can be optimized:
     -   `s LIKE '%test%'`
@@ -478,7 +484,7 @@ When ClickHouse see that data is expired, it performs an off-schedule merge. To 
 
 If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) query before `SELECT`.
 
-## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes} 
+## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
 
 ### Introduction {#introduction}
 
@@ -493,7 +499,7 @@ Data part is the minimum movable unit for `MergeTree`-engine tables. The data be
 -   Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 -   Storage policy — Set of volumes and the rules for moving data between them.
 
-The names given to the described entities can be found in the system tables, [system.storage\_policies](../../../operations/system-tables.md#system_tables-storage_policies) and [system.disks](../../../operations/system-tables.md#system_tables-disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
+The names given to the described entities can be found in the system tables, [system.storage\_policies](../../../operations/system-tables/storage_policies.md#system_tables-storage_policies) and [system.disks](../../../operations/system-tables/disks.md#system_tables-disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
 
 ### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
@@ -623,7 +629,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 The `default` storage policy implies using only one volume, which consists of only one disk given in `<path>`. Once a table is created, its storage policy cannot be changed.
 
-The number of threads performing background moves of data parts can be changed by [background_move_pool_size](../../../operations/settings/settings.md#background_move_pool_size) setting.
+The number of threads performing background moves of data parts can be changed by [background\_move\_pool\_size](../../../operations/settings/settings.md#background_move_pool_size) setting.
 
 ### Details {#details}
 
@@ -642,7 +648,7 @@ In all these cases except for mutations and partition freezing, a part is stored
 Under the hood, mutations and partition freezing make use of [hard links](https://en.wikipedia.org/wiki/Hard_link). Hard links between different disks are not supported, therefore in such cases the resulting parts are stored on the same disks as the initial ones.
 
 In the background, parts are moved between volumes on the basis of the amount of free space (`move_factor` parameter) according to the order the volumes are declared in the configuration file.
-Data is never transferred from the last one and into the first one. One may use system tables [system.part\_log](../../../operations/system-tables.md#system_tables-part-log) (field `type = MOVE_PART`) and [system.parts](../../../operations/system-tables.md#system_tables-parts) (fields `path` and `disk`) to monitor background moves. Also, the detailed information can be found in server logs.
+Data is never transferred from the last one and into the first one. One may use system tables [system.part\_log](../../../operations/system-tables/part_log.md#system_tables-part-log) (field `type = MOVE_PART`) and [system.parts](../../../operations/system-tables/parts.md#system_tables-parts) (fields `path` and `disk`) to monitor background moves. Also, the detailed information can be found in server logs.
 
 User can force moving a part or a partition from one volume to another using the query [ALTER TABLE … MOVE PART\|PARTITION … TO VOLUME\|DISK …](../../../sql-reference/statements/alter.md#alter_move-partition), all the restrictions for background operations are taken into account. The query initiates a move on its own and does not wait for background operations to be completed. User will get an error message if not enough free space is available or if any of the required conditions are not met.
 
@@ -652,4 +658,3 @@ After the completion of background merges and mutations, old parts are removed o
 During this time, they are not moved to other volumes or disks. Therefore, until the parts are finally removed, they are still taken into account for evaluation of the occupied disk space.
 
 [Original article](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->
-

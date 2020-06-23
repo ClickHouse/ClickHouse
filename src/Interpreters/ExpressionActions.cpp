@@ -691,6 +691,15 @@ void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed, si
     }
 }
 
+bool ExpressionActions::hasJoinOrArrayJoin() const
+{
+    for (const auto & action : actions)
+        if (action.type == ExpressionAction::JOIN || action.type == ExpressionAction::ARRAY_JOIN)
+            return true;
+
+    return false;
+}
+
 bool ExpressionActions::hasTotalsInJoin() const
 {
     for (const auto & action : actions)

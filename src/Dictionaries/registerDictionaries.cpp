@@ -13,6 +13,7 @@ void registerDictionaries()
         registerDictionarySourceClickHouse(source_factory);
         registerDictionarySourceMongoDB(source_factory);
         registerDictionarySourceRedis(source_factory);
+        registerDictionarySourceCassandra(source_factory);
         registerDictionarySourceXDBC(source_factory);
         registerDictionarySourceJDBC(source_factory);
         registerDictionarySourceExecutable(source_factory);

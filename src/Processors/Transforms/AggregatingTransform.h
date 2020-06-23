@@ -28,6 +28,8 @@ struct AggregatingTransformParams
         : params(params_), aggregator(params), final(final_) {}
 
     Block getHeader() const { return aggregator.getHeader(final); }
+
+    Block getCustomHeader(bool final_) const { return aggregator.getHeader(final_); }
 };
 
 struct ManyAggregatedData
@@ -116,5 +118,7 @@ private:
 
     void initGenerate();
 };
+
+Chunk convertToChunk(const Block & block);
 
 }

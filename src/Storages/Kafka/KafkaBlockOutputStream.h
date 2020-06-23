@@ -10,7 +10,7 @@ namespace DB
 class KafkaBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit KafkaBlockOutputStream(StorageKafka & storage_, const Context & context_);
+    explicit KafkaBlockOutputStream(StorageKafka & storage_, const std::shared_ptr<Context> & context_);
 
     Block getHeader() const override;
 
@@ -22,7 +22,7 @@ public:
 
 private:
     StorageKafka & storage;
-    Context context;
+    const std::shared_ptr<Context> context;
     ProducerBufferPtr buffer;
     BlockOutputStreamPtr child;
 };

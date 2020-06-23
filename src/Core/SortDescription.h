@@ -59,6 +59,13 @@ struct SortColumnDescription
     {
         return !(*this == other);
     }
+
+    std::string dump() const
+    {
+        std::stringstream ss;
+        ss << column_name << ":" << column_number << ":dir " << direction << "nulls " << nulls_direction;
+        return ss.str();
+    }
 };
 
 /// Description of the sorting rule for several columns.

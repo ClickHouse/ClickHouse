@@ -189,6 +189,7 @@ void TCPHandler::runImpl()
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
+                CurrentThread::setFatalErrorCallback([this]{ sendLogs(); });
             }
 
             query_context->setExternalTablesInitializer([&connection_settings, this] (Context & context)
@@ -304,17 +305,17 @@ void TCPHandler::runImpl()
              *  We will try to send exception to the client in any case - see below.
              */
             state.io.onException();
-            exception.emplace(Exception::CreateFromPoco, e);
+            exception.emplace(Exception::CreateFromPocoTag{}, e);
         }
         catch (const Poco::Exception & e)
         {
             state.io.onException();
-            exception.emplace(Exception::CreateFromPoco, e);
+            exception.emplace(Exception::CreateFromPocoTag{}, e);
         }
         catch (const std::exception & e)
         {
             state.io.onException();
-            exception.emplace(Exception::CreateFromSTD, e);
+            exception.emplace(Exception::CreateFromSTDTag{}, e);
         }
         catch (...)
         {

@@ -69,6 +69,7 @@ class PartLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
+class AsynchronousMetricLog;
 
 
 class ISystemLog
@@ -76,7 +77,8 @@ class ISystemLog
 public:
     virtual String getName() = 0;
     virtual ASTPtr getCreateTableQuery() = 0;
-    virtual void flush() = 0;
+    //// force -- force table creation (used for SYSTEM FLUSH LOGS)
+    virtual void flush(bool force = false) = 0;
     virtual void prepareTable() = 0;
     virtual void startup() = 0;
     virtual void shutdown() = 0;
@@ -99,6 +101,8 @@ struct SystemLogs
     std::shared_ptr<TraceLog> trace_log;                /// Used to log traces from query profiler
     std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
+    /// Metrics from system.asynchronous_metrics.
+    std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
 
     std::vector<ISystemLog *> logs;
 };
@@ -133,7 +137,7 @@ public:
     void stopFlushThread();
 
     /// Flush data in the buffer to disk
-    void flush() override;
+    void flush(bool force = false) override;
 
     /// Start the background thread.
     void startup() override;
@@ -174,6 +178,7 @@ private:
     // synchronous log flushing for SYSTEM FLUSH LOGS.
     uint64_t queue_front_index = 0;
     bool is_shutdown = false;
+    bool is_force_prepare_tables = false;
     std::condition_variable flush_event;
     // Requested to flush logs up to this index, exclusive
     uint64_t requested_flush_before = 0;
@@ -214,7 +219,7 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 template <typename LogElement>
 void SystemLog<LogElement>::startup()
 {
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
     saving_thread = ThreadFromGlobalPool([this] { savingThreadFunction(); });
 }
 
@@ -228,7 +233,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
     auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (is_shutdown)
         return;
@@ -272,7 +277,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
 
 
 template <typename LogElement>
-void SystemLog<LogElement>::flush()
+void SystemLog<LogElement>::flush(bool force)
 {
     std::unique_lock lock(mutex);
 
@@ -281,7 +286,8 @@ void SystemLog<LogElement>::flush()
 
     const uint64_t queue_end = queue_front_index + queue.size();
 
-    if (requested_flush_before < queue_end)
+    is_force_prepare_tables = force;
+    if (requested_flush_before < queue_end || force)
     {
         requested_flush_before = queue_end;
         flush_event.notify_all();
@@ -290,7 +296,7 @@ void SystemLog<LogElement>::flush()
     // Use an arbitrary timeout to avoid endless waiting.
     const int timeout_seconds = 60;
     bool result = flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds),
-        [&] { return flushed_before >= queue_end; });
+        [&] { return flushed_before >= queue_end && !is_force_prepare_tables; });
 
     if (!result)
     {
@@ -304,7 +310,7 @@ template <typename LogElement>
 void SystemLog<LogElement>::stopFlushThread()
 {
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
 
         if (!saving_thread.joinable())
         {
@@ -347,8 +353,7 @@ void SystemLog<LogElement>::savingThreadFunction()
                     std::chrono::milliseconds(flush_interval_milliseconds),
                     [&] ()
                     {
-                        return requested_flush_before > flushed_before
-                            || is_shutdown;
+                        return requested_flush_before > flushed_before || is_shutdown || is_force_prepare_tables;
                     }
                 );
 
@@ -364,10 +369,26 @@ void SystemLog<LogElement>::savingThreadFunction()
 
             if (to_flush.empty())
             {
-                continue;
-            }
+                bool force;
+                {
+                    std::lock_guard lock(mutex);
+                    force = is_force_prepare_tables;
+                }
 
-            flushImpl(to_flush, to_flush_end);
+                if (force)
+                {
+                    prepareTable();
+                    LOG_TRACE(log, "Table created (force)");
+
+                    std::lock_guard lock(mutex);
+                    is_force_prepare_tables = false;
+                    flush_event.notify_all();
+                }
+            }
+            else
+            {
+                flushImpl(to_flush, to_flush_end);
+            }
         }
         catch (...)
         {
@@ -417,8 +438,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
 
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         flushed_before = to_flush_end;
+        is_force_prepare_tables = false;
         flush_event.notify_all();
     }
 
