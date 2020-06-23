@@ -710,11 +710,17 @@ private:
             ColumnPtr new_cond_column = nullable->getNestedColumnPtr();
             size_t column_size = arg_cond.column->size();
 
-            if (cond_is_null) /// Nullable(Nothing)
-                new_cond_column = ColumnConst::create(ColumnUInt8::create(1, 0), column_size);
+            if (cond_is_null || cond_is_true || cond_is_false) /// Nullable(Nothing) or consts
+            {
+                UInt8 value = cond_is_true ? 1 : 0;
+                new_cond_column = ColumnConst::create(ColumnUInt8::create(1, value), column_size);
+            }
             else if (checkAndGetColumn<ColumnUInt8>(*new_cond_column))
             {
-                new_cond_column = nullable->getNestedColumnCopy(); /// zero NULLs in ColumnUInt8
+                auto nested_column_copy = new_cond_column->cloneResized(new_cond_column->size());
+                typeid_cast<ColumnUInt8 *>(nested_column_copy.get())->applyZeroMap(nullable->getNullMapData());
+                new_cond_column = std::move(nested_column_copy);
+
                 if (cond_is_const)
                     new_cond_column = ColumnConst::create(new_cond_column, column_size);
             }

@@ -225,12 +225,6 @@ public:
     using Filter = PaddedPODArray<UInt8>;
     virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
-    /// Replace elements that match the filter with defaults. If inverted replaces not matched elements.
-    virtual Ptr setDefaults(const Filter &, bool /*inverted*/) const
-    {
-        throw Exception("Method setDefaults is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     /// Permutes elements using specified permutation. Is used in sortings.
     /// limit - if it isn't 0, puts only first limit elements in the result.
     using Permutation = PaddedPODArray<size_t>;

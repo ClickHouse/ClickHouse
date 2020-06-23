@@ -245,7 +245,6 @@ public:
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
-    ColumnPtr setDefaults(const IColumn::Filter & filt, bool inverted) const override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 
@@ -277,6 +276,9 @@ public:
     {
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
+
+    /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
+    void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()
