@@ -12,7 +12,6 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int CANNOT_SCHEDULE_TASK;
-        extern const int LOGICAL_ERROR;
     }
 }
 
