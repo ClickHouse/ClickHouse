@@ -29,6 +29,8 @@ namespace DB {
 
         // Read "length" 32-bit integers in varint format from in, storing the result in out.  Returns the number of bytes read.
         size_t masked_vbyte_decode(const uint8_t *in, uint32_t *out, uint64_t length);
+
+        static int read_int(const uint8_t* in, uint32_t* out);
     };
 
     class CompressionCodecFactory;
