@@ -48,9 +48,7 @@ ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, const Block & hea
     options.setCompression(orc::CompressionKind::CompressionKind_NONE);
     size_t columns_count = header_.columns();
     for (size_t i = 0; i != columns_count; ++i)
-    {
         schema->addStructField(header_.safeGetByPosition(i).name, getORCType(data_types[i]));
-    }
     writer = orc::createWriter(*schema, &output_stream, options);
 }
 
