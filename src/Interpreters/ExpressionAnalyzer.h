@@ -33,7 +33,7 @@ class ASTSelectQuery;
 struct ASTTablesInSelectQueryElement;
 
 /// Create columns in block or return false if not possible
-bool sanitizeBlock(Block & block);
+bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
@@ -208,7 +208,9 @@ struct ExpressionAnalysisResult
         const FilterInfoPtr & filter_info,
         const Block & source_header);
 
+    /// Filter for row-level security.
     bool hasFilter() const { return filter_info.get(); }
+
     bool hasJoin() const { return before_join.get(); }
     bool hasPrewhere() const { return prewhere_info.get(); }
     bool hasWhere() const { return before_where.get(); }

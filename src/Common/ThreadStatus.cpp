@@ -98,4 +98,15 @@ void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & 
     thread_group->client_logs_level = client_logs_level;
 }
 
+void ThreadStatus::setFatalErrorCallback(std::function<void()> callback)
+{
+    fatal_error_callback = std::move(callback);
+}
+
+void ThreadStatus::onFatalError()
+{
+    if (fatal_error_callback)
+        fatal_error_callback();
+}
+
 }

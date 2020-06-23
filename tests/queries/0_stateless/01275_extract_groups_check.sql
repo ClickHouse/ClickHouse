@@ -1,5 +1,5 @@
-SELECT extractGroups('hello', ''); -- { serverError 69 }
-SELECT extractAllGroups('hello', ''); -- { serverError 69 }
+SELECT extractGroups('hello', ''); -- { serverError 36 }
+SELECT extractAllGroups('hello', ''); -- { serverError 36 }
 
 SELECT extractGroups('hello', ' '); -- { serverError 36 }
 SELECT extractAllGroups('hello', ' '); -- { serverError 36 }
