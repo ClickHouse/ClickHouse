@@ -83,13 +83,17 @@ def test_drop_replica(start_cluster):
     assert "can't drop local replica" in node_1_1.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1'")
     assert "can't drop local replica" in node_1_1.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1' FROM DATABASE test")
     assert "can't drop local replica" in node_1_1.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1' FROM TABLE test.test_table")
-    assert "can't drop local replica" in \
-        node_1_1.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test/{shard}/replicated/test_table'".format(shard=1))
     assert "it's active" in node_1_2.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1'")
     assert "it's active" in node_1_2.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1' FROM DATABASE test")
     assert "it's active" in node_1_2.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1' FROM TABLE test.test_table")
     assert "it's active" in \
+        node_1_3.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test/{shard}/replicated/test_table'".format(shard=1))
+    assert "There is a local table" in \
         node_1_2.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test/{shard}/replicated/test_table'".format(shard=1))
+    assert "There is a local table" in \
+        node_1_1.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test/{shard}/replicated/test_table'".format(shard=1))
+    assert "does not look like a table path" in \
+           node_1_3.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test'")
 
     with PartitionManager() as pm:
         ## make node_1_1 dead
@@ -117,7 +121,7 @@ def test_drop_replica(start_cluster):
         exists_replica_1_1 = zk.exists("/clickhouse/tables/test1/{shard}/replicated/test_table/replicas/{replica}".format(shard=1, replica='node_1_1'))
         assert (exists_replica_1_1 == None)
 
-        node_1_2.query("SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test3/{shard}/replicated/test_table'".format(shard=1))
+        node_1_3.query("SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test3/{shard}/replicated/test_table'".format(shard=1))
         exists_replica_1_1 = zk.exists("/clickhouse/tables/test3/{shard}/replicated/test_table/replicas/{replica}".format(shard=1, replica='node_1_1'))
         assert (exists_replica_1_1 == None)
 
