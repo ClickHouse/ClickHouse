@@ -13,13 +13,13 @@
  * Define overrides for non-standard allocator-related functions if they are
  * present on the system.
  */
-#define JEMALLOC_OVERRIDE___LIBC_CALLOC
-#define JEMALLOC_OVERRIDE___LIBC_FREE
-#define JEMALLOC_OVERRIDE___LIBC_MALLOC
-#define JEMALLOC_OVERRIDE___LIBC_MEMALIGN
-#define JEMALLOC_OVERRIDE___LIBC_REALLOC
-#define JEMALLOC_OVERRIDE___LIBC_VALLOC
-/* #undef JEMALLOC_OVERRIDE___POSIX_MEMALIGN */
+/* #undef JEMALLOC_OVERRIDE___LIBC_CALLOC */
+/* #undef JEMALLOC_OVERRIDE___LIBC_FREE */
+/* #undef JEMALLOC_OVERRIDE___LIBC_MALLOC */
+/* #undef JEMALLOC_OVERRIDE___LIBC_MEMALIGN */
+/* #undef JEMALLOC_OVERRIDE___LIBC_REALLOC */
+/* #undef JEMALLOC_OVERRIDE___LIBC_VALLOC */
+#define JEMALLOC_OVERRIDE___POSIX_MEMALIGN
 
 /*
  * JEMALLOC_PRIVATE_NAMESPACE is used as a prefix for all library-private APIs.
@@ -73,23 +73,24 @@
 /*
  * Defined if secure_getenv(3) is available.
  */
-// #define JEMALLOC_HAVE_SECURE_GETENV
+/* #undef JEMALLOC_HAVE_SECURE_GETENV */
 
 /*
  * Defined if issetugid(2) is available.
  */
-/* #undef JEMALLOC_HAVE_ISSETUGID */
+#define JEMALLOC_HAVE_ISSETUGID
 
 /* Defined if pthread_atfork(3) is available. */
 #define JEMALLOC_HAVE_PTHREAD_ATFORK
 
 /* Defined if pthread_setname_np(3) is available. */
-#define JEMALLOC_HAVE_PTHREAD_SETNAME_NP
+// Only since 12.1-STABLE
+// #define JEMALLOC_HAVE_PTHREAD_SETNAME_NP
 
 /*
  * Defined if clock_gettime(CLOCK_MONOTONIC_COARSE, ...) is available.
  */
-#define JEMALLOC_HAVE_CLOCK_MONOTONIC_COARSE 1
+/* #undef JEMALLOC_HAVE_CLOCK_MONOTONIC_COARSE */
 
 /*
  * Defined if clock_gettime(CLOCK_MONOTONIC, ...) is available.
@@ -102,27 +103,32 @@
 /* #undef JEMALLOC_HAVE_MACH_ABSOLUTE_TIME */
 
 /*
+ * Defined if clock_gettime(CLOCK_REALTIME, ...) is available.
+ */
+#define JEMALLOC_HAVE_CLOCK_REALTIME 1
+
+/*
  * Defined if _malloc_thread_cleanup() exists.  At least in the case of
  * FreeBSD, pthread_key_create() allocates, which if used during malloc
  * bootstrapping will cause recursion into the pthreads library.  Therefore, if
  * _malloc_thread_cleanup() exists, use it as the basis for thread cleanup in
  * malloc_tsd.
  */
-/* #undef JEMALLOC_MALLOC_THREAD_CLEANUP */
+#define JEMALLOC_MALLOC_THREAD_CLEANUP
 
 /*
  * Defined if threaded initialization is known to be safe on this platform.
  * Among other things, it must be possible to initialize a mutex without
  * triggering allocation in order for threaded allocation to be safe.
  */
-#define JEMALLOC_THREADED_INIT
+/* #undef JEMALLOC_THREADED_INIT */
 
 /*
  * Defined if the pthreads implementation defines
  * _pthread_mutex_init_calloc_cb(), in which case the function is used in order
  * to avoid recursive allocation during mutex initialization.
  */
-/* #undef JEMALLOC_MUTEX_INIT_CB */
+#define JEMALLOC_MUTEX_INIT_CB 1
 
 /* Non-empty if the tls_model attribute is supported. */
 #define JEMALLOC_TLS_MODEL __attribute__((tls_model("initial-exec")))
@@ -167,7 +173,7 @@
 /* #undef JEMALLOC_XMALLOC */
 
 /* Support lazy locking (avoid locking unless a second thread is launched). */
-/* #undef JEMALLOC_LAZY_LOCK */
+#define JEMALLOC_LAZY_LOCK
 
 /*
  * Minimum allocation alignment is 2^LG_QUANTUM bytes (ignoring tiny size
@@ -200,7 +206,7 @@
  * common sequences of mmap()/munmap() calls will cause virtual memory map
  * holes.
  */
-#define JEMALLOC_RETAIN
+/* #undef JEMALLOC_RETAIN */
 
 /* TLS is used to map arenas and magazine caches to threads. */
 #define JEMALLOC_TLS
@@ -254,8 +260,8 @@
  *                                         /proc/sys/vm.overcommit_memory file.
  * JEMALLOC_SYSCTL_VM_OVERCOMMIT: FreeBSD's vm.overcommit sysctl.
  */
-/* #undef JEMALLOC_SYSCTL_VM_OVERCOMMIT */
-#define JEMALLOC_PROC_SYS_VM_OVERCOMMIT_MEMORY
+#define JEMALLOC_SYSCTL_VM_OVERCOMMIT
+/* #undef JEMALLOC_PROC_SYS_VM_OVERCOMMIT_MEMORY */
 
 /* Defined if madvise(2) is available. */
 #define JEMALLOC_HAVE_MADVISE
@@ -264,7 +270,7 @@
  * Defined if transparent huge pages are supported via the MADV_[NO]HUGEPAGE
  * arguments to madvise(2).
  */
-#define JEMALLOC_HAVE_MADVISE_HUGE
+/* #undef JEMALLOC_HAVE_MADVISE_HUGE */
 
 /*
  * Methods for purging unused pages differ between operating systems.
@@ -281,7 +287,7 @@
  */
 #define JEMALLOC_PURGE_MADVISE_FREE
 #define JEMALLOC_PURGE_MADVISE_DONTNEED
-#define JEMALLOC_PURGE_MADVISE_DONTNEED_ZEROS
+/* #undef JEMALLOC_PURGE_MADVISE_DONTNEED_ZEROS */
 
 /* Defined if madvise(2) is available but MADV_FREE is not (x86 Linux only). */
 /* #undef JEMALLOC_DEFINE_MADVISE_FREE */
@@ -289,7 +295,7 @@
 /*
  * Defined if MADV_DO[NT]DUMP is supported as an argument to madvise.
  */
-#define JEMALLOC_MADVISE_DONTDUMP
+/* #undef JEMALLOC_MADVISE_DONTDUMP */
 
 /*
  * Defined if transparent huge pages (THPs) are supported via the
@@ -298,7 +304,7 @@
 /* #undef JEMALLOC_THP */
 
 /* Define if operating system has alloca.h header. */
-#define JEMALLOC_HAS_ALLOCA_H 1
+/* #undef JEMALLOC_HAS_ALLOCA_H */
 
 /* C99 restrict keyword supported. */
 #define JEMALLOC_HAS_RESTRICT 1
@@ -319,10 +325,10 @@
 #define LG_SIZEOF_INTMAX_T 3
 
 /* glibc malloc hooks (__malloc_hook, __realloc_hook, __free_hook). */
-#define JEMALLOC_GLIBC_MALLOC_HOOK
+/* #undef JEMALLOC_GLIBC_MALLOC_HOOK */
 
 /* glibc memalign hook. */
-#define JEMALLOC_GLIBC_MEMALIGN_HOOK
+/* #undef JEMALLOC_GLIBC_MEMALIGN_HOOK */
 
 /* pthread support */
 #define JEMALLOC_HAVE_PTHREAD
@@ -334,10 +340,10 @@
 #define JEMALLOC_HAVE_PTHREAD_MUTEX_ADAPTIVE_NP
 
 /* GNU specific sched_getcpu support */
-#define JEMALLOC_HAVE_SCHED_GETCPU
+/* #undef JEMALLOC_HAVE_SCHED_GETCPU */
 
 /* GNU specific sched_setaffinity support */
-#define JEMALLOC_HAVE_SCHED_SETAFFINITY
+/* #undef JEMALLOC_HAVE_SCHED_SETAFFINITY */
 
 /*
  * If defined, all the features necessary for background threads are present.
@@ -359,7 +365,7 @@
 /*
  * Defined if strerror_r returns char * if _GNU_SOURCE is defined.
  */
-#define JEMALLOC_STRERROR_R_RETURNS_CHAR_WITH_GNU_SOURCE
+/* #undef JEMALLOC_STRERROR_R_RETURNS_CHAR_WITH_GNU_SOURCE */
 
 /* Performs additional safety checks when defined. */
 /* #undef JEMALLOC_OPT_SAFETY_CHECKS */
