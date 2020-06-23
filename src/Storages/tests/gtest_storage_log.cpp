@@ -71,13 +71,14 @@ TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     std::string data;
 
     Block block;
 
     {
-        const auto & storage_columns = table->getColumns();
+        const auto & storage_columns = metadata_snapshot->getColumns();
         ColumnWithTypeAndName column;
         column.name = "a";
         column.type = storage_columns.getPhysical("a").type;
@@ -97,7 +98,7 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & cont
         block.insert(column);
     }
 
-    BlockOutputStreamPtr out = table->write({}, context);
+    BlockOutputStreamPtr out = table->write({}, metadata_snapshot, context);
     out->write(block);
 
     return data;
@@ -107,13 +108,14 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & cont
 std::string readData(DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     Names column_names;
     column_names.push_back("a");
 
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
-    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 8192, 1)[0]));
+    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, metadata_snapshot, {}, context, stage, 8192, 1)[0]));
 
     Block sample;
     {

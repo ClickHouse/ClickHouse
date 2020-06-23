@@ -215,9 +215,14 @@ public:
     }
 };
 
-void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & columns, ConstStoragePtr storage)
+void replaceConstantExpressions(
+    ASTPtr & node,
+    const Context & context,
+    const NamesAndTypesList & columns,
+    ConstStoragePtr storage,
+    const StorageMetadataPtr & metadata_snapshot)
 {
-    auto syntax_result = SyntaxAnalyzer(context).analyze(node, columns, storage);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(node, columns, storage, metadata_snapshot);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
     InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
@@ -285,12 +290,14 @@ StorageDistributed::StorageDistributed(
     , storage_policy(storage_policy_)
     , relative_data_path(relative_data_path_)
 {
-    setColumns(columns_);
-    setConstraints(constraints_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 
     if (sharding_key_)
     {
-        sharding_key_expr = buildShardingKeyExpression(sharding_key_, *global_context, getColumns().getAllPhysical(), false);
+        sharding_key_expr = buildShardingKeyExpression(sharding_key_, *global_context, storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
     }
 
@@ -447,6 +454,7 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
     const auto & settings = context.getSettingsRef();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
 
     if (canForceGroupByNoMerge(context, to_stage, query_ptr))
         return QueryProcessingStage::Complete;
@@ -454,7 +462,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
     ClusterPtr cluster = getCluster();
     if (settings.optimize_skip_unused_shards)
     {
-        ClusterPtr optimized_cluster = getOptimizedCluster(context, query_ptr);
+        ClusterPtr optimized_cluster = getOptimizedCluster(context, metadata_snapshot, query_ptr);
         if (optimized_cluster)
             cluster = optimized_cluster;
     }
@@ -464,6 +472,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
 
 Pipes StorageDistributed::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -475,7 +484,7 @@ Pipes StorageDistributed::read(
     ClusterPtr cluster = getCluster();
     if (settings.optimize_skip_unused_shards)
     {
-        ClusterPtr optimized_cluster = getOptimizedCluster(context, query_info.query);
+        ClusterPtr optimized_cluster = getOptimizedCluster(context, metadata_snapshot, query_info.query);
         if (optimized_cluster)
         {
             LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}", makeFormattedListOfShards(optimized_cluster));
@@ -496,7 +505,7 @@ Pipes StorageDistributed::read(
     const Scalars & scalars = context.hasQueryContext() ? context.getQueryContext().getScalars() : Scalars{};
 
     bool has_virtual_shard_num_column = std::find(column_names.begin(), column_names.end(), "_shard_num") != column_names.end();
-    if (has_virtual_shard_num_column && !isVirtualColumn("_shard_num"))
+    if (has_virtual_shard_num_column && !isVirtualColumn("_shard_num", metadata_snapshot))
         has_virtual_shard_num_column = false;
 
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
@@ -510,7 +519,7 @@ Pipes StorageDistributed::read(
 }
 
 
-BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & context)
+BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
     auto cluster = getCluster();
     const auto & settings = context.getSettingsRef();
@@ -535,7 +544,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        context, *this, createInsertToRemoteTableQuery(remote_database, remote_table, getSampleBlockNonMaterialized()), cluster,
+        context, *this, metadata_snapshot, createInsertToRemoteTableQuery(remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()), cluster,
         insert_sync, timeout);
 }
 
@@ -555,16 +564,15 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, co
     }
 }
 
-void StorageDistributed::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+void StorageDistributed::alter(const AlterCommands & params, const Context & context, TableLockHolder &)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
 
     checkAlterIsPossible(params, context.getSettingsRef());
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
-    setColumns(std::move(new_metadata.columns));
+    setInMemoryMetadata(new_metadata);
 }
 
 
@@ -610,7 +618,7 @@ Strings StorageDistributed::getDataPaths() const
     return paths;
 }
 
-void StorageDistributed::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
     std::lock_guard lock(cluster_nodes_mutex);
 
@@ -682,14 +690,14 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : global_context->getCluster(cluster_name);
 }
 
-ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, const ASTPtr & query_ptr) const
+ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = context.getSettingsRef();
 
     if (has_sharding_key)
     {
-        ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, context);
+        ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, metadata_snapshot, context);
         if (optimized)
             return optimized;
     }
@@ -750,7 +758,11 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
-ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context) const
+ClusterPtr StorageDistributed::skipUnusedShards(
+    ClusterPtr cluster,
+    const ASTPtr & query_ptr,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Context & context) const
 {
     const auto & select = query_ptr->as<ASTSelectQuery &>();
 
@@ -769,7 +781,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const ASTPtr
         condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
     }
 
-    replaceConstantExpressions(condition_ast, context, getColumns().getAll(), shared_from_this());
+    replaceConstantExpressions(condition_ast, context, metadata_snapshot->getColumns().getAll(), shared_from_this(), metadata_snapshot);
     const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards
