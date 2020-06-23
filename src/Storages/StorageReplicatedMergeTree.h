@@ -182,7 +182,7 @@ public:
 
     /** Remove a specific replica from zookeeper.
      */
-    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, bool is_readonly, bool is_drop_table);
+    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, bool is_readonly);
 
 private:
 
