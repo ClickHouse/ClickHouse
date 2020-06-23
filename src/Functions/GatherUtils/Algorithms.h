@@ -394,21 +394,6 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
 }
 
 
-template <
-    ArraySearchType search_type,
-    typename FirstSliceType,
-    typename SecondSliceType,
-    bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t),
-    bool (*isEqualSecond)(const SecondSliceType &, size_t, size_t)>
-bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
-{
-    if constexpr (search_type == ArraySearchType::Substr)
-        return sliceHasImplSubstr<FirstSliceType, SecondSliceType, isEqual, isEqualSecond>(first, second, first_null_map, second_null_map);
-    else
-        return sliceHasImplAnyAll<search_type, FirstSliceType, SecondSliceType, isEqual>(first, second, first_null_map, second_null_map);
-}
-
-
 /// Methods to check if first array has elements from second array, overloaded for various combinations of types.
 template <
     ArraySearchType search_type,
@@ -442,6 +427,33 @@ bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & se
             return false;
     }
     return search_type == ArraySearchType::All;
+}
+
+
+/// For details of Knuth-Morris-Pratt string matching algorithm see
+/// https://en.wikipedia.org/wiki/Knuth%E2%80%93Morris%E2%80%93Pratt_algorithm.
+/// A "prefix-function" is defined as: i-th element is the length of the longest of all prefixes that end in i-th position
+template <typename SliceType, typename EqualityFunc>
+std::vector<size_t> buildKMPPrefixFunction(const SliceType & pattern, const EqualityFunc & isEqualFunc)
+{
+    std::vector<size_t> result(pattern.size);
+    result[0] = 0;
+
+    for (size_t i = 1; i < pattern.size; ++i)
+    {
+        result[i] = 0;
+        for (auto length = i; length > 0;)
+        {
+            length = result[length - 1];
+            if (isEqualFunc(pattern, i, length))
+            {
+                result[i] = length + 1;
+                break;
+            }
+        }
+    }
+
+    return result;
 }
 
 
@@ -500,30 +512,18 @@ bool sliceHasImplSubstr(const FirstSliceType & first, const SecondSliceType & se
 }
 
 
-/// For details of Knuth-Morris-Pratt string matching algorithm see
-/// https://en.wikipedia.org/wiki/Knuth%E2%80%93Morris%E2%80%93Pratt_algorithm.
-/// A "prefix-function" is defined as: i-th element is the length of the longest of all prefixes that end in i-th position
-template <typename SliceType, typename EqualityFunc>
-std::vector<size_t> buildKMPPrefixFunction(const SliceType & pattern, const EqualityFunc & isEqualFunc)
+template <
+    ArraySearchType search_type,
+    typename FirstSliceType,
+    typename SecondSliceType,
+    bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t),
+    bool (*isEqualSecond)(const SecondSliceType &, size_t, size_t)>
+bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
-    std::vector<size_t> result(pattern.size);
-    result[0] = 0;
-
-    for (size_t i = 1; i < pattern.size; ++i)
-    {
-        result[i] = 0;
-        for (auto length = i; length > 0;)
-        {
-            length = result[length - 1];
-            if (isEqualFunc(pattern, i, length))
-            {
-                result[i] = length + 1;
-                break;
-            }
-        }
-    }
-
-    return result;
+    if constexpr (search_type == ArraySearchType::Substr)
+        return sliceHasImplSubstr<FirstSliceType, SecondSliceType, isEqual, isEqualSecond>(first, second, first_null_map, second_null_map);
+    else
+        return sliceHasImplAnyAll<search_type, FirstSliceType, SecondSliceType, isEqual>(first, second, first_null_map, second_null_map);
 }
 
 
