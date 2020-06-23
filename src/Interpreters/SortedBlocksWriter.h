@@ -76,8 +76,8 @@ struct SortedBlocksWriter
     size_t flush_number = 0;
     size_t flush_inflight = 0;
 
-    SortedBlocksWriter(const SizeLimits & size_limits_, VolumeSingleDiskPtr volume_, const Block & sample_block_, const SortDescription & description,
-                       Blocks & blocks, size_t rows_in_block_, size_t num_files_to_merge_, const String & codec_)
+    SortedBlocksWriter(const SizeLimits & size_limits_, VolumeSingleDiskPtr volume_, const Block & sample_block_,
+                       const SortDescription & description, size_t rows_in_block_, size_t num_files_to_merge_, const String & codec_)
         : size_limits(size_limits_)
         , volume(volume_)
         , sample_block(sample_block_)
