@@ -85,7 +85,8 @@ static const size_t signal_pipe_buf_size =
     + sizeof(ucontext_t)
     + sizeof(StackTrace)
     + sizeof(UInt32)
-    + max_query_id_size + 1;    /// query_id + varint encoded length
+    + max_query_id_size + 1    /// query_id + varint encoded length
+    + sizeof(void*);
 
 
 using signal_function = void(int, siginfo_t*, void*);
@@ -135,6 +136,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     DB::writePODBinary(stack_trace, out);
     DB::writeBinary(UInt32(getThreadId()), out);
     DB::writeStringBinary(query_id, out);
+    DB::writePODBinary(DB::current_thread, out);
 
     out.next();
 
@@ -218,16 +220,18 @@ public:
                 StackTrace stack_trace(NoCapture{});
                 UInt32 thread_num;
                 std::string query_id;
+                DB::ThreadStatus * thread_ptr{};
 
                 DB::readPODBinary(info, in);
                 DB::readPODBinary(context, in);
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
                 DB::readBinary(query_id, in);
+                DB::readPODBinary(thread_ptr, in);
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, query_id); }).detach();
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, query_id, thread_ptr); }).detach();
             }
         }
     }
@@ -248,8 +252,19 @@ private:
         const ucontext_t & context,
         const StackTrace & stack_trace,
         UInt32 thread_num,
-        const std::string & query_id) const
+        const std::string & query_id,
+        DB::ThreadStatus * thread_ptr) const
     {
+        DB::ThreadStatus thread_status;
+
+        /// Send logs from this thread to client if possible.
+        /// It will allow client to see failure messages directly.
+        if (thread_ptr)
+        {
+            if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
+                DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
+        }
+
         LOG_FATAL(log, "########################################");
 
         if (query_id.empty())
@@ -280,6 +295,10 @@ private:
 
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+
+        /// When everything is done, we will try to send these error messages to client.
+        if (thread_ptr)
+            thread_ptr->onFatalError();
     }
 };
 
