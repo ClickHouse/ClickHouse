@@ -1,4 +1,5 @@
 ---
+title: Who is using ClickHouse?
 toc_hidden: true
 toc_priority: 9
 ---

@@ -1,11 +1,12 @@
 ---
+title: What is OLAP?
 toc_hidden: true
 toc_priority: 100
 ---
 
 # What Is OLAP? {#what-is-olap}
 
-OLAP stands for Online Analytical Processing. It is a broad term that can be looked at from two perspectives: technical and business. But at the very high level, you can just read these words backward:
+[OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) stands for Online Analytical Processing. It is a broad term that can be looked at from two perspectives: technical and business. But at the very high level, you can just read these words backward:
 
 Processing
 :   Some source data is processed…

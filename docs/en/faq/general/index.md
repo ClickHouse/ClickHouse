@@ -1,4 +1,5 @@
 ---
+title: General questions about ClickHouse
 toc_hidden_folder: true
 toc_priority: 1
 toc_title: General
