@@ -33,8 +33,6 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TYPE_MISMATCH;
-    extern const int TOO_LARGE_STRING_SIZE;
-    extern const int CANNOT_CONVERT_TYPE;
 }
 
 
@@ -124,42 +122,6 @@ static Field convertDecimalType(const Field & from, const To & type)
 }
 
 
-DayNum stringToDate(const String & s)
-{
-    ReadBufferFromString in(s);
-    DayNum date{};
-
-    readDateText(date, in);
-    if (!in.eof())
-        throw Exception("String is too long for Date: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
-
-    return date;
-}
-
-UInt64 stringToDateTime(const String & s)
-{
-    ReadBufferFromString in(s);
-    time_t date_time{};
-
-    readDateTimeText(date_time, in);
-    if (!in.eof())
-        throw Exception("String is too long for DateTime: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
-
-    return UInt64(date_time);
-}
-
-DateTime64::NativeType stringToDateTime64(const String & s, UInt32 scale)
-{
-    ReadBufferFromString in(s);
-    DateTime64 datetime64 {0};
-
-    readDateTime64Text(datetime64, scale, in);
-    if (!in.eof())
-        throw Exception("String is too long for DateTime64: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
-
-    return datetime64.value;
-}
-
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)
 {
     WhichDataType which_type(type);
@@ -184,7 +146,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.get<UInt64>()));
     }
-    else if (type.isValueRepresentedByNumber())
+    else if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
         if (which_type.isUInt8()) return convertNumericType<UInt8>(src, type);
         if (which_type.isUInt16()) return convertNumericType<UInt16>(src, type);
@@ -200,9 +162,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal64> *>(&type)) return convertDecimalType(src, *ptype);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal128> *>(&type)) return convertDecimalType(src, *ptype);
 
-        if (!which_type.isDateOrDateTime() && !which_type.isUUID() && !which_type.isEnum())
-            throw Exception{"Cannot convert field to type " + type.getName(), ErrorCodes::CANNOT_CONVERT_TYPE};
-
         if (which_type.isEnum() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
             /// Convert UInt64 or Int64 to Enum's value
@@ -214,36 +173,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// We don't need any conversion UInt64 is under type of Date and DateTime
             return src;
         }
-        // TODO (vnemkov): extra cases for DateTime64: converting from integer, converting from Decimal
 
-        if (src.getType() == Field::Types::String)
+        if (which_type.isUUID() && src.getType() == Field::Types::UInt128)
         {
-            if (which_type.isDate())
-            {
-                /// Convert 'YYYY-MM-DD' Strings to Date
-                return stringToDate(src.get<const String &>());
-            }
-            else if (which_type.isDateTime())
-            {
-                /// Convert 'YYYY-MM-DD hh:mm:ss' Strings to DateTime
-                return stringToDateTime(src.get<const String &>());
-            }
-            else if (which_type.isDateTime64())
-            {
-                const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&type);
-                /// Convert 'YYYY-MM-DD hh:mm:ss.NNNNNNNNN' Strings to DateTime
-                return stringToDateTime64(src.get<const String &>(), date_time64->getScale());
-            }
-            else if (which_type.isUUID())
-            {
-                return stringToUUID(src.get<const String &>());
-            }
-            else if (which_type.isEnum())
-            {
-                /// Convert String to Enum's value
-                return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
-            }
+            /// Already in needed type.
+            return src;
         }
+
+        if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
+        {
+            /// Already in needed type.
+            return src;
+        }
+
+        /// TODO Conversion from integers to DateTime64
     }
     else if (which_type.isStringOrFixedString())
     {
@@ -328,17 +271,37 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         return src;
     }
 
+    /// Conversion from string by parsing.
     if (src.getType() == Field::Types::String)
     {
-        const auto col = type.createColumn();
-        ReadBufferFromString buffer(src.get<String>());
-        type.deserializeAsTextEscaped(*col, buffer, FormatSettings{});
+        /// Promote data type to avoid overflows. Note that overflows in the largest data type are still possible.
+        const IDataType * type_to_parse = &type;
+        DataTypePtr holder;
 
-        return (*col)[0];
+        if (type.canBePromoted())
+        {
+            holder = type.promoteNumericType();
+            type_to_parse = holder.get();
+        }
+
+        const auto col = type_to_parse->createColumn();
+        ReadBufferFromString in_buffer(src.get<String>());
+        try
+        {
+            type_to_parse->deserializeAsWholeText(*col, in_buffer, FormatSettings{});
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while converting '{}' to {}", src.get<String>(), type.getName()));
+            throw;
+        }
+        if (!in_buffer.eof())
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
+
+        Field parsed = (*col)[0];
+        return convertFieldToType(parsed, type, from_type_hint);
     }
 
-
-    // TODO (nemkov): should we attempt to parse value using or `type.deserializeAsTextEscaped()` type.deserializeAsTextEscaped() ?
     throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
         + Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
 }

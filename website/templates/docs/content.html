@@ -11,7 +11,11 @@
                     <nav class="col text-muted" aria-label="breadcrumb">
                         <ol class="breadcrumb bg-transparent p-0">
                             {% for ancestor in ancestors %}
-                            <li class="breadcrumb-item"><a href="{{ '../' * ancestor_ns.level }}" class="text-reset">{{ ancestor.title.strip() }}</a>
+                            {% set ancestor_title = ancestor.title.strip() %}
+                            {% if ancestor_title.endswith('|hidden-folder') %}
+                                {% set ancestor_title = ancestor_title[:-14] %}
+                            {% endif %}
+                            <li class="breadcrumb-item"><a href="{{ '../' * ancestor_ns.level }}" class="text-reset">{{ ancestor_title }}</a>
                                 {% set ancestor_ns.level = ancestor_ns.level - 1 %}
                             </li>
                            {% endfor %}

@@ -202,6 +202,7 @@ public:
     {
         UInt8 indent = 0;
         bool need_parens = false;
+        bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         const IAST * current_select = nullptr;
     };
 

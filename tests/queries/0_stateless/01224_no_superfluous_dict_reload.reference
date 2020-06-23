@@ -2,7 +2,7 @@ NOT_LOADED
 NOT_LOADED
 CREATE DICTIONARY dict_db_01224.dict
 (
-    `key` UInt64 DEFAULT 0, 
+    `key` UInt64 DEFAULT 0,
     `val` UInt64 DEFAULT 10
 )
 PRIMARY KEY key
@@ -12,7 +12,7 @@ LAYOUT(FLAT())
 NOT_LOADED
 CREATE TABLE dict_db_01224_dictionary.`dict_db_01224.dict`
 (
-    `key` UInt64, 
+    `key` UInt64,
     `val` UInt64
 )
 ENGINE = Dictionary(`dict_db_01224.dict`)
