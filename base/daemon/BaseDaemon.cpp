@@ -298,7 +298,14 @@ private:
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
 
         /// Send crash report to developers (if configured)
-        SentryWriter::onFault(sig, info, context, stack_trace);
+
+        #if defined(__ELF__) && !defined(__FreeBSD__)
+            const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
+        #else
+            String build_id_hex{};
+        #endif
+
+        SentryWriter::onFault(sig, info, context, stack_trace, build_id_hex);
 
         /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)

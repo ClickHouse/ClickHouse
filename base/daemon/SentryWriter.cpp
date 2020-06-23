@@ -161,7 +161,7 @@ void SentryWriter::shutdown()
 #endif
 }
 
-void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace)
+void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace, const String & build_id_hex)
 {
 #if USE_SENTRY
     auto * logger = &Poco::Logger::get("SentryWriter");
@@ -171,6 +171,10 @@ void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & c
         sentry_value_t event = sentry_value_new_message_event(SENTRY_LEVEL_FATAL, "fault", error_message.c_str());
         sentry_set_tag("signal", strsignal(sig));
         sentry_set_extra("signal_number", sentry_value_new_int32(sig));
+        if (!build_id_hex.empty())
+        {
+            sentry_set_tag("build_id", build_id_hex.c_str());
+        }
         setExtras();
 
         /// Prepare data for https://develop.sentry.dev/sdk/event-payloads/stacktrace/

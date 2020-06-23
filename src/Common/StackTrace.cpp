@@ -308,7 +308,7 @@ const StackTrace::FramePointers & StackTrace::getFramePointers() const
     return frame_pointers;
 }
 
-static void toStringEveryLineImpl(const void * const * frame_pointers, size_t offset, size_t size, std::function<void(const std::string &)> callback)
+static void toStringEveryLineImpl(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size, std::function<void(const std::string &)> callback)
 {
     if (size == 0)
         return callback("<Empty trace>");

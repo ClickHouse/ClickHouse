@@ -27,6 +27,7 @@ public:
         int sig,
         const siginfo_t & info,
         const ucontext_t & context,
-        const StackTrace & stack_trace
+        const StackTrace & stack_trace,
+        const String & build_id_hex
     );
 };
