@@ -1,0 +1,8 @@
+//
+// Created by Лада Искра on 14/06/2020.
+//
+
+#ifndef CLICKHOUSE_COMPRESSIONPFOR_H
+#define CLICKHOUSE_COMPRESSIONPFOR_H
+
+#endif //CLICKHOUSE_COMPRESSIONPFOR_H
