@@ -147,6 +147,8 @@ try
         return Application::EXIT_OK;
     }
 
+    GlobalThreadPool::initialize();
+
     shared_context = Context::createShared();
     context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
     context->makeGlobalContext();
