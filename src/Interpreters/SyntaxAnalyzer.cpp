@@ -714,7 +714,7 @@ void SyntaxAnalyzerResult::collectSourceColumns(bool add_special)
 {
     if (storage)
     {
-        const ColumnsDescription & columns = storage->getColumns();
+        const ColumnsDescription & columns = metadata_snapshot->getColumns();
 
         auto columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
         if (source_columns.empty())
@@ -1005,14 +1005,19 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
-SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage, bool allow_aggregations) const
+SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
+    ASTPtr & query,
+    const NamesAndTypesList & source_columns,
+    ConstStoragePtr storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    bool allow_aggregations) const
 {
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
 
     const auto & settings = context.getSettingsRef();
 
-    SyntaxAnalyzerResult result(source_columns, storage, false);
+    SyntaxAnalyzerResult result(source_columns, storage, metadata_snapshot, false);
 
     normalize(query, result.aliases, settings);
 
