@@ -120,6 +120,7 @@ struct ExplainSettings
     {
             {"header", query_plan_options.header},
             {"description", query_plan_options.description},
+            {"actions", query_plan_options.actions}
     };
 
     bool has(const std::string & name) const

@@ -139,4 +139,9 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
     pipeline.enableQuotaForCurrentStreams();
 }
 
+Strings AggregatingStep::describeActions() const
+{
+    return params.explain();
+}
+
 }

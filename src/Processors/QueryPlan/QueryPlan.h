@@ -37,6 +37,7 @@ public:
     {
         bool header = false;
         bool description = true;
+        bool actions = false;
     };
 
     void explain(WriteBuffer & buffer, const ExplainOptions & options);

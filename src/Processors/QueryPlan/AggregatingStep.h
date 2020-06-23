@@ -28,6 +28,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    Strings describeActions() const override;
+
 private:
     Aggregator::Params params;
     bool final;

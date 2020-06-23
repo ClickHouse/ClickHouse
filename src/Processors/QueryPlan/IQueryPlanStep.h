@@ -51,6 +51,9 @@ public:
     const std::string & getStepDescription() const { return step_description; }
     void setStepDescription(std::string description) { step_description = std::move(description); }
 
+    /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
+    virtual Strings describeActions() const { return {}; }
+
 protected:
     DataStreams input_streams;
     std::optional<DataStream> output_stream;
