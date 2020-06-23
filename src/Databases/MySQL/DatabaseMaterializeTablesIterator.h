@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Databases/IDatabase.h>
+#include <Storages/StorageMaterializeMySQL.h>
 
 namespace DB
 {

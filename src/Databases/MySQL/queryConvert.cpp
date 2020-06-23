@@ -138,7 +138,8 @@ String toCreateQuery(const MySQLTableStruct & table_struct, const Context & cont
 {
     /// TODO: settings
     if (table_struct.primary_keys.empty())
-        throw Exception("", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("The " + backQuoteIfNeed(table_struct.database_name) + "." + backQuoteIfNeed(table_struct.table_name)
+            + " cannot be materialized, because there is no primary keys.", ErrorCodes::NOT_IMPLEMENTED);
 
     WriteBufferFromOwnString out;
     String sign = getUniqueColumnName(table_struct.columns_name_and_type, "__sign");

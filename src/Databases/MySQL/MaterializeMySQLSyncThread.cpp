@@ -12,6 +12,7 @@
 #    include <DataStreams/OneBlockInputStream.h>
 #    include <DataStreams/copyData.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
+#    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #    include <Databases/MySQL/queryConvert.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/ReadBufferFromString.h>
@@ -33,16 +34,12 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTracking;
-    extern const Metric BackgroundMySQLSyncSchedulePoolTask;
-}
-
 static BlockIO tryToExecuteQuery(const String & query_to_execute, const Context & context_, const String & comment)
 {
     try
     {
+        LOG_DEBUG(&Poco::Logger::get("MaterializeMySQLSyncThread"), "Try execute query: " + query_to_execute);
+
         Context context = context_;
         context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         context.setCurrentQueryId(""); // generate random query_id
@@ -92,8 +89,8 @@ MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
 MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     const Context & context, const String & database_name_, const String & mysql_database_name_,
     mysqlxx::Pool && pool_, MySQLClient && client_, MaterializeMySQLSettings * settings_)
-    : global_context(context), database_name(database_name_), mysql_database_name(mysql_database_name_)
-    , pool(std::move(pool_)), client(std::move(client_)), settings(settings_)
+    : log(&Poco::Logger::get("MaterializeMySQLSyncThread")), global_context(context), database_name(database_name_)
+    , mysql_database_name(mysql_database_name_), pool(std::move(pool_)), client(std::move(client_)), settings(settings_)
 {
     /// TODO: 做简单的check, 失败即报错
     startSynchronization();
@@ -112,6 +109,8 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
 
 void MaterializeMySQLSyncThread::synchronization()
 {
+    setThreadName("MySQLDBSync");
+
     try
     {
         if (std::optional<MaterializeMetadata> metadata = prepareSynchronized())
@@ -146,14 +145,15 @@ void MaterializeMySQLSyncThread::synchronization()
     catch (...)
     {
         /// TODO: set
+        tryLogCurrentException(log);
         getDatabase(database_name).setException(std::current_exception());
     }
 }
 
 void MaterializeMySQLSyncThread::startSynchronization()
 {
-    if (!background_thread_pool->joinable())
-        throw Exception("", ErrorCodes::LOGICAL_ERROR);
+//    if (!background_thread_pool->joinable())
+//        throw Exception("", ErrorCodes::LOGICAL_ERROR);
 
     background_thread_pool = std::make_unique<ThreadFromGlobalPool>([this]() { synchronization(); });
 }
@@ -216,6 +216,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
                 sync_cond.wait_for(lock, std::chrono::seconds(1));
             LOG_DEBUG(log, "Database status is OK.");
 
+
             mysqlxx::PoolWithFailover::Entry connection = pool.get();
             MaterializeMetadata metadata(connection, getDatabase(database_name).getMetadataPath() + "/.metadata", mysql_database_name);
 
@@ -246,7 +247,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
 
 void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata)
 {
-    metadata.transaction(client.getPosition(), [&]() { buffers.commit(metadata, global_context); });
+    metadata.transaction(client.getPosition(), [&]() { buffers.commit(global_context); });
 }
 
 static inline void fillSignAndVersionColumnsData(Block & data, Int8 sign_value, UInt64 version_value, size_t fill_size)
@@ -385,11 +386,11 @@ void MaterializeMySQLSyncThread::Buffers::add(size_t block_rows, size_t block_by
 
 bool MaterializeMySQLSyncThread::Buffers::checkThresholds(size_t check_block_rows, size_t check_block_bytes, size_t check_total_rows, size_t check_total_bytes)
 {
-    return max_block_rows >= check_block_bytes || max_block_bytes >= check_block_bytes || total_blocks_rows >= check_total_rows
+    return max_block_rows >= check_block_rows || max_block_bytes >= check_block_bytes || total_blocks_rows >= check_total_rows
         || total_blocks_bytes >= check_total_bytes;
 }
 
-void MaterializeMySQLSyncThread::Buffers::commit(MaterializeMetadata & metatdata, const Context & context)
+void MaterializeMySQLSyncThread::Buffers::commit(const Context & context)
 {
     try
     {
