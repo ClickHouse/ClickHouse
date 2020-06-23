@@ -8,6 +8,8 @@ toc_title: General
 
 Questions:
 
+-   [Why ClickHouse is so fast?](../../faq/general/why-clickhouse-is-so-fast.md)
+-   [Who is using ClickHouse?](../../faq/general/who-is-using-clickhouse.md)
 -   [What does “ClickHouse” mean?](../../faq/general/dbms-naming.md)
 -   [What does “Не тормозит” mean?](../../faq/general/ne-tormozit.md)
 -   [Why not use something like MapReduce?](../../faq/general/mapreduce.md)

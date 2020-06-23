@@ -9,7 +9,7 @@ toc_title: Integration
 Questions:
 
 -   [How do I export data from ClickHouse to a file?](../../faq/integration/file-export.md)
--   [What if I Have a problem with encodings when connecting to Oracle via ODBC?](../../faq/integration/oracle-odbc.md)
+-   [What if I have a problem with encodings when connecting to Oracle via ODBC?](../../faq/integration/oracle-odbc.md)
 
 !!! info "Don’t see what you were looking for?"
     Check out [other F.A.Q. categories](../../faq/index.md) or browse around main documentation articles found in the left sidebar.
