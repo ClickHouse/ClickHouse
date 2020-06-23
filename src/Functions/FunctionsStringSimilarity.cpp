@@ -1,6 +1,6 @@
+#include <Functions/FunctionsStringSimilarity.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>
-#include <Functions/FunctionsStringSimilarity.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/UTF8Helpers.h>
@@ -268,8 +268,7 @@ struct NgramDistanceImpl
         size_t distance = second_size;
         if (data_size <= max_string_size)
         {
-            size_t first_size
-                = dispatchSearcher(calculateHaystackStatsAndMetric<false>, data.data(), data_size, common_stats, distance, nullptr);
+            size_t first_size = dispatchSearcher(calculateHaystackStatsAndMetric<false>, data.data(), data_size, common_stats, distance, nullptr);
             /// For !symmetric version we should not use first_size.
             if constexpr (symmetric)
                 res = distance * 1.f / std::max(first_size + second_size, size_t(1));
@@ -313,14 +312,23 @@ struct NgramDistanceImpl
             if (needle_size <= max_string_size && haystack_size <= max_string_size)
             {
                 /// Get needle stats.
-                const size_t needle_stats_size
-                    = dispatchSearcher(calculateNeedleStats<true>, needle, needle_size, common_stats, needle_ngram_storage.get());
+                const size_t needle_stats_size = dispatchSearcher(
+                    calculateNeedleStats<true>,
+                    needle,
+                    needle_size,
+                    common_stats,
+                    needle_ngram_storage.get());
 
                 size_t distance = needle_stats_size;
 
                 /// Combine with haystack stats, return to initial needle stats.
                 const size_t haystack_stats_size = dispatchSearcher(
-                    calculateHaystackStatsAndMetric<true>, haystack, haystack_size, common_stats, distance, haystack_ngram_storage.get());
+                    calculateHaystackStatsAndMetric<true>,
+                    haystack,
+                    haystack_size,
+                    common_stats,
+                    distance,
+                    haystack_ngram_storage.get());
 
                 /// Return to zero array stats.
                 for (size_t j = 0; j < needle_stats_size; ++j)
@@ -382,8 +390,12 @@ struct NgramDistanceImpl
 
                 if (needle_size <= max_string_size && haystack_size <= max_string_size)
                 {
-                    const size_t needle_stats_size
-                        = dispatchSearcher(calculateNeedleStats<true>, needle, needle_size, common_stats, needle_ngram_storage.get());
+                    const size_t needle_stats_size = dispatchSearcher(
+                        calculateNeedleStats<true>,
+                        needle,
+                        needle_size,
+                        common_stats,
+                        needle_ngram_storage.get());
 
                     size_t distance = needle_stats_size;
 
@@ -407,11 +419,15 @@ struct NgramDistanceImpl
 
                 prev_offset = needle_offsets[i];
             }
+
         }
     }
 
     static void vectorConstant(
-        const ColumnString::Chars & data, const ColumnString::Offsets & offsets, std::string needle, PaddedPODArray<Float32> & res)
+        const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
+        std::string needle,
+        PaddedPODArray<Float32> & res)
     {
         /// zeroing our map
         NgramStats common_stats = {};
@@ -437,8 +453,7 @@ struct NgramDistanceImpl
                 size_t haystack_stats_size = dispatchSearcher(
                     calculateHaystackStatsAndMetric<true>,
                     reinterpret_cast<const char *>(haystack),
-                    haystack_size,
-                    common_stats,
+                    haystack_size, common_stats,
                     distance,
                     ngram_storage.get());
                 /// For !symmetric version we should not use haystack_stats_size.
@@ -500,18 +515,14 @@ struct NameNgramSearchUTF8CaseInsensitive
 };
 
 using FunctionNgramDistance = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, false, true>, NameNgramDistance>;
-using FunctionNgramDistanceCaseInsensitive
-    = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, true>, NameNgramDistanceCaseInsensitive>;
+using FunctionNgramDistanceCaseInsensitive = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, true>, NameNgramDistanceCaseInsensitive>;
 using FunctionNgramDistanceUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false, true>, NameNgramDistanceUTF8>;
-using FunctionNgramDistanceCaseInsensitiveUTF8
-    = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, true>, NameNgramDistanceUTF8CaseInsensitive>;
+using FunctionNgramDistanceCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, true>, NameNgramDistanceUTF8CaseInsensitive>;
 
 using FunctionNgramSearch = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, false, false>, NameNgramSearch>;
-using FunctionNgramSearchCaseInsensitive
-    = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, false>, NameNgramSearchCaseInsensitive>;
+using FunctionNgramSearchCaseInsensitive = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, false>, NameNgramSearchCaseInsensitive>;
 using FunctionNgramSearchUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false, false>, NameNgramSearchUTF8>;
-using FunctionNgramSearchCaseInsensitiveUTF8
-    = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, false>, NameNgramSearchUTF8CaseInsensitive>;
+using FunctionNgramSearchCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, false>, NameNgramSearchUTF8CaseInsensitive>;
 
 
 void registerFunctionsStringSimilarity(FunctionFactory & factory)
