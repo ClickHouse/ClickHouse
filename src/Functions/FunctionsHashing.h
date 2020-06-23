@@ -40,6 +40,8 @@
 #include <Columns/ColumnTuple.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/TargetSpecific.h>
+#include <Functions/PerformanceAdaptors.h>
 #include <ext/range.h>
 #include <ext/bit_cast.h>
 
@@ -573,12 +575,13 @@ public:
 };
 
 
+DECLARE_MULTITARGET_CODE(
+
 template <typename Impl, typename Name>
 class FunctionIntHash : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIntHash>(); }
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -646,13 +649,46 @@ public:
     }
 };
 
+) // DECLARE_MULTITARGET_CODE
+
+template <typename Impl, typename Name>
+class FunctionIntHash : public TargetSpecific::Default::FunctionIntHash<Impl, Name>
+{
+public:
+    explicit FunctionIntHash(const Context & context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
+
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::AVX2,
+            TargetSpecific::AVX2::FunctionIntHash<Impl, Name>>();
+        selector.registerImplementation<TargetArch::AVX512F,
+            TargetSpecific::AVX512F::FunctionIntHash<Impl, Name>>();
+    #endif
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
+    }
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionIntHash>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
+};
+
+DECLARE_MULTITARGET_CODE(
 
 template <typename Impl>
 class FunctionAnyHash : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionAnyHash>(); }
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -937,6 +973,39 @@ public:
 
         block.getByPosition(result).column = std::move(col_to);
     }
+};
+
+) // DECLARE_MULTITARGET_CODE
+
+template <typename Impl>
+class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl>
+{
+public:
+    explicit FunctionAnyHash(const Context & context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            TargetSpecific::Default::FunctionAnyHash<Impl>>();
+
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::AVX2,
+            TargetSpecific::AVX2::FunctionAnyHash<Impl>>();
+        selector.registerImplementation<TargetArch::AVX512F,
+            TargetSpecific::AVX512F::FunctionAnyHash<Impl>>();
+    #endif
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
+    }
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionAnyHash>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
 };
 
 
