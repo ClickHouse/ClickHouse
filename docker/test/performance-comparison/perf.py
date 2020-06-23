@@ -72,17 +72,26 @@ available_parameters = {} # { 'table': ['hits_10m', 'hits_100m'], ... }
 for e in subst_elems:
     available_parameters[e.find('name').text] = [v.text for v in e.findall('values/value')]
 
-# Take care to keep the order of queries -- sometimes we have DROP IF EXISTS
+# Takes parallel lists of templates, substitutes them with all combos of
+# parameters. The set of parameters is determined based on the first list.
+# Note: keep the order of queries -- sometimes we have DROP IF EXISTS
 # followed by CREATE in create queries section, so the order matters.
-def substitute_parameters(query_templates):
-    result = []
-    for q in query_templates:
+def substitute_parameters(query_templates, *other_templates):
+    query_results = []
+    other_results = [[]] * (len(other_templates))
+    for i, q in enumerate(query_templates):
         keys = set(n for _, n, _, _ in string.Formatter().parse(q) if n)
         values = [available_parameters[k] for k in keys]
-        result.extend([
-            q.format(**dict(zip(keys, values_combo)))
-                for values_combo in itertools.product(*values)])
-    return result
+        combos = itertools.product(*values)
+        for c in combos:
+            with_keys = dict(zip(keys, c))
+            query_results.append(q.format(**with_keys))
+            for j, t in enumerate(other_templates):
+                other_results[j].append(t[i].format(**with_keys))
+    if len(other_templates):
+        return query_results, *other_results
+    else:
+        return query_results
 
 report_stage_end('substitute')
 
@@ -147,12 +156,26 @@ for c in connections:
 
 report_stage_end('fill')
 
-# Run test queries
-test_query_templates = [q.text for q in root.findall('query')]
-test_queries = substitute_parameters(test_query_templates)
+# Build a list of test queries, substituting parameters to query templates,
+# and reporting the queries marked as short.
+test_queries = []
+for e in root.findall('query'):
+    new_queries = []
+    if 'short' in e.attrib:
+        new_queries, short = substitute_parameters([e.text], [e.attrib['short']])
+        print(new_queries)
+        print(short)
+        for i, s in enumerate(short):
+            if eval(s):
+                print(f'short\t{i + len(test_queries)}')
+    else:
+        new_queries = substitute_parameters([e.text])
+
+    test_queries += new_queries
 
 report_stage_end('substitute2')
 
+# Run test queries.
 for query_index, q in enumerate(test_queries):
     query_prefix = f'{test_name}.query{query_index}'
 

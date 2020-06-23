@@ -189,8 +189,15 @@ if args.report == 'main':
     slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
     error_tests += len(slow_on_client_rows)
     printSimpleTable('Slow on client',
-                     ['Client time, s', 'Server time, s', 'Ratio', 'Test', 'Query'],
-                     slow_on_client_rows)
+         ['Client time, s', 'Server time, s', 'Ratio', 'Test', 'Query'],
+         slow_on_client_rows)
+
+
+    unmarked_short_rows = tsvRows('report/unmarked-short-queries.tsv')
+    error_tests += len(unmarked_short_rows)
+    printSimpleTable('Short queries not marked as short',
+        ['New client time, s', 'Test', '#', 'Query'],
+        unmarked_short_rows)
 
     def print_changes():
         rows = tsvRows('report/changed-perf.tsv')
