@@ -61,6 +61,8 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include <Server/MySQLHandlerFactory.h>
+#include <Server/PostgreSQLHandlerFactory.h>
+
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
@@ -1006,6 +1008,21 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
 
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: {}", address.toString());
+            });
+
+            create_server("postgresql_port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(Poco::Timespan());
+                socket.setSendTimeout(settings.send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                    new PostgreSQLHandlerFactory(*this),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+
+                LOG_INFO(log, "Listening for PostgreSQL compatibility protocol: " + address.toString());
             });
 
             /// Prometheus (if defined and not setup yet with http_port)

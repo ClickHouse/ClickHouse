@@ -14,7 +14,6 @@
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Interpreters/StorageID.h>
 
-#include <Processors/QueryPipeline.h>
 #include <Columns/FilterDescription.h>
 
 namespace Poco { class Logger; }
@@ -25,6 +24,7 @@ namespace DB
 struct SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 class Context;
+class QueryPlan;
 
 struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
@@ -77,6 +77,9 @@ public:
     /// Execute a query. Get the stream of blocks to read.
     BlockIO execute() override;
 
+    /// Builds QueryPlan for current query.
+    void buildQueryPlan(QueryPlan & query_plan);
+
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 
@@ -104,35 +107,35 @@ private:
 
     Block getSampleBlockImpl();
 
-    void executeImpl(QueryPipeline & pipeline, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe);
+    void executeImpl(QueryPlan & query_plan, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe);
 
     /// Different stages of query execution.
 
     void executeFetchColumns(
         QueryProcessingStage::Enum processing_stage,
-        QueryPipeline & pipeline,
+        QueryPlan & query_plan,
         const PrewhereInfoPtr & prewhere_info,
         const Names & columns_to_remove_after_prewhere);
 
-    void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
-    void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
-    void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
-    void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
-    void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
-    static void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeOrder(QueryPipeline & pipeline, InputOrderInfoPtr sorting_info);
-    void executeOrderOptimized(QueryPipeline & pipeline, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
-    void executeWithFill(QueryPipeline & pipeline);
-    void executeMergeSorted(QueryPipeline & pipeline);
-    void executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset);
-    void executeLimitBy(QueryPipeline & pipeline);
-    void executeLimit(QueryPipeline & pipeline);
-    void executeOffset(QueryPipeline & pipeline);
-    static void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
-    void executeExtremes(QueryPipeline & pipeline);
-    void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
-    void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
+    void executeWhere(QueryPlan & query_plan, const ExpressionActionsPtr & expression, bool remove_filter);
+    void executeAggregation(QueryPlan & query_plan, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
+    void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final);
+    void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeHaving(QueryPlan & query_plan, const ExpressionActionsPtr & expression);
+    static void executeExpression(QueryPlan & query_plan, const ExpressionActionsPtr & expression, const std::string & description);
+    void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
+    void executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
+    void executeWithFill(QueryPlan & query_plan);
+    void executeMergeSorted(QueryPlan & query_plan, const std::string & description);
+    void executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset);
+    void executeLimitBy(QueryPlan & query_plan);
+    void executeLimit(QueryPlan & query_plan);
+    void executeOffset(QueryPlan & query_plan);
+    static void executeProjection(QueryPlan & query_plan, const ExpressionActionsPtr & expression);
+    void executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct);
+    void executeExtremes(QueryPlan & query_plan);
+    void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
 
     String generateFilterActions(
         ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
@@ -143,7 +146,7 @@ private:
         CUBE = 1
     };
 
-    void executeRollupOrCube(QueryPipeline & pipeline, Modificator modificator);
+    void executeRollupOrCube(QueryPlan & query_plan, Modificator modificator);
 
     /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
       *

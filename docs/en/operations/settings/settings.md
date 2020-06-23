@@ -821,6 +821,10 @@ ClickHouse supports the following algorithms of choosing replicas:
 -   [First or random](#load_balancing-first_or_random)
 -   [Round robin](#load_balancing-round_robin)
 
+See also:
+
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
+
 ### Random (by Default) {#load_balancing-random}
 
 ``` sql
@@ -1170,8 +1174,10 @@ Controls how fast errors in distributed tables are zeroed. If a replica is unava
 
 See also:
 
+-   [load\_balancing](#load_balancing-round_robin)
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
 
 ## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
 
@@ -1182,7 +1188,23 @@ Error count of each replica is capped at this value, preventing a single replica
 
 See also:
 
+-   [load\_balancing](#load_balancing-round_robin)
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
+
+## distributed\_replica\_max\_ignored\_errors {#settings-distributed_replica_max_ignored_errors}
+
+-   Type: unsigned int
+-   Default value: 0
+
+Number of errors that will be ignored while choosing replicas (according to `load_balancing` algorithm).
+
+See also:
+
+-   [load\_balancing](#load_balancing-round_robin)
+-   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
@@ -1508,5 +1530,35 @@ Possible values:
 -   0 — Usage of `LowCardinality` is restricted.
 
 Default value: 0.
+
+## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
+
+Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create.md#create-view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+
+Possible values:
+
+-   Any positive integer.
+-   0 — Squashing disabled.
+
+Default value: 1048576.
+
+**See Also**
+
+-   [min_insert_block_size_rows](#min-insert-block-size-rows)
+
+## min_insert_block_size_bytes_for_materialized_views {#min-insert-block-size-bytes-for-materialized-views}
+
+Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create.md#create-view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+
+Possible values:
+
+-   Any positive integer.
+-   0 — Squashing disabled.
+
+Default value: 268435456.
+
+**See also**
+
+-   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

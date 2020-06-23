@@ -9,17 +9,6 @@
 #include <Core/BackgroundSchedulePool.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event LeaderElectionAcquiredLeadership;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric LeaderElection;
-}
-
-
 namespace zkutil
 {
 
@@ -91,8 +80,6 @@ private:
 
     std::atomic<bool> shutdown_called {false};
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::LeaderElection};
-
     void createNode()
     {
         shutdown_called = false;
@@ -128,7 +115,6 @@ private:
 #if !defined(ARCADIA_BUILD) /// C++20; Replicated tables are unused in Arcadia.
             if (value.ends_with(suffix))
             {
-                ProfileEvents::increment(ProfileEvents::LeaderElectionAcquiredLeadership);
                 handler();
                 return;
             }
