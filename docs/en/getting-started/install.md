@@ -90,7 +90,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 For production environments, it’s recommended to use the latest `stable`-version. You can find its number on GitHub page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
 
-### From precompiled binaries for non-Linux OS {#from-binaries-non-linux}
+### From Precompiled Binaries for Non-Linux OS {#from-binaries-non-linux}
 
 For non-Linux operating systems, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
 
