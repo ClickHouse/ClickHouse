@@ -2,6 +2,7 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/ParserSetQuery.h>
 
 namespace DB
 {
@@ -40,9 +41,23 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     auto explain_query = std::make_shared<ASTExplainQuery>(kind, old_syntax);
 
+    {
+        ASTPtr settings;
+        ParserSetQuery parser_settings(true);
+
+        auto begin = pos;
+        if (parser_settings.parse(pos, settings, expected))
+            explain_query->setSettings(std::move(settings));
+        else
+            pos = begin;
+    }
+
     ParserSelectWithUnionQuery select_p;
-    if (!select_p.parse(pos, explain_query->children.at(0), expected))
+    ASTPtr query;
+    if (!select_p.parse(pos, query, expected))
         return false;
+
+    explain_query->setExplainedQuery(std::move(query));
 
     node = std::move(explain_query);
     return true;

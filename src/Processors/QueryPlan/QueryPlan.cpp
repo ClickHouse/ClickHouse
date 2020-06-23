@@ -2,6 +2,8 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPipeline.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 #include <stack>
 
 namespace DB
@@ -175,7 +177,48 @@ void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
     interpreter_context.emplace_back(std::move(context));
 }
 
-void QueryPlan::explain(WriteBuffer & buffer)
+
+static void explainStep(
+    WriteBuffer & buffer, IQueryPlanStep & step, size_t ident, const QueryPlan::ExplainOptions & options)
+{
+    std::string prefix(ident, ' ');
+    buffer << prefix;
+    buffer << step.getName();
+
+    const auto & description = step.getStepDescription();
+    if (!description.empty())
+        buffer <<" (" << description << ')';
+
+    buffer.write('\n');
+
+    if (options.header)
+    {
+        buffer << prefix;
+
+        if (!step.hasOutputStream())
+            buffer << "No header";
+        else if (!step.getOutputStream().header)
+            buffer << "Empty header";
+        else
+        {
+            buffer << "Header: ";
+            bool first = true;
+
+            for (const auto & elem : step.getOutputStream().header)
+            {
+                if (!first)
+                    buffer << ",\n" << prefix << "        ";
+
+                first = false;
+                elem.dumpStructure(buffer, true);
+            }
+        }
+
+        buffer.write('\n');
+    }
+}
+
+void QueryPlan::explain(WriteBuffer & buffer, const ExplainOptions & options)
 {
     checkInitialized();
 
@@ -197,22 +240,7 @@ void QueryPlan::explain(WriteBuffer & buffer)
 
         if (!frame.is_description_printed)
         {
-            std::string prefix((stack.size() - 1) * ident, ' ');
-            buffer.write(prefix.data(), prefix.size());
-
-            auto name = frame.node->step->getName();
-            buffer.write(name.data(), name.size());
-
-            auto description = frame.node->step->getStepDescription();
-            if (!description.empty())
-            {
-                buffer.write(" (", 2);
-                buffer.write(description.data(), description.size());
-                buffer.write(')');
-            }
-
-            buffer.write('\n');
-
+            explainStep(buffer, *frame.node->step, (stack.size() - 1) * ident, options);
             frame.is_description_printed = true;
         }
 
