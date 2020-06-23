@@ -247,6 +247,7 @@ do
     sed -n "s/^report-threshold/$test_name/p" < "$test_file" >> "analyze/report-thresholds.tsv"
     sed -n "s/^skipped/$test_name/p" < "$test_file" >> "analyze/skipped-tests.tsv"
     sed -n "s/^display-name/$test_name/p" < "$test_file" >> "analyze/query-display-names.tsv"
+    sed -n "s/^short/$test_name/p" < "$test_file" >> "analyze/marked-short-queries.tsv"
 done
 unset IFS
 
@@ -354,7 +355,7 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
         -- we just skip the query. If there is a significant regression, the
         -- average will be above threshold, we'll process it normally and will
         -- detect the regression.
-        (left + right) / 2 < 0.02 as short,
+        right < 0.02 as short,
 
         not short and abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
         not short and abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
@@ -508,6 +509,18 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
         stat_threshold, test, query_index, query_display_name
     from query_metric_stats
     order by test, query_index;
+
+-- unmarked short queries
+create table unmarked_short_queries
+    engine File(TSV, 'report/unmarked-short-queries.tsv')
+    as select right, test, query_index, query_display_name
+    from queries
+    where short
+        and (test, query_index) not in
+            (select * from file('analyze/marked-short-queries.tsv', TSV,
+                'test text, query_index int'))
+    order by test, query_index
+    ;
 " 2> >(tee -a report/errors.log 1>&2)
 
 
