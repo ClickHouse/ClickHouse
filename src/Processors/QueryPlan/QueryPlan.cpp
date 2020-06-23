@@ -186,7 +186,7 @@ static void explainStep(
     buffer << step.getName();
 
     const auto & description = step.getStepDescription();
-    if (!description.empty())
+    if (options.description && !description.empty())
         buffer <<" (" << description << ')';
 
     buffer.write('\n');

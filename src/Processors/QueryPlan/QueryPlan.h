@@ -36,6 +36,7 @@ public:
     struct ExplainOptions
     {
         bool header = false;
+        bool description = true;
     };
 
     void explain(WriteBuffer & buffer, const ExplainOptions & options);
