@@ -132,6 +132,32 @@ def process_pull_request_review_comment(response):
     return result
 
 
+def process_push(response):
+    common_part = dict(
+        before_sha=response['before'],
+        after_sha=response['after'],
+        full_ref=response['ref'],
+        ref=response['ref'].split('/')[-1],
+        repo=response['repository']['full_name'],
+        pusher=response['pusher']['name'],
+        sender=response['sender']['login'],
+        pushed_at=response['repository']['pushed_at'],
+        raw_json=json.dumps(response),
+    )
+    commits = response['commits']
+    result = []
+    for commit in commits:
+        commit_dict = common_part.copy()
+        commit_dict['sha'] = commit['id']
+        commit_dict['tree_sha'] = commit['tree_id']
+        commit_dict['author'] = commit['author']['name']
+        commit_dict['committer'] = commit['committer']['name']
+        commit_dict['message'] = commit['message']
+        commit_dict['commited_at'] = commit['timestamp']
+        result.append(commit_dict)
+    return result
+
+
 def event_processor_dispatcher(headers, body, inserter):
     if 'X-Github-Event' in headers:
         if headers['X-Github-Event'] == 'issues':
@@ -149,6 +175,9 @@ def event_processor_dispatcher(headers, body, inserter):
         elif headers['X-Github-Event'] == 'pull_request_review_comment':
             result = process_pull_request_review_comment(body)
             inserter.insert_event_into(DB, 'pull_requests', result)
+        elif headers['X-Github-Event'] == 'push':
+            result = process_push(body)
+            inserter.insert_events_into(DB, 'commits', result)
 
 
 class ClickHouseInserter(object):
@@ -159,21 +188,36 @@ class ClickHouseInserter(object):
             'X-ClickHouse-Key': password
         }
 
-    def insert_event_into(self, db, table, event):
+    def _insert_json_str_info(self, db, table, json_str):
         params = {
             'database': db,
             'query': 'INSERT INTO {table} FORMAT JSONEachRow'.format(table=table),
             'date_time_input_format': 'best_effort'
         }
-        event_str = json.dumps(event)
         for i in range(RETRIES):
+            response = None
             try:
-                response = requests.post(self.url, params=params, data=event_str, headers=self.auth, verify=False)
+                response = requests.post(self.url, params=params, data=json_str, headers=self.auth, verify=False)
                 response.raise_for_status()
                 break
             except Exception as ex:
-                print("Exception inseting into ClickHouse:", ex)
+                print("Cannot insert with exception %s", str(ex))
+                if response:
+                    print("Reponse text %s", response.text)
                 time.sleep(0.1)
+        else:
+            raise Exception("Cannot insert data into clickhouse")
+
+    def insert_event_into(self, db, table, event):
+        event_str = json.dumps(event)
+        self._insert_json_str_info(db, table, event_str)
+
+    def insert_events_into(self, db, table, events):
+        jsons = []
+        for event in events:
+            jsons.append(json.dumps(event))
+
+        self._insert_json_str_info(db, table, ','.join(jsons))
 
 
 def test(event, context):
