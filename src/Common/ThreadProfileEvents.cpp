@@ -171,6 +171,8 @@ static const PerfEventInfo raw_events_info[] = {
     SOFTWARE_EVENT(PERF_COUNT_SW_PAGE_FAULTS_MAJ, PerfPageFaultsMajor)
 };
 
+static_assert(sizeof(raw_events_info) / sizeof(raw_events_info[0]) == NUMBER_OF_RAW_EVENTS);
+
 #undef HARDWARE_EVENT
 #undef SOFTWARE_EVENT
 
