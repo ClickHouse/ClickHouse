@@ -71,7 +71,7 @@ node6 = cluster.add_instance('node6', config_dir='configs', main_configs=['confi
 
 settings_in_memory = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 256}
 
-node9 = cluster.add_instance('node9', config_dir="configs", with_zookeeper=True)
+node9 = cluster.add_instance('node9', config_dir="configs", with_zookeeper=True, stay_alive=True)
 node10 = cluster.add_instance('node10', config_dir="configs", with_zookeeper=True)
 
 node11 = cluster.add_instance('node11', config_dir="configs", main_configs=['configs/do_not_merge.xml'], with_zookeeper=True, stay_alive=True)
@@ -93,6 +93,7 @@ def start_cluster():
         create_tables('restore_table', [node11, node12], [settings_in_memory, settings_in_memory], "shard5")
         create_tables('deduplication_table', [node9, node10], [settings_in_memory, settings_in_memory], "shard5")
         create_tables('sync_table', [node9, node10], [settings_in_memory, settings_in_memory], "shard5")
+        create_tables('alters_table', [node9, node10], [settings_in_memory, settings_in_memory], "shard5")
 
         yield cluster
 
@@ -463,6 +464,32 @@ def test_in_memory_sync_insert(start_cluster):
 
     assert node9.query("SELECT count() FROM sync_table") == "250\n"
     assert node9.query("SELECT part_type, count() FROM system.parts WHERE table = 'sync_table' AND active GROUP BY part_type") == "Compact\t1\n"
+
+# Checks that restoring from WAL works after table schema changed
+def test_in_memory_alters(start_cluster):
+    def check_parts_type(parts_num):
+        assert node9.query("SELECT part_type, count() FROM system.parts WHERE table = 'alters_table' \
+             AND active GROUP BY part_type") == "InMemory\t{}\n".format(parts_num)
+
+    node9.query("INSERT INTO alters_table (date, id, s) VALUES (toDate('2020-10-10'), 1, 'ab'), (toDate('2020-10-10'), 2, 'cd')")
+    node9.query("ALTER TABLE alters_table ADD COLUMN col1 UInt32")
+    node9.restart_clickhouse(kill=True)
+
+    expected = "1\tab\t0\n2\tcd\t0\n"
+    assert node9.query("SELECT id, s, col1 FROM alters_table") == expected
+    check_parts_type(1)
+
+    node9.query("INSERT INTO alters_table (date, id, col1) VALUES (toDate('2020-10-10'), 3, 100)")
+    node9.query("ALTER TABLE alters_table MODIFY COLUMN col1 String")
+    node9.query("ALTER TABLE alters_table DROP COLUMN s")
+    node9.restart_clickhouse(kill=True)
+
+    check_parts_type(2)
+    with pytest.raises(Exception):
+        node9.query("SELECT id, s, col1 FROM alters_table")
+
+    expected = expected = "1\t0_foo\n2\t0_foo\n3\t100_foo\n"
+    assert node9.query("SELECT id, col1 || '_foo' FROM alters_table")
 
 def test_polymorphic_parts_index(start_cluster):
     node1.query('''

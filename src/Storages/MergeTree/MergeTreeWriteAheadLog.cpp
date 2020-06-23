@@ -32,7 +32,10 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
 void MergeTreeWriteAheadLog::init()
 {
     out = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
-    block_out = std::make_unique<NativeBlockOutputStream>(*out, 0, storage.getSampleBlock());
+
+    /// Small hack: in NativeBlockOutputStream header is used only in `getHeader` method.
+    /// To avoid complex logic of changing it during ALTERs we leave it empty.
+    block_out = std::make_unique<NativeBlockOutputStream>(*out, 0, Block{});
     min_block_number = std::numeric_limits<Int64>::max();
     max_block_number = -1;
 }
