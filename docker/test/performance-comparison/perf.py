@@ -21,7 +21,8 @@ parser.add_argument('--host', nargs='*', default=['localhost'], help="Server hos
 parser.add_argument('--port', nargs='*', default=[9000], help="Server port(s). Corresponds to '--host' options.")
 parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 17)), help='Number of query runs per server. Defaults to CHPC_RUNS environment variable.')
 parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
-parser.add_argument('--print', action='store_true', help='Print test queries and exit.')
+parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
+parser.add_argument('--print-settings', action='store_true', help='Print test settings and exit.')
 args = parser.parse_args()
 
 test_name = os.path.splitext(os.path.basename(args.file[0].name))[0]
@@ -52,9 +53,18 @@ test_query_templates = [q.text for q in root.findall('query')]
 test_queries = substitute_parameters(test_query_templates)
 
 # If we're only asked to print the queries, do that and exit
-if args.print:
+if args.print_queries:
     for q in test_queries:
         print(q)
+    exit(0)
+
+# If we're only asked to print the settings, do that and exit. These are settings
+# for clickhouse-benchmark, so we print them as command line arguments, e.g.
+# '--max_memory_usage=10000000'.
+if args.print_settings:
+    for s in root.findall('settings/*'):
+        print(f'--{s.tag}={s.text}')
+
     exit(0)
 
 # Skip long tests
