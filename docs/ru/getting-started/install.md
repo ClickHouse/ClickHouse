@@ -78,6 +78,16 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 Для production окружений рекомендуется использовать последнюю `stable`-версию. Её номер также можно найти на github с на вкладке https://github.com/ClickHouse/ClickHouse/tags c постфиксом `-stable`.
 
+### Из бинарников для других операционных систем {#from-binaries-non-linux}
+
+Для не Linux дистрибутивов сборки ClickHouse предоставляются в виде кросс-компилированного бинарника с последнего коммита ветки master.
+
+- macOS — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/macos/clickhouse'`
+- AArch64 — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/aarch64/clickhouse'`
+- FreeBSD — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/freebsd/clickhouse'`
+
+Данные сборки не рекомендуются для использования в продакшене. В них присутствуют не все возможности ClickHouse.
+
 ### Из Docker образа {#from-docker-image}
 
 Для запуска ClickHouse в Docker нужно следовать инструкции на [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Внутри образов используются официальные `deb` пакеты.
