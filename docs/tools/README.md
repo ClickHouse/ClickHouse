@@ -31,7 +31,7 @@ Follow the instructions on it's official website: <https://wkhtmltopdf.org/downl
 1. `apt-get install npm` for Debian/Ubuntu or `brew install npm` on Mac OS X.
 2. `npm install -g purifycss amphtml-validator`.
 
-#### 3. Set up virtualenv:
+#### 3. Set up virtualenv
 
 ``` bash
 $ cd ClickHouse/docs/tools
