@@ -8,7 +8,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/TableStructureLockHolder.h>
+#include <Storages/TableLockHolder.h>
 #include <Storages/CheckResults.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ColumnDependency.h>
@@ -80,9 +80,10 @@ class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromo
 {
 public:
     IStorage() = delete;
-    /// Storage fields should be initialized in separate methods like setColumns
-    /// or setTableTTLs.
-    explicit IStorage(StorageID storage_id_) : storage_id(std::move(storage_id_)) {} //-V730
+    /// Storage metadata can be set separately in setInMemoryMetadata method
+    explicit IStorage(StorageID storage_id_)
+        : storage_id(std::move(storage_id_))
+        , metadata(std::make_unique<StorageInMemoryMetadata>()) {} //-V730
 
     virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;
@@ -101,7 +102,7 @@ public:
     virtual bool isView() const { return false; }
 
     /// Returns true if the storage supports queries with the SAMPLE section.
-    virtual bool supportsSampling() const { return hasSamplingKey(); }
+    virtual bool supportsSampling() const { return getInMemoryMetadataPtr()->hasSamplingKey(); }
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
@@ -129,58 +130,32 @@ public:
     /// Example is StorageSystemNumbers.
     virtual bool hasEvenlyDistributedRead() const { return false; }
 
-    /// Returns true if there is set table TTL, any column TTL or any move TTL.
-    virtual bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
-public: /// thread-unsafe part. lockStructure must be acquired
+public:
 
-    const ColumnsDescription & getColumns() const; /// returns combined set of columns
-    void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
+    /// Get mutable version (snapshot) of storage metadata. Metadata object is
+    /// multiversion, so it can be concurrently chaged, but returned copy can be
+    /// used without any locks.
+    StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata.get(); }
 
-    void setSecondaryIndices(IndicesDescription secondary_indices_);
-    const IndicesDescription & getSecondaryIndices() const;
-    /// Has at least one non primary index
-    bool hasSecondaryIndices() const;
+    /// Get immutable version (snapshot) of storage metadata. Metadata object is
+    /// multiversion, so it can be concurrently chaged, but returned copy can be
+    /// used without any locks.
+    StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
 
-    const ConstraintsDescription & getConstraints() const;
-    void setConstraints(ConstraintsDescription constraints_);
+    /// Update storage metadata. Used in ALTER or initialization of Storage.
+    /// Metadata object is multiversion, so this method can be called without
+    /// any locks.
+    void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
+    {
+        metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
+    }
 
-    /// Storage settings
-    ASTPtr getSettingsChanges() const;
-    void setSettingsChanges(const ASTPtr & settings_changes_);
-    bool hasSettingsChanges() const { return metadata.settings_changes != nullptr; }
-
-    /// Select query for *View storages.
-    const SelectQueryDescription & getSelectQuery() const;
-    void setSelectQuery(const SelectQueryDescription & select_);
-    bool hasSelectQuery() const;
-
-    StorageInMemoryMetadata getInMemoryMetadata() const { return metadata; }
-
-    Block getSampleBlock() const; /// ordinary + materialized.
-    Block getSampleBlockWithVirtuals() const; /// ordinary + materialized + virtuals.
-    Block getSampleBlockNonMaterialized() const; /// ordinary.
-    Block getSampleBlockForColumns(const Names & column_names) const; /// ordinary + materialized + aliases + virtuals.
-
-    /// Verify that all the requested names are in the table and are set correctly:
-    /// list of names is not empty and the names do not repeat.
-    void check(const Names & column_names, bool include_virtuals = false) const;
-
-    /// Check that all the requested names are in the table and have the correct types.
-    void check(const NamesAndTypesList & columns) const;
-
-    /// Check that all names from the intersection of `names` and `columns` are in the table and have the same types.
-    void check(const NamesAndTypesList & columns, const Names & column_names) const;
-
-    /// Check that the data block contains all the columns of the table with the correct types,
-    /// contains only the columns of the table, and all the columns are different.
-    /// If |need_all| is set, then checks that all the columns of the table are in the block.
-    void check(const Block & block, bool need_all = false) const;
 
     /// Return list of virtual columns (like _part, _table, etc). In the vast
     /// majority of cases virtual columns are static constant part of Storage
@@ -198,36 +173,39 @@ protected:
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
-    bool isVirtualColumn(const String & column_name) const;
+    bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
 
 private:
     StorageID storage_id;
     mutable std::mutex id_mutex;
 
-    /// TODO (alesap) just use multiversion for atomic metadata
-    mutable std::mutex ttl_mutex;
-    StorageInMemoryMetadata metadata;
+    /// Multiversion storage metadata. Allows to read/write storage metadata
+    /// without locks.
+    MultiVersionStorageMetadataPtr metadata;
 private:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
 
 public:
-    /// Acquire this lock if you need the table structure to remain constant during the execution of
-    /// the query. If will_add_new_data is true, this means that the query will add new data to the table
-    /// (INSERT or a parts merge).
-    TableStructureReadLockHolder lockStructureForShare(bool will_add_new_data, const String & query_id, const SettingSeconds & acquire_timeout);
+    /// Lock table for share. This lock must be acuqired if you want to be sure,
+    /// that table will be not dropped while you holding this lock. It's used in
+    /// variety of cases starting from SELECT queries to background merges in
+    /// MergeTree.
+    TableLockHolder lockForShare(const String & query_id, const SettingSeconds & acquire_timeout);
 
-    /// Acquire this lock at the start of ALTER to lock out other ALTERs and make sure that only you
-    /// can modify the table structure. It can later be upgraded to the exclusive lock.
-    TableStructureWriteLockHolder lockAlterIntention(const String & query_id, const SettingSeconds & acquire_timeout);
+    /// Lock table for alter. This lock must be acuqired in ALTER queries to be
+    /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
+    TableLockHolder lockForAlter(const String & query_id, const SettingSeconds & acquire_timeout);
 
-    /// Upgrade alter intention lock to the full exclusive structure lock. This is done by ALTER queries
-    /// to ensure that no other query uses the table structure and it can be safely changed.
-    void lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id, const SettingSeconds & acquire_timeout);
-
-    /// Acquire the full exclusive lock immediately. No other queries can run concurrently.
-    TableStructureWriteLockHolder lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout);
+    /// Lock table exclusively. This lock must be acuired if you want to be
+    /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
+    /// with table. For example it allows to wait all threads before DROP or
+    /// truncate query.
+    ///
+    /// NOTE: You have to be 100% sure that you need this lock. It's extremely
+    /// heavyweight and makes table irresponsive.
+    TableExclusiveLockHolder lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout);
 
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
@@ -293,10 +271,14 @@ public:
       * num_streams - a recommendation, how many streams to return,
       *  if the storage can return a different number of streams.
       *
-      * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
+      * metadata_snapshot is consistent snapshot of table metadata, it should be
+      * passed in all parts of the returned pipeline. Storage metadata can be
+      * changed during lifetime of the returned pipeline, but the snapshot is
+      * guaranteed to be immutable.
       */
     virtual Pipes read(
         const Names & /*column_names*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -310,10 +292,14 @@ public:
       * Receives a description of the query, which can contain information about the data write method.
       * Returns an object by which you can write data sequentially.
       *
-      * It is guaranteed that the table structure will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
+      * metadata_snapshot is consistent snapshot of table metadata, it should be
+      * passed in all parts of the returned streams. Storage metadata can be
+      * changed during lifetime of the returned streams, but the snapshot is
+      * guaranteed to be immutable.
       */
     virtual BlockOutputStreamPtr write(
         const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const Context & /*context*/)
     {
         throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -328,9 +314,13 @@ public:
     virtual void drop() {}
 
     /** Clear the table data and leave it empty.
-      * Must be called under lockForAlter.
+      * Must be called under exclusive lock (lockExclusively).
       */
-    virtual void truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &)
+    virtual void truncate(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /* metadata_snapshot */,
+        const Context & /* context */,
+        TableExclusiveLockHolder &)
     {
         throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -352,11 +342,10 @@ public:
      */
     virtual void renameInMemory(const StorageID & new_table_id);
 
-    /** ALTER tables in the form of column changes that do not affect the change to Storage or its parameters.
-      * This method must fully execute the ALTER query, taking care of the locks itself.
-      * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata.
+    /** ALTER tables in the form of column changes that do not affect the change
+      * to Storage or its parameters. Executes under alter lock (lockForAlter).
       */
-    virtual void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder);
+    virtual void alter(const AlterCommands & params, const Context & context, TableLockHolder & alter_lock_holder);
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
@@ -366,7 +355,7 @@ public:
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.
       */
-    virtual void alterPartition(const ASTPtr & /* query */, const PartitionCommands & /* commands */, const Context & /* context */)
+    virtual void alterPartition(const ASTPtr & /* query */, const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, const Context & /* context */)
     {
         throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -374,7 +363,13 @@ public:
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
       */
-    virtual bool optimize(const ASTPtr & /*query*/, const ASTPtr & /*partition*/, bool /*final*/, bool /*deduplicate*/, const Context & /*context*/)
+    virtual bool optimize(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const ASTPtr & /*partition*/,
+        bool /*final*/,
+        bool /*deduplicate*/,
+        const Context & /*context*/)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -421,7 +416,7 @@ public:
     virtual bool supportsIndexForIn() const { return false; }
 
     /// Provides a hint that the storage engine may evaluate the IN-condition by using an index.
-    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, const Context & /* query_context */) const { return false; }
+    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, const Context & /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
 
     /// Checks validity of the data
     virtual CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) { throw Exception("Check query is not supported for " + getName() + " storage", ErrorCodes::NOT_IMPLEMENTED); }
@@ -439,98 +434,8 @@ public:
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
-    /// Returns structure with partition key.
-    const KeyDescription & getPartitionKey() const;
-    /// Set partition key for storage (methods bellow, are just wrappers for this
-    /// struct).
-    void setPartitionKey(const KeyDescription & partition_key_);
-    /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
-    ASTPtr getPartitionKeyAST() const { return metadata.partition_key.definition_ast; }
-    /// Storage has user-defined (in CREATE query) partition key.
-    bool isPartitionKeyDefined() const;
-    /// Storage has partition key.
-    bool hasPartitionKey() const;
-    /// Returns column names that need to be read to calculate partition key.
-    Names getColumnsRequiredForPartitionKey() const;
-
-
-    /// Returns structure with sorting key.
-    const KeyDescription & getSortingKey() const;
-    /// Set sorting key for storage (methods bellow, are just wrappers for this
-    /// struct).
-    void setSortingKey(const KeyDescription & sorting_key_);
-    /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
-    ASTPtr getSortingKeyAST() const { return metadata.sorting_key.definition_ast; }
-    /// Storage has user-defined (in CREATE query) sorting key.
-    bool isSortingKeyDefined() const;
-    /// Storage has sorting key. It means, that it contains at least one column.
-    bool hasSortingKey() const;
-    /// Returns column names that need to be read to calculate sorting key.
-    Names getColumnsRequiredForSortingKey() const;
-    /// Returns columns names in sorting key specified by user in ORDER BY
-    /// expression. For example: 'a', 'x * y', 'toStartOfMonth(date)', etc.
-    Names getSortingKeyColumns() const;
-
-    /// Returns structure with primary key.
-    const KeyDescription & getPrimaryKey() const;
-    /// Set primary key for storage (methods bellow, are just wrappers for this
-    /// struct).
-    void setPrimaryKey(const KeyDescription & primary_key_);
-    /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
-    ASTPtr getPrimaryKeyAST() const { return metadata.primary_key.definition_ast; }
-    /// Storage has user-defined (in CREATE query) sorting key.
-    bool isPrimaryKeyDefined() const;
-    /// Storage has primary key (maybe part of some other key). It means, that
-    /// it contains at least one column.
-    bool hasPrimaryKey() const;
-    /// Returns column names that need to be read to calculate primary key.
-    Names getColumnsRequiredForPrimaryKey() const;
-    /// Returns columns names in sorting key specified by. For example: 'a', 'x
-    /// * y', 'toStartOfMonth(date)', etc.
-    Names getPrimaryKeyColumns() const;
-
-    /// Returns structure with sampling key.
-    const KeyDescription & getSamplingKey() const;
-    /// Set sampling key for storage (methods bellow, are just wrappers for this
-    /// struct).
-    void setSamplingKey(const KeyDescription & sampling_key_);
-    /// Returns sampling expression AST for storage or nullptr if there is none.
-    ASTPtr getSamplingKeyAST() const { return metadata.sampling_key.definition_ast; }
-    /// Storage has user-defined (in CREATE query) sampling key.
-    bool isSamplingKeyDefined() const;
-    /// Storage has sampling key.
-    bool hasSamplingKey() const;
-    /// Returns column names that need to be read to calculate sampling key.
-    Names getColumnsRequiredForSampling() const;
-
-    /// Returns column names that need to be read for FINAL to work.
-    Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }
-
-    /// Returns columns, which will be needed to calculate dependencies (skip
-    /// indices, TTL expressions) if we update @updated_columns set of columns.
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
-
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
-
-    /// Common tables TTLs (for rows and moves).
-    TTLTableDescription getTableTTLs() const;
-    void setTableTTLs(const TTLTableDescription & table_ttl_);
-    bool hasAnyTableTTL() const;
-
-    /// Separate TTLs for columns.
-    TTLColumnsDescription getColumnTTLs() const;
-    void setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_);
-    bool hasAnyColumnTTL() const;
-
-    /// Just wrapper for table TTLs, return rows part of table TTLs.
-    TTLDescription getRowsTTL() const;
-    bool hasRowsTTL() const;
-
-    /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
-    /// table TTL.
-    TTLDescriptions getMoveTTLs() const;
-    bool hasAnyMoveTTL() const;
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
@@ -558,22 +463,18 @@ public:
     }
 
 private:
-    /// You always need to take the next three locks in this order.
+    /// Lock required for alter queries (lockForAlter). Always taken for write
+    /// (actually can be replaced with std::mutex, but for consistency we use
+    /// RWLock). Allows to execute only one simultaneous alter query. Also it
+    /// should be taken by DROP-like queries, to be sure, that all alters are
+    /// finished.
+    mutable RWLock alter_lock = RWLockImpl::create();
 
-    /// If you hold this lock exclusively, you can be sure that no other structure modifying queries
-    /// (e.g. ALTER, DROP) are concurrently executing. But queries that only read table structure
-    /// (e.g. SELECT, INSERT) can continue to execute.
-    mutable RWLock alter_intention_lock = RWLockImpl::create();
-
-    /// It is taken for share for the entire INSERT query and the entire merge of the parts (for MergeTree).
-    /// ALTER COLUMN queries acquire an exclusive lock to ensure that no new parts with the old structure
-    /// are added to the table and thus the set of parts to modify doesn't change.
-    mutable RWLock new_data_structure_lock = RWLockImpl::create();
-
-    /// Lock for the table column structure (names, types, etc.) and data path.
-    /// It is taken in exclusive mode by queries that modify them (e.g. RENAME, ALTER and DROP)
-    /// and in share mode by other queries.
-    mutable RWLock structure_lock = RWLockImpl::create();
+    /// Lock required for drop queries. Every thread that want to ensure, that
+    /// table is not dropped have to tabke this lock for read (lockForShare).
+    /// DROP-like queries take this lock for write (lockExclusively), to be sure
+    /// that all table threads finished.
+    mutable RWLock drop_lock = RWLockImpl::create();
 };
 
 }

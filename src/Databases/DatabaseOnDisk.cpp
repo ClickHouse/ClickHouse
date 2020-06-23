@@ -266,7 +266,7 @@ void DatabaseOnDisk::renameTable(
     }
 
     auto table_data_relative_path = getTableDataPath(table_name);
-    TableStructureWriteLockHolder table_lock;
+    TableExclusiveLockHolder table_lock;
     String table_metadata_path;
     ASTPtr attach_query;
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
