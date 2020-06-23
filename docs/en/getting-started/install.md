@@ -90,19 +90,19 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 For production environments, it’s recommended to use the latest `stable`-version. You can find its number on GitHub page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
 
-### From Precompiled Binaries for Non-Linux OS {#from-binaries-non-linux}
-
-For non-Linux operating systems, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
-
-- macOS — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/macos/clickhouse'`
-- AArch64 — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/aarch64/clickhouse'`
-- FreeBSD — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/freebsd/clickhouse'`
-
-These builds are not recommended for use in production environments because they are less thoroughly tested, but you can do so on your own risk. They also have only a subset of ClickHouse features available.
-
 ### From Docker Image {#from-docker-image}
 
 To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Those images use official `deb` packages inside.
+
+### From Precompiled Binaries for Non-Standard Systems {#from-binaries-non-linux}
+
+For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
+
+- [macOS](https://clickhouse-builds.s3.yandex.net/master/macos/clickhouse) — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/macos/clickhouse'`
+- [FreeBSD](https://clickhouse-builds.s3.yandex.net/master/freebsd/clickhouse) — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/freebsd/clickhouse'`
+- [AArch64](https://clickhouse-builds.s3.yandex.net/master/aarch64/clickhouse) — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/aarch64/clickhouse'`
+
+These builds are not recommended for use in production environments because they are less thoroughly tested, but you can do so on your own risk. They also have only a subset of ClickHouse features available.
 
 ### From Sources {#from-sources}
 
