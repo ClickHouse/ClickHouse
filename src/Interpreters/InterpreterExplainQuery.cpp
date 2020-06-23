@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_SETTING;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -108,36 +109,62 @@ static void fillColumn(IColumn & column, const std::string & str)
         column.insertData(str.data() + start, end - start);
 }
 
-using BinarySettings = std::unordered_map<std::string, bool>;
-
-BinarySettings checkAndGetSettings(const ASTPtr & ast_settings)
+namespace
 {
-    if (!ast_settings)
-        return {};
 
-    NameSet supported_settings = {"header"};
-    auto get_supported_settings_string = [&supported_settings]()
+struct ExplainSettings
+{
+    QueryPlan::ExplainOptions query_plan_options;
+
+    std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
+    {
+            {"header", query_plan_options.header},
+    };
+
+    bool has(const std::string & name) const
+    {
+        return boolean_settings.count(name) > 0;
+    }
+
+    void setBooleanSetting(const std::string & name, bool value)
+    {
+        auto it = boolean_settings.find(name);
+        if (it == boolean_settings.end())
+            throw Exception("Unknown setting for ExplainSettings: " + name, ErrorCodes::LOGICAL_ERROR);
+
+        it->second.get() = value;
+    }
+
+    std::string getSettingsList() const
     {
         std::string res;
-        for (const auto & setting : supported_settings)
+        for (const auto & setting : boolean_settings)
         {
             if (!res.empty())
                 res += ", ";
 
-            res += setting;
+            res += setting.first;
         }
 
         return res;
-    };
+    }
+};
 
-    BinarySettings settings;
+}
+
+ExplainSettings checkAndGetSettings(const ASTPtr & ast_settings)
+{
+    if (!ast_settings)
+        return {};
+
+    ExplainSettings settings;
     const auto & set_query = ast_settings->as<ASTSetQuery &>();
 
     for (const auto & change : set_query.changes)
     {
-        if (supported_settings.count(change.name) == 0)
+        if (!settings.has(change.name))
             throw Exception("Unknown setting \"" + change.name + "\" for EXPLAIN query. Supported settings: " +
-                            get_supported_settings_string(), ErrorCodes::UNKNOWN_SETTING);
+                            settings.getSettingsList(), ErrorCodes::UNKNOWN_SETTING);
 
         if (change.value.getType() != Field::Types::UInt64)
             throw Exception("Invalid type " + std::string(change.value.getTypeName()) + " for setting \"" + change.name +
@@ -148,21 +175,10 @@ BinarySettings checkAndGetSettings(const ASTPtr & ast_settings)
             throw Exception("Invalid value " + std::to_string(value) + " for setting \"" + change.name +
                             "\". Only boolean settings are supported", ErrorCodes::INVALID_SETTING_VALUE);
 
-        settings[change.name] = value;
+        settings.setBooleanSetting(change.name, value);
     }
 
     return settings;
-}
-
-static QueryPlan::ExplainOptions getExplainOptions(const BinarySettings & settings)
-{
-    QueryPlan::ExplainOptions options;
-
-    auto it = settings.find("header");
-    if (it != settings.end())
-        options.header = it->second;
-
-    return options;
 }
 
 BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
@@ -197,7 +213,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         interpreter.buildQueryPlan(plan);
 
         WriteBufferFromOStream buffer(ss);
-        plan.explain(buffer, getExplainOptions(settings));
+        plan.explain(buffer, settings.query_plan_options);
     }
 
     fillColumn(*res_columns[0], ss.str());
