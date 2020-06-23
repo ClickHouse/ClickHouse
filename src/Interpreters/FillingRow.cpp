@@ -1,4 +1,6 @@
 #include <Interpreters/FillingRow.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+
 
 namespace DB
 {

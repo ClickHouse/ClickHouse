@@ -22,6 +22,7 @@ public:
         size_t preferred_block_size_bytes_,
         size_t preferred_max_column_in_block_size_bytes_,
         const MergeTreeData & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
         const bool use_uncompressed_cache_,
         const PrewhereInfoPtr & prewhere_info_,
         const MergeTreeReaderSettings & reader_settings_,

@@ -117,8 +117,9 @@ static void appendGraphitePattern(
                                                        aggregate_function_name, params_row, "GraphiteMergeTree storage initialization");
 
             /// TODO Not only Float64
-            pattern.function = AggregateFunctionFactory::instance().get(aggregate_function_name, {std::make_shared<DataTypeFloat64>()},
-                                                                        params_row);
+            AggregateFunctionProperties properties;
+            pattern.function = AggregateFunctionFactory::instance().get(
+                aggregate_function_name, {std::make_shared<DataTypeFloat64>()}, params_row, properties);
         }
         else if (startsWith(key, "retention"))
         {
@@ -417,6 +418,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         ++arg_num;
     }
 
+    /// This merging param maybe used as part of sorting key
+    std::optional<String> merging_param_key_arg;
+
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
     {
         if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.sign_column))
@@ -480,50 +484,83 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     ErrorCodes::BAD_ARGUMENTS);
 
         --arg_cnt;
+        /// Version collapsing is the only engine which add additional column to
+        /// sorting key.
+        merging_param_key_arg = merging_params.version_column;
     }
 
     String date_column_name;
-    ASTPtr partition_by_ast;
-    ASTPtr order_by_ast;
-    ASTPtr primary_key_ast;
-    ASTPtr sample_by_ast;
-    ASTPtr ttl_table_ast;
-    ASTPtr settings_ast;
-    IndicesDescription indices_description;
-    ConstraintsDescription constraints_description;
+
+    StorageInMemoryMetadata metadata;
+    metadata.columns = args.columns;
 
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(args.context.getMergeTreeSettings());
 
     if (is_extended_storage_def)
     {
+        ASTPtr partition_by_key;
         if (args.storage_def->partition_by)
-            partition_by_ast = args.storage_def->partition_by->ptr();
+            partition_by_key = args.storage_def->partition_by->ptr();
+
+        /// Partition key may be undefined, but despite this we store it's empty
+        /// value in partition_key structure. MergeTree checks this case and use
+        /// single default partition with name "all".
+        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, args.context);
 
         if (!args.storage_def->order_by)
             throw Exception("You must provide an ORDER BY expression in the table definition. "
                 "If you don't want this table to be sorted, use ORDER BY tuple()",
                 ErrorCodes::BAD_ARGUMENTS);
 
-        order_by_ast = args.storage_def->order_by->ptr();
+        /// Get sorting key from engine arguments.
+        ///
+        /// NOTE: store merging_param_key_arg as additional key column. We do it
+        /// before storage creation. After that storage will just copy this
+        /// column if sorting key will be changed.
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context, merging_param_key_arg);
 
+        /// If primary key explicitely defined, than get it from AST
         if (args.storage_def->primary_key)
-            primary_key_ast = args.storage_def->primary_key->ptr();
+        {
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
+        }
+        else /// Otherwise we copy it from primary key definition
+        {
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context);
+            /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
+            /// will return false but hasPrimaryKey() will return true.
+            metadata.primary_key.definition_ast = nullptr;
+        }
 
         if (args.storage_def->sample_by)
-            sample_by_ast = args.storage_def->sample_by->ptr();
+            metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.context);
 
         if (args.storage_def->ttl_table)
-            ttl_table_ast = args.storage_def->ttl_table->ptr();
-
+            metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                args.storage_def->ttl_table->ptr(),
+                metadata.columns,
+                args.context,
+                metadata.primary_key);
 
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
-                indices_description.push_back(IndexDescription::getIndexFromAST(index, args.columns, args.context));
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, args.columns, args.context));
+
+        if (args.query.columns_list && args.query.columns_list->constraints)
+            for (auto & constraint : args.query.columns_list->constraints->children)
+                metadata.constraints.constraints.push_back(constraint);
+
+        auto column_ttl_asts = args.columns.getColumnTTLs();
+        for (const auto & [name, ast] : column_ttl_asts)
+        {
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, args.columns, args.context, metadata.primary_key);
+            metadata.column_ttls_by_name[name] = new_ttl_entry;
+        }
 
         storage_settings->loadFromQuery(*args.storage_def);
 
         if (args.storage_def->settings)
-            settings_ast = args.storage_def->settings->ptr();
+            metadata.settings_changes = args.storage_def->settings->ptr();
     }
     else
     {
@@ -533,17 +570,34 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception(
                 "Date column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
+
+        auto partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
+
+        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, metadata.columns, args.context);
+
+
         ++arg_num;
 
         /// If there is an expression for sampling
         if (arg_cnt - arg_num == 3)
         {
-            sample_by_ast = engine_args[arg_num];
+            metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context);
             ++arg_num;
         }
 
-        /// Now only two parameters remain - primary_key, index_granularity.
-        order_by_ast = engine_args[arg_num];
+        /// Get sorting key from engine arguments.
+        ///
+        /// NOTE: store merging_param_key_arg as additional key column. We do it
+        /// before storage creation. After that storage will just copy this
+        /// column if sorting key will be changed.
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, args.context, merging_param_key_arg);
+
+        /// In old syntax primary_key always equals to sorting key.
+        metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context);
+        /// But it's not explicitely defined, so we evaluate definition to
+        /// nullptr
+        metadata.primary_key.definition_ast = nullptr;
+
         ++arg_num;
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
@@ -559,17 +613,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (arg_num != arg_cnt)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
 
-    if (!args.attach && !indices_description.empty() && !args.local_context.getSettingsRef().allow_experimental_data_skipping_indices)
+    if (!args.attach && !metadata.secondary_indices.empty() && !args.local_context.getSettingsRef().allow_experimental_data_skipping_indices)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
-
-    StorageInMemoryMetadata metadata(args.columns, indices_description, args.constraints);
-    metadata.partition_by_ast = partition_by_ast;
-    metadata.order_by_ast = order_by_ast;
-    metadata.primary_key_ast = primary_key_ast;
-    metadata.ttl_for_table_ast = ttl_table_ast;
-    metadata.sample_by_ast = sample_by_ast;
-    metadata.settings_ast = settings_ast;
 
     if (replicated)
         return StorageReplicatedMergeTree::create(

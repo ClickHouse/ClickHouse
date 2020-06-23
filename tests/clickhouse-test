@@ -271,6 +271,10 @@ def run_tests_array(all_tests_with_params):
                             if stderr:
                                 print(stderr.encode('utf-8'))
 
+                            # Stop on fatal errors like segmentation fault. They are send to client via logs.
+                            if ' <Fatal> ' in stderr:
+                                SERVER_DIED = True
+
                             if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                 SERVER_DIED = True
 

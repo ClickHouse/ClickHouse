@@ -158,7 +158,7 @@ struct NumIfImpl<A, B, NumberTraits::Error>
 private:
     [[noreturn]] static void throwError()
     {
-        throw Exception("Internal logic error: invalid types of arguments 2 and 3 of if", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception("Invalid types of arguments 2 and 3 of if", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 public:
     template <typename... Args> static void vectorVector(Args &&...) { throwError(); }
@@ -656,30 +656,89 @@ private:
         block.getByPosition(result).column = std::move(result_column);
     }
 
-    bool executeForNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+    bool executeForConstAndNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
         const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
         bool cond_is_null = arg_cond.column->onlyNull();
 
-        if (cond_is_null)
+        ColumnPtr not_const_condition = arg_cond.column;
+        bool cond_is_const = false;
+        bool cond_is_true = false;
+        bool cond_is_false = false;
+        if (const auto * const_arg = checkAndGetColumn<ColumnConst>(*arg_cond.column))
         {
-            block.getByPosition(result).column = std::move(block.getByPosition(arguments[2]).column);
-            return true;
+            cond_is_const = true;
+            not_const_condition = const_arg->getDataColumnPtr();
+            ColumnPtr data_column = const_arg->getDataColumnPtr();
+            if (const auto * const_nullable_arg = checkAndGetColumn<ColumnNullable>(*data_column))
+            {
+                data_column = const_nullable_arg->getNestedColumnPtr();
+                if (!data_column->empty())
+                    cond_is_null = const_nullable_arg->getNullMapData()[0];
+            }
+
+            if (!data_column->empty())
+            {
+                cond_is_true = !cond_is_null && checkAndGetColumn<ColumnUInt8>(*data_column)->getBool(0);
+                cond_is_false = !cond_is_null && !cond_is_true;
+            }
         }
 
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*arg_cond.column))
+        const auto & column1 = block.getByPosition(arguments[1]);
+        const auto & column2 = block.getByPosition(arguments[2]);
+        auto & result_column = block.getByPosition(result);
+
+        if (cond_is_true)
         {
+            if (result_column.type->equals(*column1.type))
+            {
+                result_column.column = std::move(column1.column);
+                return true;
+            }
+        }
+        else if (cond_is_false || cond_is_null)
+        {
+            if (result_column.type->equals(*column2.type))
+            {
+                result_column.column = std::move(column2.column);
+                return true;
+            }
+        }
+
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*not_const_condition))
+        {
+            ColumnPtr new_cond_column = nullable->getNestedColumnPtr();
+            size_t column_size = arg_cond.column->size();
+
+            if (cond_is_null || cond_is_true || cond_is_false) /// Nullable(Nothing) or consts
+            {
+                UInt8 value = cond_is_true ? 1 : 0;
+                new_cond_column = ColumnConst::create(ColumnUInt8::create(1, value), column_size);
+            }
+            else if (checkAndGetColumn<ColumnUInt8>(*new_cond_column))
+            {
+                auto nested_column_copy = new_cond_column->cloneResized(new_cond_column->size());
+                typeid_cast<ColumnUInt8 *>(nested_column_copy.get())->applyZeroMap(nullable->getNullMapData());
+                new_cond_column = std::move(nested_column_copy);
+
+                if (cond_is_const)
+                    new_cond_column = ColumnConst::create(new_cond_column, column_size);
+            }
+            else
+                throw Exception("Illegal column " + arg_cond.column->getName() + " of " + getName() + " condition",
+                                ErrorCodes::ILLEGAL_COLUMN);
+
             Block temporary_block
             {
-                { nullable->getNestedColumnPtr(), removeNullable(arg_cond.type), arg_cond.name },
-                block.getByPosition(arguments[1]),
-                block.getByPosition(arguments[2]),
-                block.getByPosition(result)
+                { new_cond_column, removeNullable(arg_cond.type), arg_cond.name },
+                column1,
+                column2,
+                result_column
             };
 
             executeImpl(temporary_block, {0, 1, 2}, 3, temporary_block.rows());
 
-            block.getByPosition(result).column = std::move(temporary_block.getByPosition(3).column);
+            result_column.column = std::move(temporary_block.getByPosition(3).column);
             return true;
         }
 
@@ -693,11 +752,12 @@ private:
 
     static ColumnPtr makeNullableColumnIfNot(const ColumnPtr & column)
     {
-        if (isColumnNullable(*column))
-            return column;
+        auto materialized = materializeColumnIfConst(column);
 
-        return ColumnNullable::create(
-            materializeColumnIfConst(column), ColumnUInt8::create(column->size(), 0));
+        if (isColumnNullable(*materialized))
+            return materialized;
+
+        return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), 0));
     }
 
     static ColumnPtr getNestedColumn(const ColumnPtr & column)
@@ -915,7 +975,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        if (executeForNullableCondition(block, arguments, result, input_rows_count)
+        if (executeForConstAndNullableCondition(block, arguments, result, input_rows_count)
             || executeForNullThenElse(block, arguments, result, input_rows_count)
             || executeForNullableThenElse(block, arguments, result, input_rows_count))
             return;
@@ -963,10 +1023,7 @@ public:
             using T0 = typename Types::LeftType;
             using T1 = typename Types::RightType;
 
-            if constexpr (IsDecimalNumber<T0> == IsDecimalNumber<T1>)
-                return executeTyped<T0, T1>(cond_col, block, arguments, result, input_rows_count);
-            else
-                throw Exception("Conditional function with Decimal and non Decimal", ErrorCodes::NOT_IMPLEMENTED);
+            return executeTyped<T0, T1>(cond_col, block, arguments, result, input_rows_count);
         };
 
         TypeIndex left_id = arg_then.type->getTypeId();

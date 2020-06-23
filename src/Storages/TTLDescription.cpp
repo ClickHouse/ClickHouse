@@ -23,6 +23,29 @@ extern const int BAD_ARGUMENTS;
 extern const int BAD_TTL_EXPRESSION;
 }
 
+
+TTLAggregateDescription::TTLAggregateDescription(const TTLAggregateDescription & other)
+    : column_name(other.column_name)
+    , expression_result_column_name(other.expression_result_column_name)
+{
+    if (other.expression)
+        expression = std::make_shared<ExpressionActions>(*other.expression);
+}
+
+TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateDescription & other)
+{
+    if (&other == this)
+        return *this;
+
+    column_name = other.column_name;
+    expression_result_column_name = other.expression_result_column_name;
+    if (other.expression)
+        expression = std::make_shared<ExpressionActions>(*other.expression);
+    else
+        expression.reset();
+    return *this;
+}
+
 namespace
 {
 
@@ -55,11 +78,60 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 
 }
 
+TTLDescription::TTLDescription(const TTLDescription & other)
+    : mode(other.mode)
+    , expression_ast(other.expression_ast ? other.expression_ast->clone() : nullptr)
+    , result_column(other.result_column)
+    , where_result_column(other.where_result_column)
+    , group_by_keys(other.group_by_keys)
+    , set_parts(other.set_parts)
+    , aggregate_descriptions(other.aggregate_descriptions)
+    , destination_type(other.destination_type)
+    , destination_name(other.destination_name)
+{
+    if (other.expression)
+        expression = std::make_shared<ExpressionActions>(*other.expression);
+
+    if (other.where_expression)
+        where_expression = std::make_shared<ExpressionActions>(*other.where_expression);
+}
+
+TTLDescription & TTLDescription::operator=(const TTLDescription & other)
+{
+    if (&other == this)
+        return *this;
+
+    mode = other.mode;
+    if (other.expression_ast)
+        expression_ast = other.expression_ast->clone();
+    else
+        expression_ast.reset();
+
+    if (other.expression)
+        expression = std::make_shared<ExpressionActions>(*other.expression);
+    else
+        expression.reset();
+
+    result_column = other.result_column;
+    if (other.where_expression)
+        where_expression = std::make_shared<ExpressionActions>(*other.where_expression);
+    else
+        where_expression.reset();
+
+    where_result_column = other.where_result_column;
+    group_by_keys = other.group_by_keys;
+    set_parts = other.set_parts;
+    aggregate_descriptions = other.aggregate_descriptions;
+    destination_type = other.destination_type;
+    destination_name = other.destination_name;
+    return * this;
+}
+
 TTLDescription TTLDescription::getTTLFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
     const Context & context,
-    const StorageMetadataKeyField & primary_key)
+    const KeyDescription & primary_key)
 {
     TTLDescription result;
     const auto * ttl_element = definition_ast->as<ASTTTLElement>();
@@ -148,7 +220,7 @@ TTLDescription TTLDescription::getTTLFromAST(
 
                 if (value->as<ASTFunction>())
                 {
-                    auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, true);
+                    auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
                     auto expr_actions = ExpressionAnalyzer(value, syntax_result, context).getActions(false);
                     for (const auto & column : expr_actions->getRequiredColumns())
                     {
@@ -177,11 +249,15 @@ TTLDescription TTLDescription::getTTLFromAST(
 
             for (auto [name, value] : aggregations)
             {
-                auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, true);
+                auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
                 auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, context);
 
-                result.set_parts.emplace_back(TTLAggregateDescription{
-                    name, value->getColumnName(), expr_analyzer.getActions(false)});
+                TTLAggregateDescription set_part;
+                set_part.column_name = name;
+                set_part.expression_result_column_name = value->getColumnName();
+                set_part.expression = expr_analyzer.getActions(false);
+
+                result.set_parts.emplace_back(set_part);
 
                 for (const auto & descr : expr_analyzer.getAnalyzedData().aggregate_descriptions)
                     result.aggregate_descriptions.push_back(descr);
@@ -192,6 +268,36 @@ TTLDescription TTLDescription::getTTLFromAST(
     checkTTLExpression(result.expression, result.result_column);
 
 
+    return result;
+}
+
+
+TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
+    const ASTPtr & definition_ast,
+    const ColumnsDescription & columns,
+    const Context & context,
+    const KeyDescription & primary_key)
+{
+    TTLTableDescription result;
+    if (!definition_ast)
+        return result;
+
+    result.definition_ast = definition_ast->clone();
+
+    bool seen_delete_ttl = false;
+    for (const auto & ttl_element_ptr : definition_ast->children)
+    {
+        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key);
+        if (ttl.destination_type == DataDestinationType::DELETE)
+        {
+            if (seen_delete_ttl)
+                throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
+            result.rows_ttl = ttl;
+            seen_delete_ttl = true;
+        }
+        else
+            result.move_ttl.emplace_back(std::move(ttl));
+    }
     return result;
 }
 

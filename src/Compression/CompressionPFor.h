@@ -1,8 +1,13 @@
-//
-// Created by Лада Искра on 14/06/2020.
-//
+#pragma once
 
-#ifndef CLICKHOUSE_COMPRESSIONPFOR_H
-#define CLICKHOUSE_COMPRESSIONPFOR_H
+#include <Compression/ICompressionCodec.h>
 
-#endif //CLICKHOUSE_COMPRESSIONPFOR_H
+namespace DB
+{
+
+
+
+    class CompressionCodecFactory;
+    void registerCodecPFor(CompressionCodecFactory & factory);
+
+}

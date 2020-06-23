@@ -11,13 +11,19 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_IO_BUFFER;
 }
 
-KafkaBlockOutputStream::KafkaBlockOutputStream(StorageKafka & storage_, const std::shared_ptr<Context> & context_) : storage(storage_), context(context_)
+KafkaBlockOutputStream::KafkaBlockOutputStream(
+    StorageKafka & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    const std::shared_ptr<Context> & context_)
+    : storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+    , context(context_)
 {
 }
 
 Block KafkaBlockOutputStream::getHeader() const
 {
-    return storage.getSampleBlockNonMaterialized();
+    return metadata_snapshot->getSampleBlockNonMaterialized();
 }
 
 void KafkaBlockOutputStream::writePrefix()
