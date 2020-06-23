@@ -38,6 +38,7 @@
 #include <Common/Throttler.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/clearPasswordFromCommandLine.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
@@ -75,6 +76,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
+#include <Common/UTF8Helpers.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -121,7 +123,7 @@ private:
     };
     bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
-    bool send_logs    = false;           /// send_logs_level passed, do not use previous cursor position, to avoid overlaps with logs
+    bool has_received_logs = false;      /// We have received some logs, do not use previous cursor position, to avoid overlaps with logs
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
@@ -357,6 +359,79 @@ private:
         return false;
     }
 
+#if USE_REPLXX
+    static void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors)
+    {
+        using namespace replxx;
+
+        static const std::unordered_map<TokenType, Replxx::Color> token_to_color =
+        {
+            { TokenType::Whitespace, Replxx::Color::DEFAULT },
+            { TokenType::Comment, Replxx::Color::GRAY },
+            { TokenType::BareWord, Replxx::Color::DEFAULT },
+            { TokenType::Number, Replxx::Color::GREEN },
+            { TokenType::StringLiteral, Replxx::Color::CYAN },
+            { TokenType::QuotedIdentifier, Replxx::Color::MAGENTA },
+            { TokenType::OpeningRoundBracket, Replxx::Color::BROWN },
+            { TokenType::ClosingRoundBracket, Replxx::Color::BROWN },
+            { TokenType::OpeningSquareBracket, Replxx::Color::BROWN },
+            { TokenType::ClosingSquareBracket, Replxx::Color::BROWN },
+            { TokenType::OpeningCurlyBrace, Replxx::Color::INTENSE },
+            { TokenType::ClosingCurlyBrace, Replxx::Color::INTENSE },
+
+            { TokenType::Comma, Replxx::Color::INTENSE },
+            { TokenType::Semicolon, Replxx::Color::INTENSE },
+            { TokenType::Dot, Replxx::Color::INTENSE },
+            { TokenType::Asterisk, Replxx::Color::INTENSE },
+            { TokenType::Plus, Replxx::Color::INTENSE },
+            { TokenType::Minus, Replxx::Color::INTENSE },
+            { TokenType::Slash, Replxx::Color::INTENSE },
+            { TokenType::Percent, Replxx::Color::INTENSE },
+            { TokenType::Arrow, Replxx::Color::INTENSE },
+            { TokenType::QuestionMark, Replxx::Color::INTENSE },
+            { TokenType::Colon, Replxx::Color::INTENSE },
+            { TokenType::Equals, Replxx::Color::INTENSE },
+            { TokenType::NotEquals, Replxx::Color::INTENSE },
+            { TokenType::Less, Replxx::Color::INTENSE },
+            { TokenType::Greater, Replxx::Color::INTENSE },
+            { TokenType::LessOrEquals, Replxx::Color::INTENSE },
+            { TokenType::GreaterOrEquals, Replxx::Color::INTENSE },
+            { TokenType::Concatenation, Replxx::Color::INTENSE },
+            { TokenType::At, Replxx::Color::INTENSE },
+            { TokenType::DoubleAt, Replxx::Color::MAGENTA },
+
+            { TokenType::EndOfStream, Replxx::Color::DEFAULT },
+
+            { TokenType::Error, Replxx::Color::RED },
+            { TokenType::ErrorMultilineCommentIsNotClosed, Replxx::Color::RED },
+            { TokenType::ErrorSingleQuoteIsNotClosed, Replxx::Color::RED },
+            { TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED },
+            { TokenType::ErrorSinglePipeMark, Replxx::Color::RED },
+            { TokenType::ErrorWrongNumber, Replxx::Color::RED },
+            { TokenType::ErrorMaxQuerySizeExceeded, Replxx::Color::RED }
+        };
+
+        const Replxx::Color unknown_token_color = Replxx::Color::RED;
+
+        Lexer lexer(query.data(), query.data() + query.size());
+        size_t pos = 0;
+
+        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+        {
+            size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token.begin), token.size());
+            for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
+            {
+                if (token_to_color.find(token.type) != token_to_color.end())
+                    colors[pos + code_point_index] = token_to_color.at(token.type);
+                else
+                    colors[pos + code_point_index] = unknown_token_color;
+            }
+
+            pos += utf8_len;
+        }
+    }
+#endif
+
     int mainImpl()
     {
         UseSSL use_ssl;
@@ -502,7 +577,18 @@ private:
             LineReader::Patterns query_delimiters = {";", "\\G"};
 
 #if USE_REPLXX
-            ReplxxLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
+            replxx::Replxx::highlighter_callback_t highlight_callback{};
+            if (config().getBool("highlight"))
+                highlight_callback = highlight;
+
+            ReplxxLineReader lr(
+                Suggest::instance(),
+                history_file,
+                config().has("multiline"),
+                query_extenders,
+                query_delimiters,
+                highlight_callback);
+
 #elif defined(USE_READLINE) && USE_READLINE
             ReadlineLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
@@ -822,8 +908,6 @@ private:
 
             connection->forceConnected(connection_parameters.timeouts);
 
-            send_logs = context.getSettingsRef().send_logs_level != LogsLevel::none;
-
             ASTPtr input_function;
             if (insert && insert->select)
                 insert->tryFindInputFunction(input_function);
@@ -901,7 +985,10 @@ private:
     /// Process the query that doesn't require transferring data blocks to the server.
     void processOrdinaryQuery()
     {
-        /// We will always rewrite query (even if there are no query_parameters) because it will help to find errors in query formatter.
+        /// Rewrite query only when we have query parameters.
+        /// Note that if query is rewritten, comments in query are lost.
+        /// But the user often wants to see comments in server logs, query log, processlist, etc.
+        if (!query_parameters.empty())
         {
             /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
             ReplaceQueryParameterVisitor visitor(query_parameters);
@@ -1429,6 +1516,7 @@ private:
 
     void onLogData(Block & block)
     {
+        has_received_logs = true;
         initLogsOutputStream();
         logs_out_stream->write(block);
         logs_out_stream->flush();
@@ -1464,7 +1552,7 @@ private:
     void clearProgress()
     {
         written_progress_chars = 0;
-        if (!send_logs)
+        if (!has_received_logs)
             std::cerr << "\r" CLEAR_TO_END_OF_LINE;
     }
 
@@ -1492,7 +1580,7 @@ private:
 
         const char * indicator = indicators[increment % 8];
 
-        if (!send_logs && written_progress_chars)
+        if (!has_received_logs && written_progress_chars)
             message << '\r';
 
         size_t prefix_size = message.count();
@@ -1546,7 +1634,7 @@ private:
 
         message << CLEAR_TO_END_OF_LINE;
 
-        if (send_logs)
+        if (has_received_logs)
             message << '\n';
 
         ++increment;
@@ -1766,6 +1854,7 @@ public:
             ("echo", "in batch mode, print query before execution")
             ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", po::value<bool>(), "enable or disable compression")
+            ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
         ;
@@ -1835,7 +1924,11 @@ public:
                 std::string text = e.displayText();
                 std::cerr << "Code: " << e.code() << ". " << text << std::endl;
                 std::cerr << "Table №" << i << std::endl << std::endl;
-                exit(e.code());
+                /// Avoid the case when error exit code can possibly overflow to normal (zero).
+                auto exit_code = e.code() % 256;
+                if (exit_code == 0)
+                    exit_code = 255;
+                exit(exit_code);
             }
         }
 
@@ -1912,9 +2005,12 @@ public:
             config().setBool("disable_suggestion", true);
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
+        if (options.count("highlight"))
+            config().setBool("highlight", options["highlight"].as<bool>());
 
         argsToConfig(common_arguments, config(), 100);
 
+        clearPasswordFromCommandLine(argc, argv);
     }
 };
 

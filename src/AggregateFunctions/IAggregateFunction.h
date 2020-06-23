@@ -150,6 +150,8 @@ public:
     virtual void addBatchSinglePlaceNotNull(
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena) const = 0;
 
+    virtual void addBatchSinglePlaceFromInterval(size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
+
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
       *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
       *  -Array combinator. It might also be used generally to break data dependency when array
@@ -164,7 +166,8 @@ public:
      *  nested_function is a smart pointer to this aggregate function itself.
      *  arguments and params are for nested_function.
      */
-    virtual AggregateFunctionPtr getOwnNullAdapter(const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/, const Array & /*params*/) const
+    virtual AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/, const Array & /*params*/) const
     {
         return nullptr;
     }
@@ -212,6 +215,12 @@ public:
         for (size_t i = 0; i < batch_size; ++i)
             if (!null_map[i])
                 static_cast<const Derived *>(this)->add(place, columns, i, arena);
+    }
+
+    void addBatchSinglePlaceFromInterval(size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
+    {
+        for (size_t i = batch_begin; i < batch_end; ++i)
+            static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
     void addBatchArray(
@@ -269,6 +278,17 @@ public:
     {
         return alignof(Data);
     }
+};
+
+
+/// Properties of aggregate function that are independent of argument types and parameters.
+struct AggregateFunctionProperties
+{
+    /** When the function is wrapped with Null combinator,
+      * should we return Nullable type with NULL when no values were aggregated
+      * or we should return non-Nullable type with default value (example: count, countDistinct).
+      */
+    bool returns_default_when_only_null = false;
 };
 
 

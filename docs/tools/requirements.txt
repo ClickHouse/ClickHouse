@@ -2,7 +2,7 @@ Babel==2.8.0
 backports-abc==0.5
 backports.functools-lru-cache==1.6.1
 beautifulsoup4==4.9.1
-certifi==2020.4.5.1
+certifi==2020.4.5.2
 chardet==3.0.4
 click==7.1.2
 closure==20191111
@@ -13,7 +13,7 @@ idna==2.9
 Jinja2==2.11.2
 jinja2-highlight==0.6.1
 jsmin==2.2.2
-livereload==2.6.1
+livereload==2.6.2
 Markdown==3.2.1
 MarkupSafe==1.1.1
 mkdocs==1.1.2
@@ -28,7 +28,7 @@ pymdown-extensions==7.1
 python-slugify==1.2.6
 PyYAML==5.3.1
 repackage==0.7.3
-requests==2.23.0
+requests==2.24.0
 singledispatch==3.4.0.3
 six==1.15.0
 soupsieve==2.0.1

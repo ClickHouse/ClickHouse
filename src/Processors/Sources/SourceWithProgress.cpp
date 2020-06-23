@@ -12,6 +12,11 @@ namespace ErrorCodes
     extern const int TOO_MANY_BYTES;
 }
 
+SourceWithProgress::SourceWithProgress(Block header, bool enable_auto_progress)
+    : ISourceWithProgress(header), auto_progress(enable_auto_progress)
+{
+}
+
 void SourceWithProgress::work()
 {
     if (!limits.speed_limits.checkTimeLimit(total_stopwatch.elapsed(), limits.timeout_overflow_mode))
@@ -24,7 +29,7 @@ void SourceWithProgress::work()
 
         ISourceWithProgress::work();
 
-        if (!was_progress_called && has_input)
+        if (auto_progress && !was_progress_called && has_input)
             progress({ current_chunk.chunk.getNumRows(), current_chunk.chunk.bytes() });
     }
 }

@@ -404,11 +404,11 @@ Possible values:
 
 Default value: 0.
 
-## partial_merge_join_optimizations {#partial_merge_join_optimizations}
+## partial\_merge\_join\_optimizations {#partial_merge_join_optimizations}
 
 Disables optimizations in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
 
-By default, this setting enables improvements that could lead to wrong results. If you see suspicious results in your queries, disable optimizations by this setting. Optimizations can be different in different versions of the ClickHouse server. 
+By default, this setting enables improvements that could lead to wrong results. If you see suspicious results in your queries, disable optimizations by this setting. Optimizations can be different in different versions of the ClickHouse server.
 
 Possible values:
 
@@ -417,35 +417,35 @@ Possible values:
 
 Default value: 1.
 
-## partial_merge_join_rows_in_right_blocks {#partial_merge_join_rows_in_right_blocks}
+## partial\_merge\_join\_rows\_in\_right\_blocks {#partial_merge_join_rows_in_right_blocks}
 
 Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
 
 ClickHouse server:
 
-1. Splits right-hand join data into blocks with up to the specified number of rows.
-2. Indexes each block with their minimum and maximum values
-3. Unloads prepared blocks to disk if possible.
+1.  Splits right-hand join data into blocks with up to the specified number of rows.
+2.  Indexes each block with their minimum and maximum values
+3.  Unloads prepared blocks to disk if possible.
 
 Possible values:
 
-- Any positive integer. Recommended range of values: [1000, 100000].
+-   Any positive integer. Recommended range of values: \[1000, 100000\].
 
 Default value: 65536.
 
-## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
+## join\_on\_disk\_max\_files\_to\_merge {#join_on_disk_max_files_to_merge}
 
-Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk. 
+Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk.
 
 The bigger the value of the setting, the more RAM used and the less disk I/O needed.
 
 Possible values:
 
-- Any positive integer, starting from 2.
+-   Any positive integer, starting from 2.
 
 Default value: 64.
 
-## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys}
+## any\_join\_distinct\_right\_table\_keys {#any_join_distinct_right_table_keys}
 
 Enables legacy ClickHouse server behavior in `ANY INNER|LEFT JOIN` operations.
 
@@ -454,19 +454,18 @@ Enables legacy ClickHouse server behavior in `ANY INNER|LEFT JOIN` operations.
 
 When the legacy behavior enabled:
 
-- Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are not equal because ClickHouse uses the logic with many-to-one left-to-right table keys mapping.
-- Results of `ANY INNER JOIN` operations contain all rows from the left table like the `SEMI LEFT JOIN` operations do.
+-   Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are not equal because ClickHouse uses the logic with many-to-one left-to-right table keys mapping.
+-   Results of `ANY INNER JOIN` operations contain all rows from the left table like the `SEMI LEFT JOIN` operations do.
 
 When the legacy behavior disabled:
 
-- Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are equal because ClickHouse uses the logic which provides one-to-many keys mapping in `ANY RIGHT JOIN` operations.
-- Results of `ANY INNER JOIN` operations contain one row per key from both left and right tables.
+-   Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are equal because ClickHouse uses the logic which provides one-to-many keys mapping in `ANY RIGHT JOIN` operations.
+-   Results of `ANY INNER JOIN` operations contain one row per key from both left and right tables.
 
 Possible values:
 
-- 0 — Legacy behavior is disabled.
-- 1 — Legacy behavior is enabled.
-
+-   0 — Legacy behavior is disabled.
+-   1 — Legacy behavior is enabled.
 
 Default value: 0.
 
@@ -474,18 +473,16 @@ See also:
 
 -   [JOIN strictness](../../sql-reference/statements/select/join.md#select-join-strictness)
 
-
-## temporary_files_codec {#temporary_files_codec}
+## temporary\_files\_codec {#temporary_files_codec}
 
 Sets compression codec for temporary files used in sorting and joining operations on disk.
 
-Possible values: 
+Possible values:
 
-- LZ4 — [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) compression is applied.
-- NONE — No compression is applied.
+-   LZ4 — [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) compression is applied.
+-   NONE — No compression is applied.
 
 Default value: LZ4.
-
 
 ## max\_block\_size {#setting-max_block_size}
 
@@ -555,7 +552,7 @@ Default value: 8.
 
 If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it doesn’t use the cache of uncompressed blocks.
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed\_cache\_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
@@ -567,7 +564,7 @@ Default value: 128 ✕ 8192.
 
 If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it doesn’t use the cache of uncompressed blocks.
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed\_cache\_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible value:
 
@@ -592,7 +589,7 @@ Default value: 0.
 
 Setting up query logging.
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server configuration parameter.
+Queries sent to ClickHouse with this setup are logged according to the rules in the [query\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server configuration parameter.
 
 Example:
 
@@ -622,7 +619,7 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Queries’ threads runned by ClickHouse with this setup are logged according to the rules in the [query\_thread\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
+Queries’ threads runned by ClickHouse with this setup are logged according to the rules in the [query\_thread\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
 
 Example:
 
@@ -789,7 +786,7 @@ For more information, see the section “Extreme values”.
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
-Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed\_cache\_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
 For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically to save space for truly small queries. This means that you can keep the ‘use\_uncompressed\_cache’ setting always set to 1.
 
@@ -822,6 +819,11 @@ ClickHouse supports the following algorithms of choosing replicas:
 -   [Nearest hostname](#load_balancing-nearest_hostname)
 -   [In order](#load_balancing-in_order)
 -   [First or random](#load_balancing-first_or_random)
+-   [Round robin](#load_balancing-round_robin)
+
+See also:
+
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
 
 ### Random (by Default) {#load_balancing-random}
 
@@ -864,6 +866,14 @@ load_balancing = first_or_random
 This algorithm chooses the first replica in the set or a random replica if the first is unavailable. It’s effective in cross-replication topology setups, but useless in other configurations.
 
 The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, the load is evenly distributed among replicas that are still available.
+
+### Round Robin {#load_balancing-round_robin}
+
+``` sql
+load_balancing = round_robin
+```
+
+This algorithm uses round robin policy across replicas with the same number of errors (only the queries with `round_robin` policy is accounted).
 
 ## prefer\_localhost\_replica {#settings-prefer-localhost-replica}
 
@@ -955,10 +965,10 @@ ClickHouse generates an exception
 
 See also:
 
--   [insert_quorum_timeout](#settings-insert_quorum_timeout)
--   [select_sequential_consistency](#settings-select_sequential_consistency)
+-   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
+-   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
-## insert_quorum_timeout {#settings-insert_quorum_timeout}
+## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
 Write to quorum timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
@@ -986,8 +996,8 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 
 See also:
 
--   [insert_quorum](#settings-insert_quorum)
--   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [insert\_quorum](#settings-insert_quorum)
+-   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 
 ## insert\_deduplicate {#settings-insert-deduplicate}
 
@@ -1001,7 +1011,6 @@ Possible values:
 Default value: 1.
 
 By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
-
 
 ## deduplicate\_blocks\_in\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
@@ -1067,15 +1076,15 @@ Default value: 0.
 
 ## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
-Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) construction.
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) construction.
 
 Possible values:
 
--   [uniq](../../sql-reference/aggregate-functions/reference.md#agg_function-uniq)
--   [uniqCombined](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined)
--   [uniqCombined64](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined64)
--   [uniqHLL12](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqhll12)
--   [uniqExact](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqexact)
+-   [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniqCombined](../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
+-   [uniqCombined64](../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
+-   [uniqExact](../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
 
 Default value: `uniqExact`.
 
@@ -1109,24 +1118,24 @@ Possible values:
 
 Default value: 0.
 
-## optimize_skip_unused_shards {#optimize-skip-unused-shards}
+## optimize\_skip\_unused\_shards {#optimize-skip-unused-shards}
 
 Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise does nothing).
 
 Possible values:
 
--    0 — Disabled.
--    1 — Enabled.
+-   0 — Disabled.
+-   1 — Enabled.
 
 Default value: 0
 
-## force_optimize_skip_unused_shards {#force-optimize-skip-unused-shards}
+## force\_optimize\_skip\_unused\_shards {#force-optimize-skip-unused-shards}
 
-Enables or disables query execution if [optimize_skip_unused_shards](#optimize-skip-unused-shards) is enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled, an exception will be thrown.
+Enables or disables query execution if [optimize\_skip\_unused\_shards](#optimize-skip-unused-shards) is enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled, an exception will be thrown.
 
 Possible values:
 
--   0 — Disabled. ClickHouse doesn't throw an exception.
+-   0 — Disabled. ClickHouse doesn’t throw an exception.
 -   1 — Enabled. Query execution is disabled only if the table has a sharding key.
 -   2 — Enabled. Query execution is disabled regardless of whether a sharding key is defined for the table.
 
@@ -1165,8 +1174,10 @@ Controls how fast errors in distributed tables are zeroed. If a replica is unava
 
 See also:
 
+-   [load\_balancing](#load_balancing-round_robin)
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
 
 ## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
 
@@ -1177,7 +1188,23 @@ Error count of each replica is capped at this value, preventing a single replica
 
 See also:
 
+-   [load\_balancing](#load_balancing-round_robin)
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
+
+## distributed\_replica\_max\_ignored\_errors {#settings-distributed_replica_max_ignored_errors}
+
+-   Type: unsigned int
+-   Default value: 0
+
+Number of errors that will be ignored while choosing replicas (according to `load_balancing` algorithm).
+
+See also:
+
+-   [load\_balancing](#load_balancing-round_robin)
+-   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
@@ -1249,7 +1276,7 @@ Default value: 1000000000 nanoseconds (once a second).
 
 See also:
 
--   System table [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
 
@@ -1272,7 +1299,7 @@ Default value: 1000000000 nanoseconds.
 
 See also:
 
--   System table [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
@@ -1287,8 +1314,8 @@ Default value: 0.
 
 **See Also**
 
--   [Sampling Query Profiler](../optimizing-performance/sampling-query-profiler.md)
--   System table [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   [Sampling Query Profiler](../../operations/optimizing-performance/sampling-query-profiler.md)
+-   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## input\_format\_parallel\_parsing {#input-format-parallel-parsing}
 
@@ -1336,7 +1363,7 @@ Type: URL
 
 Default value: Empty
 
-## background_pool_size {#background_pool_size}
+## background\_pool\_size {#background_pool_size}
 
 Sets the number of threads performing background operations in table engines (for example, merges in [MergeTree engine](../../engines/table-engines/mergetree-family/index.md) tables). This setting is applied from `default` profile at ClickHouse server start and can’t be changed in a user session. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
 
@@ -1348,9 +1375,9 @@ Possible values:
 
 Default value: 16.
 
-## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
+## background\_buffer\_flush\_schedule\_pool\_size {#background_buffer_flush_schedule_pool_size}
 
-Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at ClickHouse server start and can't be changed in a user session.
+Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at ClickHouse server start and can’t be changed in a user session.
 
 Possible values:
 
@@ -1358,7 +1385,7 @@ Possible values:
 
 Default value: 16.
 
-## background_move_pool_size {#background_move_pool_size}
+## background\_move\_pool\_size {#background_move_pool_size}
 
 Sets the number of threads performing background moves of data parts for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)-engine tables. This setting is applied at ClickHouse server start and can’t be changed in a user session.
 
@@ -1368,9 +1395,9 @@ Possible values:
 
 Default value: 8.
 
-## background_schedule_pool_size {#background_schedule_pool_size}
+## background\_schedule\_pool\_size {#background_schedule_pool_size}
 
-Sets the number of threads performing background tasks for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables, [Kafka](../../engines/table-engines/integrations/kafka.md) streaming, [DNS cache updates](../server-configuration-parameters/settings.md#server-settings-dns-cache-update-period). This setting is applied at ClickHouse server start and can’t be changed in a user session.
+Sets the number of threads performing background tasks for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables, [Kafka](../../engines/table-engines/integrations/kafka.md) streaming, [DNS cache updates](../../operations/server-configuration-parameters/settings.md#server-settings-dns-cache-update-period). This setting is applied at ClickHouse server start and can’t be changed in a user session.
 
 Possible values:
 
@@ -1378,7 +1405,7 @@ Possible values:
 
 Default value: 16.
 
-## background_distributed_schedule_pool_size {#background_distributed_schedule_pool_size}
+## background\_distributed\_schedule\_pool\_size {#background_distributed_schedule_pool_size}
 
 Sets the number of threads performing background tasks for [distributed](../../engines/table-engines/special/distributed.md) sends. This setting is applied at ClickHouse server start and can’t be changed in a user session.
 
@@ -1388,9 +1415,68 @@ Possible values:
 
 Default value: 16.
 
-## low_cardinality_max_dictionary_size {#low_cardinality_max_dictionary_size}
+## transform_null_in {#transform_null_in}
 
-Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can't be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
+Enables equality of [NULL](../../sql-reference/syntax.md#null-literal) values for [IN](../../sql-reference/operators/in.md) operator.
+
+By default, `NULL` values can't be compared because `NULL` means undefined value. Thus, comparison `expr = NULL` must always return `false`. With this setting `NULL = NULL` returns `true` for `IN` operator.
+
+Possible values:
+
+-   0 — Comparison of `NULL` values in `IN` operator returns `false`.
+-   1 — Comparison of `NULL` values in `IN` operator returns `true`.
+
+Default value: 0.
+
+**Example** 
+
+Consider the `null_in` table:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+│    3 │     3 │
+└──────┴───────┘
+```
+
+Query:
+
+```sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
+```
+
+Result:
+
+```text
+┌──idx─┬────i─┐
+│    1 │    1 │
+└──────┴──────┘
+```
+
+Query:
+
+```sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
+```
+
+Result:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+└──────┴───────┘
+```
+
+**See Also** 
+
+-   [NULL Processing in IN Operators](../../sql-reference/operators/in.md#in-null-processing)
+
+
+## low\_cardinality\_max\_dictionary\_size {#low_cardinality_max_dictionary_size}
+
+Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can’t be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
 
 Possible values:
 
@@ -1398,7 +1484,7 @@ Possible values:
 
 Default value: 8192.
 
-## low_cardinality_use_single_dictionary_for_part {#low_cardinality_use_single_dictionary_for_part}
+## low\_cardinality\_use\_single\_dictionary\_for\_part {#low_cardinality_use_single_dictionary_for_part}
 
 Turns on or turns off using of single dictionary for the data part.
 
@@ -1406,44 +1492,73 @@ By default, ClickHouse server monitors the size of dictionaries and if a diction
 
 Possible values:
 
-- 1 — Creating several dictionaries for the data part is prohibited.
-- 0 — Creating several dictionaries for the data part is not prohibited.
+-   1 — Creating several dictionaries for the data part is prohibited.
+-   0 — Creating several dictionaries for the data part is not prohibited.
 
 Default value: 0.
 
-## low_cardinality_allow_in_native_format {#low_cardinality_allow_in_native_format}
+## low\_cardinality\_allow\_in\_native\_format {#low_cardinality_allow_in_native_format}
 
 Allows or restricts using the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type with the [Native](../../interfaces/formats.md#native) format.
 
 If usage of `LowCardinality` is restricted, ClickHouse server converts `LowCardinality`-columns to ordinary ones for `SELECT` queries, and convert ordinary columns to `LowCardinality`-columns for `INSERT` queries.
 
-This setting is required mainly for third-party clients which don't support `LowCardinality` data type.
+This setting is required mainly for third-party clients which don’t support `LowCardinality` data type.
 
 Possible values:
 
-- 1 — Usage of `LowCardinality` is not restricted.
-- 0 — Usage of `LowCardinality` is restricted.
+-   1 — Usage of `LowCardinality` is not restricted.
+-   0 — Usage of `LowCardinality` is restricted.
 
 Default value: 1.
 
-
-## allow_suspicious_low_cardinality_types {#allow_suspicious_low_cardinality_types}
+## allow\_suspicious\_low\_cardinality\_types {#allow_suspicious_low_cardinality_types}
 
 Allows or restricts using [LowCardinality](../../sql-reference/data-types/lowcardinality.md) with data types with fixed size of 8 bytes or less: numeric data types and `FixedString(8_bytes_or_less)`.
 
 For small fixed values using of `LowCardinality` is usually inefficient, because ClickHouse stores a numeric index for each row. As a result:
 
-- Disk space usage can rise.
-- RAM consumption can be higher, depending on a dictionary size.
-- Some functions can work slower due to extra coding/encoding operations.
+-   Disk space usage can rise.
+-   RAM consumption can be higher, depending on a dictionary size.
+-   Some functions can work slower due to extra coding/encoding operations.
 
 Merge times in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables can grow due to all the reasons described above.
 
 Possible values:
 
-- 1 — Usage of `LowCardinality` is not restricted.
-- 0 — Usage of `LowCardinality` is restricted.
+-   1 — Usage of `LowCardinality` is not restricted.
+-   0 — Usage of `LowCardinality` is restricted.
 
 Default value: 0.
+
+## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
+
+Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create.md#create-view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+
+Possible values:
+
+-   Any positive integer.
+-   0 — Squashing disabled.
+
+Default value: 1048576.
+
+**See Also**
+
+-   [min_insert_block_size_rows](#min-insert-block-size-rows)
+
+## min_insert_block_size_bytes_for_materialized_views {#min-insert-block-size-bytes-for-materialized-views}
+
+Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create.md#create-view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+
+Possible values:
+
+-   Any positive integer.
+-   0 — Squashing disabled.
+
+Default value: 268435456.
+
+**See also**
+
+-   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

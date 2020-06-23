@@ -121,6 +121,7 @@ SRCS(
     System/StorageSystemQuotasUsage.cpp
     System/StorageSystemReplicas.cpp
     System/StorageSystemReplicationQueue.cpp
+    System/StorageSystemDistributionQueue.cpp
     System/StorageSystemRoleGrants.cpp
     System/StorageSystemRoles.cpp
     System/StorageSystemRowPolicies.cpp
@@ -176,6 +177,8 @@ SRCS(
     VirtualColumnUtils.cpp
     extractKeyExpressionList.cpp
     TTLDescription.cpp
+    KeyDescription.cpp
+    SelectQueryDescription.cpp
 )
 
 END()

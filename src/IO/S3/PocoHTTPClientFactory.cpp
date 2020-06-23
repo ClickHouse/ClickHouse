@@ -21,10 +21,12 @@ std::shared_ptr<Aws::Http::HttpRequest> PocoHTTPClientFactory::CreateHttpRequest
 }
 
 std::shared_ptr<Aws::Http::HttpRequest> PocoHTTPClientFactory::CreateHttpRequest(
-    const Aws::Http::URI & uri, Aws::Http::HttpMethod method, const Aws::IOStreamFactory & streamFactory) const
+    const Aws::Http::URI & uri, Aws::Http::HttpMethod method, const Aws::IOStreamFactory &) const
 {
     auto request = Aws::MakeShared<Aws::Http::Standard::StandardHttpRequest>("PocoHTTPClientFactory", uri, method);
-    request->SetResponseStreamFactory(streamFactory);
+
+    /// Don't create default response stream. Actual response stream will be set later in PocoHTTPClient.
+    request->SetResponseStreamFactory(null_factory);
 
     return request;
 }

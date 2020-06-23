@@ -20,6 +20,14 @@ function execute_null()
 
 function execute_group_by()
 {
+    # Peak memory usage for the main query (with GROUP BY) is ~100MiB (with
+    # max_threads=2 as here).
+    # So set max_memory_usage_for_user to 150MiB and if the memory tracking
+    # accounting will be incorrect then the second query will fail
+    #
+    # Note that we also need one running query for the user (sleep(3)), since
+    # max_memory_usage_for_user is installed to 0 once there are no more
+    # queries for user.
     local opts=(
         --max_memory_usage_for_user=$((150<<20))
         --max_threads=2
