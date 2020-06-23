@@ -632,7 +632,7 @@ void StorageReplicatedMergeTree::drop()
             throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
         shutdown();
-        dropReplica(zookeeper, zookeeper_path, replica_name, is_readonly ,true);
+        dropReplica(zookeeper, zookeeper_path, replica_name, is_readonly);
     }
 
     dropAllData();
@@ -750,7 +750,7 @@ static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const Strin
     return res;
 }
 
-void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, bool is_readonly, bool is_drop_table)
+void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, bool is_readonly)
 {
     static Poco::Logger * log = &Poco::Logger::get("StorageReplicatedMergeTree::dropReplica");
 
@@ -760,13 +760,6 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
 
     if (zookeeper->expired())
         throw Exception("Table was not dropped because ZooKeeper session has expired.", ErrorCodes::TABLE_WAS_NOT_DROPPED);
-
-    if (!is_drop_table)
-    {
-        if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
-            throw Exception("Can't drop replica: " + replica + ", because it's active",
-            ErrorCodes::LOGICAL_ERROR);
-    }
 
     auto remote_replica_path = zookeeper_path + "/replicas" + "/" + replica;
     LOG_INFO(log, "Removing replica {}", remote_replica_path);

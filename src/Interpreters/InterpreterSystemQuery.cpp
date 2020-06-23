@@ -418,7 +418,10 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             storage_replicated->getStatus(status);
             if (query.replica == status.replica_name)
                 throw Exception("We can't drop local replica, please use `DROP TABLE` if you want to clean the data and drop this replica", ErrorCodes::LOGICAL_ERROR);
-            storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, status.is_readonly ,false);
+            if (zookeeper->exists(status.zookeeper_path + "/replicas/" + query.replica + "/is_active"))
+                throw Exception("Can't drop replica: " + query.replica + ", because it's active",
+                    ErrorCodes::LOGICAL_ERROR);
+            storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, status.is_readonly);
             LOG_TRACE(log, "DROP REPLICA " + table_id.getNameForLogs() +  " [" + query.replica + "]: OK");
         }
         else
@@ -437,7 +440,10 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                     storage_replicated->getStatus(status);
                     if (query.replica == status.replica_name)
                         throw Exception("We can't drop local replica, please use `DROP TABLE` if you want to clean the data and drop this replica", ErrorCodes::LOGICAL_ERROR);
-                    storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, status.is_readonly ,false);
+                    if (zookeeper->exists(status.zookeeper_path + "/replicas/" + query.replica + "/is_active"))
+                        throw Exception("Can't drop replica: " + query.replica + ", because it's active",
+                            ErrorCodes::LOGICAL_ERROR);
+                    storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, status.is_readonly);
                 }
             }
             LOG_TRACE(log, "DROP REPLICA " + query.replica + " DATABSE " +  database->getDatabaseName() + ": OK");
@@ -463,7 +469,10 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                             ErrorCodes::LOGICAL_ERROR);
                     if (status.replica_path.compare(query.replica_zk_path + "/replicas/" + status.replica_name) == 0)
                     {
-                        storage_replicated->dropReplica(zookeeper, query.replica_zk_path, query.replica, status.is_readonly ,false);
+                        if (zookeeper->exists(query.replica_zk_path + "/replicas/" + query.replica + "/is_active"))
+                            throw Exception("Can't drop replica: " + query.replica + ", because it's active",
+                                ErrorCodes::LOGICAL_ERROR);
+                        storage_replicated->dropReplica(zookeeper, query.replica_zk_path, query.replica, status.is_readonly);
                         return;
                     }
                 }
@@ -494,7 +503,10 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                     storage_replicated->getStatus(status);
                     if (query.replica == status.replica_name)
                         throw Exception("We can't drop local replica, please use `DROP TABLE` if you want to clean the data and drop this replica", ErrorCodes::LOGICAL_ERROR);
-                    storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, status.is_readonly ,false);
+                    if (zookeeper->exists(status.zookeeper_path + "/replicas/" + query.replica + "/is_active"))
+                        throw Exception("Can't drop replica: " + query.replica + ", because it's active",
+                            ErrorCodes::LOGICAL_ERROR);
+                    storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, status.is_readonly);
                 }
             }
             LOG_TRACE(log, "DROP REPLICA " + query.replica + " DATABSE " +  database->getDatabaseName() + ": OK");
