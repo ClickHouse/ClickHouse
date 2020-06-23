@@ -499,8 +499,6 @@ namespace ErrorCodes
     extern const int INCONSISTENT_RESERVATIONS = 530;
     extern const int NO_RESERVATIONS_PROVIDED = 531;
     extern const int UNKNOWN_RAID_TYPE = 532;
-    extern const int CASSANDRA_INTERNAL_ERROR = 533;
-    extern const int NOT_A_LEADER = 534;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
