@@ -24,6 +24,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
+    extern const int INVALID_SETTING_VALUE;
+    extern const int UNKNOWN_SETTING;
 }
 
 namespace
@@ -106,9 +108,67 @@ static void fillColumn(IColumn & column, const std::string & str)
         column.insertData(str.data() + start, end - start);
 }
 
+using BinarySettings = std::unordered_map<std::string, bool>;
+
+BinarySettings checkAndGetSettings(const ASTPtr & ast_settings)
+{
+    if (!ast_settings)
+        return {};
+
+    NameSet supported_settings = {"header"};
+    auto get_supported_settings_string = [&supported_settings]()
+    {
+        std::string res;
+        for (const auto & setting : supported_settings)
+        {
+            if (!res.empty())
+                res += ", ";
+
+            res += setting;
+        }
+
+        return res;
+    };
+
+    BinarySettings settings;
+    const auto & set_query = ast_settings->as<ASTSetQuery &>();
+
+    for (const auto & change : set_query.changes)
+    {
+        if (supported_settings.count(change.name) == 0)
+            throw Exception("Unknown setting \"" + change.name + "\" for EXPLAIN query. Supported settings: " +
+                            get_supported_settings_string(), ErrorCodes::UNKNOWN_SETTING);
+
+        if (change.value.getType() != Field::Types::UInt64)
+            throw Exception("Invalid type " + std::string(change.value.getTypeName()) + " for setting \"" + change.name +
+                            "\" only boolean settings are supported", ErrorCodes::INVALID_SETTING_VALUE);
+
+        auto value = change.value.get<UInt64>();
+        if (value > 1)
+            throw Exception("Invalid value " + std::to_string(value) + " for setting \"" + change.name +
+                            "\". Only boolean settings are supported", ErrorCodes::INVALID_SETTING_VALUE);
+
+        settings[change.name] = value;
+    }
+
+    return settings;
+}
+
+static QueryPlan::ExplainOptions getExplainOptions(const BinarySettings & settings)
+{
+    QueryPlan::ExplainOptions options;
+
+    auto it = settings.find("header");
+    if (it != settings.end())
+        options.header = it->second;
+
+    return options;
+}
+
 BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 {
     const auto & ast = query->as<ASTExplainQuery &>();
+    auto settings = checkAndGetSettings(ast.getSettings());
 
     Block sample_block = getSampleBlock();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
@@ -124,7 +184,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         ExplainAnalyzedSyntaxVisitor::Data data{.context = context};
         ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-        ast.children.at(0)->format(IAST::FormatSettings(ss, false));
+        ast.getExplainedQuery()->format(IAST::FormatSettings(ss, false));
     }
     else if (ast.getKind() == ASTExplainQuery::QueryPlan)
     {
@@ -137,7 +197,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         interpreter.buildQueryPlan(plan);
 
         WriteBufferFromOStream buffer(ss);
-        plan.explain(buffer);
+        plan.explain(buffer, getExplainOptions(settings));
     }
 
     fillColumn(*res_columns[0], ss.str());

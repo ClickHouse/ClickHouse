@@ -28,9 +28,12 @@ bool ColumnWithTypeAndName::operator==(const ColumnWithTypeAndName & other) cons
 }
 
 
-void ColumnWithTypeAndName::dumpStructure(WriteBuffer & out) const
+void ColumnWithTypeAndName::dumpStructure(WriteBuffer & out, bool escaped) const
 {
-    out << name;
+    if (escaped)
+        writeEscapedString(name, out);
+    else
+        out << name;
 
     if (type)
         out << ' ' << type->getName();

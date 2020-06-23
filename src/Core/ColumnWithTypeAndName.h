@@ -33,7 +33,7 @@ struct ColumnWithTypeAndName
     ColumnWithTypeAndName cloneEmpty() const;
     bool operator==(const ColumnWithTypeAndName & other) const;
 
-    void dumpStructure(WriteBuffer & out) const;
+    void dumpStructure(WriteBuffer & out, bool escaped = false) const;
     String dumpStructure() const;
 };
 #pragma GCC diagnostic pop

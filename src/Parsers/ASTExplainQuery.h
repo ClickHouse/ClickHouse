@@ -21,7 +21,6 @@ public:
     ASTExplainQuery(ExplainKind kind_, bool old_syntax_)
         : kind(kind_), old_syntax(old_syntax_)
     {
-        children.emplace_back(); /// explained query
     }
 
     String getID(char delim) const override { return "Explain" + (delim + toString(kind, old_syntax)); }
@@ -35,18 +34,36 @@ public:
         return res;
     }
 
-    const ASTPtr & getExplainedQuery() const { return children.at(0); }
+    void setExplainedQuery(ASTPtr query_)
+    {
+        children.emplace_back(query_);
+        query = std::move(query_);
+    }
+
+    void setSettings(ASTPtr settings_)
+    {
+        children.emplace_back(settings_);
+        ast_settings = std::move(settings_);
+    }
+
+    const ASTPtr & getExplainedQuery() const { return query; }
+    const ASTPtr & getSettings() const { return ast_settings; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << toString(kind, old_syntax) << (settings.hilite ? hilite_none : "") << " ";
-        children.at(0)->formatImpl(settings, state, frame);
+        ast_settings->formatImpl(settings, state, frame);
+        settings.ostr << settings.nl_or_ws;
+        query->formatImpl(settings, state, frame);
     }
 
 private:
     ExplainKind kind;
     bool old_syntax; /// "EXPLAIN AST" -> "AST", "EXPLAIN SYNTAX" -> "ANALYZE"
+
+    ASTPtr query;
+    ASTPtr ast_settings;
 
     static String toString(ExplainKind kind, bool old_syntax)
     {
