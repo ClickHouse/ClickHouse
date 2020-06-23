@@ -35,7 +35,13 @@ while [[ -z $($CLICKHOUSE_CLIENT --query "SELECT name FROM system.columns WHERE 
     sleep 0.5
 done
 
-# RENAME on fly works
+$CLICKHOUSE_CLIENT --query "SELECT name FROM system.columns WHERE name = 'renamed_value1' and table = 'table_for_rename_replicated'"
+
+# SHOW CREATE TABLE takes query from .sql file on disk.
+# previous select take metadata from memory. So, when previous select says, that return renamed_value1 already exists in table, it's still can have old version on disk.
+while [[ -z $($CLICKHOUSE_CLIENT --query "SHOW CREATE TABLE table_for_rename_replicated;" | grep 'renamed_value1') ]]; do
+    sleep 0.5
+done
 
 $CLICKHOUSE_CLIENT --query "SHOW CREATE TABLE table_for_rename_replicated;"
 
