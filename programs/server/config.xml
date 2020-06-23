@@ -222,8 +222,8 @@
                 <my_ldap_server>
                     <host>localhost</host>
                     <port>636</port>
-                    <auth_dn_prefix>cn=</auth_dn_prefix>
-                    <auth_dn_suffix>, ou=users, dc=example, dc=com</auth_dn_suffix>
+                    <auth_dn_prefix>uid=</auth_dn_prefix>
+                    <auth_dn_suffix>,ou=users,dc=example,dc=com</auth_dn_suffix>
                     <enable_tls>yes</enable_tls>
                     <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
                     <tls_require_cert>demand</tls_require_cert>
