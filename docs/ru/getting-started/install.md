@@ -90,7 +90,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 - [AArch64](https://clickhouse-builds.s3.yandex.net/master/aarch64/clickhouse) — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
 - [FreeBSD](https://clickhouse-builds.s3.yandex.net/master/freebsd/clickhouse) — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
 
-После скачивания, можно воспользоваться `clickhouse client` для подключения к серверу, или `clickhouse local` для обработки локальных данных. Для запуска в режиме сервера конфигурационные файлы [сервера](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) и [пользователей](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/users.xml) можно скачать с GitHub.
+После скачивания, можно воспользоваться `clickhouse client` для подключения к серверу, или `clickhouse local` для обработки локальных данных. Для запуска `clickhouse server` необходимо скачать конфигурационные файлы [сервера](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) и [пользователей](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/users.xml) с GitHub.
 
 Данные сборки не рекомендуются для использования в продакшене, так как они недостаточно тщательно протестированны. Также, в них присутствуют не все возможности ClickHouse.
 
