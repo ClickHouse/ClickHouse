@@ -92,7 +92,7 @@ For production environments, it’s recommended to use the latest `stable`-versi
 
 ### From precompiled binaries for non-Linux OS {#from-binaries-non-linux}
 
-For non-Linux distributions, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the master branch.
+For non-Linux operating systems, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the master branch.
 
 - macOS — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/macos/clickhouse'`
 - AArch64 — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/aarch64/clickhouse'`
