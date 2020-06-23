@@ -119,6 +119,7 @@ struct ExplainSettings
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
             {"header", query_plan_options.header},
+            {"description", query_plan_options.description},
     };
 
     bool has(const std::string & name) const
