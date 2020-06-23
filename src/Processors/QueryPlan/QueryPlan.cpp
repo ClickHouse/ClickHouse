@@ -216,6 +216,25 @@ static void explainStep(
 
         buffer.write('\n');
     }
+
+    if (options.actions)
+    {
+        auto actions = step.describeActions();
+        if (!actions.empty())
+        {
+            buffer << "Actions: ";
+            bool first = true;
+
+            for (auto & action : actions)
+            {
+                if (!first)
+                    buffer << ",\n" << prefix << "         ";
+
+                first = false;
+                buffer << action;
+            }
+        }
+    }
 }
 
 void QueryPlan::explain(WriteBuffer & buffer, const ExplainOptions & options)

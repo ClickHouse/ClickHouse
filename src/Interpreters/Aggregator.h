@@ -923,6 +923,9 @@ public:
         {
             return getHeader(src_header, intermediate_header, keys, aggregates, final);
         }
+
+        /// Returns keys and aggregated for EXPLAIN query
+        Strings explain() const;
     };
 
     Aggregator(const Params & params_);
