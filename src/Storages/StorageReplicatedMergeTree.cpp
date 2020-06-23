@@ -782,12 +782,12 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
         LOG_INFO(log, "{} is the last replica, will remove table", remote_replica_path);
 
         /** At this moment, another replica can be created and we cannot remove the table.
-             * Try to remove /replicas node first. If we successfully removed it,
-             * it guarantees that we are the only replica that proceed to remove the table
-             * and no new replicas can be created after that moment (it requires the existence of /replicas node).
-             * and table cannot be recreated with new /replicas node on another servers while we are removing data,
-             * because table creation is executed in single transaction that will conflict with remaining nodes.
-             */
+          * Try to remove /replicas node first. If we successfully removed it,
+          * it guarantees that we are the only replica that proceed to remove the table
+          * and no new replicas can be created after that moment (it requires the existence of /replicas node).
+          * and table cannot be recreated with new /replicas node on another servers while we are removing data,
+          * because table creation is executed in single transaction that will conflict with remaining nodes.
+          */
 
         Coordination::Requests ops;
         Coordination::Responses responses;
