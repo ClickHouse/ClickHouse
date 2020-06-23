@@ -320,7 +320,6 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
         else
         {
             auto & ctn = block.getByName(prewhere_info->prewhere_column_name);
-            ctn.type = std::make_shared<DataTypeUInt8>();
             ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
         }
 
