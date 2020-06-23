@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config_core.h"
+
+#if USE_MYSQL
+
 #include <mysqlxx/Pool.h>
 #include <Core/MySQLClient.h>
 #include <Databases/IDatabase.h>
@@ -32,6 +36,8 @@ protected:
     DatabasePtr getNestedDatabase() const;
 
 public:
+    String getEngineName() const override { return "MySQL"; }
+
     ASTPtr getCreateDatabaseQuery() const override;
 
     void loadStoredObjects(Context & context, bool has_force_restore_data_flag) override;
@@ -78,3 +84,5 @@ public:
 };
 
 }
+
+#endif

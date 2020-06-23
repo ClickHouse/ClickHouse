@@ -12,7 +12,6 @@
 #    include <DataTypes/DataTypesNumber.h>
 #    include <Databases/DatabaseOrdinary.h>
 #    include <Databases/IDatabase.h>
-#    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Databases/MySQL/MaterializeMySQLSettings.h>
 #    include <Interpreters/MySQL/CreateQueryVisitor.h>
@@ -61,7 +60,7 @@ private:
 
         Buffers(const String & database_) : database(database_) {}
 
-        void commit(MaterializeMetadata & metatdata, const Context & context);
+        void commit(const Context & context);
 
         void add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes);
 

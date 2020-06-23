@@ -89,7 +89,7 @@ bool DatabaseConnectionMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseConnectionMySQL::getTablesIterator(const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseConnectionMySQL::getTablesIterator(const Context &, const FilterByNameFunction & filter_by_table_name)
 {
     Tables tables;
     std::lock_guard<std::mutex> lock(mutex);
@@ -103,12 +103,12 @@ DatabaseTablesIteratorPtr DatabaseConnectionMySQL::getTablesIterator(const Filte
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
 
-bool DatabaseConnectionMySQL::isTableExist(const String & name) const
+bool DatabaseConnectionMySQL::isTableExist(const String & name, const Context & context) const
 {
-    return bool(tryGetTable(name, global_context));
+    return bool(tryGetTable(name, context));
 }
 
-StoragePtr DatabaseConnectionMySQL::tryGetTable(const String & mysql_table_name) const
+StoragePtr DatabaseConnectionMySQL::tryGetTable(const String & mysql_table_name, const Context &) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -156,7 +156,7 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
     return create_table_query;
 }
 
-ASTPtr DatabaseConnectionMySQL::getCreateTableQueryImpl(const String & table_name, bool throw_on_error) const
+ASTPtr DatabaseConnectionMySQL::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 

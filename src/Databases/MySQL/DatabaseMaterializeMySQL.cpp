@@ -38,7 +38,16 @@ DatabasePtr DatabaseMaterializeMySQL::getNestedDatabase() const
     std::unique_lock<std::mutex> lock(mutex);
 
     if (exception)
-        std::rethrow_exception(exception);
+    {
+        try
+        {
+            std::rethrow_exception(exception);
+        }
+        catch (Exception & exception)
+        {
+            throw Exception(exception);
+        }
+    }
 
     return nested_database;
 }
