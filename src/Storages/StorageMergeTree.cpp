@@ -865,8 +865,11 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
         /// Clear old parts. It is unnecessary to do it more than once a second.
         if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
         {
-            clearOldPartsFromFilesystem();
-            clearOldTemporaryDirectories();
+            {
+                auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+                clearOldPartsFromFilesystem();
+                clearOldTemporaryDirectories();
+            }
             clearOldMutations();
         }
 
