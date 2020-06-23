@@ -80,7 +80,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 ### Из бинарников для других операционных систем {#from-binaries-non-linux}
 
-Для не Linux дистрибутивов сборки ClickHouse предоставляются в виде кросс-компилированного бинарника с последнего коммита ветки master.
+Для других операционных систем сборки ClickHouse предоставляются в виде кросс-компилированного бинарника с последнего коммита ветки master.
 
 - macOS — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/macos/clickhouse'`
 - AArch64 — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/aarch64/clickhouse'`
