@@ -477,7 +477,7 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
-    /// Must be called with locked lockForShare().
+    /// Must be called with locked lockForShare() because use relative_data_path.
     void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 
     /// After the call to dropAllData() no method can be called.
@@ -487,9 +487,9 @@ public:
     /// Drop data directories if they are empty. It is safe to call this method if table creation was unsuccessful.
     void dropIfEmpty();
 
-    /// Moves the entire data directory.
-    /// Flushes the uncompressed blocks cache and the marks cache.
-    /// Must be called with locked lockForShare().
+    /// Moves the entire data directory. Flushes the uncompressed blocks cache
+    /// and the marks cache. Must be called with locked lockExclusively()
+    /// because changes relative_data_path.
     void rename(const String & new_table_path, const StorageID & new_table_id) override;
 
     /// Check if the ALTER can be performed:
