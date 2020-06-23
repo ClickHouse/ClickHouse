@@ -1121,20 +1121,19 @@ Enables or disables skipping of unused shards for [SELECT](../../sql-reference/s
 Possible values:
 
 -   0 — Disabled.
--   1 — Enabled, including nested `Distributed()` tables.
--   2 — Enabled, excluding nested `Distributed()` tables.
+-   1 — Enabled.
 
 Default value: 0
 
 ## optimize\_skip\_unused\_shards\_nesting {#optimize-skip-unused-shards-nesting}
 
-Controls nesting level for [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) (hence still requires [`optimize_skip_unused_shards`](#optimize-skip-unused-shards)).
+Controls [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) (hence still requires [`optimize_skip_unused_shards`](#optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enables `optimize_skip_unused_shards` only for the first level
--   2 — Enables `optimize_skip_unused_shards` up to the second level
+-   0 — Disabled, `optimize_skip_unused_shards` works always.
+-   1 — Enables `optimize_skip_unused_shards` only for the first level.
+-   2 — Enables `optimize_skip_unused_shards` up to the second level.
 
 Default value: 0
 
@@ -1152,11 +1151,15 @@ Default value: 0
 
 ## force\_optimize\_skip\_unused\_shards\_nesting {#settings-force_optimize_skip_unused_shards_nesting}
 
-Controls nesting level for [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards) (hence still requires [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards)).
+Controls [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards) (hence still requires [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
 
--   Type: unsigned int
--   1 — Enables `force_optimize_skip_unused_shards_nesting` only for the first level
--   2 — Enables `force_optimize_skip_unused_shards_nesting` up to the second level
+Possible values:
+
+-   0 - Disabled, `force_optimize_skip_unused_shards` works always.
+-   1 — Enables `force_optimize_skip_unused_shards` only for the first level.
+-   2 — Enables `force_optimize_skip_unused_shards` up to the second level.
+
+Default value: 0
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
