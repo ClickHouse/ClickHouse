@@ -131,6 +131,11 @@ function run_tests
         test_files=$(ls "$test_prefix"/*.xml)
     fi
 
+    # Determine which concurrent benchmarks to run. For now, the only test
+    # we run as a concurrent benchmark is 'website'. Run it as benchmark if we
+    # are also going to run it as a normal test.
+    for test in $test_files; do echo $test; done | sed -n '/website/p' > benchmarks-to-run.txt
+
     # Delete old report files.
     for x in {test-times,wall-clock-times}.tsv
     do
@@ -169,12 +174,20 @@ function run_benchmark
     rm -rf benchmark ||:
     mkdir benchmark ||:
 
-    # TODO disable this when there is an explicit list of tests to run
-    "$script_dir/perf.py" --print right/performance/website.xml > benchmark/website-queries.tsv
-    # TODO things to fix in clickhouse-benchmark:
-    # - --max_memory_usage setting does nothing
-    clickhouse-benchmark --port 9001 --concurrency 6 --cumulative --iterations 1000 --randomize 1 --delay 0 --json benchmark/website-left.json --continue_on_errors -- --max_memory_usage 30000000000 < benchmark/website-queries.tsv
-    clickhouse-benchmark --port 9002 --concurrency 6 --cumulative --iterations 1000 --randomize 1 --delay 0 --json benchmark/website-right.json --continue_on_errors -- --max_memory_usage 30000000000 < benchmark/website-queries.tsv
+    # The list is built by run_tests.
+    for file in $(cat benchmarks-to-run.txt)
+    do
+        name=$(basename "$file" ".xml")
+
+        "$script_dir/perf.py" --print-queries "$file" > "benchmark/$name-queries.txt"
+        "$script_dir/perf.py" --print-settings "$file" > "benchmark/$name-settings.txt"
+
+        readarray -t settings < "benchmark/$name-settings.txt"
+        command=(clickhouse-benchmark --concurrency 6 --cumulative --iterations 1000 --randomize 1 --delay 0 --continue_on_errors "${settings[@]}")
+
+        "${command[@]}" --port 9001 --json "benchmark/$name-left.json" < "benchmark/$name-queries.txt"
+        "${command[@]}" --port 9002 --json "benchmark/$name-right.json" < "benchmark/$name-queries.txt"
+    done
 }
 
 function get_profiles_watchdog
