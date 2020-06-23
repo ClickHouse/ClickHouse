@@ -32,7 +32,7 @@ struct ReplicatedMergeTreeTableMetadata
     UInt64 index_granularity_bytes;
 
     ReplicatedMergeTreeTableMetadata() = default;
-    explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data);
+    explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);
 
     void read(ReadBuffer & in);
     static ReplicatedMergeTreeTableMetadata parse(const String & s);

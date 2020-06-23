@@ -1,4 +1,4 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS quorum1;
 DROP TABLE IF EXISTS quorum2;
