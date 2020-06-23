@@ -6,13 +6,13 @@
 #if !defined(ARCADIA_BUILD)
 #    include <murmurhash2.h>
 #    include <murmurhash3.h>
-#    include "config_functions.h"
 #    include "config_core.h"
+#    include "config_functions.h"
 #endif
 
+#include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
-#include <Common/HashTable/Hash.h>
 
 #if USE_XXHASH
 #    include <xxhash.h>
@@ -23,30 +23,29 @@
 #    include <openssl/sha.h>
 #endif
 
-#include <Poco/ByteOrder.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
-#include <Functions/IFunctionImpl.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <ext/range.h>
+#include <Functions/IFunctionImpl.h>
+#include <Poco/ByteOrder.h>
 #include <ext/bit_cast.h>
+#include <ext/range.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -94,10 +93,7 @@ struct IntHash64Impl
 {
     using ReturnType = UInt64;
 
-    static UInt64 apply(UInt64 x)
-    {
-        return intHash64(x ^ 0x4CF2D2BAAE6DA887ULL);
-    }
+    static UInt64 apply(UInt64 x) { return intHash64(x ^ 0x4CF2D2BAAE6DA887ULL); }
 };
 
 #if USE_SSL
@@ -119,7 +115,8 @@ struct HalfMD5Impl
         MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         MD5_Final(buf.char_data, &ctx);
 
-        return Poco::ByteOrder::flipBytes(static_cast<Poco::UInt64>(buf.uint64_data));        /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
+        return Poco::ByteOrder::flipBytes(static_cast<Poco::UInt64>(
+            buf.uint64_data)); /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
     }
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
@@ -137,7 +134,10 @@ struct HalfMD5Impl
 struct MD5Impl
 {
     static constexpr auto name = "MD5";
-    enum { length = 16 };
+    enum
+    {
+        length = 16
+    };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -151,7 +151,10 @@ struct MD5Impl
 struct SHA1Impl
 {
     static constexpr auto name = "SHA1";
-    enum { length = 20 };
+    enum
+    {
+        length = 20
+    };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -165,7 +168,10 @@ struct SHA1Impl
 struct SHA224Impl
 {
     static constexpr auto name = "SHA224";
-    enum { length = 28 };
+    enum
+    {
+        length = 28
+    };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -179,7 +185,10 @@ struct SHA224Impl
 struct SHA256Impl
 {
     static constexpr auto name = "SHA256";
-    enum { length = 32 };
+    enum
+    {
+        length = 32
+    };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -196,10 +205,7 @@ struct SipHash64Impl
     static constexpr auto name = "sipHash64";
     using ReturnType = UInt64;
 
-    static UInt64 apply(const char * begin, size_t size)
-    {
-        return sipHash64(begin, size);
-    }
+    static UInt64 apply(const char * begin, size_t size) { return sipHash64(begin, size); }
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
@@ -213,11 +219,14 @@ struct SipHash64Impl
 struct SipHash128Impl
 {
     static constexpr auto name = "sipHash128";
-    enum { length = 16 };
+    enum
+    {
+        length = 16
+    };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
-        sipHash128(begin, size, reinterpret_cast<char*>(out_char_data));
+        sipHash128(begin, size, reinterpret_cast<char *>(out_char_data));
     }
 };
 
@@ -235,15 +244,9 @@ struct MurmurHash2Impl32
 
     using ReturnType = UInt32;
 
-    static UInt32 apply(const char * data, const size_t size)
-    {
-        return MurmurHash2(data, size, 0);
-    }
+    static UInt32 apply(const char * data, const size_t size) { return MurmurHash2(data, size, 0); }
 
-    static UInt32 combineHashes(UInt32 h1, UInt32 h2)
-    {
-        return IntHash32Impl::apply(h1) ^ h2;
-    }
+    static UInt32 combineHashes(UInt32 h1, UInt32 h2) { return IntHash32Impl::apply(h1) ^ h2; }
 
     static constexpr bool use_int_hash_for_pods = false;
 };
@@ -253,15 +256,9 @@ struct MurmurHash2Impl64
     static constexpr auto name = "murmurHash2_64";
     using ReturnType = UInt64;
 
-    static UInt64 apply(const char * data, const size_t size)
-    {
-        return MurmurHash64A(data, size, 0);
-    }
+    static UInt64 apply(const char * data, const size_t size) { return MurmurHash64A(data, size, 0); }
 
-    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
-    {
-        return IntHash64Impl::apply(h1) ^ h2;
-    }
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return IntHash64Impl::apply(h1) ^ h2; }
 
     static constexpr bool use_int_hash_for_pods = false;
 };
@@ -272,15 +269,9 @@ struct GccMurmurHashImpl
     static constexpr auto name = "gccMurmurHash";
     using ReturnType = UInt64;
 
-    static UInt64 apply(const char * data, const size_t size)
-    {
-        return MurmurHash64A(data, size, 0xc70f6907UL);
-    }
+    static UInt64 apply(const char * data, const size_t size) { return MurmurHash64A(data, size, 0xc70f6907UL); }
 
-    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
-    {
-        return IntHash64Impl::apply(h1) ^ h2;
-    }
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return IntHash64Impl::apply(h1) ^ h2; }
 
     static constexpr bool use_int_hash_for_pods = false;
 };
@@ -301,10 +292,7 @@ struct MurmurHash3Impl32
         return h;
     }
 
-    static UInt32 combineHashes(UInt32 h1, UInt32 h2)
-    {
-        return IntHash32Impl::apply(h1) ^ h2;
-    }
+    static UInt32 combineHashes(UInt32 h1, UInt32 h2) { return IntHash32Impl::apply(h1) ^ h2; }
 
     static constexpr bool use_int_hash_for_pods = false;
 };
@@ -325,10 +313,7 @@ struct MurmurHash3Impl64
         return h[0] ^ h[1];
     }
 
-    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
-    {
-        return IntHash64Impl::apply(h1) ^ h2;
-    }
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return IntHash64Impl::apply(h1) ^ h2; }
 
     static constexpr bool use_int_hash_for_pods = false;
 };
@@ -336,7 +321,10 @@ struct MurmurHash3Impl64
 struct MurmurHash3Impl128
 {
     static constexpr auto name = "murmurHash3_128";
-    enum { length = 16 };
+    enum
+    {
+        length = 16
+    };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -522,18 +510,15 @@ public:
     static constexpr auto name = Impl::name;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHashFixedString>(); }
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isStringOrFixedString(arguments[0]))
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeFixedString>(Impl::length);
     }
@@ -565,9 +550,25 @@ public:
 
             block.getByPosition(result).column = std::move(col_to);
         }
+        else if (
+            const ColumnFixedString * col_from_fix = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
+        {
+            auto col_to = ColumnFixedString::create(Impl::length);
+            const typename ColumnFixedString::Chars & data = col_from_fix->getChars();
+            const auto size = col_from_fix->size();
+            auto & chars_to = col_to->getChars();
+            const auto length = col_from_fix->getN();
+            chars_to.resize(size * Impl::length);
+            for (size_t i = 0; i < size; ++i)
+            {
+                Impl::apply(
+                    reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
+            }
+            block.getByPosition(result).column = std::move(col_to);
+        }
         else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                    + " of first argument of function " + getName(),
+            throw Exception(
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };
@@ -601,24 +602,21 @@ private:
             block.getByPosition(result).column = std::move(col_to);
         }
         else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                    + " of first argument of function " + Name::name,
+            throw Exception(
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
 public:
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!arguments[0]->isValueRepresentedByNumber())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
@@ -630,18 +628,29 @@ public:
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
         WhichDataType which(from_type);
 
-        if      (which.isUInt8()) executeType<UInt8>(block, arguments, result);
-        else if (which.isUInt16()) executeType<UInt16>(block, arguments, result);
-        else if (which.isUInt32()) executeType<UInt32>(block, arguments, result);
-        else if (which.isUInt64()) executeType<UInt64>(block, arguments, result);
-        else if (which.isInt8()) executeType<Int8>(block, arguments, result);
-        else if (which.isInt16()) executeType<Int16>(block, arguments, result);
-        else if (which.isInt32()) executeType<Int32>(block, arguments, result);
-        else if (which.isInt64()) executeType<Int64>(block, arguments, result);
-        else if (which.isDate()) executeType<UInt16>(block, arguments, result);
-        else if (which.isDateTime()) executeType<UInt32>(block, arguments, result);
+        if (which.isUInt8())
+            executeType<UInt8>(block, arguments, result);
+        else if (which.isUInt16())
+            executeType<UInt16>(block, arguments, result);
+        else if (which.isUInt32())
+            executeType<UInt32>(block, arguments, result);
+        else if (which.isUInt64())
+            executeType<UInt64>(block, arguments, result);
+        else if (which.isInt8())
+            executeType<Int8>(block, arguments, result);
+        else if (which.isInt16())
+            executeType<Int16>(block, arguments, result);
+        else if (which.isInt32())
+            executeType<Int32>(block, arguments, result);
+        else if (which.isInt64())
+            executeType<Int64>(block, arguments, result);
+        else if (which.isDate())
+            executeType<UInt16>(block, arguments, result);
+        else if (which.isDateTime())
+            executeType<UInt32>(block, arguments, result);
         else
-            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+            throw Exception(
+                "Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
@@ -707,9 +716,7 @@ private:
             }
         }
         else
-            throw Exception("Illegal column " + column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Illegal column " + column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <bool first>
@@ -738,9 +745,7 @@ private:
             ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
-                const ToType h = Impl::apply(
-                    reinterpret_cast<const char *>(&data[current_offset]),
-                    offsets[i] - current_offset - 1);
+                const ToType h = Impl::apply(reinterpret_cast<const char *>(&data[current_offset]), offsets[i] - current_offset - 1);
 
                 if (first)
                     vec_to[i] = h;
@@ -784,9 +789,8 @@ private:
             }
         }
         else
-            throw Exception("Illegal column " + column->getName()
-                    + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(
+                "Illegal column " + column->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <bool first>
@@ -834,9 +838,8 @@ private:
             executeArray<first>(type, &*full_column, vec_to);
         }
         else
-            throw Exception("Illegal column " + column->getName()
-                    + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(
+                "Illegal column " + column->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <bool first>
@@ -844,28 +847,46 @@ private:
     {
         WhichDataType which(from_type);
 
-        if      (which.isUInt8()) executeIntType<UInt8, first>(icolumn, vec_to);
-        else if (which.isUInt16()) executeIntType<UInt16, first>(icolumn, vec_to);
-        else if (which.isUInt32()) executeIntType<UInt32, first>(icolumn, vec_to);
-        else if (which.isUInt64()) executeIntType<UInt64, first>(icolumn, vec_to);
-        else if (which.isInt8()) executeIntType<Int8, first>(icolumn, vec_to);
-        else if (which.isInt16()) executeIntType<Int16, first>(icolumn, vec_to);
-        else if (which.isInt32()) executeIntType<Int32, first>(icolumn, vec_to);
-        else if (which.isInt64()) executeIntType<Int64, first>(icolumn, vec_to);
-        else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
-        else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
-        else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
-        else if (which.isDateTime()) executeIntType<UInt32, first>(icolumn, vec_to);
-        else if (which.isFloat32()) executeIntType<Float32, first>(icolumn, vec_to);
-        else if (which.isFloat64()) executeIntType<Float64, first>(icolumn, vec_to);
-        else if (which.isString()) executeString<first>(icolumn, vec_to);
-        else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
-        else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
+        if (which.isUInt8())
+            executeIntType<UInt8, first>(icolumn, vec_to);
+        else if (which.isUInt16())
+            executeIntType<UInt16, first>(icolumn, vec_to);
+        else if (which.isUInt32())
+            executeIntType<UInt32, first>(icolumn, vec_to);
+        else if (which.isUInt64())
+            executeIntType<UInt64, first>(icolumn, vec_to);
+        else if (which.isInt8())
+            executeIntType<Int8, first>(icolumn, vec_to);
+        else if (which.isInt16())
+            executeIntType<Int16, first>(icolumn, vec_to);
+        else if (which.isInt32())
+            executeIntType<Int32, first>(icolumn, vec_to);
+        else if (which.isInt64())
+            executeIntType<Int64, first>(icolumn, vec_to);
+        else if (which.isEnum8())
+            executeIntType<Int8, first>(icolumn, vec_to);
+        else if (which.isEnum16())
+            executeIntType<Int16, first>(icolumn, vec_to);
+        else if (which.isDate())
+            executeIntType<UInt16, first>(icolumn, vec_to);
+        else if (which.isDateTime())
+            executeIntType<UInt32, first>(icolumn, vec_to);
+        else if (which.isFloat32())
+            executeIntType<Float32, first>(icolumn, vec_to);
+        else if (which.isFloat64())
+            executeIntType<Float64, first>(icolumn, vec_to);
+        else if (which.isString())
+            executeString<first>(icolumn, vec_to);
+        else if (which.isFixedString())
+            executeString<first>(icolumn, vec_to);
+        else if (which.isArray())
+            executeArray<first>(from_type, icolumn, vec_to);
         else
             executeGeneric<first>(icolumn, vec_to);
     }
 
-    void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first)
+    void
+    executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first)
     {
         /// Flattening of tuples.
         if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
@@ -899,19 +920,13 @@ private:
     }
 
 public:
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeNumber<ToType>>();
-    }
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override { return std::make_shared<DataTypeNumber<ToType>>(); }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
@@ -1028,18 +1043,21 @@ public:
     {
         const auto arg_count = arguments.size();
         if (arg_count != 1 && arg_count != 2)
-            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed " +
-                toString(arg_count) + ", should be 1 or 2.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed " + toString(arg_count)
+                                + ", should be 1 or 2.",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         const auto first_arg = arguments.front().get();
         if (!WhichDataType(first_arg).isString())
-            throw Exception{"Illegal type " + first_arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception{"Illegal type " + first_arg->getName() + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (arg_count == 2)
         {
             const auto & second_arg = arguments.back();
             if (!isInteger(second_arg))
-                throw Exception{"Illegal type " + second_arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception{"Illegal type " + second_arg->getName() + " of argument of function " + getName(),
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         return std::make_shared<DataTypeUInt64>();
@@ -1077,9 +1095,7 @@ private:
             ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
-                out[i] = URLHashImpl::apply(
-                    reinterpret_cast<const char *>(&chars[current_offset]),
-                    offsets[i] - current_offset - 1);
+                out[i] = URLHashImpl::apply(reinterpret_cast<const char *>(&chars[current_offset]), offsets[i] - current_offset - 1);
 
                 current_offset = offsets[i];
             }
@@ -1087,8 +1103,9 @@ private:
             block.getByPosition(result).column = std::move(col_to);
         }
         else
-            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
-                " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function "
+                                + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN};
     }
 
     void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const size_t result) const
@@ -1113,9 +1130,7 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 out[i] = URLHierarchyHashImpl::apply(
-                    level,
-                    reinterpret_cast<const char *>(&chars[current_offset]),
-                    offsets[i] - current_offset - 1);
+                    level, reinterpret_cast<const char *>(&chars[current_offset]), offsets[i] - current_offset - 1);
 
                 current_offset = offsets[i];
             }
@@ -1123,14 +1138,21 @@ private:
             block.getByPosition(result).column = std::move(col_to);
         }
         else
-            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
-                " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function "
+                                + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN};
     }
 };
 
 
-struct NameIntHash32 { static constexpr auto name = "intHash32"; };
-struct NameIntHash64 { static constexpr auto name = "intHash64"; };
+struct NameIntHash32
+{
+    static constexpr auto name = "intHash32";
+};
+struct NameIntHash64
+{
+    static constexpr auto name = "intHash64";
+};
 
 #if USE_SSL
 using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
@@ -1163,8 +1185,8 @@ using FunctionJavaHashUTF16LE = FunctionAnyHash<JavaHashUTF16LEImpl>;
 using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 #if USE_XXHASH
-    using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
-    using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
+using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 #endif
 
 }
