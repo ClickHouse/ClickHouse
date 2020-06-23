@@ -533,7 +533,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(arguments[0]))
+        if (!isStringOrFixedString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -565,6 +565,22 @@ public:
                 current_offset = offsets[i];
             }
 
+            block.getByPosition(result).column = std::move(col_to);
+        }
+        else if (
+            const ColumnFixedString * col_from_fix = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
+        {
+            auto col_to = ColumnFixedString::create(Impl::length);
+            const typename ColumnFixedString::Chars & data = col_from_fix->getChars();
+            const auto size = col_from_fix->size();
+            auto & chars_to = col_to->getChars();
+            const auto length = col_from_fix->getN();
+            chars_to.resize(size * Impl::length);
+            for (size_t i = 0; i < size; ++i)
+            {
+                Impl::apply(
+                    reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
+            }
             block.getByPosition(result).column = std::move(col_to);
         }
         else
