@@ -269,8 +269,7 @@ std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
 void GlobalThreadPool::initialize(size_t max_threads)
 {
-    // There should be an assert, but we can't add it because of the unit tests...
-    // assert(!the_instance);
+    assert(!the_instance);
 
     the_instance.reset(new GlobalThreadPool(max_threads,
         1000 /*max_free_threads*/, 10000 /*max_queue_size*/,
@@ -281,8 +280,9 @@ GlobalThreadPool & GlobalThreadPool::instance()
 {
     if (!the_instance)
     {
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
-            "The global thread pool is not initalized");
+        // Allow implicit initialization. This is needed for old code that is
+        // impractical to redo now, especially Arcadia users and unit tests.
+        initialize();
     }
 
     return *the_instance;

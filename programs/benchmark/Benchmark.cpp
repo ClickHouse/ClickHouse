@@ -560,8 +560,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             return 1;
         }
 
-        GlobalThreadPool::initialize();
-
         print_stacktrace = options.count("stacktrace");
 
         UseSSL use_ssl;

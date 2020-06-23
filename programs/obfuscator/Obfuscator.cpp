@@ -1040,9 +1040,6 @@ try
         return 0;
     }
 
-    // Needed for parallel parsing.
-    GlobalThreadPool::initialize();
-
     UInt64 seed = sipHash64(options["seed"].as<std::string>());
 
     std::string structure = options["structure"].as<std::string>();
