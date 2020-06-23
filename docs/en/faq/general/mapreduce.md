@@ -1,6 +1,6 @@
 ---
 toc_hidden: true
-toc_priority: 20
+toc_priority: 110
 ---
 
 # Why Not Use Something Like MapReduce? {#why-not-use-something-like-mapreduce}
