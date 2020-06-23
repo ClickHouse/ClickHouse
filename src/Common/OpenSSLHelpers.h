@@ -1,11 +1,11 @@
 #pragma once
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
+#    include "src/Common/config.h"
 #endif
 
 #if USE_SSL
-#    include <Core/Types.h>
+#    include "src/Core/Types.h"
 
 
 namespace DB

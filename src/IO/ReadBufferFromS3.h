@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Common/config.h>
+#include "src/Common/config.h"
 
 #if USE_AWS_S3
 
 #    include <memory>
 
-#    include <IO/HTTPCommon.h>
-#    include <IO/ReadBuffer.h>
+#    include "src/IO/HTTPCommon.h"
+#    include "src/IO/ReadBuffer.h"
 #    include <aws/s3/model/GetObjectResult.h>
 #    include "SeekableReadBuffer.h"
 

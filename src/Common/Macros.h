@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <Core/Names.h>
+#include "src/Core/Types.h"
+#include "src/Core/Names.h"
 
 #include <map>
 

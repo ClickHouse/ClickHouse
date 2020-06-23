@@ -7,16 +7,16 @@
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/sparse_hash_map>
 
-#include <Common/Stopwatch.h>
+#include "src/Common/Stopwatch.h"
 
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 //#define DBMS_HASH_MAP_DEBUG_RESIZES
 
-#include <Core/Types.h>
-#include <IO/ReadBufferFromFile.h>
+#include "src/Core/Types.h"
+#include "src/IO/ReadBufferFromFile.h"
 #include <Compression/CompressedReadBuffer.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/SipHash.h>
+#include "src/Common/HashTable/HashMap.h"
+#include "src/Common/SipHash.h"
 
 using Key = UInt64;
 using Value = UInt64;

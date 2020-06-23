@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Access/RowPolicy.h>
+#include "src/Access/RowPolicy.h"
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 

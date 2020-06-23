@@ -3,7 +3,7 @@
 
 #include <Interpreters/AggregationCommon.h>
 
-#include <Common/HashTable/SmallTable.h>
+#include "src/Common/HashTable/SmallTable.h"
 
 
 int main(int, char **)

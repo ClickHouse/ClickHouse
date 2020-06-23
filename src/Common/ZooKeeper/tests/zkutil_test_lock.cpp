@@ -1,5 +1,5 @@
 #include <iostream>
-#include <Common/ZooKeeper/Lock.h>
+#include "src/Common/ZooKeeper/Lock.h"
 
 int main()
 {

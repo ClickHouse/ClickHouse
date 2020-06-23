@@ -6,10 +6,10 @@
 
 #include "MemoryStatisticsOS.h"
 
-#include <Common/Exception.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadHelpers.h>
-#include <common/logger_useful.h>
+#include "src/Common/Exception.h"
+#include "src/IO/ReadBufferFromMemory.h"
+#include "src/IO/ReadHelpers.h"
+#include "base/common/logger_useful.h"
 
 
 namespace DB

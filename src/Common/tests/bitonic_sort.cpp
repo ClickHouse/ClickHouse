@@ -1,13 +1,13 @@
-#include <Common/config.h>
+#include "src/Common/config.h"
 #include <iostream>
 
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
 #endif
 #include <ext/bit_cast.h>
-#include <Common/Stopwatch.h>
-#include <IO/ReadHelpers.h>
-#include <Core/Defines.h>
+#include "src/Common/Stopwatch.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/Core/Defines.h"
 #include <climits>
 #include <algorithm>
 

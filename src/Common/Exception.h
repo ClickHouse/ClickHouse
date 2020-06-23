@@ -6,7 +6,7 @@
 
 #include <Poco/Exception.h>
 
-#include <Common/StackTrace.h>
+#include "src/Common/StackTrace.h"
 
 #include <fmt/format.h>
 

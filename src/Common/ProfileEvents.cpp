@@ -1,6 +1,6 @@
-#include <Common/ProfileEvents.h>
-#include <Common/CurrentThread.h>
-#include <Common/typeid_cast.h>
+#include "src/Common/ProfileEvents.h"
+#include "src/Common/CurrentThread.h"
+#include "src/Common/typeid_cast.h"
 #include <Columns/ColumnArray.h>
 
 /// Available events. Add something here as you wish.

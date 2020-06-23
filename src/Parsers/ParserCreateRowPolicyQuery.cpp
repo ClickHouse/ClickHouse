@@ -1,6 +1,6 @@
 #include <Parsers/ParserCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
-#include <Access/RowPolicy.h>
+#include "src/Access/RowPolicy.h"
 #include <Parsers/ASTRowPolicyName.h>
 #include <Parsers/ParserRowPolicyName.h>
 #include <Parsers/ParserRolesOrUsersSet.h>

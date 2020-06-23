@@ -8,16 +8,16 @@
 
 #include <random>
 
-#include <common/defines.h>
-#include <common/sleep.h>
-#include <common/getThreadId.h>
+#include "base/common/defines.h"
+#include "base/common/sleep.h"
+#include "base/common/getThreadId.h"
 
-#include <IO/ReadHelpers.h>
+#include "src/IO/ReadHelpers.h"
 
-#include <Common/Exception.h>
-#include <Common/thread_local_rng.h>
+#include "src/Common/Exception.h"
+#include "src/Common/thread_local_rng.h"
 
-#include <Common/ThreadFuzzer.h>
+#include "src/Common/ThreadFuzzer.h"
 
 
 /// We will also wrap some thread synchronization functions to inject sleep/migration before or after.

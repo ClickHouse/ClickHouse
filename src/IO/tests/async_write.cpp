@@ -1,9 +1,9 @@
 #include <iostream>
 
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/AsynchronousWriteBuffer.h>
-#include <IO/copyData.h>
+#include "src/IO/ReadBufferFromFileDescriptor.h"
+#include "src/IO/WriteBufferFromFileDescriptor.h"
+#include "src/IO/AsynchronousWriteBuffer.h"
+#include "src/IO/copyData.h"
 #include <Compression/CompressedWriteBuffer.h>
 
 

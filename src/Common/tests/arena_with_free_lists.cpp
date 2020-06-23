@@ -5,7 +5,7 @@
 #define USE_BAD_ARENA 0
 
 #if !USE_BAD_ARENA
-    #include <Common/ArenaWithFreeLists.h>
+    #include "src/Common/ArenaWithFreeLists.h"
 #endif
 
 #include <variant>
@@ -14,14 +14,14 @@
 #include <sys/resource.h>
 #include <ext/bit_cast.h>
 #include <ext/size.h>
-#include <Common/Arena.h>
+#include "src/Common/Arena.h"
 
-#include <common/StringRef.h>
-#include <Core/Field.h>
-#include <Common/Stopwatch.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
+#include "base/common/StringRef.h"
+#include "src/Core/Field.h"
+#include "src/Common/Stopwatch.h"
+#include "src/IO/ReadBufferFromFileDescriptor.h"
 #include <Compression/CompressedReadBuffer.h>
-#include <IO/ReadHelpers.h>
+#include "src/IO/ReadHelpers.h"
 
 using namespace DB;
 

@@ -2,7 +2,7 @@
 
 #include <Core/Field.h>
 #include <Interpreters/ProcessList.h>
-#include <Access/EnabledQuota.h>
+#include "src/Access/EnabledQuota.h"
 #include <Common/CurrentThread.h>
 #include <common/sleep.h>
 

@@ -1,5 +1,5 @@
-#include <Access/RowPolicy.h>
-#include <Common/quoteString.h>
+#include "src/Access/RowPolicy.h"
+#include "src/Common/quoteString.h"
 #include <boost/range/algorithm/equal.hpp>
 
 

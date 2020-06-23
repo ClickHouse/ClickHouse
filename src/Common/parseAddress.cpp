@@ -1,7 +1,7 @@
-#include <Common/parseAddress.h>
-#include <Common/Exception.h>
-#include <IO/ReadHelpers.h>
-#include <common/find_symbols.h>
+#include "src/Common/parseAddress.h"
+#include "src/Common/Exception.h"
+#include "src/IO/ReadHelpers.h"
+#include "base/common/find_symbols.h"
 
 
 namespace DB

@@ -7,16 +7,16 @@
 
 #include <Interpreters/AggregationCommon.h>
 
-#include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/TwoLevelHashMap.h>
-//#include <Common/HashTable/HashTableWithSmallLocks.h>
-//#include <Common/HashTable/HashTableMerge.h>
+#include "src/Common/HashTable/HashMap.h"
+#include "src/Common/HashTable/TwoLevelHashMap.h"
+//#include "src/Common/HashTable/HashTableWithSmallLocks.h"
+//#include "src/Common/HashTable/HashTableMerge.h"
 
-#include <IO/ReadBufferFromFile.h>
+#include "src/IO/ReadBufferFromFile.h"
 #include <Compression/CompressedReadBuffer.h>
 
-#include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
+#include "src/Common/Stopwatch.h"
+#include "src/Common/ThreadPool.h"
 
 
 using Key = UInt64;

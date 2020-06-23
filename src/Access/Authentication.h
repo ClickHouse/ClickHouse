@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <Common/Exception.h>
-#include <Common/OpenSSLHelpers.h>
+#include "src/Core/Types.h"
+#include "src/Common/Exception.h"
+#include "src/Common/OpenSSLHelpers.h"
 #include <Poco/SHA1Engine.h>
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string/case_conv.hpp>

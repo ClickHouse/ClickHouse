@@ -1,10 +1,10 @@
 #include <string>
 
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/LimitReadBuffer.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/copyData.h>
-#include <IO/WriteHelpers.h>
+#include "src/IO/ReadBufferFromFileDescriptor.h"
+#include "src/IO/LimitReadBuffer.h"
+#include "src/IO/WriteBufferFromFileDescriptor.h"
+#include "src/IO/copyData.h"
+#include "src/IO/WriteHelpers.h"
 
 
 int main(int argc, char ** argv)

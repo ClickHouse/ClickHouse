@@ -1,5 +1,5 @@
-#include <IO/WriteBufferFromOStream.h>
-#include <Common/Exception.h>
+#include "src/IO/WriteBufferFromOStream.h"
+#include "src/Common/Exception.h"
 
 
 namespace DB

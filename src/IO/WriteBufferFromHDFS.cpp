@@ -1,9 +1,9 @@
-#include <Common/config.h>
+#include "src/Common/config.h"
 
 #if USE_HDFS
 
-#include <IO/WriteBufferFromHDFS.h>
-#include <IO/HDFSCommon.h>
+#include "src/IO/WriteBufferFromHDFS.h"
+#include "src/IO/HDFSCommon.h"
 #include <hdfs/hdfs.h>
 
 

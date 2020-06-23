@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/Arena.h>
+#include "src/Common/Arena.h"
 
 /**
   * In some aggregation scenarios, when adding a key to the hash table, we

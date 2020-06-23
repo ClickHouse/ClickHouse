@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <Common/PODArray.h>
+#include "src/Core/Types.h"
+#include "src/Common/PODArray.h"
 
 #include <algorithm>
 #include <cctype>

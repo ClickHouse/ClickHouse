@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Access/AccessRightsElement.h>
+#include "src/Access/AccessRightsElement.h"
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 

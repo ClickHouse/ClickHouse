@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Common/assert_cast.h>
-#include <Common/HashTable/HashTableKeyHolder.h>
+#include "src/Common/assert_cast.h"
+#include "src/Common/HashTable/HashTableKeyHolder.h"
 #include <Interpreters/AggregationCommon.h>
 
 

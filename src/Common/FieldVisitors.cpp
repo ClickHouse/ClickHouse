@@ -1,13 +1,13 @@
-#include <Core/UUID.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <Common/FieldVisitors.h>
-#include <Common/SipHash.h>
+#include "src/Core/UUID.h"
+#include "src/IO/ReadBuffer.h"
+#include "src/IO/WriteBuffer.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/ReadBufferFromString.h"
+#include "src/IO/WriteBufferFromString.h"
+#include "src/IO/Operators.h"
+#include "src/Common/FieldVisitors.h"
+#include "src/Common/SipHash.h"
 
 
 namespace DB

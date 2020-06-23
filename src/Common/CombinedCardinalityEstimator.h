@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Common/HashTable/SmallTable.h>
-#include <Common/HashTable/HashSet.h>
-#include <Common/HyperLogLogCounter.h>
-#include <Core/Defines.h>
+#include "src/Common/HashTable/SmallTable.h"
+#include "src/Common/HashTable/HashSet.h"
+#include "src/Common/HyperLogLogCounter.h"
+#include "src/Core/Defines.h"
 
 
 namespace DB

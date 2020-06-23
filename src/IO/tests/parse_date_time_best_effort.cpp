@@ -1,10 +1,10 @@
 #include <string>
 
-#include <IO/parseDateTimeBestEffort.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
+#include "src/IO/parseDateTimeBestEffort.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/ReadBufferFromFileDescriptor.h"
+#include "src/IO/WriteBufferFromFileDescriptor.h"
 
 
 using namespace DB;

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <Common/BitHelpers.h>
+#include "src/Core/Types.h"
+#include "src/Common/BitHelpers.h"
 #include <Poco/UTF8Encoding.h>
 
 #ifdef __SSE2__

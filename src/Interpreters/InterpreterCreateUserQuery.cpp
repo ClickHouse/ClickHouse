@@ -5,9 +5,9 @@
 #include <Parsers/ASTCreateUserQuery.h>
 #include <Parsers/ASTUserNameWithHost.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
-#include <Access/User.h>
-#include <Access/ContextAccess.h>
+#include "src/Access/AccessControlManager.h"
+#include "src/Access/User.h"
+#include "src/Access/ContextAccess.h"
 #include <boost/range/algorithm/copy.hpp>
 
 

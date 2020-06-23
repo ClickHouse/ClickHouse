@@ -1,15 +1,15 @@
 #include <Poco/Version.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/HTTPCommon.h>
-#include <IO/Progress.h>
-#include <Common/Exception.h>
-#include <Common/NetException.h>
-#include <Common/Stopwatch.h>
+#include "src/IO/WriteBufferFromHTTPServerResponse.h"
+#include "src/IO/WriteBufferFromString.h"
+#include "src/IO/HTTPCommon.h"
+#include "src/IO/Progress.h"
+#include "src/Common/Exception.h"
+#include "src/Common/NetException.h"
+#include "src/Common/Stopwatch.h"
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
+#    include "src/Common/config.h"
 #endif
 
 

@@ -1,6 +1,6 @@
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromString.h>
+#include "src/IO/Operators.h"
+#include "src/IO/WriteBufferFromFileDescriptor.h"
+#include "src/IO/WriteBufferFromString.h"
 
 
 int main(int, char **)

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Common/UInt128.h>
-#include <common/strong_typedef.h>
-#include <Common/thread_local_rng.h>
+#include "src/Common/UInt128.h"
+#include "base/common/strong_typedef.h"
+#include "src/Common/thread_local_rng.h"
 
 namespace DB
 {

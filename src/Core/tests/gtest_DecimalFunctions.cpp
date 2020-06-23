@@ -1,7 +1,7 @@
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
-#include <Core/DecimalFunctions.h>
+#include "src/Core/DecimalFunctions.h"
 
 namespace
 {

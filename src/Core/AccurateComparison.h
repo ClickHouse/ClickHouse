@@ -4,8 +4,8 @@
 #include <limits>
 #include "Defines.h"
 #include "Types.h"
-#include <Common/NaNUtils.h>
-#include <Common/UInt128.h>
+#include "src/Common/NaNUtils.h"
+#include "src/Common/UInt128.h"
 
 /** Preceptually-correct number comparisons.
   * Example: Int8(-1) != UInt8(255)

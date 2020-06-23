@@ -1,10 +1,10 @@
 #include <iostream>
-#include <Core/Types.h>
-#include <Common/ShellCommand.h>
-#include <IO/copyData.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
+#include "src/Core/Types.h"
+#include "src/Common/ShellCommand.h"
+#include "src/IO/copyData.h"
+#include "src/IO/WriteBufferFromFileDescriptor.h"
+#include "src/IO/ReadBufferFromString.h"
+#include "src/IO/ReadHelpers.h"
 
 #include <chrono>
 #include <thread>

@@ -9,8 +9,8 @@
 
 #include <cstring>
 
-#include <Common/Exception.h>
-#include <Common/setThreadName.h>
+#include "src/Common/Exception.h"
+#include "src/Common/setThreadName.h"
 
 
 namespace DB

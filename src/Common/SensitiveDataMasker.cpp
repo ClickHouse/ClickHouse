@@ -9,10 +9,10 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <common/logger_useful.h>
+#include "base/common/logger_useful.h"
 
-#include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include "src/Common/Exception.h"
+#include "src/Common/StringUtils/StringUtils.h"
 
 #ifndef NDEBUG
 #    include <iostream>

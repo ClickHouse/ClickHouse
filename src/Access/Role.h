@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Access/IAccessEntity.h>
-#include <Access/GrantedAccess.h>
-#include <Access/GrantedRoles.h>
-#include <Access/SettingsProfileElement.h>
+#include "src/Access/IAccessEntity.h"
+#include "src/Access/GrantedAccess.h"
+#include "src/Access/GrantedRoles.h"
+#include "src/Access/SettingsProfileElement.h"
 
 
 namespace DB

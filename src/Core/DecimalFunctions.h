@@ -1,9 +1,9 @@
 #pragma once
 // Moved Decimal-related functions out from Core/Types.h to reduce compilation time.
 
-#include <Core/Types.h>
-#include <Common/Exception.h>
-#include <common/arithmeticOverflow.h>
+#include "src/Core/Types.h"
+#include "src/Common/Exception.h"
+#include "base/common/arithmeticOverflow.h"
 
 #include <limits>
 

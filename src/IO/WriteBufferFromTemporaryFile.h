@@ -1,7 +1,7 @@
-#include <IO/WriteBuffer.h>
-#include <IO/IReadableWriteBuffer.h>
-#include <IO/WriteBufferFromFile.h>
-#include <Common/filesystemHelpers.h>
+#include "src/IO/WriteBuffer.h"
+#include "src/IO/IReadableWriteBuffer.h"
+#include "src/IO/WriteBufferFromFile.h"
+#include "src/Common/filesystemHelpers.h"
 
 
 namespace DB

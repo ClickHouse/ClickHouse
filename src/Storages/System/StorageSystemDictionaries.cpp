@@ -8,7 +8,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Access/ContextAccess.h>
+#include "src/Access/ContextAccess.h"
 #include <Storages/System/StorageSystemDictionaries.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnString.h>

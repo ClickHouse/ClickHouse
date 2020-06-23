@@ -1,5 +1,5 @@
-#include <Common/Config/ConfigProcessor.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include "src/Common/Config/ConfigProcessor.h"
+#include "src/Common/ZooKeeper/ZooKeeper.h"
 #include <Poco/Event.h>
 #include <iostream>
 

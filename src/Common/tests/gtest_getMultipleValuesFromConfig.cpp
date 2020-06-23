@@ -1,4 +1,4 @@
-#include <Common/getMultipleKeysFromConfig.h>
+#include "src/Common/getMultipleKeysFromConfig.h"
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/XMLConfiguration.h>
 

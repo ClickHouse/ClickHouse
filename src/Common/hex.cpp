@@ -1,4 +1,4 @@
-#include <Common/hex.h>
+#include "src/Common/hex.h"
 
 const char * const hex_digit_to_char_uppercase_table = "0123456789ABCDEF";
 const char * const hex_digit_to_char_lowercase_table = "0123456789abcdef";

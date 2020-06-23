@@ -2,10 +2,10 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#include <Common/ProfileEvents.h>
+#include "src/Common/ProfileEvents.h"
 
-#include <IO/WriteBufferFromFile.h>
-#include <IO/WriteHelpers.h>
+#include "src/IO/WriteBufferFromFile.h"
+#include "src/IO/WriteHelpers.h"
 
 
 namespace ProfileEvents

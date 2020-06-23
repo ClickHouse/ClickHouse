@@ -2,12 +2,12 @@
 
 #if defined(__linux__)
 
-#include <Common/Exception.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadHelpers.h>
+#include "src/Common/Exception.h"
+#include "src/IO/ReadBufferFromMemory.h"
+#include "src/IO/ReadHelpers.h"
 
-#include <common/find_symbols.h>
-#include <common/logger_useful.h>
+#include "base/common/find_symbols.h"
+#include "base/common/logger_useful.h"
 
 #include <cassert>
 #include <sys/types.h>

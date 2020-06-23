@@ -2,8 +2,8 @@
 #include <cstring>
 #include <thread>
 #include <pcg_random.hpp>
-#include <Common/ArrayCache.h>
-#include <IO/ReadHelpers.h>
+#include "src/Common/ArrayCache.h"
+#include "src/IO/ReadHelpers.h"
 
 
 template <typename Cache>

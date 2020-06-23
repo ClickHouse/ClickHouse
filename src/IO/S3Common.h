@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Common/config.h>
+#include "src/Common/config.h"
 
 #if USE_AWS_S3
 
-#include <Core/Types.h>
+#include "src/Core/Types.h"
 #include <Interpreters/Context.h>
 #include <aws/core/Aws.h>
 

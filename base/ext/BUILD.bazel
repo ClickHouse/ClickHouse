@@ -1,0 +1,10 @@
+cc_library(
+    name = "ext",
+    hdrs = [
+        "shared_ptr_helper.h",
+    ],
+    visibility = [
+        "//base:__subpackages__",
+        "//src:__subpackages__",
+    ],
+)

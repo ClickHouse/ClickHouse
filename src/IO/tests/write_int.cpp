@@ -1,5 +1,5 @@
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/WriteBufferFromFileDescriptor.h"
 
 
 /** gcc-7 generates wrong code with -O1 -finline-small-functions -ftree-vrp

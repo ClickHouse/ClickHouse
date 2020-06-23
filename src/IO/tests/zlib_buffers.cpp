@@ -3,14 +3,14 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Core/Types.h>
-#include <Common/Stopwatch.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ZlibDeflatingWriteBuffer.h>
-#include <IO/ZlibInflatingReadBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
+#include "src/Core/Types.h"
+#include "src/Common/Stopwatch.h"
+#include "src/IO/WriteBufferFromFile.h"
+#include "src/IO/ReadBufferFromFile.h"
+#include "src/IO/ZlibDeflatingWriteBuffer.h"
+#include "src/IO/ZlibInflatingReadBuffer.h"
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/ReadHelpers.h"
 
 
 int main(int, char **)

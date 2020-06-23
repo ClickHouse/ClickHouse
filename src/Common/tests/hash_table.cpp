@@ -3,8 +3,8 @@
 
 #include <Interpreters/AggregationCommon.h>
 
-#include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/HashSet.h>
+#include "src/Common/HashTable/HashMap.h"
+#include "src/Common/HashTable/HashSet.h"
 
 
 int main(int, char **)

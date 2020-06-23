@@ -2,10 +2,10 @@
 #include <sstream>
 #include <iomanip>
 
-#include <Common/formatReadable.h>
-#include <IO/DoubleConverter.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
+#include "src/Common/formatReadable.h"
+#include "src/IO/DoubleConverter.h"
+#include "src/IO/WriteBufferFromString.h"
+#include "src/IO/WriteHelpers.h"
 
 namespace DB
 {

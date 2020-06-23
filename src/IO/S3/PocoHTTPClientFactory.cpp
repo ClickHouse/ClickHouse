@@ -1,6 +1,6 @@
 #include "PocoHTTPClientFactory.h"
 
-#include <IO/S3/PocoHTTPClient.h>
+#include "src/IO/S3/PocoHTTPClient.h"
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>

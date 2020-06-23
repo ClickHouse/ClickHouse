@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Common/Exception.h>
-#include <Common/NamePrompter.h>
-#include <Core/Types.h>
+#include "src/Common/Exception.h"
+#include "src/Common/NamePrompter.h"
+#include "src/Core/Types.h"
 #include <Poco/String.h>
 
 #include <unordered_map>

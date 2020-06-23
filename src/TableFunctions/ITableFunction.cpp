@@ -1,7 +1,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
-#include <Access/AccessFlags.h>
+#include "src/Access/AccessFlags.h"
 #include <Common/ProfileEvents.h>
 
 

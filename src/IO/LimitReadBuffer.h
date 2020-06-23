@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <IO/ReadBuffer.h>
+#include "src/Core/Types.h"
+#include "src/IO/ReadBuffer.h"
 
 
 namespace DB

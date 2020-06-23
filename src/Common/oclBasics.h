@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "src/Common/config.h"
 #if USE_OPENCL
 
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
@@ -14,8 +14,8 @@
 #endif
 
 #include <algorithm>
-#include <Core/Types.h>
-#include <Common/Exception.h>
+#include "src/Core/Types.h"
+#include "src/Common/Exception.h"
 
 
 namespace DB

@@ -1,7 +1,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/Macros.h>
-#include <Common/Exception.h>
-#include <IO/WriteHelpers.h>
+#include "src/Common/Macros.h"
+#include "src/Common/Exception.h"
+#include "src/IO/WriteHelpers.h"
 
 
 namespace DB

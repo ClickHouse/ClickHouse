@@ -9,9 +9,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
-#include <Access/Quota.h>
-#include <Access/AccessFlags.h>
+#include "src/Access/AccessControlManager.h"
+#include "src/Access/Quota.h"
+#include "src/Access/AccessFlags.h"
 #include <ext/range.h>
 
 

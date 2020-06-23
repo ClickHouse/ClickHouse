@@ -1,7 +1,7 @@
 #pragma once
 #include <atomic>
 #include <memory>
-#include <Common/ActionLock.h>
+#include "src/Common/ActionLock.h"
 
 
 namespace DB

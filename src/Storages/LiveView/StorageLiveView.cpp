@@ -39,7 +39,7 @@ limitations under the License. */
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Access/AccessFlags.h>
+#include "src/Access/AccessFlags.h"
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 

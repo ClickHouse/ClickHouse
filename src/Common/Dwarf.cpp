@@ -23,9 +23,9 @@
 
 #include <string.h>
 
-#include <Common/Elf.h>
-#include <Common/Dwarf.h>
-#include <Common/Exception.h>
+#include "src/Common/Elf.h"
+#include "src/Common/Dwarf.h"
+#include "src/Common/Exception.h"
 
 
 #define DW_CHILDREN_no 0

@@ -1,12 +1,12 @@
 #include <sstream>
 
-#include <Common/Exception.h>
-#include <Common/ThreadProfileEvents.h>
-#include <Common/QueryProfiler.h>
-#include <Common/ThreadStatus.h>
+#include "src/Common/Exception.h"
+#include "src/Common/ThreadProfileEvents.h"
+#include "src/Common/QueryProfiler.h"
+#include "src/Common/ThreadStatus.h"
 
 #include <Poco/Logger.h>
-#include <common/getThreadId.h>
+#include "base/common/getThreadId.h"
 
 
 namespace DB

@@ -5,8 +5,8 @@
 #include <Poco/Timespan.h>
 #include <boost/noncopyable.hpp>
 
-#include <common/logger_useful.h>
-#include <Common/Exception.h>
+#include "base/common/logger_useful.h"
+#include "src/Common/Exception.h"
 
 
 namespace DB

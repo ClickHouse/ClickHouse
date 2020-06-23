@@ -1,9 +1,9 @@
-#include <IO/createWriteBufferFromFileBase.h>
-#include <IO/WriteBufferFromFile.h>
+#include "src/IO/createWriteBufferFromFileBase.h"
+#include "src/IO/WriteBufferFromFile.h"
 #if defined(__linux__) || defined(__FreeBSD__)
-#include <IO/WriteBufferAIO.h>
+#include "src/IO/WriteBufferAIO.h"
 #endif
-#include <Common/ProfileEvents.h>
+#include "src/Common/ProfileEvents.h"
 
 
 namespace ProfileEvents

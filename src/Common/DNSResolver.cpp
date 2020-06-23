@@ -1,9 +1,9 @@
 #include "DNSResolver.h"
-#include <common/SimpleCache.h>
-#include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
-#include <Core/Names.h>
-#include <Core/Types.h>
+#include "base/common/SimpleCache.h"
+#include "src/Common/Exception.h"
+#include "src/Common/ProfileEvents.h"
+#include "src/Core/Names.h"
+#include "src/Core/Types.h"
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/NetException.h>

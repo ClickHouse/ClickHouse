@@ -7,7 +7,7 @@
 
 #include <Poco/Net/PartHandler.h>
 
-#include <Core/Block.h>
+#include "src/Core/Block.h"
 #include <Client/Connection.h>
 #include <IO/ReadBuffer.h>
 

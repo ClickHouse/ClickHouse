@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Common/config.h>
+#include "src/Common/config.h"
 
 #if USE_HDFS
-#include <IO/ReadBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
+#include "src/IO/ReadBuffer.h"
+#include "src/IO/BufferWithOwnMemory.h"
 #include <string>
 #include <memory>
 

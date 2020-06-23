@@ -1,14 +1,14 @@
-#include <IO/CompressionMethod.h>
+#include "src/IO/CompressionMethod.h"
 
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
-#include <IO/ZlibInflatingReadBuffer.h>
-#include <IO/ZlibDeflatingWriteBuffer.h>
-#include <IO/BrotliReadBuffer.h>
-#include <IO/BrotliWriteBuffer.h>
+#include "src/IO/ReadBuffer.h"
+#include "src/IO/WriteBuffer.h"
+#include "src/IO/ZlibInflatingReadBuffer.h"
+#include "src/IO/ZlibDeflatingWriteBuffer.h"
+#include "src/IO/BrotliReadBuffer.h"
+#include "src/IO/BrotliWriteBuffer.h"
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
+#    include "src/Common/config.h"
 #endif
 
 

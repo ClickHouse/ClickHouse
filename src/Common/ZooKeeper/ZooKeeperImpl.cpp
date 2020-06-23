@@ -1,18 +1,18 @@
-#include <Common/ZooKeeper/ZooKeeperImpl.h>
-#include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
-#include <Common/setThreadName.h>
+#include "src/Common/ZooKeeper/ZooKeeperImpl.h"
+#include "src/Common/Exception.h"
+#include "src/Common/ProfileEvents.h"
+#include "src/Common/setThreadName.h"
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/Operators.h"
+#include "src/IO/WriteBufferFromString.h"
 
 #include <Poco/Exception.h>
 #include <Poco/Net/NetException.h>
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
+#    include "src/Common/config.h"
 #endif
 
 #if USE_SSL

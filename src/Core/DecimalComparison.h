@@ -1,9 +1,9 @@
 #pragma once
 
-#include <common/arithmeticOverflow.h>
-#include <Core/Block.h>
-#include <Core/AccurateComparison.h>
-#include <Core/callOnTypeIndex.h>
+#include "base/common/arithmeticOverflow.h"
+#include "src/Core/Block.h"
+#include "src/Core/AccurateComparison.h"
+#include "src/Core/callOnTypeIndex.h"
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>

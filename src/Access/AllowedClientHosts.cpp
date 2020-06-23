@@ -1,5 +1,5 @@
-#include <Access/AllowedClientHosts.h>
-#include <Common/Exception.h>
+#include "src/Access/AllowedClientHosts.h"
+#include "src/Common/Exception.h"
 #include <common/SimpleCache.h>
 #include <Functions/likePatternToRegexp.h>
 #include <Poco/Net/SocketAddress.h>
@@ -8,7 +8,7 @@
 #include <ext/scope_guard.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <ifaddrs.h>
-#include <Common/DNSResolver.h>
+#include "src/Common/DNSResolver.h"
 
 
 namespace DB

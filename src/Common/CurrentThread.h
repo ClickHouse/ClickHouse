@@ -3,8 +3,8 @@
 #include <memory>
 #include <string>
 
-#include <common/StringRef.h>
-#include <Common/ThreadStatus.h>
+#include "base/common/StringRef.h"
+#include "src/Common/ThreadStatus.h"
 
 
 namespace ProfileEvents

@@ -6,7 +6,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Common/ThreadPool.h>
-#include <Access/AccessRightsElement.h>
+#include "src/Access/AccessRightsElement.h"
 
 
 namespace DB

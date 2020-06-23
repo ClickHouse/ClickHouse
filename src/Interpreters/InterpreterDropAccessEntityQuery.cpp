@@ -3,13 +3,13 @@
 #include <Parsers/ASTRowPolicyName.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
-#include <Access/AccessControlManager.h>
-#include <Access/AccessFlags.h>
-#include <Access/User.h>
-#include <Access/Role.h>
-#include <Access/Quota.h>
-#include <Access/RowPolicy.h>
-#include <Access/SettingsProfile.h>
+#include "src/Access/AccessControlManager.h"
+#include "src/Access/AccessFlags.h"
+#include "src/Access/User.h"
+#include "src/Access/Role.h"
+#include "src/Access/Quota.h"
+#include "src/Access/RowPolicy.h"
+#include "src/Access/SettingsProfile.h"
 
 
 namespace DB

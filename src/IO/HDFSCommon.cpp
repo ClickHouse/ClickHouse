@@ -1,8 +1,8 @@
-#include <IO/HDFSCommon.h>
+#include "src/IO/HDFSCommon.h"
 #include <Poco/URI.h>
 
 #if USE_HDFS
-#include <Common/Exception.h>
+#include "src/Common/Exception.h"
 
 namespace DB
 {

@@ -1,6 +1,6 @@
-#include <Access/AccessRightsElement.h>
+#include "src/Access/AccessRightsElement.h"
 #include <Dictionaries/IDictionary.h>
-#include <Common/quoteString.h>
+#include "src/Common/quoteString.h"
 #include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm/unique.hpp>
 #include <boost/range/algorithm_ext/is_sorted.hpp>

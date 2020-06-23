@@ -6,8 +6,8 @@
   * instantiation of SettingsCollection<>.
   */
 
-#include <Common/SettingsChanges.h>
-#include <Common/FieldVisitors.h>
+#include "src/Common/SettingsChanges.h"
+#include "src/Common/FieldVisitors.h"
 
 
 namespace DB

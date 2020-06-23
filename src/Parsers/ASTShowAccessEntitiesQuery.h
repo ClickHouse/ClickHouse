@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTQueryWithOutput.h>
-#include <Access/IAccessEntity.h>
+#include "src/Access/IAccessEntity.h"
 
 
 namespace DB

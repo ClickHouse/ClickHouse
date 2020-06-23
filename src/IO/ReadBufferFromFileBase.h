@@ -1,7 +1,7 @@
 #pragma once
 
-#include <IO/BufferWithOwnMemory.h>
-#include <IO/SeekableReadBuffer.h>
+#include "src/IO/BufferWithOwnMemory.h"
+#include "src/IO/SeekableReadBuffer.h"
 #include <common/time.h>
 
 #include <functional>

@@ -4,13 +4,13 @@
 
 //#if defined(NDEBUG)
 //#undef NDEBUG
-#include <Common/RadixSort.h>
+#include "src/Common/RadixSort.h"
 //#endif
 
-#include <Common/Stopwatch.h>
-#include <Common/randomSeed.h>
-#include <IO/ReadHelpers.h>
-#include <Core/Defines.h>
+#include "src/Common/Stopwatch.h"
+#include "src/Common/randomSeed.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/Core/Defines.h"
 #include <pdqsort.h>
 
 /// Example:

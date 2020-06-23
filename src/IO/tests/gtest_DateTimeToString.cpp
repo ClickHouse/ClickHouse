@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <common/DateLUT.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/WriteBufferFromString.h"
 
 namespace
 {

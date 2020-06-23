@@ -1,9 +1,9 @@
-#include <Common/config.h>
+#include "src/Common/config.h"
 
 #if USE_AWS_S3
 
-#    include <IO/WriteBufferFromS3.h>
-#    include <IO/WriteHelpers.h>
+#    include "src/IO/WriteBufferFromS3.h"
+#    include "src/IO/WriteHelpers.h"
 
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/CompleteMultipartUploadRequest.h>

@@ -1,5 +1,5 @@
-#include <IO/ZlibDeflatingWriteBuffer.h>
-#include <Common/MemorySanitizer.h>
+#include "src/IO/ZlibDeflatingWriteBuffer.h"
+#include "src/Common/MemorySanitizer.h"
 
 
 namespace DB

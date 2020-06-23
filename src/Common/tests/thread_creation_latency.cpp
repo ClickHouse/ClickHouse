@@ -1,11 +1,11 @@
 #include <iostream>
 #include <iomanip>
 
-#include <IO/ReadHelpers.h>
+#include "src/IO/ReadHelpers.h"
 
-#include <Common/Stopwatch.h>
-#include <Common/Exception.h>
-#include <Common/ThreadPool.h>
+#include "src/Common/Stopwatch.h"
+#include "src/Common/Exception.h"
+#include "src/Common/ThreadPool.h"
 
 
 int value = 0;

@@ -1,7 +1,7 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterUseQuery.h>
-#include <Access/AccessFlags.h>
+#include "src/Access/AccessFlags.h"
 #include <Common/typeid_cast.h>
 
 

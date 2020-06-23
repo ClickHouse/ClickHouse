@@ -12,9 +12,9 @@
 #endif
 
 #include <ext/bit_cast.h>
-#include <Core/Types.h>
-#include <Core/Defines.h>
-#include <Common/PODArray.h>
+#include "src/Core/Types.h"
+#include "src/Core/Defines.h"
+#include "src/Common/PODArray.h"
 #include <Columns/ColumnsCommon.h>
 
 #include "oclBasics.h"

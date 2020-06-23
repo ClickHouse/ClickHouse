@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Core/Defines.h>
+#include "src/Core/Defines.h"
 #if __has_include(<sanitizer/asan_interface.h>) && defined(ADDRESS_SANITIZER)
 #   include <sanitizer/asan_interface.h>
 #endif
-#include <Common/Arena.h>
-#include <Common/BitHelpers.h>
+#include "src/Common/Arena.h"
+#include "src/Common/BitHelpers.h"
 
 
 namespace DB

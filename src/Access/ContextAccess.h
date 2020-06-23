@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Access/AccessRights.h>
-#include <Access/RowPolicy.h>
+#include "src/Access/AccessRights.h"
+#include "src/Access/RowPolicy.h"
 #include <Interpreters/ClientInfo.h>
-#include <Core/UUID.h>
+#include "src/Core/UUID.h"
 #include <ext/scope_guard.h>
 #include <ext/shared_ptr_helper.h>
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>

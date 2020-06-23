@@ -3,12 +3,12 @@
 #include <map>
 
 #include <pcg_random.hpp>
-#include <Core/Field.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/AutoArray.h>
-#include <IO/WriteHelpers.h>
+#include "src/Core/Field.h"
+#include "src/Common/HashTable/HashMap.h"
+#include "src/Common/AutoArray.h"
+#include "src/IO/WriteHelpers.h"
 
-#include <Common/Stopwatch.h>
+#include "src/Common/Stopwatch.h"
 
 
 int main(int argc, char ** argv)

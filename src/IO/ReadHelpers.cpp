@@ -1,13 +1,13 @@
-#include <Core/Defines.h>
-#include <Common/hex.h>
-#include <Common/PODArray.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/memcpySmall.h>
+#include "src/Core/Defines.h"
+#include "src/Common/hex.h"
+#include "src/Common/PODArray.h"
+#include "src/Common/StringUtils/StringUtils.h"
+#include "src/Common/memcpySmall.h"
 #include <Formats/FormatSettings.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/readFloatText.h>
-#include <IO/Operators.h>
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/WriteBufferFromString.h"
+#include "src/IO/readFloatText.h"
+#include "src/IO/Operators.h"
 #include <common/find_symbols.h>
 #include <stdlib.h>
 

@@ -10,9 +10,9 @@
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
-#include <Access/RowPolicy.h>
-#include <Access/AccessFlags.h>
+#include "src/Access/AccessControlManager.h"
+#include "src/Access/RowPolicy.h"
+#include "src/Access/AccessFlags.h"
 #include <ext/range.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 

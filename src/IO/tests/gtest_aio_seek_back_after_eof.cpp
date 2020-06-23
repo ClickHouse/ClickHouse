@@ -2,10 +2,10 @@
 
 #include <gtest/gtest.h>
 
-#include <Core/Defines.h>
+#include "src/Core/Defines.h"
 #include <unistd.h>
-#include <IO/ReadBufferAIO.h>
-#include <Common/randomSeed.h>
+#include "src/IO/ReadBufferAIO.h"
+#include "src/Common/randomSeed.h"
 #include <fstream>
 #include <string>
 

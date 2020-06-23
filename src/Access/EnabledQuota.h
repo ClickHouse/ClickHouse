@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Access/Quota.h>
-#include <Core/UUID.h>
+#include "src/Access/Quota.h"
+#include "src/Core/UUID.h"
 #include <Poco/Net/IPAddress.h>
 #include <boost/noncopyable.hpp>
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>

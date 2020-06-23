@@ -2,7 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <Access/RowPolicy.h>
+#include "src/Access/RowPolicy.h"
 
 
 namespace DB

@@ -3,8 +3,8 @@
 #include <map>
 #include <string>
 
-#include <Common/SpaceSaving.h>
-#include <common/StringRef.h>
+#include "src/Common/SpaceSaving.h"
+#include "base/common/StringRef.h"
 
 int main(int, char **)
 {

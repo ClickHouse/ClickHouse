@@ -1,9 +1,9 @@
 #pragma once
 
 #include <iostream>
-#include <Core/Types.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
+#include "src/Core/Types.h"
+#include "src/IO/ReadBuffer.h"
+#include "src/IO/WriteBuffer.h"
 
 
 namespace DB

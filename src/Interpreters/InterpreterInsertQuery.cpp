@@ -14,7 +14,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
-#include <Access/AccessFlags.h>
+#include "src/Access/AccessFlags.h"
 #include <Interpreters/JoinedTables.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>

@@ -1,11 +1,11 @@
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/parseDateTimeBestEffort.h>
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/parseDateTimeBestEffort.h"
 
-#include <Common/PODArray.h>
+#include "src/Common/PODArray.h"
 
 /** Test formatting and parsing predefined DateTime64 values to/from string
  */

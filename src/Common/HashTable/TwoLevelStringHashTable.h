@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/HashTable/StringHashTable.h>
+#include "src/Common/HashTable/StringHashTable.h"
 
 template <typename SubMaps, typename ImplTable = StringHashTable<SubMaps>, size_t BITS_FOR_BUCKET = 8>
 class TwoLevelStringHashTable : private boost::noncopyable

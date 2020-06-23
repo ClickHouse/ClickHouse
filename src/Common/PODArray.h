@@ -8,18 +8,18 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <common/strong_typedef.h>
+#include "base/common/strong_typedef.h"
 
-#include <Common/Allocator.h>
-#include <Common/Exception.h>
-#include <Common/BitHelpers.h>
-#include <Common/memcpySmall.h>
+#include "src/Common/Allocator.h"
+#include "src/Common/Exception.h"
+#include "src/Common/BitHelpers.h"
+#include "src/Common/memcpySmall.h"
 
 #ifndef NDEBUG
     #include <sys/mman.h>
 #endif
 
-#include <Common/PODArray_fwd.h>
+#include "src/Common/PODArray_fwd.h"
 
 
 namespace DB

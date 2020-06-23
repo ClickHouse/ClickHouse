@@ -27,7 +27,7 @@
 
 #include <Storages/StorageInput.h>
 
-#include <Access/EnabledQuota.h>
+#include "src/Access/EnabledQuota.h"
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>

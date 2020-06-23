@@ -3,9 +3,9 @@
 #include <iostream>
 #include <sstream>
 
-#include <Core/Types.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
+#include "src/Core/Types.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/ReadBufferFromString.h"
 
 
 int main(int, char **)

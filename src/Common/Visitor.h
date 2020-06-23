@@ -1,8 +1,8 @@
 #pragma once
 
-#include <common/demangle.h>
-#include <Common/TypeList.h>
-#include <Common/Exception.h>
+#include "base/common/demangle.h"
+#include "src/Common/TypeList.h"
+#include "src/Common/Exception.h"
 
 /* Generic utils which are intended for visitor pattern implementation.
  * The original purpose is to provide possibility to get concrete template specialisation for type in list.

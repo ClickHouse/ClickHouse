@@ -6,20 +6,24 @@ package(
 
 cc_library(
     name = "boost",
+    includes = [""],
+    hdrs =
+        glob(["boost/algorithm/**/*.hpp"]) +
+        glob(["boost/config/**/*.hpp"]) +
+        glob(["boost/detail/**/*.hpp"]) +
+        glob(["boost/iterator/**/*.hpp"]) +
+        [
+            "boost/config.hpp",
+            "boost/core/noncopyable.hpp",
+            "boost/noncopyable.hpp",
+        ],
+)
+
+cc_library(
+    name = "program_options",
+    includes = [""],
+    srcs = glob(["boost/libs/program_options/src/*.cpp"]),
     hdrs = [
-        "boost/config.hpp",
-        "boost/config/compiler/clang.hpp",
-        "boost/config/detail/posix_features.hpp",
-        "boost/config/detail/select_compiler_config.hpp",
-        "boost/config/detail/select_platform_config.hpp",
-        "boost/config/detail/select_stdlib_config.hpp",
-        "boost/config/detail/suffix.hpp",
-        "boost/config/helper_macros.hpp",
-        "boost/config/platform/linux.hpp",
-        "boost/config/stdlib/libstdcpp3.hpp",
-        "boost/config/user.hpp",
-        "boost/core/noncopyable.hpp",
-        "boost/noncopyable.hpp",
-    ],
-    strip_include_prefix = "", # changes include flag from '-iquote' to '-I'
+        "boost/program_options.hpp",
+    ]
 )

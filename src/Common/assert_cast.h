@@ -5,8 +5,8 @@
 #include <typeindex>
 #include <string>
 
-#include <Common/Exception.h>
-#include <common/demangle.h>
+#include "src/Common/Exception.h"
+#include "base/common/demangle.h"
 
 
 namespace DB

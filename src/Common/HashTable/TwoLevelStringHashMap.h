@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Common/HashTable/StringHashMap.h>
-#include <Common/HashTable/TwoLevelStringHashTable.h>
+#include "src/Common/HashTable/StringHashMap.h"
+#include "src/Common/HashTable/TwoLevelStringHashTable.h"
 
 template <typename TMapped, typename Allocator = HashTableAllocator, template <typename...> typename ImplTable = StringHashMap>
 class TwoLevelStringHashMap : public TwoLevelStringHashTable<StringHashMapSubMaps<TMapped, Allocator>, ImplTable<TMapped, Allocator>>

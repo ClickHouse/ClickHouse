@@ -1,9 +1,11 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <Common/typeid_cast.h>
-#include <Common/quoteString.h>
+#include "src/Common/quoteString.h"
+#include "src/Common/typeid_cast.h"
+#include "src/Core/Types.h"
+
 #include <boost/algorithm/string.hpp>
+
 #include <memory>
 
 

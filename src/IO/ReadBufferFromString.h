@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/ReadBufferFromMemory.h>
+#include "src/IO/ReadBufferFromMemory.h"
 
 
 namespace DB

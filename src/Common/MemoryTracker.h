@@ -1,10 +1,10 @@
 #pragma once
 
 #include <atomic>
-#include <common/types.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/SimpleActionBlocker.h>
-#include <Common/VariableContext.h>
+#include "base/common/types.h"
+#include "src/Common/CurrentMetrics.h"
+#include "src/Common/SimpleActionBlocker.h"
+#include "src/Common/VariableContext.h"
 
 
 /** Tracks memory consumption.

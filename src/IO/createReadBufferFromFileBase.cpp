@@ -1,10 +1,10 @@
-#include <IO/createReadBufferFromFileBase.h>
-#include <IO/ReadBufferFromFile.h>
+#include "src/IO/createReadBufferFromFileBase.h"
+#include "src/IO/ReadBufferFromFile.h"
 #if defined(__linux__) || defined(__FreeBSD__)
-#include <IO/ReadBufferAIO.h>
+#include "src/IO/ReadBufferAIO.h"
 #endif
-#include <IO/MMapReadBufferFromFile.h>
-#include <Common/ProfileEvents.h>
+#include "src/IO/MMapReadBufferFromFile.h"
+#include "src/Common/ProfileEvents.h"
 
 
 namespace ProfileEvents

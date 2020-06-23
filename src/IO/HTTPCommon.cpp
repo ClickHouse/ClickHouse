@@ -1,15 +1,15 @@
-#include <IO/HTTPCommon.h>
+#include "src/IO/HTTPCommon.h"
 
-#include <Common/DNSResolver.h>
-#include <Common/Exception.h>
-#include <Common/PoolBase.h>
-#include <Common/ProfileEvents.h>
-#include <Common/SipHash.h>
+#include "src/Common/DNSResolver.h"
+#include "src/Common/Exception.h"
+#include "src/Common/PoolBase.h"
+#include "src/Common/ProfileEvents.h"
+#include "src/Common/SipHash.h"
 
 #include <Poco/Version.h>
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
+#    include "src/Common/config.h"
 #endif
 
 #if USE_SSL

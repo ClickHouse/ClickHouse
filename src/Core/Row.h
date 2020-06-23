@@ -2,8 +2,8 @@
 
 #include <vector>
 
-#include <Common/AutoArray.h>
-#include <Core/Field.h>
+#include "src/Common/AutoArray.h"
+#include "src/Core/Field.h"
 
 
 namespace DB

@@ -1,12 +1,12 @@
 #include <memory>
 
 #include "CurrentThread.h"
-#include <common/logger_useful.h>
-#include <Common/ThreadStatus.h>
-#include <Common/TaskStatsInfoGetter.h>
+#include "base/common/logger_useful.h"
+#include "src/Common/ThreadStatus.h"
+#include "src/Common/TaskStatsInfoGetter.h"
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
-#include <common/getThreadId.h>
+#include "base/common/getThreadId.h"
 #include <Poco/Logger.h>
 
 

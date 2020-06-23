@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/CounterInFile.h>
+#include "src/Common/CounterInFile.h"
 
 
 /** Allows to get an auto-increment number, storing it in a file.

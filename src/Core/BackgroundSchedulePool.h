@@ -11,10 +11,10 @@
 #include <map>
 #include <functional>
 #include <boost/noncopyable.hpp>
-#include <Common/ZooKeeper/Types.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadPool.h>
+#include "src/Common/ZooKeeper/Types.h"
+#include "src/Common/CurrentMetrics.h"
+#include "src/Common/CurrentThread.h"
+#include "src/Common/ThreadPool.h"
 
 
 namespace DB

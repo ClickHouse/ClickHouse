@@ -2,9 +2,9 @@
 #include <Parsers/ASTSetRoleQuery.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Interpreters/Context.h>
-#include <Access/RolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
-#include <Access/User.h>
+#include "src/Access/RolesOrUsersSet.h"
+#include "src/Access/AccessControlManager.h"
+#include "src/Access/User.h"
 
 
 namespace DB

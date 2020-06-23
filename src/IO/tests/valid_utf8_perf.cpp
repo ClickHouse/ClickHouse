@@ -1,6 +1,6 @@
-#include <IO/WriteBufferValidUTF8.h>
-#include <IO/WriteBufferFromString.h>
-#include <Common/Stopwatch.h>
+#include "src/IO/WriteBufferValidUTF8.h"
+#include "src/IO/WriteBufferFromString.h"
+#include "src/Common/Stopwatch.h"
 #include <string>
 #include <streambuf>
 #include <iostream>

@@ -5,8 +5,8 @@
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
-#include <Access/AccessControlManager.h>
-#include <Access/AccessFlags.h>
+#include "src/Access/AccessControlManager.h"
+#include "src/Access/AccessFlags.h"
 #include <boost/range/algorithm/sort.hpp>
 
 

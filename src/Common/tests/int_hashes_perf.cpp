@@ -5,9 +5,9 @@
 #include <iostream>
 #include <iomanip>
 #include <Poco/Exception.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/Stopwatch.h>
-#include <Core/Defines.h>
+#include "src/Common/HashTable/Hash.h"
+#include "src/Common/Stopwatch.h"
+#include "src/Core/Defines.h"
 
 
 static void setAffinity()

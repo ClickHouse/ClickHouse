@@ -4,11 +4,11 @@
 #include <vector>
 #include <algorithm>
 
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Core/SortDescription.h>
-#include <Core/Block.h>
-#include <Core/ColumnNumbers.h>
+#include "src/Common/typeid_cast.h"
+#include "src/Common/assert_cast.h"
+#include "src/Core/SortDescription.h"
+#include "src/Core/Block.h"
+#include "src/Core/ColumnNumbers.h"
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
 

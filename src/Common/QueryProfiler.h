@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Core/Types.h>
+#include "src/Core/Types.h"
 #include <signal.h>
 #include <time.h>
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
+#    include "src/Common/config.h"
 #endif
 
 

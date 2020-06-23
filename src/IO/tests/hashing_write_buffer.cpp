@@ -1,5 +1,5 @@
-#include <IO/HashingWriteBuffer.h>
-#include <IO/WriteBufferFromFile.h>
+#include "src/IO/HashingWriteBuffer.h"
+#include "src/IO/WriteBufferFromFile.h"
 #include <pcg_random.hpp>
 
 #include "hashing_buffer.h"

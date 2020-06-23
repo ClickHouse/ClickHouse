@@ -1,7 +1,7 @@
 #pragma once
 
 #include <algorithm>
-#include <Core/Block.h>
+#include "src/Core/Block.h"
 #include <Columns/IColumn.h>
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 

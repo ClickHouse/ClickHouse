@@ -1,12 +1,12 @@
 #pragma once
 
-#include <common/StringRef.h>
-#include <Common/ProfileEvents.h>
-#include <Common/MemoryTracker.h>
+#include "base/common/StringRef.h"
+#include "src/Common/ProfileEvents.h"
+#include "src/Common/MemoryTracker.h"
 
-#include <Core/SettingsCollection.h>
+#include "src/Core/SettingsCollection.h"
 
-#include <IO/Progress.h>
+#include "src/IO/Progress.h"
 
 #include <memory>
 #include <map>

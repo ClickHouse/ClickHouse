@@ -3,8 +3,8 @@
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
-#include <Access/AccessControlManager.h>
-#include <Access/AccessFlags.h>
+#include "src/Access/AccessControlManager.h"
+#include "src/Access/AccessFlags.h"
 #include <ext/range.h>
 #include <boost/range/algorithm/find_if.hpp>
 #include <boost/range/algorithm/upper_bound.hpp>

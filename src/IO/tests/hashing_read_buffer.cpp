@@ -1,6 +1,6 @@
-#include <IO/ReadBufferFromIStream.h>
-#include <IO/HashingReadBuffer.h>
-#include <IO/WriteBufferFromOStream.h>
+#include "src/IO/ReadBufferFromIStream.h"
+#include "src/IO/HashingReadBuffer.h"
+#include "src/IO/WriteBufferFromOStream.h"
 #include "hashing_buffer.h"
 #include <iostream>
 #include <pcg_random.hpp>

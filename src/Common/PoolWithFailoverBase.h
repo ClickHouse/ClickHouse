@@ -5,14 +5,14 @@
 #include <climits>
 #include <random>
 #include <functional>
-#include <common/types.h>
+#include "base/common/types.h"
 #include <ext/scope_guard.h>
-#include <Core/Types.h>
-#include <Common/PoolBase.h>
-#include <Common/ProfileEvents.h>
-#include <Common/NetException.h>
-#include <Common/Exception.h>
-#include <Common/randomSeed.h>
+#include "src/Core/Types.h"
+#include "src/Common/PoolBase.h"
+#include "src/Common/ProfileEvents.h"
+#include "src/Common/NetException.h"
+#include "src/Common/Exception.h"
+#include "src/Common/randomSeed.h"
 
 
 namespace DB

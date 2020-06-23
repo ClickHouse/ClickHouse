@@ -4,8 +4,8 @@
 #include <memory>
 #include <cstddef>
 #include <string>
-#include <Core/Field.h>
-#include <Core/SettingsCollection.h>
+#include "src/Core/Field.h"
+#include "src/Core/SettingsCollection.h"
 
 class Collator;
 

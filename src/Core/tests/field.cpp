@@ -2,10 +2,10 @@
 #include <iomanip>
 #include <sstream>
 
-#include <Core/Field.h>
-#include <Common/FieldVisitors.h>
+#include "src/Core/Field.h"
+#include "src/Common/FieldVisitors.h"
 
-#include <Common/Stopwatch.h>
+#include "src/Common/Stopwatch.h"
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <DataTypes/DataTypeString.h>

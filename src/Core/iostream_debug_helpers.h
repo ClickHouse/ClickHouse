@@ -51,4 +51,4 @@ std::ostream & operator<<(std::ostream & stream, const SyntaxAnalyzerResult & wh
 }
 
 /// some operator<< should be declared before operator<<(... std::shared_ptr<>)
-#include <common/iostream_debug_helpers.h>
+#include "base/common/iostream_debug_helpers.h"

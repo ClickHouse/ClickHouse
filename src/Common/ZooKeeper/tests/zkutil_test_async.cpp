@@ -1,5 +1,5 @@
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <IO/ReadHelpers.h>
+#include "src/Common/ZooKeeper/ZooKeeper.h"
+#include "src/IO/ReadHelpers.h"
 
 
 int main(int argc, char ** argv)

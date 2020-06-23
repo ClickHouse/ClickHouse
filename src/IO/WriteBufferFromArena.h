@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Common/Arena.h>
+#include "src/Common/Arena.h"
 #include <common/StringRef.h>
-#include <IO/WriteBuffer.h>
+#include "src/IO/WriteBuffer.h"
 
 
 namespace DB

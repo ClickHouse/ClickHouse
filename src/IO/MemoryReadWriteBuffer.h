@@ -1,10 +1,10 @@
 #pragma once
 #include <forward_list>
 
-#include <IO/WriteBuffer.h>
-#include <IO/IReadableWriteBuffer.h>
-#include <Common/Allocator.h>
-#include <Core/Defines.h>
+#include "src/IO/WriteBuffer.h"
+#include "src/IO/IReadableWriteBuffer.h"
+#include "src/Common/Allocator.h"
+#include "src/Core/Defines.h"
 #include <boost/noncopyable.hpp>
 
 

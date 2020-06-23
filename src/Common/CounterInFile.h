@@ -10,13 +10,13 @@
 #include <Poco/File.h>
 #include <Poco/Exception.h>
 
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include "src/IO/ReadBufferFromFileDescriptor.h"
+#include "src/IO/WriteBufferFromFileDescriptor.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/WriteHelpers.h"
 
-#include <Common/Exception.h>
-#include <common/types.h>
+#include "src/Common/Exception.h"
+#include "base/common/types.h"
 
 
 namespace DB

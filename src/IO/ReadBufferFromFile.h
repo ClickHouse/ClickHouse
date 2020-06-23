@@ -1,7 +1,7 @@
 #pragma once
 
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <Common/CurrentMetrics.h>
+#include "src/IO/ReadBufferFromFileDescriptor.h"
+#include "src/Common/CurrentMetrics.h"
 
 #ifndef O_DIRECT
 #define O_DIRECT 00040000

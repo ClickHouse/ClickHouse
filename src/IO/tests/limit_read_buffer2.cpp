@@ -1,9 +1,9 @@
 #include <sstream>
 
-#include <IO/LimitReadBuffer.h>
-#include <IO/copyData.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
+#include "src/IO/LimitReadBuffer.h"
+#include "src/IO/copyData.h"
+#include "src/IO/WriteBufferFromString.h"
+#include "src/IO/ReadHelpers.h"
 
 
 namespace DB

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <type_traits>
-#include <Common/HashTable/HashSet.h>
+#include "src/Common/HashTable/HashSet.h"
 
 
 /** A hash table that allows you to clear the table in O(1).

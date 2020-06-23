@@ -3,14 +3,14 @@
 #include <iostream>
 #include <fstream>
 
-#include <Core/Types.h>
-#include <Common/Stopwatch.h>
-#include <Common/formatReadable.h>
-#include <IO/readFloatText.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
+#include "src/Core/Types.h"
+#include "src/Common/Stopwatch.h"
+#include "src/Common/formatReadable.h"
+#include "src/IO/readFloatText.h"
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/Operators.h"
+#include "src/IO/ReadBufferFromFileDescriptor.h"
+#include "src/IO/WriteBufferFromFileDescriptor.h"
 #include <Compression/CompressedReadBuffer.h>
 
 

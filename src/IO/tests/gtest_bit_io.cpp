@@ -1,11 +1,11 @@
 #include <string.h>
-#include <IO/BitHelpers.h>
+#include "src/IO/BitHelpers.h"
 
-#include <Core/Types.h>
-#include <IO/MemoryReadWriteBuffer.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <Common/BitHelpers.h>
-#include <Common/PODArray.h>
+#include "src/Core/Types.h"
+#include "src/IO/MemoryReadWriteBuffer.h"
+#include "src/IO/ReadBufferFromMemory.h"
+#include "src/Common/BitHelpers.h"
+#include "src/Common/PODArray.h"
 
 #include <cmath>
 #include <iomanip>

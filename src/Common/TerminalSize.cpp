@@ -1,7 +1,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
-#include <Common/Exception.h>
-#include <Common/TerminalSize.h>
+#include "src/Common/Exception.h"
+#include "src/Common/TerminalSize.h"
 #include <boost/program_options.hpp>
 
 

@@ -2,7 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <Access/Quota.h>
+#include "src/Access/Quota.h"
 
 
 namespace DB

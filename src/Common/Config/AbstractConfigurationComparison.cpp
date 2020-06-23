@@ -1,7 +1,7 @@
-#include <Common/Config/AbstractConfigurationComparison.h>
+#include "src/Common/Config/AbstractConfigurationComparison.h"
 
 #include <unordered_set>
-#include <common/StringRef.h>
+#include "base/common/StringRef.h"
 #include <Poco/Util/AbstractConfiguration.h>
 
 

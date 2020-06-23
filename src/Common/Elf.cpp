@@ -1,8 +1,8 @@
 #if defined(__ELF__) && !defined(__FreeBSD__)
 
-#include <Common/Elf.h>
-#include <Common/Exception.h>
-#include <common/unaligned.h>
+#include "src/Common/Elf.h"
+#include "src/Common/Exception.h"
+#include "base/common/unaligned.h"
 
 #include <string.h>
 

@@ -1,9 +1,9 @@
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
+#    include "src/Common/config.h"
 #endif
 
 #if USE_BROTLI
-#    include <IO/BrotliWriteBuffer.h>
+#    include "src/IO/BrotliWriteBuffer.h"
 #    include <brotli/encode.h>
 
 namespace DB

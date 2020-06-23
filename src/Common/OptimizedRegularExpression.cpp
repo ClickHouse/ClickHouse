@@ -1,6 +1,6 @@
-#include <Common/Exception.h>
-#include <Common/PODArray.h>
-#include <Common/OptimizedRegularExpression.h>
+#include "src/Common/Exception.h"
+#include "src/Common/PODArray.h"
+#include "src/Common/OptimizedRegularExpression.h"
 
 #define MIN_LENGTH_FOR_STRSTR 3
 #define MAX_SUBPATTERNS 1024

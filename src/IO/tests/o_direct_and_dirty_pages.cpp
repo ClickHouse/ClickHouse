@@ -2,11 +2,11 @@
 
 #include <iostream>
 
-#include <Core/Types.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
+#include "src/Core/Types.h"
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/WriteBufferFromFile.h"
+#include "src/IO/ReadBufferFromFile.h"
 
 int main(int, char **)
 {

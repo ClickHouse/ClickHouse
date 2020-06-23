@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include <Core/ColumnWithTypeAndName.h>
+#include "src/Core/ColumnWithTypeAndName.h"
 
 
 namespace DB

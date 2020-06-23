@@ -3,9 +3,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Core/Field.h>
-#include <Core/DecimalComparison.h>
-#include <Common/FieldVisitors.h>
+#include "src/Core/Field.h"
+#include "src/Core/DecimalComparison.h"
+#include "src/Common/FieldVisitors.h"
 
 
 namespace DB

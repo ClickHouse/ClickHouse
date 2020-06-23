@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Access/AccessRights.h>
-#include <Access/SettingsProfileElement.h>
-#include <Core/UUID.h>
+#include "src/Access/AccessRights.h"
+#include "src/Access/SettingsProfileElement.h"
+#include "src/Core/UUID.h"
 #include <boost/container/flat_set.hpp>
 #include <unordered_map>
 

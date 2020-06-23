@@ -13,8 +13,8 @@
 #include <type_traits>
 
 #include <ext/bit_cast.h>
-#include <Core/Types.h>
-#include <Core/Defines.h>
+#include "src/Core/Types.h"
+#include "src/Core/Defines.h"
 
 
 /** Radix sort, has the following functionality:

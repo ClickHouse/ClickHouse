@@ -1,8 +1,8 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <IO/ReadHelpers.h>
+#include "src/IO/WriteBuffer.h"
+#include "src/IO/BufferWithOwnMemory.h"
+#include "src/IO/ReadHelpers.h"
 #include <city.h>
 
 #define DBMS_DEFAULT_HASHING_BLOCK_SIZE 2048ULL

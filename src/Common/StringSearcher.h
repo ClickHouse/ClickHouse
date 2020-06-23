@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/UTF8Helpers.h>
-#include <Core/Defines.h>
+#include "src/Common/Exception.h"
+#include "src/Common/StringUtils/StringUtils.h"
+#include "src/Common/UTF8Helpers.h"
+#include "src/Core/Defines.h"
 #include <ext/range.h>
 #include <Poco/Unicode.h>
 #include <stdint.h>

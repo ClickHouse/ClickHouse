@@ -11,9 +11,9 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Core/ExternalTable.h>
+#include "src/Core/ExternalTable.h"
 #include <Poco/Net/MessageHeader.h>
-#include <common/find_symbols.h>
+#include "base/common/find_symbols.h"
 
 
 namespace DB

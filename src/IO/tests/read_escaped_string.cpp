@@ -2,10 +2,10 @@
 
 #include <iostream>
 
-#include <Core/Types.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/ConcatReadBuffer.h>
+#include "src/Core/Types.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/ReadBufferFromMemory.h"
+#include "src/IO/ConcatReadBuffer.h"
 
 
 using namespace DB;

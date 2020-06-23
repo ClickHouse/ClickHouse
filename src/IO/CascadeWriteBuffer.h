@@ -1,6 +1,6 @@
 #pragma once
 #include <functional>
-#include <IO/WriteBuffer.h>
+#include "src/IO/WriteBuffer.h"
 
 
 namespace DB

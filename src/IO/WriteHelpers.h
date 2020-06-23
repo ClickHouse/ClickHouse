@@ -12,20 +12,20 @@
 #include <common/find_symbols.h>
 #include <common/StringRef.h>
 
-#include <Core/DecimalFunctions.h>
-#include <Core/Types.h>
-#include <Core/UUID.h>
+#include "src/Core/DecimalFunctions.h"
+#include "src/Core/Types.h"
+#include "src/Core/UUID.h"
 
-#include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/UInt128.h>
+#include "src/Common/Exception.h"
+#include "src/Common/StringUtils/StringUtils.h"
+#include "src/Common/UInt128.h"
 
-#include <IO/CompressionMethod.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteIntText.h>
-#include <IO/VarInt.h>
-#include <IO/DoubleConverter.h>
-#include <IO/WriteBufferFromString.h>
+#include "src/IO/CompressionMethod.h"
+#include "src/IO/WriteBuffer.h"
+#include "src/IO/WriteIntText.h"
+#include "src/IO/VarInt.h"
+#include "src/IO/DoubleConverter.h"
+#include "src/IO/WriteBufferFromString.h"
 
 #include <ryu/ryu.h>
 

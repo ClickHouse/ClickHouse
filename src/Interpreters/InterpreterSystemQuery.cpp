@@ -21,8 +21,8 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Access/ContextAccess.h>
-#include <Access/AllowedClientHosts.h>
+#include "src/Access/ContextAccess.h"
+#include "src/Access/AllowedClientHosts.h"
 #include <Databases/IDatabase.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>

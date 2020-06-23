@@ -2,8 +2,8 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Common/HyperLogLogCounter.h>
-#include <Common/HashTable/SmallTable.h>
+#include "src/Common/HyperLogLogCounter.h"
+#include "src/Common/HashTable/SmallTable.h"
 
 
 namespace DB

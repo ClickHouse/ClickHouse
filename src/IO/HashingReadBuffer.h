@@ -1,7 +1,7 @@
 #pragma once
 
-#include <IO/ReadBuffer.h>
-#include <IO/HashingWriteBuffer.h>
+#include "src/IO/ReadBuffer.h"
+#include "src/IO/HashingWriteBuffer.h"
 
 namespace DB
 {

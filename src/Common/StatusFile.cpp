@@ -7,15 +7,15 @@
 #include <errno.h>
 
 #include <Poco/File.h>
-#include <common/logger_useful.h>
-#include <common/errnoToString.h>
-#include <Common/ClickHouseRevision.h>
-#include <common/LocalDateTime.h>
+#include "base/common/logger_useful.h"
+#include "base/common/errnoToString.h"
+#include "src/Common/ClickHouseRevision.h"
+#include "base/common/LocalDateTime.h"
 
-#include <IO/ReadBufferFromFile.h>
-#include <IO/LimitReadBuffer.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/Operators.h>
+#include "src/IO/ReadBufferFromFile.h"
+#include "src/IO/LimitReadBuffer.h"
+#include "src/IO/WriteBufferFromFileDescriptor.h"
+#include "src/IO/Operators.h"
 
 
 namespace DB

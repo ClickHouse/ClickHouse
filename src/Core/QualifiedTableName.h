@@ -2,7 +2,7 @@
 
 #include <string>
 #include <tuple>
-#include <Common/SipHash.h>
+#include "src/Common/SipHash.h"
 
 namespace DB
 {

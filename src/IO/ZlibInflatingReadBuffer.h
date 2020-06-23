@@ -1,8 +1,8 @@
 #pragma once
 
-#include <IO/ReadBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <IO/CompressionMethod.h>
+#include "src/IO/ReadBuffer.h"
+#include "src/IO/BufferWithOwnMemory.h"
+#include "src/IO/CompressionMethod.h"
 
 #include <zlib.h>
 

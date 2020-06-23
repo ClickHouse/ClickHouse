@@ -1,12 +1,12 @@
-#include <common/JSON.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <Common/escapeForFileName.h>
+#include "base/common/JSON.h"
+#include "src/IO/WriteBufferFromFile.h"
+#include "src/IO/ReadBufferFromFile.h"
+#include "src/IO/WriteBufferFromString.h"
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/Common/escapeForFileName.h"
 
-#include <Common/FileChecker.h>
+#include "src/Common/FileChecker.h"
 
 
 namespace DB

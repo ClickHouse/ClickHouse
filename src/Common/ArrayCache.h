@@ -13,9 +13,9 @@
 #include <boost/noncopyable.hpp>
 #include <ext/scope_guard.h>
 
-#include <Common/Exception.h>
-#include <Common/randomSeed.h>
-#include <Common/formatReadable.h>
+#include "src/Common/Exception.h"
+#include "src/Common/randomSeed.h"
+#include "src/Common/formatReadable.h"
 
 /// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
 #ifndef MAP_ANONYMOUS

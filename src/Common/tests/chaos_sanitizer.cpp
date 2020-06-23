@@ -2,12 +2,12 @@
 #include <iostream>
 #include <atomic>
 
-#include <common/sleep.h>
+#include "base/common/sleep.h"
 
-#include <IO/ReadHelpers.h>
+#include "src/IO/ReadHelpers.h"
 
-#include <Common/Exception.h>
-#include <Common/ThreadFuzzer.h>
+#include "src/Common/Exception.h"
+#include "src/Common/ThreadFuzzer.h"
 
 
 /** Prooves that ThreadFuzzer helps to find concurrency bugs.

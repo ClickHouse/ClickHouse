@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Access/AccessRights.h>
+#include "src/Access/AccessRights.h"
 
 
 namespace DB

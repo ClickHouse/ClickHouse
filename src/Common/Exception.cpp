@@ -3,20 +3,20 @@
 #include <string.h>
 #include <cxxabi.h>
 #include <Poco/String.h>
-#include <common/logger_useful.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadBufferFromFile.h>
-#include <common/demangle.h>
-#include <common/errnoToString.h>
-#include <Common/formatReadable.h>
-#include <Common/filesystemHelpers.h>
+#include "base/common/logger_useful.h"
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/Operators.h"
+#include "src/IO/ReadBufferFromString.h"
+#include "src/IO/ReadBufferFromFile.h"
+#include "base/common/demangle.h"
+#include "base/common/errnoToString.h"
+#include "src/Common/formatReadable.h"
+#include "src/Common/filesystemHelpers.h"
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
+#    include "src/Common/config_version.h"
 #endif
 
 namespace DB

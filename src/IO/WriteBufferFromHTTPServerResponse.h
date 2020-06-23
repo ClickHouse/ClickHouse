@@ -5,17 +5,17 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Version.h>
-#include <IO/CompressionMethod.h>
-#include <IO/WriteBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <IO/WriteBufferFromOStream.h>
-#include <IO/HTTPCommon.h>
-#include <IO/Progress.h>
-#include <Common/NetException.h>
-#include <Common/Stopwatch.h>
+#include "src/IO/CompressionMethod.h"
+#include "src/IO/WriteBuffer.h"
+#include "src/IO/BufferWithOwnMemory.h"
+#include "src/IO/WriteBufferFromOStream.h"
+#include "src/IO/HTTPCommon.h"
+#include "src/IO/Progress.h"
+#include "src/Common/NetException.h"
+#include "src/Common/Stopwatch.h"
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
+#    include "src/Common/config.h"
 #endif
 
 

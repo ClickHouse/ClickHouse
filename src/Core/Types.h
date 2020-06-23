@@ -3,8 +3,8 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include <common/types.h>
-#include <Common/intExp.h>
+#include "base/common/types.h"
+#include "src/Common/intExp.h"
 
 
 namespace DB

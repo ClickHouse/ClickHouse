@@ -7,13 +7,13 @@
 #include <functional>
 #include <pcg-random/pcg_random.hpp>
 
-#include <common/logger_useful.h>
-#include <common/find_symbols.h>
-#include <Common/randomSeed.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/PODArray.h>
-#include <Common/thread_local_rng.h>
-#include <Common/Exception.h>
+#include "base/common/logger_useful.h"
+#include "base/common/find_symbols.h"
+#include "src/Common/randomSeed.h"
+#include "src/Common/StringUtils/StringUtils.h"
+#include "src/Common/PODArray.h"
+#include "src/Common/thread_local_rng.h"
+#include "src/Common/Exception.h"
 
 #include <Poco/Net/NetException.h>
 

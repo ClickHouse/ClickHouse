@@ -5,7 +5,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
 
-#include <IO/ReadHelpers.h>
+#include "src/IO/ReadHelpers.h"
 
 
 /** Somehow, in case of POST, Poco::Net::HTMLForm doesn't read parameters from URL, only from body.

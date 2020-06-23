@@ -8,7 +8,7 @@
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Access/ContextAccess.h>
+#include "src/Access/ContextAccess.h"
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 

@@ -1,7 +1,7 @@
 #include "UseSSL.h"
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
+#    include "src/Common/config.h"
 #endif
 
 #if USE_SSL

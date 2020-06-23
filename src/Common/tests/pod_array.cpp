@@ -1,5 +1,5 @@
-#include <Common/PODArray.h>
-#include <Core/Types.h>
+#include "src/Common/PODArray.h"
+#include "src/Core/Types.h"
 #include <iostream>
 
 #define ASSERT_CHECK(cond, res)                        \

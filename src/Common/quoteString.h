@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <common/StringRef.h>
+#include "src/Core/Types.h"
+#include "base/common/StringRef.h"
 
 
 namespace DB

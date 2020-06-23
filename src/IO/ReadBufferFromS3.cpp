@@ -1,9 +1,9 @@
-#include <Common/config.h>
+#include "src/Common/config.h"
 
 #if USE_AWS_S3
 
-#    include <IO/ReadBufferFromIStream.h>
-#    include <IO/ReadBufferFromS3.h>
+#    include "src/IO/ReadBufferFromIStream.h"
+#    include "src/IO/ReadBufferFromS3.h"
 
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/GetObjectRequest.h>

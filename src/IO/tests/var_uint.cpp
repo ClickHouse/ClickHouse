@@ -1,10 +1,10 @@
 #include <string>
 
 #include <iostream>
-#include <IO/VarInt.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
+#include "src/IO/VarInt.h"
+#include "src/IO/WriteBufferFromString.h"
+#include "src/IO/ReadBufferFromString.h"
+#include "src/IO/ReadHelpers.h"
 #include <Poco/HexBinaryEncoder.h>
 
 

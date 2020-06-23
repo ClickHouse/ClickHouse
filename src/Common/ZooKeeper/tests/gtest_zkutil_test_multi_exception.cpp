@@ -1,13 +1,13 @@
-#include <Common/typeid_cast.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/StringUtils/StringUtils.h>
+#include "src/Common/typeid_cast.h"
+#include "src/Common/ZooKeeper/ZooKeeper.h"
+#include "src/Common/ZooKeeper/KeeperException.h"
+#include "src/Common/StringUtils/StringUtils.h"
 #include <iostream>
 #include <chrono>
 
 #include <gtest/gtest.h>
 
-#include <Common/ShellCommand.h>
+#include "src/Common/ShellCommand.h"
 
 
 using namespace DB;

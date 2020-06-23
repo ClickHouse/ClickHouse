@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
+#include "src/IO/WriteBuffer.h"
 
 
 /// Since HexWriteBuffer is often created in the inner loop, we'll make its buffer size small.

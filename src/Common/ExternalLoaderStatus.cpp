@@ -1,4 +1,4 @@
-#include <Common/ExternalLoaderStatus.h>
+#include "src/Common/ExternalLoaderStatus.h"
 
 namespace DB
 {

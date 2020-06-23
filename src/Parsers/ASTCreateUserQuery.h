@@ -2,8 +2,8 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <Access/Authentication.h>
-#include <Access/AllowedClientHosts.h>
+#include "src/Access/Authentication.h"
+#include "src/Access/AllowedClientHosts.h"
 
 
 namespace DB

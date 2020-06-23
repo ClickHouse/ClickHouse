@@ -2,10 +2,10 @@
 
 #include <iostream>
 #include <Client/Connection.h>
-#include <Core/Block.h>
-#include <Core/ColumnWithTypeAndName.h>
-#include <Core/Field.h>
-#include <Core/NamesAndTypes.h>
+#include "src/Core/Block.h"
+#include "src/Core/ColumnWithTypeAndName.h"
+#include "src/Core/Field.h"
+#include "src/Core/NamesAndTypes.h"
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
@@ -14,8 +14,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
-#include <Common/COW.h>
-#include <Common/FieldVisitors.h>
+#include "src/Common/COW.h"
+#include "src/Common/FieldVisitors.h"
 
 namespace DB
 {

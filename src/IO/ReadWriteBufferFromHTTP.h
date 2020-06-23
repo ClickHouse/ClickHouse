@@ -1,11 +1,11 @@
 #pragma once
 
 #include <functional>
-#include <Core/Types.h>
-#include <IO/ConnectionTimeouts.h>
-#include <IO/HTTPCommon.h>
-#include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromIStream.h>
+#include "src/Core/Types.h"
+#include "src/IO/ConnectionTimeouts.h"
+#include "src/IO/HTTPCommon.h"
+#include "src/IO/ReadBuffer.h"
+#include "src/IO/ReadBufferFromIStream.h"
 #include <Poco/Any.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -13,13 +13,13 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 #include <Poco/Version.h>
-#include <Common/DNSResolver.h>
-#include <Common/RemoteHostFilter.h>
+#include "src/Common/DNSResolver.h"
+#include "src/Common/RemoteHostFilter.h"
 #include <common/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
+#    include "src/Common/config.h"
 #endif
 
 

@@ -1,6 +1,6 @@
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/typeid_cast.h>
+#include "src/Common/ZooKeeper/ZooKeeper.h"
+#include "src/Common/ZooKeeper/KeeperException.h"
+#include "src/Common/typeid_cast.h"
 #include <iostream>
 #include <unistd.h>
 

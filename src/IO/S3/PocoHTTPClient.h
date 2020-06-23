@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/ConnectionTimeouts.h>
+#include "src/IO/ConnectionTimeouts.h"
 #include <aws/core/http/HttpClient.h>
 
 namespace Aws::Http::Standard

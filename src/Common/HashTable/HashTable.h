@@ -8,23 +8,23 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Core/Defines.h>
-#include <Core/Types.h>
-#include <Common/Exception.h>
+#include "src/Core/Defines.h"
+#include "src/Core/Types.h"
+#include "src/Common/Exception.h"
 
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/VarInt.h>
+#include "src/IO/WriteBuffer.h"
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/ReadBuffer.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/VarInt.h"
 
-#include <Common/HashTable/HashTableAllocator.h>
-#include <Common/HashTable/HashTableKeyHolder.h>
+#include "src/Common/HashTable/HashTableAllocator.h"
+#include "src/Common/HashTable/HashTableKeyHolder.h"
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
     #include <iostream>
     #include <iomanip>
-    #include <Common/Stopwatch.h>
+    #include "src/Common/Stopwatch.h"
 #endif
 
 /** NOTE HashTable could only be used for memmoveable (position independent) types.

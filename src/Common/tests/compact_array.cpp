@@ -4,9 +4,9 @@
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #endif
 
-#include <Common/CompactArray.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
+#include "src/Common/CompactArray.h"
+#include "src/IO/WriteBufferFromFile.h"
+#include "src/IO/ReadBufferFromFile.h"
 #include <filesystem>
 #include <string>
 #include <iostream>

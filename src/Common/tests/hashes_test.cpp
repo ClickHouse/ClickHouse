@@ -1,10 +1,10 @@
 #include <iostream>
 #include <iomanip>
 #include <city.h>
-#include <Common/Stopwatch.h>
-#include <Common/SipHash.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/ReadHelpers.h>
+#include "src/Common/Stopwatch.h"
+#include "src/Common/SipHash.h"
+#include "src/IO/ReadBufferFromFileDescriptor.h"
+#include "src/IO/ReadHelpers.h"
 #include "config_core.h"
 #if USE_SSL
 #   include <openssl/md5.h>

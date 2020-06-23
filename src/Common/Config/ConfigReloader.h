@@ -1,9 +1,9 @@
 #pragma once
 
 #include "ConfigProcessor.h"
-#include <Common/ThreadPool.h>
-#include <Common/ZooKeeper/Common.h>
-#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include "src/Common/ThreadPool.h"
+#include "src/Common/ZooKeeper/Common.h"
+#include "src/Common/ZooKeeper/ZooKeeperNodeCache.h"
 #include <time.h>
 #include <string>
 #include <thread>

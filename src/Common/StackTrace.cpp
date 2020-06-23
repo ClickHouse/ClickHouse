@@ -1,12 +1,12 @@
-#include <Common/StackTrace.h>
+#include "src/Common/StackTrace.h"
 
-#include <Core/Defines.h>
-#include <Common/Dwarf.h>
-#include <Common/Elf.h>
-#include <Common/SymbolIndex.h>
-#include <Common/MemorySanitizer.h>
-#include <common/SimpleCache.h>
-#include <common/demangle.h>
+#include "src/Core/Defines.h"
+#include "src/Common/Dwarf.h"
+#include "src/Common/Elf.h"
+#include "src/Common/SymbolIndex.h"
+#include "src/Common/MemorySanitizer.h"
+#include "base/common/SimpleCache.h"
+#include "base/common/demangle.h"
 
 #include <cstring>
 #include <filesystem>
@@ -14,7 +14,7 @@
 #include <unordered_map>
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
+#    include "src/Common/config.h"
 #endif
 
 #if USE_UNWIND

@@ -1,8 +1,8 @@
 #if defined(__linux__) || defined(__FreeBSD__)
 
-#include <IO/WriteBufferAIO.h>
-#include <Common/MemorySanitizer.h>
-#include <Common/ProfileEvents.h>
+#include "src/IO/WriteBufferAIO.h"
+#include "src/Common/MemorySanitizer.h"
+#include "src/Common/ProfileEvents.h"
 
 #include <limits>
 #include <sys/types.h>

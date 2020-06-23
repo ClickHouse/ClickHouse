@@ -1,8 +1,8 @@
 #pragma once
 
 #include <shared_mutex>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
+#include "src/Common/ProfileEvents.h"
+#include "src/Common/Stopwatch.h"
 
 
 namespace DB

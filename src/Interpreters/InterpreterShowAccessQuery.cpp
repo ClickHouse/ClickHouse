@@ -7,8 +7,8 @@
 #include <Columns/ColumnString.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
-#include <Access/AccessFlags.h>
-#include <Access/AccessControlManager.h>
+#include "src/Access/AccessFlags.h"
+#include "src/Access/AccessControlManager.h"
 #include <ext/range.h>
 #include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>

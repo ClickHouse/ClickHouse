@@ -1,6 +1,6 @@
-#include <Common/quoteString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
+#include "src/Common/quoteString.h"
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/WriteBufferFromString.h"
 
 
 namespace DB

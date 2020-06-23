@@ -4,11 +4,11 @@
 #include <vector>
 #include <memory>
 #include <optional>
-#include <Common/StringSearcher.h>
+#include "src/Common/StringSearcher.h"
 #include <re2/re2.h>
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
+#    include "src/Common/config.h"
 #endif
 
 #if USE_RE2_ST

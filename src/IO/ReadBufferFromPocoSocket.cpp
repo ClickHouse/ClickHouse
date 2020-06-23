@@ -1,9 +1,9 @@
 #include <Poco/Net/NetException.h>
 
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <Common/Exception.h>
-#include <Common/NetException.h>
-#include <Common/Stopwatch.h>
+#include "src/IO/ReadBufferFromPocoSocket.h"
+#include "src/Common/Exception.h"
+#include "src/Common/NetException.h"
+#include "src/Common/Stopwatch.h"
 
 
 namespace ProfileEvents

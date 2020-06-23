@@ -12,9 +12,9 @@
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/StringUtils/StringUtils.h>
+#include "src/Common/ZooKeeper/ZooKeeperNodeCache.h"
+#include "src/Common/ZooKeeper/KeeperException.h"
+#include "src/Common/StringUtils/StringUtils.h"
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
 

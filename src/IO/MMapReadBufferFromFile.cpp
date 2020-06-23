@@ -1,9 +1,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include <Common/ProfileEvents.h>
-#include <Common/formatReadable.h>
-#include <IO/MMapReadBufferFromFile.h>
+#include "src/Common/ProfileEvents.h"
+#include "src/Common/formatReadable.h"
+#include "src/IO/MMapReadBufferFromFile.h"
 
 
 namespace ProfileEvents

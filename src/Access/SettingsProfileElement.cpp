@@ -1,9 +1,9 @@
-#include <Access/SettingsProfileElement.h>
-#include <Access/SettingsConstraints.h>
-#include <Access/AccessControlManager.h>
-#include <Access/SettingsProfile.h>
+#include "src/Access/SettingsProfileElement.h"
+#include "src/Access/SettingsConstraints.h"
+#include "src/Access/AccessControlManager.h"
+#include "src/Access/SettingsProfile.h"
 #include <Parsers/ASTSettingsProfileElement.h>
-#include <Core/Settings.h>
+#include "src/Core/Settings.h"
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 

@@ -1,10 +1,10 @@
 #pragma once
 
 #include <sstream>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/ReadWriteBufferFromHTTP.h"
 #include <Interpreters/Context.h>
-#include <Access/AccessType.h>
+#include "src/Access/AccessType.h"
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Poco/File.h>
 #include <Poco/Logger.h>
@@ -12,12 +12,12 @@
 #include <Poco/Path.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/ShellCommand.h>
-#include <common/logger_useful.h>
+#include "src/Common/ShellCommand.h"
+#include "base/common/logger_useful.h"
 #include <ext/range.h>
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
+#    include "src/Common/config.h"
 #endif
 
 namespace DB

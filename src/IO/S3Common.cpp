@@ -1,9 +1,9 @@
-#include <Common/config.h>
+#include "src/Common/config.h"
 
 #if USE_AWS_S3
 
-#    include <IO/S3Common.h>
-#    include <IO/WriteBufferFromString.h>
+#    include "src/IO/S3Common.h"
+#    include "src/IO/WriteBufferFromString.h"
 #    include <Storages/StorageS3Settings.h>
 
 #    include <aws/core/auth/AWSCredentialsProvider.h>
@@ -11,10 +11,10 @@
 #    include <aws/core/utils/logging/LogSystemInterface.h>
 #    include <aws/s3/S3Client.h>
 #    include <aws/core/http/HttpClientFactory.h>
-#    include <IO/S3/PocoHTTPClientFactory.h>
-#    include <IO/S3/PocoHTTPClientFactory.cpp>
-#    include <IO/S3/PocoHTTPClient.h>
-#    include <IO/S3/PocoHTTPClient.cpp>
+#    include "src/IO/S3/PocoHTTPClientFactory.h"
+#    include "src/IO/S3/PocoHTTPClientFactory.cpp"
+#    include "src/IO/S3/PocoHTTPClient.h"
+#    include "src/IO/S3/PocoHTTPClient.cpp"
 #    include <boost/algorithm/string.hpp>
 #    include <Poco/URI.h>
 #    include <re2/re2.h>

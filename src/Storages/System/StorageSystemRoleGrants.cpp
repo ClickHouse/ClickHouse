@@ -6,9 +6,9 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
-#include <Access/AccessControlManager.h>
-#include <Access/Role.h>
-#include <Access/User.h>
+#include "src/Access/AccessControlManager.h"
+#include "src/Access/Role.h"
+#include "src/Access/User.h"
 #include <Interpreters/Context.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 

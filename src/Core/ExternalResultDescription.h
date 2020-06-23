@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include <Core/Block.h>
+#include "src/Core/Block.h"
 
 
 namespace DB

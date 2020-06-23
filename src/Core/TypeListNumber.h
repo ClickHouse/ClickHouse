@@ -1,6 +1,6 @@
 #pragma once
-#include <Core/Types.h>
-#include <Common/TypeList.h>
+#include "src/Core/Types.h"
+#include "src/Common/TypeList.h"
 
 namespace DB
 {

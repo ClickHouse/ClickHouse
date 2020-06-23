@@ -1,0 +1,12 @@
+cc_binary(
+    name = "clickhouse-client",
+    srcs = [
+        "clickhouse-client.cpp",
+
+        "Client.cpp",
+        "ConnectionParameters.cpp",
+        "ConnectionParameters.h",
+        "Suggest.cpp",
+        "Suggest.h",
+    ],
+)

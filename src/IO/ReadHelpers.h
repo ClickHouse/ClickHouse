@@ -14,23 +14,23 @@
 #include <common/StringRef.h>
 #include <common/arithmeticOverflow.h>
 
-#include <Core/Types.h>
-#include <Core/DecimalFunctions.h>
-#include <Core/UUID.h>
+#include "src/Core/Types.h"
+#include "src/Core/DecimalFunctions.h"
+#include "src/Core/UUID.h"
 
-#include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/Arena.h>
-#include <Common/UInt128.h>
-#include <Common/intExp.h>
+#include "src/Common/Exception.h"
+#include "src/Common/StringUtils/StringUtils.h"
+#include "src/Common/Arena.h"
+#include "src/Common/UInt128.h"
+#include "src/Common/intExp.h"
 
 #include <Formats/FormatSettings.h>
 
-#include <IO/CompressionMethod.h>
-#include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <IO/VarInt.h>
+#include "src/IO/CompressionMethod.h"
+#include "src/IO/ReadBuffer.h"
+#include "src/IO/ReadBufferFromMemory.h"
+#include "src/IO/BufferWithOwnMemory.h"
+#include "src/IO/VarInt.h"
 
 #include <DataTypes/DataTypeDateTime.h>
 

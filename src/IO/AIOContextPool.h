@@ -6,8 +6,8 @@
 #include <future>
 #include <mutex>
 #include <map>
-#include <IO/AIO.h>
-#include <Common/ThreadPool.h>
+#include "src/IO/AIO.h"
+#include "src/Common/ThreadPool.h"
 
 
 namespace DB

@@ -3,11 +3,11 @@
 #include <iostream>
 #include <sstream>
 
-#include <Core/Types.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include "src/Core/Types.h"
+#include "src/IO/ReadBufferFromString.h"
+#include "src/IO/WriteBufferFromString.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/WriteHelpers.h"
 
 
 int main(int, char **)

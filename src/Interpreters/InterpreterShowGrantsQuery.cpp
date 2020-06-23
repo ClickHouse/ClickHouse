@@ -7,10 +7,10 @@
 #include <Columns/ColumnString.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
-#include <Access/AccessControlManager.h>
-#include <Access/User.h>
-#include <Access/Role.h>
-#include <Access/RolesOrUsersSet.h>
+#include "src/Access/AccessControlManager.h"
+#include "src/Access/User.h"
+#include "src/Access/Role.h"
+#include "src/Access/RolesOrUsersSet.h"
 #include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 

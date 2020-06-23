@@ -3,16 +3,16 @@
 
 #include <common/types.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteIntText.h>
-#include <IO/WriteBufferFromVector.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/AsynchronousWriteBuffer.h>
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/WriteIntText.h"
+#include "src/IO/WriteBufferFromVector.h"
+#include "src/IO/WriteBufferFromString.h"
+#include "src/IO/AsynchronousWriteBuffer.h"
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
 
-#include <Common/Stopwatch.h>
+#include "src/Common/Stopwatch.h"
 
 
 static UInt64 rdtsc()

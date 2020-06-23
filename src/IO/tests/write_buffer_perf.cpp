@@ -3,9 +3,9 @@
 #include <iostream>
 #include <fstream>
 
-#include <Core/Types.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
+#include "src/Core/Types.h"
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/WriteBufferFromOStream.h"
 
 
 int main(int, char **)

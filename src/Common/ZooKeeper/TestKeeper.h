@@ -7,9 +7,9 @@
 #include <chrono>
 
 #include <Poco/Timespan.h>
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ThreadPool.h>
-#include <Common/ConcurrentBoundedQueue.h>
+#include "src/Common/ZooKeeper/IKeeper.h"
+#include "src/Common/ThreadPool.h"
+#include "src/Common/ConcurrentBoundedQueue.h"
 
 
 namespace Coordination

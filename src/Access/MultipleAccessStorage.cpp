@@ -1,6 +1,6 @@
-#include <Access/MultipleAccessStorage.h>
-#include <Common/Exception.h>
-#include <Common/quoteString.h>
+#include "src/Access/MultipleAccessStorage.h"
+#include "src/Common/Exception.h"
+#include "src/Common/quoteString.h"
 
 
 namespace DB

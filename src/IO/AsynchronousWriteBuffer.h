@@ -4,8 +4,8 @@
 
 #include <vector>
 
-#include <Common/ThreadPool.h>
-#include <IO/WriteBuffer.h>
+#include "src/Common/ThreadPool.h"
+#include "src/IO/WriteBuffer.h"
 
 
 namespace DB

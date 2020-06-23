@@ -1,0 +1,13 @@
+cc_library(
+    name = "pcg-random",
+    includes = [""],
+    hdrs = [
+        "pcg_extras.hpp",
+        "pcg_random.hpp",
+        "pcg_uint128.hpp",
+    ],
+    visibility = [
+        "//base:__subpackages__",
+        "//src:__subpackages__",
+    ],
+)

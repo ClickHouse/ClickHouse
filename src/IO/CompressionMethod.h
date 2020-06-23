@@ -3,7 +3,7 @@
 #include <string>
 #include <memory>
 
-#include <Core/Defines.h>
+#include "src/Core/Defines.h"
 
 
 namespace DB

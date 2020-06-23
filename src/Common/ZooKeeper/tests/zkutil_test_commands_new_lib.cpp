@@ -1,11 +1,11 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Event.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/ZooKeeper/ZooKeeperImpl.h>
-#include <Common/typeid_cast.h>
+#include "src/Common/StringUtils/StringUtils.h"
+#include "src/Common/ZooKeeper/ZooKeeperImpl.h"
+#include "src/Common/typeid_cast.h"
 #include <iostream>
-#include <common/find_symbols.h>
+#include "base/common/find_symbols.h"
 
 
 using namespace Coordination;

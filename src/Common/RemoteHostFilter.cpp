@@ -2,10 +2,10 @@
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Formats/FormatFactory.h>
-#include <Common/RemoteHostFilter.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/Exception.h>
-#include <IO/WriteHelpers.h>
+#include "src/Common/RemoteHostFilter.h"
+#include "src/Common/StringUtils/StringUtils.h"
+#include "src/Common/Exception.h"
+#include "src/IO/WriteHelpers.h"
 
 
 namespace DB

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Common/CurrentMetrics.h>
-#include <IO/MMapReadBufferFromFileDescriptor.h>
+#include "src/Common/CurrentMetrics.h"
+#include "src/IO/MMapReadBufferFromFileDescriptor.h"
 
 
 namespace CurrentMetrics

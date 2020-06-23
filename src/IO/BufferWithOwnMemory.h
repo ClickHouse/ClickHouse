@@ -2,11 +2,11 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Common/ProfileEvents.h>
-#include <Common/Allocator.h>
+#include "src/Common/ProfileEvents.h"
+#include "src/Common/Allocator.h"
 
-#include <Common/Exception.h>
-#include <Core/Defines.h>
+#include "src/Common/Exception.h"
+#include "src/Core/Defines.h"
 
 
 namespace ProfileEvents

@@ -1,7 +1,7 @@
 #include "ReadBufferFromHDFS.h"
 
 #if USE_HDFS
-#include <IO/HDFSCommon.h>
+#include "src/IO/HDFSCommon.h"
 #include <hdfs/hdfs.h>
 
 

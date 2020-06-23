@@ -1,8 +1,8 @@
 #include <type_traits>
-#include <IO/ReadHelpers.h>
-#include <Core/Defines.h>
+#include "src/IO/ReadHelpers.h"
+#include "src/Core/Defines.h"
 #include <common/shift10.h>
-#include <Common/StringUtils/StringUtils.h>
+#include "src/Common/StringUtils/StringUtils.h"
 #include <double-conversion/double-conversion.h>
 
 

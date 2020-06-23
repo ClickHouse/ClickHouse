@@ -2,7 +2,7 @@
 
 #include <cstddef>
 #include <utility>
-#include <Core/Defines.h>
+#include "src/Core/Defines.h"
 
 namespace DB
 {

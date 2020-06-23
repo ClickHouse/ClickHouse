@@ -2,8 +2,8 @@
 
 #include <sys/types.h>
 
-#include <Common/CurrentMetrics.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
+#include "src/Common/CurrentMetrics.h"
+#include "src/IO/WriteBufferFromFileDescriptor.h"
 
 
 namespace CurrentMetrics

@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <memory>
 
-#include <Common/Exception.h>
-#include <IO/BufferBase.h>
+#include "src/Common/Exception.h"
+#include "src/IO/BufferBase.h"
 
 
 namespace DB

@@ -1,8 +1,8 @@
 #include <iostream>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/KeeperException.h>
+#include "src/Common/ZooKeeper/ZooKeeper.h"
+#include "src/Common/ZooKeeper/KeeperException.h"
 #include <Poco/ConsoleChannel.h>
-#include <Common/Exception.h>
+#include "src/Common/Exception.h"
 
 
 /// Проверяет, какие ошибки выдает ZooKeeper при попытке сделать какую-нибудь операцию через разное время после истечения сессии.

@@ -1,10 +1,10 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/types.h>
-#include <Common/Exception.h>
-#include <Common/randomSeed.h>
-#include <Common/SipHash.h>
-#include <Core/Types.h>
+#include "src/Common/Exception.h"
+#include "src/Common/randomSeed.h"
+#include "src/Common/SipHash.h"
+#include "src/Core/Types.h"
 
 
 namespace DB

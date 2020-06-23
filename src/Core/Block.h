@@ -6,10 +6,10 @@
 #include <map>
 #include <initializer_list>
 
-#include <Core/BlockInfo.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/ColumnWithTypeAndName.h>
-#include <Core/ColumnsWithTypeAndName.h>
+#include "src/Core/BlockInfo.h"
+#include "src/Core/NamesAndTypes.h"
+#include "src/Core/ColumnWithTypeAndName.h"
+#include "src/Core/ColumnsWithTypeAndName.h"
 
 
 namespace DB

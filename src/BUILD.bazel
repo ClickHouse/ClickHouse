@@ -1,0 +1,13 @@
+cc_library(
+    name = "dbms",
+    deps = [
+        "//base/common",
+        "//base/ext",
+        "//base/pcg-random",
+    ],
+    srcs =
+        glob(["Access/*.cpp", "Access/*.h"]) +
+        glob(["Common/*.cpp", "Common/*.h"]) +
+        glob(["Core/*.cpp", "Core/*.h"]) +
+        glob(["IO/*.cpp", "IO/*.h"]),
+)

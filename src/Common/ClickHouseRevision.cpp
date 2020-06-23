@@ -1,7 +1,7 @@
-#include <Common/ClickHouseRevision.h>
+#include "src/Common/ClickHouseRevision.h"
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
+#    include "src/Common/config_version.h"
 #endif
 
 namespace ClickHouseRevision

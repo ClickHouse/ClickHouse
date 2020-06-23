@@ -1,4 +1,4 @@
-#include <Access/EnabledRowPolicies.h>
+#include "src/Access/EnabledRowPolicies.h"
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>

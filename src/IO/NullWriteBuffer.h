@@ -1,7 +1,7 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
+#include "src/IO/WriteBuffer.h"
+#include "src/IO/BufferWithOwnMemory.h"
 #include <boost/noncopyable.hpp>
 
 namespace DB

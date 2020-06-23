@@ -1,15 +1,15 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/ThreadPool.h>
-#include <Common/ZooKeeper/IKeeper.h>
+#include "src/Core/Types.h"
+#include "src/Common/ConcurrentBoundedQueue.h"
+#include "src/Common/CurrentMetrics.h"
+#include "src/Common/ThreadPool.h"
+#include "src/Common/ZooKeeper/IKeeper.h"
 
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromPocoSocket.h>
+#include "src/IO/ReadBuffer.h"
+#include "src/IO/WriteBuffer.h"
+#include "src/IO/ReadBufferFromPocoSocket.h"
+#include "src/IO/WriteBufferFromPocoSocket.h"
 
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketAddress.h>

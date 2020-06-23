@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/SettingsCollection.h>
-#include <Core/Defines.h>
+#include "src/Core/SettingsCollection.h"
+#include "src/Core/Defines.h"
 
 
 namespace Poco

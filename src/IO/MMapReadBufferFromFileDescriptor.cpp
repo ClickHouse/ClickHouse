@@ -3,11 +3,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <Common/ProfileEvents.h>
-#include <Common/formatReadable.h>
-#include <Common/Exception.h>
-#include <IO/WriteHelpers.h>
-#include <IO/MMapReadBufferFromFileDescriptor.h>
+#include "src/Common/ProfileEvents.h"
+#include "src/Common/formatReadable.h"
+#include "src/Common/Exception.h"
+#include "src/IO/WriteHelpers.h"
+#include "src/IO/MMapReadBufferFromFileDescriptor.h"
 
 
 namespace DB

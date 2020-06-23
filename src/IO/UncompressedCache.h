@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Common/LRUCache.h>
-#include <Common/SipHash.h>
-#include <Common/UInt128.h>
-#include <Common/ProfileEvents.h>
-#include <IO/BufferWithOwnMemory.h>
+#include "src/Common/LRUCache.h"
+#include "src/Common/SipHash.h"
+#include "src/Common/UInt128.h"
+#include "src/Common/ProfileEvents.h"
+#include "src/IO/BufferWithOwnMemory.h"
 
 
 namespace ProfileEvents

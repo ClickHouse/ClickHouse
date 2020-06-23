@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Access/EnabledSettings.h>
-#include <Core/UUID.h>
-#include <Core/Types.h>
+#include "src/Access/EnabledSettings.h"
+#include "src/Core/UUID.h"
+#include "src/Core/Types.h"
 #include <ext/scope_guard.h>
 #include <map>
 #include <unordered_map>

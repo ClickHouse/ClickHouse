@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <Core/UUID.h>
-#include <Common/SettingsChanges.h>
-#include <Access/SettingsConstraints.h>
-#include <Access/SettingsProfileElement.h>
+#include "src/Core/Types.h"
+#include "src/Core/UUID.h"
+#include "src/Common/SettingsChanges.h"
+#include "src/Access/SettingsConstraints.h"
+#include "src/Access/SettingsProfileElement.h"
 #include <boost/container/flat_set.hpp>
 #include <mutex>
 

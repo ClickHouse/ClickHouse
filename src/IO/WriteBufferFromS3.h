@@ -1,16 +1,16 @@
 #pragma once
 
-#include <Common/config.h>
+#include "src/Common/config.h"
 
 #if USE_AWS_S3
 
 #    include <memory>
 #    include <vector>
-#    include <Core/Types.h>
-#    include <IO/BufferWithOwnMemory.h>
-#    include <IO/HTTPCommon.h>
-#    include <IO/WriteBuffer.h>
-#    include <IO/WriteBufferFromString.h>
+#    include "src/Core/Types.h"
+#    include "src/IO/BufferWithOwnMemory.h"
+#    include "src/IO/HTTPCommon.h"
+#    include "src/IO/WriteBuffer.h"
+#    include "src/IO/WriteBufferFromString.h"
 
 namespace Aws::S3
 {

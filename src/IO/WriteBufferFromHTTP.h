@@ -1,9 +1,9 @@
 #pragma once
 
-#include <IO/ConnectionTimeouts.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteBufferFromOStream.h>
-#include <IO/HTTPCommon.h>
+#include "src/IO/ConnectionTimeouts.h"
+#include "src/IO/WriteBuffer.h"
+#include "src/IO/WriteBufferFromOStream.h"
+#include "src/IO/HTTPCommon.h"
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>

@@ -1,9 +1,9 @@
 #include "PocoHTTPClient.h"
 
 #include <utility>
-#include <IO/HTTPCommon.h>
-#include <IO/S3/PocoHTTPResponseStream.h>
-#include <IO/S3/PocoHTTPResponseStream.cpp>
+#include "src/IO/HTTPCommon.h"
+#include "src/IO/S3/PocoHTTPResponseStream.h"
+#include "src/IO/S3/PocoHTTPResponseStream.cpp"
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>

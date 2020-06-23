@@ -1,5 +1,5 @@
-#include <IO/HashingWriteBuffer.h>
-#include <IO/WriteBufferFromFile.h>
+#include "src/IO/HashingWriteBuffer.h"
+#include "src/IO/WriteBufferFromFile.h"
 
 #define FAIL(msg) do { std::cout << msg; exit(1); } while (false)
 

@@ -1,5 +1,5 @@
-#include <Common/UTF8Helpers.h>
-#include <Common/StringUtils/StringUtils.h>
+#include "src/Common/UTF8Helpers.h"
+#include "src/Common/StringUtils/StringUtils.h"
 
 #include <widechar_width.h>
 

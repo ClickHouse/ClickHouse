@@ -1,17 +1,17 @@
 #include "TraceCollector.h"
 
-#include <Core/Field.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
-#include <IO/WriteHelpers.h>
+#include "src/Core/Field.h"
+#include "src/IO/ReadBufferFromFileDescriptor.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/WriteBufferFromFileDescriptor.h"
+#include "src/IO/WriteBufferFromFileDescriptorDiscardOnFailure.h"
+#include "src/IO/WriteHelpers.h"
 #include <Interpreters/TraceLog.h>
 #include <Poco/Logger.h>
-#include <Common/Exception.h>
-#include <Common/PipeFDs.h>
-#include <Common/StackTrace.h>
-#include <common/logger_useful.h>
+#include "src/Common/Exception.h"
+#include "src/Common/PipeFDs.h"
+#include "src/Common/StackTrace.h"
+#include "base/common/logger_useful.h"
 
 #include <unistd.h>
 #include <fcntl.h>

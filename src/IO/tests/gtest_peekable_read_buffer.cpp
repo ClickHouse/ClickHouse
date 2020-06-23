@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
-#include <Core/Types.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ConcatReadBuffer.h>
-#include <IO/PeekableReadBuffer.h>
+#include "src/Core/Types.h"
+#include "src/IO/ReadHelpers.h"
+#include "src/IO/ReadBufferFromString.h"
+#include "src/IO/ConcatReadBuffer.h"
+#include "src/IO/PeekableReadBuffer.h"
 
 namespace DB::ErrorCodes
 {

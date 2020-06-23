@@ -8,10 +8,10 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
-#include <Common/PoolBase.h>
+#include "src/Common/PoolBase.h"
 #include <Poco/URIStreamFactory.h>
 
-#include <IO/ConnectionTimeouts.h>
+#include "src/IO/ConnectionTimeouts.h"
 
 namespace Poco
 {

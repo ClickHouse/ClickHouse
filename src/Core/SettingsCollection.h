@@ -4,8 +4,8 @@
 #include <Poco/URI.h>
 #include <DataStreams/SizeLimits.h>
 #include <Formats/FormatSettings.h>
-#include <common/StringRef.h>
-#include <Core/Types.h>
+#include "base/common/StringRef.h"
+#include "src/Core/Types.h"
 #include <unordered_map>
 
 

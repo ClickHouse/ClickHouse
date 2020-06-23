@@ -2,10 +2,10 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Columns/ColumnArray.h>
-#include <Common/typeid_cast.h>
+#include "src/Common/typeid_cast.h"
 #include <string.h>
 #include <boost/program_options/options_description.hpp>
-#include <Core/SettingsCollectionImpl.h>
+#include "src/Core/SettingsCollectionImpl.h"
 
 namespace DB
 {

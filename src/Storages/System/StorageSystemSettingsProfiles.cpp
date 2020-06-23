@@ -8,9 +8,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
-#include <Access/SettingsProfile.h>
-#include <Access/AccessFlags.h>
+#include "src/Access/AccessControlManager.h"
+#include "src/Access/SettingsProfile.h"
+#include "src/Access/AccessFlags.h"
 
 
 namespace DB
