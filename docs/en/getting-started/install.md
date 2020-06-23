@@ -98,7 +98,7 @@ For non-Linux operating systems, ClickHouse builds are provided as a cross-compi
 - AArch64 — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/aarch64/clickhouse'`
 - FreeBSD — `curl -O 'https://clickhouse-builds.s3.yandex.net/master/freebsd/clickhouse'`
 
-These builds are not recommended for use in production environment. Not all ClickHouse features are present in them.
+These builds are not recommended for use in production environments because they are less thoroughly tested, but you can do so on your own risk. They also have only a subset of ClickHouse features available.
 
 ### From Docker Image {#from-docker-image}
 
