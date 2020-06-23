@@ -13,15 +13,19 @@ if (ENABLE_JEMALLOC)
     option (USE_INTERNAL_JEMALLOC "Use internal jemalloc library" ${NOT_UNBUNDLED})
 
     if (USE_INTERNAL_JEMALLOC)
-        # ThreadPool select job randomly, and there can be some threads that had been
-        # performed some memory heavy task before and will be inactive for some time,
-        # but until it will became active again, the memory will not be freed since by
-        # default each thread has it's own arena, but there should be not more then
-        # 4*CPU arenas (see opt.nareans description).
-        #
-        # By enabling percpu_arena number of arenas limited to number of CPUs and hence
-        # this problem should go away.
-        set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0")
+        if (OS_LINUX)
+            # ThreadPool select job randomly, and there can be some threads that had been
+            # performed some memory heavy task before and will be inactive for some time,
+            # but until it will became active again, the memory will not be freed since by
+            # default each thread has it's own arena, but there should be not more then
+            # 4*CPU arenas (see opt.nareans description).
+            #
+            # By enabling percpu_arena number of arenas limited to number of CPUs and hence
+            # this problem should go away.
+            set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0")
+        else()
+            set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0")
+        endif()
         # CACHE variable is empty, to allow changing defaults without necessity
         # to purge cache
         set (JEMALLOC_CONFIG_MALLOC_CONF_OVERRIDE "" CACHE STRING "Change default configuration string of JEMalloc" )
