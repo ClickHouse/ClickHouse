@@ -18,6 +18,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
+#include <Common/clearPasswordFromCommandLine.h>
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -469,7 +470,7 @@ private:
             const auto & info = infos[i];
 
             json_out << double_quote << connections[i]->getDescription() << ": {\n";
-            json_out << double_quote << "statistics: {\n";
+            json_out << double_quote << "statistics" << ": {\n";
 
             print_key_value("QPS", info->queries / info->work_time);
             print_key_value("RPS", info->read_rows / info->work_time);
@@ -479,7 +480,7 @@ private:
             print_key_value("num_queries", info->queries.load(), false);
 
             json_out << "},\n";
-            json_out << double_quote << "query_time_percentiles: {\n";
+            json_out << double_quote << "query_time_percentiles" << ": {\n";
 
             for (int percent = 0; percent <= 90; percent += 10)
                 print_percentile(*info, percent);
@@ -539,7 +540,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("password",      value<std::string>()->default_value(""),          "")
             ("database",      value<std::string>()->default_value("default"),   "")
             ("stacktrace",                                                      "print stack traces of exceptions")
-            ("confidence",    value<size_t>()->default_value(5),                "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
+            ("confidence",    value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id",      value<std::string>()->default_value(""),         "")
         ;
 
@@ -549,6 +550,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         boost::program_options::notify(options);
+
+        clearPasswordFromCommandLine(argc, argv);
 
         if (options.count("help"))
         {

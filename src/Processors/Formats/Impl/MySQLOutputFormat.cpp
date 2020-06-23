@@ -88,7 +88,7 @@ void MySQLOutputFormat::flush()
     packet_sender->out->next();
 }
 
-void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory)
+void registerOutputFormatProcessorMySQLWire(FormatFactory & factory)
 {
     factory.registerOutputFormatProcessor(
         "MySQLWire",

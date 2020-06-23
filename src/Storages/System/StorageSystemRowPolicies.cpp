@@ -9,7 +9,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/RowPolicy.h>
 #include <Access/AccessFlags.h>
@@ -31,7 +31,7 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
         {"database", std::make_shared<DataTypeString>()},
         {"table", std::make_shared<DataTypeString>()},
         {"id", std::make_shared<DataTypeUUID>()},
-        {"source", std::make_shared<DataTypeString>()},
+        {"storage", std::make_shared<DataTypeString>()},
     };
 
     for (auto type : ext::range(MAX_CONDITION_TYPE))
@@ -87,7 +87,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, const Cont
                        const String & storage_name,
                        const std::array<String, MAX_CONDITION_TYPE> & conditions,
                        bool is_restrictive,
-                       const ExtendedRoleSet & apply_to)
+                       const RolesOrUsersSet & apply_to)
     {
         column_name.insertData(name.data(), name.length());
         column_short_name.insertData(name_parts.short_name.data(), name_parts.short_name.length());
