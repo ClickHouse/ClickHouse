@@ -67,6 +67,13 @@ def adjust_markdown_html(content):
                 summary.extract()
                 details.insert(0, summary)
 
+    for dd in soup.find_all('dd'):
+        dd_class = dd.attrs.get('class')
+        if dd_class:
+            dd.attrs['class'] = dd_class + ['pl-3']
+        else:
+            dd.attrs['class'] = 'pl-3'
+
     for div in soup.find_all('div'):
         div_class = div.attrs.get('class')
         is_admonition = div_class and 'admonition' in div.attrs.get('class')
