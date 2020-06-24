@@ -291,14 +291,16 @@ set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 # efficiency. This is disabled for AArch64, so that we can run the same binary on
 # Android which doesn't support ET_EXEC binaries.
 if (MAKE_STATIC_LIBRARIES AND NOT ARCH_ARM)
-    set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
+    set (CMAKE_POSITION_INDEPENDENT_CODE 0)
     if (OS_LINUX)
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no-pie")
     endif ()
 else ()
-    set (CMAKE_POSITION_INDEPENDENT_CODE ON)
+    set (CMAKE_POSITION_INDEPENDENT_CODE 1)
+    # Without this, the executable type is still ET_EXEC
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-pie")
 endif ()
 
 # Using "include-what-you-use" tool.
