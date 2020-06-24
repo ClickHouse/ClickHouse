@@ -5,7 +5,7 @@ import pytest
 
 import helpers.cluster
 import helpers.test_tools
-import http_server
+import fake_sentry_server
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -25,15 +25,15 @@ def started_node():
 
 
 def test_send_segfault(started_node,):
-    started_node.copy_file_to_container(os.path.join(SCRIPT_DIR, "http_server.py"), "/http_server.py")
-    started_node.exec_in_container(["bash", "-c", "python2 /http_server.py"], detach=True, user="root")
+    started_node.copy_file_to_container(os.path.join(SCRIPT_DIR, "fake_sentry_server.py"), "/fake_sentry_server.py")
+    started_node.exec_in_container(["bash", "-c", "python2 /fake_sentry_server.py"], detach=True, user="root")
     time.sleep(0.5)
     started_node.exec_in_container(["bash", "-c", "pkill -11 clickhouse"], user="root")
 
     result = None
     for attempt in range(1, 6):
         time.sleep(0.25 * attempt)
-        result = started_node.exec_in_container(['cat', http_server.RESULT_PATH], user='root')
+        result = started_node.exec_in_container(['cat', fake_sentry_server.RESULT_PATH], user='root')
         if result == 'OK':
             break
         elif result == 'INITIAL_STATE':
