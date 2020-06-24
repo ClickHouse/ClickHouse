@@ -96,7 +96,8 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
     };
 
     const ASTFunction * child_func = getInternalFunction(func);
-    if (!child_func || !supported.count(func.name) || !supported.find(func.name)->second.count(child_func->name))
+    if (!child_func || !child_func->arguments || child_func->arguments->children.size() != 2 ||
+        !supported.count(func.name) || !supported.find(func.name)->second.count(child_func->name))
         return {};
 
     /// Cannot rewrite function with alias cause alias could become undefined
@@ -104,7 +105,6 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
         return {};
 
     const auto & child_func_args = child_func->arguments->children;
-
     const auto * first_literal = child_func_args[0]->as<ASTLiteral>();
     const auto * second_literal = child_func_args[1]->as<ASTLiteral>();
 
@@ -112,13 +112,14 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
 
     if (first_literal && !second_literal)
     {
+        /// It's possible to rewrite 'sum(1/n)' with 'sum(1) * div(1/n)' but we lose accuracy. Ignored.
         if (child_func->name == "divide")
             return {};
 
         const String & new_name = changeNameIfNeeded(func.name, child_func->name, *first_literal);
         optimized_ast = exchangeExtractFirstArgument(new_name, *child_func);
     }
-    else if (!first_literal && second_literal)
+    else if (second_literal) /// second or both are consts
     {
         const String & new_name = changeNameIfNeeded(func.name, child_func->name, *second_literal);
         optimized_ast = exchangeExtractSecondArgument(new_name, *child_func);
@@ -130,16 +131,24 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
 }
 
 
-void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTFunction & func, ASTPtr & ast)
+void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
 {
     if (auto exchanged_funcs = tryExchangeFunctions(func))
+    {
         ast = exchanged_funcs;
+
+        /// Main visitor is bottom-up. This is top-down part.
+        /// We've found an aggregate function an now move it donw through others: sum(mul(mul)) -> mul(mul(sum)).
+        /// It's not dangerous cause main visitor already has visited this part of tree.
+        auto & expression_list = ast->children[0];
+        visit(expression_list->children[0], data);
+    }
 }
 
-void ArithmeticOperationsInAgrFuncMatcher::visit(ASTPtr & ast, Data &)
+void ArithmeticOperationsInAgrFuncMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (const auto * function_node = ast->as<ASTFunction>())
-        visit(*function_node, ast);
+        visit(*function_node, ast, data);
 }
 
 bool ArithmeticOperationsInAgrFuncMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)

@@ -43,12 +43,12 @@ ANALYZE SELECT min(1 + n * 2), min(1 + 2 * n), min(1 + n / 2), min(1 + 1 / n) FR
 ANALYZE SELECT max(1 + n + 1), max(1 + 1 + n), max(1 + n - 1), max(1 + 1 - n) FROM (SELECT number n FROM numbers(10));
 ANALYZE SELECT max(1 + n * 2), max(1 + 2 * n), max(1 + n / 2), max(1 + 1 / n) FROM (SELECT number n FROM numbers(10));
 
-ANALYZE SELECT sum(n + 1 + 1), sum(1 + n + 1), sum(n - 1 + 1), sum(1 - n + 1) FROM (SELECT number n FROM numbers(10));
-ANALYZE SELECT sum(n * 2 + 1), sum(2 * n + 1), sum(n / 2 + 1), sum(1 / n + 1) FROM (SELECT number n FROM numbers(10));
-ANALYZE SELECT min(n + 1 + 1), min(1 + n + 1), min(n - 1 + 1), min(1 - n + 1) FROM (SELECT number n FROM numbers(10));
-ANALYZE SELECT min(n * 2 + 1), min(2 * n + 1), min(n / 2 + 1), min(1 / n + 1) FROM (SELECT number n FROM numbers(10));
-ANALYZE SELECT max(n + 1 + 1), max(1 + n + 1), max(n - 1 + 1), max(1 - n + 1) FROM (SELECT number n FROM numbers(10));
-ANALYZE SELECT max(n * 2 + 1), max(2 * n + 1), max(n / 2 + 1), max(1 / n + 1) FROM (SELECT number n FROM numbers(10));
+ANALYZE SELECT sum(n + -1 + -1), sum(-1 + n + -1), sum(n - -1 + -1), sum(-1 - n + -1) FROM (SELECT number n FROM numbers(10));
+ANALYZE SELECT sum(n * -2 * -1), sum(-2 * n * -1), sum(n / -2 / -1), sum(-1 / n / -1) FROM (SELECT number n FROM numbers(10));
+ANALYZE SELECT min(n + -1 + -1), min(-1 + n + -1), min(n - -1 + -1), min(-1 - n + -1) FROM (SELECT number n FROM numbers(10));
+ANALYZE SELECT min(n * -2 * -1), min(-2 * n * -1), min(n / -2 / -1), min(-1 / n / -1) FROM (SELECT number n FROM numbers(10));
+ANALYZE SELECT max(n + -1 + -1), max(-1 + n + -1), max(n - -1 + -1), max(-1 - n + -1) FROM (SELECT number n FROM numbers(10));
+ANALYZE SELECT max(n * -2 * -1), max(-2 * n * -1), max(n / -2 / -1), max(-1 / n / -1) FROM (SELECT number n FROM numbers(10));
 
 ANALYZE SELECT sum(n + 1) + sum(1 + n) + sum(n - 1) + sum(1 - n) FROM (SELECT number n FROM numbers(10));
 ANALYZE SELECT sum(n * 2) + sum(2 * n) + sum(n / 2) + sum(1 / n) FROM (SELECT number n FROM numbers(10));
@@ -100,12 +100,12 @@ SELECT min(1 + n * 2), min(1 + 2 * n), min(1 + n / 2), min(1 + 1 / n) FROM (SELE
 SELECT max(1 + n + 1), max(1 + 1 + n), max(1 + n - 1), max(1 + 1 - n) FROM (SELECT number n FROM numbers(10));
 SELECT max(1 + n * 2), max(1 + 2 * n), max(1 + n / 2), max(1 + 1 / n) FROM (SELECT number n FROM numbers(10));
 
-SELECT sum(n + 1 + 1), sum(1 + n + 1), sum(n - 1 + 1), sum(1 - n + 1) FROM (SELECT number n FROM numbers(10));
-SELECT sum(n * 2 + 1), sum(2 * n + 1), sum(n / 2 + 1), sum(1 / n + 1) FROM (SELECT number n FROM numbers(10));
-SELECT min(n + 1 + 1), min(1 + n + 1), min(n - 1 + 1), min(1 - n + 1) FROM (SELECT number n FROM numbers(10));
-SELECT min(n * 2 + 1), min(2 * n + 1), min(n / 2 + 1), min(1 / n + 1) FROM (SELECT number n FROM numbers(10));
-SELECT max(n + 1 + 1), max(1 + n + 1), max(n - 1 + 1), max(1 - n + 1) FROM (SELECT number n FROM numbers(10));
-SELECT max(n * 2 + 1), max(2 * n + 1), max(n / 2 + 1), max(1 / n + 1) FROM (SELECT number n FROM numbers(10));
+SELECT sum(n + -1 + -1), sum(-1 + n + -1), sum(n - -1 + -1), sum(-1 - n + -1) FROM (SELECT number n FROM numbers(10));
+SELECT sum(n * -2 * -1), sum(-2 * n * -1), sum(n / -2 / -1), sum(-1 / n / -1) FROM (SELECT number n FROM numbers(10));
+SELECT min(n + -1 + -1), min(-1 + n + -1), min(n - -1 + -1), min(-1 - n + -1) FROM (SELECT number n FROM numbers(10));
+SELECT min(n * -2 * -1), min(-2 * n * -1), min(n / -2 / -1), min(-1 / n / -1) FROM (SELECT number n FROM numbers(10));
+SELECT max(n + -1 + -1), max(-1 + n + -1), max(n - -1 + -1), max(-1 - n + -1) FROM (SELECT number n FROM numbers(10));
+SELECT max(n * -2 * -1), max(-2 * n * -1), max(n / -2 / -1), max(-1 / n / -1) FROM (SELECT number n FROM numbers(10));
 
 SELECT sum(n + 1) + sum(1 + n) + sum(n - 1) + sum(1 - n) FROM (SELECT number n FROM numbers(10));
 SELECT sum(n * 2) + sum(2 * n) + sum(n / 2) + sum(1 / n) FROM (SELECT number n FROM numbers(10));
@@ -163,12 +163,12 @@ SELECT min(1 + n * 2), min(1 + 2 * n), min(1 + n / 2), min(1 + 1 / n) FROM (SELE
 SELECT max(1 + n + 1), max(1 + 1 + n), max(1 + n - 1), max(1 + 1 - n) FROM (SELECT number n FROM numbers(10));
 SELECT max(1 + n * 2), max(1 + 2 * n), max(1 + n / 2), max(1 + 1 / n) FROM (SELECT number n FROM numbers(10));
 
-SELECT sum(n + 1 + 1), sum(1 + n + 1), sum(n - 1 + 1), sum(1 - n + 1) FROM (SELECT number n FROM numbers(10));
-SELECT sum(n * 2 + 1), sum(2 * n + 1), sum(n / 2 + 1), sum(1 / n + 1) FROM (SELECT number n FROM numbers(10));
-SELECT min(n + 1 + 1), min(1 + n + 1), min(n - 1 + 1), min(1 - n + 1) FROM (SELECT number n FROM numbers(10));
-SELECT min(n * 2 + 1), min(2 * n + 1), min(n / 2 + 1), min(1 / n + 1) FROM (SELECT number n FROM numbers(10));
-SELECT max(n + 1 + 1), max(1 + n + 1), max(n - 1 + 1), max(1 - n + 1) FROM (SELECT number n FROM numbers(10));
-SELECT max(n * 2 + 1), max(2 * n + 1), max(n / 2 + 1), max(1 / n + 1) FROM (SELECT number n FROM numbers(10));
+SELECT sum(n + -1 + -1), sum(-1 + n + -1), sum(n - -1 + -1), sum(-1 - n + -1) FROM (SELECT number n FROM numbers(10));
+SELECT sum(n * -2 * -1), sum(-2 * n * -1), sum(n / -2 / -1), sum(-1 / n / -1) FROM (SELECT number n FROM numbers(10));
+SELECT min(n + -1 + -1), min(-1 + n + -1), min(n - -1 + -1), min(-1 - n + -1) FROM (SELECT number n FROM numbers(10));
+SELECT min(n * -2 * -1), min(-2 * n * -1), min(n / -2 / -1), min(-1 / n / -1) FROM (SELECT number n FROM numbers(10));
+SELECT max(n + -1 + -1), max(-1 + n + -1), max(n - -1 + -1), max(-1 - n + -1) FROM (SELECT number n FROM numbers(10));
+SELECT max(n * -2 * -1), max(-2 * n * -1), max(n / -2 / -1), max(-1 / n / -1) FROM (SELECT number n FROM numbers(10));
 
 SELECT sum(n + 1) + sum(1 + n) + sum(n - 1) + sum(1 - n) FROM (SELECT number n FROM numbers(10));
 SELECT sum(n * 2) + sum(2 * n) + sum(n / 2) + sum(1 / n) FROM (SELECT number n FROM numbers(10));

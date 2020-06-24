@@ -30,16 +30,16 @@ SELECT \n    max(n * n) + 1,\n    1 + max(n * n),\n    max(n * n) - 1,\n    1 - 
 SELECT \n    max(n * n) * 2,\n    max((2 * n) * n),\n    max(n * n) / 2,\n    max((1 / n) * n)\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
 SELECT \n    sum((1 + n) + 1),\n    sum((1 + 1) + n),\n    sum((1 + n) - 1),\n    sum((1 + 1) - n)\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
 SELECT \n    sum(1 + (n * 2)),\n    sum(1 + (2 * n)),\n    sum(1 + (n / 2)),\n    sum(1 + (1 / n))\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
-SELECT \n    min(1 + n) + 1,\n    min((1 + 1) + n),\n    min(1 + n) - 1,\n    min((1 + 1) - n)\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
+SELECT \n    (1 + min(n)) + 1,\n    min((1 + 1) + n),\n    (1 + min(n)) - 1,\n    min((1 + 1) - n)\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
 SELECT \n    1 + min(n * 2),\n    1 + min(2 * n),\n    1 + min(n / 2),\n    1 + min(1 / n)\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
-SELECT \n    max(1 + n) + 1,\n    max((1 + 1) + n),\n    max(1 + n) - 1,\n    max((1 + 1) - n)\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
+SELECT \n    (1 + max(n)) + 1,\n    max((1 + 1) + n),\n    (1 + max(n)) - 1,\n    max((1 + 1) - n)\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
 SELECT \n    1 + max(n * 2),\n    1 + max(2 * n),\n    1 + max(n / 2),\n    1 + max(1 / n)\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
-SELECT \n    sum((n + 1) + 1),\n    sum((1 + n) + 1),\n    sum((n - 1) + 1),\n    sum((1 - n) + 1)\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
-SELECT \n    sum((n * 2) + 1),\n    sum((2 * n) + 1),\n    sum((n / 2) + 1),\n    sum((1 / n) + 1)\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
-SELECT \n    min(n + 1) + 1,\n    min(1 + n) + 1,\n    min(n - 1) + 1,\n    min(1 - n) + 1\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
-SELECT \n    min(n * 2) + 1,\n    min(2 * n) + 1,\n    min(n / 2) + 1,\n    min(1 / n) + 1\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
-SELECT \n    max(n + 1) + 1,\n    max(1 + n) + 1,\n    max(n - 1) + 1,\n    max(1 - n) + 1\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
-SELECT \n    max(n * 2) + 1,\n    max(2 * n) + 1,\n    max(n / 2) + 1,\n    max(1 / n) + 1\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
+SELECT \n    sum((n + -1) + -1),\n    sum((-1 + n) + -1),\n    sum((n - -1) + -1),\n    sum((-1 - n) + -1)\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
+SELECT \n    (sum(n) * -2) * -1,\n    (-2 * sum(n)) * -1,\n    (sum(n) / -2) / -1,\n    sum(-1 / n) / -1\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
+SELECT \n    (min(n) + -1) + -1,\n    (-1 + min(n)) + -1,\n    (min(n) - -1) + -1,\n    (-1 - min(n)) + -1\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
+SELECT \n    (min(n) * -2) * -1,\n    (-2 * min(n)) * -1,\n    (min(n) / -2) / -1,\n    max(-1 / n) / -1\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
+SELECT \n    (max(n) + -1) + -1,\n    (-1 + max(n)) + -1,\n    (max(n) - -1) + -1,\n    (-1 - max(n)) + -1\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
+SELECT \n    (max(n) * -2) * -1,\n    (-2 * max(n)) * -1,\n    (max(n) / -2) / -1,\n    min(-1 / n) / -1\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
 SELECT ((sum(n + 1) + sum(1 + n)) + sum(n - 1)) + sum(1 - n)\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
 SELECT (((sum(n) * 2) + (2 * sum(n))) + (sum(n) / 2)) + sum(1 / n)\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
 SELECT (((min(n) + 1) + (1 + min(n))) + (min(n) - 1)) + (1 - min(n))\nFROM \n(\n    SELECT number AS n\n    FROM numbers(10)\n)
@@ -82,12 +82,12 @@ SELECT (((max(n) * 2) + (2 * max(n))) + (max(n) / 2)) + max(1 / n)\nFROM \n(\n  
 1	1	1	1.1111111111111112
 11	11	9	2
 19	19	5.5	inf
-65	65	45	-25
-100	100	32.5	inf
-2	2	0	-7
-1	1	1	1.1111111111111112
-11	11	9	2
-19	19	5.5	inf
+25	25	45	-65
+90	90	22.5	inf
+-2	-2	0	-2
+0	0	0	0.1111111111111111
+7	7	9	-11
+18	18	4.5	inf
 110
 inf
 2
@@ -133,12 +133,12 @@ inf
 1	1	1	1.1111111111111112
 11	11	9	2
 19	19	5.5	inf
-65	65	45	-25
-100	100	32.5	inf
-2	2	0	-7
-1	1	1	1.1111111111111112
-11	11	9	2
-19	19	5.5	inf
+25	25	45	-65
+90	90	22.5	inf
+-2	-2	0	-11
+0	0	0	0.1111111111111111
+7	7	9	-2
+18	18	4.5	inf
 110
 inf
 -7

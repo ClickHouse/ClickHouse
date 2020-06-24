@@ -19,7 +19,7 @@ public:
     struct Data {};
 
     static void visit(ASTPtr & ast, Data & data);
-    static void visit(const ASTFunction &, ASTPtr & ast);
+    static void visit(const ASTFunction &, ASTPtr & ast, Data & data);
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
 };
