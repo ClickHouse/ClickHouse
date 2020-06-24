@@ -16,10 +16,13 @@ class Context;
 struct Settings;
 struct SelectQueryOptions;
 using Scalars = std::map<String, Block>;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 struct SyntaxAnalyzerResult
 {
     ConstStoragePtr storage;
+    StorageMetadataPtr metadata_snapshot;
     std::shared_ptr<TableJoin> analyzed_join;
 
     NamesAndTypesList source_columns;
@@ -51,8 +54,13 @@ struct SyntaxAnalyzerResult
     /// Results of scalar sub queries
     Scalars scalars;
 
-    SyntaxAnalyzerResult(const NamesAndTypesList & source_columns_, ConstStoragePtr storage_ = {}, bool add_special = true)
+    SyntaxAnalyzerResult(
+        const NamesAndTypesList & source_columns_,
+        ConstStoragePtr storage_ = {},
+        const StorageMetadataPtr & metadata_snapshot_ = {},
+        bool add_special = true)
         : storage(storage_)
+        , metadata_snapshot(metadata_snapshot_)
         , source_columns(source_columns_)
     {
         collectSourceColumns(add_special);
@@ -86,7 +94,12 @@ public:
     {}
 
     /// Analyze and rewrite not select query
-    SyntaxAnalyzerResultPtr analyze(ASTPtr & query, const NamesAndTypesList & source_columns_, ConstStoragePtr storage = {}, bool allow_aggregations = false) const;
+    SyntaxAnalyzerResultPtr analyze(
+        ASTPtr & query,
+        const NamesAndTypesList & source_columns_,
+        ConstStoragePtr storage = {},
+        const StorageMetadataPtr & metadata_snapshot = {},
+        bool allow_aggregations = false) const;
 
     /// Analyze and rewrite select query
     SyntaxAnalyzerResultPtr analyzeSelect(

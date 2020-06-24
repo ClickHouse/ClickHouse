@@ -176,6 +176,54 @@ hasAny(array1, array2)
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])` returns `1`.
 
+## hasSubstr {#hassubstr}
+
+Checks whether all the elements of array2 appear in array1 in the same exact order. Therefore, the function will return 1, if and only if `array1 = prefix + array2 + suffix`.
+
+``` sql
+hasSubstr(array1, array2)
+```
+
+In other words, the functions will check whether all the elements of `array2` are contained in `array1` like 
+the `hasAll` function. In addition, it will check that the elements are observed in the same order in both `array1` and `array2`.
+
+For Example: 
+ - `hasSubstr([1,2,3,4], [2,3])` returns 1. However, `hasSubstr([1,2,3,4], [3,2])` will return `0`.
+ - `hasSubstr([1,2,3,4], [1,2,3])` returns 1. However, `hasSubstr([1,2,3,4], [1,2,4])` will return `0`.
+
+**Parameters**
+
+-   `array1` – Array of any type with a set of elements.
+-   `array2` – Array of any type with a set of elements.
+
+**Return values**
+
+-   `1`, if `array1` contains `array2`.
+-   `0`, otherwise.
+
+**Peculiar properties**
+
+-   The function will return `1` if `array2` is empty.
+-   `Null` processed as a value. In other words `hasSubstr([1, 2, NULL, 3, 4], [2,3])` will return `0`. However, `hasSubstr([1, 2, NULL, 3, 4], [2,NULL,3])` will return `1`
+-   Order of values in both of arrays does matter.
+
+**Examples**
+
+`SELECT hasSubstr([], [])` returns 1.
+
+`SELECT hasSubstr([1, Null], [Null])` returns 1.
+
+`SELECT hasSubstr([1.0, 2, 3, 4], [1, 3])` returns 0.
+
+`SELECT hasSubstr(['a', 'b'], ['a'])` returns 1.
+
+`SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'b'])` returns 1.
+
+`SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'c'])` returns 0.
+
+`SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])` returns 1.
+
+
 ## indexOf(arr, x) {#indexofarr-x}
 
 Returns the index of the first ‘x’ element (starting from 1) if it is in the array, or 0 if it is not.

@@ -388,7 +388,9 @@ StorageGenerateRandom::StorageGenerateRandom(const StorageID & table_id_, const 
     : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
 {
     random_seed = random_seed_ ? sipHash64(*random_seed_) : randomSeed();
-    setColumns(columns_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    setInMemoryMetadata(storage_metadata);
 }
 
 
@@ -427,18 +429,19 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
 Pipes StorageGenerateRandom::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    check(column_names, true);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const ColumnsDescription & our_columns = getColumns();
+    const ColumnsDescription & our_columns = metadata_snapshot->getColumns();
     Block block_header;
     for (const auto & name : column_names)
     {

@@ -363,7 +363,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
         const IAST & args = *func->arguments;
         const ASTPtr & left_in_operand = args.children.at(0);
 
-        if (storage()->mayBenefitFromIndexForIn(left_in_operand, context))
+        if (storage()->mayBenefitFromIndexForIn(left_in_operand, context, metadata_snapshot))
         {
             const ASTPtr & arg = args.children.at(1);
             if (arg->as<ASTSubquery>() || arg->as<ASTIdentifier>())
@@ -760,10 +760,6 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
             group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(all_columns, context));
             getRootActions(child, only_types, group_by_elements_actions.back());
         }
-//        std::cerr << "group_by_elements_actions\n";
-//        for (const auto & elem : group_by_elements_actions) {
-//            std::cerr << elem->dumpActions() << "\n";
-//        }
     }
 
     return true;
@@ -857,10 +853,6 @@ bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain
             order_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(all_columns, context));
             getRootActions(child, only_types, order_by_elements_actions.back());
         }
-//        std::cerr << "order_by_elements_actions\n";
-//        for (const auto & elem : order_by_elements_actions) {
-//            std::cerr << elem->dumpActions() << "\n";
-//        }
     }
     return true;
 }
@@ -1018,6 +1010,7 @@ ExpressionActionsPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
 
 ExpressionAnalysisResult::ExpressionAnalysisResult(
         SelectQueryExpressionAnalyzer & query_analyzer,
+        const StorageMetadataPtr & metadata_snapshot,
         bool first_stage_,
         bool second_stage_,
         bool only_types,
@@ -1068,14 +1061,14 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))
         {
-            Names columns_for_sampling = storage->getColumnsRequiredForSampling();
+            Names columns_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
                 columns_for_sampling.begin(), columns_for_sampling.end());
         }
 
         if (storage && query.final())
         {
-            Names columns_for_final = storage->getColumnsRequiredForFinal();
+            Names columns_for_final = metadata_snapshot->getColumnsRequiredForFinal();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
                 columns_for_final.begin(), columns_for_final.end());
         }
