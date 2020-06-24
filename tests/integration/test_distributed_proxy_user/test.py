@@ -7,6 +7,7 @@ from time import sleep
 import threading
 import pytest
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
@@ -26,6 +27,11 @@ def create_tables():
     n1.query("""
     CREATE TABLE d2 AS system.one
     Engine=Distributed(c2, system, one)
+    """)
+
+    n1.query("""
+    CREATE TABLE dist_guest AS system.one
+    Engine=Distributed(cluster_guest, system, one)
     """)
 
 @pytest.fixture(scope='module', autouse=True)
@@ -76,6 +82,10 @@ def test_user_nopass_yes():
     query_with_id(n1, 'd2-user-nopass', 'SELECT * FROM d2', user='nopass')
     assert get_query_user_info(n1, 'd2-user-nopass') == ['nopass', 'nopass']
     assert get_query_user_info(n2, 'd2-user-nopass') == ['nopass', 'nopass']
+
+def test_user_guest():
+    with pytest.raises(QueryRuntimeException, match="guest: Not enough privileges. To execute this query it's necessary to have the grant PROXY ON *\.*"):
+        query_with_id(n1, 'dist_guest-user-guest', 'SELECT * FROM dist_guest')
 
 def test_cluster():
     query_with_id(n1, 'cluster-c1', 'SELECT * FROM cluster(c1, system.one)')

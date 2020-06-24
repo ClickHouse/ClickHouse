@@ -38,6 +38,15 @@
 
             <access_management>1</access_management>
         </pass>
+
+        <guest>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </guest>
     </users>
 
     <quotas>

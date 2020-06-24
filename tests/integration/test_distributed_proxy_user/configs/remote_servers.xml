@@ -25,6 +25,21 @@
                 <proxy_user>true</proxy_user>
             </node>
         </c2>
+
+        <cluster_guest>
+            <node>
+                <host>n1</host>
+                <port>9000</port>
+                <user>guest</user>
+                <proxy_user>true</proxy_user>
+            </node>
+            <node>
+                <host>n2</host>
+                <port>9000</port>
+                <user>guest</user>
+                <proxy_user>true</proxy_user>
+            </node>
+        </cluster_guest>
     </remote_servers>
 </yandex>
 
