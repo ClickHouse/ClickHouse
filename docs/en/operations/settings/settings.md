@@ -1264,14 +1264,14 @@ Default value: 16.
 
 ## always_fetch_merged_part {#always_fetch_merged_part}
 
-Prohibits data parts merging at replicas in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md)-engine tables.
+Prohibits data parts merging at replicas in [Replicated*MergeTree](../../engines/table-engines/mergetree-family/replication.md)-engine tables.
 
-When merging is prohibited, the replica never merges parts and always downloads merged parts from other replicas. If there is no merged data yet, the replica waits for it to appear. CPU and disk load on the replica server decreases, but the network load on cluster increases. This setting can be useful on servers with relatively weak CPUs or slow disks, such as servers for backups storage.
+When merging is prohibited, the replica never merges parts and always downloads merged parts from other replicas. If there is no required data yet, the replica waits for it. CPU and disk load on the replica server decreases, but the network load on cluster increases. This setting can be useful on servers with relatively weak CPUs or slow disks, such as servers for backups storage.
 
 Possible values:
 
--   0 — `ReplicatedMergeTree`-engine tables merge data parts at replicas.
--   1 — `ReplicatedMergeTree`-engine tables don't merge data parts at replicas. The tables download merged data parts from other replicas.
+-   0 — `Replicated*MergeTree`-engine tables merge data parts at the replica.
+-   1 — `Replicated*MergeTree`-engine tables don't merge data parts at the replica. The tables download merged data parts from other replicas.
 
 Default value: 0.
 
