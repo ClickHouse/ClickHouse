@@ -640,7 +640,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
         else if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind == ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
             if (create.uuid == UUIDHelpers::Nil)
-                throw Exception("Table UUID is not specified in DDL log", ErrorCodes::INCORRECT_QUERY);
+                throw Exception("Table UUID is not specified in DDL log", ErrorCodes::LOGICAL_ERROR);
         }
         else
         {
