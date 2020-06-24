@@ -45,6 +45,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Functions/IFunction.h>
 
 #include <Core/Field.h>
 #include <Core/Settings.h>
@@ -188,6 +189,18 @@ ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, con
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
+bool isExpressionActionsDeterministics(const ExpressionActionsPtr & actions)
+{
+    for (const auto & action : actions->getActions())
+    {
+        if (action.type != ExpressionAction::APPLY_FUNCTION)
+            continue;
+        if (!action.function_base->isDeterministic())
+            return false;
+    }
+    return true;
+}
+
 class ReplacingConstantExpressionsMatcher
 {
 public:
@@ -299,6 +312,7 @@ StorageDistributed::StorageDistributed(
     {
         sharding_key_expr = buildShardingKeyExpression(sharding_key_, *global_context, storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
+        sharding_key_is_deterministic = isExpressionActionsDeterministics(sharding_key_expr);
     }
 
     if (!relative_data_path.empty())
@@ -514,8 +528,8 @@ Pipes StorageDistributed::read(
         : ClusterProxy::SelectStreamFactory(
             header, processed_stage, StorageID{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
-    return ClusterProxy::executeQuery(
-        select_stream_factory, cluster, modified_query_ast, context, context.getSettingsRef(), query_info);
+    return ClusterProxy::executeQuery(select_stream_factory, cluster, log,
+        modified_query_ast, context, context.getSettingsRef(), query_info);
 }
 
 
@@ -695,7 +709,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
     ClusterPtr cluster = getCluster();
     const Settings & settings = context.getSettingsRef();
 
-    if (has_sharding_key)
+    if (has_sharding_key && sharding_key_is_deterministic)
     {
         ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, metadata_snapshot, context);
         if (optimized)
@@ -708,6 +722,8 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
         std::stringstream exception_message;
         if (!has_sharding_key)
             exception_message << "No sharding key";
+        else if (sharding_key_is_deterministic)
+            exception_message << "Sharding key is not deterministic";
         else
             exception_message << "Sharding key " << sharding_key_column_name << " is not used";
 

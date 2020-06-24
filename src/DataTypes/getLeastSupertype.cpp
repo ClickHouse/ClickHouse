@@ -208,7 +208,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         }
     }
 
-    /// For Date and DateTime, the common type is DateTime. No other types are compatible.
+    /// For Date and DateTime/DateTime64, the common type is DateTime/DateTime64. No other types are compatible.
     {
         UInt32 have_date = type_ids.count(TypeIndex::Date);
         UInt32 have_datetime = type_ids.count(TypeIndex::DateTime);
@@ -218,40 +218,25 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         {
             bool all_date_or_datetime = type_ids.size() == (have_date + have_datetime + have_datetime64);
             if (!all_date_or_datetime)
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Date/DateTime and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Date/DateTime/DateTime64 and some of them are not",
+                    ErrorCodes::NO_COMMON_TYPE);
 
             if (have_datetime64 == 0)
-            {
                 return std::make_shared<DataTypeDateTime>();
-            }
 
-            // When DateTime64 involved, make sure that supertype has whole-part precision
-            // big enough to hold max whole-value of any type from `types`.
-            // That would sacrifice scale when comparing DateTime64 of different scales.
+            UInt8 max_scale = 0;
 
-            UInt32 max_datetime64_whole_precision = 0;
             for (const auto & t : types)
             {
                 if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(t.get()))
                 {
-                    const auto whole_precision = dt64->getPrecision() - dt64->getScale();
-                    max_datetime64_whole_precision = std::max(whole_precision, max_datetime64_whole_precision);
+                    const auto scale = dt64->getScale();
+                    if (scale > max_scale)
+                        max_scale = scale;
                 }
             }
 
-            UInt32 least_decimal_precision = 0;
-            if (have_datetime)
-            {
-                least_decimal_precision = leastDecimalPrecisionFor(TypeIndex::UInt32);
-            }
-            else if (have_date)
-            {
-                least_decimal_precision = leastDecimalPrecisionFor(TypeIndex::UInt16);
-            }
-            max_datetime64_whole_precision = std::max(least_decimal_precision, max_datetime64_whole_precision);
-
-            const UInt32 scale = DataTypeDateTime64::maxPrecision() - max_datetime64_whole_precision;
-            return std::make_shared<DataTypeDateTime64>(scale);
+            return std::make_shared<DataTypeDateTime64>(max_scale);
         }
     }
 

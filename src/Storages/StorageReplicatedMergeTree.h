@@ -185,6 +185,10 @@ public:
 
     int getMetadataVersion() const { return metadata_version; }
 
+    /** Remove a specific replica from zookeeper.
+     */
+    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, Poco::Logger * logger);
+
 private:
 
     /// Get a sequential consistent view of current parts.

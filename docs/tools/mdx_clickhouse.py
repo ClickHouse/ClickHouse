@@ -26,6 +26,7 @@ MARKDOWN_EXTENSIONS = [
     'mdx_clickhouse',
     'admonition',
     'attr_list',
+    'def_list',
     'codehilite',
     'nl2br',
     'sane_lists',

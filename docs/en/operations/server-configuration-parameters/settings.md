@@ -426,6 +426,18 @@ The value 0 means that you can delete all tables without any restrictions.
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
 
+## max\_thread\_pool\_size {#max-thread-pool-size}
+
+The maximum number of threads in the Global Thread pool.
+
+Default value: 10000.
+
+**Example**
+
+``` xml
+<max_thread_pool_size>12000</max_thread_pool_size>
+```
+
 ## merge\_tree {#server_configuration_parameters-merge_tree}
 
 Fine tuning for tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
