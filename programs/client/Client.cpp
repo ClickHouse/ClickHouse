@@ -103,6 +103,7 @@ namespace ErrorCodes
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int DEADLOCK_AVOIDED;
+    extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
 
@@ -1874,6 +1875,12 @@ public:
 
         /// Parse main commandline options.
         po::parsed_options parsed = po::command_line_parser(common_arguments).options(main_description).run();
+        auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+        // unrecognized_options[0] is "", I dont understand why we need "" as the first argument which unused
+        if (unrecognized_options.size() > 1)
+        {
+            throw Exception("Unrecognized option '" + unrecognized_options[1] + "'", ErrorCodes::UNRECOGNIZED_ARGUMENTS);
+        }
         po::variables_map options;
         po::store(parsed, options);
         po::notify(options);
@@ -2030,6 +2037,12 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     catch (const boost::program_options::error & e)
     {
         std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return 1;
+    }
+    catch (const DB::Exception & e)
+    {
+        std::string text = e.displayText();
+        std::cerr << "Code: " << e.code() << ". " << text << std::endl;
         return 1;
     }
     catch (...)
