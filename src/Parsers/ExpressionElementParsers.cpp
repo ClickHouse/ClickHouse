@@ -1270,6 +1270,19 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     String name(pos->begin, pos->end);
     ++pos;
 
+    /// SELECT @@session|global.variable style
+    if (pos->type == TokenType::Dot)
+    {
+        ++pos;
+
+        if (pos->type != TokenType::BareWord)
+        {
+            expected.add(pos, "variable name");
+            return false;
+        }
+        name = String(pos->begin, pos->end);
+    }
+
     auto name_literal = std::make_shared<ASTLiteral>(name);
 
     auto expr_list_args = std::make_shared<ASTExpressionList>();
