@@ -12,7 +12,7 @@ class RabbitMQBlockOutputStream : public IBlockOutputStream
 {
 
 public:
-    explicit RabbitMQBlockOutputStream(StorageRabbitMQ & storage_, const Context & context_);
+    explicit RabbitMQBlockOutputStream(StorageRabbitMQ & storage_, const StorageMetadataPtr & metadata_snapshot_, const Context & context_);
 
     Block getHeader() const override;
 
@@ -22,6 +22,7 @@ public:
 
 private:
     StorageRabbitMQ & storage;
+    StorageMetadataPtr metadata_snapshot;
     Context context;
     ProducerBufferPtr buffer;
     BlockOutputStreamPtr child;

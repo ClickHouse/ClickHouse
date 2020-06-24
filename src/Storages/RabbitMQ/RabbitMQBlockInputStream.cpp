@@ -14,13 +14,18 @@ namespace DB
 {
 
 RabbitMQBlockInputStream::RabbitMQBlockInputStream(
-        StorageRabbitMQ & storage_, const Context & context_, const Names & columns, Poco::Logger * log_)
+    StorageRabbitMQ & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    const Context & context_,
+    const Names & columns,
+    Poco::Logger * log_)
         : storage(storage_)
+        , metadata_snapshot(metadata_snapshot_)
         , context(context_)
         , column_names(columns)
         , log(log_)
-        , non_virtual_header(storage.getSampleBlockNonMaterialized())
-        , virtual_header(storage.getSampleBlockForColumns({"_exchange"}))
+        , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
+        , virtual_header(metadata_snapshot->getSampleBlockForColumns({"_exchange"}, storage.getVirtuals(), storage.getStorageID()))
 {
 }
 
@@ -36,7 +41,7 @@ RabbitMQBlockInputStream::~RabbitMQBlockInputStream()
 
 Block RabbitMQBlockInputStream::getHeader() const
 {
-    return storage.getSampleBlockForColumns(column_names);
+    return metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
 }
 
 

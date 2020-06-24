@@ -15,14 +15,19 @@ namespace ErrorCodes
 
 
 RabbitMQBlockOutputStream::RabbitMQBlockOutputStream(
-        StorageRabbitMQ & storage_, const Context & context_) : storage(storage_), context(context_)
+    StorageRabbitMQ & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    const Context & context_)
+    : storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+    , context(context_)
 {
 }
 
 
 Block RabbitMQBlockOutputStream::getHeader() const
 {
-    return storage.getSampleBlockNonMaterialized();
+    return metadata_snapshot->getSampleBlockNonMaterialized();
 }
 
 
