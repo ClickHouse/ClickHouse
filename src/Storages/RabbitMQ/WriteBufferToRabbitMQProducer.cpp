@@ -4,6 +4,7 @@
 #include "Columns/ColumnsNumber.h"
 #include <common/logger_useful.h>
 #include <amqpcpp.h>
+#include <uv.h>
 #include <chrono>
 #include <thread>
 #include <atomic>
@@ -43,28 +44,31 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , delim(delimiter)
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
-        , producerEvbase(event_base_new())
-        , eventHandler(producerEvbase, log)
-        , connection(&eventHandler, AMQP::Address(parsed_address.first, parsed_address.second,
-                    AMQP::Login(login_password.first, login_password.second), "/"))
 {
+
+    loop = new uv_loop_t;
+    uv_loop_init(loop);
+
+    event_handler = std::make_unique<RabbitMQHandler>(loop, log);
+    connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(), AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
+
     /* The reason behind making a separate connection for each concurrent producer is explained here:
      * https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/128#issuecomment-300780086 - publishing from
      * different threads (as outputStreams are asynchronous) with the same connection leads to internal library errors.
      */
     size_t cnt_retries = 0;
-    while (!connection.ready() && ++cnt_retries != Loop_retries_max)
+    while (!connection->ready() && ++cnt_retries != Loop_retries_max)
     {
-        event_base_loop(producerEvbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
+        uv_run(loop, UV_RUN_NOWAIT);
         std::this_thread::sleep_for(std::chrono::milliseconds(Connection_setup_sleep));
     }
 
-    if (!connection.ready())
+    if (!connection->ready())
     {
         LOG_ERROR(log, "Cannot set up connection for producer!");
     }
 
-    producer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
+    producer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
     checkExchange();
 
     /// If publishing should be wrapped in transactions
@@ -78,7 +82,9 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
 WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
     finilizeProducer();
-    connection.close();
+    connection->close();
+    event_handler->stop();
+
     assert(rows == 0 && chunks.empty());
 }
 
@@ -195,7 +201,7 @@ void WriteBufferToRabbitMQProducer::nextImpl()
 
 void WriteBufferToRabbitMQProducer::startEventLoop()
 {
-    eventHandler.startProducerLoop();
+    event_handler->startProducerLoop();
 }
 
 }

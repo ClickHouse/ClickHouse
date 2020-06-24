@@ -551,6 +551,7 @@ def test_rabbitmq_sharding_between_channels_publish(rabbitmq_cluster):
     while True:
         result = instance.query('SELECT count() FROM test.view')
         time.sleep(1)
+        print("Result", result, "Expected", messages_num * threads_num)
         if int(result) == messages_num * threads_num:
             break
 
@@ -641,7 +642,8 @@ def test_rabbitmq_sharding_between_channels_and_queues_publish(rabbitmq_cluster)
         DROP TABLE IF EXISTS test.consumer;
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree
-            ORDER BY key;
+            ORDER BY key
+            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT * FROM test.rabbitmq;
     ''')
@@ -1522,4 +1524,3 @@ if __name__ == '__main__':
     cluster.start()
     raw_input("Cluster created, press any key to destroy...")
     cluster.shutdown()
-

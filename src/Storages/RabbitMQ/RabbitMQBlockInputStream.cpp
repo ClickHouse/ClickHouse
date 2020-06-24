@@ -66,7 +66,7 @@ Block RabbitMQBlockInputStream::readImpl()
 
     finished = true;
 
-    MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
+    MutableColumns result_columns = non_virtual_header.cloneEmptyColumns();
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     auto input_format = FormatFactory::instance().getInputFormat(

@@ -7,16 +7,16 @@
 #include <amqpcpp/libevent.h>
 #include <amqpcpp/linux_tcp.h>
 #include <common/types.h>
-#include <event2/event.h>
+#include <amqpcpp/libuv.h>
 
 namespace DB
 {
 
-class RabbitMQHandler : public AMQP::LibEventHandler
+class RabbitMQHandler : public AMQP::LibUvHandler
 {
 
 public:
-    RabbitMQHandler(event_base * evbase_, Poco::Logger * log_);
+    RabbitMQHandler(uv_loop_t * evbase_, Poco::Logger * log_);
 
     void onError(AMQP::TcpConnection * connection, const char * message) override;
     void startConsumerLoop(std::atomic<bool> & loop_started);
@@ -26,7 +26,7 @@ public:
     std::atomic<bool> & checkStopIsScheduled() { return stop_scheduled; };
 
 private:
-    event_base * evbase;
+    uv_loop_t * loop;
     Poco::Logger * log;
 
     timeval tv;
