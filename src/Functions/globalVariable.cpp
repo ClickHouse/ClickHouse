@@ -52,7 +52,7 @@ public:
         String variable_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
         auto variable = global_variable_map.find(Poco::toLower(variable_name));
         if (variable == global_variable_map.end())
-            return std::make_shared<DataTypeString>();
+            return std::make_shared<DataTypeInt32>();
         else
             return variable->second.type;
     }
@@ -63,10 +63,8 @@ public:
         String variable_name = assert_cast<const ColumnConst &>(*col.column).getValue<String>();
         auto variable = global_variable_map.find(Poco::toLower(variable_name));
 
-        Field val;
-        if (variable == global_variable_map.end())
-            val = "";
-        else
+        Field val = 0;
+        if (variable != global_variable_map.end())
             val = variable->second.value;
 
         auto & result_col = block.getByPosition(result);
