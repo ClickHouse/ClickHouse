@@ -760,10 +760,6 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
             group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(all_columns, context));
             getRootActions(child, only_types, group_by_elements_actions.back());
         }
-//        std::cerr << "group_by_elements_actions\n";
-//        for (const auto & elem : group_by_elements_actions) {
-//            std::cerr << elem->dumpActions() << "\n";
-//        }
     }
 
     return true;
@@ -857,10 +853,6 @@ bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain
             order_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(all_columns, context));
             getRootActions(child, only_types, order_by_elements_actions.back());
         }
-//        std::cerr << "order_by_elements_actions\n";
-//        for (const auto & elem : order_by_elements_actions) {
-//            std::cerr << elem->dumpActions() << "\n";
-//        }
     }
     return true;
 }
