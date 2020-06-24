@@ -49,9 +49,9 @@ private:
     const size_t num_queues;
     const bool use_transactional_channel;
 
-    event_base * producerEvbase;
-    RabbitMQHandler eventHandler;
-    AMQP::TcpConnection connection;
+    uv_loop_t * loop;
+    std::unique_ptr<RabbitMQHandler> event_handler;
+    std::unique_ptr<AMQP::TcpConnection> connection;
     ProducerPtr producer_channel;
 
     size_t next_queue = 0;

@@ -9,7 +9,8 @@
 #include <atomic>
 #include <Storages/RabbitMQ/Buffer_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
-#include <event2/event.h>
+#include <amqpcpp/libuv.h>
+#include <uv.h>
 
 
 namespace DB
@@ -53,7 +54,6 @@ public:
     const String & getFormatName() const { return format_name; }
     NamesAndTypesList getVirtuals() const override;
 
-    const void pingConnection() { connection.heartbeat(); }
 
 protected:
     StorageRabbitMQ(
@@ -91,9 +91,9 @@ private:
     std::pair<String, UInt16> parsed_address;
     std::pair<String, String> login_password;
 
-    event_base * evbase;
-    RabbitMQHandler eventHandler;
-    AMQP::TcpConnection connection; /// Connection for all consumers
+    uv_loop_t * loop;
+    std::unique_ptr<RabbitMQHandler> event_handler;
+    std::unique_ptr<AMQP::TcpConnection> connection; /// Connection for all consumers
 
     Poco::Semaphore semaphore;
     std::mutex mutex;
@@ -102,12 +102,16 @@ private:
     size_t next_channel_id = 1; /// Must >= 1 because it is used as a binding key, which has to be > 0
     bool update_channel_id = false;
 
-    BackgroundSchedulePool::TaskHolder task;
+    BackgroundSchedulePool::TaskHolder streaming_task;
+    BackgroundSchedulePool::TaskHolder heartbeat_task;
     std::atomic<bool> stream_cancelled{false};
 
     ConsumerBufferPtr createReadBuffer();
 
     void threadFunc();
+    void heartbeatFunc();
+
+    void pingConnection() { connection->heartbeat(); }
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 };

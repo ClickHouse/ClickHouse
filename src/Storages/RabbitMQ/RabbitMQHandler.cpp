@@ -11,9 +11,9 @@ enum
 };
 
 
-RabbitMQHandler::RabbitMQHandler(event_base * evbase_, Poco::Logger * log_) :
-    LibEventHandler(evbase_),
-    evbase(evbase_),
+RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_) :
+    AMQP::LibUvHandler(loop_),
+    loop(loop_),
     log(log_)
 {
     tv.tv_sec = 0;
@@ -44,7 +44,7 @@ void RabbitMQHandler::startConsumerLoop(std::atomic<bool> & loop_started)
         loop_started.store(true);
         stop_scheduled = false;
 
-        event_base_loop(evbase, EVLOOP_NONBLOCK);
+        uv_run(loop, UV_RUN_NOWAIT);
         mutex_before_event_loop.unlock();
     }
 }
@@ -52,7 +52,7 @@ void RabbitMQHandler::startConsumerLoop(std::atomic<bool> & loop_started)
 
 void RabbitMQHandler::startProducerLoop()
 {
-    event_base_loop(evbase, EVLOOP_NONBLOCK);
+    uv_run(loop, UV_RUN_NOWAIT);
 }
 
 
@@ -60,7 +60,7 @@ void RabbitMQHandler::stop()
 {
     if (mutex_before_loop_stop.try_lock())
     {
-        event_base_loopbreak(evbase);
+        uv_stop(loop);
         mutex_before_loop_stop.unlock();
     }
 }
@@ -69,7 +69,7 @@ void RabbitMQHandler::stop()
 void RabbitMQHandler::stopWithTimeout()
 {
     stop_scheduled = true;
-    event_base_loopexit(evbase, &tv);
+    uv_stop(loop);
 }
 
 }

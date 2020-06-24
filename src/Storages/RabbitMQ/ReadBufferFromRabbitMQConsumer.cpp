@@ -446,10 +446,7 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
         }
 
         if (received.empty())
-        {
-            LOG_TRACE(log, "No more messages to be fetched");
             return false;
-        }
 
         messages.clear();
 

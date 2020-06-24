@@ -43,6 +43,8 @@ enum
     Connection_setup_retries_max = 1000
 };
 
+static const auto RESCHEDULE_MS = 500;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -80,19 +82,21 @@ StorageRabbitMQ::StorageRabbitMQ(
                     rabbitmq_context.getConfigRef().getString("rabbitmq_username", "root"),
                     rabbitmq_context.getConfigRef().getString("rabbitmq_password", "clickhouse")))
         , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
-        , evbase(event_base_new())
-        , eventHandler(evbase, log)
-        , connection(&eventHandler, AMQP::Address(parsed_address.first, parsed_address.second,
-                    AMQP::Login(login_password.first, login_password.second), "/"))
 {
+    loop = new uv_loop_t;
+    uv_loop_init(loop);
+
+    event_handler = std::make_unique<RabbitMQHandler>(loop, log);
+    connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(), AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
+
     size_t cnt_retries = 0;
-    while (!connection.ready() && ++cnt_retries != Connection_setup_retries_max)
+    while (!connection->ready() && ++cnt_retries != Connection_setup_retries_max)
     {
-        event_base_loop(evbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
+        uv_run(loop, UV_RUN_NOWAIT);
         std::this_thread::sleep_for(std::chrono::milliseconds(Connection_setup_sleep));
     }
 
-    if (!connection.ready())
+    if (!connection->ready())
     {
         LOG_ERROR(log, "Cannot set up connection for consumer");
     }
@@ -102,8 +106,10 @@ StorageRabbitMQ::StorageRabbitMQ(
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 
-    task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
-    task->deactivate();
+    streaming_task = global_context.getSchedulePool().createTask("RabbitMQStreamingTask", [this]{ threadFunc(); });
+    streaming_task->deactivate();
+    heartbeat_task = global_context.getSchedulePool().createTask("RabbitMQHeartbeatTask", [this]{ heartbeatFunc(); });
+    heartbeat_task->deactivate();
 
     bind_by_id = num_consumers > 1 || num_queues > 1;
 
@@ -112,6 +118,17 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     /// Make sure that local exchange name is unique for each table and is not the same as client's exchange name
     local_exchange_name = exchange_name + "_" + table_name;
+}
+
+
+void StorageRabbitMQ::heartbeatFunc()
+{
+    if (!stream_cancelled)
+    {
+        LOG_DEBUG(log, "Sending RabbitMQ heartbeat");
+        connection->heartbeat();
+        heartbeat_task->scheduleAfter(RESCHEDULE_MS * 10);
+    }
 }
 
 
@@ -165,7 +182,8 @@ void StorageRabbitMQ::startup()
         }
     }
 
-    task->activateAndSchedule();
+    streaming_task->activateAndSchedule();
+    heartbeat_task->activateAndSchedule();
 }
 
 
@@ -178,8 +196,10 @@ void StorageRabbitMQ::shutdown()
         popReadBuffer();
     }
 
-    connection.close();
-    task->deactivate();
+    streaming_task->deactivate();
+    heartbeat_task->deactivate();
+
+    connection->close();
 }
 
 
@@ -223,18 +243,21 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
         next_channel_id += num_queues;
     update_channel_id = true;
 
-    ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
+    ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
 
-    return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer_channel, eventHandler, exchange_name, routing_keys,
-            next_channel_id, log, row_delimiter, bind_by_id, num_queues, exchange_type, local_exchange_name, stream_cancelled);
+    return std::make_shared<ReadBufferFromRabbitMQConsumer>(
+        consumer_channel, *event_handler, exchange_name, routing_keys,
+        next_channel_id, log, row_delimiter, bind_by_id, num_queues,
+        exchange_type, local_exchange_name, stream_cancelled);
 }
 
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
-    return std::make_shared<WriteBufferToRabbitMQProducer>(parsed_address, login_password, routing_keys[0], local_exchange_name,
-            log, num_consumers * num_queues, bind_by_id, use_transactional_channel,
-            row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
+    return std::make_shared<WriteBufferToRabbitMQProducer>(
+        parsed_address, login_password, routing_keys[0], local_exchange_name,
+        log, num_consumers * num_queues, bind_by_id, use_transactional_channel,
+        row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
 
@@ -296,7 +319,7 @@ void StorageRabbitMQ::threadFunc()
 
     /// Wait for attached views
     if (!stream_cancelled)
-        task->activateAndSchedule();
+        streaming_task->schedule();
 }
 
 
