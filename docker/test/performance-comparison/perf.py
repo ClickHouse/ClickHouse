@@ -76,7 +76,7 @@ for e in subst_elems:
 # parameters. The set of parameters is determined based on the first list.
 # Note: keep the order of queries -- sometimes we have DROP IF EXISTS
 # followed by CREATE in create queries section, so the order matters.
-def substitute_parameters(query_templates, *other_templates):
+def substitute_parameters(query_templates, other_templates = []):
     query_results = []
     other_results = [[]] * (len(other_templates))
     for i, q in enumerate(query_templates):
@@ -89,7 +89,7 @@ def substitute_parameters(query_templates, *other_templates):
             for j, t in enumerate(other_templates):
                 other_results[j].append(t[i].format(**with_keys))
     if len(other_templates):
-        return query_results, *other_results
+        return query_results, other_results
     else:
         return query_results
 
@@ -162,10 +162,8 @@ test_queries = []
 for e in root.findall('query'):
     new_queries = []
     if 'short' in e.attrib:
-        new_queries, short = substitute_parameters([e.text], [e.attrib['short']])
-        print(new_queries)
-        print(short)
-        for i, s in enumerate(short):
+        new_queries, [is_short] = substitute_parameters([e.text], [[e.attrib['short']]])
+        for i, s in enumerate(is_short):
             if eval(s):
                 print(f'short\t{i + len(test_queries)}')
     else:
