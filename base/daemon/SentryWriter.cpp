@@ -245,5 +245,6 @@ void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & c
     UNUSED(info);
     UNUSED(context);
     UNUSED(stack_trace);
+    UNUSED(build_id_hex);
 #endif
 }
