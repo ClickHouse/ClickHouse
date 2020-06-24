@@ -34,7 +34,7 @@ These actions are described in detail below.
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, [`codec`](create.md#codecs) and `default_expr` (see the section [Default expressions](create.md#create-default-values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](../../sql-reference/statements/create.md#codecs) and `default_expr` (see the section [Default expressions](../../sql-reference/statements/create.md#create-default-values)).
 
 If the `IF NOT EXISTS` clause is included, the query won’t return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
@@ -90,7 +90,7 @@ Adds a comment to the column. If the `IF EXISTS` clause is specified, the query 
 
 Each column can have one comment. If a comment already exists for the column, a new comment overwrites the previous comment.
 
-Comments are stored in the `comment_expression` column returned by the [DESCRIBE TABLE](misc.md#misc-describe-table) query.
+Comments are stored in the `comment_expression` column returned by the [DESCRIBE TABLE](../../sql-reference/statements/misc.md#misc-describe-table) query.
 
 Example:
 
@@ -144,7 +144,7 @@ The `ALTER` query lets you create and delete separate elements (columns) in nest
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 
-If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](insert-into.md#insert_query_insert-select) query, then switch the tables using the [RENAME](misc.md#misc_operations-rename) query and delete the old table. You can use the [clickhouse-copier](../../operations/utilities/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query.
+If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select) query, then switch the tables using the [RENAME](../../sql-reference/statements/misc.md#misc_operations-rename) query and delete the old table. You can use the [clickhouse-copier](../../operations/utilities/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query.
 
 The `ALTER` query blocks all reads and writes for the table. In other words, if a long `SELECT` is running at the time of the `ALTER` query, the `ALTER` query will wait for it to complete. At the same time, all new queries to the same table will wait while this `ALTER` is running.
 
@@ -182,7 +182,7 @@ Also, they are replicated (syncing indices metadata through ZooKeeper).
 
 ### Manipulations with Constraints {#manipulations-with-constraints}
 
-See more on [constraints](create.md#constraints)
+See more on [constraints](../../sql-reference/statements/create.md#constraints)
 
 Constraints could be added or deleted using following syntax:
 
@@ -233,7 +233,7 @@ Read about setting the partition expression in a section [How to specify the par
 
 After the query is executed, you can do whatever you want with the data in the `detached` directory — delete it from the file system, or just leave it.
 
-This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../../operations/system-tables.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replica.
+This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../../operations/system-tables/replicas.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replica.
 
 #### DROP PARTITION {#alter_drop-partition}
 
@@ -434,13 +434,13 @@ You can specify the partition expression in `ALTER ... PARTITION` queries in dif
 -   As a value from the `partition` column of the `system.parts` table. For example, `ALTER TABLE visits DETACH PARTITION 201901`.
 -   As the expression from the table column. Constants and constant expressions are supported. For example, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
 -   Using the partition ID. Partition ID is a string identifier of the partition (human-readable, if possible) that is used as the names of partitions in the file system and in ZooKeeper. The partition ID must be specified in the `PARTITION ID` clause, in a single quotes. For example, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
--   In the [ALTER ATTACH PART](#alter_attach-partition) and [DROP DETACHED PART](#alter_drop-detached) query, to specify the name of a part, use string literal with a value from the `name` column of the [system.detached\_parts](../../operations/system-tables.md#system_tables-detached_parts) table. For example, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+-   In the [ALTER ATTACH PART](#alter_attach-partition) and [DROP DETACHED PART](#alter_drop-detached) query, to specify the name of a part, use string literal with a value from the `name` column of the [system.detached\_parts](../../operations/system-tables/detached_parts.md#system_tables-detached_parts) table. For example, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 Usage of quotes when specifying the partition depends on the type of partition expression. For example, for the `String` type, you have to specify its name in quotes (`'`). For the `Date` and `Int*` types no quotes are needed.
 
 For old-style tables, you can specify the partition either as a number `201901` or a string `'201901'`. The syntax for the new-style tables is stricter with types (similar to the parser for the VALUES input format).
 
-All the rules above are also true for the [OPTIMIZE](misc.md#misc_operations-optimize) query. If you need to specify the only partition when optimizing a non-partitioned table, set the expression `PARTITION tuple()`. For example:
+All the rules above are also true for the [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) query. If you need to specify the only partition when optimizing a non-partitioned table, set the expression `PARTITION tuple()`. For example:
 
 ``` sql
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
@@ -495,7 +495,7 @@ For \*MergeTree tables mutations execute by rewriting whole data parts. There is
 
 Mutations are totally ordered by their creation order and are applied to each part in that order. Mutations are also partially ordered with INSERTs - data that was inserted into the table before the mutation was submitted will be mutated and data that was inserted after that will not be mutated. Note that mutations do not block INSERTs in any way.
 
-A mutation query returns immediately after the mutation entry is added (in case of replicated tables to ZooKeeper, for nonreplicated tables - to the filesystem). The mutation itself executes asynchronously using the system profile settings. To track the progress of mutations you can use the [`system.mutations`](../../operations/system-tables.md#system_tables-mutations) table. A mutation that was successfully submitted will continue to execute even if ClickHouse servers are restarted. There is no way to roll back the mutation once it is submitted, but if the mutation is stuck for some reason it can be cancelled with the [`KILL MUTATION`](misc.md#kill-mutation) query.
+A mutation query returns immediately after the mutation entry is added (in case of replicated tables to ZooKeeper, for nonreplicated tables - to the filesystem). The mutation itself executes asynchronously using the system profile settings. To track the progress of mutations you can use the [`system.mutations`](../../operations/system-tables/mutations.md#system_tables-mutations) table. A mutation that was successfully submitted will continue to execute even if ClickHouse servers are restarted. There is no way to roll back the mutation once it is submitted, but if the mutation is stuck for some reason it can be cancelled with the [`KILL MUTATION`](../../sql-reference/statements/misc.md#kill-mutation) query.
 
 Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
 
@@ -512,11 +512,11 @@ ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]
     [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
-```  
+```
 
 ### Description {#alter-user-dscr}
 
-To use `ALTER USER` you must have the [ALTER USER](grant.md#grant-access-management) privilege.
+To use `ALTER USER` you must have the [ALTER USER](../../sql-reference/statements/grant.md#grant-access-management) privilege.
 
 ### Examples {#alter-user-examples}
 
@@ -526,7 +526,7 @@ Set assigned roles as default:
 ALTER USER user DEFAULT ROLE role1, role2
 ```
 
-If roles aren't previously assigned to a user, ClickHouse throws an exception.
+If roles aren’t previously assigned to a user, ClickHouse throws an exception.
 
 Set all the assigned roles to default:
 
@@ -542,7 +542,6 @@ Set all the assigned roles to default, excepting `role1` and `role2`:
 ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
 ```
 
-
 ## ALTER ROLE {#alter-role-statement}
 
 Changes roles.
@@ -554,7 +553,6 @@ ALTER ROLE [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
-
 
 ## ALTER ROW POLICY {#alter-row-policy-statement}
 
@@ -570,7 +568,6 @@ ALTER [ROW] POLICY [IF EXISTS] name [ON CLUSTER cluster_name] ON [database.]tabl
     [USING {condition | NONE}][,...]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
-
 
 ## ALTER QUOTA {#alter-quota-statement}
 
@@ -588,7 +585,6 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
-
 ## ALTER SETTINGS PROFILE {#alter-settings-profile-statement}
 
 Changes settings profiles.
@@ -600,6 +596,5 @@ ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
-
 
 [Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->

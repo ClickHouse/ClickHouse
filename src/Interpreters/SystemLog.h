@@ -69,6 +69,7 @@ class PartLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
+class AsynchronousMetricLog;
 
 
 class ISystemLog
@@ -100,6 +101,8 @@ struct SystemLogs
     std::shared_ptr<TraceLog> trace_log;                /// Used to log traces from query profiler
     std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
+    /// Metrics from system.asynchronous_metrics.
+    std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
 
     std::vector<ISystemLog *> logs;
 };
@@ -167,8 +170,6 @@ private:
 
     /* Data shared between callers of add()/flush()/shutdown(), and the saving thread */
     std::mutex mutex;
-    /* prepareTable() guard */
-    std::mutex prepare_mutex;
     // Queue is bounded. But its size is quite large to not block in all normal cases.
     std::vector<LogElement> queue;
     // An always-incrementing index of the first message currently in the queue.
@@ -177,6 +178,7 @@ private:
     // synchronous log flushing for SYSTEM FLUSH LOGS.
     uint64_t queue_front_index = 0;
     bool is_shutdown = false;
+    bool is_force_prepare_tables = false;
     std::condition_variable flush_event;
     // Requested to flush logs up to this index, exclusive
     uint64_t requested_flush_before = 0;
@@ -282,12 +284,10 @@ void SystemLog<LogElement>::flush(bool force)
     if (is_shutdown)
         return;
 
-    if (force)
-        prepareTable();
-
     const uint64_t queue_end = queue_front_index + queue.size();
 
-    if (requested_flush_before < queue_end)
+    is_force_prepare_tables = force;
+    if (requested_flush_before < queue_end || force)
     {
         requested_flush_before = queue_end;
         flush_event.notify_all();
@@ -296,7 +296,7 @@ void SystemLog<LogElement>::flush(bool force)
     // Use an arbitrary timeout to avoid endless waiting.
     const int timeout_seconds = 60;
     bool result = flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds),
-        [&] { return flushed_before >= queue_end; });
+        [&] { return flushed_before >= queue_end && !is_force_prepare_tables; });
 
     if (!result)
     {
@@ -353,8 +353,7 @@ void SystemLog<LogElement>::savingThreadFunction()
                     std::chrono::milliseconds(flush_interval_milliseconds),
                     [&] ()
                     {
-                        return requested_flush_before > flushed_before
-                            || is_shutdown;
+                        return requested_flush_before > flushed_before || is_shutdown || is_force_prepare_tables;
                     }
                 );
 
@@ -370,10 +369,26 @@ void SystemLog<LogElement>::savingThreadFunction()
 
             if (to_flush.empty())
             {
-                continue;
-            }
+                bool force;
+                {
+                    std::lock_guard lock(mutex);
+                    force = is_force_prepare_tables;
+                }
 
-            flushImpl(to_flush, to_flush_end);
+                if (force)
+                {
+                    prepareTable();
+                    LOG_TRACE(log, "Table created (force)");
+
+                    std::lock_guard lock(mutex);
+                    is_force_prepare_tables = false;
+                    flush_event.notify_all();
+                }
+            }
+            else
+            {
+                flushImpl(to_flush, to_flush_end);
+            }
         }
         catch (...)
         {
@@ -425,6 +440,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     {
         std::lock_guard lock(mutex);
         flushed_before = to_flush_end;
+        is_force_prepare_tables = false;
         flush_event.notify_all();
     }
 
@@ -435,16 +451,15 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
-    std::lock_guard prepare_lock(prepare_mutex);
-
     String description = table_id.getNameForLogs();
 
     table = DatabaseCatalog::instance().tryGetTable(table_id, context);
 
     if (table)
     {
+        auto metadata_snapshot = table->getInMemoryMetadataPtr();
         const Block expected = LogElement::createBlock();
-        const Block actual = table->getSampleBlockNonMaterialized();
+        const Block actual = metadata_snapshot->getSampleBlockNonMaterialized();
 
         if (!blocksHaveEqualStructure(actual, expected))
         {

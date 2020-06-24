@@ -137,6 +137,15 @@
       -->
     <max_server_memory_usage>0</max_server_memory_usage>
 
+    <!-- Maximum number of threads in the Global thread pool.
+    This will default to a maximum of 10000 threads if not specified.
+    This setting will be useful in scenarios where there are a large number
+    of distributed queries that are running concurrently but are idling most
+    of the time, in which case a higher number of threads might be required.
+    -->
+
+     <max_thread_pool_size>10000</max_thread_pool_size>
+
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
     <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
@@ -481,6 +490,20 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
+
+    <!--
+        Asynchronous metric log contains values of metrics from
+        system.asynchronous_metrics.
+    -->
+    <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <!--
+            Asynchronous metrics are updated once a minute, so there is
+            no need to flush more often.
+        -->
+        <flush_interval_milliseconds>60000</flush_interval_milliseconds>
+    </asynchronous_metric_log>
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
          See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
