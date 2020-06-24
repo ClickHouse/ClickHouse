@@ -46,6 +46,28 @@ def test_simple_alter_table(started_cluster):
     main_node.query("ALTER TABLE testdb.alter_test ADD COLUMN AddedNested2 Nested(A UInt32, B UInt64) AFTER AddedNested1;")
 
     time.sleep(DURATION_SECONDS)
+
+    schema = main_node.query("show create table testdb.alter_test")
+    fields = [
+        "`CounterID`",
+        "`StartDate`",
+        "`UserID`",
+        "`VisitID`",
+        "`NestedColumn.A`",
+        "`NestedColumn.S`",
+        "`ToDrop`",
+        "`Added0`",
+        "`Added1`",
+        "`Added2`",
+        "`AddedNested1.A`",
+        "`AddedNested1.B`",
+        "`AddedNested1.C`",
+        "`AddedNested2.A`",
+        "`AddedNested2.B`"]
+
+    for field in fields:
+        assert field in schema
+
     assert main_node.query("desc table testdb.alter_test") == dummy_node.query("desc table testdb.alter_test")
 
 def test_create_replica_after_delay(started_cluster):
