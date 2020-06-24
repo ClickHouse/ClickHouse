@@ -1048,17 +1048,6 @@ Valeurs possibles:
 
 Valeur par défaut: 0
 
-## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
-
-Réinitialiser [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) pour imbriquée `Distributed` table
-
-Valeurs possibles:
-
--   1 — Enabled.
--   0 — Disabled.
-
-Valeur par défaut: 0.
-
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
 Active ou désactive le lancement d'une exception si [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) la requête n'a pas effectué de fusion.

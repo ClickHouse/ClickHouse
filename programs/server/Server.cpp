@@ -431,6 +431,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
 
+    /// Initialize global thread pool
+    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
 
     /// Storage with temporary data for processing of heavy queries.
     {

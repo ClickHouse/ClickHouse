@@ -275,8 +275,11 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
         switch (*buf.position())
         {
             case '+':
+            {
                 break;
+            }
             case '-':
+            {
                 if constexpr (is_signed_v<T>)
                     negative = true;
                 else
@@ -287,6 +290,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                         return ReturnType(false);
                 }
                 break;
+            }
             case '0': [[fallthrough]];
             case '1': [[fallthrough]];
             case '2': [[fallthrough]];
@@ -297,20 +301,27 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '7': [[fallthrough]];
             case '8': [[fallthrough]];
             case '9':
+            {
                 if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
                 {
-                    // perform relativelly slow overflow check only when number of decimal digits so far is close to the max for given type.
-                    if (buf.count() - initial_pos >= std::numeric_limits<T>::max_digits10)
+                    /// Perform relativelly slow overflow check only when
+                    /// number of decimal digits so far is close to the max for given type.
+                    /// Example: 20 * 10 will overflow Int8.
+
+                    if (buf.count() - initial_pos + 1 >= std::numeric_limits<T>::max_digits10)
                     {
-                        if (common::mulOverflow(res, static_cast<decltype(res)>(10), res)
-                            || common::addOverflow(res, static_cast<decltype(res)>(*buf.position() - '0'), res))
+                        T signed_res = res;
+                        if (common::mulOverflow<T>(signed_res, 10, signed_res)
+                            || common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
                             return ReturnType(false);
+                        res = signed_res;
                         break;
                     }
                 }
                 res *= 10;
                 res += *buf.position() - '0';
                 break;
+            }
             default:
                 goto end;
         }
@@ -318,7 +329,23 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     }
 
 end:
-    x = negative ? -res : res;
+    if (!negative)
+    {
+        x = res;
+    }
+    else
+    {
+        if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+        {
+            x = res;
+            if (common::mulOverflow<T>(x, -1, x))
+                return ReturnType(false);
+        }
+        else
+        {
+            x = -res;
+        }
+    }
 
     return ReturnType(true);
 }
@@ -658,35 +685,34 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         return ReturnType(false);
     }
 
-    DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> c{static_cast<DateTime64::NativeType>(whole), 0};
+    DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> components{static_cast<DateTime64::NativeType>(whole), 0};
 
     if (!buf.eof() && *buf.position() == '.')
     {
-        buf.ignore(1); // skip separator
-        const auto pos_before_fractional = buf.count();
-        if (!tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(c.fractional, buf))
+        ++buf.position();
+
+        /// Read digits, up to 'scale' positions.
+        for (size_t i = 0; i < scale; ++i)
         {
-            return ReturnType(false);
+            if (!buf.eof() && isNumericASCII(*buf.position()))
+            {
+                components.fractional *= 10;
+                components.fractional += *buf.position() - '0';
+                ++buf.position();
+            }
+            else
+            {
+                /// Adjust to scale.
+                components.fractional *= 10;
+            }
         }
 
-        // Adjust fractional part to the scale, since decimalFromComponents knows nothing
-        // about convention of ommiting trailing zero on fractional part
-        // and assumes that fractional part value is less than 10^scale.
-
-        // If scale is 3, but we read '12', promote fractional part to '120'.
-        // And vice versa: if we read '1234', denote it to '123'.
-        const auto fractional_length = static_cast<Int32>(buf.count() - pos_before_fractional);
-        if (const auto adjust_scale = static_cast<Int32>(scale) - fractional_length; adjust_scale > 0)
-        {
-            c.fractional *= common::exp10_i64(adjust_scale);
-        }
-        else if (adjust_scale < 0)
-        {
-            c.fractional /= common::exp10_i64(-1 * adjust_scale);
-        }
+        /// Ignore digits that are out of precision.
+        while (!buf.eof() && isNumericASCII(*buf.position()))
+            ++buf.position();
     }
 
-    datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(c, scale);
+    datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
 
     return ReturnType(true);
 }
