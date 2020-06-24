@@ -17,20 +17,63 @@ import jsmin
 import mdx_clickhouse
 
 
+def handle_iframe(iframe, soup):
+    if not iframe.attrs['src'].startswith('https://www.youtube.com/'):
+        raise RuntimeError('iframes are allowed only for YouTube')
+    wrapper = soup.new_tag('div')
+    wrapper.attrs['class'] = ['embed-responsive', 'embed-responsive-16by9']
+    iframe.insert_before(wrapper)
+    iframe.extract()
+    wrapper.insert(0, iframe)
+    if 'width' in iframe.attrs:
+        del iframe.attrs['width']
+    if 'height' in iframe.attrs:
+        del iframe.attrs['height']
+    iframe.attrs['allow'] = 'accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture'
+    iframe.attrs['class'] = 'embed-responsive-item'
+    iframe.attrs['frameborder'] = '0'
+    iframe.attrs['allowfullscreen'] = '1'
+
+
 def adjust_markdown_html(content):
     soup = bs4.BeautifulSoup(
         content,
         features='html.parser'
     )
+
     for a in soup.find_all('a'):
         a_class = a.attrs.get('class')
         if a_class and 'headerlink' in a_class:
             a.string = '\xa0'
+
+    for iframe in soup.find_all('iframe'):
+        handle_iframe(iframe, soup)
+
+    for img in soup.find_all('img'):
+        if img.attrs.get('alt') == 'iframe':
+            img.name = 'iframe'
+            img.string = ''
+            handle_iframe(img, soup)
+            continue
+        img_class = img.attrs.get('class')
+        if img_class:
+            img.attrs['class'] = img_class + ['img-fluid']
+        else:
+            img.attrs['class'] = 'img-fluid'
+
     for details in soup.find_all('details'):
         for summary in details.find_all('summary'):
             if summary.parent != details:
                 summary.extract()
                 details.insert(0, summary)
+
+    for dd in soup.find_all('dd'):
+        dd_class = dd.attrs.get('class')
+        if dd_class:
+            dd.attrs['class'] = dd_class + ['pl-3']
+        else:
+            dd.attrs['class'] = 'pl-3'
+
     for div in soup.find_all('div'):
         div_class = div.attrs.get('class')
         is_admonition = div_class and 'admonition' in div.attrs.get('class')
@@ -41,10 +84,12 @@ def adjust_markdown_html(content):
                     a.attrs['class'] = a_class + ['alert-link']
                 else:
                     a.attrs['class'] = 'alert-link'
+
         for p in div.find_all('p'):
             p_class = p.attrs.get('class')
             if is_admonition and p_class and ('admonition-title' in p_class):
                 p.attrs['class'] = p_class + ['alert-heading', 'display-6', 'mb-2']
+
         if is_admonition:
             div.attrs['role'] = 'alert'
             if ('info' in div_class) or ('note' in div_class):
@@ -107,9 +152,12 @@ def build_website(args):
             'public',
             'node_modules',
             'templates',
-            'feathericons',
             'locale'
         )
+    )
+    shutil.copy2(
+        os.path.join(args.website_dir, 'js', 'embedd.min.js'),
+        os.path.join(args.output_dir, 'js', 'embedd.min.js')
     )
 
     for root, _, filenames in os.walk(args.output_dir):
@@ -136,6 +184,7 @@ def get_css_in(args):
         f"'{args.website_dir}/css/bootstrap.css'",
         f"'{args.website_dir}/css/docsearch.css'",
         f"'{args.website_dir}/css/base.css'",
+        f"'{args.website_dir}/css/blog.css'",
         f"'{args.website_dir}/css/docs.css'",
         f"'{args.website_dir}/css/highlight.css'"
     ]
@@ -236,6 +285,10 @@ def minify_website(args):
 
 def process_benchmark_results(args):
     benchmark_root = os.path.join(args.website_dir, 'benchmark')
+    required_keys = {
+        'dbms': ['result'],
+        'hardware': ['result', 'system', 'system_full', 'kind']
+    }
     for benchmark_kind in ['dbms', 'hardware']:
         results = []
         results_root = os.path.join(benchmark_root, benchmark_kind, 'results')
@@ -243,7 +296,11 @@ def process_benchmark_results(args):
             result_file = os.path.join(results_root, result)
             logging.debug(f'Reading benchmark result from {result_file}')
             with open(result_file, 'r') as f:
-                results += json.loads(f.read())
+                result = json.loads(f.read())
+                for item in result:
+                    for required_key in required_keys[benchmark_kind]:
+                        assert required_key in item, f'No "{required_key}" in {result_file}'
+                results += result
         results_js = os.path.join(args.output_dir, 'benchmark', benchmark_kind, 'results.js')
         with open(results_js, 'w') as f:
             data = json.dumps(results)

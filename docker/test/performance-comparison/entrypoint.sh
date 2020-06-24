@@ -17,7 +17,7 @@ function find_reference_sha
     # If not master, try to fetch pull/.../{head,merge}
     if [ "$PR_TO_TEST" != "0" ]
     then
-        git -C ch fetch origin "refs/pull/$PR_TO_TEST/*:refs/heads/pr/*"
+        git -C ch fetch origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*"
     fi
 
     # Go back from the revision to be tested, trying to find the closest published
@@ -28,9 +28,9 @@ function find_reference_sha
     # and SHA_TO_TEST, but a revision that is merged with recent master, given
     # by pull/.../merge ref.
     # Master is the first parent of the pull/.../merge.
-    if git -C ch rev-parse pr/merge
+    if git -C ch rev-parse "pull/$PR_TO_TEST/merge"
     then
-        start_ref=pr/merge~
+        start_ref="pull/$PR_TO_TEST/merge~"
     fi
 
     while :
@@ -73,11 +73,11 @@ if [ "$REF_PR" == "" ]; then echo Reference PR is not specified ; exit 1 ; fi
 
 (
     git -C ch log -1 --decorate "$SHA_TO_TEST" ||:
-    if git -C ch rev-parse pr/merge &> /dev/null
+    if git -C ch rev-parse "pull/$PR_TO_TEST/merge" &> /dev/null
     then
         echo
         echo Real tested commit is:
-        git -C ch log -1 --decorate pr/merge
+        git -C ch log -1 --decorate "pull/$PR_TO_TEST/merge"
     fi
 ) | tee right-commit.txt
 
@@ -87,7 +87,7 @@ then
     # tests for use by compare.sh. Compare to merge base, because master might be
     # far in the future and have unrelated test changes.
     base=$(git -C ch merge-base "$SHA_TO_TEST" master)
-    git -C ch diff --name-only "$SHA_TO_TEST" "$base" | tee changed-tests.txt
+    git -C ch diff --name-only "$base" "$SHA_TO_TEST" | tee changed-tests.txt
     if grep -vq '^tests/performance' changed-tests.txt
     then
         # Have some other changes besides the tests, so truncate the test list,
@@ -131,5 +131,8 @@ done
 
 dmesg -T > dmesg.log
 
-7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} {right,left}/{performance,db/preprocessed_configs,scripts} report analyze
+7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} \
+    {right,left}/{performance,scripts} {{right,left}/db,db0}/preprocessed_configs \
+    report analyze benchmark
+
 cp compare.log /output
