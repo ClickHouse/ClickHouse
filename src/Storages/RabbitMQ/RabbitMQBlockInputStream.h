@@ -14,6 +14,7 @@ class RabbitMQBlockInputStream : public IBlockInputStream
 public:
     RabbitMQBlockInputStream(
             StorageRabbitMQ & storage_,
+            const StorageMetadataPtr & metadata_snapshot_,
             const Context & context_,
             const Names & columns,
             Poco::Logger * log_);
@@ -29,6 +30,7 @@ public:
 
 private:
     StorageRabbitMQ & storage;
+    StorageMetadataPtr metadata_snapshot;
     Context context;
     Names column_names;
     Poco::Logger * log;

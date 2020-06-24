@@ -98,7 +98,9 @@ StorageRabbitMQ::StorageRabbitMQ(
     }
 
     rabbitmq_context.makeQueryContext();
-    setColumns(columns_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    setInMemoryMetadata(storage_metadata);
 
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
@@ -115,6 +117,7 @@ StorageRabbitMQ::StorageRabbitMQ(
 
 Pipes StorageRabbitMQ::read(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & /* query_info */,
         const Context & context,
         QueryProcessingStage::Enum /* processed_stage */,
@@ -129,8 +132,9 @@ Pipes StorageRabbitMQ::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<RabbitMQBlockInputStream>(
-                        *this, context, column_names, log)));
+        pipes.emplace_back(
+            std::make_shared<SourceFromInputStream>(std::make_shared<RabbitMQBlockInputStream>(
+                    *this, metadata_snapshot, context, column_names, log)));
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -139,9 +143,9 @@ Pipes StorageRabbitMQ::read(
 }
 
 
-BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const Context & context)
+BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
-    return std::make_shared<RabbitMQBlockOutputStream>(*this, context);
+    return std::make_shared<RabbitMQBlockOutputStream>(*this, metadata_snapshot, context);
 }
 
 
@@ -316,7 +320,7 @@ bool StorageRabbitMQ::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto stream = std::make_shared<RabbitMQBlockInputStream>(*this, rabbitmq_context, block_io.out->getHeader().getNames(), log);
+        auto stream = std::make_shared<RabbitMQBlockInputStream>(*this, getInMemoryMetadataPtr(), rabbitmq_context, block_io.out->getHeader().getNames(), log);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
