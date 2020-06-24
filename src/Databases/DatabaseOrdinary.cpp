@@ -1,5 +1,3 @@
-#include <iomanip>
-
 #include <Core/Settings.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
@@ -12,17 +10,14 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Storages/StorageFactory.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
-#include <TableFunctions/TableFunctionFactory.h>
 
 #include <Parsers/queryToString.h>
 
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Event.h>
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
