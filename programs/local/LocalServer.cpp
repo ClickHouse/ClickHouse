@@ -47,6 +47,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int CANNOT_LOAD_CONFIG;
 }
@@ -112,7 +114,7 @@ void LocalServer::tryInitPath()
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cannot work with emtpy storage path that is explicitly specified"
-                " by the --path option. Please check the program options and
+                " by the --path option. Please check the program options and"
                 " correct the --path.");
         }
     }
