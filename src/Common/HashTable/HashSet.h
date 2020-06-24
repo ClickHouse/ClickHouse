@@ -93,6 +93,14 @@ template
 >
 using HashSet = HashSetTable<Key, HashTableCell<Key, Hash>, Hash, Grower, Allocator>;
 
+template <typename Key, typename Hash, size_t initial_size_degree>
+using HashSetWithStackMemory = HashSet<
+    Key,
+    Hash,
+    HashTableGrower<initial_size_degree>,
+    HashTableAllocatorWithStackMemory<
+        (1ULL << initial_size_degree)
+        * sizeof(HashTableCell<Key, Hash>)>>;
 
 template
 <
@@ -102,3 +110,12 @@ template
     typename Allocator = HashTableAllocator
 >
 using HashSetWithSavedHash = HashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, Grower, Allocator>;
+
+template <typename Key, typename Hash, size_t initial_size_degree>
+using HashSetWithSavedHashWithStackMemory = HashSetWithSavedHash<
+    Key,
+    Hash,
+    HashTableGrower<initial_size_degree>,
+    HashTableAllocatorWithStackMemory<
+        (1ULL << initial_size_degree)
+        * sizeof(HashSetCellWithSavedHash<Key, Hash>)>>;

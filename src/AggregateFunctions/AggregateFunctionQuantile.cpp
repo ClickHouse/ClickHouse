@@ -70,17 +70,17 @@ AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, c
     WhichDataType which(argument_type);
 
 #define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) return std::make_shared<Function<TYPE, true>>(argument_type, params);
+    if (which.idx == TypeIndex::TYPE) return std::make_shared<Function<TYPE, true>>(argument_types, params);
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
-    if (which.idx == TypeIndex::Date) return std::make_shared<Function<DataTypeDate::FieldType, false>>(argument_type, params);
-    if (which.idx == TypeIndex::DateTime) return std::make_shared<Function<DataTypeDateTime::FieldType, false>>(argument_type, params);
+    if (which.idx == TypeIndex::Date) return std::make_shared<Function<DataTypeDate::FieldType, false>>(argument_types, params);
+    if (which.idx == TypeIndex::DateTime) return std::make_shared<Function<DataTypeDateTime::FieldType, false>>(argument_types, params);
 
     if constexpr (supportDecimal<Function>())
     {
-        if (which.idx == TypeIndex::Decimal32) return std::make_shared<Function<Decimal32, false>>(argument_type, params);
-        if (which.idx == TypeIndex::Decimal64) return std::make_shared<Function<Decimal64, false>>(argument_type, params);
-        if (which.idx == TypeIndex::Decimal128) return std::make_shared<Function<Decimal128, false>>(argument_type, params);
+        if (which.idx == TypeIndex::Decimal32) return std::make_shared<Function<Decimal32, false>>(argument_types, params);
+        if (which.idx == TypeIndex::Decimal64) return std::make_shared<Function<Decimal64, false>>(argument_types, params);
+        if (which.idx == TypeIndex::Decimal128) return std::make_shared<Function<Decimal128, false>>(argument_types, params);
     }
 
     throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name,

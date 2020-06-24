@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: "Aral\u0131kl\u0131"
 ---
 
 # Aralıklı {#data-type-interval}
 
-Zaman ve Tarih aralıklarını temsil eden veri türleri ailesi. Ortaya çıkan türleri [INTERVAL](../../../sql-reference/operators.md#operator-interval) operatör.
+Zaman ve Tarih aralıklarını temsil eden veri türleri ailesi. Ortaya çıkan türleri [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operatör.
 
 !!! warning "Uyarıcı"
     `Interval` veri türü değerleri tablolarda saklanamaz.
@@ -81,5 +81,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## Ayrıca Bakınız {#see-also}
 
--   [INTERVAL](../../../sql-reference/operators.md#operator-interval) operatör
+-   [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operatör
 -   [toİnterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) tip dönüştürme işlevleri

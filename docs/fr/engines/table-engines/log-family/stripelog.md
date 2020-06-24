@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 32
 toc_title: StripeLog
 ---
@@ -11,7 +11,7 @@ Ce moteur appartient à la famille des moteurs en rondins. Voir les propriétés
 
 Utilisez ce moteur dans des scénarios lorsque vous devez écrire de nombreuses tables avec une petite quantité de données (moins de 1 million de lignes).
 
-## Création d’une Table {#table_engines-stripelog-creating-a-table}
+## Création d'une Table {#table_engines-stripelog-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -24,9 +24,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Voir la description détaillée de la [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) requête.
 
-## L’écriture Des Données {#table_engines-stripelog-writing-the-data}
+## L'écriture des Données {#table_engines-stripelog-writing-the-data}
 
-Le `StripeLog` moteur stocke toutes les colonnes dans un fichier. Pour chaque `INSERT` requête, ClickHouse ajoute le bloc de données à la fin d’un fichier de table, en écrivant des colonnes une par une.
+Le `StripeLog` moteur stocke toutes les colonnes dans un fichier. Pour chaque `INSERT` requête, ClickHouse ajoute le bloc de données à la fin d'un fichier de table, en écrivant des colonnes une par une.
 
 Pour chaque table ClickHouse écrit les fichiers:
 
@@ -35,13 +35,13 @@ Pour chaque table ClickHouse écrit les fichiers:
 
 Le `StripeLog` moteur ne prend pas en charge la `ALTER UPDATE` et `ALTER DELETE` opérations.
 
-## La Lecture Des Données {#table_engines-stripelog-reading-the-data}
+## La lecture des Données {#table_engines-stripelog-reading-the-data}
 
-Le fichier avec des marques permet à ClickHouse de paralléliser la lecture des données. Cela signifie qu’une `SELECT` la requête renvoie des lignes dans un ordre imprévisible. L’utilisation de la `ORDER BY` clause pour trier les lignes.
+Le fichier avec des marques permet à ClickHouse de paralléliser la lecture des données. Cela signifie qu'une `SELECT` la requête renvoie des lignes dans un ordre imprévisible. L'utilisation de la `ORDER BY` clause pour trier les lignes.
 
-## Exemple D’Utilisation {#table_engines-stripelog-example-of-use}
+## Exemple D'utilisation {#table_engines-stripelog-example-of-use}
 
-Création d’une table:
+Création d'une table:
 
 ``` sql
 CREATE TABLE stripe_log_table
@@ -62,7 +62,7 @@ INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The second regular message
 
 Nous avons utilisé deux `INSERT` requêtes pour créer deux blocs de données `data.bin` fichier.
 
-ClickHouse utilise plusieurs threads lors de la sélection des données. Chaque thread lit un bloc de données séparé et renvoie les lignes résultantes indépendamment à la fin. En conséquence, l’ordre des blocs de lignes dans le résultat ne correspond pas à l’ordre des mêmes blocs dans l’entrée, dans la plupart des cas. Exemple:
+ClickHouse utilise plusieurs threads lors de la sélection des données. Chaque thread lit un bloc de données séparé et renvoie les lignes résultantes indépendamment à la fin. En conséquence, l'ordre des blocs de lignes dans le résultat ne correspond pas à l'ordre des mêmes blocs dans l'entrée, dans la plupart des cas. Exemple:
 
 ``` sql
 SELECT * FROM stripe_log_table

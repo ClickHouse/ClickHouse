@@ -12,17 +12,24 @@ namespace ErrorCodes
     extern const int TOO_MANY_BYTES;
 }
 
+SourceWithProgress::SourceWithProgress(Block header, bool enable_auto_progress)
+    : ISourceWithProgress(header), auto_progress(enable_auto_progress)
+{
+}
+
 void SourceWithProgress::work()
 {
     if (!limits.speed_limits.checkTimeLimit(total_stopwatch.elapsed(), limits.timeout_overflow_mode))
+    {
         cancel();
+    }
     else
     {
         was_progress_called = false;
 
         ISourceWithProgress::work();
 
-        if (!was_progress_called && has_input)
+        if (auto_progress && !was_progress_called && has_input)
             progress({ current_chunk.chunk.getNumRows(), current_chunk.chunk.bytes() });
     }
 }
@@ -57,7 +64,13 @@ void SourceWithProgress::progress(const Progress & value)
         /// The total amount of data processed or intended for processing in all sources, possibly on remote servers.
 
         ProgressValues progress = process_list_elem->getProgressIn();
-        size_t total_rows_estimate = std::max(progress.read_rows, progress.total_rows_to_read);
+
+        /// If the mode is "throw" and estimate of total rows is known, then throw early if an estimate is too high.
+        /// If the mode is "break", then allow to read before limit even if estimate is very high.
+
+        size_t rows_to_check_limit = progress.read_rows;
+        if (limits.size_limits.overflow_mode == OverflowMode::THROW && progress.total_rows_to_read > progress.read_rows)
+            rows_to_check_limit = progress.total_rows_to_read;
 
         /// Check the restrictions on the
         ///  * amount of data to read
@@ -67,9 +80,11 @@ void SourceWithProgress::progress(const Progress & value)
 
         if (limits.mode == LimitsMode::LIMITS_TOTAL)
         {
-            if (!limits.size_limits.check(total_rows_estimate, progress.read_bytes, "rows to read",
+            if (!limits.size_limits.check(rows_to_check_limit, progress.read_bytes, "rows or bytes to read",
                                           ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
+            {
                 cancel();
+            }
         }
 
         size_t total_rows = progress.total_rows_to_read;

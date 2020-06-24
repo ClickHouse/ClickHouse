@@ -338,43 +338,46 @@ class GenerateSource : public SourceWithProgress
 {
 public:
     GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, const Context & context_)
-        : SourceWithProgress(block_header_), block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
-        , block_header(block_header_), rng(random_seed_), context(context_) {}
+        : SourceWithProgress(Nested::flatten(prepareBlockToFill(block_header_)))
+        , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
+        , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
 
     String getName() const override { return "GenerateRandom"; }
 
 protected:
     Chunk generate() override
     {
-        /// To support Nested types, we will collect them to single Array of Tuple.
-        auto names_and_types = Nested::collect(block_header.getNamesAndTypesList());
-
         Columns columns;
-        columns.reserve(names_and_types.size());
+        columns.reserve(block_to_fill.columns());
 
-        Block compact_block;
-        for (const auto & elem : names_and_types)
-        {
-            compact_block.insert(
-            {
-                fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, context),
-                elem.type,
-                elem.name
-            });
-        }
+        for (const auto & elem : block_to_fill)
+            columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, context));
 
-        return {Nested::flatten(compact_block).getColumns(), block_size};
+        columns = Nested::flatten(block_to_fill.cloneWithColumns(std::move(columns))).getColumns();
+        return {std::move(columns), block_size};
     }
 
 private:
     UInt64 block_size;
     UInt64 max_array_length;
     UInt64 max_string_length;
-    Block block_header;
+    Block block_to_fill;
 
     pcg64 rng;
 
     const Context & context;
+
+    static Block & prepareBlockToFill(Block & block)
+    {
+        /// To support Nested types, we will collect them to single Array of Tuple.
+        auto names_and_types = Nested::collect(block.getNamesAndTypesList());
+        block.clear();
+
+        for (auto & column : names_and_types)
+            block.insert(ColumnWithTypeAndName(column.type, column.name));
+
+        return block;
+    }
 };
 
 }
@@ -385,7 +388,9 @@ StorageGenerateRandom::StorageGenerateRandom(const StorageID & table_id_, const 
     : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
 {
     random_seed = random_seed_ ? sipHash64(*random_seed_) : randomSeed();
-    setColumns(columns_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    setInMemoryMetadata(storage_metadata);
 }
 
 
@@ -424,18 +429,19 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
 Pipes StorageGenerateRandom::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    check(column_names, true);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const ColumnsDescription & our_columns = getColumns();
+    const ColumnsDescription & our_columns = metadata_snapshot->getColumns();
     Block block_header;
     for (const auto & name : column_names)
     {

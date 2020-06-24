@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 69
 toc_title: "ClickHouse testleri nas\u0131l \xE7al\u0131\u015Ft\u0131r\u0131l\u0131\
   r"
@@ -14,7 +14,7 @@ Fonksiyonel testler en basit ve kullanımı kolay olanlardır. ClickHouse özell
 
 Her işlevsel test, çalışan ClickHouse sunucusuna bir veya birden çok sorgu gönderir ve sonucu referansla karşılaştırır.
 
-Testler bulunur `queries` dizin. İki alt dizin var: `stateless` ve `stateful`. Durumsuz testler, önceden yüklenmiş test verileri olmadan sorguları çalıştırır - genellikle testin kendisinde anında küçük sentetik veri kümeleri oluştururlar. Durum bilgisi testleri, Yandex’ten önceden yüklenmiş test verileri gerektirir.Metrica ve halka açık değil. Biz sadece kullanmak eğilimindedir `stateless` testler ve yeni eklemekten kaçının `stateful` testler.
+Testler bulunur `queries` dizin. İki alt dizin var: `stateless` ve `stateful`. Durumsuz testler, önceden yüklenmiş test verileri olmadan sorguları çalıştırır - genellikle testin kendisinde anında küçük sentetik veri kümeleri oluştururlar. Durum bilgisi testleri, Yandex'ten önceden yüklenmiş test verileri gerektirir.Metrica ve halka açık değil. Biz sadece kullanmak eğilimindedir `stateless` testler ve yeni eklemekten kaçının `stateful` testler.
 
 Her test iki tipten biri olabilir: `.sql` ve `.sh`. `.sql` test için borulu basit SQL komut dosyasıdır `clickhouse-client --multiquery --testmode`. `.sh` test kendisi tarafından çalıştırılan bir komut dosyasıdır.
 
@@ -41,15 +41,15 @@ Fonksiyonel testlerle kolayca çoğaltılabilen bazı hatalar biliyorsak, hazır
 
 ## Entegrasyon Testleri {#integration-tests}
 
-Entegrasyon testleri, kümelenmiş konfigürasyonda Clickhouse’u ve MySQL, Postgres, MongoDB gibi diğer sunucularla ClickHouse etkileşimini test etmeyi sağlar. Ağ bölmelerini, paket damlalarını vb. taklit etmek için kullanışlıdırlar. Bu testler Docker altında çalıştırılır ve çeşitli yazılımlarla birden fazla konteyner oluşturur.
+Entegrasyon testleri, kümelenmiş konfigürasyonda Clickhouse'u ve MySQL, Postgres, MongoDB gibi diğer sunucularla ClickHouse etkileşimini test etmeyi sağlar. Ağ bölmelerini, paket damlalarını vb. taklit etmek için kullanışlıdırlar. Bu testler Docker altında çalıştırılır ve çeşitli yazılımlarla birden fazla konteyner oluşturur.
 
 Görmek `tests/integration/README.md` bu testlerin nasıl çalıştırılacağı hakkında.
 
-Clickhouse’un üçüncü taraf sürücülerle entegrasyonunun sınanmadığını unutmayın. Ayrıca şu anda JDBC ve ODBC sürücülerimizle entegrasyon testlerimiz yok.
+Clickhouse'un üçüncü taraf sürücülerle entegrasyonunun sınanmadığını unutmayın. Ayrıca şu anda JDBC ve ODBC sürücülerimizle entegrasyon testlerimiz yok.
 
 ## Ünite Testleri {#unit-tests}
 
-Birim testleri, Clickhouse’u bir bütün olarak değil, tek bir yalıtılmış kitaplık veya sınıfı test etmek istediğinizde kullanışlıdır. Etkinleştirebilir veya devre dışı bırakma ile testlerin yapı `ENABLE_TESTS` Cmake seçeneği. Birim testleri (ve diğer test programları) bulunur `tests` kodun alt dizinleri. Birim testlerini çalıştırmak için şunları yazın `ninja test`. Bazı testler kullanın `gtest`, ancak bazıları test başarısızlığında sıfır olmayan çıkış kodunu döndüren programlardır.
+Birim testleri, Clickhouse'u bir bütün olarak değil, tek bir yalıtılmış kitaplık veya sınıfı test etmek istediğinizde kullanışlıdır. Etkinleştirebilir veya devre dışı bırakma ile testlerin yapı `ENABLE_TESTS` Cmake seçeneği. Birim testleri (ve diğer test programları) bulunur `tests` kodun alt dizinleri. Birim testlerini çalıştırmak için şunları yazın `ninja test`. Bazı testler kullanın `gtest`, ancak bazıları test başarısızlığında sıfır olmayan çıkış kodunu döndüren programlardır.
 
 Kodun zaten işlevsel testler tarafından kapsanması durumunda birim testlerine sahip olmak zorunlu değildir (ve işlevsel testler genellikle kullanımı çok daha basittir).
 
@@ -59,11 +59,11 @@ Performans testleri ölçmek ve sentetik sorguları ClickHouse bazı izole kısm
 
 Her test, durdurma için bazı koşullarla (örneğin, bir döngüde bir veya birden fazla sorgu (muhtemelen parametre kombinasyonlarıyla) çalıştırır “maximum execution speed is not changing in three seconds”) ve sorgu performansı ile ilgili bazı metrikleri ölçün (örneğin “maximum execution speed”). Bazı testler önceden yüklenmiş test veri kümesinde Önkoşullar içerebilir.
 
-Bazı senaryoda Clickhouse’un performansını artırmak istiyorsanız ve basit sorgularda iyileştirmeler gözlemlenebiliyorsa, bir performans testi yazmanız önerilir. Her zaman kullanmak mantıklı `perf top` testleriniz sırasında veya diğer perf araçları.
+Bazı senaryoda Clickhouse'un performansını artırmak istiyorsanız ve basit sorgularda iyileştirmeler gözlemlenebiliyorsa, bir performans testi yazmanız önerilir. Her zaman kullanmak mantıklı `perf top` testleriniz sırasında veya diğer perf araçları.
 
-## Test araçları Ve Komut dosyaları {#test-tools-and-scripts}
+## Test araçları ve komut dosyaları {#test-tools-and-scripts}
 
-Bazı programlar `tests` dizin testleri hazırlanmış değil, ancak test araçlarıdır. Örneğin, için `Lexer` bir araç var `src/Parsers/tests/lexer` bu sadece stdin’in tokenizasyonunu yapar ve renklendirilmiş sonucu stdout’a yazar. Bu tür araçları kod örnekleri olarak ve keşif ve manuel test için kullanabilirsiniz.
+Bazı programlar `tests` dizin testleri hazırlanmış değil, ancak test araçlarıdır. Örneğin, için `Lexer` bir araç var `src/Parsers/tests/lexer` bu sadece stdin'in tokenizasyonunu yapar ve renklendirilmiş sonucu stdout'a yazar. Bu tür araçları kod örnekleri olarak ve keşif ve manuel test için kullanabilirsiniz.
 
 Ayrıca Çift Dosya yerleştirebilirsiniz `.sh` ve `.reference` aracı ile birlikte bazı önceden tanımlanmış giriş üzerinde çalıştırmak için-daha sonra komut sonucu karşılaştırılabilir `.reference` Dosya. Bu tür testler otomatik değildir.
 
@@ -79,7 +79,7 @@ Clickhouse açık kaynaklı önce çekirdek testi ayrı ekip tarafından yazılm
 
 Yeni bir özellik geliştirdiğinizde, el ile de test etmek mantıklıdır. Bunu aşağıdaki adımlarla yapabilirsiniz:
 
-ClickHouse Oluşturun. Terminalden Clickhouse’u çalıştırın: dizini değiştir `programs/clickhouse-server` ve ile çalıştırın `./clickhouse-server`. Bu yapılandırma kullanacak (`config.xml`, `users.xml` ve içindeki dosyalar `config.d` ve `users.d` dizinler) geçerli dizinden varsayılan olarak. ClickHouse sunucusuna bağlanmak için, çalıştırın `programs/clickhouse-client/clickhouse-client`.
+ClickHouse Oluşturun. Terminalden Clickhouse'u çalıştırın: dizini değiştir `programs/clickhouse-server` ve ile çalıştırın `./clickhouse-server`. Bu yapılandırma kullanacak (`config.xml`, `users.xml` ve içindeki dosyalar `config.d` ve `users.d` dizinler) geçerli dizinden varsayılan olarak. ClickHouse sunucusuna bağlanmak için, çalıştırın `programs/clickhouse-client/clickhouse-client`.
 
 Tüm clickhouse araçlarının (sunucu, istemci, vb.) sadece tek bir ikili için symlinks olduğunu unutmayın `clickhouse`. Bu ikili bulabilirsiniz `programs/clickhouse`. Tüm araçlar olarak da çağrılabilir `clickhouse tool` yerine `clickhouse-tool`.
 
@@ -118,7 +118,7 @@ Kararlı olarak yayınlamadan önce test ortamında dağıtın. Test ortamı, 1/
 SELECT hostName() AS h, any(version()), any(uptime()), max(UTCEventTime), count() FROM remote('example01-01-{1..3}t', merge, hits) WHERE EventDate >= today() - 2 GROUP BY h ORDER BY h;
 ```
 
-Bazı durumlarda yandex’teki arkadaş ekiplerimizin test ortamına da dağıtım yapıyoruz: Pazar, Bulut, vb. Ayrıca geliştirme amacıyla kullanılan bazı donanım sunucularımız var.
+Bazı durumlarda yandex'teki arkadaş ekiplerimizin test ortamına da dağıtım yapıyoruz: Pazar, Bulut, vb. Ayrıca geliştirme amacıyla kullanılan bazı donanım sunucularımız var.
 
 ## Yük Testi {#load-testing}
 
@@ -132,7 +132,7 @@ Bir gün veya daha fazla sorgu günlüğü toplayın:
 $ clickhouse-client --query="SELECT DISTINCT query FROM system.query_log WHERE event_date = today() AND query LIKE '%ym:%' AND query NOT LIKE '%system.query_log%' AND type = 2 AND is_initial_query" > queries.tsv
 ```
 
-Bu şekilde karmaşık bir örnektir. `type = 2` başarıyla yürütülen sorguları süzer. `query LIKE '%ym:%'` yandex’ten ilgili sorguları seçmektir.Metrica. `is_initial_query` yalnızca istemci tarafından başlatılan sorguları seçmektir, Clickhouse’un kendisi tarafından değil (dağıtılmış sorgu işlemenin parçaları olarak).
+Bu şekilde karmaşık bir örnektir. `type = 2` başarıyla yürütülen sorguları süzer. `query LIKE '%ym:%'` yandex'ten ilgili sorguları seçmektir.Metrica. `is_initial_query` yalnızca istemci tarafından başlatılan sorguları seçmektir, Clickhouse'un kendisi tarafından değil (dağıtılmış sorgu işlemenin parçaları olarak).
 
 `scp` bu test kümenize günlük ve aşağıdaki gibi çalıştırın:
 
@@ -150,7 +150,7 @@ Kesin sorgu yürütme zamanlamaları kaydedilmez ve sorguların ve ortamın yük
 
 ## Yapı Testleri {#build-tests}
 
-Yapı testleri, yapının çeşitli alternatif konfigürasyonlarda ve bazı yabancı sistemlerde bozulmadığını kontrol etmeyi sağlar. Testler bulunur `ci` dizin. Docker, Vagrant ve bazen de `qemu-user-static` Docker’ın içinde. Bu testler geliştirme aşamasındadır ve test çalıştırmaları otomatik değildir.
+Yapı testleri, yapının çeşitli alternatif konfigürasyonlarda ve bazı yabancı sistemlerde bozulmadığını kontrol etmeyi sağlar. Testler bulunur `ci` dizin. Docker, Vagrant ve bazen de `qemu-user-static` Docker'ın içinde. Bu testler geliştirme aşamasındadır ve test çalıştırmaları otomatik değildir.
 
 Motivasyon:
 
@@ -166,7 +166,7 @@ Normalde tüm testleri ClickHouse yapısının tek bir varyantında serbest bır
 
 Tüm yapı varyantlarında tüm testleri çalıştıramasak da, en azından çeşitli yapı varyantlarının bozulmadığını kontrol etmek istiyoruz. Bu amaçla yapı testlerini kullanıyoruz.
 
-## Protokol uyumluluğu Testi {#testing-for-protocol-compatibility}
+## Protokol uyumluluğu testi {#testing-for-protocol-compatibility}
 
 ClickHouse ağ protokolünü genişlettiğimizde, eski clickhouse istemcisinin yeni clickhouse sunucusu ile çalıştığını ve yeni clickhouse istemcisinin eski clickhouse sunucusu ile çalıştığını (sadece ilgili paketlerden ikili dosyaları çalıştırarak) manuel olarak test ediyoruz.
 
@@ -176,7 +176,7 @@ Ana ClickHouse kodu (bu `dbms` dizin) ile inşa edilmiştir `-Wall -Wextra -Werr
 
 Clang daha yararlı uyarılar vardır-Sen ile onları arayabilirsiniz `-Weverything` ve varsayılan oluşturmak için bir şey seçin.
 
-Üretim yapıları için gcc kullanılır (hala clang’dan biraz daha verimli kod üretir). Geliştirme için, clang genellikle kullanımı daha uygundur. Hata ayıklama modu ile kendi makinenizde inşa edebilirsiniz (dizüstü bilgisayarınızın pilinden tasarruf etmek için), ancak derleyicinin daha fazla uyarı üretebileceğini lütfen unutmayın `-O3` daha iyi kontrol akışı ve prosedürler arası analiz nedeniyle. Clang ile inşa ederken, `libc++` yerine kullanılır `libstdc++` ve hata ayıklama modu ile oluştururken, hata ayıklama sürümü `libc++` çalışma zamanında daha fazla hata yakalamak için izin verir kullanılır.
+Üretim yapıları için gcc kullanılır (hala clang'dan biraz daha verimli kod üretir). Geliştirme için, clang genellikle kullanımı daha uygundur. Hata ayıklama modu ile kendi makinenizde inşa edebilirsiniz (dizüstü bilgisayarınızın pilinden tasarruf etmek için), ancak derleyicinin daha fazla uyarı üretebileceğini lütfen unutmayın `-O3` daha iyi kontrol akışı ve prosedürler arası analiz nedeniyle. Clang ile inşa ederken, `libc++` yerine kullanılır `libstdc++` ve hata ayıklama modu ile oluştururken, hata ayıklama sürümü `libc++` çalışma zamanında daha fazla hata yakalamak için izin verir kullanılır.
 
 ## Dezenfektanlar {#sanitizers}
 
@@ -200,13 +200,23 @@ Hata ayıklama sürümü `jemalloc` hata ayıklama oluşturmak için kullanılı
 
 ## Fuzzing {#fuzzing}
 
-Rastgele SQL sorguları oluşturmak ve sunucunun ölmediğini kontrol etmek için basit fuzz testi kullanıyoruz. Fuzz testi Adres dezenfektanı ile yapılır. İçinde bulabilirsiniz `00746_sql_fuzzy.pl`. Bu test sürekli olarak (gece ve daha uzun) çalıştırılmalıdır.
+ClickHouse fuzzing hem kullanılarak uygulanmaktadır [libFuzzer](https://llvm.org/docs/LibFuzzer.html) ve rastgele SQL sorguları.
+Tüm fuzz testleri sanitizers (Adres ve tanımsız) ile yapılmalıdır.
 
-Aralık 2018 itibariyle, hala kütüphane kodunun izole fuzz testini kullanmıyoruz.
+LibFuzzer kütüphane kodu izole fuzz testi için kullanılır. Fuzzers test kodunun bir parçası olarak uygulanır ve “\_fuzzer” adı postfixes.
+Fuzzer örneği bulunabilir `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer özgü yapılandırmalar, sözlükler ve corpus saklanır `tests/fuzz`.
+Kullanıcı girişini işleyen her işlevsellik için fuzz testleri yazmanızı öneririz.
+
+Fuzzers varsayılan olarak oluşturulmaz. Hem fuzzers inşa etmek `-DENABLE_FUZZING=1` ve `-DENABLE_TESTS=1` seçenekler ayarlanmalıdır.
+Fuzzers oluştururken Jemalloc'u devre dışı bırakmanızı öneririz. ClickHouse fuzzing'i entegre etmek için kullanılan yapılandırma
+Google OSS-Fuzz bulunabilir `docker/fuzz`.
+
+Ayrıca rastgele SQL sorguları oluşturmak ve sunucunun bunları çalıştırarak ölmediğini kontrol etmek için basit fuzz testi kullanıyoruz.
+İçinde bulabilirsiniz `00746_sql_fuzzy.pl`. Bu test sürekli olarak (gece ve daha uzun) çalıştırılmalıdır.
 
 ## Güvenlik Denetimi {#security-audit}
 
-Yandex Bulut departmanından insanlar, güvenlik açısından ClickHouse yeteneklerine bazı temel genel bakışlar yaparlar.
+Yandex Güvenlik ekibinden insanlar güvenlik açısından ClickHouse yetenekleri bazı temel bakış yapmak.
 
 ## Statik Analizörler {#static-analyzers}
 
@@ -230,9 +240,9 @@ Alternatif olarak deneyebilirsiniz `uncrustify` kodunuzu yeniden biçimlendirmek
 
 `CLion` kod stilimiz için ayarlanması gereken kendi kod biçimlendiricisine sahiptir.
 
-## Metrica B2B Testleri {#metrica-b2b-tests}
+## Metrica B2B testleri {#metrica-b2b-tests}
 
-Her ClickHouse sürümü Yandex Metrica ve AppMetrica motorları ile test edilir. Clickhouse’un Test ve kararlı sürümleri Vm’lerde dağıtılır ve Giriş verilerinin sabit örneğini işleyen Metrica motorunun küçük bir kopyasıyla çalışır. Daha sonra Metrica motorunun iki örneğinin sonuçları birlikte karşılaştırılır.
+Her ClickHouse sürümü Yandex Metrica ve AppMetrica motorları ile test edilir. Clickhouse'un Test ve kararlı sürümleri Vm'lerde dağıtılır ve Giriş verilerinin sabit örneğini işleyen Metrica motorunun küçük bir kopyasıyla çalışır. Daha sonra Metrica motorunun iki örneğinin sonuçları birlikte karşılaştırılır.
 
 Bu testler ayrı ekip tarafından otomatikleştirilir. Yüksek sayıda hareketli parça nedeniyle, testler çoğu zaman tamamen ilgisiz nedenlerle başarısız olur, bu da anlaşılması çok zordur. Büyük olasılıkla bu testlerin bizim için negatif değeri var. Bununla birlikte, bu testlerin yüzlerce kişiden yaklaşık bir veya iki kez yararlı olduğu kanıtlanmıştır.
 
@@ -244,9 +254,9 @@ Temmuz 2018 itibariyle test kapsamını takip etmiyoruz.
 
 Yandex dahili CI ve iş otomasyon sistemi ile testler yapıyoruz “Sandbox”.
 
-Yapı işleri ve testler, taahhüt bazında sanal alanda çalıştırılır. Ortaya çıkan paketler ve test sonuçları Github’da yayınlanır ve doğrudan bağlantılar tarafından indirilebilir. Eserler sonsuza dek saklanır. Eğer GitHub bir çekme isteği gönderdiğinizde, biz olarak etiketlemek “can be tested” ve bizim CI sistemi sizin için ClickHouse paketleri (yayın, hata ayıklama, Adres dezenfektanı ile, vb) inşa edecek.
+Yapı işleri ve testler, taahhüt bazında sanal alanda çalıştırılır. Ortaya çıkan paketler ve test sonuçları Github'da yayınlanır ve doğrudan bağlantılar tarafından indirilebilir. Eserler sonsuza dek saklanır. Eğer GitHub bir çekme isteği gönderdiğinizde, biz olarak etiketlemek “can be tested” ve bizim CI sistemi sizin için ClickHouse paketleri (yayın, hata ayıklama, Adres dezenfektanı ile, vb) inşa edecek.
 
 Travis CI, zaman ve hesaplama gücü sınırı nedeniyle kullanmıyoruz.
-Jenkins’i kullanmayız. Daha önce kullanıldı ve şimdi Jenkins kullanmadığımız için mutluyuz.
+Jenkins'i kullanmayız. Daha önce kullanıldı ve şimdi Jenkins kullanmadığımız için mutluyuz.
 
 [Orijinal makale](https://clickhouse.tech/docs/en/development/tests/) <!--hide-->

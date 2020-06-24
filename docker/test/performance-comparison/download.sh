@@ -46,7 +46,13 @@ function download
     done
 
     mkdir ~/fg ||:
-    cd ~/fg && wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl" && chmod +x ~/fg/flamegraph.pl &
+    (
+        cd ~/fg
+        wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl"
+        wget -nv -nd -c "https://raw.githubusercontent.com/brendangregg/FlameGraph/master/difffolded.pl"
+        chmod +x ~/fg/difffolded.pl
+        chmod +x ~/fg/flamegraph.pl
+    ) &
 
     wait
 }

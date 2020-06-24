@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 65
 toc_title: "\u0130\xE7g\xF6zlem"
 ---
@@ -16,7 +16,7 @@ toc_title: "\u0130\xE7g\xF6zlem"
 
 -   Yüklemek `clickhouse-common-static-dbg` paket.
 
--   Ayarla… [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) ayar 1.
+-   Ayarla... [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) ayar 1.
 
         For security reasons introspection functions are disabled by default.
 
@@ -100,7 +100,7 @@ LIMIT 1
 \G
 ```
 
-Bu [arrayMap](higher-order-functions.md#higher_order_functions-array-map) işlev, her bir elemanın işlenmesini sağlar `trace` ar arrayray by the `addressToLine` işlev. Gördüğünüz bu işlemin sonucu `trace_source_code_lines` çıktı sütunu.
+Bu [arrayMap](higher-order-functions.md#higher_order_functions-array-map) işlev, her bir elemanın işlenmesini sağlar `trace` ar arrayray by the `addressToLine` İşlev. Gördüğünüz bu işlemin sonucu `trace_source_code_lines` çıktı sütunu.
 
 ``` text
 Row 1:
@@ -186,7 +186,7 @@ LIMIT 1
 \G
 ```
 
-Bu [arrayMap](higher-order-functions.md#higher_order_functions-array-map) işlev, her bir elemanın işlenmesini sağlar `trace` ar arrayray by the `addressToSymbols` işlev. Gördüğünüz bu işlemin sonucu `trace_symbols` çıktı sütunu.
+Bu [arrayMap](higher-order-functions.md#higher_order_functions-array-map) işlev, her bir elemanın işlenmesini sağlar `trace` ar arrayray by the `addressToSymbols` İşlev. Gördüğünüz bu işlemin sonucu `trace_symbols` çıktı sütunu.
 
 ``` text
 Row 1:
@@ -283,7 +283,7 @@ LIMIT 1
 \G
 ```
 
-Bu [arrayMap](higher-order-functions.md#higher_order_functions-array-map) işlev, her bir elemanın işlenmesini sağlar `trace` ar arrayray by the `demangle` işlev. Gördüğünüz bu işlemin sonucu `trace_functions` çıktı sütunu.
+Bu [arrayMap](higher-order-functions.md#higher_order_functions-array-map) işlev, her bir elemanın işlenmesini sağlar `trace` ar arrayray by the `demangle` İşlev. Gördüğünüz bu işlemin sonucu `trace_functions` çıktı sütunu.
 
 ``` text
 Row 1:

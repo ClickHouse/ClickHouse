@@ -26,7 +26,7 @@ public:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
-
+    void resetParser() override;
 
 private:
     void addInputColumn(const String & column_name);

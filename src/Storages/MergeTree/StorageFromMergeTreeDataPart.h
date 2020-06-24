@@ -21,40 +21,25 @@ public:
 
     Pipes read(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         unsigned num_streams) override
     {
-        return MergeTreeDataSelectExecutor(part->storage).readFromParts(
-                {part}, column_names, query_info, context, max_block_size, num_streams);
+        return MergeTreeDataSelectExecutor(part->storage)
+            .readFromParts({part}, column_names, metadata_snapshot, query_info, context, max_block_size, num_streams);
     }
 
 
     bool supportsIndexForIn() const override { return true; }
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
+    bool mayBenefitFromIndexForIn(
+        const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & metadata_snapshot) const override
     {
-        return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
+        return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
-
-    bool hasAnyTTL() const override { return part->storage.hasAnyTTL(); }
-    bool hasRowsTTL() const override { return part->storage.hasRowsTTL(); }
-
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override
-    {
-        return part->storage.getColumnDependencies(updated_columns);
-    }
-
-    StorageInMemoryMetadata getInMemoryMetadata() const override
-    {
-        return part->storage.getInMemoryMetadata();
-    }
-
-    bool hasSortingKey() const { return part->storage.hasSortingKey(); }
-
-    Names getSortingKeyColumns() const override { return part->storage.getSortingKeyColumns(); }
 
     NamesAndTypesList getVirtuals() const override
     {
@@ -66,8 +51,7 @@ protected:
         : IStorage(getIDFromPart(part_))
         , part(part_)
     {
-        setColumns(part_->storage.getColumns());
-        setIndices(part_->storage.getIndices());
+        setInMemoryMetadata(part_->storage.getInMemoryMetadata());
     }
 
 private:

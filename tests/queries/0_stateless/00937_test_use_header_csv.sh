@@ -3,10 +3,10 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.csv"
-$CLICKHOUSE_CLIENT --query="CREATE TABLE test.csv (d Date, u UInt8, str String) ENGINE = TinyLog"
+$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS csv"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE csv (d Date, u UInt8, str String) ENGINE = TinyLog"
 
-INSERT_QUERY='$CLICKHOUSE_CLIENT --query="INSERT INTO test.csv FORMAT CSVWithNames"'
+INSERT_QUERY='$CLICKHOUSE_CLIENT --query="INSERT INTO csv FORMAT CSVWithNames"'
 USE_HEADER='--input_format_with_names_use_header=1'
 SKIP_UNKNOWN='--input_format_skip_unknown_fields=1'
 
@@ -32,5 +32,5 @@ echo -ne 'str,u\nLine16,1\nLine17,2\n'                  | eval $INSERT_QUERY $US
 echo -ne 'd,str\n2019-04-18,Line18\n2019-04-18,Line19\n'| eval $INSERT_QUERY $USE_HEADER
 echo -ne 'unknown\n\n\n'                                | eval $INSERT_QUERY $USE_HEADER $SKIP_UNKNOWN
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM test.csv"
-$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.csv"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM csv"
+$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS csv"

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 43
 toc_title: 'Conditionnel '
 ---
@@ -17,17 +17,17 @@ Contrôle la ramification conditionnelle. Contrairement à la plupart des systè
 SELECT if(cond, then, else)
 ```
 
-Si la condition `cond` renvoie une valeur non nulle, retourne le résultat de l’expression `then` et le résultat de l’expression `else`, si présent, est ignoré. Si l’ `cond` est égal à zéro ou `NULL` alors le résultat de la `then` l’expression est ignorée et le résultat de `else` expression, si elle est présente, est renvoyée.
+Si la condition `cond` renvoie une valeur non nulle, retourne le résultat de l'expression `then` et le résultat de l'expression `else`, si présent, est ignoré. Si l' `cond` est égal à zéro ou `NULL` alors le résultat de la `then` l'expression est ignorée et le résultat de `else` expression, si elle est présente, est renvoyée.
 
 **Paramètre**
 
 -   `cond` – The condition for evaluation that can be zero or not. The type is UInt8, Nullable(UInt8) or NULL.
--   `then` - L’expression à renvoyer si la condition est remplie.
--   `else` - L’expression à renvoyer si la condition n’est pas remplie.
+-   `then` - L'expression à renvoyer si la condition est remplie.
+-   `else` - L'expression à renvoyer si la condition n'est pas remplie.
 
 **Valeurs renvoyées**
 
-La fonction s’exécute `then` et `else` expressions et retourne son résultat, selon que la condition `cond` fini par être zéro ou pas.
+La fonction s'exécute `then` et `else` expressions et retourne son résultat, selon que la condition `cond` fini par être zéro ou pas.
 
 **Exemple**
 
@@ -103,7 +103,7 @@ Il fonctionne même comme `if` fonction.
 
 Syntaxe: `cond ? then : else`
 
-Retourner `then` si l’ `cond` renvoie la valeur vrai (supérieur à zéro), sinon renvoie `else`.
+Retourner `then` si l' `cond` renvoie la valeur vrai (supérieur à zéro), sinon renvoie `else`.
 
 -   `cond` doit être de type de `UInt8`, et `then` et `else` doit avoir le type commun le plus bas.
 
@@ -115,7 +115,7 @@ Retourner `then` si l’ `cond` renvoie la valeur vrai (supérieur à zéro), si
 
 ## multiIf {#multiif}
 
-Permet d’écrire le [CASE](../operators.md#operator_case) opérateur plus compacte dans la requête.
+Permet d'écrire le [CASE](../operators/index.md#operator_case) opérateur plus compacte dans la requête.
 
 Syntaxe: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 
@@ -129,7 +129,7 @@ La fonction accepte `2N+1` paramètre.
 
 **Valeurs renvoyées**
 
-La fonction renvoie l’une des valeurs `then_N` ou `else` selon les conditions `cond_N`.
+La fonction renvoie l'une des valeurs `then_N` ou `else` selon les conditions `cond_N`.
 
 **Exemple**
 
@@ -151,7 +151,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴─────────────────┘
 ```
 
-## Utilisation Directe Des résultats Conditionnels {#using-conditional-results-directly}
+## Utilisation Directe Des Résultats Conditionnels {#using-conditional-results-directly}
 
 Les conditions entraînent toujours `0`, `1` ou `NULL`. Vous pouvez donc utiliser des résultats conditionnels directement comme ceci:
 
@@ -168,7 +168,7 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-## Valeurs Nulles Dans Les Conditions {#null-values-in-conditionals}
+## Valeurs nulles dans les conditions {#null-values-in-conditionals}
 
 Lorsque `NULL` les valeurs sont impliqués dans des conditions, le résultat sera également `NULL`.
 
@@ -186,7 +186,7 @@ SELECT
 
 Donc, vous devriez construire vos requêtes avec soin si les types sont `Nullable`.
 
-L’exemple suivant le démontre en omettant d’ajouter la condition égale à `multiIf`.
+L'exemple suivant le démontre en omettant d'ajouter la condition égale à `multiIf`.
 
 ``` sql
 SELECT

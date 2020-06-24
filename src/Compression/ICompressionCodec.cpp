@@ -21,6 +21,8 @@ namespace ErrorCodes
 
 UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest) const
 {
+    assert(source != nullptr && dest != nullptr);
+
     dest[0] = getMethodByte();
     UInt8 header_size = getHeaderSize();
     /// Write data from header_size
@@ -33,8 +35,9 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
 
 UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const
 {
-    UInt8 header_size = getHeaderSize();
+    assert(source != nullptr && dest != nullptr);
 
+    UInt8 header_size = getHeaderSize();
     if (source_size < header_size)
         throw Exception("Can't decompress data: the compressed data size (" + toString(source_size)
             + ", this should include header size) is less than the header size (" + toString(header_size) + ")", ErrorCodes::CORRUPTED_DATA);

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 14
 toc_title: "Bah\xE7e"
 ---
@@ -31,7 +31,7 @@ Bahçesi arka uç herhangi bir ek sunucu tarafı uygulaması olmadan sadece bir 
 ClickHouse HTTPS bitiş noktası da oyun alanının bir parçası olarak kullanılabilir.
 
 Herhangi bir HTTP istemcisi kullanarak oyun alanına sorgu yapabilirsiniz, örneğin [kıvrılma](https://curl.haxx.se) veya [wget](https://www.gnu.org/software/wget/), veya kullanarak bir bağlantı kurmak [JDBC](../interfaces/jdbc.md) veya [ODBC](../interfaces/odbc.md) sürücüler.
-Clickhouse’u destekleyen yazılım ürünleri hakkında daha fazla bilgi mevcuttur [burada](../interfaces/index.md).
+Clickhouse'u destekleyen yazılım ürünleri hakkında daha fazla bilgi mevcuttur [burada](../interfaces/index.md).
 
 | Parametre | Değer                                   |
 |:----------|:----------------------------------------|

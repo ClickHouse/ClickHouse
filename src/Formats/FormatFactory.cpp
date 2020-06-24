@@ -14,6 +14,7 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
+#include <Processors/Formats/Impl/PostgreSQLOutputFormat.h>
 #include <Poco/URI.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -101,6 +102,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
+    format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_format = settings.format_template_row;
@@ -361,6 +363,8 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
+    registerInputFormatProcessorArrow(*this);
+    registerOutputFormatProcessorArrow(*this);
     registerInputFormatProcessorAvro(*this);
     registerOutputFormatProcessorAvro(*this);
 #endif
@@ -369,11 +373,13 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorRegexp(*this);
     registerInputFormatProcessorMsgPack(*this);
     registerOutputFormatProcessorMsgPack(*this);
+    registerInputFormatProcessorJSONAsString(*this);
 
     registerFileSegmentationEngineTabSeparated(*this);
     registerFileSegmentationEngineCSV(*this);
     registerFileSegmentationEngineJSONEachRow(*this);
     registerFileSegmentationEngineRegexp(*this);
+    registerFileSegmentationEngineJSONAsString(*this);
 
     registerOutputFormatNull(*this);
 
@@ -387,8 +393,9 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
-    registerOutputFormatProcessorMySQLWrite(*this);
+    registerOutputFormatProcessorMySQLWire(*this);
     registerOutputFormatProcessorMarkdown(*this);
+    registerOutputFormatProcessorPostgreSQLWire(*this);
 }
 
 FormatFactory & FormatFactory::instance()

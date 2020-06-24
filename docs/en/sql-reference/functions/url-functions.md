@@ -1,6 +1,6 @@
 ---
 toc_priority: 54
-toc_title: Working with URLs
+toc_title: URLs
 ---
 
 # Functions for Working with URLs {#functions-for-working-with-urls}
@@ -116,6 +116,10 @@ Returns the “first significant subdomain”. This is a non-standard concept sp
 Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain” (see the explanation above).
 
 For example, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
+
+### port(URL\[, default\_port = 0\]) {#port}
+
+Returns the port or `default_port` if there is no port in the URL (or in case of validation error).
 
 ### path {#path}
 

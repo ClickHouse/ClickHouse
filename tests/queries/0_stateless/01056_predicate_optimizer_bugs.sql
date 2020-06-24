@@ -74,3 +74,13 @@ SELECT * FROM (SELECT * FROM system.one) WHERE arrayMap(x -> x + 1, [dummy]) = [
 
 ANALYZE SELECT *  FROM (SELECT 1 AS id, 2 AS value) INNER JOIN (SELECT 1 AS id, 3 AS value_1) USING id WHERE arrayMap(x -> x + value + value_1, [1]) = [6];
 SELECT *  FROM (SELECT 1 AS id, 2 AS value) INNER JOIN (SELECT 1 AS id, 3 AS value_1) USING id WHERE arrayMap(x -> x + value + value_1, [1]) = [6];
+
+-- check order is preserved
+ANALYZE SELECT * FROM system.one HAVING dummy > 0 AND dummy < 0;
+
+-- from #10613
+SELECT name, count() AS cnt
+FROM remote('127.{1,2}', system.settings)
+GROUP BY name
+HAVING (max(value) > '9') AND (min(changed) = 0)
+FORMAT Null;

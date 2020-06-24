@@ -58,8 +58,14 @@ def get_used_disks_for_table(node, table_name, partition=None):
         ORDER BY modification_time
     """.format(name=table_name, suffix=suffix)).strip().split('\n')
 
+def check_used_disks_with_retry(node, table_name, expected_disks, retries):
+    for _ in range(retries):
+        used_disks = get_used_disks_for_table(node, table_name)
+        if set(used_disks).issubset(expected_disks):
+            return True
+        time.sleep(0.5)
+    return False
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine,alter", [
     ("mt_test_rule_with_invalid_destination","MergeTree()",0),
     ("replicated_mt_test_rule_with_invalid_destination","ReplicatedMergeTree('/clickhouse/replicated_test_rule_with_invalid_destination', '1')",0),
@@ -119,7 +125,6 @@ def test_rule_with_invalid_destination(started_cluster, name, engine, alter):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_inserts_to_disk_do_not_work","MergeTree()",0),
     ("replicated_mt_test_inserts_to_disk_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_inserts_to_disk_do_not_work', '1')",0),
@@ -149,10 +154,12 @@ def test_inserts_to_disk_work(started_cluster, name, engine, positive):
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        try:
+            node1.query("DROP TABLE IF EXISTS {}".format(name))
+        except:
+            pass
 
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_moves_to_disk_do_not_work","MergeTree()",0),
     ("replicated_mt_test_moves_to_disk_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_to_disk_do_not_work', '1')",0),
@@ -171,7 +178,7 @@ def test_moves_to_disk_work(started_cluster, name, engine, positive):
             SETTINGS storage_policy='small_jbod_with_external'
         """.format(name=name, engine=engine))
 
-        wait_expire_1 = 6
+        wait_expire_1 = 12
         wait_expire_2 = 4
         time_1 = time.time() + wait_expire_1
         time_2 = time.time() + wait_expire_1 + wait_expire_2
@@ -199,7 +206,6 @@ def test_moves_to_disk_work(started_cluster, name, engine, positive):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("mt_test_moves_to_volume_work","MergeTree()"),
     ("replicated_mt_test_moves_to_volume_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_to_volume_work', '1')"),
@@ -246,7 +252,6 @@ def test_moves_to_volume_work(started_cluster, name, engine):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_inserts_to_volume_do_not_work","MergeTree()",0),
     ("replicated_mt_test_inserts_to_volume_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_inserts_to_volume_do_not_work', '1')",0),
@@ -285,7 +290,6 @@ def test_inserts_to_volume_work(started_cluster, name, engine, positive):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("mt_test_moves_to_disk_eventually_work","MergeTree()"),
     ("replicated_mt_test_moves_to_disk_eventually_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_to_disk_eventually_work', '1')"),
@@ -374,7 +378,6 @@ def test_replicated_download_ttl_info(started_cluster):
                 continue
 
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_merges_to_disk_do_not_work","MergeTree()",0),
     ("replicated_mt_test_merges_to_disk_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_merges_to_disk_do_not_work', '1')",0),
@@ -396,7 +399,7 @@ def test_merges_to_disk_work(started_cluster, name, engine, positive):
         node1.query("SYSTEM STOP MERGES {}".format(name))
         node1.query("SYSTEM STOP MOVES {}".format(name))
 
-        wait_expire_1 = 10
+        wait_expire_1 = 16
         wait_expire_2 = 4
         time_1 = time.time() + wait_expire_1
         time_2 = time.time() + wait_expire_1 + wait_expire_2
@@ -432,7 +435,6 @@ def test_merges_to_disk_work(started_cluster, name, engine, positive):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("mt_test_merges_with_full_disk_work","MergeTree()"),
     ("replicated_mt_test_merges_with_full_disk_work","ReplicatedMergeTree('/clickhouse/replicated_test_merges_with_full_disk_work', '1')"),
@@ -499,7 +501,6 @@ def test_merges_with_full_disk_work(started_cluster, name, engine):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_moves_after_merges_do_not_work","MergeTree()",0),
     ("replicated_mt_test_moves_after_merges_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_do_not_work', '1')",0),
@@ -518,7 +519,7 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
             SETTINGS storage_policy='small_jbod_with_external'
         """.format(name=name, engine=engine))
 
-        wait_expire_1 = 10
+        wait_expire_1 = 16
         wait_expire_2 = 4
         time_1 = time.time() + wait_expire_1
         time_2 = time.time() + wait_expire_1 + wait_expire_2
@@ -552,7 +553,6 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine,positive,bar", [
     ("mt_test_moves_after_alter_do_not_work","MergeTree()",0,"DELETE"),
     ("replicated_mt_test_moves_after_alter_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_do_not_work', '1')",0,"DELETE"),
@@ -626,7 +626,7 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
         node1.query("""
                 ALTER TABLE {name}
                     MODIFY TTL
-                    d1 TO DISK 'external'
+                    d1 TO DISK 'external' SETTINGS materialize_ttl_after_modify = 0
             """.format(name=name))
 
         time.sleep(0.5)
@@ -658,7 +658,6 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_alter_multiple_ttls_positive", "MergeTree()", True),
     ("mt_replicated_test_alter_multiple_ttls_positive", "ReplicatedMergeTree('/clickhouse/replicated_test_alter_multiple_ttls_positive', '1')", True),
@@ -697,16 +696,16 @@ limitations under the License."""
             ) ENGINE = {engine}
             ORDER BY tuple()
             PARTITION BY p1
-            TTL d1 + INTERVAL 30 SECOND TO DISK 'jbod2',
-                d1 + INTERVAL 60 SECOND TO VOLUME 'external'
+            TTL d1 + INTERVAL 34 SECOND TO DISK 'jbod2',
+                d1 + INTERVAL 64 SECOND TO VOLUME 'external'
             SETTINGS storage_policy='jbods_with_external', merge_with_ttl_timeout=0
         """.format(name=name, engine=engine))
 
         node1.query("""
             ALTER TABLE {name} MODIFY
             TTL d1 + INTERVAL 0 SECOND TO DISK 'jbod2',
-                d1 + INTERVAL 5 SECOND TO VOLUME 'external',
-                d1 + INTERVAL 10 SECOND DELETE
+                d1 + INTERVAL 14 SECOND TO VOLUME 'external',
+                d1 + INTERVAL 19 SECOND DELETE
         """.format(name=name))
 
         for p in range(3):
@@ -724,24 +723,38 @@ limitations under the License."""
 
         assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["6"]
 
-        time.sleep(5)
+        if positive:
+            expected_disks = {"external"}
+        else:
+            expected_disks = {"jbod1", "jbod2"}
 
-        used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {"external"} if positive else {"jbod1", "jbod2"}
+        check_used_disks_with_retry(node1, name, expected_disks, 50)
 
         assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["6"]
 
         time.sleep(5)
 
-        node1.query("OPTIMIZE TABLE {name} FINAL".format(name=name))
+        for i in range(50):
+            rows_count = int(node1.query("SELECT count() FROM {name}".format(name=name)).strip())
+            if positive:
+                if rows_count == 0:
+                    break
+            else:
+                if rows_count == 3:
+                    break
+            node1.query("OPTIMIZE TABLE {name} FINAL".format(name=name))
+            time.sleep(0.5)
 
-        assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["0"] if positive else ["3"]
+
+        if positive:
+            assert rows_count == 0
+        else:
+            assert rows_count == 3
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("concurrently_altering_ttl_mt","MergeTree()"),
     ("concurrently_altering_ttl_replicated_mt","ReplicatedMergeTree('/clickhouse/concurrently_altering_ttl_replicated_mt', '1')",),
@@ -792,7 +805,7 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
                 try:
                     node1.query("ALTER TABLE {} MOVE {mt} {mp} TO {md} {mv}".format(
                         name, mt=move_type, mp=move_part, md=move_disk, mv=move_volume))
-                except QueryRuntimeException as ex:
+                except QueryRuntimeException:
                     pass
 
             for i in range(num):
@@ -809,11 +822,18 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
                     what = random.choice(["TO VOLUME 'main'", "TO VOLUME 'external'", "TO DISK 'jbod1'", "TO DISK 'jbod2'", "TO DISK 'external'"])
                     when = "now()+{}".format(random.randint(-1, 5))
                     ttls.append("{} {}".format(when, what))
-                node1.query("ALTER TABLE {} MODIFY TTL {}".format(name, ", ".join(ttls)))
+                try:
+                    node1.query("ALTER TABLE {} MODIFY TTL {}".format(name, ", ".join(ttls)))
+                except QueryRuntimeException:
+                    pass
 
         def optimize_table(num):
             for i in range(num):
-                node1.query("OPTIMIZE TABLE {} FINAL".format(name))
+                try: # optimize may throw after concurrent alter
+                    node1.query("OPTIMIZE TABLE {} FINAL".format(name), settings={'optimize_throw_if_noop': '1'})
+                    break
+                except:
+                    pass
 
         p = Pool(15)
         tasks = []
@@ -832,7 +852,7 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
-@pytest.mark.skip(reason="Flappy test")
+@pytest.mark.skip(reason="Flacky test")
 @pytest.mark.parametrize("name,positive", [
     ("test_double_move_while_select_negative", 0),
     ("test_double_move_while_select_positive", 1),
@@ -863,12 +883,16 @@ def test_double_move_while_select(started_cluster, name, positive):
         thread = threading.Thread(target=long_select)
         thread.start()
 
+        time.sleep(1)
+
         node1.query("ALTER TABLE {name} MOVE PART '{part}' TO DISK 'jbod1'".format(name=name, part=parts[0]))
 
         # Fill jbod1 to force ClickHouse to make move of partition 1 to external.
         node1.query("INSERT INTO {name} VALUES (2, '{string}')".format(name=name, string=get_random_string(9 * 1024 * 1024)))
         node1.query("INSERT INTO {name} VALUES (3, '{string}')".format(name=name, string=get_random_string(9 * 1024 * 1024)))
         node1.query("INSERT INTO {name} VALUES (4, '{string}')".format(name=name, string=get_random_string(9 * 1024 * 1024)))
+
+        time.sleep(1)
 
         # If SELECT locked old part on external, move shall fail.
         assert node1.query("SELECT disk_name FROM system.parts WHERE table = '{name}' AND active = 1 AND name = '{part}'"
@@ -877,6 +901,96 @@ def test_double_move_while_select(started_cluster, name, positive):
         thread.join()
 
         assert node1.query("SELECT n FROM {name} ORDER BY n".format(name=name)).splitlines() == ["1", "2", "3", "4"]
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
+@pytest.mark.parametrize("name,engine,positive", [
+    ("mt_test_alter_with_merge_do_not_work","MergeTree()",0),
+    ("replicated_mt_test_alter_with_merge_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_alter_with_merge_do_not_work', '1')",0),
+    ("mt_test_alter_with_merge_work","MergeTree()",1),
+    ("replicated_mt_test_alter_with_merge_work","ReplicatedMergeTree('/clickhouse/replicated_test_alter_with_merge_work', '1')",1),
+])
+def test_alter_with_merge_work(started_cluster, name, engine, positive):
+    """Copyright 2019, Altinity LTD
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License."""
+    """Check that TTL expressions are re-evaluated for
+    existing parts after ALTER command changes TTL expressions
+    and parts are merged.
+    """
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            TTL d1 + INTERVAL 3000 SECOND TO DISK 'jbod2',
+                d1 + INTERVAL 6000 SECOND TO VOLUME 'external'
+            SETTINGS storage_policy='jbods_with_external', merge_with_ttl_timeout=0
+        """.format(name=name, engine=engine))
+
+
+        def optimize_table(num):
+            for i in range(num):
+                try: # optimize may throw after concurrent alter
+                    node1.query("OPTIMIZE TABLE {} FINAL".format(name), settings={'optimize_throw_if_noop': '1'})
+                    break
+                except:
+                    pass
+
+        for p in range(3):
+            data = [] # 6MB in total
+            now = time.time()
+            for i in range(2):
+                s1 = get_random_string(1024 * 1024) # 1MB
+                d1 = now - 1 if positive else now + 300
+                data.append("('{}', toDateTime({}))".format(s1, d1))
+            values = ",".join(data)
+            node1.query("INSERT INTO {name} (s1, d1) VALUES {values}".format(name=name, values=values))
+
+        used_disks = get_used_disks_for_table(node1, name)
+        assert set(used_disks) == {"jbod1", "jbod2"}
+
+        node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["6"]
+
+        node1.query("""
+            ALTER TABLE {name} MODIFY
+            TTL d1 + INTERVAL 0 SECOND TO DISK 'jbod2',
+                d1 + INTERVAL 5 SECOND TO VOLUME 'external',
+                d1 + INTERVAL 10 SECOND DELETE
+        """.format(name=name))
+
+        optimize_table(20)
+
+        assert node1.query("SELECT count() FROM system.parts WHERE table = '{name}' AND active = 1".format(name=name)) == "1\n"
+
+        time.sleep(5)
+
+        optimize_table(20)
+
+        if positive:
+            assert check_used_disks_with_retry(node1, name, set(["external"]), 50)
+        else:
+            assert check_used_disks_with_retry(node1, name, set(["jbod1", "jbod2"]), 50)
+
+        time.sleep(5)
+
+        optimize_table(20)
+
+        if positive:
+            assert node1.query("SELECT count() FROM {name}".format(name=name)) == "0\n"
+        else:
+            assert node1.query("SELECT count() FROM {name}".format(name=name)) == "6\n"
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))

@@ -48,13 +48,6 @@ protected:
 };
 
 
-class ParserBareWord : public IParserBase
-{
-protected:
-    const char * getName() const override { return "bare word"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 /** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
  *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
   */
@@ -308,6 +301,16 @@ protected:
 };
 
 
+/** MySQL-style global variable: @@var
+  */
+class ParserMySQLGlobalVariable : public IParserBase
+{
+protected:
+    const char * getName() const override { return "MySQL-style global variable"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 /** The expression element is one of: an expression in parentheses, an array, a literal, a function, an identifier, an asterisk.
   */
 class ParserExpressionElement : public IParserBase
@@ -363,7 +366,7 @@ protected:
     bool brackets_can_be_omitted;
 };
 
-/** Data type or table engine, possibly with parameters. For example, UInt8 or see examples from ParserIdentifierWithParameters
+/** Table engine, possibly with parameters. See examples from ParserIdentifierWithParameters
   * Parse result is ASTFunction, with or without arguments.
   */
 class ParserIdentifierWithOptionalParameters : public IParserBase

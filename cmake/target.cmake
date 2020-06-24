@@ -27,6 +27,7 @@ if (CMAKE_CROSSCOMPILING)
     elseif (OS_FREEBSD)
         # FIXME: broken dependencies
         set (ENABLE_PROTOBUF OFF CACHE INTERNAL "")
+        set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
     else ()
         message (FATAL_ERROR "Trying to cross-compile to unsupported system: ${CMAKE_SYSTEM_NAME}!")
     endif ()

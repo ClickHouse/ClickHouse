@@ -11,7 +11,6 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 
-
 namespace DB
 {
 
@@ -32,8 +31,11 @@ class ASTExpressionList;
 class ASTSelectQuery;
 struct ASTTablesInSelectQueryElement;
 
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
 /// Create columns in block or return false if not possible
-bool sanitizeBlock(Block & block);
+bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
@@ -174,6 +176,7 @@ struct ExpressionAnalysisResult
 
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
+    bool optimize_aggregation_in_order = false;
 
     ExpressionActionsPtr before_join;   /// including JOIN
     ExpressionActionsPtr before_where;
@@ -195,18 +198,22 @@ struct ExpressionAnalysisResult
     ConstantFilterDescription where_constant_filter_description;
     /// Actions by every element of ORDER BY
     ManyExpressionActions order_by_elements_actions;
+    ManyExpressionActions group_by_elements_actions;
 
     ExpressionAnalysisResult() = default;
 
     ExpressionAnalysisResult(
         SelectQueryExpressionAnalyzer & query_analyzer,
+        const StorageMetadataPtr & metadata_snapshot,
         bool first_stage,
         bool second_stage,
         bool only_types,
         const FilterInfoPtr & filter_info,
         const Block & source_header);
 
+    /// Filter for row-level security.
     bool hasFilter() const { return filter_info.get(); }
+
     bool hasJoin() const { return before_join.get(); }
     bool hasPrewhere() const { return prewhere_info.get(); }
     bool hasWhere() const { return before_where.get(); }
@@ -228,11 +235,14 @@ public:
         const ASTPtr & query_,
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
+        const StorageMetadataPtr & metadata_snapshot_,
         const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
         const SelectQueryOptions & options_ = {})
-    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_)
-    ,   required_result_columns(required_result_columns_), query_options(options_)
+        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_)
+        , metadata_snapshot(metadata_snapshot_)
+        , required_result_columns(required_result_columns_)
+        , query_options(options_)
     {
     }
 
@@ -243,8 +253,6 @@ public:
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
-    /// Create Set-s that we make from IN section to use index on them.
-    void makeSetsForIndex(const ASTPtr & node);
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
@@ -258,6 +266,7 @@ public:
     void appendProjectResult(ExpressionActionsChain & chain) const;
 
 private:
+    StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.
     NameSet required_result_columns;
     SelectQueryOptions query_options;
@@ -274,6 +283,9 @@ private:
       * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
       */
     SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
+
+    /// Create Set-s that we make from IN section to use index on them.
+    void makeSetsForIndex(const ASTPtr & node);
 
     JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
 
@@ -302,7 +314,7 @@ private:
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
-    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
+    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     /// After aggregation:

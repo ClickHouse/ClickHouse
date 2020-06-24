@@ -49,6 +49,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name_)
 
         {"column",                                     std::make_shared<DataTypeString>()},
         {"type",                                       std::make_shared<DataTypeString>()},
+        {"column_position",                            std::make_shared<DataTypeUInt64>()},
         {"default_kind",                               std::make_shared<DataTypeString>()},
         {"default_expression",                         std::make_shared<DataTypeString>()},
         {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
@@ -70,7 +71,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
     };
 
     std::unordered_map<String, ColumnInfo> columns_info;
-    for (const auto & column : info.storage->getColumns())
+    for (const auto & column : info.storage->getInMemoryMetadataPtr()->getColumns())
     {
         ColumnInfo column_info;
         if (column.default_desc.expression)
@@ -101,9 +102,10 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
 
         using State = IMergeTreeDataPart::State;
 
+        size_t column_position = 0;
         for (const auto & column : part->getColumns())
-
         {
+            ++column_position;
             size_t j = 0;
             {
                 WriteBufferFromOwnString out;
@@ -138,11 +140,12 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
             columns_[j++]->insert(info.database);
             columns_[j++]->insert(info.table);
             columns_[j++]->insert(info.engine);
-            columns_[j++]->insert(part->disk->getName());
+            columns_[j++]->insert(part->volume->getDisk()->getName());
             columns_[j++]->insert(part->getFullPath());
 
             columns_[j++]->insert(column.name);
             columns_[j++]->insert(column.type->getName());
+            columns_[j++]->insert(column_position);
 
             auto column_info_it = columns_info.find(column.name);
             if (column_info_it != columns_info.end())

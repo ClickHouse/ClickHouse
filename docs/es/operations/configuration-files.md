@@ -1,18 +1,18 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 50
 toc_title: "Archivos de configuraci\xF3n"
 ---
 
-# Archivos De configuración {#configuration_files}
+# Archivos de configuración {#configuration_files}
 
 ClickHouse admite la administración de configuración de varios archivos. El archivo de configuración del servidor principal es `/etc/clickhouse-server/config.xml`. Otros archivos deben estar en el `/etc/clickhouse-server/config.d` directorio.
 
 !!! note "Nota"
     Todos los archivos de configuración deben estar en formato XML. Además, deben tener el mismo elemento raíz, generalmente `<yandex>`.
 
-Algunos valores especificados en el archivo de configuración principal se pueden anular en otros archivos de configuración. El `replace` o `remove` los atributos pueden ser especificada para los elementos de estos archivos de configuración.
+Algunos valores especificados en el archivo de configuración principal se pueden anular en otros archivos de configuración. El `replace` o `remove` se pueden especificar atributos para los elementos de estos archivos de configuración.
 
 Si no se especifica ninguno, combina el contenido de los elementos de forma recursiva, reemplazando los valores de los elementos secundarios duplicados.
 
@@ -22,11 +22,11 @@ Si `remove` se especifica, elimina el elemento.
 
 La configuración también puede definir “substitutions”. Si un elemento tiene el `incl` atributo, la sustitución correspondiente del archivo se utilizará como el valor. De forma predeterminada, la ruta al archivo con sustituciones es `/etc/metrika.xml`. Esto se puede cambiar en el [include\_from](server-configuration-parameters/settings.md#server_configuration_parameters-include_from) elemento en la configuración del servidor. Los valores de sustitución se especifican en `/yandex/substitution_name` elementos en este archivo. Si una sustitución especificada en `incl` no existe, se registra en el registro. Para evitar que ClickHouse registre las sustituciones que faltan, especifique `optional="true"` atributo (por ejemplo, ajustes para [macro](server-configuration-parameters/settings.md)).
 
-Las sustituciones pueden también ser realizada a partir de Cuidador. Para ello, especifique el atributo `from_zk = "/path/to/node"`. El valor del elemento se sustituye por el contenido del nodo en `/path/to/node` en ZooKeeper. También puede colocar un subárbol XML completo en el nodo ZooKeeper y se insertará completamente en el elemento de origen.
+Las sustituciones también se pueden realizar desde ZooKeeper. Para hacer esto, especifique el atributo `from_zk = "/path/to/node"`. El valor del elemento se sustituye por el contenido del nodo en `/path/to/node` en ZooKeeper. También puede colocar un subárbol XML completo en el nodo ZooKeeper y se insertará completamente en el elemento de origen.
 
 El `config.xml` file puede especificar una configuración separada con configuraciones de usuario, perfiles y cuotas. La ruta relativa a esta configuración se establece en el `users_config` elemento. Por defecto, es `users.xml`. Si `users_config` se omite, la configuración de usuario, los perfiles y las cuotas se especifican directamente en `config.xml`.
 
-Configuración de usuarios puede ser dividido en archivos separados similar a `config.xml` y `config.d/`.
+La configuración de los usuarios se puede dividir en archivos separados similares a `config.xml` y `config.d/`.
 El nombre del directorio se define como `users_config` sin `.xml` postfix concatenado con `.d`.
 Directorio `users.d` se utiliza por defecto, como `users_config` por defecto `users.xml`.
 Por ejemplo, puede tener un archivo de configuración separado para cada usuario como este:

@@ -4,6 +4,64 @@
 
 Возвращает строку - имя хоста, на котором эта функция была выполнена. При распределённой обработке запроса, это будет имя хоста удалённого сервера, если функция выполняется на удалённом сервере.
 
+## getMacro {#getmacro}
+
+Возвращает именованное значение из секции [macros](../../operations/server-configuration-parameters/settings.md#macros) конфигурации сервера.
+
+**Синтаксис** 
+
+```sql
+getMacro(name);
+```
+
+**Параметры**
+
+- `name` — Имя, которое необходимо получить из секции `macros`. [String](../../sql-reference/data-types/string.md#string).
+
+**Возвращаемое значение**
+
+- Значение по указанному имени.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Пример секции `macros` в конфигурационном файле сервера:
+
+```xml
+<macros>
+    <test>Value</test>
+</macros>
+```
+
+Запрос:
+
+```sql
+SELECT getMacro('test');
+```
+
+Результат:
+
+```text
+┌─getMacro('test')─┐
+│ Value            │
+└──────────────────┘
+```
+
+Альтернативный способ получения значения:
+
+```sql
+SELECT * FROM system.macros
+WHERE macro = 'test'
+```
+
+```text
+┌─macro─┬─substitution─┐
+│ test  │ Value        │
+└───────┴──────────────┘
+```
+
+
 ## FQDN {#fqdn}
 
 Возвращает полное имя домена.
@@ -170,6 +228,75 @@ SELECT currentUser();
 ┌─currentUser()─┐
 │ default       │
 └───────────────┘
+```
+
+## isConstant {#is-constant}
+
+Проверяет, является ли аргумент константным выражением.
+
+Константное выражение — это выражение, результат которого известен на момент анализа запроса (до его выполнения). Например, выражения над [литералами](../syntax.md#literals) являются константными.
+
+Используется в целях разработки, отладки или демонстрирования.
+
+**Синтаксис**
+
+``` sql
+isConstant(x)
+```
+
+**Параметры**
+
+- `x` — Выражение для проверки.
+
+**Возвращаемые значения**
+
+- `1` — Выражение `x` является константным.
+- `0` — Выражение `x` не является константным.
+
+Тип: [UInt8](../data-types/int-uint.md).
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT isConstant(x + 1) FROM (SELECT 43 AS x)
+```
+
+Результат:
+
+```text
+┌─isConstant(plus(x, 1))─┐
+│                      1 │
+└────────────────────────┘
+```
+
+Запрос:
+
+```sql
+WITH 3.14 AS pi SELECT isConstant(cos(pi))
+```
+
+Результат:
+
+```text
+┌─isConstant(cos(pi))─┐
+│                   1 │
+└─────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT isConstant(number) FROM numbers(1)
+```
+
+Результат:
+
+```text
+┌─isConstant(number)─┐
+│                  0 │
+└────────────────────┘
 ```
 
 ## isFinite(x) {#isfinitex}
@@ -1025,5 +1152,53 @@ SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers 
 │      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                               30 │
 └────────┴────────────────────────────────┴──────────────────────────────────┘
 ```
+
+## randomString {#randomstring}
+
+Генерирует бинарную строку заданной длины, заполненную случайными байтами (в том числе нулевыми).
+
+**Синтаксис**
+
+``` sql
+randomString(length)
+```
+
+**Параметры** 
+
+-   `length` — длина строки. Положительное целое число.
+
+**Возвращаемое значение**
+
+-   Строка, заполненная случайными байтами.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT randomString(30) AS str, length(str) AS len FROM numbers(2) FORMAT Vertical;
+```
+
+Ответ:
+
+``` text
+Row 1:
+──────
+str: 3 G  :   pT ?w тi  k aV f6
+len: 30
+
+Row 2:
+──────
+str: 9 ,]    ^   )  ]??  8
+len: 30
+```
+
+**Смотрите также**
+
+-   [generateRandom](../../sql-reference/table-functions/generate.md#generaterandom)
+-   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
+
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->

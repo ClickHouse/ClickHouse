@@ -1,6 +1,6 @@
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
 #include <Parsers/ASTCreateQuotaQuery.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
@@ -15,15 +15,18 @@ namespace DB
 {
 namespace
 {
-void updateQuotaFromQueryImpl(Quota & quota, const ASTCreateQuotaQuery & query, const std::optional<ExtendedRoleSet> & roles_from_query = {})
+    void updateQuotaFromQueryImpl(
+        Quota & quota,
+        const ASTCreateQuotaQuery & query,
+        const String & override_name,
+        const std::optional<RolesOrUsersSet> & override_to_roles)
     {
-        if (query.alter)
-        {
-            if (!query.new_name.empty())
-                quota.setName(query.new_name);
-        }
-        else
-            quota.setName(query.name);
+        if (!override_name.empty())
+            quota.setName(override_name);
+        else if (!query.new_name.empty())
+            quota.setName(query.new_name);
+        else if (query.names.size() == 1)
+            quota.setName(query.names.front());
 
         if (query.key_type)
             quota.key_type = *query.key_type;
@@ -56,23 +59,13 @@ void updateQuotaFromQueryImpl(Quota & quota, const ASTCreateQuotaQuery & query, 
             auto & quota_limits = *it;
             quota_limits.randomize_interval = query_limits.randomize_interval;
             for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
-            {
-                if (query_limits.max[resource_type])
-                    quota_limits.max[resource_type] = *query_limits.max[resource_type];
-                else
-                    quota_limits.max[resource_type] = Quota::UNLIMITED;
-            }
+                quota_limits.max[resource_type] = query_limits.max[resource_type];
         }
 
-        const ExtendedRoleSet * roles = nullptr;
-        std::optional<ExtendedRoleSet> temp_role_set;
-        if (roles_from_query)
-            roles = &*roles_from_query;
+        if (override_to_roles)
+            quota.to_roles = *override_to_roles;
         else if (query.roles)
-            roles = &temp_role_set.emplace(*query.roles);
-
-        if (roles)
-            quota.to_roles = *roles;
+            quota.to_roles = *query.roles;
     }
 }
 
@@ -89,37 +82,42 @@ BlockIO InterpreterCreateQuotaQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, context);
     }
 
-    std::optional<ExtendedRoleSet> roles_from_query;
+    std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
-        roles_from_query = ExtendedRoleSet{*query.roles, access_control, context.getUserID()};
+        roles_from_query = RolesOrUsersSet{*query.roles, access_control, context.getUserID()};
 
     if (query.alter)
     {
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_quota = typeid_cast<std::shared_ptr<Quota>>(entity->clone());
-            updateQuotaFromQueryImpl(*updated_quota, query, roles_from_query);
+            updateQuotaFromQueryImpl(*updated_quota, query, {}, roles_from_query);
             return updated_quota;
         };
         if (query.if_exists)
         {
-            if (auto id = access_control.find<Quota>(query.name))
-                access_control.tryUpdate(*id, update_func);
+            auto ids = access_control.find<Quota>(query.names);
+            access_control.tryUpdate(ids, update_func);
         }
         else
-            access_control.update(access_control.getID<Quota>(query.name), update_func);
+            access_control.update(access_control.getIDs<Quota>(query.names), update_func);
     }
     else
     {
-        auto new_quota = std::make_shared<Quota>();
-        updateQuotaFromQueryImpl(*new_quota, query, roles_from_query);
+        std::vector<AccessEntityPtr> new_quotas;
+        for (const String & name : query.names)
+        {
+            auto new_quota = std::make_shared<Quota>();
+            updateQuotaFromQueryImpl(*new_quota, query, name, roles_from_query);
+            new_quotas.emplace_back(std::move(new_quota));
+        }
 
         if (query.if_not_exists)
-            access_control.tryInsert(new_quota);
+            access_control.tryInsert(new_quotas);
         else if (query.or_replace)
-            access_control.insertOrReplace(new_quota);
+            access_control.insertOrReplace(new_quotas);
         else
-            access_control.insert(new_quota);
+            access_control.insert(new_quotas);
     }
 
     return {};
@@ -128,7 +126,7 @@ BlockIO InterpreterCreateQuotaQuery::execute()
 
 void InterpreterCreateQuotaQuery::updateQuotaFromQuery(Quota & quota, const ASTCreateQuotaQuery & query)
 {
-    updateQuotaFromQueryImpl(quota, query);
+    updateQuotaFromQueryImpl(quota, query, {}, {});
 }
 
 }

@@ -6,9 +6,9 @@
 
 namespace DB
 {
-size_t EnabledRowPolicies::Hash::operator()(const DatabaseAndTableNameRef & database_and_table_name) const
+size_t EnabledRowPolicies::Hash::operator()(const MixedConditionKey & key) const
 {
-    return std::hash<std::string_view>{}(database_and_table_name.first) - std::hash<std::string_view>{}(database_and_table_name.second);
+    return std::hash<std::string_view>{}(key.database) - std::hash<std::string_view>{}(key.table_name) + static_cast<size_t>(key.condition_type);
 }
 
 
@@ -20,16 +20,22 @@ EnabledRowPolicies::EnabledRowPolicies(const Params & params_)
 EnabledRowPolicies::~EnabledRowPolicies() = default;
 
 
-ASTPtr EnabledRowPolicies::getCondition(const String & database, const String & table_name, ConditionType type) const
+ASTPtr EnabledRowPolicies::getCondition(const String & database, const String & table_name, ConditionType condition_type) const
 {
     /// We don't lock `mutex` here.
     auto loaded = map_of_mixed_conditions.load();
-    auto it = loaded->find({database, table_name});
+    auto it = loaded->find({database, table_name, condition_type});
     if (it == loaded->end())
         return {};
-    return it->second.mixed_conditions[type];
-}
 
+    auto condition = it->second.ast;
+
+    bool value;
+    if (tryGetLiteralBool(condition.get(), value) && value)
+        return nullptr; /// The condition is always true, no need to check it.
+
+    return condition;
+}
 
 ASTPtr EnabledRowPolicies::getCondition(const String & database, const String & table_name, ConditionType type, const ASTPtr & extra_condition) const
 {
@@ -41,31 +47,9 @@ ASTPtr EnabledRowPolicies::getCondition(const String & database, const String & 
 
     bool value;
     if (tryGetLiteralBool(condition.get(), value) && value)
-        condition = nullptr;  /// The condition is always true, no need to check it.
+        return nullptr;  /// The condition is always true, no need to check it.
 
     return condition;
-}
-
-
-std::vector<UUID> EnabledRowPolicies::getCurrentPolicyIDs() const
-{
-    /// We don't lock `mutex` here.
-    auto loaded = map_of_mixed_conditions.load();
-    std::vector<UUID> policy_ids;
-    for (const auto & mixed_conditions : *loaded | boost::adaptors::map_values)
-        boost::range::copy(mixed_conditions.policy_ids, std::back_inserter(policy_ids));
-    return policy_ids;
-}
-
-
-std::vector<UUID> EnabledRowPolicies::getCurrentPolicyIDs(const String & database, const String & table_name) const
-{
-    /// We don't lock `mutex` here.
-    auto loaded = map_of_mixed_conditions.load();
-    auto it = loaded->find({database, table_name});
-    if (it == loaded->end())
-        return {};
-    return it->second.policy_ids;
 }
 
 }

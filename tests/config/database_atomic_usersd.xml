@@ -1,0 +1,9 @@
+<yandex>
+    <profiles>
+        <default>
+            <default_database_engine>Atomic</default_database_engine>
+            <allow_experimental_database_atomic>1</allow_experimental_database_atomic>
+            <show_table_uuid_in_table_create_query_if_not_nil>0</show_table_uuid_in_table_create_query_if_not_nil>
+        </default>
+    </profiles>
+</yandex>

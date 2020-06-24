@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 58
 toc_title: Trabajar con diccionarios externos
 ---
 
-# Funciones Para Trabajar Con Diccionarios Externos {#ext_dict_functions}
+# Funciones para trabajar con diccionarios externos {#ext_dict_functions}
 
 Para obtener información sobre cómo conectar y configurar diccionarios externos, consulte [Diccionarios externos](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
@@ -23,7 +23,7 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 -   `dict_name` — Name of the dictionary. [Literal de cadena](../syntax.md#syntax-string-literal).
 -   `attr_name` — Name of the column of the dictionary. [Literal de cadena](../syntax.md#syntax-string-literal).
 -   `id_expr` — Key value. [Expresion](../syntax.md#syntax-expressions) devolviendo un [UInt64](../../sql-reference/data-types/int-uint.md) o [Tupla](../../sql-reference/data-types/tuple.md)valor -type dependiendo de la configuración del diccionario.
--   `default_value_expr` — Value returned if the dictionary doesn’t contain a row with the `id_expr` clave. [Expresion](../syntax.md#syntax-expressions) devolviendo el valor en el tipo de datos configurado para `attr_name` atributo.
+-   `default_value_expr` — Value returned if the dictionary doesn't contain a row with the `id_expr` clave. [Expresion](../syntax.md#syntax-expressions) devolviendo el valor en el tipo de datos configurado para `attr_name` atributo.
 
 **Valor devuelto**
 
@@ -161,7 +161,7 @@ dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 
 Tipo: `UInt8`.
 
-## Otras Funciones {#ext_dict_functions-other}
+## Otras funciones {#ext_dict_functions-other}
 
 ClickHouse admite funciones especializadas que convierten los valores de atributo de diccionario a un tipo de datos específico, independientemente de la configuración del diccionario.
 
@@ -189,7 +189,7 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 -   `dict_name` — Name of the dictionary. [Literal de cadena](../syntax.md#syntax-string-literal).
 -   `attr_name` — Name of the column of the dictionary. [Literal de cadena](../syntax.md#syntax-string-literal).
 -   `id_expr` — Key value. [Expresion](../syntax.md#syntax-expressions) devolviendo un [UInt64](../../sql-reference/data-types/int-uint.md)-tipo de valor.
--   `default_value_expr` — Value which is returned if the dictionary doesn’t contain a row with the `id_expr` clave. [Expresion](../syntax.md#syntax-expressions) devolviendo un valor en el tipo de datos configurado para `attr_name` atributo.
+-   `default_value_expr` — Value which is returned if the dictionary doesn't contain a row with the `id_expr` clave. [Expresion](../syntax.md#syntax-expressions) devolviendo un valor en el tipo de datos configurado para `attr_name` atributo.
 
 **Valor devuelto**
 
