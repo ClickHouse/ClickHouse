@@ -39,6 +39,8 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 
+#include <filesystem>
+
 
 namespace DB
 {
@@ -98,22 +100,55 @@ void LocalServer::applyCmdSettings()
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
 void LocalServer::tryInitPath()
 {
-    std::string path = config().getString("path", "");
-    Poco::trimInPlace(path);
+    std::string path;
 
-    if (!path.empty())
+    if (config().has("path"))
     {
-        if (path.back() != '/')
-            path += '/';
+        // User-supplied path.
+        path = config().getString("path");
+        Poco::trimInPlace(path);
 
-        context->setPath(path);
-        return;
+        if (path.empty())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot work with emtpy storage path that is explicitly specified"
+                " by the --path option. Please check the program options and
+                " correct the --path.");
+        }
+    }
+    else
+    {
+        // Default unique path in the system temporary directory.
+        const auto tmp = std::filesystem::temp_directory_path();
+        const auto default_path = tmp
+            / fmt::format("clickhouse-local-{}", getpid());
+
+        if (exists(default_path))
+        {
+            // This is a directory that is left by a previous run of
+            // clickhouse-local that had the same pid and did not complete
+            // correctly. Remove it, with an additional sanity check.
+            if (default_path.parent_path() != tmp)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "The temporary directory of clickhouse-local '{}' is not"
+                    " inside the system temporary directory '{}'. Will not delete"
+                    " it", default_path.string(), tmp.string());
+            }
+
+            remove_all(default_path);
+        }
+
+        create_directory(default_path);
+        temporary_directory_to_delete = default_path;
+
+        path = default_path.string();
     }
 
-    /// In case of empty path set paths to helpful directories
-    std::string cd = Poco::Path::current();
-    context->setTemporaryStorage(cd + "tmp");
-    context->setFlagsPath(cd + "flags");
+    if (path.back() != '/')
+        path += '/';
+
+    context->setPath(path);
     context->setUserFilesPath(""); // user's files are everywhere
 }
 
@@ -228,10 +263,21 @@ try
     context->shutdown();
     context.reset();
 
+    cleanup();
+
     return Application::EXIT_OK;
 }
 catch (const Exception & e)
 {
+    try
+    {
+        cleanup();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
     std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
 
     /// If exception code isn't zero, we should return non-zero return code anyway.
@@ -370,6 +416,29 @@ void LocalServer::setupUsers()
         context->setUsersConfig(users_config);
     else
         throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
+}
+
+void LocalServer::cleanup()
+{
+    // Delete the temporary directory if needed. Just in case, check that it is
+    // in the system temporary directory, not to delete user data if there is a
+    // bug.
+    if (temporary_directory_to_delete)
+    {
+        const auto tmp = std::filesystem::temp_directory_path();
+        const auto dir = *temporary_directory_to_delete;
+        temporary_directory_to_delete.reset();
+
+        if (dir.parent_path() != tmp)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "The temporary directory of clickhouse-local '{}' is not inside"
+                " the system temporary directory '{}'. Will not delete it",
+                dir.string(), tmp.string());
+        }
+
+        remove_all(dir);
+    }
 }
 
 static void showClientVersion()
