@@ -1281,6 +1281,7 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             return false;
         }
         name = String(pos->begin, pos->end);
+        ++pos;
     }
 
     auto name_literal = std::make_shared<ASTLiteral>(name);
