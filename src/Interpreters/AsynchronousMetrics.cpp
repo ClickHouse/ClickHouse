@@ -71,7 +71,7 @@ void AsynchronousMetrics::run()
         // need to change it by recompilation to debug something. The generic
         // code is left here so that you don't have to ruin your mood by touching
         // std::chrono.
-        const seconds period(60);
+        const seconds period(10);
 
         const auto now = time_point_cast<seconds>(system_clock::now());
 
@@ -328,6 +328,45 @@ void AsynchronousMetrics::update()
     saveAllArenasMetric<size_t>(new_values, "dirty_purged");
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
 #endif
+
+    // Try to add processor frequencies, ignoring errors.
+    try
+    {
+        ReadBufferFromFile buf("/proc/cpuinfo");
+
+        // We need the following lines:
+        // core id  	: 4
+        // cpu MHz	 	: 4052.941
+        // They contain tabs and are interspersed with other info.
+        int core_id = 0;
+        while (!buf.eof())
+        {
+            std::string s;
+            readEscapedStringUntilEOL(s, buf);
+            // It doesn't read the EOL itself.
+            ++buf.position();
+
+            if (s.rfind("core id", 0) == 0)
+            {
+                if (auto colon = s.find_first_of(':'))
+                {
+                    core_id = std::stoi(s.substr(colon + 2));
+                }
+            }
+            else if (s.rfind("cpu MHz", 0) == 0)
+            {
+                if (auto colon = s.find_first_of(':'))
+                {
+                    auto mhz = std::stod(s.substr(colon + 2));
+                    new_values[fmt::format("CPUFrequencyMHz_{}", core_id)] = mhz;
+                }
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
     /// Add more metrics as you wish.
 
