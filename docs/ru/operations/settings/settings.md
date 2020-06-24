@@ -1025,7 +1025,7 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0.
 
-## optimize_skip_unused_shards {#optimize-skip-unused-shards}
+## optimize\_skip\_unused\_shards {#optimize-skip-unused-shards}
 
 Включает или отключает пропуск неиспользуемых шардов для запросов [SELECT](../../sql-reference/statements/select/index.md) , в которых условие ключа шардирования задано в секции `WHERE/PREWHERE`. Предполагается, что данные распределены с помощью ключа шардирования, в противном случае настройка ничего не делает.
 
@@ -1036,15 +1036,39 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0
 
-## force_optimize_skip_unused_shards {#force-optimize-skip-unused-shards}
+## optimize\_skip\_unused\_shards\_nesting {#optimize-skip-unused-shards-nesting}
+
+Контролирует настройку [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) (поэтому все еще требует `optimize_skip_unused_shards`) в зависимости от вложенности распределенного запроса (когда у вас есть `Distributed` таблица которая смотрит на другую `Distributed` таблицу).
+
+Возможные значения:
+
+-    0 — Выключена, `optimize_skip_unused_shards` работает всегда.
+-    1 — Включает `optimize_skip_unused_shards` только для 1-ого уровня вложенности.
+-    2 — Включает `optimize_skip_unused_shards` для 1-ого и 2-ого уровня вложенности.
+
+Значение по умолчанию: 0
+
+## force\_optimize\_skip\_unused\_shards {#force-optimize-skip-unused-shards}
 
 Разрешает или запрещает выполнение запроса, если настройка [optimize_skip_unused_shards](#optimize-skip-unused-shards) включена, а пропуск неиспользуемых шардов невозможен. Если данная настройка включена и пропуск невозможен, ClickHouse генерирует исключение.
 
 Возможные значения:
 
--   0 — Выключена. ClickHouse не генерирует исключение.
--   1 — Включена. Выполнение запроса запрещается, только если у таблицы есть ключ шардирования.
--   2 — Включена. Выполнение запроса запрещается, даже если для таблицы не определен ключ шардирования.
+-    0 — Выключена, `force_optimize_skip_unused_shards` работает всегда.
+-    1 — Включает `force_optimize_skip_unused_shards` только для 1-ого уровня вложенности.
+-    2 — Включает `force_optimize_skip_unused_shards` для 1-ого и 2-ого уровня вложенности.
+
+Значение по умолчанию: 0
+
+## force\_optimize\_skip\_unused\_shards\_nesting {#settings-force_optimize_skip_unused_shards_nesting}
+
+Контролирует настройку [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards) (поэтому все еще требует `optimize_skip_unused_shards`) в зависимости от вложенности распределенного запроса (когда у вас есть `Distributed` таблица которая смотрит на другую `Distributed` таблицу).
+
+Возможные значения:
+
+-   0 - Disabled, `force_optimize_skip_unused_shards` works on all levels.
+-   1 — Enables `force_optimize_skip_unused_shards` only for the first level.
+-   2 — Enables `force_optimize_skip_unused_shards` up to the second level.
 
 Значение по умолчанию: 0
 
