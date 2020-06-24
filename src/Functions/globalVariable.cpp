@@ -1,10 +1,14 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
+
+#include <unordered_map>
+#include <Poco/String.h>
 
 
 namespace DB
@@ -43,19 +47,39 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!checkColumnConst<ColumnString>(arguments[0].column.get()))
-            throw Exception("Agrument of function " + getName() + " must be constant string", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Argument of function " + getName() + " must be constant string", ErrorCodes::BAD_ARGUMENTS);
 
         String variable_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
-
-        throw Exception("There is no global variable with name " + variable_name, ErrorCodes::BAD_ARGUMENTS);
+        auto variable = global_variable_map.find(Poco::toLower(variable_name));
+        if (variable == global_variable_map.end())
+            return std::make_shared<DataTypeString>();
+        else
+            return variable->second.type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t /*result*/, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        String variable_name = assert_cast<const ColumnConst &>(*block.getByPosition(0).column).getValue<String>();
+        const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
+        String variable_name = assert_cast<const ColumnConst &>(*col.column).getValue<String>();
+        auto variable = global_variable_map.find(Poco::toLower(variable_name));
 
-        throw Exception("There is no global variable with name " + variable_name, ErrorCodes::BAD_ARGUMENTS);
+        Field val;
+        if (variable == global_variable_map.end())
+            val = "";
+        else
+            val = variable->second.value;
+
+        auto & result_col = block.getByPosition(result);
+        result_col.column = result_col.type->createColumnConst(input_rows_count, val);
     }
+
+private:
+    struct TypeAndValue
+    {
+        DataTypePtr type;
+        Field value;
+    };
+    std::unordered_map<String, TypeAndValue> global_variable_map = {{"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}}};
 };
 
 
