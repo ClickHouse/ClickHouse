@@ -1,4 +1,5 @@
 ---
+title: What if I have a problem with encodings when using Oracle via ODBC?
 toc_hidden: true
 toc_priority: 20
 ---
