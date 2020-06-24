@@ -599,6 +599,11 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     Pipes res;
 
+    /// Projection, that needed to drop columns, which have appeared by execution
+    /// of some extra expressions, and to allow execute the same expressions later.
+    /// NOTE: It may lead to double computation of expressions.
+    ExpressionActionsPtr result_projection;
+
     if (select.final())
     {
         /// Add columns needed to calculate the sorting expression and the sign.
@@ -620,7 +625,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             settings.use_uncompressed_cache,
             query_info,
             virt_column_names,
-            settings);
+            settings,
+            result_projection);
     }
     else if (settings.optimize_read_in_order && query_info.input_sorting_info)
     {
@@ -640,7 +646,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             query_info,
             sorting_key_prefix_expr,
             virt_column_names,
-            settings);
+            settings,
+            result_projection);
     }
     else
     {
@@ -660,6 +667,13 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         for (auto & pipe : res)
             pipe.addSimpleTransform(std::make_shared<FilterTransform>(
                     pipe.getHeader(), filter_expression, filter_function->getColumnName(), false));
+    }
+
+    if (result_projection)
+    {
+        for (auto & pipe : res)
+            pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(
+                pipe.getHeader(), result_projection));
     }
 
     /// By the way, if a distributed query or query to a Merge table is made, then the `_sample_factor` column can have different values.
@@ -801,6 +815,14 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     return res;
 }
 
+static ExpressionActionsPtr createProjection(const Pipe & pipe, const MergeTreeData & data)
+{
+    const auto & header = pipe.getHeader();
+    auto projection = std::make_shared<ExpressionActions>(header.getNamesAndTypesList(), data.global_context);
+    projection->add(ExpressionAction::project(header.getNames()));
+    return projection;
+}
+
 Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts,
     size_t num_streams,
@@ -810,7 +832,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sorting_key_prefix_expr,
     const Names & virt_columns,
-    const Settings & settings) const
+    const Settings & settings,
+    ExpressionActionsPtr & out_projection) const
 {
     size_t sum_marks = 0;
     const InputSortingInfoPtr & input_sorting_info = query_info.input_sorting_info;
@@ -986,6 +1009,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                 sort_description.emplace_back(data.sorting_key_columns[j],
                     input_sorting_info->direction, 1);
 
+            /// Drop temporary columns, added by 'sorting_key_prefix_expr'
+            out_projection = createProjection(pipes.back(), data);
             for (auto & pipe : pipes)
                 pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), sorting_key_prefix_expr));
 
@@ -1009,7 +1034,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     bool use_uncompressed_cache,
     const SelectQueryInfo & query_info,
     const Names & virt_columns,
-    const Settings & settings) const
+    const Settings & settings,
+    ExpressionActionsPtr & out_projection) const
 {
     const auto data_settings = data.getSettings();
     size_t sum_marks = 0;
@@ -1050,6 +1076,10 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             virt_columns, part.part_index_in_query);
 
         Pipe pipe(std::move(source_processor));
+        /// Drop temporary columns, added by 'sorting_key_expr'
+        if (!out_projection)
+            out_projection = createProjection(pipe, data);
+
         pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), data.sorting_key_expr));
         pipes.emplace_back(std::move(pipe));
     }
