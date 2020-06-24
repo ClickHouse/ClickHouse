@@ -257,7 +257,7 @@ public:
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address);
     /// Sets the current user that was specified via proxy user.
     /// - No password checks for the proxied_user,
-    /// - Current user checked that it is allowed to proxy to the proxied_user,
+    /// - Current user checked that it is allowed to proxy,
     /// - proxied_user is checked weather specified address is allowed.
     void setProxiedUser(const String & proxied_user, const Poco::Net::SocketAddress & address);
     void setQuotaKey(String quota_key_);

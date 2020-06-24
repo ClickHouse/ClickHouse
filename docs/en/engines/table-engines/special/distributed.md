@@ -169,14 +169,6 @@ By default distributed queries uses user from the cluster configuration (or `def
       </test_cluster>
   ```
 
-- Allow the node user (`user` from the `replica`, or `default` if not set) to execute queries as initial user:
-
-  ``` sql
-  ALTER USER current_user ON CLUSTER test_cluster ALLOW PROXYING VIA initial_proxy_user;
-  -- or create new new
-  CREATE USER new_user ALLOW PROXYING VIA initial_proxy_user;
-  ```
-
 - And the proxy user should have `PROXY` privelege:
 
   ``` sql

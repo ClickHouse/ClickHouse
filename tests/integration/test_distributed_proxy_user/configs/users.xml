@@ -15,11 +15,6 @@
             <quota>default</quota>
 
             <access_management>1</access_management>
-
-            <allowed_proxy_users>
-                <user>pass</user>
-                <user>nopass</user>
-            </allowed_proxy_users>
         </default>
 
         <nopass>
@@ -31,11 +26,6 @@
             <quota>default</quota>
 
             <access_management>1</access_management>
-
-            <allowed_proxy_users>
-                <user>pass</user>
-                <user>default</user>
-            </allowed_proxy_users>
         </nopass>
 
         <pass>
@@ -47,11 +37,6 @@
             <quota>default</quota>
 
             <access_management>1</access_management>
-
-            <allowed_proxy_users>
-                <user>nopass</user>
-                <user>default</user>
-            </allowed_proxy_users>
         </pass>
     </users>
 

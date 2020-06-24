@@ -43,7 +43,6 @@ NamesAndTypesList StorageSystemUsers::getNamesAndTypes()
         {"default_roles_all", std::make_shared<DataTypeUInt8>()},
         {"default_roles_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"default_roles_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"allowed_proxy_users", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
     };
     return names_and_types;
 }
@@ -75,16 +74,13 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
     auto & column_default_roles_list_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_default_roles_except = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_default_roles_except_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
-    auto & column_proxy_users = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
-    auto & column_proxy_users_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
 
     auto add_row = [&](const String & name,
                        const UUID & id,
                        const String & storage_name,
                        const Authentication & authentication,
                        const AllowedClientHosts & allowed_hosts,
-                       const RolesOrUsersSet & default_roles,
-                       const auto & allowed_proxy_users)
+                       const RolesOrUsersSet & default_roles)
     {
         column_name.insertData(name.data(), name.length());
         column_id.push_back(id);
@@ -141,10 +137,6 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
         for (const auto & role_name : default_roles_ast->except_names)
             column_default_roles_except.insertData(role_name.data(), role_name.length());
         column_default_roles_except_offsets.push_back(column_default_roles_except.size());
-
-        for (const auto & proxy_user : allowed_proxy_users)
-            column_proxy_users.insertData(proxy_user.data(), proxy_user.length());
-        column_proxy_users_offsets.push_back(column_proxy_users.size());
     };
 
     for (const auto & id : ids)
@@ -157,7 +149,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
         if (!storage)
             continue;
 
-        add_row(user->getName(), id, storage->getStorageName(), user->authentication, user->allowed_client_hosts, user->default_roles, user->allowed_proxy_users);
+        add_row(user->getName(), id, storage->getStorageName(), user->authentication, user->allowed_client_hosts, user->default_roles);
     }
 }
 

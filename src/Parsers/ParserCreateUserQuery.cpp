@@ -243,26 +243,6 @@ namespace
         });
     }
 
-    bool parseAllowedProxyUsers(IParserBase::Pos & pos, Expected & expected, const char * prefix, std::unordered_set<std::string> & allowed_proxy_users)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            if (prefix && !ParserKeyword{prefix}.ignore(pos, expected))
-                return false;
-
-            if (!ParserKeyword{"PROXYING VIA"}.ignore(pos, expected))
-                return false;
-
-            String name;
-            if (!parseUserName(pos, expected, name))
-                return false;
-
-            allowed_proxy_users.emplace(name);
-
-            return true;
-        });
-    }
-
     bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -318,9 +298,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> remove_hosts;
     std::shared_ptr<ASTRolesOrUsersSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
-    std::optional<std::unordered_set<std::string>> allowed_proxy_users;
-    std::optional<std::unordered_set<std::string>> add_allowed_proxy_users;
-    std::optional<std::unordered_set<std::string>> remove_allowed_proxy_users;
     String cluster;
 
     while (true)
@@ -353,15 +330,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             continue;
         }
 
-        std::unordered_set<std::string> new_proxy_users;
-        if (parseAllowedProxyUsers(pos, expected, "ALLOW", new_proxy_users))
-        {
-            if (!allowed_proxy_users)
-                allowed_proxy_users.emplace();
-            allowed_proxy_users->merge(new_proxy_users);
-            continue;
-        }
-
         if (!default_roles && parseDefaultRoles(pos, expected, attach_mode, default_roles))
             continue;
 
@@ -386,22 +354,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 if (!remove_hosts)
                     remove_hosts.emplace();
                 remove_hosts->add(new_hosts);
-                continue;
-            }
-
-            if (parseAllowedProxyUsers(pos, expected, "ALLOW", new_proxy_users))
-            {
-                if (!add_allowed_proxy_users)
-                    add_allowed_proxy_users.emplace();
-                add_allowed_proxy_users->merge(new_proxy_users);
-                continue;
-            }
-
-            if (parseAllowedProxyUsers(pos, expected, "DENY", new_proxy_users))
-            {
-                if (!remove_allowed_proxy_users)
-                    remove_allowed_proxy_users.emplace();
-                remove_allowed_proxy_users->merge(new_proxy_users);
                 continue;
             }
         }
@@ -438,9 +390,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->remove_hosts = std::move(remove_hosts);
     query->default_roles = std::move(default_roles);
     query->settings = std::move(settings);
-    query->allowed_proxy_users = allowed_proxy_users;
-    query->add_allowed_proxy_users = add_allowed_proxy_users;
-    query->remove_allowed_proxy_users = remove_allowed_proxy_users;
 
     return true;
 }

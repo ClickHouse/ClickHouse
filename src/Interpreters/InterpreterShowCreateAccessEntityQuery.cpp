@@ -74,8 +74,6 @@ namespace
                 query->settings = user.settings.toASTWithNames(*manager);
         }
 
-        query->allowed_proxy_users = user.allowed_proxy_users;
-
         return query;
     }
 

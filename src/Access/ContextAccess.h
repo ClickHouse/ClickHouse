@@ -65,11 +65,6 @@ public:
     bool isCorrectPassword(const String & password) const;
     bool isClientHostAllowed() const;
 
-    /// Return true if:
-    /// - proxy_user has PROXY grant,
-    /// - proxy_user is in the list of allowed PROXY users for this user.
-    bool isProxyingAllowed(const String & proxy_user) const;
-
     /// Returns information about current and enabled roles.
     /// The function can return nullptr.
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;

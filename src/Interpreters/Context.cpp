@@ -709,7 +709,7 @@ void Context::setProxiedUser(const String & proxied_user, const Poco::Net::Socke
     if (proxied_user_id)
     {
         proxied_access = getAccessControlManager().getContextAccess(*proxied_user_id, {}, true, settings, current_database, client_info);
-        if (!proxied_access->isClientHostAllowed() || !proxied_access->isProxyingAllowed(current_user))
+        if (!proxied_access->isClientHostAllowed())
         {
             proxied_user_id = {};
             proxied_access = nullptr;

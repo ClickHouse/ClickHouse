@@ -7,8 +7,6 @@
 #include <Access/GrantedRoles.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/SettingsProfileElement.h>
-#include <unordered_set>
-#include <string>
 
 
 namespace DB
@@ -19,7 +17,6 @@ struct User : public IAccessEntity
 {
     Authentication authentication;
     AllowedClientHosts allowed_client_hosts = AllowedClientHosts::AnyHostTag{};
-    std::unordered_set<std::string> allowed_proxy_users;
     GrantedAccess access;
     GrantedRoles granted_roles;
     RolesOrUsersSet default_roles = RolesOrUsersSet::AllTag{};

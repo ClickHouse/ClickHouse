@@ -4,8 +4,6 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Access/Authentication.h>
 #include <Access/AllowedClientHosts.h>
-#include <unordered_set>
-#include <set>
 
 
 namespace DB
@@ -17,7 +15,6 @@ class ASTSettingsProfileElements;
 /** CREATE USER [IF NOT EXISTS | OR REPLACE] name
   *     [NOT IDENTIFIED | IDENTIFIED [WITH {no_password|plaintext_password|sha256_password|sha256_hash|double_sha1_password|double_sha1_hash}] BY {'password'|'hash'}]
   *     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-  *     [PROXY 'user'[, ...]]
   *     [DEFAULT ROLE role [,...]]
   *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   *
@@ -25,7 +22,6 @@ class ASTSettingsProfileElements;
   *      [RENAME TO new_name]
   *      [NOT IDENTIFIED | IDENTIFIED [WITH {no_password|plaintext_password|sha256_password|sha256_hash|double_sha1_password|double_sha1_hash}] BY {'password'|'hash'}]
   *      [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-  *      [[ADD|DROP] PROXY 'user'[, ...]]
   *      [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
   *      [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   */
@@ -52,10 +48,6 @@ public:
     std::shared_ptr<ASTRolesOrUsersSet> default_roles;
 
     std::shared_ptr<ASTSettingsProfileElements> settings;
-
-    std::optional<std::unordered_set<std::string>> allowed_proxy_users;
-    std::optional<std::unordered_set<std::string>> add_allowed_proxy_users;
-    std::optional<std::unordered_set<std::string>> remove_allowed_proxy_users;
 
     String getID(char) const override;
     ASTPtr clone() const override;

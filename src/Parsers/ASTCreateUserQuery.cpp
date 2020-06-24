@@ -180,26 +180,6 @@ namespace
         format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
         settings.format(format);
     }
-
-    void formatAllowedProxyUsers(const char *prefix, const std::unordered_set<std::string> & users, const IAST::FormatSettings & settings)
-    {
-        if (users.empty())
-            return;
-
-        if (prefix)
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << prefix << " PROXY "
-                          << (settings.hilite ? IAST::hilite_none : "");
-        else
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " PROXY " << (settings.hilite ? IAST::hilite_none : "");
-
-        bool need_comma = false;
-        for (const auto & user : users)
-        {
-            if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << backQuoteIfNeed(user);
-        }
-    }
 }
 
 
@@ -257,13 +237,5 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (settings && (!settings->empty() || alter))
         formatSettings(*settings, format);
-
-    if (allowed_proxy_users)
-        formatAllowedProxyUsers(nullptr, *allowed_proxy_users, format);
-    if (add_allowed_proxy_users)
-        formatAllowedProxyUsers("ADD", *add_allowed_proxy_users, format);
-    if (remove_allowed_proxy_users)
-        formatAllowedProxyUsers("DROP", *remove_allowed_proxy_users, format);
-
 }
 }

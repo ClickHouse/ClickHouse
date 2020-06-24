@@ -86,11 +86,6 @@
 
             <!-- User can create other users and grant rights to them. -->
             <!-- <access_management>1</access_management> -->
-
-            <!-- Proxy users -->
-            <!-- <allowed_proxy_user>foo</allowed_proxy_user>-->
-            <!-- <allowed_proxy_user>bar</allowed_proxy_user>-->
-
         </default>
     </users>
 

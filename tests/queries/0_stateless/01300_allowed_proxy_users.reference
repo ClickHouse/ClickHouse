@@ -1,6 +1,0 @@
-CREATE
-CREATE USER test_user_01300_create PROXY foobar
-ALTER
-CREATE USER test_user_01300_alter
-CREATE USER test_user_01300_alter PROXY foobar
-CREATE USER test_user_01300_alter
