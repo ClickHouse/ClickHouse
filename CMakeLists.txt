@@ -301,6 +301,13 @@ else ()
     set (CMAKE_POSITION_INDEPENDENT_CODE 1)
     # Without this, the executable type is still ET_EXEC
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-pie")
+    # Without these flags, we'll get errors in base/common/tests/unit_tests_libcommon like the following:
+    # ld.lld: error: cannot preempt symbol: std::__1::__fs::filesystem::filesystem_error::what() const
+    # >>> defined in contrib/libcxx-cmake/libcxx.a(operations.cpp.o)
+    # >>> referenced by operations.cpp
+    # >>>               operations.cpp.o:(vtable for std::__1::__fs::filesystem::filesystem_error) in archive contrib/libcxx-cmake/libcxx.a
+    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fPIC")
+    set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fPIC")
 endif ()
 
 # Using "include-what-you-use" tool.
