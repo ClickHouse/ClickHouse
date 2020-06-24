@@ -116,7 +116,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
 
     size_t total_dictionaries = 0;
 
-    // clang-format off
     auto process_metadata = [&context, &file_names, &total_dictionaries, this](const String & file_name)
     {
         fs::path path(getMetadataPath());
@@ -139,7 +138,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
             throw;
         }
     };
-    // clang-format on
 
 
     iterateMetadataFiles(context, process_metadata);
@@ -159,7 +157,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
     {
         const auto & create_query = name_with_query.second->as<const ASTCreateQuery &>();
         if (!create_query.is_dictionary)
-            // clang-format off
             pool.scheduleOrThrowOnError([&]()
             {
                 tryAttachTable(
@@ -173,7 +170,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++tables_processed, total_tables, watch);
             });
-        // clang-format on
     }
 
     pool.wait();
@@ -207,13 +203,11 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed{0};
 
-    // clang-format off
     auto startup_one_table = [&](const StoragePtr & table)
     {
         table->startup();
         logAboutProgress(log, ++tables_processed, total_tables, watch);
     };
-    // clang-format on
 
 
     try
