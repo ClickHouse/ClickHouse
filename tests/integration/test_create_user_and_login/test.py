@@ -12,9 +12,10 @@ def started_cluster():
     try:
         cluster.start()
         
-        instance.query("CREATE TABLE test_table(x UInt32, y UInt32) ENGINE = MergeTree ORDER BY tuple()")
-        instance.query("INSERT INTO test_table VALUES (1,5), (2,10)")
-
+        instance.query("CREATE DATABASE test")
+        instance.query("CREATE TABLE test.table(x UInt32, y UInt32) ENGINE = MergeTree ORDER BY tuple()")
+        instance.query("INSERT INTO test.table VALUES (1,5), (2,10)")
+        
         yield cluster
 
     finally:
@@ -27,6 +28,7 @@ def cleanup_after_test():
         yield
     finally:
         instance.query("DROP USER IF EXISTS A, B")
+        instance.query("DROP TABLE IF EXISTS default.table")
 
 
 def test_login():
@@ -38,28 +40,28 @@ def test_login():
 
 def test_grant_and_revoke():
     instance.query("CREATE USER A")
-    assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test_table", user='A')
+    assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test.table", user='A')
     
-    instance.query('GRANT SELECT ON test_table TO A')
-    assert instance.query("SELECT * FROM test_table", user='A') == "1\t5\n2\t10\n"
+    instance.query('GRANT SELECT ON test.table TO A')
+    assert instance.query("SELECT * FROM test.table", user='A') == "1\t5\n2\t10\n"
 
-    instance.query('REVOKE SELECT ON test_table FROM A')
-    assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test_table", user='A')
+    instance.query('REVOKE SELECT ON test.table FROM A')
+    assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test.table", user='A')
 
 
 def test_grant_option():
     instance.query("CREATE USER A")
     instance.query("CREATE USER B")
 
-    instance.query('GRANT SELECT ON test_table TO A')
-    assert instance.query("SELECT * FROM test_table", user='A') == "1\t5\n2\t10\n"
-    assert "Not enough privileges" in instance.query_and_get_error("GRANT SELECT ON test_table TO B", user='A')
+    instance.query('GRANT SELECT ON test.table TO A')
+    assert instance.query("SELECT * FROM test.table", user='A') == "1\t5\n2\t10\n"
+    assert "Not enough privileges" in instance.query_and_get_error("GRANT SELECT ON test.table TO B", user='A')
     
-    instance.query('GRANT SELECT ON test_table TO A WITH GRANT OPTION')
-    instance.query("GRANT SELECT ON test_table TO B", user='A')
-    assert instance.query("SELECT * FROM test_table", user='B') == "1\t5\n2\t10\n"
+    instance.query('GRANT SELECT ON test.table TO A WITH GRANT OPTION')
+    instance.query("GRANT SELECT ON test.table TO B", user='A')
+    assert instance.query("SELECT * FROM test.table", user='B') == "1\t5\n2\t10\n"
 
-    instance.query('REVOKE SELECT ON test_table FROM A, B')
+    instance.query('REVOKE SELECT ON test.table FROM A, B')
 
 
 def test_introspection():
@@ -100,3 +102,17 @@ def test_introspection():
            TSV([[ "A",  "\N", "SELECT", "test", "table", "\N", 0, 0 ],
                 [ "B",  "\N", "CREATE", "\N",   "\N",    "\N", 0, 0 ],
                 [ "B",  "\N", "CREATE", "\N",   "\N",    "\N", 0, 1 ]])
+
+
+def test_current_database():
+    instance.query("CREATE USER A")
+    instance.query("GRANT SELECT ON table TO A", database="test")
+    
+    assert instance.query("SHOW GRANTS FOR A") == TSV([ "GRANT SELECT ON test.table TO A" ])
+    assert instance.query("SHOW GRANTS FOR A", database="test") == TSV([ "GRANT SELECT ON test.table TO A" ])
+    
+    assert instance.query("SELECT * FROM test.table", user='A') == "1\t5\n2\t10\n"
+    assert instance.query("SELECT * FROM table", user='A', database='test') == "1\t5\n2\t10\n"
+
+    instance.query("CREATE TABLE default.table(x UInt32, y UInt32) ENGINE = MergeTree ORDER BY tuple()")
+    assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM table", user='A')
