@@ -1295,7 +1295,7 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     function_node->children.push_back(expr_list_args);
 
     node = function_node;
-    node->setAlias(name);
+    node->setAlias("@@" + name);
     return true;
 }
 
