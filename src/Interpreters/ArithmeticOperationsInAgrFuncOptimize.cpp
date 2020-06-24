@@ -138,7 +138,7 @@ void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTFunction & func, ASTPt
         ast = exchanged_funcs;
 
         /// Main visitor is bottom-up. This is top-down part.
-        /// We've found an aggregate function an now move it donw through others: sum(mul(mul)) -> mul(mul(sum)).
+        /// We've found an aggregate function an now move it down through others: sum(mul(mul)) -> mul(mul(sum)).
         /// It's not dangerous cause main visitor already has visited this part of tree.
         auto & expression_list = ast->children[0];
         visit(expression_list->children[0], data);
