@@ -59,15 +59,25 @@ private:
 /// It finds columns and translate their names to the normal form. Expand asterisks and qualified asterisks with column names.
 using TranslateQualifiedNamesVisitor = TranslateQualifiedNamesMatcher::Visitor;
 
-/// Restore ASTIdentifiers to long form
-struct RestoreQualifiedNamesData
-{
-    using TypeToVisit = ASTIdentifier;
 
-    void visit(ASTIdentifier & identifier, ASTPtr & ast);
+
+/// Restore ASTIdentifiers to long form, change table name in case of distributed.
+struct RestoreQualifiedNamesMatcher
+{
+    struct Data
+    {
+        DatabaseAndTableWithAlias distributed_table;
+        DatabaseAndTableWithAlias remote_table;
+        bool rename = false;
+
+        void changeTable(ASTIdentifier & identifier) const;
+    };
+
+    static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
+    static void visit(ASTPtr & ast, Data & data);
+    static void visit(ASTIdentifier & identifier, ASTPtr & ast, Data & data);
 };
 
-using RestoreQualifiedNamesMatcher = OneTypeMatcher<RestoreQualifiedNamesData>;
 using RestoreQualifiedNamesVisitor = InDepthNodeVisitor<RestoreQualifiedNamesMatcher, true>;
 
 }

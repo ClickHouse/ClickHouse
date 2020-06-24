@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS d_one;
-CREATE TABLE d_one (dummy UInt8) ENGINE = Distributed(test_cluster_two_shards_localhost, system, one, rand());
+CREATE TABLE d_one (dummy UInt8) ENGINE = Distributed(test_cluster_two_shards, system, one, rand());
 
 SELECT 'local_0', toUInt8(1) AS dummy FROM system.one AS o WHERE o.dummy = 0;
 SELECT 'local_1', toUInt8(1) AS dummy FROM system.one AS o WHERE o.dummy = 1;

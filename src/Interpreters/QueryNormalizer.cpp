@@ -76,20 +76,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     if (it_alias != data.aliases.end() && current_alias != node.name)
     {
         if (!IdentifierSemantic::canBeAlias(node))
-        {
-            /// This means that column had qualified name, which was translated (so, canBeAlias() returns false).
-            /// But there is an alias with the same name. So, let's use original name for that column.
-            /// If alias wasn't set, use original column name as alias.
-            /// That helps to avoid result set with columns which have same names but different values.
-            if (node.alias.empty())
-            {
-                node.name.swap(node.alias);
-                node.restoreCompoundName();
-                node.name.swap(node.alias);
-            }
-
             return;
-        }
 
         /// We are alias for other column (node.name), but we are alias by
         /// ourselves to some other column
