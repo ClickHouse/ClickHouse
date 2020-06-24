@@ -1055,11 +1055,11 @@ Each Avro message embeds a schema id that can be resolved to the actual schema w
 
 Schemas are cached once resolved.
 
-Schema Registry URL is configured with [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+Schema Registry URL is configured with [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#format_avro_schema_registry_url).
 
 ### Data Types Matching {#data_types-matching-1}
 
-Same as [Avro](#data-format-avro)
+Same as [Avro](#data-format-avro).
 
 ### Usage {#usage}
 

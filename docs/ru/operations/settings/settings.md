@@ -1221,4 +1221,10 @@ Default value: 0.
 
 Значение по умолчанию: 16.
 
+## format\_avro\_schema\_registry\_url {#format_avro_schema_registry_url}
+
+Задает URL реестра схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html) для использования с форматом [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent).
+
+Значение по умолчанию: `Пустая строка`.
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
