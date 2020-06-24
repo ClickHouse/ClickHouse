@@ -287,11 +287,12 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-if (MAKE_STATIC_LIBRARIES)
+# For static linking, disable position-independend code for a slight increase in
+# efficiency. This is disabled for arch64, so that we can run the same binary on
+# Android which doesn't support ET_EXEC binaries.
+if (MAKE_STATIC_LIBRARIES AND NOT ARCH_ARM)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-    if (OS_LINUX AND NOT ARCH_ARM)
-        # Slightly more efficient code can be generated
-        # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
+    if (OS_LINUX)
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no-pie")
