@@ -123,13 +123,13 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("uniq",
-        createAggregateFunctionUniq<AggregateFunctionUniqUniquesHashSetData, AggregateFunctionUniqUniquesHashSetDataForVariadic>);
+        {createAggregateFunctionUniq<AggregateFunctionUniqUniquesHashSetData, AggregateFunctionUniqUniquesHashSetDataForVariadic>, {true}});
 
     factory.registerFunction("uniqHLL12",
-        createAggregateFunctionUniq<false, AggregateFunctionUniqHLL12Data, AggregateFunctionUniqHLL12DataForVariadic>);
+        {createAggregateFunctionUniq<false, AggregateFunctionUniqHLL12Data, AggregateFunctionUniqHLL12DataForVariadic>, {true}});
 
     factory.registerFunction("uniqExact",
-        createAggregateFunctionUniq<true, AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>>);
+        {createAggregateFunctionUniq<true, AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>>, {true}});
 }
 
 }

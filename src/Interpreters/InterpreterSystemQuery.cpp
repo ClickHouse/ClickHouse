@@ -20,6 +20,7 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/AsynchronousMetricLog.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -48,6 +49,7 @@ namespace ErrorCodes
     extern const int CANNOT_KILL;
     extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int TABLE_WAS_NOT_DROPPED;
 }
 
 
@@ -184,7 +186,7 @@ BlockIO InterpreterSystemQuery::execute()
 
     /// Make canonical query for simpler processing
     if (!query.table.empty())
-         table_id = context.resolveStorageID(StorageID(query.database, query.table), Context::ResolveOrdinary);
+        table_id = context.resolveStorageID(StorageID(query.database, query.table), Context::ResolveOrdinary);
 
     if (!query.target_dictionary.empty() && !query.database.empty())
         query.target_dictionary = query.database + "." + query.target_dictionary;
@@ -284,6 +286,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_DISTRIBUTED_SENDS:
             startStopAction(ActionLocks::DistributedSend, true);
             break;
+        case Type::DROP_REPLICA:
+            dropReplica(query);
+            break;
         case Type::SYNC_REPLICA:
             syncReplica(query);
             break;
@@ -306,7 +311,8 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(true); },
                     [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(true); },
                     [&] () { if (auto text_log = context.getTextLog()) text_log->flush(true); },
-                    [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(true); }
+                    [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(true); },
+                    [&] () { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:
@@ -396,6 +402,111 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
     for (auto & table : replica_names)
         pool.scheduleOrThrowOnError([&]() { tryRestartReplica(table, system_context, false); });
     pool.wait();
+}
+
+void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
+{
+    if (query.replica.empty())
+        throw Exception("Replica name is empty", ErrorCodes::BAD_ARGUMENTS);
+
+    if (!table_id.empty())
+    {
+        context.checkAccess(AccessType::SYSTEM_DROP_REPLICA, table_id);
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
+
+        if (!dropReplicaImpl(query, table))
+            throw Exception("Table " + table_id.getNameForLogs() + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
+    }
+    else if (!query.database.empty())
+    {
+        context.checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.database);
+        DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.database);
+        for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+            dropReplicaImpl(query, iterator->table());
+        LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
+    }
+    else if (query.is_drop_whole_replica)
+    {
+        context.checkAccess(AccessType::SYSTEM_DROP_REPLICA);
+        auto databases = DatabaseCatalog::instance().getDatabases();
+
+        for (auto & elem : databases)
+        {
+            DatabasePtr & database = elem.second;
+            for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                dropReplicaImpl(query, iterator->table());
+            LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
+        }
+    }
+    else if (!query.replica_zk_path.empty())
+    {
+        context.checkAccess(AccessType::SYSTEM_DROP_REPLICA);
+        auto remote_replica_path = query.replica_zk_path  + "/replicas/" + query.replica;
+
+        /// This check is actually redundant, but it may prevent from some user mistakes
+        for (auto & elem : DatabaseCatalog::instance().getDatabases())
+        {
+            DatabasePtr & database = elem.second;
+            for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+            {
+                if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
+                {
+                    StorageReplicatedMergeTree::Status status;
+                    storage_replicated->getStatus(status);
+                    if (status.zookeeper_path == query.replica_zk_path)
+                        throw Exception("There is a local table " + storage_replicated->getStorageID().getNameForLogs() +
+                                        ", which has the same table path in ZooKeeper. Please check the path in query. "
+                                        "If you want to drop replica of this table, use `DROP TABLE` "
+                                        "or `SYSTEM DROP REPLICA 'name' FROM db.table`", ErrorCodes::TABLE_WAS_NOT_DROPPED);
+                }
+            }
+        }
+
+        auto zookeeper = context.getZooKeeper();
+
+        bool looks_like_table_path = zookeeper->exists(query.replica_zk_path + "/replicas") ||
+                                     zookeeper->exists(query.replica_zk_path + "/dropped");
+        if (!looks_like_table_path)
+            throw Exception("Specified path " + query.replica_zk_path + " does not look like a table path",
+                            ErrorCodes::TABLE_WAS_NOT_DROPPED);
+
+        if (zookeeper->exists(remote_replica_path + "/is_active"))
+            throw Exception("Can't remove replica: " + query.replica + ", because it's active",
+                ErrorCodes::TABLE_WAS_NOT_DROPPED);
+
+        StorageReplicatedMergeTree::dropReplica(zookeeper, query.replica_zk_path, query.replica, log);
+        LOG_INFO(log, "Dropped replica {}", remote_replica_path);
+    }
+    else
+        throw Exception("Invalid query", ErrorCodes::LOGICAL_ERROR);
+}
+
+bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table)
+{
+    auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
+    if (!storage_replicated)
+        return false;
+
+    StorageReplicatedMergeTree::Status status;
+    auto zookeeper = context.getZooKeeper();
+    storage_replicated->getStatus(status);
+
+    /// Do not allow to drop local replicas and active remote replicas
+    if (query.replica == status.replica_name)
+        throw Exception("We can't drop local replica, please use `DROP TABLE` "
+                        "if you want to clean the data and drop this replica", ErrorCodes::TABLE_WAS_NOT_DROPPED);
+
+    /// NOTE it's not atomic: replica may become active after this check, but before dropReplica(...)
+    /// However, the main usecase is to drop dead replica, which cannot become active.
+    /// This check prevents only from accidental drop of some other replica.
+    if (zookeeper->exists(status.zookeeper_path + "/replicas/" + query.replica + "/is_active"))
+        throw Exception("Can't drop replica: " + query.replica + ", because it's active",
+                        ErrorCodes::TABLE_WAS_NOT_DROPPED);
+
+    storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, log);
+    LOG_TRACE(log, "Dropped replica {} of {}", query.replica, table->getStorageID().getNameForLogs());
+
+    return true;
 }
 
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
@@ -526,6 +637,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES);
             else
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES, query.database, query.table);
+            break;
+        }
+        case Type::DROP_REPLICA:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.database, query.table);
             break;
         }
         case Type::SYNC_REPLICA:

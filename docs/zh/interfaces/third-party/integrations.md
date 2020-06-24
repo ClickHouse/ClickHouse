@@ -7,6 +7,7 @@
 
 -   关系数据库管理系统
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-复制器](https://github.com/larsnovikov/horgh-replicator)
@@ -90,5 +91,10 @@
 -   仙丹
     -   [Ecto](https://github.com/elixir-ecto/ecto)
     -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
+-   Ruby
+    -   [Ruby on Rails](https://rubyonrails.org/)
+        -   [activecube](https://github.com/bitquery/activecube)
+    -   [GraphQL](https://github.com/graphql)
+        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
 [来源文章](https://clickhouse.tech/docs/zh/interfaces/third-party/integrations/) <!--hide-->

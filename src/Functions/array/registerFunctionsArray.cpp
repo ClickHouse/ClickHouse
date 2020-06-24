@@ -8,6 +8,7 @@ void registerFunctionArrayResize(FunctionFactory &);
 void registerFunctionHas(FunctionFactory &);
 void registerFunctionHasAll(FunctionFactory &);
 void registerFunctionHasAny(FunctionFactory &);
+void registerFunctionHasSubstr(FunctionFactory &);
 void registerFunctionIndexOf(FunctionFactory &);
 void registerFunctionCountEqual(FunctionFactory &);
 void registerFunctionArrayIntersect(FunctionFactory &);
@@ -43,6 +44,7 @@ void registerFunctionsArray(FunctionFactory & factory)
     registerFunctionHas(factory);
     registerFunctionHasAll(factory);
     registerFunctionHasAny(factory);
+    registerFunctionHasSubstr(factory);
     registerFunctionIndexOf(factory);
     registerFunctionCountEqual(factory);
     registerFunctionArrayIntersect(factory);
