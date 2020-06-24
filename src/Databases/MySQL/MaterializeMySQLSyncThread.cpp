@@ -310,8 +310,8 @@ static inline size_t onUpdateData(const std::vector<Field> & rows_data, Block & 
     std::vector<bool> difference_sorting_keys_mark(rows_data.size() / 2);
 
     for (size_t index = 0; index < rows_data.size(); index += 2)
-        difference_sorting_keys_mark.emplace_back(differenceSortingKeys(
-            DB::get<const Tuple &>(rows_data[index]), DB::get<const Tuple &>(rows_data[index + 1]), sorting_columns_index));
+        difference_sorting_keys_mark[index / 2] = differenceSortingKeys(
+            DB::get<const Tuple &>(rows_data[index]), DB::get<const Tuple &>(rows_data[index + 1]), sorting_columns_index);
 
     for (size_t column = 0; column < buffer.columns() - 2; ++column)
     {
@@ -447,6 +447,7 @@ MaterializeMySQLSyncThread::Buffers::BufferAndSortingColumnsPtr MaterializeMySQL
             for (const auto & required_name_for_sorting_key : required_for_sorting_key)
                 buffer_and_soring_columns->second.emplace_back(
                     buffer_and_soring_columns->first.getPositionByName(required_name_for_sorting_key));
+
         }
 
         return buffer_and_soring_columns;

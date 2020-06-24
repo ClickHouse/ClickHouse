@@ -35,7 +35,13 @@ Pipes StorageMaterializeMySQL::read(
     size_t max_block_size,
     unsigned int num_streams)
 {
-    if (ASTSelectQuery * select_query = query_info.query->as<ASTSelectQuery>())
+    NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
+
+    Block nested_header = nested_storage->getSampleBlockNonMaterialized();
+    ColumnWithTypeAndName & sign_column = nested_header.getByPosition(nested_header.columns() - 2);
+    ColumnWithTypeAndName & version_column = nested_header.getByPosition(nested_header.columns() - 1);
+
+    if (ASTSelectQuery * select_query = query_info.query->as<ASTSelectQuery>(); select_query && !column_names_set.count(version_column.name))
     {
         auto & tables_in_select_query = select_query->tables()->as<ASTTablesInSelectQuery &>();
 
@@ -48,28 +54,53 @@ Pipes StorageMaterializeMySQL::read(
         }
     }
 
+    String filter_column_name;
     Names require_columns_name = column_names;
-    Block header = nested_storage->getSampleBlockNonMaterialized();
-    ColumnWithTypeAndName & sign_column = header.getByPosition(header.columns() - 2);
-
-    if (require_columns_name.end() == std::find(require_columns_name.begin(), require_columns_name.end(), sign_column.name))
+    ASTPtr expressions = std::make_shared<ASTExpressionList>();
+    if (column_names_set.empty() || !column_names_set.count(sign_column.name))
+    {
         require_columns_name.emplace_back(sign_column.name);
 
-    return nested_storage->read(require_columns_name, query_info, context, processed_stage, max_block_size, num_streams);
+        const auto & sign_column_name = std::make_shared<ASTIdentifier>(sign_column.name);
+        const auto & fetch_sign_value = std::make_shared<ASTLiteral>(Field(Int8(1)));
 
-    /*for (auto & pipe : pipes)
+        expressions->children.emplace_back(makeASTFunction("equals", sign_column_name, fetch_sign_value));
+        filter_column_name = expressions->children.back()->getColumnName();
+
+        for (const auto & column_name : column_names)
+            expressions->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+    }
+
+    Pipes pipes = nested_storage->read(require_columns_name, query_info, context, processed_stage, max_block_size, num_streams);
+
+    if (!expressions->children.empty() && !pipes.empty())
     {
-        std::cout << "Pipe Header Structure:" << pipe.getHeader().dumpStructure() << "\n";
-        ASTPtr expr = makeASTFunction(
-            "equals", std::make_shared<ASTIdentifier>(sign_column.name), std::make_shared<ASTLiteral>(Field(Int8(1))));
-        auto syntax = SyntaxAnalyzer(context).analyze(expr, pipe.getHeader().getNamesAndTypesList());
-        ExpressionActionsPtr expression_actions = ExpressionAnalyzer(expr, syntax, context).getActions(true);
+        Block pipe_header = pipes.front().getHeader();
+        SyntaxAnalyzerResultPtr syntax = SyntaxAnalyzer(context).analyze(expressions, pipe_header.getNamesAndTypesList());
+        ExpressionActionsPtr expression_actions = ExpressionAnalyzer(expressions, syntax, context).getActions(true);
 
-        pipe.addSimpleTransform(std::make_shared<FilterTransform>(pipe.getHeader(), expression_actions, expr->getColumnName(), false));
-        /// TODO: maybe need remove sign columns
-    }*/
+        for (auto & pipe : pipes)
+        {
+            assertBlocksHaveEqualStructure(pipe_header, pipe.getHeader(), "StorageMaterializeMySQL");
+            pipe.addSimpleTransform(std::make_shared<FilterTransform>(pipe.getHeader(), expression_actions, filter_column_name, false));
+        }
+    }
 
-//    return pipes;
+    return pipes;
+}
+
+NamesAndTypesList StorageMaterializeMySQL::getVirtuals() const
+{
+    NamesAndTypesList virtuals;
+    Block nested_header = nested_storage->getSampleBlockNonMaterialized();
+    ColumnWithTypeAndName & sign_column = nested_header.getByPosition(nested_header.columns() - 2);
+    ColumnWithTypeAndName & version_column = nested_header.getByPosition(nested_header.columns() - 1);
+    virtuals.emplace_back(NameAndTypePair(sign_column.name, sign_column.type));
+    virtuals.emplace_back(NameAndTypePair(version_column.name, version_column.type));
+
+    auto nested_virtuals = nested_storage->getVirtuals();
+    virtuals.insert(virtuals.end(), nested_virtuals.begin(), nested_virtuals.end());
+    return virtuals;
 }
 
 }
