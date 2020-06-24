@@ -42,8 +42,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
-    : name(std::move(name_)), type(std::move(type_))
+ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, bool is_virtual_)
+    : name(std::move(name_)), type(std::move(type_)), is_virtual(is_virtual_)
 {
 }
 
@@ -120,7 +120,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_ast->codec)
-            codec = CompressionCodecFactory::instance().get(col_ast->codec, type, false);
+            codec = CompressionCodecFactory::instance().get(col_ast->codec, type);
 
         if (col_ast->ttl)
             ttl = col_ast->ttl;
@@ -130,10 +130,10 @@ void ColumnDescription::readText(ReadBuffer & buf)
 }
 
 
-ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
+ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, bool all_virtuals)
 {
     for (auto & elem : ordinary)
-        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
+        add(ColumnDescription(std::move(elem.name), std::move(elem.type), all_virtuals));
 }
 
 
@@ -260,7 +260,7 @@ NamesAndTypesList ColumnsDescription::getOrdinary() const
 {
     NamesAndTypesList ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind == ColumnDefaultKind::Default)
+        if (col.default_desc.kind == ColumnDefaultKind::Default && !col.is_virtual)
             ret.emplace_back(col.name, col.type);
     return ret;
 }
@@ -281,6 +281,15 @@ NamesAndTypesList ColumnsDescription::getAliases() const
         if (col.default_desc.kind == ColumnDefaultKind::Alias)
             ret.emplace_back(col.name, col.type);
     return ret;
+}
+
+NamesAndTypesList ColumnsDescription::getVirtuals() const
+{
+    NamesAndTypesList result;
+    for (const auto & column : columns)
+        if (column.is_virtual)
+            result.emplace_back(column.name, column.type);
+    return result;
 }
 
 NamesAndTypesList ColumnsDescription::getAll() const
@@ -318,7 +327,7 @@ NamesAndTypesList ColumnsDescription::getAllPhysical() const
 {
     NamesAndTypesList ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind != ColumnDefaultKind::Alias)
+        if (col.default_desc.kind != ColumnDefaultKind::Alias && !col.is_virtual)
             ret.emplace_back(col.name, col.type);
     return ret;
 }
@@ -327,7 +336,7 @@ Names ColumnsDescription::getNamesOfPhysical() const
 {
     Names ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind != ColumnDefaultKind::Alias)
+        if (col.default_desc.kind != ColumnDefaultKind::Alias && !col.is_virtual)
             ret.emplace_back(col.name);
     return ret;
 }
@@ -335,7 +344,7 @@ Names ColumnsDescription::getNamesOfPhysical() const
 NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    if (it == columns.get<1>().end() || it->default_desc.kind == ColumnDefaultKind::Alias)
+    if (it == columns.get<1>().end() || it->default_desc.kind == ColumnDefaultKind::Alias || it->is_virtual)
         throw Exception("There is no physical column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     return NameAndTypePair(it->name, it->type);
 }
@@ -343,7 +352,7 @@ NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) cons
 bool ColumnsDescription::hasPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias;
+    return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias && !it->is_virtual;
 }
 
 

@@ -3,7 +3,6 @@
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -45,7 +44,9 @@ Pipes StorageSystemStoragePolicies::read(
     MutableColumnPtr col_max_part_size = ColumnUInt64::create();
     MutableColumnPtr col_move_factor = ColumnFloat32::create();
 
-    for (const auto & [policy_name, policy_ptr] : context.getPoliciesMap())
+    const auto & policy_selector = context.getStoragePolicySelector();
+
+    for (const auto & [policy_name, policy_ptr] : policy_selector->getPoliciesMap())
     {
         const auto & volumes = policy_ptr->getVolumes();
         for (size_t i = 0; i != volumes.size(); ++i)
@@ -54,8 +55,8 @@ Pipes StorageSystemStoragePolicies::read(
             col_volume_name->insert(volumes[i]->getName());
             col_priority->insert(i + 1);
             Array disks;
-            disks.reserve(volumes[i]->getDisks().size());
-            for (const auto & disk_ptr : volumes[i]->getDisks())
+            disks.reserve(volumes[i]->disks.size());
+            for (const auto & disk_ptr : volumes[i]->disks)
                 disks.push_back(disk_ptr->getName());
             col_disks->insert(disks);
             col_max_part_size->insert(volumes[i]->max_data_part_size);

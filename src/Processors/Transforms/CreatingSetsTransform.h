@@ -21,8 +21,8 @@ class CreatingSetsTransform : public IProcessor
 public:
     CreatingSetsTransform(
         Block out_header_,
-        SubqueriesForSets subqueries_for_sets_,
-        SizeLimits network_transfer_limits_,
+        const SubqueriesForSets & subqueries_for_sets_,
+        const SizeLimits & network_transfer_limits_,
         const Context & context_);
 
     String getName() const override { return "CreatingSetsTransform"; }
@@ -54,7 +54,7 @@ private:
     size_t bytes_to_transfer = 0;
 
     using Logger = Poco::Logger;
-    Poco::Logger * log = &Poco::Logger::get("CreatingSetsBlockInputStream");
+    Logger * log = &Logger::get("CreatingSetsBlockInputStream");
 
     bool is_initialized = false;
 

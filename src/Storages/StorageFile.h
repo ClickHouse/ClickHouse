@@ -52,8 +52,6 @@ public:
         const Context & context;
     };
 
-    NamesAndTypesList getVirtuals() const override;
-
 protected:
     friend class StorageFileSource;
     friend class StorageFileBlockOutputStream;
@@ -85,7 +83,7 @@ private:
 
     mutable std::shared_mutex rwlock;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageFile");
+    Logger * log = &Logger::get("StorageFile");
 };
 
 }

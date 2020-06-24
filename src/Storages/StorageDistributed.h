@@ -3,10 +3,11 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Core/Settings.h>
+#include <Interpreters/Cluster.h>
 #include <Parsers/ASTFunction.h>
 #include <common/logger_useful.h>
 #include <Common/ActionBlocker.h>
@@ -15,17 +16,14 @@
 namespace DB
 {
 
-struct Settings;
 class Context;
+class StorageDistributedDirectoryMonitor;
 
-class VolumeJBOD;
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
+class Volume;
+using VolumePtr = std::shared_ptr<Volume>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-class Cluster;
-using ClusterPtr = std::shared_ptr<Cluster>;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -64,6 +62,9 @@ public:
     bool supportsPrewhere() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
+    NameAndTypePair getColumn(const String & column_name) const override;
+    bool hasColumn(const String & column_name) const override;
+
     bool isRemote() const override { return true; }
 
     /// Return true if distributed_group_by_no_merge may be applied.
@@ -86,7 +87,7 @@ public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
     void renameOnDisk(const String & new_path_to_table_data);
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
 
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
@@ -109,9 +110,6 @@ public:
     void createDirectoryMonitors(const std::string & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
     StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & disk, const std::string & name);
-    /// Return list of metrics for all created monitors
-    /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
-    std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
 
     void flushClusterNodesAllData();
 
@@ -126,14 +124,12 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
-    NamesAndTypesList getVirtuals() const override;
-
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    std::unique_ptr<Context> global_context;
-    Poco::Logger * log;
+    Context global_context;
+    Logger * log = &Logger::get("StorageDistributed");
 
     /// Used to implement TableFunctionRemote.
     std::shared_ptr<Cluster> owned_cluster;
@@ -181,18 +177,18 @@ protected:
     String storage_policy;
     String relative_data_path;
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
-    VolumeJBODPtr volume;
+    VolumePtr volume;
 
     struct ClusterNodeData
     {
         std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
-        ConnectionPoolPtr connection_pool;
+        ConnectionPoolPtr conneciton_pool;
 
         void flushAllData() const;
         void shutdownAndDropAllData() const;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
-    mutable std::mutex cluster_nodes_mutex;
+    std::mutex cluster_nodes_mutex;
 
 };
 

@@ -50,7 +50,7 @@ BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
         {
             String database = context.resolveDatabase(exists_query->database);
             context.checkAccess(AccessType::SHOW_TABLES, database, exists_query->table);
-            result = DatabaseCatalog::instance().isTableExist({database, exists_query->table}, context);
+            result = DatabaseCatalog::instance().isTableExist({database, exists_query->table});
         }
     }
     else if ((exists_query = query_ptr->as<ASTExistsDictionaryQuery>()))

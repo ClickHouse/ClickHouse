@@ -71,7 +71,7 @@ private:
     FileChecker file_checker;
     mutable std::shared_mutex rwlock;
 
-    Poco::Logger * log;
+    Logger * log;
 
     void addFiles(const String & column_name, const IDataType & type);
 };

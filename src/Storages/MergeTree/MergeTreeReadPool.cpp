@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
-#include <Common/formatReadable.h>
 #include <ext/range.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 
 
 namespace ProfileEvents
@@ -167,9 +166,10 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
     ++backoff_state.num_events;
 
     ProfileEvents::increment(ProfileEvents::SlowRead);
-    LOG_DEBUG(log, "Slow read, event №{}: read {} bytes in {} sec., {}/s.",
-        backoff_state.num_events, info.bytes_read, info.nanoseconds / 1e9,
-        ReadableSize(throughput));
+    LOG_DEBUG(log, std::fixed << std::setprecision(3)
+        << "Slow read, event №" << backoff_state.num_events
+        << ": read " << info.bytes_read << " bytes in " << info.nanoseconds / 1000000000.0 << " sec., "
+        << info.bytes_read * 1000.0 / info.nanoseconds << " MB/s.");
 
     if (backoff_state.num_events < backoff_settings.min_events)
         return;
@@ -178,7 +178,7 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
     --backoff_state.current_threads;
 
     ProfileEvents::increment(ProfileEvents::ReadBackoff);
-    LOG_DEBUG(log, "Will lower number of threads to {}", backoff_state.current_threads);
+    LOG_DEBUG(log, "Will lower number of threads to " << backoff_state.current_threads);
 }
 
 

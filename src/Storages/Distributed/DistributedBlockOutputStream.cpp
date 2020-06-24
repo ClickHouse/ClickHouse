@@ -1,7 +1,7 @@
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageDistributed.h>
-#include <Disks/StoragePolicy.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 #include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
@@ -17,7 +17,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Context.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -87,7 +86,7 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
         bool insert_sync_, UInt64 insert_timeout_)
         : context(context_), storage(storage_), query_ast(query_ast_), query_string(queryToString(query_ast_)),
         cluster(cluster_), insert_sync(insert_sync_),
-        insert_timeout(insert_timeout_), log(&Poco::Logger::get("DistributedBlockOutputStream"))
+        insert_timeout(insert_timeout_), log(&Logger::get("DistributedBlockOutputStream"))
 {
 }
 
@@ -114,8 +113,9 @@ void DistributedBlockOutputStream::write(const Block & block)
         if (ordinary_block.has(col.name))
         {
             ordinary_block.erase(col.name);
-            LOG_DEBUG(log, "{}: column {} will be removed, because it is MATERIALIZED",
-                storage.getStorageID().getNameForLogs(), col.name);
+            LOG_DEBUG(log, storage.getStorageID().getNameForLogs()
+                << ": column " + col.name + " will be removed, "
+                << "because it is MATERIALIZED");
         }
     }
 
@@ -167,7 +167,6 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
 
 void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
 {
-    const Settings & settings = context.getSettingsRef();
     const auto & addresses_with_failovers = cluster->getShardsAddresses();
     const auto & shards_info = cluster->getShardsInfo();
     size_t num_shards = shards_info.size();
@@ -181,14 +180,14 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
         const auto & shard_info = shards_info[shard_index];
         auto & shard_jobs = per_shard_jobs[shard_index];
 
-        /// If hasInternalReplication, than prefer local replica (if !prefer_localhost_replica)
-        if (!shard_info.hasInternalReplication() || !shard_info.isLocal() || !settings.prefer_localhost_replica)
+        /// If hasInternalReplication, than prefer local replica
+        if (!shard_info.hasInternalReplication() || !shard_info.isLocal())
         {
             const auto & replicas = addresses_with_failovers[shard_index];
 
             for (size_t replica_index : ext::range(0, replicas.size()))
             {
-                if (!replicas[replica_index].is_local || !settings.prefer_localhost_replica)
+                if (!replicas[replica_index].is_local)
                 {
                     shard_jobs.replicas_jobs.emplace_back(shard_index, replica_index, false, first_block);
                     ++remote_jobs_count;
@@ -199,7 +198,7 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
             }
         }
 
-        if (shard_info.isLocal() && settings.prefer_localhost_replica)
+        if (shard_info.isLocal())
         {
             shard_jobs.replicas_jobs.emplace_back(shard_index, 0, true, first_block);
             ++local_jobs_count;
@@ -228,7 +227,7 @@ void DistributedBlockOutputStream::waitForJobs()
     size_t num_finished_jobs = finished_jobs_count;
 
     if (num_finished_jobs < jobs_count)
-        LOG_WARNING(log, "Expected {} writing jobs, but finished only {}", jobs_count, num_finished_jobs);
+        LOG_WARNING(log, "Expected " << jobs_count << " writing jobs, but finished only " << num_finished_jobs);
 }
 
 
@@ -276,12 +275,12 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
         }
 
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
-        const Settings & settings = context.getSettingsRef();
 
-        if (!job.is_local_job || !settings.prefer_localhost_replica)
+        if (!job.is_local_job)
         {
             if (!job.stream)
             {
+                const Settings & settings = context.getSettingsRef();
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
                 if (shard_info.hasInternalReplication())
                 {
@@ -312,14 +311,14 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
 
-                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, timeouts, query_string, settings, context.getClientInfo());
+                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, timeouts, query_string, &settings, &context.getClientInfo());
                 job.stream->writePrefix();
             }
 
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
             job.stream->write(shard_block);
         }
-        else // local
+        else
         {
             if (!job.stream)
             {
@@ -409,10 +408,12 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 
 void DistributedBlockOutputStream::writeSuffix()
 {
-    auto log_performance = [this]()
+    auto log_performance = [this] ()
     {
         double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
+        LOG_DEBUG(log, "It took " << std::fixed << std::setprecision(1) << elapsed << " sec. to insert " << inserted_blocks << " blocks"
+                   << ", " << std::fixed << std::setprecision(1) << inserted_rows / elapsed << " rows per second"
+                   << ". " << getCurrentStateDescription());
     };
 
     if (insert_sync && pool)
@@ -506,25 +507,31 @@ void DistributedBlockOutputStream::writeSplitAsync(const Block & block)
 void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const size_t shard_id)
 {
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
-    const auto & settings = context.getSettingsRef();
 
     if (shard_info.hasInternalReplication())
     {
-        if (shard_info.isLocal() && settings.prefer_localhost_replica)
+        if (shard_info.getLocalNodeCount() > 0)
+        {
             /// Prefer insert into current instance directly
             writeToLocal(block, shard_info.getLocalNodeCount());
+        }
         else
-            writeToShard(block, {shard_info.pathForInsert(settings.prefer_localhost_replica)});
+        {
+            if (shard_info.dir_name_for_internal_replication.empty())
+                throw Exception("Directory name for async inserts is empty, table " + storage.getStorageID().getNameForLogs(), ErrorCodes::LOGICAL_ERROR);
+
+            writeToShard(block, {shard_info.dir_name_for_internal_replication});
+        }
     }
     else
     {
-        if (shard_info.isLocal() && settings.prefer_localhost_replica)
+        if (shard_info.getLocalNodeCount() > 0)
             writeToLocal(block, shard_info.getLocalNodeCount());
 
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
-            if (!address.is_local || !settings.prefer_localhost_replica)
-                dir_names.push_back(address.toFullString(settings.use_compact_format_in_distributed_parts_names));
+            if (!address.is_local)
+                dir_names.push_back(address.toFullString(context.getSettingsRef().use_compact_format_in_distributed_parts_names));
 
         if (!dir_names.empty())
             writeToShard(block, dir_names);

@@ -15,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_CAST;
 }
 
 /**
@@ -380,7 +381,7 @@ public:
         auto * column = typeid_cast<ColumnFloat64 *>(&to);
         if (!column)
             throw Exception("Cast of column of predictions is incorrect. getReturnTypeToPredict must return same value as it is casted to",
-                            ErrorCodes::LOGICAL_ERROR);
+                            ErrorCodes::BAD_CAST);
 
         this->data(place).predict(column->getData(), block, offset, limit, arguments, context);
     }

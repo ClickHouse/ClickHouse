@@ -61,18 +61,11 @@ public:
 
     friend bool operator ==(const AccessFlags & left, const AccessFlags & right) { return left.flags == right.flags; }
     friend bool operator !=(const AccessFlags & left, const AccessFlags & right) { return !(left == right); }
-    friend bool operator <(const AccessFlags & left, const AccessFlags & right) { return memcmp(&left.flags, &right.flags, sizeof(Flags)) < 0; }
-    friend bool operator >(const AccessFlags & left, const AccessFlags & right) { return right < left; }
-    friend bool operator <=(const AccessFlags & left, const AccessFlags & right) { return !(right < left); }
-    friend bool operator >=(const AccessFlags & left, const AccessFlags & right) { return !(left < right); }
 
     void clear() { flags.reset(); }
 
     /// Returns a comma-separated list of keywords, like "SELECT, CREATE USER, UPDATE".
     String toString() const;
-
-    /// Returns a list of access types.
-    std::vector<AccessType> toAccessTypes() const;
 
     /// Returns a list of keywords.
     std::vector<std::string_view> toKeywords() const;
@@ -158,27 +151,21 @@ public:
         return res;
     }
 
-    std::vector<AccessType> flagsToAccessTypes(const Flags & flags_) const
-    {
-        std::vector<AccessType> access_types;
-        flagsToAccessTypesRec(flags_, access_types, *all_node);
-        return access_types;
-    }
-
     std::vector<std::string_view> flagsToKeywords(const Flags & flags_) const
     {
         std::vector<std::string_view> keywords;
-        flagsToKeywordsRec(flags_, keywords, *all_node);
+        flagsToKeywordsRec(flags_, keywords, *flags_to_keyword_tree);
+
+        if (keywords.empty())
+            keywords.push_back("USAGE");
+
         return keywords;
     }
 
     String flagsToString(const Flags & flags_) const
     {
-        auto keywords = flagsToKeywords(flags_);
-        if (keywords.empty())
-            return "USAGE";
         String str;
-        for (const auto & keyword : keywords)
+        for (const auto & keyword : flagsToKeywords(flags_))
         {
             if (!str.empty())
                 str += ", ";
@@ -214,7 +201,7 @@ private:
     {
         const String keyword;
         NodeType node_type;
-        AccessType access_type = AccessType::NONE;
+        AccessType type = AccessType::NONE;
         Strings aliases;
         Flags flags;
         std::vector<NodePtr> children;
@@ -246,8 +233,8 @@ private:
         return aliases;
     }
 
-    static void makeNode(
-        AccessType access_type,
+    static void makeFlagsToKeywordTreeNode(
+        AccessType type,
         const std::string_view & name,
         const std::string_view & aliases,
         NodeType node_type,
@@ -272,13 +259,13 @@ private:
             nodes[node->keyword] = node.get();
         }
 
-        node->access_type = access_type;
+        node->type = type;
         node->node_type = node_type;
         node->aliases = splitAliases(aliases);
         if (node_type != GROUP)
             node->setFlag(next_flag++);
 
-        bool has_parent_group = (parent_group_name != std::string_view{"NONE"});
+        bool has_parent_group = (parent_group_name != "NONE");
         if (!has_parent_group)
         {
             std::string_view keyword_as_string_view = node->keyword;
@@ -299,25 +286,25 @@ private:
         it_parent->second->addChild(std::move(node));
     }
 
-    void makeNodes()
+    void makeFlagsToKeywordTree()
     {
         std::unordered_map<std::string_view, NodePtr> owned_nodes;
         std::unordered_map<std::string_view, Node *> nodes;
         size_t next_flag = 0;
 
-#define MAKE_ACCESS_FLAGS_NODE(name, aliases, node_type, parent_group_name) \
-            makeNode(AccessType::name, #name, aliases, node_type, #parent_group_name, nodes, owned_nodes, next_flag);
+#define MAKE_ACCESS_FLAGS_TO_KEYWORD_TREE_NODE(name, aliases, node_type, parent_group_name) \
+            makeFlagsToKeywordTreeNode(AccessType::name, #name, aliases, node_type, #parent_group_name, nodes, owned_nodes, next_flag);
 
-            APPLY_FOR_ACCESS_TYPES(MAKE_ACCESS_FLAGS_NODE)
+            APPLY_FOR_ACCESS_TYPES(MAKE_ACCESS_FLAGS_TO_KEYWORD_TREE_NODE)
 
-#undef MAKE_ACCESS_FLAGS_NODE
+#undef MAKE_ACCESS_FLAGS_TO_KEYWORD_TREE_NODE
 
         if (!owned_nodes.count("NONE"))
             throw Exception("'NONE' not declared", ErrorCodes::LOGICAL_ERROR);
         if (!owned_nodes.count("ALL"))
             throw Exception("'ALL' not declared", ErrorCodes::LOGICAL_ERROR);
 
-        all_node = std::move(owned_nodes["ALL"]);
+        flags_to_keyword_tree = std::move(owned_nodes["ALL"]);
         none_node = std::move(owned_nodes["NONE"]);
         owned_nodes.erase("ALL");
         owned_nodes.erase("NONE");
@@ -337,7 +324,7 @@ private:
         if (!start_node)
         {
             makeKeywordToFlagsMap(none_node.get());
-            start_node = all_node.get();
+            start_node = flags_to_keyword_tree.get();
         }
 
         start_node->aliases.emplace_back(start_node->keyword);
@@ -356,10 +343,10 @@ private:
         if (!start_node)
         {
             makeAccessTypeToFlagsMapping(none_node.get());
-            start_node = all_node.get();
+            start_node = flags_to_keyword_tree.get();
         }
 
-        size_t index = static_cast<size_t>(start_node->access_type);
+        size_t index = static_cast<size_t>(start_node->type);
         access_type_to_flags_mapping.resize(std::max(index + 1, access_type_to_flags_mapping.size()));
         access_type_to_flags_mapping[index] = start_node->flags;
 
@@ -371,7 +358,7 @@ private:
     {
         if (!start_node)
         {
-            start_node = all_node.get();
+            start_node = flags_to_keyword_tree.get();
             all_flags = start_node->flags;
         }
         if (start_node->node_type != GROUP)
@@ -385,27 +372,10 @@ private:
 
     Impl()
     {
-        makeNodes();
+        makeFlagsToKeywordTree();
         makeKeywordToFlagsMap();
         makeAccessTypeToFlagsMapping();
         collectAllFlags();
-    }
-
-    static void flagsToAccessTypesRec(const Flags & flags_, std::vector<AccessType> & access_types, const Node & start_node)
-    {
-        Flags matching_flags = (flags_ & start_node.flags);
-        if (matching_flags.any())
-        {
-            if (matching_flags == start_node.flags)
-            {
-                access_types.push_back(start_node.access_type);
-            }
-            else
-            {
-                for (const auto & child : start_node.children)
-                   flagsToAccessTypesRec(flags_, access_types, *child);
-            }
-        }
     }
 
     static void flagsToKeywordsRec(const Flags & flags_, std::vector<std::string_view> & keywords, const Node & start_node)
@@ -425,7 +395,7 @@ private:
         }
     }
 
-    NodePtr all_node;
+    NodePtr flags_to_keyword_tree;
     NodePtr none_node;
     std::unordered_map<std::string_view, Flags> keyword_to_flags_map;
     std::vector<Flags> access_type_to_flags_mapping;
@@ -439,7 +409,6 @@ inline AccessFlags::AccessFlags(const std::string_view & keyword) : flags(Impl<>
 inline AccessFlags::AccessFlags(const std::vector<std::string_view> & keywords) : flags(Impl<>::instance().keywordsToFlags(keywords)) {}
 inline AccessFlags::AccessFlags(const Strings & keywords) : flags(Impl<>::instance().keywordsToFlags(keywords)) {}
 inline String AccessFlags::toString() const { return Impl<>::instance().flagsToString(flags); }
-inline std::vector<AccessType> AccessFlags::toAccessTypes() const { return Impl<>::instance().flagsToAccessTypes(flags); }
 inline std::vector<std::string_view> AccessFlags::toKeywords() const { return Impl<>::instance().flagsToKeywords(flags); }
 inline AccessFlags AccessFlags::allFlags() { return Impl<>::instance().getAllFlags(); }
 inline AccessFlags AccessFlags::allGlobalFlags() { return Impl<>::instance().getGlobalFlags(); }

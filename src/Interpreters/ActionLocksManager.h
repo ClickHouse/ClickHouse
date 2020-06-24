@@ -19,10 +19,8 @@ class Context;
 class ActionLocksManager
 {
 public:
-    ActionLocksManager(const Context & context);
-
     /// Adds new locks for each table
-    void add(StorageActionBlockType action_type, const Context & context);
+    void add(StorageActionBlockType action_type);
     /// Add new lock for a table if it has not been already added
     void add(const StorageID & table_id, StorageActionBlockType action_type);
     void add(const StoragePtr & table, StorageActionBlockType action_type);
@@ -43,7 +41,6 @@ private:
 
     mutable std::mutex mutex;
     StorageLocks storage_locks;
-    const Context & global_context;
 };
 
 }

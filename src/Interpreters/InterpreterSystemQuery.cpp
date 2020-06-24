@@ -20,7 +20,6 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
-#include <Interpreters/AsynchronousMetricLog.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -145,7 +144,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
         auto access = context.getAccess();
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
         {
-            for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = elem.second->getTablesIterator(); iterator->isValid(); iterator->next())
             {
                 StoragePtr table = iterator->table();
                 if (!table)
@@ -205,6 +204,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_DNS_CACHE:
             context.checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
+            AllowedClientHosts::dropDNSCaches();
             /// Reinitialize clusters to update their resolved_addresses
             system_context.reloadClusterConfig();
             break;
@@ -302,13 +302,12 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_LOGS:
             context.checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             executeCommandsAndThrowIfError(
-                    [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(true); },
-                    [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(true); },
-                    [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(true); },
-                    [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(true); },
-                    [&] () { if (auto text_log = context.getTextLog()) text_log->flush(true); },
-                    [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(true); },
-                    [&] () { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); }
+                    [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(); },
+                    [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(); },
+                    [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(); },
+                    [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(); },
+                    [&] () { if (auto text_log = context.getTextLog()) text_log->flush(); },
+                    [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:
@@ -327,7 +326,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     context.checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
 
     auto table_ddl_guard = need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName()) : nullptr;
-    auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica, context);
+    auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica);
     ASTPtr create_ast;
 
     /// Detach actions
@@ -338,7 +337,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        create_ast = database->getCreateTableQuery(replica.table_name, context);
+        create_ast = database->getCreateTableQuery(replica.table_name);
 
         database->detachTable(replica.table_name);
     }
@@ -349,7 +348,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, false);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
     auto data_path = database->getTableDataPath(create);
 
@@ -375,7 +374,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
     for (auto & elem : catalog.getDatabases())
     {
         DatabasePtr & database = elem.second;
-        for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
         {
             if (auto table = iterator->table())
             {
@@ -403,19 +402,19 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
 {
     context.checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
 
     if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for it to become empty");
         if (!storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.totalMilliseconds()))
         {
-            LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
+            LOG_ERROR(log, "SYNC REPLICA " + table_id.getNameForLogs() + ": Timed out!");
             throw Exception(
                     "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out! "
                     "See the 'receive_timeout' setting", ErrorCodes::TIMEOUT_EXCEEDED);
         }
-        LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
+        LOG_TRACE(log, "SYNC REPLICA " + table_id.getNameForLogs() + ": OK");
     }
     else
         throw Exception("Table " + table_id.getNameForLogs() + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
@@ -425,7 +424,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
     context.checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
-    if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, context).get()))
+    if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id).get()))
         storage_distributed->flushClusterNodesAllData();
     else
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);

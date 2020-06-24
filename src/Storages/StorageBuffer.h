@@ -8,7 +8,6 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Poco/Event.h>
-#include <Interpreters/Context.h>
 
 
 namespace Poco { class Logger; }
@@ -16,6 +15,8 @@ namespace Poco { class Logger; }
 
 namespace DB
 {
+
+class Context;
 
 
 /** During insertion, buffers the data in the RAM until certain thresholds are exceeded.
@@ -75,7 +76,7 @@ public:
     {
         if (!destination_id)
             return false;
-        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, global_context);
+        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id);
         if (dest && dest.get() != this)
             return dest->supportsPrewhere();
         return false;
@@ -85,7 +86,7 @@ public:
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
 
     /// The structure of the subordinate table is not checked and does not change.
     void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;

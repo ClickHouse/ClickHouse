@@ -1,6 +1,11 @@
+#include <DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DataStreams/narrowBlockInputStreams.h>
+#include <DataStreams/LazyBlockInputStream.h>
+#include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -46,7 +51,7 @@ StorageMerge::StorageMerge(
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage(table_id_)
+    : IStorage(table_id_, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
     , global_context(context_)
@@ -54,10 +59,40 @@ StorageMerge::StorageMerge(
     setColumns(columns_);
 }
 
+
+/// NOTE: structure of underlying tables as well as their set are not constant,
+///       so the results of these methods may become obsolete after the call.
+
+NameAndTypePair StorageMerge::getColumn(const String & column_name) const
+{
+    if (!IStorage::hasColumn(column_name))
+    {
+        auto first_table = getFirstTable([](auto &&) { return true; });
+        if (first_table)
+            return first_table->getColumn(column_name);
+    }
+
+    return IStorage::getColumn(column_name);
+}
+
+
+bool StorageMerge::hasColumn(const String & column_name) const
+{
+    if (!IStorage::hasColumn(column_name))
+    {
+        auto first_table = getFirstTable([](auto &&) { return true; });
+        if (first_table)
+            return first_table->hasColumn(column_name);
+    }
+
+    return true;
+}
+
+
 template <typename F>
 StoragePtr StorageMerge::getFirstTable(F && predicate) const
 {
-    auto iterator = getDatabaseIterator(global_context);
+    auto iterator = getDatabaseIterator();
 
     while (iterator->isValid())
     {
@@ -105,7 +140,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 {
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
-    DatabaseTablesIteratorPtr iterator = getDatabaseIterator(context);
+    DatabaseTablesIteratorPtr iterator = getDatabaseIterator();
 
     size_t selected_table_size = 0;
 
@@ -172,12 +207,12 @@ Pipes StorageMerge::read(
     num_streams *= num_streams_multiplier;
     size_t remaining_streams = num_streams;
 
-    InputOrderInfoPtr input_sorting_info;
-    if (query_info.order_optimizer)
+    InputSortingInfoPtr input_sorting_info;
+    if (query_info.order_by_optimizer)
     {
         for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
         {
-            auto current_info = query_info.order_optimizer->getInputOrder(std::get<0>(*it));
+            auto current_info = query_info.order_by_optimizer->getInputOrder(std::get<0>(*it));
             if (it == selected_tables.begin())
                 input_sorting_info = current_info;
             else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
@@ -187,7 +222,7 @@ Pipes StorageMerge::read(
                 break;
         }
 
-        query_info.input_order_info = input_sorting_info;
+        query_info.input_sorting_info = input_sorting_info;
     }
 
     for (const auto & table : selected_tables)
@@ -233,9 +268,20 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 
     if (!storage)
     {
+        if (query_info.force_tree_shaped_pipeline)
+        {
+            /// This flag means that pipeline must be tree-shaped,
+            /// so we can't enable processors for InterpreterSelectQuery here.
+            auto stream = InterpreterSelectQuery(modified_query_info.query, *modified_context, std::make_shared<OneBlockInputStream>(header),
+                                                 SelectQueryOptions(processed_stage).analyze()).execute().in;
+
+            pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
+            return pipes;
+        }
+
         auto pipe = InterpreterSelectQuery(modified_query_info.query, *modified_context,
                                              std::make_shared<OneBlockInputStream>(header),
-                                             SelectQueryOptions(processed_stage).analyze()).execute().pipeline.getPipe();
+                                             SelectQueryOptions(processed_stage).analyze()).executeWithProcessors().getPipe();
         pipe.addInterpreterContext(modified_context);
         pipes.emplace_back(std::move(pipe));
         return pipes;
@@ -260,8 +306,15 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 
         InterpreterSelectQuery interpreter{modified_query_info.query, *modified_context, SelectQueryOptions(processed_stage)};
 
+        if (query_info.force_tree_shaped_pipeline)
         {
-            Pipe pipe = interpreter.execute().pipeline.getPipe();
+            BlockInputStreamPtr stream = interpreter.execute().in;
+            Pipe pipe(std::make_shared<SourceFromInputStream>(std::move(stream)));
+            pipes.emplace_back(std::move(pipe));
+        }
+        else
+        {
+            Pipe pipe = interpreter.executeWithProcessors().getPipe();
             pipes.emplace_back(std::move(pipe));
         }
 
@@ -306,7 +359,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String & query_id, const Settings & settings) const
 {
     StorageListWithLocks selected_tables;
-    auto iterator = getDatabaseIterator(global_context);
+    auto iterator = getDatabaseIterator();
 
     while (iterator->isValid())
     {
@@ -326,7 +379,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
         const ASTPtr & query, bool has_virtual_column, const String & query_id, const Settings & settings) const
 {
     StorageListWithLocks selected_tables;
-    DatabaseTablesIteratorPtr iterator = getDatabaseIterator(global_context);
+    DatabaseTablesIteratorPtr iterator = getDatabaseIterator();
 
     auto virtual_column = ColumnString::create();
 
@@ -363,16 +416,16 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
 }
 
 
-DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
+DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator() const
 {
     checkStackSize();
     auto database = DatabaseCatalog::instance().getDatabase(source_database);
     auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
-    return database->getTablesIterator(context, table_name_match);
+    return database->getTablesIterator(table_name_match);
 }
 
 
-void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
+void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
 {
     for (const auto & command : commands)
     {
@@ -391,7 +444,7 @@ void StorageMerge::alter(
     auto table_id = getStorageID();
 
     StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
-    params.apply(storage_metadata, context);
+    params.apply(storage_metadata);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, storage_metadata);
     setColumns(storage_metadata.columns);
 }
@@ -407,6 +460,7 @@ Block StorageMerge::getQueryHeader(
             if (query_info.prewhere_info)
             {
                 query_info.prewhere_info->prewhere_actions->execute(header);
+                header = materializeBlock(header);
                 if (query_info.prewhere_info->remove_prewhere_column)
                     header.erase(query_info.prewhere_info->prewhere_column_name);
             }
@@ -414,9 +468,9 @@ Block StorageMerge::getQueryHeader(
         }
         case QueryProcessingStage::WithMergeableState:
         case QueryProcessingStage::Complete:
-            return InterpreterSelectQuery(
+            return materializeBlock(InterpreterSelectQuery(
                 query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
-                SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+                SelectQueryOptions(processed_stage).analyze()).getSampleBlock());
     }
     throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);
 }
@@ -442,8 +496,8 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
         if (!header_column.type->equals(*before_column.type.get()) && processed_stage > QueryProcessingStage::FetchColumns)
         {
             NamesAndTypesList source_columns = getSampleBlock().getNamesAndTypesList();
-            auto virtual_column = *getVirtuals().tryGetByName("_table");
-            source_columns.emplace_back(NameAndTypePair{virtual_column.name, virtual_column.type});
+            NameAndTypePair virtual_column = getColumn("_table");
+            source_columns.insert(source_columns.end(), virtual_column);
             auto syntax_result = SyntaxAnalyzer(context).analyze(where_expression, source_columns);
             ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, context}.getActions(false, false);
             Names required_columns = actions->getRequiredColumns();
@@ -487,17 +541,4 @@ void registerStorageMerge(StorageFactory & factory)
     });
 }
 
-NamesAndTypesList StorageMerge::getVirtuals() const
-{
-    NamesAndTypesList virtuals{{"_table", std::make_shared<DataTypeString>()}};
-
-    auto first_table = getFirstTable([](auto && table) { return table; });
-    if (first_table)
-    {
-        auto table_virtuals = first_table->getVirtuals();
-        virtuals.insert(virtuals.end(), table_virtuals.begin(), table_virtuals.end());
-    }
-
-    return virtuals;
-}
 }

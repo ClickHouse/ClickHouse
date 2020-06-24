@@ -334,7 +334,7 @@ StorageTinyLog::StorageTinyLog(
     , table_path(relative_path_)
     , max_compress_block_size(max_compress_block_size_)
     , file_checker(disk, table_path + "sizes.json")
-    , log(&Poco::Logger::get("StorageTinyLog"))
+    , log(&Logger::get("StorageTinyLog"))
 {
     setColumns(columns_);
     setConstraints(constraints_);

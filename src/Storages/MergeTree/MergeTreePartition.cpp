@@ -26,7 +26,7 @@ static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & di
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
-    return getID(storage.getPartitionKey().sample_block);
+    return getID(storage.partition_key_sample);
 }
 
 /// NOTE: This ID is used to create part names which are then persisted in ZK and as directory names on the file system.
@@ -89,8 +89,7 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
 
 void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const
 {
-    const auto & partition_key_sample = storage.getPartitionKey().sample_block;
-    size_t key_size = partition_key_sample.columns();
+    size_t key_size = storage.partition_key_sample.columns();
 
     if (key_size == 0)
     {
@@ -98,7 +97,7 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
     }
     else if (key_size == 1)
     {
-        const DataTypePtr & type = partition_key_sample.getByPosition(0).type;
+        const DataTypePtr & type = storage.partition_key_sample.getByPosition(0).type;
         auto column = type->createColumn();
         column->insert(value[0]);
         type->serializeAsText(*column, 0, out, format_settings);
@@ -109,7 +108,7 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
         Columns columns;
         for (size_t i = 0; i < key_size; ++i)
         {
-            const auto & type = partition_key_sample.getByPosition(i).type;
+            const auto & type = storage.partition_key_sample.getByPosition(i).type;
             types.push_back(type);
             auto column = type->createColumn();
             column->insert(value[i]);
@@ -124,20 +123,19 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
 
 void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path)
 {
-    if (!storage.hasPartitionKey())
+    if (!storage.partition_key_expr)
         return;
 
-    const auto & partition_key_sample = storage.getPartitionKey().sample_block;
     auto partition_file_path = part_path + "partition.dat";
     auto file = openForReading(disk, partition_file_path);
-    value.resize(partition_key_sample.columns());
-    for (size_t i = 0; i < partition_key_sample.columns(); ++i)
-        partition_key_sample.getByPosition(i).type->deserializeBinary(value[i], *file);
+    value.resize(storage.partition_key_sample.columns());
+    for (size_t i = 0; i < storage.partition_key_sample.columns(); ++i)
+        storage.partition_key_sample.getByPosition(i).type->deserializeBinary(value[i], *file);
 }
 
 void MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
-    store(storage.getPartitionKey().sample_block, disk, part_path, checksums);
+    store(storage.partition_key_sample, disk, part_path, checksums);
 }
 
 void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const

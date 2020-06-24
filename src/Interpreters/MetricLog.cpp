@@ -35,8 +35,10 @@ Block MetricLogElement::createBlock()
 }
 
 
-void MetricLogElement::appendToBlock(MutableColumns & columns) const
+void MetricLogElement::appendToBlock(Block & block) const
 {
+    MutableColumns columns = block.mutateColumns();
+
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time));

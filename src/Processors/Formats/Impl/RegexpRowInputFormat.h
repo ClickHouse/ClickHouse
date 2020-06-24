@@ -32,7 +32,6 @@ public:
     String getName() const override { return "RegexpRowInputFormat"; }
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-    void resetParser() override;
 
 private:
     bool readField(size_t index, MutableColumns & columns);
@@ -41,9 +40,9 @@ private:
 
     PeekableReadBuffer buf;
     const FormatSettings format_settings;
-    const ColumnFormat field_format;
+    ColumnFormat field_format;
 
-    const RE2 regexp;
+    RE2 regexp;
     // The vector of fields extracted from line using regexp.
     std::vector<re2::StringPiece> matched_fields;
     // These two vectors are needed to use RE2::FullMatchN (function for extracting fields).

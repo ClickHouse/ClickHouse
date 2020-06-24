@@ -68,7 +68,7 @@ private:
     FileChecker file_checker;
     mutable std::shared_mutex rwlock;
 
-    Poco::Logger * log;
+    Logger * log;
 };
 
 }

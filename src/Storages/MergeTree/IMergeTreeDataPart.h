@@ -31,12 +31,8 @@ struct FutureMergedMutatedPart;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
-class IVolume;
-using VolumePtr = std::shared_ptr<IVolume>;
-
 class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
-class MarkCache;
 
 namespace ErrorCodes
 {
@@ -64,14 +60,14 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const VolumePtr & volume,
+        const DiskPtr & disk,
         const std::optional<String> & relative_path,
         Type part_type_);
 
     IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
-        const VolumePtr & volume,
+        const DiskPtr & disk,
         const std::optional<String> & relative_path,
         Type part_type_);
 
@@ -107,7 +103,6 @@ public:
     virtual ~IMergeTreeDataPart();
 
     using ColumnToSize = std::map<std::string, UInt64>;
-    /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & /* column_to_size */) const;
 
     Type getType() const { return part_type; }
@@ -118,7 +113,6 @@ public:
 
     const NamesAndTypesList & getColumns() const { return columns; }
 
-    /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
     void remove() const;
@@ -161,10 +155,8 @@ public:
     String name;
     MergeTreePartInfo info;
 
-    VolumePtr volume;
+    DiskPtr disk;
 
-    /// A directory path (relative to storage's path) where part data is actually stored
-    /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
@@ -294,21 +286,10 @@ public:
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
 
     size_t getFileSizeOrZero(const String & file_name) const;
-
-    /// Returns path to part dir relatively to disk mount point
     String getFullRelativePath() const;
-
-    /// Returns full path to part dir
     String getFullPath() const;
-
-    /// Makes checks and move part to new directory
-    /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
-    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = true) const;
-
-    /// Moves a part to detached/ directory and adds prefix to its name
+    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = false) const;
     void renameToDetached(const String & prefix) const;
-
-    /// Makes clone of a part in detached/ directory via hard links
     void makeCloneInDetached(const String & prefix) const;
 
     /// Makes full clone of part in detached/ on another disk
@@ -321,7 +302,6 @@ public:
     /// storage and pass it to this method.
     virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
 
-    /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
     void calculateColumnsSizesOnDisk();
 
@@ -336,7 +316,7 @@ protected:
     /// checksums.txt and columns.txt. 0 - if not counted;
     UInt64 bytes_on_disk{0};
 
-    /// Columns description. Cannot be changed, after part initialization.
+    /// Columns description. Cannot be changed, after part initialiation.
     NamesAndTypesList columns;
     const Type part_type;
 
@@ -369,12 +349,11 @@ private:
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
 
-    /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
+    /// Loads ttl infos in json format from file ttl.txt. If file doesn`t exists assigns ttl infos with all zeros
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
 
-    /// Generate unique path to detach part
     String getRelativePathForDetachedPart(const String & prefix) const;
 };
 

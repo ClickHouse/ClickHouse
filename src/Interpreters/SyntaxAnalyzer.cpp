@@ -22,19 +22,12 @@
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
-#include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
-#include <Interpreters/DuplicateDistinctVisitor.h>
-#include <Interpreters/DuplicateOrderByVisitor.h>
-#include <Interpreters/GroupByFunctionKeysVisitor.h>
-#include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
-#include <Interpreters/AnyInputOptimize.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/queryToString.h>
 
@@ -108,7 +101,7 @@ using CustomizeGlobalNotInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeF
 /// Expand asterisks and qualified asterisks with column names.
 /// There would be columns in normal form & column aliases after translation. Column & column alias would be normalized in QueryNormalizer.
 void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query, const NameSet & source_columns_set,
-                             const TablesWithColumns & tables_with_columns)
+                             const std::vector<TableWithColumnNames> & tables_with_columns)
 {
     LogAST log;
     TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns);
@@ -349,116 +342,6 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
         appendUnusedGroupByColumn(select_query, source_columns);
 }
 
-struct GroupByKeysInfo
-{
-    std::unordered_set<String> key_names; ///set of keys' short names
-    bool has_identifier = false;
-    bool has_function = false;
-    bool has_possible_collision = false;
-};
-
-GroupByKeysInfo getGroupByKeysInfo(ASTs & group_keys)
-{
-    GroupByKeysInfo data;
-
-    ///filling set with short names of keys
-    for (auto & group_key : group_keys)
-    {
-        if (group_key->as<ASTFunction>())
-            data.has_function = true;
-
-        if (auto * group_key_ident = group_key->as<ASTIdentifier>())
-        {
-            data.has_identifier = true;
-            if (data.key_names.count(group_key_ident->shortName()))
-            {
-                ///There may be a collision between different tables having similar variables.
-                ///Due to the fact that we can't track these conflicts yet,
-                ///it's better to disable some optimizations to avoid elimination necessary keys.
-                data.has_possible_collision = true;
-            }
-
-            data.key_names.insert(group_key_ident->shortName());
-        }
-        else if (auto * group_key_func = group_key->as<ASTFunction>())
-        {
-            data.key_names.insert(group_key_func->getColumnName());
-        }
-        else
-        {
-            data.key_names.insert(group_key->getColumnName());
-        }
-    }
-
-    return data;
-}
-
-///eliminate functions of other GROUP BY keys
-void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
-{
-    if (!select_query->groupBy())
-        return;
-
-    auto grp_by = select_query->groupBy();
-    auto & group_keys = grp_by->children;
-
-    ASTs modified; ///result
-
-    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_keys);
-
-    if (!group_by_keys_data.has_function || group_by_keys_data.has_possible_collision)
-        return;
-
-    GroupByFunctionKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
-    GroupByFunctionKeysVisitor(visitor_data).visit(grp_by);
-
-    modified.reserve(group_keys.size());
-
-    ///filling the result
-    for (auto & group_key : group_keys)
-    {
-        if (auto * group_key_func = group_key->as<ASTFunction>())
-        {
-            if (group_by_keys_data.key_names.count(group_key_func->getColumnName()))
-                modified.push_back(group_key);
-
-            continue;
-        }
-        if (auto * group_key_ident = group_key->as<ASTIdentifier>())
-        {
-            if (group_by_keys_data.key_names.count(group_key_ident->shortName()))
-                modified.push_back(group_key);
-
-            continue;
-        }
-        else
-        {
-            if (group_by_keys_data.key_names.count(group_key->getColumnName()))
-                modified.push_back(group_key);
-        }
-    }
-
-    ///modifying the input
-    grp_by->children = modified;
-}
-
-/// Eliminates min/max/any-aggregators of functions of GROUP BY keys
-void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query)
-{
-    if (!select_query->groupBy())
-        return;
-
-    auto grp_by = select_query->groupBy();
-    auto & group_keys = grp_by->children;
-
-    GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_keys);
-
-    auto select = select_query->select();
-
-    SelectAggregateFunctionOfGroupByKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
-    SelectAggregateFunctionOfGroupByKeysVisitor(visitor_data).visit(select);
-}
-
 /// Remove duplicate items from ORDER BY.
 void optimizeOrderBy(const ASTSelectQuery * select_query)
 {
@@ -484,15 +367,6 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
 
     if (unique_elems.size() < elems.size())
         elems = std::move(unique_elems);
-}
-
-/// Optimize duplicate ORDER BY and DISTINCT
-void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, const Context & context)
-{
-    DuplicateOrderByVisitor::Data order_by_data{context, false};
-    DuplicateOrderByVisitor(order_by_data).visit(query);
-    DuplicateDistinctVisitor::Data distinct_data{};
-    DuplicateDistinctVisitor(distinct_data).visit(query);
 }
 
 /// Remove duplicate items from LIMIT BY.
@@ -553,23 +427,6 @@ void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_miltiif)
 
     if (if_chain_to_miltiif)
         OptimizeIfChainsVisitor().visit(query);
-}
-
-void optimizeArithmeticOperationsInAgr(ASTPtr & query, bool optimize_arithmetic_operations_in_agr_func)
-{
-    if (optimize_arithmetic_operations_in_agr_func)
-    {
-        /// Removing arithmetic operations from functions
-        ArithmeticOperationsInAgrFuncVisitor::Data data = {};
-        ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
-    }
-}
-
-void optimizeAnyInput(ASTPtr & query)
-{
-    /// Removing arithmetic operations from functions
-    AnyInputVisitor::Data data = {};
-    AnyInputVisitor(data).visit(query);
 }
 
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
@@ -660,7 +517,7 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 
 /// Find the columns that are obtained by JOIN.
 void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & select_query,
-                          const TablesWithColumns & tables, const Aliases & aliases)
+                          const std::vector<TableWithColumnNames> & tables, const Aliases & aliases)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
     if (!node)
@@ -709,14 +566,13 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 }
 
 /// Add columns from storage to source_columns list. Deduplicate resulted list.
-/// Special columns are non physical columns, for example ALIAS
-void SyntaxAnalyzerResult::collectSourceColumns(bool add_special)
+void SyntaxAnalyzerResult::collectSourceColumns(bool add_virtuals)
 {
     if (storage)
     {
         const ColumnsDescription & columns = storage->getColumns();
 
-        auto columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
+        auto columns_from_storage = add_virtuals ? columns.getAll() : columns.getAllPhysical();
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);
         else
@@ -730,7 +586,7 @@ void SyntaxAnalyzerResult::collectSourceColumns(bool add_special)
 /// Calculate which columns are required to execute the expression.
 /// Then, delete all other columns from the list of available columns.
 /// After execution, columns will only contain the list of columns needed to read from the table.
-void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, bool is_select)
+void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
 {
     /// We calculate required_source_columns with source_columns modifications and swap them on exit
     required_source_columns = source_columns;
@@ -780,11 +636,12 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, bool is_sele
                 required.insert(column_name_type.name);
     }
 
-    /// You need to read at least one column to find the number of rows.
-    if (is_select && required.empty())
-    {
-        optimize_trivial_count = true;
+    const auto * select_query = query->as<ASTSelectQuery>();
 
+    /// You need to read at least one column to find the number of rows.
+    if (select_query && required.empty())
+    {
+        maybe_optimize_trivial_count = true;
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
         struct ColumnSizeTuple
@@ -793,14 +650,12 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, bool is_sele
             size_t type_size;
             size_t uncompressed_size;
             String name;
-
             bool operator<(const ColumnSizeTuple & that) const
             {
                 return std::tie(compressed_size, type_size, uncompressed_size)
                     < std::tie(that.compressed_size, that.type_size, that.uncompressed_size);
             }
         };
-
         std::vector<ColumnSizeTuple> columns;
         if (storage)
         {
@@ -814,7 +669,6 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, bool is_sele
                 columns.emplace_back(ColumnSizeTuple{c->second.data_compressed, type_size, c->second.data_uncompressed, source_column.name});
             }
         }
-
         if (!columns.empty())
             required.insert(std::min_element(columns.begin(), columns.end())->name);
         else
@@ -839,13 +693,11 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, bool is_sele
     /// in columns list, so that when further processing they are also considered.
     if (storage)
     {
-        const auto storage_virtuals = storage->getVirtuals();
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
-            auto column = storage_virtuals.tryGetByName(*it);
-            if (column)
+            if (storage->hasColumn(*it))
             {
-                source_columns.push_back(*column);
+                source_columns.push_back(storage->getColumn(*it));
                 unknown_required_source_columns.erase(it++);
             }
             else
@@ -894,7 +746,6 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, bool is_sele
     required_source_columns.swap(source_columns);
 }
 
-
 SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     ASTPtr & query,
     SyntaxAnalyzerResult && result,
@@ -925,6 +776,12 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);
 
+    /// TODO: Remove unneeded conversion
+    std::vector<TableWithColumnNames> tables_with_column_names;
+    tables_with_column_names.reserve(tables_with_columns.size());
+    for (const auto & table : tables_with_columns)
+        tables_with_column_names.emplace_back(table.removeTypes());
+
     if (tables_with_columns.size() > 1)
     {
         result.analyzed_join->columns_from_joined_table = tables_with_columns[1].columns;
@@ -932,7 +789,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
             source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
     }
 
-    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
+    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_column_names);
 
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
@@ -951,33 +808,14 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     {
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
-        /// Move arithmetic operations out of aggregation functions
-        optimizeArithmeticOperationsInAgr(query, settings.optimize_arithmetic_operations_in_aggregate_functions);
-
         /// Push the predicate expression down to the subqueries.
-        result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
+        result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_column_names, settings).optimize(*select_query);
 
         /// GROUP BY injective function elimination.
         optimizeGroupBy(select_query, source_columns_set, context);
 
-        /// GROUP BY functions of other keys elimination.
-        if (settings.optimize_group_by_function_keys)
-            optimizeGroupByFunctionKeys(select_query);
-
-        ///Move all operations out of any function
-        if (settings.optimize_move_functions_out_of_any)
-            optimizeAnyInput(query);
-
-        /// Eliminate min/max/any aggregators of functions of GROUP BY keys
-        if (settings.optimize_aggregators_of_group_by_keys)
-            optimizeAggregateFunctionsOfGroupByKeys(select_query);
-
         /// Remove duplicate items from ORDER BY.
         optimizeOrderBy(select_query);
-
-        /// Remove duplicate ORDER BY and DISTINCT from subqueries.
-        if (settings.optimize_duplicate_order_by_and_distinct)
-            optimizeDuplicateOrderByAndDistinct(query, context);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
@@ -990,22 +828,15 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
                           result.analyzed_join->table_join);
-        collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
+        collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_column_names, result.aliases);
     }
 
     result.aggregates = getAggregates(query, *select_query);
-    result.collectUsedColumns(query, true);
-
-    if (result.optimize_trivial_count)
-        result.optimize_trivial_count = settings.optimize_trivial_count_query &&
-            !select_query->where() && !select_query->prewhere() && !select_query->groupBy() && !select_query->having() &&
-            !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final() &&
-            (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
-
+    result.collectUsedColumns(query);
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
-SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage, bool allow_aggregations) const
+SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage) const
 {
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
@@ -1021,21 +852,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
 
     optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
-    if (allow_aggregations)
-    {
-        GetAggregatesVisitor::Data data;
-        GetAggregatesVisitor(data).visit(query);
-
-        /// There can not be other aggregate functions within the aggregate functions.
-        for (const ASTFunction * node : data.aggregates)
-            for (auto & arg : node->arguments->children)
-                assertNoAggregates(arg, "inside another aggregate function");
-        result.aggregates = data.aggregates;
-    }
-    else
-        assertNoAggregates(query, "in wrong place");
-
-    result.collectUsedColumns(query, false);
+    assertNoAggregates(query, "in wrong place");
+    result.collectUsedColumns(query);
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 

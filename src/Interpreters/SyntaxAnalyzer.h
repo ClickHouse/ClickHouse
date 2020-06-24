@@ -46,20 +46,20 @@ struct SyntaxAnalyzerResult
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
 
-    bool optimize_trivial_count = false;
-
     /// Results of scalar sub queries
     Scalars scalars;
 
-    SyntaxAnalyzerResult(const NamesAndTypesList & source_columns_, ConstStoragePtr storage_ = {}, bool add_special = true)
+    bool maybe_optimize_trivial_count = false;
+
+    SyntaxAnalyzerResult(const NamesAndTypesList & source_columns_, ConstStoragePtr storage_ = {}, bool add_virtuals = true)
         : storage(storage_)
         , source_columns(source_columns_)
     {
-        collectSourceColumns(add_special);
+        collectSourceColumns(add_virtuals);
     }
 
-    void collectSourceColumns(bool add_special);
-    void collectUsedColumns(const ASTPtr & query, bool is_select);
+    void collectSourceColumns(bool add_virtuals);
+    void collectUsedColumns(const ASTPtr & query);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
     const Scalars & getScalars() const { return scalars; }
 };
@@ -86,7 +86,7 @@ public:
     {}
 
     /// Analyze and rewrite not select query
-    SyntaxAnalyzerResultPtr analyze(ASTPtr & query, const NamesAndTypesList & source_columns_, ConstStoragePtr storage = {}, bool allow_aggregations = false) const;
+    SyntaxAnalyzerResultPtr analyze(ASTPtr & query, const NamesAndTypesList & source_columns_, ConstStoragePtr storage = {}) const;
 
     /// Analyze and rewrite select query
     SyntaxAnalyzerResultPtr analyzeSelect(

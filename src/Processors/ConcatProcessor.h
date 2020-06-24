@@ -16,7 +16,10 @@ namespace DB
 class ConcatProcessor : public IProcessor
 {
 public:
-    ConcatProcessor(const Block & header, size_t num_inputs);
+    ConcatProcessor(const Block & header, size_t num_inputs)
+        : IProcessor(InputPorts(num_inputs, header), OutputPorts{header}), current_input(inputs.begin())
+    {
+    }
 
     String getName() const override { return "Concat"; }
 

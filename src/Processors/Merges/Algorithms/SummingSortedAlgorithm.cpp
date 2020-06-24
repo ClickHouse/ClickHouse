@@ -47,8 +47,7 @@ struct SummingSortedAlgorithm::AggregateDescription
 
     void init(const char * function_name, const DataTypes & argument_types)
     {
-        AggregateFunctionProperties properties;
-        function = AggregateFunctionFactory::instance().get(function_name, argument_types, {}, properties);
+        function = AggregateFunctionFactory::instance().get(function_name, argument_types);
         add_function = function->getAddressOfAddFunction();
         state.reset(function->sizeOfData(), function->alignOfData());
     }
@@ -624,19 +623,19 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
 {
 }
 
-void SummingSortedAlgorithm::initialize(Inputs inputs)
+void SummingSortedAlgorithm::initialize(Chunks chunks)
 {
-    for (auto & input : inputs)
-        if (input.chunk)
-            preprocessChunk(input.chunk);
+    for (auto & chunk : chunks)
+        if (chunk)
+            preprocessChunk(chunk);
 
-    initializeQueue(std::move(inputs));
+    initializeQueue(std::move(chunks));
 }
 
-void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
+void SummingSortedAlgorithm::consume(Chunk chunk, size_t source_num)
 {
-    preprocessChunk(input.chunk);
-    updateCursor(input, source_num);
+    preprocessChunk(chunk);
+    updateCursor(std::move(chunk), source_num);
 }
 
 IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
@@ -647,15 +646,6 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
         bool key_differs;
 
         SortCursor current = queue.current();
-
-        if (current->isLast() && skipLastRowFor(current->order))
-        {
-            /// If we skip this row, it's not equals with any key we process.
-            last_key.reset();
-            /// Get the next block from the corresponding source, if there is one.
-            queue.removeTop();
-            return Status(current.impl->order);
-        }
 
         {
             detail::RowRef current_key;

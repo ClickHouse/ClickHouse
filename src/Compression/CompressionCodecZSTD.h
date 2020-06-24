@@ -26,9 +26,6 @@ protected:
 
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return true; }
-
 private:
     const int level;
 };

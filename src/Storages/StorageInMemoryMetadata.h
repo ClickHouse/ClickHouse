@@ -1,13 +1,9 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
-#include <Storages/KeyDescription.h>
-#include <Storages/TTLDescription.h>
-#include <Storages/SelectQueryDescription.h>
-
+#include <Storages/ConstraintsDescription.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -21,31 +17,29 @@ struct StorageInMemoryMetadata
     /// defaults, comments, etc. All table engines have columns.
     ColumnsDescription columns;
     /// Table indices. Currently supported for MergeTree only.
-    IndicesDescription secondary_indices;
+    IndicesDescription indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
     /// PARTITION BY expression. Currently supported for MergeTree only.
-    KeyDescription partition_key;
-    /// PRIMARY KEY expression. If absent, than equal to order_by_ast.
-    KeyDescription primary_key;
+    ASTPtr partition_by_ast = nullptr;
     /// ORDER BY expression. Required field for all MergeTree tables
     /// even in old syntax MergeTree(partition_key, order_by, ...)
-    KeyDescription sorting_key;
+    ASTPtr order_by_ast = nullptr;
+    /// PRIMARY KEY expression. If absent, than equal to order_by_ast.
+    ASTPtr primary_key_ast = nullptr;
+    /// TTL expression for whole table. Supported for MergeTree only.
+    ASTPtr ttl_for_table_ast = nullptr;
     /// SAMPLE BY expression. Supported for MergeTree only.
-    KeyDescription sampling_key;
-    /// Separate ttl expressions for columns
-    TTLColumnsDescription column_ttls_by_name;
-    /// TTL expressions for table (Move and Rows)
-    TTLTableDescription table_ttl;
+    ASTPtr sample_by_ast = nullptr;
     /// SETTINGS expression. Supported for MergeTree, Buffer and Kafka.
-    ASTPtr settings_changes;
-    /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
-    SelectQueryDescription select;
-
-    StorageInMemoryMetadata() = default;
-    StorageInMemoryMetadata(const ColumnsDescription & columns_, const IndicesDescription & secondary_indices_, const ConstraintsDescription & constraints_);
+    ASTPtr settings_ast = nullptr;
+    /// SELECT QUERY. Supported for MaterializedView only.
+    ASTPtr select = nullptr;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
+    StorageInMemoryMetadata() = default;
+    StorageInMemoryMetadata(const ColumnsDescription & columns_, const IndicesDescription & indices_, const ConstraintsDescription & constraints_);
+
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 };
 

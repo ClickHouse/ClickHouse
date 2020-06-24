@@ -20,7 +20,6 @@
 #include <Common/CurrentThread.h>
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
-#include <Processors/Sources/RemoteSource.h>
 
 namespace DB
 {
@@ -33,14 +32,6 @@ void QueryPipeline::checkInitialized()
 {
     if (!initialized())
         throw Exception("QueryPipeline wasn't initialized.", ErrorCodes::LOGICAL_ERROR);
-}
-
-void QueryPipeline::checkInitializedAndNotCompleted()
-{
-    checkInitialized();
-
-    if (streams.empty())
-        throw Exception("QueryPipeline was already completed.", ErrorCodes::LOGICAL_ERROR);
 }
 
 void QueryPipeline::checkSource(const ProcessorPtr & source, bool can_have_totals)
@@ -203,11 +194,11 @@ static ProcessorPtr callProcessorGetter(
 template <typename TProcessorGetter>
 void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
 {
-    checkInitializedAndNotCompleted();
+    checkInitialized();
 
     Block header;
 
-    auto add_transform = [&](OutputPort *& stream, StreamType stream_type)
+    auto add_transform = [&](OutputPort *& stream, StreamType stream_type, size_t stream_num [[maybe_unused]] = IProcessor::NO_STREAM)
     {
         if (!stream)
             return;
@@ -240,14 +231,17 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
 
         if (transform)
         {
+//            if (stream_type == StreamType::Main)
+//                transform->setStream(stream_num);
+
             connect(*stream, transform->getInputs().front());
             stream = &transform->getOutputs().front();
             processors.emplace_back(std::move(transform));
         }
     };
 
-    for (auto & stream : streams)
-        add_transform(stream, StreamType::Main);
+    for (size_t stream_num = 0; stream_num < streams.size(); ++stream_num)
+        add_transform(streams[stream_num], StreamType::Main, stream_num);
 
     add_transform(totals_having_port, StreamType::Totals);
     add_transform(extremes_port, StreamType::Extremes);
@@ -265,50 +259,9 @@ void QueryPipeline::addSimpleTransform(const ProcessorGetterWithStreamKind & get
     addSimpleTransformImpl(getter);
 }
 
-void QueryPipeline::setSinks(const ProcessorGetterWithStreamKind & getter)
-{
-    checkInitializedAndNotCompleted();
-
-    auto add_transform = [&](OutputPort *& stream, StreamType stream_type)
-    {
-        if (!stream)
-            return;
-
-        auto transform = getter(stream->getHeader(), stream_type);
-
-        if (transform)
-        {
-            if (transform->getInputs().size() != 1)
-                throw Exception("Sink for query pipeline transform should have single input, "
-                                "but " + transform->getName() + " has " +
-                                toString(transform->getInputs().size()) + " inputs.", ErrorCodes::LOGICAL_ERROR);
-
-            if (!transform->getOutputs().empty())
-                throw Exception("Sink for query pipeline transform should have no outputs, "
-                                "but " + transform->getName() + " has " +
-                                toString(transform->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
-        }
-
-        if (!transform)
-            transform = std::make_shared<NullSink>(stream->getHeader());
-
-        connect(*stream, transform->getInputs().front());
-        processors.emplace_back(std::move(transform));
-    };
-
-    for (auto & stream : streams)
-        add_transform(stream, StreamType::Main);
-
-    add_transform(totals_having_port, StreamType::Totals);
-    add_transform(extremes_port, StreamType::Extremes);
-
-    streams.clear();
-    current_header.clear();
-}
-
 void QueryPipeline::addPipe(Processors pipe)
 {
-    checkInitializedAndNotCompleted();
+    checkInitialized();
 
     if (pipe.empty())
         throw Exception("Can't add empty processors list to QueryPipeline.", ErrorCodes::LOGICAL_ERROR);
@@ -345,7 +298,7 @@ void QueryPipeline::addPipe(Processors pipe)
 
 void QueryPipeline::addDelayedStream(ProcessorPtr source)
 {
-    checkInitializedAndNotCompleted();
+    checkInitialized();
 
     checkSource(source, false);
     assertBlocksHaveEqualStructure(current_header, source->getOutputs().front().getHeader(), "QueryPipeline");
@@ -360,7 +313,7 @@ void QueryPipeline::addDelayedStream(ProcessorPtr source)
 
 void QueryPipeline::resize(size_t num_streams, bool force, bool strict)
 {
-    checkInitializedAndNotCompleted();
+    checkInitialized();
 
     if (!force && num_streams == getNumStreams())
         return;
@@ -394,7 +347,7 @@ void QueryPipeline::enableQuotaForCurrentStreams()
 
 void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
 {
-    checkInitializedAndNotCompleted();
+    checkInitialized();
 
     if (!typeid_cast<const TotalsHavingTransform *>(transform.get()))
         throw Exception("TotalsHavingTransform expected for QueryPipeline::addTotalsHavingTransform.",
@@ -417,7 +370,7 @@ void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
 
 void QueryPipeline::addDefaultTotals()
 {
-    checkInitializedAndNotCompleted();
+    checkInitialized();
 
     if (totals_having_port)
         throw Exception("Totals having transform was already added to pipeline.", ErrorCodes::LOGICAL_ERROR);
@@ -439,7 +392,7 @@ void QueryPipeline::addDefaultTotals()
 
 void QueryPipeline::addTotals(ProcessorPtr source)
 {
-    checkInitializedAndNotCompleted();
+    checkInitialized();
 
     if (totals_having_port)
         throw Exception("Totals having transform was already added to pipeline.", ErrorCodes::LOGICAL_ERROR);
@@ -470,7 +423,7 @@ void QueryPipeline::dropTotalsAndExtremes()
 
 void QueryPipeline::addExtremesTransform()
 {
-    checkInitializedAndNotCompleted();
+    checkInitialized();
 
     if (extremes_port)
         throw Exception("Extremes transform was already added to pipeline.", ErrorCodes::LOGICAL_ERROR);
@@ -497,7 +450,7 @@ void QueryPipeline::addExtremesTransform()
 
 void QueryPipeline::addCreatingSetsTransform(ProcessorPtr transform)
 {
-    checkInitializedAndNotCompleted();
+    checkInitialized();
 
     if (!typeid_cast<const CreatingSetsTransform *>(transform.get()))
         throw Exception("CreatingSetsTransform expected for QueryPipeline::addExtremesTransform.",
@@ -514,14 +467,14 @@ void QueryPipeline::addCreatingSetsTransform(ProcessorPtr transform)
     processors.emplace_back(std::move(concat));
 }
 
-void QueryPipeline::setOutputFormat(ProcessorPtr output)
+void QueryPipeline::setOutput(ProcessorPtr output)
 {
-    checkInitializedAndNotCompleted();
+    checkInitialized();
 
     auto * format = dynamic_cast<IOutputFormat * >(output.get());
 
     if (!format)
-        throw Exception("IOutputFormat processor expected for QueryPipeline::setOutputFormat.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("IOutputFormat processor expected for QueryPipeline::setOutput.", ErrorCodes::LOGICAL_ERROR);
 
     if (output_format)
         throw Exception("QueryPipeline already has output.", ErrorCodes::LOGICAL_ERROR);
@@ -554,25 +507,19 @@ void QueryPipeline::setOutputFormat(ProcessorPtr output)
     connect(*totals_having_port, totals);
     connect(*extremes_port, extremes);
 
-    streams.clear();
-    current_header.clear();
-    extremes_port = nullptr;
-    totals_having_port = nullptr;
-
     initRowsBeforeLimit();
 }
 
 void QueryPipeline::unitePipelines(
-    std::vector<std::unique_ptr<QueryPipeline>> pipelines, const Block & common_header)
+    std::vector<QueryPipeline> && pipelines, const Block & common_header)
 {
-    if (initialized())
+    checkInitialized();
+
+    addSimpleTransform([&](const Block & header)
     {
-        addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<ConvertingTransform>(
-                    header, common_header, ConvertingTransform::MatchColumnsMode::Position);
-        });
-    }
+        return std::make_shared<ConvertingTransform>(
+                header, common_header, ConvertingTransform::MatchColumnsMode::Position);
+    });
 
     std::vector<OutputPort *> extremes;
     std::vector<OutputPort *> totals;
@@ -583,19 +530,15 @@ void QueryPipeline::unitePipelines(
     if (totals_having_port)
         totals.push_back(totals_having_port);
 
-    for (auto & pipeline_ptr : pipelines)
+    for (auto & pipeline : pipelines)
     {
-        auto & pipeline = *pipeline_ptr;
         pipeline.checkInitialized();
 
-        if (!pipeline.isCompleted())
+        pipeline.addSimpleTransform([&](const Block & header)
         {
-            pipeline.addSimpleTransform([&](const Block & header)
-            {
-               return std::make_shared<ConvertingTransform>(
-                       header, common_header, ConvertingTransform::MatchColumnsMode::Position);
-            });
-        }
+           return std::make_shared<ConvertingTransform>(
+                   header, common_header, ConvertingTransform::MatchColumnsMode::Position);
+        });
 
         if (pipeline.extremes_port)
         {
@@ -643,8 +586,6 @@ void QueryPipeline::unitePipelines(
         else
             totals_having_port = uniteTotals(totals, current_header, processors);
     }
-
-    current_header = common_header;
 }
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
@@ -677,10 +618,8 @@ void QueryPipeline::initRowsBeforeLimit()
 {
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
-    /// TODO: add setRowsBeforeLimitCounter as virtual method to IProcessor.
     std::vector<LimitTransform *> limits;
     std::vector<SourceFromInputStream *> sources;
-    std::vector<RemoteSource *> remote_sources;
 
     std::unordered_set<IProcessor *> visited;
 
@@ -711,9 +650,6 @@ void QueryPipeline::initRowsBeforeLimit()
 
             if (auto * source = typeid_cast<SourceFromInputStream *>(processor))
                 sources.emplace_back(source);
-
-            if (auto * source = typeid_cast<RemoteSource *>(processor))
-                remote_sources.emplace_back(source);
         }
         else if (auto * sorting = typeid_cast<PartialSortingTransform *>(processor))
         {
@@ -744,7 +680,7 @@ void QueryPipeline::initRowsBeforeLimit()
         }
     }
 
-    if (!rows_before_limit_at_least && (!limits.empty() || !sources.empty() || !remote_sources.empty()))
+    if (!rows_before_limit_at_least && (!limits.empty() || !sources.empty()))
     {
         rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
 
@@ -752,9 +688,6 @@ void QueryPipeline::initRowsBeforeLimit()
             limit->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
         for (auto & source : sources)
-            source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
-
-        for (auto & source : remote_sources)
             source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
     }
 
@@ -804,8 +737,10 @@ Pipes QueryPipeline::getPipes() &&
 
 PipelineExecutorPtr QueryPipeline::execute()
 {
-    if (!isCompleted())
-        throw Exception("Cannot execute pipeline because it is not completed.", ErrorCodes::LOGICAL_ERROR);
+    checkInitialized();
+
+    if (!output_format)
+        throw Exception("Cannot execute pipeline because it doesn't have output.", ErrorCodes::LOGICAL_ERROR);
 
     return std::make_shared<PipelineExecutor>(processors, process_list_element);
 }

@@ -23,8 +23,13 @@ namespace DB
 template <typename T>
 struct AggregateFunctionTopKData
 {
-    using Set = SpaceSaving<T, HashCRC32<T>>;
-
+    using Set = SpaceSaving
+    <
+        T,
+        HashCRC32<T>,
+        HashTableGrower<4>,
+        HashTableAllocatorWithStackMemory<sizeof(T) * (1 << 4)>
+    >;
     Set value;
 };
 
@@ -104,7 +109,13 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionTopKGenericData
 {
-    using Set = SpaceSaving<StringRef, StringRefHash>;
+    using Set = SpaceSaving
+    <
+        StringRef,
+        StringRefHash,
+        HashTableGrower<4>,
+        HashTableAllocatorWithStackMemory<sizeof(StringRef) * (1 << 4)>
+    >;
 
     Set value;
 };

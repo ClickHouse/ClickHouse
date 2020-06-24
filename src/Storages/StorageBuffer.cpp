@@ -74,7 +74,7 @@ StorageBuffer::StorageBuffer(
     , max_thresholds(max_thresholds_)
     , destination_id(destination_id_)
     , allow_materialized(allow_materialized_)
-    , log(&Poco::Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
+    , log(&Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
     , bg_pool(global_context.getBufferFlushSchedulePool())
 {
     setColumns(columns_);
@@ -129,7 +129,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
 {
     if (destination_id)
     {
-        auto destination = DatabaseCatalog::instance().getTable(destination_id, context);
+        auto destination = DatabaseCatalog::instance().getTable(destination_id);
 
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
@@ -153,7 +153,7 @@ Pipes StorageBuffer::read(
 
     if (destination_id)
     {
-        auto destination = DatabaseCatalog::instance().getTable(destination_id, context);
+        auto destination = DatabaseCatalog::instance().getTable(destination_id);
 
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
@@ -163,16 +163,14 @@ Pipes StorageBuffer::read(
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
         {
-            const auto & dest_columns = destination->getColumns();
-            const auto & our_columns = getColumns();
-            return dest_columns.hasPhysical(column_name) &&
-                   dest_columns.get(column_name).type->equals(*our_columns.get(column_name).type);
+            return destination->hasColumn(column_name) &&
+                   destination->getColumn(column_name).type->equals(*getColumn(column_name).type);
         });
 
         if (dst_has_same_structure)
         {
-            if (query_info.order_optimizer)
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination);
+            if (query_info.order_by_optimizer)
+                query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(destination);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             pipes_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
@@ -183,28 +181,30 @@ Pipes StorageBuffer::read(
             const Block header = getSampleBlock();
             Names columns_intersection = column_names;
             Block header_after_adding_defaults = header;
-            const auto & dest_columns = destination->getColumns();
-            const auto & our_columns = getColumns();
             for (const String & column_name : column_names)
             {
-                if (!dest_columns.hasPhysical(column_name))
+                if (!destination->hasColumn(column_name))
                 {
-                    LOG_WARNING(log, "Destination table {} doesn't have column {}. The default values are used.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name));
+                    LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs()
+                        << " doesn't have column " << backQuoteIfNeed(column_name) << ". The default values are used.");
                     boost::range::remove_erase(columns_intersection, column_name);
                     continue;
                 }
-                const auto & dst_col = dest_columns.getPhysical(column_name);
-                const auto & col = our_columns.getPhysical(column_name);
+                const auto & dst_col = destination->getColumn(column_name);
+                const auto & col = getColumn(column_name);
                 if (!dst_col.type->equals(*col.type))
                 {
-                    LOG_WARNING(log, "Destination table {} has different type of column {} ({} != {}). Data from destination table are converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name), dst_col.type->getName(), col.type->getName());
+                    LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs()
+                        << " has different type of column " << backQuoteIfNeed(column_name) << " ("
+                        << dst_col.type->getName() << " != " << col.type->getName() << "). Data from destination table are converted.");
                     header_after_adding_defaults.getByName(column_name) = ColumnWithTypeAndName(dst_col.type, column_name);
                 }
             }
 
             if (columns_intersection.empty())
             {
-                LOG_WARNING(log, "Destination table {} has no common columns with block in buffer. Block of data is skipped.", destination_id.getNameForLogs());
+                LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs()
+                    << " has no common columns with block in buffer. Block of data is skipped.");
             }
             else
             {
@@ -245,7 +245,7 @@ Pipes StorageBuffer::read(
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
         for (auto & pipe : pipes_from_buffers)
-            pipe = InterpreterSelectQuery(query_info.query, context, std::move(pipe), SelectQueryOptions(processed_stage)).execute().pipeline.getPipe();
+            pipe = InterpreterSelectQuery(query_info.query, context, std::move(pipe), SelectQueryOptions(processed_stage)).executeWithProcessors().getPipe();
 
     if (query_info.prewhere_info)
     {
@@ -293,7 +293,7 @@ static void appendBlock(const Block & from, Block & to)
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
             const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            MutableColumnPtr col_to = IColumn::mutate(std::move(to.getByPosition(column_no).column));
+            MutableColumnPtr col_to = (*std::move(to.getByPosition(column_no).column)).mutate();
 
             col_to->insertRangeFrom(col_from, 0, rows);
 
@@ -309,7 +309,7 @@ static void appendBlock(const Block & from, Block & to)
             {
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
                 if (col_to->size() != old_rows)
-                    col_to = col_to->cut(0, old_rows);
+                    col_to = (*std::move(col_to)).mutate()->cut(0, old_rows);
             }
         }
         catch (...)
@@ -345,7 +345,7 @@ public:
         StoragePtr destination;
         if (storage.destination_id)
         {
-            destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.global_context);
+            destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id);
             if (destination.get() == &storage)
                 throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
         }
@@ -357,7 +357,7 @@ public:
         {
             if (storage.destination_id)
             {
-                LOG_TRACE(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
+                LOG_TRACE(storage.log, "Writing block with " << rows << " rows, " << bytes << " bytes directly.");
                 storage.writeBlockToDestination(block, destination);
             }
             return;
@@ -445,7 +445,7 @@ bool StorageBuffer::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
     if (!destination_id)
         return false;
 
-    auto destination = DatabaseCatalog::instance().getTable(destination_id, query_context);
+    auto destination = DatabaseCatalog::instance().getTable(destination_id);
 
     if (destination.get() == this)
         throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
@@ -458,7 +458,8 @@ void StorageBuffer::startup()
 {
     if (global_context.getSettingsRef().readonly)
     {
-        LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate system_profile to fix this.", getName());
+        LOG_WARNING(log, "Storage " << getName() << " is run with readonly settings, it will not be able to insert data."
+            << " Set appropriate system_profile to fix this.");
     }
 
     flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ flushBack(); });
@@ -599,7 +600,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
 
-    LOG_TRACE(log, "Flushing buffer with {} rows, {} bytes, age {} seconds {}.", rows, bytes, time_passed, (check_thresholds ? "(bg)" : "(direct)"));
+    LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds " << (check_thresholds ? "(bg)" : "(direct)") << ".");
 
     if (!destination_id)
         return;
@@ -612,7 +613,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         */
     try
     {
-        writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, global_context));
+        writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id));
     }
     catch (...)
     {
@@ -641,7 +642,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     if (!table)
     {
-        LOG_ERROR(log, "Destination table {} doesn't exist. Block of data is discarded.", destination_id.getNameForLogs());
+        LOG_ERROR(log, "Destination table " << destination_id.getNameForLogs() << " doesn't exist. Block of data is discarded.");
         return;
     }
 
@@ -663,7 +664,10 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
             auto column = block.getByName(dst_col.name);
             if (!column.type->equals(*dst_col.type))
             {
-                LOG_WARNING(log, "Destination table {} have different type of column {} ({} != {}). Block of data is converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column.name), dst_col.type->getName(), column.type->getName());
+                LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs()
+                    << " have different type of column " << backQuoteIfNeed(column.name) << " ("
+                    << dst_col.type->getName() << " != " << column.type->getName()
+                    << "). Block of data is converted.");
                 column.column = castColumn(column, dst_col.type);
                 column.type = dst_col.type;
             }
@@ -674,12 +678,14 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     if (block_to_write.columns() == 0)
     {
-        LOG_ERROR(log, "Destination table {} have no common columns with block in buffer. Block of data is discarded.", destination_id.getNameForLogs());
+        LOG_ERROR(log, "Destination table " << destination_id.getNameForLogs()
+            << " have no common columns with block in buffer. Block of data is discarded.");
         return;
     }
 
     if (block_to_write.columns() != block.columns())
-        LOG_WARNING(log, "Not all columns from block in buffer exist in destination table {}. Some columns are discarded.", destination_id.getNameForLogs());
+        LOG_WARNING(log, "Not all columns from block in buffer exist in destination table "
+            << destination_id.getNameForLogs() << ". Some columns are discarded.");
 
     auto list_of_columns = std::make_shared<ASTExpressionList>();
     insert->columns = list_of_columns;
@@ -734,7 +740,7 @@ void StorageBuffer::reschedule()
     flush_handle->scheduleAfter(std::min(min, max) * 1000);
 }
 
-void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
+void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
 {
     for (const auto & command : commands)
     {
@@ -749,7 +755,7 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const S
 std::optional<UInt64> StorageBuffer::totalRows() const
 {
     std::optional<UInt64> underlying_rows;
-    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id, global_context);
+    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id);
 
     if (underlying)
         underlying_rows = underlying->totalRows();
@@ -786,10 +792,10 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    params.apply(new_metadata, context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
-    setColumns(std::move(new_metadata.columns));
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    params.apply(metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
+    setColumns(std::move(metadata.columns));
 }
 
 

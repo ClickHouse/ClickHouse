@@ -18,7 +18,6 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
-#include <Common/clearPasswordFromCommandLine.h>
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -290,7 +289,7 @@ private:
                     connection_entries.emplace_back(std::make_shared<Entry>(
                             connection->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
 
-                pool.scheduleOrThrowOnError([this, connection_entries]() mutable { thread(connection_entries); });
+                pool.scheduleOrThrowOnError(std::bind(&Benchmark::thread, this, connection_entries));
             }
         }
         catch (...)
@@ -425,7 +424,7 @@ private:
             std::cerr << percent << "%\t\t";
             for (const auto & info : infos)
             {
-                std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec.\t";
+                std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec." << "\t";
             }
             std::cerr << "\n";
         };
@@ -460,7 +459,7 @@ private:
 
         auto print_percentile = [&json_out](Stats & info, auto percent, bool with_comma = true)
         {
-            json_out << "\"" << percent << "\": " << info.sampler.quantileNearest(percent / 100.0) << (with_comma ? ",\n" : "\n");
+            json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileNearest(percent / 100.0) << (with_comma ? ",\n" : "\n");
         };
 
         json_out << "{\n";
@@ -540,7 +539,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("password",      value<std::string>()->default_value(""),          "")
             ("database",      value<std::string>()->default_value("default"),   "")
             ("stacktrace",                                                      "print stack traces of exceptions")
-            ("confidence",    value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
+            ("confidence",    value<size_t>()->default_value(5),                "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id",      value<std::string>()->default_value(""),         "")
         ;
 
@@ -550,8 +549,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         boost::program_options::notify(options);
-
-        clearPasswordFromCommandLine(argc, argv);
 
         if (options.count("help"))
         {

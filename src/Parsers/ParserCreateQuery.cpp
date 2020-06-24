@@ -53,7 +53,12 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserIdentifierWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserFunction().parse(pos, node, expected);
+    ParserFunction function_or_array;
+    if (function_or_array.parse(pos, node, expected))
+        return true;
+
+    ParserNestedTable nested;
+    return nested.parse(pos, node, expected);
 }
 
 bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -80,7 +85,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_granularity("GRANULARITY");
 
     ParserIdentifier name_p;
-    ParserDataType data_type_p;
+    ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
 
@@ -98,7 +103,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!s_type.ignore(pos, expected))
         return false;
 
-    if (!data_type_p.parse(pos, type, expected))
+    if (!ident_with_optional_params_p.parse(pos, type, expected))
         return false;
 
     if (!s_granularity.ignore(pos, expected))
@@ -152,7 +157,7 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
 
     ParserIndexDeclaration index_p;
     ParserConstraintDeclaration constraint_p;
-    ParserColumnDeclaration column_p{true, true};
+    ParserColumnDeclaration column_p;
 
     ASTPtr new_node = nullptr;
 
@@ -484,12 +489,15 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
+    ParserStorage storage_p;
+    ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
 
     ASTPtr table;
     ASTPtr to_table;
     ASTPtr columns_list;
+    ASTPtr storage;
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;
@@ -790,6 +798,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserToken s_dot(TokenType::Dot);
     ParserDictionaryAttributeDeclarationList attributes_p;
     ParserDictionary dictionary_p;
+
 
     bool if_not_exists = false;
 

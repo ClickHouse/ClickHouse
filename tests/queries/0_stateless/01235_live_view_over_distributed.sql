@@ -17,4 +17,3 @@ SELECT * FROM lv;
 DROP TABLE visits;
 DROP TABLE visits_layer;
 
-DROP TABLE lv;

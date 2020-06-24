@@ -14,27 +14,15 @@ using namespace DB;
 
 TEST(zkutil, ZookeeperConnected)
 {
-    /// In our CI infrastructure it is typical that ZooKeeper is unavailable for some amount of time.
-    size_t i;
-    for (i = 0; i < 100; ++i)
+    try
     {
-        try
-        {
-            auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
-            zookeeper->exists("/");
-            zookeeper->createIfNotExists("/clickhouse_test", "Unit tests of ClickHouse");
-        }
-        catch (...)
-        {
-            std::cerr << "Zookeeper is unavailable, try " << i << std::endl;
-            sleep(1);
-            continue;
-        }
-        break;
+        auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
+        zookeeper->exists("/");
+        zookeeper->createIfNotExists("/clickhouse_test", "Unit tests of ClickHouse");
     }
-    if (i == 100)
+    catch (...)
     {
-        std::cerr << "No zookeeper after " << i << " tries. skip tests." << std::endl;
+        std::cerr << "No zookeeper. skip tests." << std::endl;
         exit(0);
     }
 }
@@ -98,7 +86,7 @@ TEST(zkutil, MultiAsync)
         ops.clear();
 
         auto res = fut.get();
-        ASSERT_EQ(res.error, Coordination::Error::ZOK);
+        ASSERT_EQ(res.error, Coordination::ZOK);
         ASSERT_EQ(res.responses.size(), 2);
     }
 
@@ -138,15 +126,15 @@ TEST(zkutil, MultiAsync)
 
         /// The test is quite heavy. It is normal if session is expired during this test.
         /// If we don't check that, the test will be flacky.
-        if (res.error != Coordination::Error::ZSESSIONEXPIRED && res.error != Coordination::Error::ZCONNECTIONLOSS)
+        if (res.error != Coordination::ZSESSIONEXPIRED && res.error != Coordination::ZCONNECTIONLOSS)
         {
-            ASSERT_EQ(res.error, Coordination::Error::ZNODEEXISTS);
+            ASSERT_EQ(res.error, Coordination::ZNODEEXISTS);
             ASSERT_EQ(res.responses.size(), 2);
         }
     }
     catch (const Coordination::Exception & e)
     {
-        if (e.code != Coordination::Error::ZSESSIONEXPIRED && e.code != Coordination::Error::ZCONNECTIONLOSS)
+        if (e.code != Coordination::ZSESSIONEXPIRED && e.code != Coordination::ZCONNECTIONLOSS)
             throw;
     }
 }

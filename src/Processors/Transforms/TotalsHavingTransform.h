@@ -1,6 +1,5 @@
-#pragma once
-
 #include <Processors/ISimpleTransform.h>
+
 #include <Common/Arena.h>
 
 namespace DB
@@ -36,8 +35,6 @@ public:
 
     Status prepare() override;
     void work() override;
-
-    static Block transformHeader(Block block, const ExpressionActionsPtr & expression, bool final);
 
 protected:
     void transform(Chunk & chunk) override;

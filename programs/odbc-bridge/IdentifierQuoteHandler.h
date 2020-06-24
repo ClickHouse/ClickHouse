@@ -1,15 +1,14 @@
 #pragma once
-
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequestHandler.h>
+#include <Common/config.h>
 
-#if USE_ODBC
-
-/// This handler establishes connection to database, and retrieve quote style identifier
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+/** This handler establish connection to database, and retrieve quote style identifier
+  */
 namespace DB
 {
-
 class IdentifierQuoteHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
@@ -24,7 +23,5 @@ private:
     Poco::Logger * log;
     size_t keep_alive_timeout;
 };
-
 }
-
 #endif

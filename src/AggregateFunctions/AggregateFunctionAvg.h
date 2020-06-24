@@ -71,13 +71,13 @@ public:
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         writeBinary(this->data(place).numerator, buf);
-        writeBinary(this->data(place).denominator, buf);
+        writeVarUInt(this->data(place).denominator, buf);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
         readBinary(this->data(place).numerator, buf);
-        readBinary(this->data(place).denominator, buf);
+        readVarUInt(this->data(place).denominator, buf);
     }
 
     void insertResultInto(AggregateDataPtr place, IColumn & to) const override

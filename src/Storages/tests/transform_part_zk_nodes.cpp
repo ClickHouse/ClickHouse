@@ -76,7 +76,7 @@ try
         }
         catch (const Coordination::Exception & e)
         {
-            if (e.code == Coordination::Error::ZNONODE)
+            if (e.code == Coordination::ZNONODE)
                 continue;
             throw;
         }

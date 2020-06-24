@@ -8,6 +8,7 @@
 #include <Poco/NullChannel.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
@@ -118,13 +119,13 @@ void LocalServer::tryInitPath()
 }
 
 
-static void attachSystemTables(const Context & context)
+static void attachSystemTables()
 {
     DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
     if (!system_database)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE, context);
+        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE);
         DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
     }
 
@@ -135,7 +136,7 @@ static void attachSystemTables(const Context & context)
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
-    Poco::Logger * log = &logger();
+    Logger * log = &logger();
     ThreadStatus thread_status;
     UseSSL use_ssl;
 
@@ -202,7 +203,7 @@ try
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
     applyCmdOptions();
 
@@ -211,16 +212,16 @@ try
         /// Lock path directory before read
         status.emplace(context->getPath() + "status");
 
-        LOG_DEBUG(log, "Loading metadata from {}", context->getPath());
+        LOG_DEBUG(log, "Loading metadata from " << context->getPath());
         loadMetadataSystem(*context);
-        attachSystemTables(*context);
+        attachSystemTables();
         loadMetadata(*context);
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else
     {
-        attachSystemTables(*context);
+        attachSystemTables();
     }
 
     processQueries();
@@ -278,7 +279,7 @@ void LocalServer::processQueries()
     context->makeSessionContext();
     context->makeQueryContext();
 
-    context->setUser("default", "", Poco::Net::SocketAddress{});
+    context->setUser("default", "", Poco::Net::SocketAddress{}, "");
     context->setCurrentQueryId("");
     applyCmdSettings();
 

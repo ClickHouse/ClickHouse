@@ -11,8 +11,19 @@ PEERDIR(
 SRCS(
     clickhouse-server.cpp
 
+    HTTPHandler.cpp
+    HTTPHandlerFactory.cpp
+    InterserverIOHTTPHandler.cpp
     MetricsTransmitter.cpp
+    MySQLHandler.cpp
+    MySQLHandlerFactory.cpp
+    NotFoundHandler.cpp
+    PrometheusMetricsWriter.cpp
+    PrometheusRequestHandler.cpp
+    ReplicasStatusHandler.cpp
+    StaticRequestHandler.cpp
     Server.cpp
+    TCPHandler.cpp
 )
 
 END()

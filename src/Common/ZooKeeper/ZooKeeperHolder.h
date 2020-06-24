@@ -70,7 +70,7 @@ private:
     mutable std::mutex mutex;
     ZooKeeper::Ptr ptr;
 
-    Poco::Logger * log = &Poco::Logger::get("ZooKeeperHolder");
+    Logger * log = &Logger::get("ZooKeeperHolder");
 
     static std::string nullptr_exception_message;
 };

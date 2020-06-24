@@ -44,8 +44,6 @@ class SourceWithProgress : public ISourceWithProgress
 {
 public:
     using ISourceWithProgress::ISourceWithProgress;
-    /// If enable_auto_progress flag is set, progress() will be automatically called on each generated chunk.
-    SourceWithProgress(Block header, bool enable_auto_progress);
 
     using LocalLimits = IBlockInputStream::LocalLimits;
     using LimitsMode = IBlockInputStream::LimitsMode;
@@ -78,9 +76,6 @@ private:
     /// This flag checks if progress() was manually called at generate() call.
     /// If not, it will be called for chunk after generate() was finished.
     bool was_progress_called = false;
-
-    /// If enabled, progress() will be automatically called on each generated chunk.
-    bool auto_progress = true;
 };
 
 }

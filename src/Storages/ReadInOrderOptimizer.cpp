@@ -30,7 +30,7 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
         forbidden_columns.insert(elem.first);
 }
 
-InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage) const
+InputSortingInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage) const
 {
     Names sorting_key_columns;
     if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
@@ -122,7 +122,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage
     if (order_key_prefix_descr.empty())
         return {};
 
-    return std::make_shared<InputOrderInfo>(std::move(order_key_prefix_descr), read_direction);
+    return std::make_shared<InputSortingInfo>(std::move(order_key_prefix_descr), read_direction);
 }
 
 }

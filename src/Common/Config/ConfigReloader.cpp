@@ -85,11 +85,10 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
     {
         ConfigProcessor config_processor(path);
         ConfigProcessor::LoadedConfig loaded_config;
-
-        LOG_DEBUG(log, "Loading config '{}'", path);
-
         try
         {
+            LOG_DEBUG(log, "Loading config '" << path << "'");
+
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
             if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
@@ -127,8 +126,6 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             need_reload_from_zk = false;
         }
 
-        LOG_DEBUG(log, "Loaded config '{}', performing update on configuration", path);
-
         try
         {
             updater(loaded_config.configuration);
@@ -139,8 +136,6 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
                 throw;
             tryLogCurrentException(log, "Error updating configuration from '" + path + "' config.");
         }
-
-        LOG_DEBUG(log, "Loaded config '{}', performed update on configuration", path);
     }
 }
 

@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -39,7 +38,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 {
     std::unordered_set<String> skip_indexes_column_names_set;
     for (const auto & index : writer->getSkipIndices())
-        std::copy(index->index.column_names.cbegin(), index->index.column_names.cend(),
+        std::copy(index->columns.cbegin(), index->columns.cend(),
                   std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
     Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 

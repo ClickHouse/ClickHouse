@@ -13,7 +13,6 @@ void registerDictionaries()
         registerDictionarySourceClickHouse(source_factory);
         registerDictionarySourceMongoDB(source_factory);
         registerDictionarySourceRedis(source_factory);
-        registerDictionarySourceCassandra(source_factory);
         registerDictionarySourceXDBC(source_factory);
         registerDictionarySourceJDBC(source_factory);
         registerDictionarySourceExecutable(source_factory);
@@ -26,7 +25,6 @@ void registerDictionaries()
         registerDictionaryRangeHashed(factory);
         registerDictionaryComplexKeyHashed(factory);
         registerDictionaryComplexKeyCache(factory);
-        registerDictionaryComplexKeyDirect(factory);
 #if !defined(ARCADIA_BUILD)
         registerDictionaryTrie(factory);
 #endif
@@ -34,7 +32,6 @@ void registerDictionaries()
         registerDictionaryHashed(factory);
         registerDictionaryCache(factory);
         registerDictionaryPolygon(factory);
-        registerDictionaryDirect(factory);
     }
 }
 

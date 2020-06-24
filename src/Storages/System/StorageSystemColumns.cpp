@@ -12,7 +12,6 @@
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -32,7 +31,6 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "table",              std::make_shared<DataTypeString>() },
         { "name",               std::make_shared<DataTypeString>() },
         { "type",               std::make_shared<DataTypeString>() },
-        { "position",           std::make_shared<DataTypeUInt64>() },
         { "default_kind",       std::make_shared<DataTypeString>() },
         { "default_expression", std::make_shared<DataTypeString>() },
         { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
@@ -132,10 +130,11 @@ protected:
 
             bool check_access_for_columns = check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
 
-            size_t position = 0;
             for (const auto & column : columns)
             {
-                ++position;
+                if (column.is_virtual)
+                    continue;
+
                 if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 
@@ -150,8 +149,6 @@ protected:
                     res_columns[res_index++]->insert(column.name);
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.type->getName());
-                if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(position);
 
                 if (column.default_desc.expression)
                 {
@@ -306,7 +303,7 @@ Pipes StorageSystemColumns::read(
             const DatabasePtr database = databases.at(database_name);
             offsets[i] = i ? offsets[i - 1] : 0;
 
-            for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
             {
                 if (const auto & table = iterator->table())
                 {

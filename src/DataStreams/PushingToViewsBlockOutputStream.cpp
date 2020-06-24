@@ -5,7 +5,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
@@ -41,25 +40,15 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     /// We need special context for materialized views insertions
     if (!dependencies.empty())
     {
-        select_context = std::make_unique<Context>(context);
-        insert_context = std::make_unique<Context>(context);
-
-        const auto & insert_settings = insert_context->getSettingsRef();
-
+        views_context = std::make_unique<Context>(context);
         // Do not deduplicate insertions into MV if the main insertion is Ok
         if (disable_deduplication_for_children)
-            insert_context->setSetting("insert_deduplicate", false);
-
-        // Separate min_insert_block_size_rows/min_insert_block_size_bytes for children
-        if (insert_settings.min_insert_block_size_rows_for_materialized_views.changed)
-            insert_context->setSetting("min_insert_block_size_rows", insert_settings.min_insert_block_size_rows_for_materialized_views.value);
-        if (insert_settings.min_insert_block_size_bytes_for_materialized_views.changed)
-            insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
+            views_context->setSetting("insert_deduplicate", false);
     }
 
     for (const auto & database_table : dependencies)
     {
-        auto dependent_table = DatabaseCatalog::instance().getTable(database_table, context);
+        auto dependent_table = DatabaseCatalog::instance().getTable(database_table);
 
         ASTPtr query;
         BlockOutputStreamPtr out;
@@ -72,39 +61,38 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
-            query = materialized_view->getSelectQuery().inner_query;
+            query = materialized_view->getInnerQuery();
 
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->table_id = inner_table_id;
 
             /// Get list of columns we get from select query.
-            auto header = InterpreterSelectQuery(query, *select_context, SelectQueryOptions().analyze())
+            auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze())
                     .getSampleBlock();
 
             /// Insert only columns returned by select.
             auto list = std::make_shared<ASTExpressionList>();
-            const auto & inner_table_columns = inner_table->getColumns();
             for (auto & column : header)
                 /// But skip columns which storage doesn't have.
-                if (inner_table_columns.hasPhysical(column.name))
+                if (inner_table->hasColumn(column.name))
                     list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
             insert->columns = std::move(list);
 
             ASTPtr insert_query_ptr(insert.release());
-            InterpreterInsertQuery interpreter(insert_query_ptr, *insert_context);
+            InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
             BlockIO io = interpreter.execute();
             out = io.out;
         }
         else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
-            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *insert_context, ASTPtr(), true);
+            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr(), true);
         else
-            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *insert_context, ASTPtr());
+            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr());
 
         views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr});
     }
 
-    /// Do not push to destination table if the flag is set
+    /* Do not push to destination table if the flag is set */
     if (!no_destination)
     {
         output = storage->write(query_ptr, context);
@@ -310,13 +298,12 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// We create a table with the same name as original table and the same alias columns,
             ///  but it will contain single block (that is INSERT-ed into main table).
             /// InterpreterSelectQuery will do processing of alias columns.
-
-            Context local_context = *select_context;
+            Context local_context = *views_context;
             local_context.addViewSource(
-                StorageValues::create(
-                    storage->getStorageID(), storage->getColumns(), block, storage->getVirtuals()));
+                    StorageValues::create(storage->getStorageID(), storage->getColumns(),
+                                          block));
             select.emplace(view.query, local_context, SelectQueryOptions());
-            in = std::make_shared<MaterializingBlockInputStream>(select->execute().getInputStream());
+            in = std::make_shared<MaterializingBlockInputStream>(select->execute().in);
 
             /// Squashing is needed here because the materialized view query can generate a lot of blocks
             /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY

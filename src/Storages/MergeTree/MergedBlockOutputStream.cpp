@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Interpreters/Context.h>
 #include <Poco/File.h>
 
 
@@ -50,7 +49,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         }
     }
 
-    volume->getDisk()->createDirectories(part_path);
+    disk->createDirectories(part_path);
 
     writer = data_part->getWriter(columns_list, skip_indices, default_codec, writer_settings);
     writer->initPrimaryIndex();
@@ -100,14 +99,14 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
     {
-        new_part->partition.store(storage, volume->getDisk(), part_path, checksums);
+        new_part->partition.store(storage, disk, part_path, checksums);
         if (new_part->minmax_idx.initialized)
-            new_part->minmax_idx.store(storage, volume->getDisk(), part_path, checksums);
+            new_part->minmax_idx.store(storage, disk, part_path, checksums);
         else if (rows_count)
             throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
                 + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        auto count_out = volume->getDisk()->writeFile(part_path + "count.txt", 4096);
+        auto count_out = disk->writeFile(part_path + "count.txt", 4096);
         HashingWriteBuffer count_out_hashing(*count_out);
         writeIntText(rows_count, count_out_hashing);
         count_out_hashing.next();
@@ -118,7 +117,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     if (!new_part->ttl_infos.empty())
     {
         /// Write a file with ttl infos in json format.
-        auto out = volume->getDisk()->writeFile(part_path + "ttl.txt", 4096);
+        auto out = disk->writeFile(part_path + "ttl.txt", 4096);
         HashingWriteBuffer out_hashing(*out);
         new_part->ttl_infos.write(out_hashing);
         checksums.files["ttl.txt"].file_size = out_hashing.count();
@@ -129,13 +128,13 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     {
         /// Write a file with a description of columns.
-        auto out = volume->getDisk()->writeFile(part_path + "columns.txt", 4096);
+        auto out = disk->writeFile(part_path + "columns.txt", 4096);
         part_columns.writeText(*out);
     }
 
     {
         /// Write file with checksums.
-        auto out = volume->getDisk()->writeFile(part_path + "checksums.txt", 4096);
+        auto out = disk->writeFile(part_path + "checksums.txt", 4096);
         checksums.write(*out);
     }
 
@@ -157,12 +156,12 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     std::unordered_set<String> skip_indexes_column_names_set;
-    for (const auto & index : storage.getSecondaryIndices())
-        std::copy(index.column_names.cbegin(), index.column_names.cend(),
+    for (const auto & index : storage.skip_indices)
+        std::copy(index->columns.cbegin(), index->columns.cend(),
                 std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
     Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 
-    Block primary_key_block = getBlockAndPermute(block, storage.getPrimaryKeyColumns(), permutation);
+    Block primary_key_block = getBlockAndPermute(block, storage.primary_key_columns, permutation);
     Block skip_indexes_block = getBlockAndPermute(block, skip_indexes_column_names, permutation);
 
     writer->write(block, permutation, primary_key_block, skip_indexes_block);

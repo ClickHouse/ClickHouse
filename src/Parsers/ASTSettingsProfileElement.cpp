@@ -31,7 +31,7 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
         return;
     }
 
-    settings.ostr << setting_name;
+    settings.ostr << name;
 
     if (!value.isNull())
     {

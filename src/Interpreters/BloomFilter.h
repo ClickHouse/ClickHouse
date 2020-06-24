@@ -11,15 +11,6 @@
 
 namespace DB
 {
-struct BloomFilterParameters
-{
-    /// size of filter in bytes.
-    size_t filter_size;
-    /// number of used hash functions.
-    size_t filter_hashes;
-    /// random seed for hash functions generation.
-    size_t seed;
-};
 
 class BloomFilter
 {
@@ -28,7 +19,6 @@ public:
     using UnderType = UInt64;
     using Container = std::vector<UnderType>;
 
-    BloomFilter(const BloomFilterParameters & params);
     /// size -- size of filter in bytes.
     /// hashes -- number of used hash functions.
     /// seed -- random seed for hash functions generation.
