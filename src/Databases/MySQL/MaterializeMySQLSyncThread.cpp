@@ -62,7 +62,7 @@ static inline DatabaseMaterializeMySQL & getDatabase(const String & database_nam
     if (DatabaseMaterializeMySQL * database_materialize = typeid_cast<DatabaseMaterializeMySQL *>(database.get()))
         return *database_materialize;
 
-    throw Exception("", ErrorCodes::LOGICAL_ERROR);
+    throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
 }
 
 MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
@@ -77,8 +77,7 @@ MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
             }
 
             sync_cond.notify_one();
-//            sync_task_handler->deactivate();
-//            flush_task_handler->deactivate();
+            /// TODO: join thread
         }
     }
     catch (...)
@@ -96,17 +95,6 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     /// TODO: 做简单的check, 失败即报错
     startSynchronization();
 }
-
-/*MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
-    const Context & context, const String & database_name_, const String & metadata_path_
-    , const ASTStorage * database_engine_define_, const String & mysql_database_name_, mysqlxx::Pool && pool_
-    , MySQLClient && client_ , std::unique_ptr<MaterializeMySQLSettings> settings_)
-    : DatabaseMaterializeMySQL(std::make_shared<DatabaseOrdinary>(database_name_, metadata_path_, context), database_engine_define_->clone(), "MaterializeMySQLSyncThread")
-    , global_context(context.getGlobalContext()), metadata_path(metadata_path_), mysql_database_name(mysql_database_name_)
-    , pool(std::move(pool_)), client(std::move(client_)), settings(std::move(settings_))
-{
-
-}*/
 
 void MaterializeMySQLSyncThread::synchronization()
 {
@@ -158,9 +146,7 @@ void MaterializeMySQLSyncThread::synchronization()
 
 void MaterializeMySQLSyncThread::startSynchronization()
 {
-//    if (!background_thread_pool->joinable())
-//        throw Exception("", ErrorCodes::LOGICAL_ERROR);
-
+    /// TODO: reset exception.
     background_thread_pool = std::make_unique<ThreadFromGlobalPool>([this]() { synchronization(); });
 }
 
