@@ -26,13 +26,17 @@ namespace ErrorCodes
 
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
+    if (ast->as<ASTQueryParameter>())
+        visitQueryParameter(ast);
+    else
+        visitChildren(ast);
+}
+
+
+void ReplaceQueryParameterVisitor::visitChildren(ASTPtr & ast)
+{
     for (auto & child : ast->children)
-    {
-        if (child->as<ASTQueryParameter>())
-            visitQueryParameter(child);
-        else
-            visit(child);
-    }
+        visit(child);
 }
 
 const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
