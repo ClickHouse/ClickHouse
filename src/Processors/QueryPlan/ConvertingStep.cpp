@@ -46,4 +46,34 @@ void ConvertingStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
+Strings ConvertingStep::describeActions() const
+{
+    const auto & header = input_streams[0].header;
+    auto conversion = ConvertingTransform(header, result_header, ConvertingTransform::MatchColumnsMode::Name)
+            .getConversion();
+
+    Strings res;
+
+    auto get_description = [](const ColumnWithTypeAndName & elem, bool is_const)
+    {
+        return elem.name + " " + elem.type->getName() + (is_const ? " Const" : "");
+    };
+
+    for (size_t i = 0; i < conversion.size(); ++i)
+    {
+        const auto & from = header.getByPosition(conversion[i]);
+        const auto & to = result_header.getByPosition(i);
+
+        bool from_const = from.column && isColumnConst(*from.column);
+        bool to_const = to.column && isColumnConst(*to.column);
+
+        if (from.name == to.name && from.type->equals(*to.type) && from_const == to_const)
+            res.emplace_back(get_description(from, from_const));
+        else
+            res.emplace_back(get_description(to, to_const) + " <- " + get_description(from, from_const));
+    }
+
+    return res;
+}
+
 }

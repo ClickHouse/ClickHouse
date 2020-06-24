@@ -5,14 +5,16 @@
 namespace DB
 {
 
-class OffsetsStep : public ITransformingStep
+class OffsetStep : public ITransformingStep
 {
 public:
-    OffsetsStep(const DataStream & input_stream_, size_t offset_);
+    OffsetStep(const DataStream & input_stream_, size_t offset_);
 
-    String getName() const override { return "Offsets"; }
+    String getName() const override { return "Offset"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
+
+    Strings describeActions() const override;
 
 private:
     size_t offset;

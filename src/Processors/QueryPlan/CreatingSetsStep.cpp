@@ -35,4 +35,21 @@ void CreatingSetsStep::transformPipeline(QueryPipeline & pipeline)
     pipeline.addCreatingSetsTransform(std::move(creating_sets));
 }
 
+Strings CreatingSetsStep::describeActions() const
+{
+    Strings res;
+    for (const auto & set : subqueries_for_sets)
+    {
+        String str;
+        if (set.second.set)
+            str += "Set: ";
+        else if (set.second.join)
+            str += "Join: ";
+
+        str += set.first;
+    }
+
+    return res;
+}
+
 }

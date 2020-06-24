@@ -15,6 +15,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    Strings describeActions() const override;
+
 private:
     size_t group_length;
     size_t group_offset;

@@ -24,6 +24,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    Strings describeActions() const override;
+
 private:
     SortDescription description;
     size_t max_merged_block_size;

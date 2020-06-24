@@ -19,6 +19,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    Strings describeActions() const override;
+
 private:
     SortDescription prefix_description;
     SortDescription result_description;

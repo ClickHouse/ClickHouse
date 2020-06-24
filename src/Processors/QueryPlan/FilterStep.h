@@ -19,6 +19,8 @@ public:
     String getName() const override { return "Filter"; }
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    Strings describeActions() const override;
+
 private:
     ExpressionActionsPtr expression;
     String filter_column_name;

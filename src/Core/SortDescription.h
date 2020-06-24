@@ -71,4 +71,7 @@ struct SortColumnDescription
 /// Description of the sorting rule for several columns.
 using SortDescription = std::vector<SortColumnDescription>;
 
+class Block;
+String dumpSortDescription(const SortDescription & description, const Block & header);
+
 }

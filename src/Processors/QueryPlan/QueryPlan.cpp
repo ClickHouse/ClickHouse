@@ -207,7 +207,7 @@ static void explainStep(
             for (const auto & elem : step.getOutputStream().header)
             {
                 if (!first)
-                    buffer << ",\n" << prefix << "        ";
+                    buffer << "\n" << prefix << "        ";
 
                 first = false;
                 elem.dumpStructure(buffer, true);
@@ -222,17 +222,8 @@ static void explainStep(
         auto actions = step.describeActions();
         if (!actions.empty())
         {
-            buffer << "Actions: ";
-            bool first = true;
-
             for (auto & action : actions)
-            {
-                if (!first)
-                    buffer << ",\n" << prefix << "         ";
-
-                first = false;
-                buffer << action;
-            }
+                buffer << prefix << action << '\n';
         }
     }
 }

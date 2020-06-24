@@ -37,4 +37,23 @@ void LimitByStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
+Strings LimitByStep::describeActions() const
+{
+    Strings res;
+    String columns_str;
+    for (const auto & column : columns)
+    {
+        if (!columns_str.empty())
+            columns_str += ", ";
+
+        columns_str += column;
+    }
+
+    return {
+        "Columns: " + columns_str,
+        "Length " + std::to_string(group_length),
+        "Offset " + std::to_string(group_offset),
+    };
+}
+
 }

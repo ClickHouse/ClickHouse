@@ -50,4 +50,14 @@ void PartialSortingStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
+Strings PartialSortingStep::describeActions() const
+{
+    Strings res = {"Sort description: " + dumpSortDescription(sort_description, input_streams.front().header)};
+
+    if (limit)
+        res.emplace_back("Limit " + std::to_string(limit));
+
+    return res;
+}
+
 }

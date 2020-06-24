@@ -22,6 +22,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    Strings describeActions() const override;
+
 private:
     AggregatingTransformParamsPtr params;
     bool memory_efficient_aggregation;

@@ -69,4 +69,17 @@ void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
     }
 }
 
+Strings FinishSortingStep::describeActions() const
+{
+    Strings res = {
+        "Prefix sort description: " + dumpSortDescription(prefix_description, input_streams.front().header),
+        "Result sort description: " + dumpSortDescription(result_description, input_streams.front().header)
+    };
+
+    if (limit)
+        res.emplace_back("Limit " + std::to_string(limit));
+
+    return res;
+}
+
 }

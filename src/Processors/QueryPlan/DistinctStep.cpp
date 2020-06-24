@@ -65,4 +65,18 @@ void DistinctStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
+Strings DistinctStep::describeActions() const
+{
+    String res;
+    for (const auto & column : columns)
+    {
+        if (!res.empty())
+            res += ", ";
+
+        res += column;
+    }
+
+    return {"Columns: " + res};
+}
+
 }
