@@ -35,4 +35,30 @@ void LimitStep::transformPipeline(QueryPipeline & pipeline)
     pipeline.addPipe({std::move(transform)});
 }
 
+Strings LimitStep::describeActions() const
+{
+    Strings res;
+    res.emplace_back("Limit " + std::to_string(limit));
+    res.emplace_back("Offset " + std::to_string(offset));
+
+    if (with_ties || always_read_till_end)
+    {
+        String str;
+        if (with_ties)
+            str += "WITH TIES";
+
+        if (always_read_till_end)
+        {
+            if (!str.empty())
+                str += ", ";
+
+            str += "Reads all data";
+        }
+
+        res.emplace_back(str);
+    }
+
+    return res;
+}
+
 }

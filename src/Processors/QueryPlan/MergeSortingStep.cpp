@@ -48,4 +48,15 @@ void MergeSortingStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
+Strings MergeSortingStep::describeActions() const
+{
+    Strings res = {"Sort description: " + dumpSortDescription(description, input_streams.front().header)};
+
+    if (limit)
+        res.emplace_back("Limit " + std::to_string(limit));
+
+    return res;
+}
+
+
 }

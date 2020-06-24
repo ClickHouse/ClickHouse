@@ -59,6 +59,21 @@ void ExpressionStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
+static Strings getActionsDescription(const ExpressionActionsPtr & expression)
+{
+    Strings res;
+    for (const auto & action : expression->getActions())
+        res.emplace_back((res.empty() ? "Actions: "
+                                      : "         ") + action.toString());
+
+    return res;
+}
+
+Strings ExpressionStep::describeActions() const
+{
+    return getActionsDescription(expression);
+}
+
 InflatingExpressionStep::InflatingExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_, bool default_totals_)
     : ITransformingStep(
         input_stream_,
@@ -86,6 +101,11 @@ void InflatingExpressionStep::transformPipeline(QueryPipeline & pipeline)
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
         return std::make_shared<InflatingExpressionTransform>(header, expression, on_totals, add_default_totals);
     });
+}
+
+Strings InflatingExpressionStep::describeActions() const
+{
+    return getActionsDescription(expression);
 }
 
 }

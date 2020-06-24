@@ -25,6 +25,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    Strings describeActions() const override;
+
 private:
     bool overflow_row;
     ExpressionActionsPtr expression;

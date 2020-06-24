@@ -15,6 +15,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    Strings describeActions() const override;
+
 private:
     ExpressionActionsPtr expression;
     bool default_totals; /// See ExpressionTransform
@@ -28,6 +30,8 @@ public:
     String getName() const override { return "Expression"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
+
+    Strings describeActions() const override;
 
 private:
     ExpressionActionsPtr expression;

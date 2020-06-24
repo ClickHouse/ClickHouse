@@ -158,21 +158,33 @@ Strings Aggregator::Params::explain() const
     String keys_str;
     for (auto key : keys)
     {
-        if (keys_str.empty())
+        if (!keys_str.empty())
             keys_str += ", ";
 
         if (key >= header.columns())
             keys_str += "unknown position " + std::to_string(key);
         else
-            keys_str += src_header.getByPosition(key).name;
+            keys_str += header.getByPosition(key).name;
     }
 
-    res.emplace_back("keys: " + std::move(keys_str));
+    res.emplace_back("Keys: " + std::move(keys_str));
 
-    for (const auto & aggregate : aggregates)
+    if (!aggregates.empty())
     {
-        auto aggregate_strings = aggregate.explain();
-        res.insert(res.end(), aggregate_strings.begin(), aggregate_strings.end());
+        bool first = true;
+        for (const auto & aggregate : aggregates)
+        {
+            auto aggregate_strings = aggregate.explain();
+            for (const auto & aggregate_str : aggregate_strings)
+            {
+                if (first)
+                    res.emplace_back("Aggregates: " + aggregate_str);
+                else
+                    res.emplace_back("            " + aggregate_str);
+
+                first = false;
+            }
+        }
     }
 
     return res;

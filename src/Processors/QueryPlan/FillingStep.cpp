@@ -27,4 +27,9 @@ void FillingStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
+Strings FillingStep::describeActions() const
+{
+    return {"Sort description: " + dumpSortDescription(sort_description, input_streams.front().header)};
+}
+
 }
