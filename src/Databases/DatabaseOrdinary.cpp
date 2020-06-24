@@ -1,3 +1,5 @@
+#include <boost/filesystem.hpp>
+
 #include <Core/Settings.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
@@ -23,6 +25,7 @@
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 
+namespace fs = boost::filesystem;
 
 namespace DB
 {
@@ -114,10 +117,13 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
     size_t total_dictionaries = 0;
 
     auto process_metadata = [&context, &file_names, &total_dictionaries, this](const String & file_name) {
-        String full_path = getMetadataPath() + file_name;
+        fs::path path(getMetadataPath());
+        fs::path file_path(file_name);
+        fs::path full_path = path / file_path;
+
         try
         {
-            auto ast = parseQueryFromMetadata(log, context, full_path, /*throw_on_error*/ true, /*remove_empty*/ false);
+            auto ast = parseQueryFromMetadata(log, context, full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
@@ -127,7 +133,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
         }
         catch (Exception & e)
         {
-            e.addMessage("Cannot parse definition from metadata file " + full_path);
+            e.addMessage("Cannot parse definition from metadata file " + full_path.string());
             throw;
         }
     };
