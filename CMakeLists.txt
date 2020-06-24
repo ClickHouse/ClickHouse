@@ -288,7 +288,7 @@ endif ()
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
 # For static linking, disable position-independend code for a slight increase in
-# efficiency. This is disabled for arch64, so that we can run the same binary on
+# efficiency. This is disabled for AArch64, so that we can run the same binary on
 # Android which doesn't support ET_EXEC binaries.
 if (MAKE_STATIC_LIBRARIES AND NOT ARCH_ARM)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
