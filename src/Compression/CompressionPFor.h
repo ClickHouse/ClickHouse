@@ -5,8 +5,6 @@
 namespace DB
 {
 
-
-
     class CompressionCodecFactory;
     void registerCodecPFor(CompressionCodecFactory & factory);
 
