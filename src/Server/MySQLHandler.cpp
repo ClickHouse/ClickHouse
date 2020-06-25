@@ -254,7 +254,8 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     packet.readPayload(payload);
     String database = connection_context.getCurrentDatabase();
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, connection_context);
-    for (const NameAndTypePair & column: table_ptr->getColumns().getAll())
+    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
+    for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(
             database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0

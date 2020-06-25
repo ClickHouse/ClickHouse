@@ -1,4 +1,4 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 DROP DATABASE IF EXISTS db_01115;
 CREATE DATABASE db_01115 Engine = Ordinary;

@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-binary-builder .
+#  docker build -t yandex/clickhouse-binary-builder .
 FROM ubuntu:19.10
 
 RUN apt-get --allow-unauthenticated update -y && apt-get install --yes wget gnupg

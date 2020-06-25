@@ -130,8 +130,8 @@ String InterpreterSelectQuery::generateFilterActions(
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, SyntaxAnalyzerResult({}, storage));
-    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context);
+    auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, SyntaxAnalyzerResult({}, storage, metadata_snapshot));
+    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context, metadata_snapshot);
     actions = analyzer.simpleSelectActions();
 
     return expr_list->children.at(0)->getColumnName();
@@ -166,8 +166,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const StoragePtr & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const SelectQueryOptions & options_)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::nullopt, storage_, options_.copy().noSubquery())
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::nullopt, storage_, options_.copy().noSubquery(), {}, metadata_snapshot_)
 {}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
@@ -215,7 +216,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     std::optional<Pipe> input_pipe_,
     const StoragePtr & storage_,
     const SelectQueryOptions & options_,
-    const Names & required_result_column_names)
+    const Names & required_result_column_names,
+    const StorageMetadataPtr & metadata_snapshot_)
     : options(options_)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
     , query_ptr(options.modify_inplace ? query_ptr_ : query_ptr_->clone())
@@ -224,6 +226,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , input(input_)
     , input_pipe(std::move(input_pipe_))
     , log(&Poco::Logger::get("InterpreterSelectQuery"))
+    , metadata_snapshot(metadata_snapshot_)
 {
     checkStackSize();
 
@@ -253,13 +256,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        table_lock = storage->lockStructureForShare(
-                false, context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+        table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
+        if (metadata_snapshot == nullptr)
+            metadata_snapshot = storage->getInMemoryMetadataPtr();
     }
 
     if (has_input || !joined_tables.resolveTables())
-        joined_tables.makeFakeTable(storage, source_header);
+        joined_tables.makeFakeTable(storage, metadata_snapshot, source_header);
 
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
@@ -273,7 +277,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             /// Rewritten with subquery. Free storage locks here.
             storage = {};
-            table_lock.release();
+            table_lock.reset();
             table_id = StorageID::createEmpty();
         }
     }
@@ -304,11 +308,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
         if (view)
-            view->replaceWithSubquery(getSelectQuery(), view_table);
+            view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot);
 
         syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
-                query_ptr, SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage),
-                options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
+            query_ptr,
+            SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage, metadata_snapshot),
+            options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
         /// Save scalar sub queries's results in the query context
         if (!options.only_analyze && context->hasQueryContext())
@@ -331,12 +336,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 current_info.query = query_ptr;
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
 
-                MergeTreeWhereOptimizer{current_info, *context, *merge_tree, syntax_analyzer_result->requiredSourceColumns(), log};
+                MergeTreeWhereOptimizer{current_info, *context, *merge_tree, metadata_snapshot, syntax_analyzer_result->requiredSourceColumns(), log};
             }
         }
 
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
-                query_ptr, syntax_analyzer_result, *context,
+                query_ptr, syntax_analyzer_result, *context, metadata_snapshot,
                 NameSet(required_result_column_names.begin(), required_result_column_names.end()),
                 !options.only_analyze, options);
 
@@ -377,14 +382,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (storage)
         {
-            source_header = storage->getSampleBlockForColumns(required_columns);
+            source_header = metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID());
 
             /// Fix source_header for filter actions.
             if (row_policy_filter)
             {
                 filter_info = std::make_shared<FilterInfo>();
                 filter_info->column_name = generateFilterActions(filter_info->actions, row_policy_filter, required_columns);
-                source_header = storage->getSampleBlockForColumns(filter_info->actions->getRequiredColumns());
+                source_header = metadata_snapshot->getSampleBlockForColumns(
+                    filter_info->actions->getRequiredColumns(), storage->getVirtuals(), storage->getStorageID());
             }
         }
 
@@ -497,6 +503,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     analysis_result = ExpressionAnalysisResult(
             *query_analyzer,
+            metadata_snapshot,
             first_stage,
             second_stage,
             options.only_analyze,
@@ -1105,7 +1112,7 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         /// Detect, if ALIAS columns are required for query execution
         auto alias_columns_required = false;
-        const ColumnsDescription & storage_columns = storage->getColumns();
+        const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();
         for (const auto & column_name : required_columns)
         {
             auto column_default = storage_columns.getDefault(column_name);
@@ -1197,7 +1204,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     = ext::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
             }
 
-            auto syntax_result = SyntaxAnalyzer(*context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage);
+            auto syntax_result = SyntaxAnalyzer(*context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage, metadata_snapshot);
             alias_actions = ExpressionAnalyzer(required_columns_all_expr, syntax_result, *context).getActions(true);
 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
@@ -1228,7 +1235,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 prewhere_info->prewhere_actions = std::move(new_actions);
 
                 auto analyzed_result
-                    = SyntaxAnalyzer(*context).analyze(required_columns_from_prewhere_expr, storage->getColumns().getAllPhysical());
+                    = SyntaxAnalyzer(*context).analyze(required_columns_from_prewhere_expr, metadata_snapshot->getColumns().getAllPhysical());
                 prewhere_info->alias_actions
                     = ExpressionAnalyzer(required_columns_from_prewhere_expr, analyzed_result, *context).getActions(true, false);
 
@@ -1332,7 +1339,6 @@ void InterpreterSelectQuery::executeFetchColumns(
     else if (storage)
     {
         /// Table.
-
         if (max_streams == 0)
             throw Exception("Logical error: zero number of streams requested", ErrorCodes::LOGICAL_ERROR);
 
@@ -1360,11 +1366,11 @@ void InterpreterSelectQuery::executeFetchColumns(
                     getSortDescriptionFromGroupBy(query),
                     query_info.syntax_analyzer_result);
 
-            query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage);
+            query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
         }
 
         auto read_step = std::make_unique<ReadFromStorageStep>(
-                table_lock, options, storage,
+            table_lock, metadata_snapshot, options, storage,
                 required_columns, query_info, context, processing_stage, max_block_size, max_streams);
 
         read_step->setStepDescription("Read from " + storage->getName());
