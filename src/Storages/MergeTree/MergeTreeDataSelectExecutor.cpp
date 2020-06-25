@@ -544,6 +544,14 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     if (minmax_idx_condition)
         LOG_DEBUG(log, "MinMax index condition: {}", minmax_idx_condition->toString());
 
+    MergeTreeReaderSettings reader_settings =
+    {
+        .min_bytes_to_use_direct_io = settings.min_bytes_to_use_direct_io,
+        .min_bytes_to_use_mmap_io = settings.min_bytes_to_use_mmap_io,
+        .max_read_buffer_size = settings.max_read_buffer_size,
+        .save_marks_in_cache = true
+    };
+
     /// PREWHERE
     String prewhere_column;
     if (select.prewhere())
@@ -583,7 +591,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
         for (const auto & index_and_condition : useful_indices)
             ranges.ranges = filterMarksUsingIndex(
-                    index_and_condition.first, index_and_condition.second, part, ranges.ranges, settings);
+                index_and_condition.first, index_and_condition.second, part, ranges.ranges, settings, reader_settings);
 
         if (!ranges.ranges.empty())
         {
@@ -604,14 +612,6 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     ProfileEvents::increment(ProfileEvents::SelectedMarks, sum_marks);
 
     Pipes res;
-
-    MergeTreeReaderSettings reader_settings =
-    {
-        .min_bytes_to_use_direct_io = settings.min_bytes_to_use_direct_io,
-        .min_bytes_to_use_mmap_io = settings.min_bytes_to_use_mmap_io,
-        .max_read_buffer_size = settings.max_read_buffer_size,
-        .save_marks_in_cache = true
-    };
 
     /// Projection, that needed to drop columns, which have appeared by execution
     /// of some extra expressions, and to allow execute the same expressions later.
@@ -1405,7 +1405,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexConditionPtr condition,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
-    const Settings & settings) const
+    const Settings & settings,
+    const MergeTreeReaderSettings & reader_settings) const
 {
     if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index_helper->getFileName() + ".idx"))
     {
@@ -1428,9 +1429,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     size_t index_marks_count = (marks_count - final_mark + index_granularity - 1) / index_granularity;
 
     MergeTreeIndexReader reader(
-            index_helper, part,
-            index_marks_count,
-            ranges);
+        index_helper, part,
+        index_marks_count,
+        ranges,
+        reader_settings);
 
     MarkRanges res;
 
