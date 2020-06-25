@@ -1,16 +1,15 @@
 import pytest
 import os
-import time
 from helpers.cluster import ClickHouseCluster
-import random
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
 
 node = cluster.add_instance('node', main_configs=['configs/dictionaries/complex_key_cache_string.xml'])
 
+@pytest.mark.parametrize("placement", ["memory", "ssd"])
 @pytest.fixture(scope="module")
-def started_cluster():
+def started_cluster(placement):
     try:
         cluster.start()
         node.query("create table radars_table (radar_id String, radar_ip String, client_id String) engine=MergeTree() order by radar_id")
