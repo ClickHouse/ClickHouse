@@ -59,7 +59,7 @@ Block InflatingExpressionTransform::readExecute(Chunk & chunk)
             res = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
         if (res)
-            expression->execute(res, not_processed, action_number);
+            expression->execute(res, not_processed);
     }
     else if (not_processed->empty()) /// There's not processed data inside expression.
     {
@@ -67,12 +67,12 @@ Block InflatingExpressionTransform::readExecute(Chunk & chunk)
             res = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
         not_processed.reset();
-        expression->execute(res, not_processed, action_number);
+        expression->execute(res, not_processed);
     }
     else
     {
         res = std::move(not_processed->block);
-        expression->execute(res, not_processed, action_number);
+        expression->execute(res, not_processed);
     }
     return res;
 }

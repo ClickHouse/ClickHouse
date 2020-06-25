@@ -27,7 +27,6 @@ private:
     bool initialized = false;
 
     ExtraBlockPtr not_processed;
-    size_t action_number = 0;
 
     Block readExecute(Chunk & chunk);
 };
