@@ -837,7 +837,8 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view_many (key UInt64, value UInt64)
             ENGINE = MergeTree
-            ORDER BY key;
+            ORDER BY key
+            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
         CREATE MATERIALIZED VIEW test.consumer_many TO test.view_many AS
             SELECT * FROM test.rabbitmq_many;
     ''')
@@ -899,7 +900,8 @@ def test_rabbitmq_sharding_between_channels_and_queues_insert(rabbitmq_cluster):
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view_sharding (key UInt64, value UInt64)
             ENGINE = MergeTree
-            ORDER BY key;
+            ORDER BY key
+            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
         CREATE MATERIALIZED VIEW test.consumer_sharding TO test.view_sharding AS
             SELECT * FROM test.rabbitmq_sharding;
     ''')
@@ -960,7 +962,8 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view_overload (key UInt64, value UInt64)
             ENGINE = MergeTree
-            ORDER BY key;
+            ORDER BY key
+            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
         CREATE MATERIALIZED VIEW test.consumer_overload TO test.view_overload AS
             SELECT * FROM test.rabbitmq_overload;
     ''')
@@ -993,6 +996,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
     while True:
         result = instance.query('SELECT count() FROM test.view_overload')
         time.sleep(1)
+        print("Result", int(result), "Expected", messages_num * threads_num)
         if int(result) == messages_num * threads_num:
             break
 
@@ -1015,7 +1019,8 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
         CREATE TABLE test.destination(key UInt64, value UInt64,
             _consumed_by LowCardinality(String))
         ENGINE = MergeTree()
-        ORDER BY key;
+        ORDER BY key
+        SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
     ''')
 
     num_tables = 5

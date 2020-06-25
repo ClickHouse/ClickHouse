@@ -46,10 +46,10 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , chunk_size(chunk_size_)
 {
 
-    loop = new uv_loop_t;
-    uv_loop_init(loop);
+    loop = std::make_unique<uv_loop_t>();
+    uv_loop_init(loop.get());
 
-    event_handler = std::make_unique<RabbitMQHandler>(loop, log);
+    event_handler = std::make_unique<RabbitMQHandler>(loop.get(), log);
     connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(), AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
 
     /* The reason behind making a separate connection for each concurrent producer is explained here:
@@ -59,7 +59,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
     size_t cnt_retries = 0;
     while (!connection->ready() && ++cnt_retries != Loop_retries_max)
     {
-        uv_run(loop, UV_RUN_NOWAIT);
+        uv_run(loop.get(), UV_RUN_NOWAIT);
         std::this_thread::sleep_for(std::chrono::milliseconds(Connection_setup_sleep));
     }
 
