@@ -327,8 +327,12 @@ struct ExpressionActionsChain
 
     ExpressionActionsPtr getLastActions(bool allow_empty = false)
     {
-        if (steps.empty() && !allow_empty)
+        if (steps.empty())
+        {
+            if (allow_empty)
+                return {};
             throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+        }
 
         return steps.back().actions;
     }
