@@ -484,6 +484,7 @@ const char * auto_contributors[] {
     "glockbender",
     "hao.he",
     "hcz",
+    "hexiaoting",
     "hotid",
     "igor",
     "igor.lapko",
