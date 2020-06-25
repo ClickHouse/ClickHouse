@@ -270,7 +270,8 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
-void MergeTreeData::checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach) const
+void MergeTreeData::checkProperties(
+    const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach) const
 {
     if (!new_metadata.sorting_key.definition_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -343,12 +344,12 @@ void MergeTreeData::checkProperties(const StorageInMemoryMetadata & new_metadata
             for (const String & col : used_columns)
             {
                 if (!added_columns.contains(col) || deleted_columns.contains(col))
-                    throw Exception("Existing column " + col + " is used in the expression that was "
+                    throw Exception("Existing column " + backQuoteIfNeed(col) + " is used in the expression that was "
                         "added to the sorting key. You can add expressions that use only the newly added columns",
                         ErrorCodes::BAD_ARGUMENTS);
 
                 if (new_metadata.columns.getDefaults().count(col))
-                    throw Exception("Newly added column " + col + " has a default expression, so adding "
+                    throw Exception("Newly added column " + backQuoteIfNeed(col) + " has a default expression, so adding "
                         "expressions that use it to the sorting key is forbidden",
                         ErrorCodes::BAD_ARGUMENTS);
             }
@@ -1219,6 +1220,69 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
     }
 }
 
+/// Conversion that is allowed for partition key.
+/// Partition key should be serialized in the same way after conversion.
+/// NOTE: The list is not complete.
+/// TODO: Provide generic code.
+bool isSafeForPartitionKeyConversion(const IDataType * from, const IDataType * to)
+{
+    if (from->getName() == to->getName())
+        return true;
+
+    /// Enums are serialized in partition key as numbers - so conversion from Enum to number is Ok.
+    /// But not from number to Enum because Enum does not necessarily represents all numbers.
+    /// Numbers are serialized in text - so extending the type of number is Ok.
+    /// Conversion to/from Floats and DateTimes can also be allowed, but we don't enable it deliberately.
+
+    static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
+        {
+            { typeid(DataTypeEnum8),    typeid(DataTypeEnum8)  },
+            { typeid(DataTypeEnum8),    typeid(DataTypeEnum16) },
+            { typeid(DataTypeEnum8),    typeid(DataTypeInt8)   },
+            { typeid(DataTypeEnum8),    typeid(DataTypeInt16)  },
+            { typeid(DataTypeEnum8),    typeid(DataTypeInt32)  },
+            { typeid(DataTypeEnum8),    typeid(DataTypeInt64)  },
+
+            { typeid(DataTypeEnum16),   typeid(DataTypeEnum16) },
+            { typeid(DataTypeEnum16),   typeid(DataTypeInt16)  },
+            { typeid(DataTypeEnum16),   typeid(DataTypeInt32)  },
+            { typeid(DataTypeEnum16),   typeid(DataTypeInt64)  },
+
+            { typeid(DataTypeUInt8),    typeid(DataTypeUInt16) },
+            { typeid(DataTypeUInt8),    typeid(DataTypeUInt32) },
+            { typeid(DataTypeUInt8),    typeid(DataTypeUInt64) },
+            { typeid(DataTypeUInt8),    typeid(DataTypeInt16)  },
+            { typeid(DataTypeUInt8),    typeid(DataTypeInt32)  },
+            { typeid(DataTypeUInt8),    typeid(DataTypeInt64)  },
+
+            { typeid(DataTypeInt8),     typeid(DataTypeInt16)  },
+            { typeid(DataTypeInt8),     typeid(DataTypeInt32)  },
+            { typeid(DataTypeInt8),     typeid(DataTypeInt64)  },
+
+            { typeid(DataTypeUInt16),   typeid(DataTypeUInt32) },
+            { typeid(DataTypeUInt16),   typeid(DataTypeUInt64) },
+            { typeid(DataTypeUInt16),   typeid(DataTypeInt32)  },
+            { typeid(DataTypeUInt16),   typeid(DataTypeInt64)  },
+
+            { typeid(DataTypeInt16),    typeid(DataTypeInt32)  },
+            { typeid(DataTypeInt16),    typeid(DataTypeInt64)  },
+
+            { typeid(DataTypeUInt32),   typeid(DataTypeUInt64) },
+            { typeid(DataTypeUInt32),   typeid(DataTypeInt64)  },
+
+            { typeid(DataTypeInt32),    typeid(DataTypeInt64)  },
+        };
+
+    auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
+    for (auto it = it_range.first; it != it_range.second; ++it)
+    {
+        if (it->second == typeid(*to))
+            return true;
+    }
+
+    return false;
+}
+
 }
 
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Settings &) const
@@ -1235,13 +1299,22 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     /// (and not as a part of some expression) and if the ALTER only affects column metadata.
     NameSet columns_alter_type_metadata_only;
 
+    /// Columns to check that the type change is safe for partition key.
+    NameSet columns_alter_type_check_safe_for_partition;
+
     if (old_metadata.hasPartitionKey())
     {
-        /// Forbid altering partition key columns because it can change partition ID format.
-        /// TODO: in some cases (e.g. adding an Enum value) a partition key column can still be ALTERed.
-        /// We should allow it.
-        for (const String & col : old_metadata.getColumnsRequiredForPartitionKey())
-            columns_alter_type_forbidden.insert(col);
+        /// Forbid altering columns inside partition key expressions because it can change partition ID format.
+        auto partition_key_expr = old_metadata.getPartitionKey().expression;
+        for (const ExpressionAction & action : partition_key_expr->getActions())
+        {
+            auto action_columns = action.getNeededColumns();
+            columns_alter_type_forbidden.insert(action_columns.begin(), action_columns.end());
+        }
+
+        /// But allow to alter columns without expressions under certain condition.
+        for (const String & col : partition_key_expr->getRequiredColumns())
+            columns_alter_type_check_safe_for_partition.insert(col);
     }
 
     for (const auto & index : old_metadata.getSecondaryIndices())
@@ -1287,7 +1360,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         }
         if (command.type == AlterCommand::RENAME_COLUMN)
         {
-            if (columns_alter_type_forbidden.count(command.column_name) || columns_alter_type_metadata_only.count(command.column_name))
+            if (columns_alter_type_forbidden.count(command.column_name)
+                || columns_alter_type_metadata_only.count(command.column_name)
+                || columns_alter_type_check_safe_for_partition.count(command.column_name))
             {
                 throw Exception(
                     "Trying to ALTER RENAME key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
@@ -1297,7 +1372,20 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         else if (command.isModifyingData(getInMemoryMetadata()))
         {
             if (columns_alter_type_forbidden.count(command.column_name))
-                throw Exception("ALTER of key column " + command.column_name + " is forbidden", ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                throw Exception("ALTER of key column " + backQuoteIfNeed(command.column_name) + " is forbidden", ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+
+            if (columns_alter_type_check_safe_for_partition.count(command.column_name))
+            {
+                if (command.type == AlterCommand::MODIFY_COLUMN)
+                {
+                    auto it = old_types.find(command.column_name);
+                    if (it == old_types.end() || !isSafeForPartitionKeyConversion(it->second, command.data_type.get()))
+                        throw Exception("ALTER of partition key column " + backQuoteIfNeed(command.column_name) + " from type "
+                                + it->second->getName() + " to type " + command.data_type->getName()
+                                + " is not safe because it can change the representation of partition key in data part name",
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                }
+            }
 
             if (columns_alter_type_metadata_only.count(command.column_name))
             {
@@ -1305,7 +1393,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 {
                     auto it = old_types.find(command.column_name);
                     if (it == old_types.end() || !isMetadataOnlyConversion(it->second, command.data_type.get()))
-                        throw Exception("ALTER of key column " + command.column_name + " must be metadata-only",
+                        throw Exception("ALTER of key column " + backQuoteIfNeed(command.column_name) + " from type "
+                            + it->second->getName() + " to type " + command.data_type->getName() + " must be metadata-only",
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
                 }
             }
@@ -1313,7 +1402,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     }
 
     checkProperties(new_metadata, old_metadata);
-
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (old_metadata.hasSettingsChanges())
