@@ -340,6 +340,13 @@ struct ExpressionActionsChain
         return steps.back();
     }
 
+    Step & lastStep(const NamesAndTypesList & columns)
+    {
+        if (steps.empty())
+            steps.emplace_back(std::make_shared<ExpressionActions>(columns, context));
+        return steps.back();
+    }
+
     std::string dumpChain();
 };
 
