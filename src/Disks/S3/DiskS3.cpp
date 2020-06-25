@@ -466,6 +466,11 @@ void DiskS3::clearDirectory(const String & path)
             remove(it->path());
 }
 
+void DiskS3::sync(const String & /*path*/) const
+{
+    throw Exception("Method sync is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 void DiskS3::moveFile(const String & from_path, const String & to_path)
 {
     if (exists(to_path))

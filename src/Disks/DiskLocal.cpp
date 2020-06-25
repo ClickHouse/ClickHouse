@@ -8,7 +8,7 @@
 
 #include <IO/createReadBufferFromFileBase.h>
 #include <IO/createWriteBufferFromFileBase.h>
-
+#include <unistd.h>
 
 namespace DB
 {
@@ -19,6 +19,9 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int PATH_ACCESS_DENIED;
     extern const int INCORRECT_DISK_INDEX;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_FSYNC;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -186,6 +189,18 @@ void DiskLocal::clearDirectory(const String & path)
 void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 {
     Poco::File(disk_path + from_path).renameTo(disk_path + to_path);
+}
+
+void DiskLocal::sync(const String & path) const
+{
+    String full_path = disk_path + path;
+    int fd = ::open(full_path.c_str(), O_RDONLY);
+    if (-1 == fd)
+        throwFromErrnoWithPath("Cannot open file " + full_path, full_path,
+                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+
+    if (-1 == fsync(fd))
+        throwFromErrnoWithPath("Cannot fsync " + full_path, full_path, ErrorCodes::CANNOT_FSYNC);
 }
 
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
