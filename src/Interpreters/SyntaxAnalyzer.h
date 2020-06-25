@@ -11,6 +11,7 @@ namespace DB
 {
 
 class ASTFunction;
+struct ASTTablesInSelectQueryElement;
 class TableJoin;
 class Context;
 struct Settings;
@@ -24,6 +25,7 @@ struct SyntaxAnalyzerResult
     ConstStoragePtr storage;
     StorageMetadataPtr metadata_snapshot;
     std::shared_ptr<TableJoin> analyzed_join;
+    const ASTTablesInSelectQueryElement * ast_join = nullptr;
 
     NamesAndTypesList source_columns;
     NameSet source_columns_set; /// Set of names of source_columns.
