@@ -1,0 +1,36 @@
+<test>
+    <settings>
+        <max_threads>4</max_threads>
+        <use_uncompressed_cache>1</use_uncompressed_cache>
+        <merge_tree_max_rows_to_use_cache>2000000000</merge_tree_max_rows_to_use_cache>
+        <merge_tree_max_bytes_to_use_cache>10000000000</merge_tree_max_bytes_to_use_cache>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>format</name>
+            <values>
+                <value>Memory</value>
+                <value>MergeTree ORDER BY tuple()</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>type</name>
+            <values>
+                <value>Float64</value>
+                <value>Float64 NULL</value>
+                <value>Float32</value>
+                <value>Float32 NULL</value>
+                <value>Int32</value>
+                <value>Int32 NULL</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE zz (x Float64) ENGINE {engine}</create_query>
+    <fill_query>INSERT INTO zz SELECT rand() FROM numbers(1000000000)</fill_query>
+
+    <query>SELECT sum(x) FROM zz</query>
+
+    <drop_query>DROP TABLE IF EXISTS zz</drop_query>
+</test>
