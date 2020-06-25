@@ -71,6 +71,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
+    extern const int CANNOT_PARSE_UUID;
 }
 
 class InputStreamReadBufferAdapter : public avro::InputStream
