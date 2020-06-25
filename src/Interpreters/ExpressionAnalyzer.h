@@ -11,7 +11,6 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 
-
 namespace DB
 {
 
@@ -32,8 +31,11 @@ class ASTExpressionList;
 class ASTSelectQuery;
 struct ASTTablesInSelectQueryElement;
 
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
 /// Create columns in block or return false if not possible
-bool sanitizeBlock(Block & block);
+bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
@@ -202,6 +204,7 @@ struct ExpressionAnalysisResult
 
     ExpressionAnalysisResult(
         SelectQueryExpressionAnalyzer & query_analyzer,
+        const StorageMetadataPtr & metadata_snapshot,
         bool first_stage,
         bool second_stage,
         bool only_types,
@@ -232,11 +235,14 @@ public:
         const ASTPtr & query_,
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
+        const StorageMetadataPtr & metadata_snapshot_,
         const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
         const SelectQueryOptions & options_ = {})
-    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_)
-    ,   required_result_columns(required_result_columns_), query_options(options_)
+        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_)
+        , metadata_snapshot(metadata_snapshot_)
+        , required_result_columns(required_result_columns_)
+        , query_options(options_)
     {
     }
 
@@ -260,6 +266,7 @@ public:
     void appendProjectResult(ExpressionActionsChain & chain) const;
 
 private:
+    StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.
     NameSet required_result_columns;
     SelectQueryOptions query_options;

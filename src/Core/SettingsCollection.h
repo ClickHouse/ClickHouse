@@ -302,6 +302,7 @@ using SettingDateTimeInputFormat = SettingEnum<FormatSettings::DateTimeInputForm
 enum class LogsLevel
 {
     none = 0,    /// Disable
+    fatal,
     error,
     warning,
     information,
@@ -330,7 +331,7 @@ using SettingLogQueriesType = SettingEnum<QueryLogElementType>;
 
 enum class SettingsBinaryFormat
 {
-    OLD,     /// Part of the settings are serialized as strings, and other part as varints. This is the old behaviour.
+    OLD,     /// Part of the settings are serialized as strings, and other part as variants. This is the old behaviour.
     STRINGS, /// All settings are serialized as strings. Before each value the flag `is_ignorable` is serialized.
     DEFAULT = STRINGS,
 };
@@ -548,6 +549,9 @@ public:
 
     /// Gathers all changed values (e.g. for applying them later to another collection of settings).
     SettingsChanges changes() const;
+
+    // A debugging aid.
+    std::string dumpChangesToString() const;
 
     /// Applies change to concrete setting.
     void applyChange(const SettingChange & change);

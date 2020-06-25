@@ -89,6 +89,7 @@ public:
 
     Pipes read(
         const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
@@ -98,13 +99,17 @@ public:
     std::optional<UInt64> totalRows() const override;
     std::optional<UInt64> totalBytes() const override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
-    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context) override;
+    bool optimize(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context) override;
 
-    void alter(const AlterCommands & params, const Context & query_context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & query_context, TableLockHolder & table_lock_holder) override;
 
-    void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
+    void alterPartition(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const PartitionCommands & commands,
+        const Context & query_context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
@@ -115,7 +120,7 @@ public:
       */
     void drop() override;
 
-    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
@@ -162,7 +167,7 @@ public:
     /// Get replica delay relative to current time.
     time_t getAbsoluteDelay() const;
 
-    /// If the absolute delay is greater than min_relative_delay_to_yield_leadership,
+    /// If the absolute delay is greater than min_relative_delay_to_measure,
     /// will also calculate the difference from the unprocessed time of the best replica.
     /// NOTE: Will communicate to ZooKeeper to calculate relative delay.
     void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay);
@@ -179,6 +184,10 @@ public:
     bool canUseAdaptiveGranularity() const override;
 
     int getMetadataVersion() const { return metadata_version; }
+
+    /** Remove a specific replica from zookeeper.
+     */
+    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, Poco::Logger * logger);
 
 private:
 
@@ -297,20 +306,20 @@ private:
     /** Creates the minimum set of nodes in ZooKeeper and create first replica.
       * Returns true if was created, false if exists.
       */
-    bool createTableIfNotExists();
+    bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot);
 
     /** Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
       */
-    void createReplica();
+    void createReplica(const StorageMetadataPtr & metadata_snapshot);
 
     /** Create nodes in the ZK, which must always be, but which might not exist when older versions of the server are running.
       */
     void createNewZooKeeperNodes();
 
-    void checkTableStructure(const String & zookeeper_prefix);
+    void checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
-    /// Must be called under IStorage::lockStructureForAlter() lock.
+    /// Must be called under IStorage::lockForAlter() lock.
     void setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff);
 
     /** Check that the set of parts corresponds to that in ZK (/replicas/me/parts/).
@@ -324,7 +333,7 @@ private:
       * If no one has such a part, nothing checks.
       * Not very reliable: if two replicas add a part almost at the same time, no checks will occur.
       * Adds actions to `ops` that add data about the part into ZooKeeper.
-      * Call under TableStructureLock.
+      * Call under lockForShare.
       */
     void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const DataPartPtr & part,
                                            Coordination::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
@@ -497,10 +506,6 @@ private:
       */
     bool waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
-    /// Choose leader replica, send requst to it and wait.
-    /// Only makes sense when old ClickHouse versions are working on the same cluster, because now we allow multiple leaders.
-    void sendRequestToLeaderReplica(const ASTPtr & query, const Context & query_context);
-
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;
 
@@ -523,12 +528,9 @@ private:
     bool dropPartsInPartition(zkutil::ZooKeeper & zookeeper, String & partition_id,
         StorageReplicatedMergeTree::LogEntry & entry, bool detach);
 
-    /// Find cluster address for host
-    std::optional<Cluster::Address> findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const;
-
     // Partition helpers
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
-    void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
+    void attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & query_context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & query_context);
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & query_context);

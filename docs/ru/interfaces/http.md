@@ -244,7 +244,7 @@ X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_ro
 -   `read_bytes` — объём прочитанных данных в байтах.
 -   `total_rows_to_read` — общее количество строк для чтения.
 -   `written_rows` — количество записанных строк.
--   `written_bytes` — объём прочитанных данных в байтах.
+-   `written_bytes` — объём записанных данных в байтах.
 
 Запущенные запросы не останавливаются автоматически при разрыве HTTP соединения. Парсинг и форматирование данных производится на стороне сервера и использование сети может быть неэффективным.
 Может быть передан необязательный параметр query\_id - идентификатор запроса, произвольная строка. Подробнее смотрите раздел «Настройки, replace\_running\_query».
@@ -276,7 +276,7 @@ $ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&
 ### Пример {#primer}
 
 ``` bash
-$ curl -sS "<address>?param_id=2¶m_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
+$ curl -sS "http://localhost:8123/?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
 ## Предопределенный HTTP интерфейс {#predefined_http_interface}

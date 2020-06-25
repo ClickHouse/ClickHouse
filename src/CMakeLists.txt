@@ -88,6 +88,7 @@ list (APPEND dbms_sources
     AggregateFunctions/AggregateFunctionFactory.cpp
     AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
     AggregateFunctions/AggregateFunctionState.cpp
+    AggregateFunctions/AggregateFunctionCount.cpp
     AggregateFunctions/parseAggregateFunctionParameters.cpp)
 
 list (APPEND dbms_headers
@@ -96,6 +97,7 @@ list (APPEND dbms_headers
     AggregateFunctions/AggregateFunctionFactory.h
     AggregateFunctions/AggregateFunctionCombinatorFactory.h
     AggregateFunctions/AggregateFunctionState.h
+    AggregateFunctions/AggregateFunctionCount.cpp
     AggregateFunctions/FactoryHelpers.h
     AggregateFunctions/parseAggregateFunctionParameters.h)
 
@@ -157,6 +159,7 @@ add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
+add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
