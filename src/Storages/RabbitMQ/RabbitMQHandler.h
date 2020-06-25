@@ -31,7 +31,7 @@ private:
 
     timeval tv;
     std::atomic<bool> stop_scheduled = false;
-    std::timed_mutex mutex_before_event_loop;
+    std::mutex mutex_before_event_loop;
     std::mutex mutex_before_loop_stop;
 };
 

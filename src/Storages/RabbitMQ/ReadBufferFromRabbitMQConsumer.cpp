@@ -46,7 +46,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
         , consumer_channel(std::move(consumer_channel_))
-        , eventHandler(eventHandler_)
+        , event_handler(eventHandler_)
         , exchange_name(exchange_name_)
         , routing_keys(routing_keys_)
         , channel_id(channel_id_)
@@ -372,7 +372,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
              * executing all callbacks on the connection (not only its own), then there should be some point to unblock.
              * loop_started == 1 if current consumer is started the loop and not another.
              */
-            if (!loop_started.load() && !eventHandler.checkStopIsScheduled())
+            if (!loop_started.load() && !event_handler.checkStopIsScheduled())
             {
                 stopEventLoopWithTimeout();
             }
@@ -415,19 +415,19 @@ void ReadBufferFromRabbitMQConsumer::checkSubscription()
 
 void ReadBufferFromRabbitMQConsumer::stopEventLoop()
 {
-    eventHandler.stop();
+    event_handler.stop();
 }
 
 
 void ReadBufferFromRabbitMQConsumer::stopEventLoopWithTimeout()
 {
-    eventHandler.stopWithTimeout();
+    event_handler.stopWithTimeout();
 }
 
 
 void ReadBufferFromRabbitMQConsumer::startEventLoop(std::atomic<bool> & loop_started)
 {
-    eventHandler.startConsumerLoop(loop_started);
+    event_handler.startConsumerLoop(loop_started);
 }
 
 
