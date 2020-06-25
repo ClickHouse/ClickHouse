@@ -1340,6 +1340,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     if (!merging_params.sign_column.empty())
         columns_alter_type_forbidden.insert(merging_params.sign_column);
 
+    /// All of the above.
+    NameSet columns_in_keys;
+    columns_in_keys.insert(columns_alter_type_forbidden.begin(), columns_alter_type_forbidden.end());
+    columns_in_keys.insert(columns_alter_type_metadata_only.begin(), columns_alter_type_metadata_only.end());
+    columns_in_keys.insert(columns_alter_type_check_safe_for_partition.begin(), columns_alter_type_check_safe_for_partition.end());
+
     std::map<String, const IDataType *> old_types;
     for (const auto & column : old_metadata.getColumns().getAllPhysical())
         old_types.emplace(column.name, column.type.get());
@@ -1360,19 +1366,27 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         }
         if (command.type == AlterCommand::RENAME_COLUMN)
         {
-            if (columns_alter_type_forbidden.count(command.column_name)
-                || columns_alter_type_metadata_only.count(command.column_name)
-                || columns_alter_type_check_safe_for_partition.count(command.column_name))
+            if (columns_in_keys.count(command.column_name))
             {
                 throw Exception(
                     "Trying to ALTER RENAME key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
             }
         }
+        else if (command.type == AlterCommand::DROP_COLUMN)
+        {
+            if (columns_in_keys.count(command.column_name))
+            {
+                throw Exception(
+                    "Trying to ALTER DROP key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+            }
+        }
         else if (command.isModifyingData(getInMemoryMetadata()))
         {
             if (columns_alter_type_forbidden.count(command.column_name))
-                throw Exception("ALTER of key column " + backQuoteIfNeed(command.column_name) + " is forbidden", ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                throw Exception("ALTER of key column " + backQuoteIfNeed(command.column_name) + " is forbidden",
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
 
             if (columns_alter_type_check_safe_for_partition.count(command.column_name))
             {
