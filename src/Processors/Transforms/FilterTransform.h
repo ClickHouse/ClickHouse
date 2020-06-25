@@ -19,6 +19,12 @@ public:
         const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false);
 
+    static Block transformHeader(
+            Block header,
+            const ExpressionActionsPtr & expression,
+            const String & filter_column_name,
+            bool remove_filter_column);
+
     String getName() const override { return "FilterTransform"; }
 
     Status prepare() override;

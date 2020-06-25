@@ -22,6 +22,8 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTWatchQuery.h>
+#include <Parsers/Lexer.h>
 
 #include <Storages/StorageInput.h>
 
@@ -41,7 +43,6 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Parsers/ASTWatchQuery.h>
 
 
 namespace ProfileEvents
@@ -70,11 +71,35 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
         ast.checkSize(settings.max_ast_elements);
 }
 
-/// NOTE This is wrong in case of single-line comments and in case of multiline string literals.
+
 static String joinLines(const String & query)
 {
-    String res = query;
-    std::replace(res.begin(), res.end(), '\n', ' ');
+    /// Care should be taken. We don't join lines inside non-whitespace tokens (e.g. multiline string literals)
+    ///  and we don't join line after comment (because it can be single-line comment).
+    /// All other whitespaces replaced to a single whitespace.
+
+    String res;
+    const char * begin = query.data();
+    const char * end = begin + query.size();
+
+    Lexer lexer(begin, end);
+    Token token = lexer.nextToken();
+    for (; !token.isEnd(); token = lexer.nextToken())
+    {
+        if (token.type == TokenType::Whitespace)
+        {
+            res += ' ';
+        }
+        else if (token.type == TokenType::Comment)
+        {
+            res.append(token.begin, token.end);
+            if (token.end < end && *token.end == '\n')
+                res += '\n';
+        }
+        else
+            res.append(token.begin, token.end);
+    }
+
     return res;
 }
 
@@ -326,8 +351,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     StoragePtr storage = context.executeTableFunction(input_function);
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
-                    BlockInputStreamPtr input_stream = std::make_shared<InputStreamFromASTInsertQuery>(ast, istr,
-                        input_storage.getSampleBlock(), context, input_function);
+                    auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
+                    BlockInputStreamPtr input_stream = std::make_shared<InputStreamFromASTInsertQuery>(
+                        ast, istr, input_metadata_snapshot->getSampleBlock(), context, input_function);
                     input_storage.setInputStream(input_stream);
                 }
             }

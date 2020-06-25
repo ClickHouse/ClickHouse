@@ -1,6 +1,4 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 37
 toc_title: "\u7248\u672C\u96C6\u5408\u5728\u65B0\u6811"
 ---
@@ -33,23 +31,23 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 有关查询参数的说明，请参阅 [查询说明](../../../sql-reference/statements/create.md).
 
-**发动机参数**
+**引擎参数**
 
 ``` sql
 VersionedCollapsingMergeTree(sign, version)
 ```
 
--   `sign` — Name of the column with the type of row: `1` 是一个 “state” 行, `-1` 是一个 “cancel” 划
+-   `sign` — 指定行类型的列名: `1` 是一个 “state” 行, `-1` 是一个 “cancel” 划
 
     列数据类型应为 `Int8`.
 
--   `version` — Name of the column with the version of the object state.
+-   `version` — 指定对象状态版本的列名。
 
     列数据类型应为 `UInt*`.
 
-**查询子句**
+**查询 Clauses**
 
-当创建一个 `VersionedCollapsingMergeTree` 表，相同 [条款](mergetree.md) 需要创建一个时 `MergeTree` 桌子
+当创建一个 `VersionedCollapsingMergeTree` 表时，跟创建一个 `MergeTree`表的时候需要相同 [Clause](mergetree.md) 
 
 <details markdown="1">
 
@@ -69,17 +67,17 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 所有的参数，除了 `sign` 和 `version` 具有相同的含义 `MergeTree`.
 
--   `sign` — Name of the column with the type of row: `1` 是一个 “state” 行, `-1` 是一个 “cancel” 划
+-   `sign` — 指定行类型的列名: `1` 是一个 “state” 行, `-1` 是一个 “cancel” 划
 
     Column Data Type — `Int8`.
 
--   `version` — Name of the column with the version of the object state.
+-   `version` — 指定对象状态版本的列名。
 
     列数据类型应为 `UInt*`.
 
 </details>
 
-## 崩溃 {#table_engines_versionedcollapsingmergetree}
+## 折叠 {#table_engines_versionedcollapsingmergetree}
 
 ### 数据 {#data}
 
@@ -125,23 +123,23 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 1.  写入数据的程序应该记住对象的状态以取消它。 该 “cancel” 字符串应该是 “state” 与相反的字符串 `Sign`. 这增加了存储的初始大小，但允许快速写入数据。
 2.  列中长时间增长的数组由于写入负载而降低了引擎的效率。 数据越简单，效率就越高。
-3.  `SELECT` 结果很大程度上取决于对象变化历史的一致性。 准备插入数据时要准确。 您可以通过不一致的数据获得不可预测的结果，例如会话深度等非负指标的负值。
+3.  `SELECT` 结果很大程度上取决于对象变化历史的一致性。 准备插入数据时要准确。 不一致的数据将导致不可预测的结果，例如会话深度等非负指标的负值。
 
 ### 算法 {#table_engines-versionedcollapsingmergetree-algorithm}
 
-当ClickHouse合并数据部分时，它会删除具有相同主键和版本且不同主键和版本的每对行 `Sign`. 行的顺序并不重要。
+当ClickHouse合并数据部分时，它会删除具有相同主键和版本但 `Sign`值不同的一对行. 行的顺序并不重要。
 
 当ClickHouse插入数据时，它会按主键对行进行排序。 如果 `Version` 列不在主键中，ClickHouse将其隐式添加到主键作为最后一个字段并使用它进行排序。
 
 ## 选择数据 {#selecting-data}
 
-ClickHouse不保证具有相同主键的所有行都将位于相同的结果数据部分中，甚至位于相同的物理服务器上。 对于写入数据和随后合并数据部分都是如此。 此外，ClickHouse流程 `SELECT` 具有多个线程的查询，并且无法预测结果中的行顺序。 这意味着聚合是必需的，如果有必要得到完全 “collapsed” 从数据 `VersionedCollapsingMergeTree` 桌子
+ClickHouse不保证具有相同主键的所有行都将位于相同的结果数据部分中，甚至位于相同的物理服务器上。 对于写入数据和随后合并数据部分都是如此。 此外，ClickHouse流程 `SELECT` 具有多个线程的查询，并且无法预测结果中的行顺序。 这意味着，如果有必要从`VersionedCollapsingMergeTree` 表中得到完全 “collapsed” 的数据，聚合是必需的。
 
 要完成折叠，请使用 `GROUP BY` 考虑符号的子句和聚合函数。 例如，要计算数量，请使用 `sum(Sign)` 而不是 `count()`. 要计算的东西的总和，使用 `sum(Sign * x)` 而不是 `sum(x)`，并添加 `HAVING sum(Sign) > 0`.
 
 聚合 `count`, `sum` 和 `avg` 可以这样计算。 聚合 `uniq` 如果对象至少具有一个非折叠状态，则可以计算。 聚合 `min` 和 `max` 无法计算是因为 `VersionedCollapsingMergeTree` 不保存折叠状态值的历史记录。
 
-如果您需要提取数据 “collapsing” 但是，如果没有聚合（例如，要检查是否存在其最新值与某些条件匹配的行），则可以使用 `FINAL` 修饰符 `FROM` 条款 这种方法效率低下，不应与大型表一起使用。
+如果您需要提取数据 “collapsing” 但是，如果没有聚合（例如，要检查是否存在其最新值与某些条件匹配的行），则可以使用 `FINAL` 修饰 `FROM` 条件这种方法效率低下，不应与大型表一起使用。
 
 ## 使用示例 {#example-of-use}
 
@@ -233,6 +231,6 @@ SELECT * FROM UAct FINAL
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
 ```
 
-这是一个非常低效的方式来选择数据。 不要把它用于大桌子。
+这是一个非常低效的方式来选择数据。 不要把它用于数据量大的表。
 
 [原始文章](https://clickhouse.tech/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->

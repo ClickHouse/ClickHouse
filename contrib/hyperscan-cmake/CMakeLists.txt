@@ -219,16 +219,16 @@ if (ENABLE_HYPERSCAN)
 
         target_compile_definitions (hyperscan PUBLIC USE_HYPERSCAN=1)
         target_compile_options (hyperscan
-            PRIVATE -g0 -march=corei7 # library has too much debug information
-            PUBLIC -Wno-documentation
+            PRIVATE -g0 # Library has too much debug information
+            -march=corei7 -O2 -fno-strict-aliasing -fno-omit-frame-pointer -fvisibility=hidden # The options from original build system
+            -fno-sanitize=undefined # Assume the library takes care of itself
         )
         target_include_directories (hyperscan
             PRIVATE
                 common
                 ${LIBRARY_DIR}/include
-            PUBLIC
-                ${LIBRARY_DIR}/src
         )
+        target_include_directories (hyperscan SYSTEM PUBLIC ${LIBRARY_DIR}/src)
         if (ARCH_AMD64)
             target_include_directories (hyperscan PRIVATE x86_64)
         endif ()

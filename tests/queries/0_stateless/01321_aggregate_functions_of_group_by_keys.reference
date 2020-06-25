@@ -1,0 +1,105 @@
+0	0
+0	1
+0	2
+1	0
+1	1
+1	2
+0	0
+0	1
+0	2
+1	0
+1	1
+1	2
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+1
+2
+2
+3
+3
+4
+4
+4
+5
+6
+6
+6
+8
+8
+9
+10
+12
+12
+12
+15
+16
+18
+20
+24
+0
+0
+SELECT \n    number % 2 AS a,\n    number % 3 AS b\nFROM numbers(10000000)\nGROUP BY \n    number % 2,\n    number % 3\nORDER BY \n    min(number % 2) AS a ASC,\n    max(number % 3) AS b ASC
+SELECT \n    number % 2 AS a,\n    number % 3 AS b\nFROM numbers(10000000)\nGROUP BY \n    number % 2,\n    number % 3\nORDER BY \n    any(number % 2) AS a ASC,\n    anyLast(number % 3) AS b ASC
+SELECT (number % 5) * (number % 7) AS a\nFROM numbers(10000000)\nGROUP BY \n    number % 7,\n    number % 5\nORDER BY max((number % 5) * (number % 7)) AS a ASC
+SELECT foo\nFROM \n(\n    SELECT number AS foo\n    FROM numbers(1)\n    GROUP BY number\n)
+0	0
+0	1
+0	2
+1	0
+1	1
+1	2
+0	0
+0	1
+0	2
+1	0
+1	1
+1	2
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+1
+2
+2
+3
+3
+4
+4
+4
+5
+6
+6
+6
+8
+8
+9
+10
+12
+12
+12
+15
+16
+18
+20
+24
+0
+SELECT \n    min(number % 2) AS a,\n    max(number % 3) AS b\nFROM numbers(10000000)\nGROUP BY \n    number % 2,\n    number % 3\nORDER BY \n    a ASC,\n    b ASC
+SELECT \n    any(number % 2) AS a,\n    anyLast(number % 3) AS b\nFROM numbers(10000000)\nGROUP BY \n    number % 2,\n    number % 3\nORDER BY \n    a ASC,\n    b ASC
+SELECT max((number % 5) * (number % 7)) AS a\nFROM numbers(10000000)\nGROUP BY \n    number % 7,\n    number % 5\nORDER BY a ASC
+SELECT foo\nFROM \n(\n    SELECT anyLast(number) AS foo\n    FROM numbers(1)\n    GROUP BY number\n)

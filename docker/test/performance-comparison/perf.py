@@ -14,57 +14,21 @@ import traceback
 def tsv_escape(s):
     return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r','')
 
-stage_start_seconds = time.perf_counter()
-
-def report_stage_end(stage_name):
-    global stage_start_seconds
-    print('{}\t{}'.format(stage_name, time.perf_counter() - stage_start_seconds))
-    stage_start_seconds = time.perf_counter()
-
-report_stage_end('start')
-
 parser = argparse.ArgumentParser(description='Run performance test.')
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
 parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs=1, help='test description file')
 parser.add_argument('--host', nargs='*', default=['localhost'], help="Server hostname(s). Corresponds to '--port' options.")
 parser.add_argument('--port', nargs='*', default=[9000], help="Server port(s). Corresponds to '--host' options.")
 parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 13)), help='Number of query runs per server. Defaults to CHPC_RUNS environment variable.')
-parser.add_argument('--no-long', type=bool, default=True, help='Skip the tests tagged as long.')
+parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
+parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
+parser.add_argument('--print-settings', action='store_true', help='Print test settings and exit.')
 args = parser.parse_args()
 
 test_name = os.path.splitext(os.path.basename(args.file[0].name))[0]
 
 tree = et.parse(args.file[0])
 root = tree.getroot()
-
-# Skip long tests
-for tag in root.findall('.//tag'):
-    if tag.text == 'long':
-        print('skipped\tTest is tagged as long.')
-        sys.exit(0)
-
-# Check main metric
-main_metric_element = root.find('main_metric/*')
-if main_metric_element is not None and main_metric_element.tag != 'min_time':
-    raise Exception('Only the min_time main metric is supported. This test uses \'{}\''.format(main_metric_element.tag))
-
-# FIXME another way to detect infinite tests. They should have an appropriate main_metric but sometimes they don't.
-infinite_sign = root.find('.//average_speed_not_changing_for_ms')
-if infinite_sign is not None:
-    raise Exception('Looks like the test is infinite (sign 1)')
-
-# Print report threshold for the test if it is set.
-if 'max_ignored_relative_change' in root.attrib:
-    print(f'report-threshold\t{root.attrib["max_ignored_relative_change"]}')
-
-# Open connections
-servers = [{'host': host, 'port': port} for (host, port) in zip(args.host, args.port)]
-connections = [clickhouse_driver.Client(**server) for server in servers]
-
-for s in servers:
-    print('server\t{}\t{}'.format(s['host'], s['port']))
-
-report_stage_end('connect')
 
 # Process query parameters
 subst_elems = root.findall('substitutions/substitution')
@@ -84,7 +48,54 @@ def substitute_parameters(query_templates):
                 for values_combo in itertools.product(*values)])
     return result
 
-report_stage_end('substitute')
+# Build a list of test queries, processing all substitutions
+test_query_templates = [q.text for q in root.findall('query')]
+test_queries = substitute_parameters(test_query_templates)
+
+# If we're only asked to print the queries, do that and exit
+if args.print_queries:
+    for q in test_queries:
+        print(q)
+    exit(0)
+
+# If we're only asked to print the settings, do that and exit. These are settings
+# for clickhouse-benchmark, so we print them as command line arguments, e.g.
+# '--max_memory_usage=10000000'.
+if args.print_settings:
+    for s in root.findall('settings/*'):
+        print(f'--{s.tag}={s.text}')
+
+    exit(0)
+
+# Skip long tests
+if not args.long:
+    for tag in root.findall('.//tag'):
+        if tag.text == 'long':
+            print('skipped\tTest is tagged as long.')
+            sys.exit(0)
+
+# Check main metric to detect infinite tests. We shouldn't have such tests anymore,
+# but we did in the past, and it is convenient to be able to process old tests.
+main_metric_element = root.find('main_metric/*')
+if main_metric_element is not None and main_metric_element.tag != 'min_time':
+    raise Exception('Only the min_time main metric is supported. This test uses \'{}\''.format(main_metric_element.tag))
+
+# Another way to detect infinite tests. They should have an appropriate main_metric
+# but sometimes they don't.
+infinite_sign = root.find('.//average_speed_not_changing_for_ms')
+if infinite_sign is not None:
+    raise Exception('Looks like the test is infinite (sign 1)')
+
+# Print report threshold for the test if it is set.
+if 'max_ignored_relative_change' in root.attrib:
+    print(f'report-threshold\t{root.attrib["max_ignored_relative_change"]}')
+
+# Open connections
+servers = [{'host': host, 'port': port} for (host, port) in zip(args.host, args.port)]
+connections = [clickhouse_driver.Client(**server) for server in servers]
+
+for s in servers:
+    print('server\t{}\t{}'.format(s['host'], s['port']))
 
 # Run drop queries, ignoring errors. Do this before all other activity, because
 # clickhouse_driver disconnects on error (this is not configurable), and the new
@@ -97,8 +108,6 @@ for c in connections:
             c.execute(q)
         except:
             pass
-
-report_stage_end('drop1')
 
 # Apply settings.
 # If there are errors, report them and continue -- maybe a new test uses a setting
@@ -115,8 +124,6 @@ for c in connections:
         except:
             print(traceback.format_exc(), file=sys.stderr)
 
-report_stage_end('settings')
-
 # Check tables that should exist. If they don't exist, just skip this test.
 tables = [e.text for e in root.findall('preconditions/table_exists')]
 for t in tables:
@@ -128,8 +135,6 @@ for t in tables:
             skipped_message = ' '.join(exception_message.split('\n')[:2])
             print(f'skipped\t{tsv_escape(skipped_message)}')
             sys.exit(0)
-
-report_stage_end('preconditions')
 
 # Run create queries
 create_query_templates = [q.text for q in root.findall('create_query')]
@@ -145,14 +150,7 @@ for c in connections:
     for q in fill_queries:
         c.execute(q)
 
-report_stage_end('fill')
-
 # Run test queries
-test_query_templates = [q.text for q in root.findall('query')]
-test_queries = substitute_parameters(test_query_templates)
-
-report_stage_end('substitute2')
-
 for query_index, q in enumerate(test_queries):
     query_prefix = f'{test_name}.query{query_index}'
 
@@ -199,13 +197,9 @@ for query_index, q in enumerate(test_queries):
     client_seconds = time.perf_counter() - start_seconds
     print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')
 
-report_stage_end('benchmark')
-
 # Run drop queries
 drop_query_templates = [q.text for q in root.findall('drop_query')]
 drop_queries = substitute_parameters(drop_query_templates)
 for c in connections:
     for q in drop_queries:
         c.execute(q)
-
-report_stage_end('drop2')
