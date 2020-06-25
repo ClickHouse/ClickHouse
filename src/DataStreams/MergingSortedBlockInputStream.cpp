@@ -225,6 +225,12 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
                 finished = true;
             }
 
+            if (limit && total_merged_rows + merged_rows == limit)
+            {
+                cancel(false);
+                finished = true;
+            }
+
             /// Write order of rows for other columns
             /// this data will be used in grather stream
             if (out_row_sources_buf)
