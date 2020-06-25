@@ -153,9 +153,6 @@ protected:
     void analyzeAggregation();
     bool makeAggregateDescriptions(ExpressionActionsPtr & actions);
 
-    /// columns - the columns that are present before the transformations begin.
-    void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
-
     const ASTSelectQuery * getSelectQuery() const;
 
     bool isRemoteStorage() const;
@@ -309,7 +306,8 @@ private:
 
     /// Before aggregation:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
-    bool appendJoin(ExpressionActionsChain & chain, bool only_types);
+    bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
+    bool appendJoin(ExpressionActionsChain & chain);
     /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
     void appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();
