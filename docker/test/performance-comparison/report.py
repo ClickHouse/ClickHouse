@@ -321,6 +321,11 @@ if args.report == 'main':
 
     print_test_times()
 
+    printSimpleTable('Metric changes',
+        ['Metric', 'Old median value', 'New median value',
+            'Relative difference', 'Times difference'],
+        tsvRows('metrics/changes.tsv'))
+
     print_report_errors()
 
     print("""

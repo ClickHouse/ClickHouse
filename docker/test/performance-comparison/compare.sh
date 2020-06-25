@@ -744,6 +744,64 @@ unset IFS
 grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' >> run-errors.tsv ||:
 }
 
+function report_metrics
+{
+rm -rf metrics ||:
+mkdir metrics
+
+clickhouse-local --stacktrace --verbose --query "
+create view right_async_metric_log as
+    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes,
+        'event_date Date, event_time DateTime, name String, value Float64')
+    ;
+
+-- Use the right log as time reference because it may have higher precision.
+create table metrics engine File(TSV, 'metrics/metrics.tsv') as
+    with (select min(event_time) from right_async_metric_log) as min_time
+    select name metric, r.event_time - min_time event_time, l.value as left, r.value as right
+    from right_async_metric_log r
+    asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes,
+        'event_date Date, event_time DateTime, name String, value Float64') l
+    on l.name = r.name and r.event_time <= l.event_time
+    order by metric, event_time
+    ;
+
+-- Show metrics that have changed
+create table changes engine File(TSV, 'metrics/changes.tsv') as
+    select metric, median(left) as left, median(right) as right,
+        floor((right - left) / left, 3) diff,
+        floor(if(left > right, left / right, right / left), 3) times_diff
+    from metrics
+    group by metric
+    having abs(diff) > 0.05 and isFinite(diff)
+    order by diff desc
+    ;
+"
+
+IFS=$'\n'
+for prefix in $(cut -f1 "metrics/metrics.tsv" | sort | uniq)
+do
+    file="metrics/$prefix.tsv"
+    grep "^$prefix	" "metrics/metrics.tsv" | cut -f2- > "$file"
+
+    gnuplot -e "
+        set datafile separator '\t';
+        set terminal png size 960,540;
+        set xtics time format '%tH:%tM';
+        set title '$prefix' noenhanced offset 0,-3;
+        set key left top;
+        plot
+            '$file' using 1:2 with lines title 'Left'
+            , '$file' using 1:3 with lines title 'Right'
+            ;
+    " \
+        | convert - -filter point -resize "200%" "metrics/$prefix.png" &
+
+done
+wait
+unset IFS
+}
+
 # Check that local and client are in PATH
 clickhouse-local --version > /dev/null
 clickhouse-client --version > /dev/null
@@ -806,7 +864,11 @@ case "$stage" in
     ;&
 "report")
     time report ||:
-
+    ;&
+"report_metrics")
+    time report_metrics ||:
+    ;&
+"report_html")
     time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
     time "$script_dir/report.py" > report.html
     ;&
