@@ -821,6 +821,10 @@ ClickHouse supports the following algorithms of choosing replicas:
 -   [First or random](#load_balancing-first_or_random)
 -   [Round robin](#load_balancing-round_robin)
 
+See also:
+
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
+
 ### Random (by Default) {#load_balancing-random}
 
 ``` sql
@@ -1125,6 +1129,18 @@ Possible values:
 
 Default value: 0
 
+## optimize\_skip\_unused\_shards\_nesting {#optimize-skip-unused-shards-nesting}
+
+Controls [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) (hence still requires [`optimize_skip_unused_shards`](#optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
+
+Possible values:
+
+-   0 — Disabled, `optimize_skip_unused_shards` works always.
+-   1 — Enables `optimize_skip_unused_shards` only for the first level.
+-   2 — Enables `optimize_skip_unused_shards` up to the second level.
+
+Default value: 0
+
 ## force\_optimize\_skip\_unused\_shards {#force-optimize-skip-unused-shards}
 
 Enables or disables query execution if [optimize\_skip\_unused\_shards](#optimize-skip-unused-shards) is enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled, an exception will be thrown.
@@ -1137,16 +1153,17 @@ Possible values:
 
 Default value: 0
 
-## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
+## force\_optimize\_skip\_unused\_shards\_nesting {#settings-force_optimize_skip_unused_shards_nesting}
 
-Reset [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) for nested `Distributed` table
+Controls [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards) (hence still requires [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
 
 Possible values:
 
--   1 — Enabled.
--   0 — Disabled.
+-   0 - Disabled, `force_optimize_skip_unused_shards` works always.
+-   1 — Enables `force_optimize_skip_unused_shards` only for the first level.
+-   2 — Enables `force_optimize_skip_unused_shards` up to the second level.
 
-Default value: 0.
+Default value: 0
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
@@ -1170,8 +1187,10 @@ Controls how fast errors in distributed tables are zeroed. If a replica is unava
 
 See also:
 
+-   [load\_balancing](#load_balancing-round_robin)
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
 
 ## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
 
@@ -1182,7 +1201,23 @@ Error count of each replica is capped at this value, preventing a single replica
 
 See also:
 
+-   [load\_balancing](#load_balancing-round_robin)
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
+
+## distributed\_replica\_max\_ignored\_errors {#settings-distributed_replica_max_ignored_errors}
+
+-   Type: unsigned int
+-   Default value: 0
+
+Number of errors that will be ignored while choosing replicas (according to `load_balancing` algorithm).
+
+See also:
+
+-   [load\_balancing](#load_balancing-round_robin)
+-   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
