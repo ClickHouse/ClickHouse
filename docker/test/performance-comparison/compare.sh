@@ -131,6 +131,11 @@ function run_tests
         test_files=$(ls "$test_prefix"/*.xml)
     fi
 
+    # Determine which concurrent benchmarks to run. For now, the only test
+    # we run as a concurrent benchmark is 'website'. Run it as benchmark if we
+    # are also going to run it as a normal test.
+    for test in $test_files; do echo $test; done | sed -n '/website/p' > benchmarks-to-run.txt
+
     # Delete old report files.
     for x in {test-times,wall-clock-times}.tsv
     do
@@ -159,6 +164,30 @@ function run_tests
     unset TIMEFORMAT
 
     wait
+}
+
+# Run some queries concurrently and report the resulting TPS. This additional
+# (relatively) short test helps detect concurrency-related effects, because the
+# main performance comparison testing is done query-by-query.
+function run_benchmark
+{
+    rm -rf benchmark ||:
+    mkdir benchmark ||:
+
+    # The list is built by run_tests.
+    for file in $(cat benchmarks-to-run.txt)
+    do
+        name=$(basename "$file" ".xml")
+
+        "$script_dir/perf.py" --print-queries "$file" > "benchmark/$name-queries.txt"
+        "$script_dir/perf.py" --print-settings "$file" > "benchmark/$name-settings.txt"
+
+        readarray -t settings < "benchmark/$name-settings.txt"
+        command=(clickhouse-benchmark --concurrency 6 --cumulative --iterations 1000 --randomize 1 --delay 0 --continue_on_errors "${settings[@]}")
+
+        "${command[@]}" --port 9001 --json "benchmark/$name-left.json" < "benchmark/$name-queries.txt"
+        "${command[@]}" --port 9002 --json "benchmark/$name-right.json" < "benchmark/$name-queries.txt"
+    done
 }
 
 function get_profiles_watchdog
@@ -219,7 +248,7 @@ function build_log_column_definitions
 {
 # FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
 # absolutely atrocious way. This should be done by the file() function itself.
-for x in {right,left}-{addresses,{query,query-thread,trace,metric}-log}.tsv
+for x in {right,left}-{addresses,{query,query-thread,trace,{async-,}metric}-log}.tsv
 do
     paste -d' ' \
         <(sed -n '1{s/\t/\n/g;p;q}' "$x" | sed 's/\(^.*$\)/"\1"/') \
@@ -715,6 +744,9 @@ case "$stage" in
 "run_tests")
     # Ignore the errors to collect the log and build at least some report, anyway
     time run_tests ||:
+    ;&
+"run_benchmark")
+    time run_benchmark 2> >(tee -a run-errors.tsv 1>&2) ||:
     ;&
 "get_profiles")
     # Getting profiles inexplicably hangs sometimes, so try to save some logs if
