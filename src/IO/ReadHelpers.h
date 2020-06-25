@@ -454,6 +454,8 @@ void readBackQuotedString(String & s, ReadBuffer & buf);
 void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readStringUntilEOF(String & s, ReadBuffer & buf);
+
+// Doesn't read the EOL itself.
 void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
 
