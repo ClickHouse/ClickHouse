@@ -1876,7 +1876,7 @@ public:
         /// Parse main commandline options.
         po::parsed_options parsed = po::command_line_parser(common_arguments).options(main_description).run();
         auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
-        // unrecognized_options[0] is "", I dont understand why we need "" as the first argument which unused
+        // unrecognized_options[0] is "", I don't understand why we need "" as the first argument which unused
         if (unrecognized_options.size() > 1)
         {
             throw Exception("Unrecognized option '" + unrecognized_options[1] + "'", ErrorCodes::UNRECOGNIZED_ARGUMENTS);
