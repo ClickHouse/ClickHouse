@@ -1,0 +1,25 @@
+---
+toc_priority: 143
+---
+
+# maxMap {#agg_functions-maxmap}
+
+Syntax: `maxMap(key, value)` or `maxMap(Tuple(key, value))`
+
+Calculates the maximum from `value` array according to the keys specified in the ‘key’ array.
+Passing tuple of keys and values arrays is synonymical to passing two arrays of keys and values.
+The number of elements in ‘key’ and ‘value’ must be the same for each row that is totaled.
+Returns a tuple of two arrays: keys in sorted order, and values calculated for the corresponding keys.
+
+Example:
+
+``` sql
+SELECT maxMap(a, b)
+FROM values('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1]))
+```
+
+``` text
+┌─maxMap(a, b)──────┐
+│ ([1,2,3],[2,2,1]) │
+└───────────────────┘
+```

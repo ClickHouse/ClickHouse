@@ -275,7 +275,7 @@ Use buffering to avoid situations where a query processing error occurred after 
 
 ### Queries with Parameters {#cli-queries-with-parameters}
 
-You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](cli.md#cli-queries-with-parameters).
+You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](../interfaces/cli.md#cli-queries-with-parameters).
 
 ### Example {#example}
 

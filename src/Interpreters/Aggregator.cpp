@@ -96,39 +96,48 @@ void AggregatedDataVariants::convertToTwoLevel()
     }
 }
 
-
 Block Aggregator::getHeader(bool final) const
+{
+    return params.getHeader(final);
+}
+
+Block Aggregator::Params::getHeader(
+    const Block & src_header,
+    const Block & intermediate_header,
+    const ColumnNumbers & keys,
+    const AggregateDescriptions & aggregates,
+    bool final)
 {
     Block res;
 
-    if (params.src_header)
+    if (src_header)
     {
-        for (size_t i = 0; i < params.keys_size; ++i)
-            res.insert(params.src_header.safeGetByPosition(params.keys[i]).cloneEmpty());
+        for (const auto & key : keys)
+            res.insert(src_header.safeGetByPosition(key).cloneEmpty());
 
-        for (size_t i = 0; i < params.aggregates_size; ++i)
+        for (const auto & aggregate : aggregates)
         {
-            size_t arguments_size = params.aggregates[i].arguments.size();
+            size_t arguments_size = aggregate.arguments.size();
             DataTypes argument_types(arguments_size);
             for (size_t j = 0; j < arguments_size; ++j)
-                argument_types[j] = params.src_header.safeGetByPosition(params.aggregates[i].arguments[j]).type;
+                argument_types[j] = src_header.safeGetByPosition(aggregate.arguments[j]).type;
 
             DataTypePtr type;
             if (final)
-                type = params.aggregates[i].function->getReturnType();
+                type = aggregate.function->getReturnType();
             else
-                type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
+                type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
 
-            res.insert({ type, params.aggregates[i].column_name });
+            res.insert({ type, aggregate.column_name });
         }
     }
-    else if (params.intermediate_header)
+    else if (intermediate_header)
     {
-        res = params.intermediate_header.cloneEmpty();
+        res = intermediate_header.cloneEmpty();
 
         if (final)
         {
-            for (const auto & aggregate : params.aggregates)
+            for (const auto & aggregate : aggregates)
             {
                 auto & elem = res.getByName(aggregate.column_name);
 
