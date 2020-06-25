@@ -485,6 +485,7 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
 
     while True:
         result = instance.query('SELECT count() FROM test.view')
+        print("Result", result, "Expected", batch_messages * rabbitmq_messages)
         if int(result) == batch_messages * rabbitmq_messages:
             break
 

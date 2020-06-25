@@ -23,7 +23,7 @@ class ReadBufferFromRabbitMQConsumer : public ReadBuffer
 public:
     ReadBufferFromRabbitMQConsumer(
             ChannelPtr consumer_channel_,
-            RabbitMQHandler & eventHandler_,
+            RabbitMQHandler & event_handler_,
             const String & exchange_name_,
             const Names & routing_keys_,
             const size_t channel_id_,
@@ -46,7 +46,7 @@ private:
     using Messages = std::vector<String>;
 
     ChannelPtr consumer_channel;
-    RabbitMQHandler & eventHandler;
+    RabbitMQHandler & event_handler;
 
     const String & exchange_name;
     const Names & routing_keys;
