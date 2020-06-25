@@ -332,8 +332,8 @@ void AsynchronousMetrics::update()
         ReadBufferFromFile buf("/proc/cpuinfo");
 
         // We need the following lines:
-        // core id  	: 4
-        // cpu MHz	 	: 4052.941
+        // core id : 4
+        // cpu MHz : 4052.941
         // They contain tabs and are interspersed with other info.
         int core_id = 0;
         while (!buf.eof())
