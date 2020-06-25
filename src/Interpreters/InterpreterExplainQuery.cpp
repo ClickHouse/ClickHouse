@@ -10,7 +10,6 @@
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteBufferFromOStream.h>
 
@@ -216,6 +215,20 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
         WriteBufferFromOStream buffer(ss);
         plan.explain(buffer, settings.query_plan_options);
+    }
+    else if (ast.getKind() == ASTExplainQuery::QueryPipeline)
+    {
+        if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+            throw Exception("Only SELECT is supported for EXPLAIN query", ErrorCodes::INCORRECT_QUERY);
+
+        QueryPlan plan;
+
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
+        interpreter.buildQueryPlan(plan);
+        plan.buildQueryPipeline();
+
+        WriteBufferFromOStream buffer(ss);
+        plan.explainPipeline(buffer);
     }
 
     fillColumn(*res_columns[0], ss.str());

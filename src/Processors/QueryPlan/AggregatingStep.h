@@ -29,6 +29,7 @@ public:
     void transformPipeline(QueryPipeline & pipeline) override;
 
     Strings describeActions() const override;
+    void describePipeline(FormatSettings & settings) const override;
 
 private:
     Aggregator::Params params;
@@ -41,6 +42,13 @@ private:
 
     InputOrderInfoPtr group_by_info;
     SortDescription group_by_sort_description;
+
+    Processors aggregating_in_order;
+    Processors aggregating_sorted;
+    Processors finalizing;
+
+    Processors aggregating;
+
 };
 
 }

@@ -8,6 +8,10 @@ class QueryPipeline;
 using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 using QueryPipelines = std::vector<QueryPipelinePtr>;
 
+class IProcessor;
+using ProcessorPtr = std::shared_ptr<IProcessor>;
+using Processors = std::vector<ProcessorPtr>;
+
 /// Description of data stream.
 class DataStream
 {
@@ -51,8 +55,19 @@ public:
     const std::string & getStepDescription() const { return step_description; }
     void setStepDescription(std::string description) { step_description = std::move(description); }
 
+    struct FormatSettings
+    {
+        WriteBuffer & out;
+        size_t offset = 0;
+        const size_t ident = 2;
+        const char ident_char = ' ';
+    };
+
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
     virtual Strings describeActions() const { return {}; }
+
+    /// Get description of processors added in current step. Should be called after updatePipeline().
+    virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
 protected:
     DataStreams input_streams;
@@ -60,6 +75,8 @@ protected:
 
     /// Text description about what current step does.
     std::string step_description;
+
+    static void describePipeline(const Processors & processors, FormatSettings & settings);
 };
 
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;

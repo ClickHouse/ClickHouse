@@ -22,6 +22,7 @@ AddingDelayedStreamStep::AddingDelayedStreamStep(
 
 void AddingDelayedStreamStep::transformPipeline(QueryPipeline & pipeline)
 {
+    source->setQueryPlanStep(this);
     pipeline.addDelayedStream(source);
 }
 
