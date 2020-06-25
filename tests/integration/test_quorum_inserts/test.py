@@ -190,6 +190,7 @@ def test_insert_quorum_with_drop_partition(started_cluster, add_new_data):
     ]
 )
 
+@pytest.mark.skip(reason="ALTER MOVE PARTITION TO TABLE statement is not supported in 20.1")
 def test_insert_quorum_with_move_partition(started_cluster, add_new_data):
     execute_on_all_cluster("DROP TABLE IF EXISTS test_insert_quorum_with_move_partition_source")
     execute_on_all_cluster("DROP TABLE IF EXISTS test_insert_quorum_with_move_partition_destination")
