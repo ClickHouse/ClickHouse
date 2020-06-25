@@ -17,6 +17,10 @@ class Query:
             }}
         }}
 
+        baseRepository {{
+            nameWithOwner
+        }}
+
         mergeCommit {{
             oid
             parents(first: {min_page_size}) {{
@@ -34,16 +38,18 @@ class Query:
             }}
         }}
 
+        baseRefName
         closed
         id
         mergeable
         merged
         number
         title
+        url
     '''
 
     def __init__(self, token, owner, name, team, max_page_size=100, min_page_size=5):
-        Query._PULL_REQUEST = Query._PULL_REQUEST.format(min_page_size=min_page_size)
+        self._PULL_REQUEST = Query._PULL_REQUEST.format(min_page_size=min_page_size)
 
         self._token = token
         self._owner = owner
@@ -130,7 +136,7 @@ class Query:
         '''
 
         query = _QUERY.format(owner=self._owner, name=self._name, number=number,
-                              pull_request_data = Query._PULL_REQUEST, min_page_size=self._min_page_size)
+                              pull_request_data = self._PULL_REQUEST, min_page_size=self._min_page_size)
         return self._run(query)['repository']['pullRequest']
 
     def find_pull_request(self, base, head):
@@ -146,12 +152,91 @@ class Query:
         '''
 
         query = _QUERY.format(owner=self._owner, name=self._name, base=base, head=head,
-                              pull_request_data = Query._PULL_REQUEST, min_page_size=self._min_page_size)
+                              pull_request_data = self._PULL_REQUEST, min_page_size=self._min_page_size)
         result = self._run(query)['repository']['pullRequests']
         if result['totalCount'] > 0:
             return result['nodes'][0]
         else:
             return {}
+
+    def get_pull_requests(self, before_commit):
+        '''
+        Get all merged pull-requests from the HEAD of default branch to the last commit (excluding)
+        '''
+
+        _QUERY = '''
+            repository(owner: "{owner}" name: "{name}") {{
+                defaultBranchRef {{
+                    target {{
+                        ... on Commit {{
+                            history(first: {max_page_size} {next}) {{
+                                pageInfo {{
+                                    hasNextPage
+                                    endCursor
+                                }}
+                                nodes {{
+                                    oid
+                                    associatedPullRequests(first: {min_page_size}) {{
+                                        totalCount
+                                        nodes {{
+                                            ... on PullRequest {{
+                                                {pull_request_data}
+
+                                                labels(first: {min_page_size}) {{
+                                                    totalCount
+                                                    pageInfo {{
+                                                        hasNextPage
+                                                        endCursor
+                                                    }}
+                                                    nodes {{
+                                                        name
+                                                        color
+                                                    }}
+                                                }}
+                                            }}
+                                        }}
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+            }}
+        '''
+
+        pull_requests = []
+        not_end = True
+        query = _QUERY.format(owner=self._owner, name=self._name,
+                              max_page_size=self._max_page_size,
+                              min_page_size=self._min_page_size,
+                              pull_request_data=self._PULL_REQUEST,
+                              next='')
+
+        while not_end:
+            result = self._run(query)['repository']['defaultBranchRef']['target']['history']
+            not_end = result['pageInfo']['hasNextPage']
+            query = _QUERY.format(owner=self._owner, name=self._name,
+                                  max_page_size=self._max_page_size,
+                                  min_page_size=self._min_page_size,
+                                  pull_request_data=self._PULL_REQUEST,
+                                  next='after: "{}"'.format(result["pageInfo"]["endCursor"]))
+
+            for commit in result['nodes']:
+                # FIXME: maybe include `before_commit`?
+                if str(commit['oid']) == str(before_commit):
+                    not_end = False
+                    break
+
+                # TODO: fetch all pull-requests that were merged in a single commit.
+                assert commit['associatedPullRequests']['totalCount'] <= self._min_page_size
+
+                for pull_request in commit['associatedPullRequests']['nodes']:
+                    if(pull_request['baseRepository']['nameWithOwner'] == '{}/{}'.format(self._owner, self._name) and
+                       pull_request['baseRefName'] == self.default_branch and
+                       pull_request['mergeCommit']['oid'] == commit['oid']):
+                        pull_requests.append(pull_request)
+
+        return pull_requests
 
     def create_pull_request(self, source, target, title, description="", draft=False, can_modify=True):
         _QUERY = '''
@@ -172,7 +257,7 @@ class Query:
 
         query = _QUERY.format(target=target, source=source, id=self._id, title=title, body=description,
                               draft="true" if draft else "false", modify="true" if can_modify else "false",
-                              pull_request_data = Query._PULL_REQUEST)
+                              pull_request_data = self._PULL_REQUEST)
         return self._run(query, is_mutation=True)['createPullRequest']['pullRequest']
 
     def merge_pull_request(self, id):
@@ -186,7 +271,7 @@ class Query:
             }}
         '''
 
-        query = _QUERY.format(id=id, pull_request_data = Query._PULL_REQUEST)
+        query = _QUERY.format(id=id, pull_request_data = self._PULL_REQUEST)
         return self._run(query, is_mutation=True)['mergePullRequest']['pullRequest']
 
     # FIXME: figure out how to add more assignees
@@ -366,131 +451,6 @@ class Query:
             events += [event for event in result['nodes'] if event and event['source']]
 
         return events
-
-    _PULL_REQUESTS = '''
-        repository(owner: "ClickHouse" name: "ClickHouse") {{
-            defaultBranchRef {{
-                name
-                target {{
-                    ... on Commit {{
-                        history(first: {max_page_size} {next}) {{
-                            pageInfo {{
-                                hasNextPage
-                                endCursor
-                            }}
-                            nodes {{
-                                oid
-                                associatedPullRequests(first: {min_page_size}) {{
-                                    totalCount
-                                    nodes {{
-                                        ... on PullRequest {{
-                                            id
-                                            number
-                                            author {{
-                                                login
-                                            }}
-                                            bodyText
-                                            mergedBy {{
-                                                login
-                                            }}
-                                            url
-                                            baseRefName
-                                            baseRepository {{
-                                                nameWithOwner
-                                            }}
-                                            mergeCommit {{
-                                                oid
-                                            }}
-                                            labels(first: {min_page_size}) {{
-                                                pageInfo {{
-                                                    hasNextPage
-                                                    endCursor
-                                                }}
-                                                nodes {{
-                                                    name
-                                                    color
-                                                }}
-                                            }}
-                                            timeline(first: {min_page_size}) {{
-                                                pageInfo {{
-                                                    hasNextPage
-                                                    endCursor
-                                                }}
-                                                nodes {{
-                                                    ... on CrossReferencedEvent {{
-                                                        isCrossRepository
-                                                        source {{
-                                                            ... on PullRequest {{
-                                                                number
-                                                                baseRefName
-                                                                merged
-                                                                labels(first: 0) {{
-                                                                    nodes {{
-                                                                        name
-                                                                    }}
-                                                                }}
-                                                            }}
-                                                        }}
-                                                        target {{
-                                                            ... on PullRequest {{
-                                                                number
-                                                            }}
-                                                        }}
-                                                    }}
-                                                }}
-                                            }}
-                                        }}
-                                    }}
-                                }}
-                            }}
-                        }}
-                    }}
-                }}
-            }}
-        }}
-    '''
-    def get_pull_requests(self, before_commit, login):
-        '''Get all merged pull-requests from the HEAD of default branch to the last commit (excluding)
-
-        Args:
-            before_commit (string-convertable): commit sha of the last commit (excluding)
-            login (string): filter pull-requests by user login
-
-        Returns:
-            pull_requests: a list of JSON nodes with pull-requests' details
-        '''
-        pull_requests = []
-        not_end = True
-        query = Query._PULL_REQUESTS.format(max_page_size=self._max_page_size,
-                                            min_page_size=self._min_page_size,
-                                            next='')
-
-        while not_end:
-            result = self._run(query)['repository']['defaultBranchRef']
-            default_branch_name = result['name']
-            result = result['target']['history']
-            not_end = result['pageInfo']['hasNextPage']
-            query = Query._PULL_REQUESTS.format(max_page_size=self._max_page_size,
-                                                min_page_size=self._min_page_size,
-                                                next=f'after: "{result["pageInfo"]["endCursor"]}"')
-
-            for commit in result['nodes']:
-                if str(commit['oid']) == str(before_commit):
-                    not_end = False
-                    break
-
-                # TODO: fetch all pull-requests that were merged in a single commit.
-                assert commit['associatedPullRequests']['totalCount'] <= self._min_page_size, \
-                    f'there are {commit["associatedPullRequests"]["totalCount"]} pull-requests merged in commit {commit["oid"]}'
-
-                for pull_request in commit['associatedPullRequests']['nodes']:
-                    if(pull_request['baseRepository']['nameWithOwner'] == 'ClickHouse/ClickHouse' and
-                       pull_request['baseRefName'] == default_branch_name and
-                       pull_request['mergeCommit']['oid'] == commit['oid'] and
-                       (not login or pull_request['author']['login'] == login)):
-                        pull_requests.append(pull_request)
-
-        return pull_requests
 
     _DEFAULT = '''
         repository(owner: "ClickHouse", name: "ClickHouse") {

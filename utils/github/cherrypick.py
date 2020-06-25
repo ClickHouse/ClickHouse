@@ -17,9 +17,9 @@ Third run creates PR from backport branch (with merged previous PR) to release b
 from query import Query as RemoteRepo
 
 import argparse
+import logging
 import os
 import sys
-import time
 
 
 class CherryPick:
@@ -60,10 +60,12 @@ class CherryPick:
                 number=self._pr['number'], target=self.target_branch, title=self._pr['title'].replace('"', '\\"')),
             description='Original pull-request #{}'.format(self._pr['number']))
 
+        # FIXME: use `team` to leave a single eligible assignee.
         self._gh.add_assignee(pr, self._pr['author'])
         self._gh.add_assignee(pr, self._pr['mergedBy'])
+
         self._gh.set_label(pr, "do not test")
-        self._gh.set_label(pr, "pr-backport")
+        self._gh.set_label(pr, "pr-cherrypick")
 
         return pr
 
@@ -79,36 +81,49 @@ class CherryPick:
                 number=self._pr['number'], target=self.target_branch, title=self._pr['title'].replace('"', '\\"')),
             description='Original pull-request #{}\nCherry-pick pull-request #{}'.format(self._pr['number'], cherrypick_pr['number']))
 
+        # FIXME: use `team` to leave a single eligible assignee.
         self._gh.add_assignee(pr, self._pr['author'])
         self._gh.add_assignee(pr, self._pr['mergedBy'])
+
         self._gh.set_label(pr, "pr-backport")
 
         return pr
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--token', type=str, required=True, help='token for Github access')
-    parser.add_argument('--number', type=str, required=True, help='number of PR to cherrypick')
-    parser.add_argument('--target', type=str, required=True, help='branch name to cherrypick to')
-    parser.add_argument('--repo', type=str, required=True, help='path to full repository')
-    args = parser.parse_args()
-
-    cp = CherryPick(args.token, 'ClickHouse', 'ClickHouse', 'core', args.number, args.target)
+def run(token, pr, branch, repo):
+    cp = CherryPick(token, 'ClickHouse', 'ClickHouse', 'core', pr, branch)
 
     pr1 = cp.getCherryPickPullRequest()
     if not pr1:
-        pr1 = cp.createCherryPickPullRequest(args.repo)
+        pr1 = cp.createCherryPickPullRequest(repo)
+        logging.info('Created PR with cherry-pick of %s to %s: %s', pr, branch, pr1['url'])
+    else:
+        logging.info('Found PR with cherry-pick of %s to %s: %s', pr, branch, pr1['url'])
 
-    if not pr1['merged'] and pr1['mergeable'] == 'MERGEABLE'and not pr1['closed']:
+    if not pr1['merged'] and pr1['mergeable'] == 'MERGEABLE' and not pr1['closed']:
         pr1 = cp.mergeCherryPickPullRequest(pr1)
+        logging.info('Merged PR with cherry-pick of %s to %s: %s', pr, branch, pr1['url'])
 
     if not pr1['merged']:
-        print (pr1)
-        sys.exit()  # cherry-pick is rejected
+        logging.info('Waiting for PR with cherry-pick of %s to %s: %s', pr, branch, pr1['url'])
+        return  # cherry-pick is rejected
 
     pr2 = cp.getBackportPullRequest()
     if not pr2:
         pr2 = cp.createBackportPullRequest(pr1)
+        logging.info('Created PR with backport of %s to %s: %s', pr, branch, pr2['url'])
+    else:
+        logging.info('Found PR with backport of %s to %s: %s', pr, branch, pr2['url'])
 
-    print (pr2)
+
+if __name__ == "__main__":
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--token',  '-t', type=str, required=True, help='token for Github access')
+    parser.add_argument('--pr',           type=str, required=True, help='PR# to cherry-pick')
+    parser.add_argument('--branch', '-b', type=str, required=True, help='target branch name for cherry-pick')
+    parser.add_argument('--repo',   '-r', type=str, required=True, help='path to full repository', metavar='PATH')
+    args = parser.parse_args()
+
+    run(args.token, args.pr, args.branch, args.repo)
