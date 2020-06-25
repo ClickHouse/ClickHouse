@@ -1221,16 +1221,12 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
 }
 
-void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const
+void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Settings &) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     commands.apply(new_metadata, global_context);
-    if (old_metadata.getSecondaryIndices().empty() && !new_metadata.secondary_indices.empty()
-        && !settings.allow_experimental_data_skipping_indices)
-        throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
-                        "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_type_forbidden;
