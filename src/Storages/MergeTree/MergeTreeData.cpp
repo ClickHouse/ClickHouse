@@ -1271,7 +1271,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     for (const auto & column : old_metadata.getColumns().getAllPhysical())
         old_types.emplace(column.name, column.type.get());
 
-
     for (const AlterCommand & command : commands)
     {
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
