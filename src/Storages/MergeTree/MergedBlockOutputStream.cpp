@@ -85,6 +85,7 @@ void MergedBlockOutputStream::writeSuffix()
 
 void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         MergeTreeData::MutableDataPartPtr & new_part,
+        bool sync,
         const NamesAndTypesList * total_columns_list,
         MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
@@ -95,9 +96,9 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums = std::move(*additional_column_checksums);
 
     /// Finish columns serialization.
-    writer->finishDataSerialization(checksums);
-    writer->finishPrimaryIndexSerialization(checksums);
-    writer->finishSkipIndicesSerialization(checksums);
+    writer->finishDataSerialization(checksums, sync);
+    writer->finishPrimaryIndexSerialization(checksums, sync);
+    writer->finishSkipIndicesSerialization(checksums, sync);
 
     NamesAndTypesList part_columns;
     if (!total_columns_list)

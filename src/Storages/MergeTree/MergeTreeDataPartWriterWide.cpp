@@ -264,7 +264,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     next_index_offset = current_row - total_rows;
 }
 
-void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
     const auto & global_settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
@@ -295,6 +295,8 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
     {
         stream.second->finalize();
         stream.second->addToChecksums(checksums);
+        if (sync)
+            stream.second->sync();
     }
 
     column_streams.clear();

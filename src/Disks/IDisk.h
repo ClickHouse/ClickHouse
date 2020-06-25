@@ -105,6 +105,9 @@ public:
     /// Move directory from `from_path` to `to_path`.
     virtual void moveDirectory(const String & from_path, const String & to_path) = 0;
 
+    /// Do fsync on directory.
+    virtual void sync(const String & path) const = 0;
+
     /// Return iterator to the contents of the specified directory.
     virtual DiskDirectoryIteratorPtr iterateDirectory(const String & path) = 0;
 

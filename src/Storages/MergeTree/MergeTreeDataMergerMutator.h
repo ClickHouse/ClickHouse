@@ -189,7 +189,8 @@ private:
         time_t time_of_mutation,
         const CompressionCodecPtr & codec,
         MergeListEntry & merge_entry,
-        bool need_remove_expired_values) const;
+        bool need_remove_expired_values,
+        bool need_sync) const;
 
     /// Mutate some columns of source part with mutation_stream
     void mutateSomePartColumns(
@@ -202,7 +203,8 @@ private:
         time_t time_of_mutation,
         const CompressionCodecPtr & codec,
         MergeListEntry & merge_entry,
-        bool need_remove_expired_values) const;
+        bool need_remove_expired_values,
+        bool need_sync) const;
 
     /// Initialize and write to disk new part fields like checksums, columns,
     /// etc.

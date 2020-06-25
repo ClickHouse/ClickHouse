@@ -52,6 +52,8 @@ public:
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
+    void sync(const String & path) const override;
+
     DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
     void createFile(const String & path) override;

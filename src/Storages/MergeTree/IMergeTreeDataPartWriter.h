@@ -102,9 +102,9 @@ public:
     void initSkipIndices();
     void initPrimaryIndex();
 
-    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) = 0;
-    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums);
-    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
+    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) = 0;
+    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksum, bool sync);
 
 protected:
     /// Count index_granularity for block and store in `index_granularity`
