@@ -39,11 +39,15 @@ void RabbitMQHandler::startConsumerLoop(std::atomic<bool> & loop_started)
     /* The object of this class is shared between concurrent consumers (who share the same connection == share the same
      * event loop and handler). But the loop should not be attempted to start if it is already running.
      */
-    std::lock_guard lock(mutex_before_event_loop);
-    loop_started.store(true);
-    stop_scheduled = false;
+    bool expected = false;
+    if (loop_started.compare_exchange_strong(expected, true))
+    {
+        std::lock_guard lock(mutex_before_event_loop);
+        stop_scheduled = false;
 
-    uv_run(loop, UV_RUN_NOWAIT);
+        uv_run(loop, UV_RUN_NOWAIT);
+        loop_started.store(false);
+    }
 }
 
 
