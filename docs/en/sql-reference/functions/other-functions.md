@@ -783,7 +783,7 @@ Returns size on disk (without taking into account compression).
 blockSerializedSize(value[, value[, ...]])
 ```
 
-**Parameters:**
+**Parameters**
 
 -   `value` — Any value.
 
@@ -793,9 +793,13 @@ blockSerializedSize(value[, value[, ...]])
 
 **Example**
 
+Query:
+
 ``` sql
 SELECT blockSerializedSize(maxState(1)) as x
 ```
+
+Result: 
 
 ``` text
 ┌─x─┐
