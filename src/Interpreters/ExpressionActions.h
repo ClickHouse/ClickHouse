@@ -212,7 +212,7 @@ public:
     void execute(Block & block, bool dry_run = false) const;
 
     /// Execute the expression on the block with continuation.
-    void execute(Block & block, ExtraBlockPtr & not_processed, size_t & start_action) const;
+    void execute(Block & block, ExtraBlockPtr & not_processed) const;
 
     bool hasJoinOrArrayJoin() const;
 
