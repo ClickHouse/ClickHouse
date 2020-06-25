@@ -178,7 +178,8 @@ struct ExpressionAnalysisResult
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
 
-    ExpressionActionsPtr before_join;   /// including JOIN
+    ExpressionActionsPtr before_join;
+    ExpressionActionsPtr join;
     ExpressionActionsPtr before_where;
     ExpressionActionsPtr before_aggregation;
     ExpressionActionsPtr before_having;
@@ -214,7 +215,7 @@ struct ExpressionAnalysisResult
     /// Filter for row-level security.
     bool hasFilter() const { return filter_info.get(); }
 
-    bool hasJoin() const { return before_join.get(); }
+    bool hasJoin() const { return join.get(); }
     bool hasPrewhere() const { return prewhere_info.get(); }
     bool hasWhere() const { return before_where.get(); }
     bool hasHaving() const { return before_having.get(); }

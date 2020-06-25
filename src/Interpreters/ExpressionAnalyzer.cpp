@@ -1101,10 +1101,14 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         query_analyzer.appendArrayJoin(chain, only_types || !first_stage);
 
+        before_join = chain.getLastActions(true);
+        if (before_join)
+            chain.addStep();
+
         if (query_analyzer.appendJoin(chain, only_types || !first_stage))
         {
-            before_join = chain.getLastActions();
-            if (!hasJoin())
+            join = chain.getLastActions();
+            if (!join)
                 throw Exception("No expected JOIN", ErrorCodes::LOGICAL_ERROR);
             chain.addStep();
         }
@@ -1153,11 +1157,11 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         }
 
         bool join_allow_read_in_order = true;
-        if (before_join)
+        if (hasJoin())
         {
             /// You may find it strange but we support read_in_order for HashJoin and do not support for MergeJoin.
-            auto join = before_join->getTableJoinAlgo();
-            join_allow_read_in_order = typeid_cast<HashJoin *>(join.get()) && !join->hasStreamWithNonJoinedRows();
+            auto join_algo = join->getTableJoinAlgo();
+            join_allow_read_in_order = typeid_cast<HashJoin *>(join_algo.get()) && !join_algo->hasStreamWithNonJoinedRows();
         }
 
         optimize_read_in_order =
