@@ -142,8 +142,8 @@ String toCreateQuery(const MySQLTableStruct & table_struct, const Context & cont
             + " cannot be materialized, because there is no primary keys.", ErrorCodes::NOT_IMPLEMENTED);
 
     WriteBufferFromOwnString out;
-    String sign = getUniqueColumnName(table_struct.columns_name_and_type, "__sign");
-    String version = getUniqueColumnName(table_struct.columns_name_and_type, "__version");
+    String sign = getUniqueColumnName(table_struct.columns_name_and_type, "_sign");
+    String version = getUniqueColumnName(table_struct.columns_name_and_type, "_version");
     out << "CREATE TABLE " << (table_struct.if_not_exists ? "IF NOT EXISTS" : "")
         << backQuoteIfNeed(table_struct.database_name) + "." << backQuoteIfNeed(table_struct.table_name)
         << "(" << queryToString(InterpreterCreateQuery::formatColumns(table_struct.columns_name_and_type))
