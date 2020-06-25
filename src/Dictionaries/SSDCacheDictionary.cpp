@@ -19,7 +19,6 @@
 #include <ext/range.h>
 #include <ext/size.h>
 #include <ext/bit_cast.h>
-#include <numeric>
 #include <filesystem>
 #include <city.h>
 
@@ -96,7 +95,6 @@ namespace
     constexpr UInt8 HAS_NOT_FOUND = 2;
 
     const std::string BIN_FILE_EXT = ".bin";
-    const std::string IND_FILE_EXT = ".idx";
 
     int preallocateDiskSpace(int fd, size_t len)
     {
@@ -191,7 +189,12 @@ SSDCachePartition::SSDCachePartition(
     keys_buffer.values = SSDCachePartition::Attribute::Container<UInt64>();
 
     if (!std::filesystem::create_directories(std::filesystem::path{dir_path}))
-        throw Exception{"Failed to create directories.", ErrorCodes::CANNOT_CREATE_DIRECTORY};
+    {
+        if (std::filesystem::exists(std::filesystem::path{dir_path}))
+            LOG_INFO(&Poco::Logger::get("SSDCachePartition::Constructor"), "Using existing directory '{}' for cache-partition", dir_path);
+        else
+            throw Exception{"Failed to create directories.", ErrorCodes::CANNOT_CREATE_DIRECTORY};
+    }
 
     {
         ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -360,7 +363,7 @@ void SSDCachePartition::flush()
     const auto & ids = std::get<Attribute::Container<UInt64>>(keys_buffer.values);
     if (ids.empty())
         return;
-    Poco::Logger::get("paritiiton").information("flushing to SSD.");
+    LOG_INFO(&Poco::Logger::get("SSDCachePartition::flush()"), "Flushing to Disk.");
 
     AIOContext aio_context{1};
 
@@ -1299,7 +1302,7 @@ SSDCacheDictionary::SSDCacheDictionary(
             path, max_partitions_count, file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys)
     , log(&Poco::Logger::get("SSDCacheDictionary"))
 {
-    LOG_INFO(log, "Using storage path '" << path << "'.");
+    LOG_INFO(log, "Using storage path '{}'.", path);
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
 

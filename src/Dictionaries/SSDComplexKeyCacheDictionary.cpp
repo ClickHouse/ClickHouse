@@ -187,7 +187,12 @@ SSDComplexKeyCachePartition::SSDComplexKeyCachePartition(
     , attributes_structure(attributes_structure_)
 {
     if (!std::filesystem::create_directories(std::filesystem::path{dir_path}))
-        throw Exception{"Failed to create directories.", ErrorCodes::CANNOT_CREATE_DIRECTORY};
+    {
+        if (std::filesystem::exists(std::filesystem::path{dir_path}))
+            LOG_INFO(&Poco::Logger::get("SSDComplexKeyCachePartition::Constructor"), "Using existing directory '{}' for cache-partition", dir_path);
+        else
+            throw Exception{"Failed to create directories.", ErrorCodes::CANNOT_CREATE_DIRECTORY};
+    }
 
     {
         ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -1344,7 +1349,7 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
             path, max_partitions_count, file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys)
     , log(&Poco::Logger::get("SSDComplexKeyCacheDictionary"))
 {
-    LOG_INFO(log, "Using storage path '" << path << "'.");
+    LOG_INFO(log, "Using storage path '{}'.", path);
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
 

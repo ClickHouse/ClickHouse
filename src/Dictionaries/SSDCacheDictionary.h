@@ -55,16 +55,16 @@ public:
     struct Index final
     {
         bool inMemory() const;
-        void setInMemory(const bool in_memory);
+        void setInMemory(bool in_memory);
 
         bool exists() const;
         void setNotExists();
 
         size_t getAddressInBlock() const;
-        void setAddressInBlock(const size_t address_in_block);
+        void setAddressInBlock(size_t address_in_block);
 
         size_t getBlockId() const;
-        void setBlockId(const size_t block_id);
+        void setBlockId(size_t block_id);
 
         bool operator< (const Index & rhs) const { return index < rhs.index; }
 
@@ -96,12 +96,12 @@ public:
             const AttributeUnderlyingType & key_structure,
             const std::vector<AttributeUnderlyingType> & attributes_structure,
             const std::string & dir_path,
-            const size_t file_id,
-            const size_t max_size,
-            const size_t block_size,
-            const size_t read_buffer_size,
-            const size_t write_buffer_size,
-            const size_t max_stored_keys);
+            size_t file_id,
+            size_t max_size,
+            size_t block_size,
+            size_t read_buffer_size,
+            size_t write_buffer_size,
+            size_t max_stored_keys);
 
     ~SSDCachePartition();
 
@@ -109,11 +109,11 @@ public:
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
     template <typename Out, typename GetDefault>
-    void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+    void getValue(size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             ResultArrayType<Out> & out, std::vector<bool> & found, GetDefault & get_default,
             std::chrono::system_clock::time_point now) const;
 
-    void getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+    void getString(size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             StringRefs & refs, ArenaWithFreeLists & arena, std::vector<bool> & found,
             std::vector<size_t> & default_ids, std::chrono::system_clock::time_point now) const;
 
@@ -146,9 +146,9 @@ public:
     using Attributes = std::vector<Attribute>;
 
     size_t appendBlock(const Attribute & new_keys, const Attributes & new_attributes,
-            const PaddedPODArray<Metadata> & metadata, const size_t begin);
+            const PaddedPODArray<Metadata> & metadata, size_t begin);
 
-    size_t appendDefaults(const Attribute & new_keys, const PaddedPODArray<Metadata> & metadata, const size_t begin);
+    size_t appendDefaults(const Attribute & new_keys, const PaddedPODArray<Metadata> & metadata, size_t begin);
 
     void flush();
 
@@ -156,7 +156,7 @@ public:
 
     size_t getId() const;
 
-    PaddedPODArray<Key> getCachedIds(const std::chrono::system_clock::time_point now) const;
+    PaddedPODArray<Key> getCachedIds(std::chrono::system_clock::time_point now) const;
 
     double getLoadFactor() const;
 
@@ -176,7 +176,7 @@ private:
     template <typename SetFunc>
     void getValueFromStorage(const PaddedPODArray<Index> & indices, SetFunc & set) const;
 
-    void ignoreFromBufferToAttributeIndex(const size_t attribute_index, ReadBuffer & buf) const;
+    void ignoreFromBufferToAttributeIndex(size_t attribute_index, ReadBuffer & buf) const;
 
     const size_t file_id;
     const size_t max_size;
@@ -218,12 +218,12 @@ public:
     SSDCacheStorage(
             const AttributeTypes & attributes_structure,
             const std::string & path,
-            const size_t max_partitions_count,
-            const size_t file_size,
-            const size_t block_size,
-            const size_t read_buffer_size,
-            const size_t write_buffer_size,
-            const size_t max_stored_keys);
+            size_t max_partitions_count,
+            size_t file_size,
+            size_t block_size,
+            size_t read_buffer_size,
+            size_t write_buffer_size,
+            size_t max_stored_keys);
 
     ~SSDCacheStorage();
 
@@ -231,11 +231,11 @@ public:
     using ResultArrayType = SSDCachePartition::ResultArrayType<T>;
 
     template <typename Out, typename GetDefault>
-    void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+    void getValue(size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
             GetDefault & get_default, std::chrono::system_clock::time_point now) const;
 
-    void getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+    void getString(size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             StringRefs & refs, ArenaWithFreeLists & arena, std::unordered_map<Key, std::vector<size_t>> & not_found,
             std::vector<size_t> & default_ids, std::chrono::system_clock::time_point now) const;
 
@@ -245,7 +245,7 @@ public:
     template <typename PresentIdHandler, typename AbsentIdHandler>
     void update(DictionarySourcePtr & source_ptr, const std::vector<Key> & requested_ids,
             PresentIdHandler && on_updated, AbsentIdHandler && on_id_not_found,
-            const DictionaryLifetime lifetime);
+            DictionaryLifetime lifetime);
 
     PaddedPODArray<Key> getCachedIds() const;
 
@@ -303,14 +303,14 @@ public:
             const std::string & name_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
-            const DictionaryLifetime dict_lifetime_,
+            DictionaryLifetime dict_lifetime_,
             const std::string & path,
-            const size_t max_partitions_count_,
-            const size_t file_size_,
-            const size_t block_size_,
-            const size_t read_buffer_size_,
-            const size_t write_buffer_size_,
-            const size_t max_stored_keys_);
+            size_t max_partitions_count_,
+            size_t file_size_,
+            size_t block_size_,
+            size_t read_buffer_size_,
+            size_t write_buffer_size_,
+            size_t max_stored_keys_);
 
     const std::string & getDatabase() const override { return name; }
     const std::string & getName() const override { return name; }
@@ -402,7 +402,7 @@ public:
 #undef DECLARE
 
     void
-    getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out)
+    getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * def, ColumnString * out)
     const;
 
 #define DECLARE(TYPE) \
@@ -423,7 +423,7 @@ public:
     DECLARE(Decimal128)
 #undef DECLARE
 
-    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const;
+    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * out) const;
 
     void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
@@ -434,15 +434,15 @@ private:
 
     template <typename T>
     AttributeValueVariant createAttributeNullValueWithTypeImpl(const Field & null_value);
-    AttributeValueVariant createAttributeNullValueWithType(const AttributeUnderlyingType type, const Field & null_value);
+    AttributeValueVariant createAttributeNullValueWithType(AttributeUnderlyingType type, const Field & null_value);
     void createAttributes();
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
-            const size_t attribute_index, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
+            size_t attribute_index, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
 
     template <typename DefaultGetter>
-    void getItemsStringImpl(const size_t attribute_index, const PaddedPODArray<Key> & ids,
+    void getItemsStringImpl(size_t attribute_index, const PaddedPODArray<Key> & ids,
             ColumnString * out, DefaultGetter && get_default) const;
 
     const std::string name;
