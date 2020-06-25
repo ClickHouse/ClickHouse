@@ -369,7 +369,7 @@ Keys:
 ``` xml
 <send_crash_reports>
     <enabled>true</enabled>
-</logger>
+</send_crash_reports>
 ```
 
 ## macros {#macros}
