@@ -1,4 +1,5 @@
 #include <daemon/BaseDaemon.h>
+#include <daemon/SentryWriter.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -288,7 +289,7 @@ private:
             std::stringstream bare_stacktrace;
             bare_stacktrace << "Stack trace:";
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-                bare_stacktrace << ' ' << stack_trace.getFrames()[i];
+                bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
 
             LOG_FATAL(log, bare_stacktrace.str());
         }
@@ -296,9 +297,20 @@ private:
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
 
+        /// Send crash report to developers (if configured)
+
+        #if defined(__ELF__) && !defined(__FreeBSD__)
+            const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
+        #else
+            String build_id_hex{};
+        #endif
+
+        SentryWriter::onFault(sig, info, context, stack_trace, build_id_hex);
+
         /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)
             thread_ptr->onFatalError();
+
     }
 };
 
@@ -330,7 +342,7 @@ static void sanitizerDeathCallback()
         std::stringstream bare_stacktrace;
         bare_stacktrace << "Stack trace:";
         for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-            bare_stacktrace << ' ' << stack_trace.getFrames()[i];
+            bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
 
         LOG_FATAL(log, bare_stacktrace.str());
     }
@@ -529,6 +541,7 @@ void debugIncreaseOOMScore() {}
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
+
     task_manager = std::make_unique<Poco::TaskManager>();
     ServerApplication::initialize(self);
 
@@ -536,7 +549,6 @@ void BaseDaemon::initialize(Application & self)
     argsToConfig(argv(), config(), PRIO_APPLICATION - 100);
 
     bool is_daemon = config().getBool("application.runAsDaemon", false);
-
     if (is_daemon)
     {
         /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
@@ -672,6 +684,7 @@ void BaseDaemon::initialize(Application & self)
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
+    SentryWriter::initialize(config());
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
