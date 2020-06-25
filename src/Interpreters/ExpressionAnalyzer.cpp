@@ -504,11 +504,7 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, JoinPtr j
 
 bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
 {
-    const ASTTablesInSelectQueryElement * ast_join = getSelectQuery()->join();
-    if (!ast_join)
-        return false;
-
-    JoinPtr table_join = makeTableJoin(*ast_join);
+    JoinPtr table_join = makeTableJoin(*syntax->ast_join);
 
     initChain(chain, sourceColumns());
     ExpressionActionsChain::Step & step = chain.steps.back();
@@ -1101,12 +1097,14 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         query_analyzer.appendArrayJoin(chain, only_types || !first_stage);
 
-        before_join = chain.getLastActions(true);
-        if (before_join)
-            chain.addStep();
-
-        if (query_analyzer.appendJoin(chain, only_types || !first_stage))
+        if (query_analyzer.hasTableJoin())
         {
+            before_join = chain.getLastActions(true);
+            if (before_join)
+                chain.addStep();
+
+            query_analyzer.appendJoin(chain, only_types || !first_stage);
+
             join = chain.getLastActions();
             if (!join)
                 throw Exception("No expected JOIN", ErrorCodes::LOGICAL_ERROR);

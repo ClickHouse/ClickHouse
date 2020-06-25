@@ -250,6 +250,7 @@ public:
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
     bool hasGlobalSubqueries() { return has_global_subqueries; }
+    bool hasTableJoin() const { return syntax->ast_join; }
 
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
