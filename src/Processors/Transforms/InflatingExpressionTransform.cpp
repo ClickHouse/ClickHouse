@@ -5,9 +5,10 @@
 namespace DB
 {
 
-static Block transformHeader(Block header, const ExpressionActionsPtr & expression)
+Block InflatingExpressionTransform::transformHeader(Block header, const ExpressionActionsPtr & expression)
 {
-    expression->execute(header, true);
+    ExtraBlockPtr tmp;
+    expression->execute(header, tmp);
     return header;
 }
 

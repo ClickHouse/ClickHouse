@@ -16,6 +16,8 @@ public:
 
     String getName() const override { return "InflatingExpressionTransform"; }
 
+    static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
+
 protected:
     void transform(Chunk & chunk) override;
     bool needInputData() const override { return !not_processed; }

@@ -139,13 +139,8 @@ private:
     void executeOnTotals(Block & block) const;
 
     /// Executes action on block (modify it). Block could be splitted in case of JOIN. Then not_processed block is created.
-    void execute(Block & block, bool dry_run, ExtraBlockPtr & not_processed) const;
-
-    void execute(Block & block, bool dry_run) const
-    {
-        ExtraBlockPtr extra;
-        execute(block, dry_run, extra);
-    }
+    void execute(Block & block, ExtraBlockPtr & not_processed) const;
+    void execute(Block & block, bool dry_run) const;
 };
 
 

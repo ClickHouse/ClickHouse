@@ -7,9 +7,14 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class ExpressionTransform;
+class InflatingExpressionTransform;
+
 class ExpressionStep : public ITransformingStep
 {
 public:
+    using Transform = ExpressionTransform;
+
     explicit ExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_, bool default_totals_ = false);
     String getName() const override { return "Expression"; }
 
@@ -24,6 +29,8 @@ private:
 class InflatingExpressionStep : public ITransformingStep
 {
 public:
+    using Transform = InflatingExpressionTransform;
+
     explicit InflatingExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_, bool default_totals_ = false);
     String getName() const override { return "Expression"; }
 
