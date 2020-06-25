@@ -8,7 +8,7 @@
 
     <substitutions>
         <substitution>
-            <name>format</name>
+            <name>engine</name>
             <values>
                 <value>Memory</value>
                 <value>MergeTree ORDER BY tuple()</value>
@@ -27,7 +27,7 @@
         </substitution>
     </substitutions>
 
-    <create_query>CREATE TABLE zz (x Float64) ENGINE {engine}</create_query>
+    <create_query>CREATE TABLE zz (x {type}) ENGINE {engine}</create_query>
     <fill_query>INSERT INTO zz SELECT rand() FROM numbers(1000000000)</fill_query>
 
     <query>SELECT sum(x) FROM zz</query>
