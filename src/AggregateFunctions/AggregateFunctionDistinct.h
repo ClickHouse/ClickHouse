@@ -115,10 +115,8 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
     {
         const char * begin = nullptr;
         StringRef value(begin, 0);
-        SipHash hash;
         for (size_t i = 0; i < columns_num; ++i)
         {
-            columns[i]->updateHashWithValue(row_num, hash);
             auto cur_ref = columns[i]->serializeValueIntoArena(row_num, *arena, begin);
             value.data = cur_ref.data - value.size;
             value.size += cur_ref.size;
