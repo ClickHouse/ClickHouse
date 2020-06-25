@@ -191,7 +191,7 @@ if args.report == 'main':
     slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
     error_tests += len(slow_on_client_rows)
     printSimpleTable('Slow on client',
-                     ['Client time, s', 'Server time, s', 'Ratio', 'Test', 'Query'],
+                     ['Client time,&nbsp;s', 'Server time,&nbsp;s', 'Ratio', 'Test', 'Query'],
                      slow_on_client_rows)
 
     def print_changes():
@@ -203,8 +203,8 @@ if args.report == 'main':
 
         print(tableStart('Changes in performance'))
         columns = [
-            'Old, s',                                          # 0
-            'New, s',                                          # 1
+            'Old,&nbsp;s',                                          # 0
+            'New,&nbsp;s',                                          # 1
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 2
             'p&nbsp;<&nbsp;0.001 threshold',                   # 3
             # Failed                                           # 4
@@ -245,8 +245,8 @@ if args.report == 'main':
         unstable_queries += len(unstable_rows)
 
         columns = [
-            'Old, s', #0
-            'New, s', #1
+            'Old,&nbsp;s', #0
+            'New,&nbsp;s', #1
             'Relative difference (new&nbsp;-&nbsp;old)/old', #2
             'p&nbsp;<&nbsp;0.001 threshold', #3
             # Failed #4
@@ -288,13 +288,13 @@ if args.report == 'main':
 
         columns = [
             'Test',                                          #0
-            'Wall clock time, s',                            #1
-            'Total client time, s',                          #2
+            'Wall clock time,&nbsp;s',                            #1
+            'Total client time,&nbsp;s',                          #2
             'Total queries',                                 #3
             'Ignored short queries',                         #4
-            'Longest query<br>(sum for all runs), s',        #5
-            'Avg wall clock time<br>(sum for all runs), s',  #6
-            'Shortest query<br>(sum for all runs), s',       #7
+            'Longest query<br>(sum for all runs),&nbsp;s',        #5
+            'Avg wall clock time<br>(sum for all runs),&nbsp;s',  #6
+            'Shortest query<br>(sum for all runs),&nbsp;s',       #7
             ]
 
         print(tableStart('Test times'))
@@ -384,6 +384,11 @@ if args.report == 'main':
                 *sys.exc_info()[:2])[-1])
         pass
 
+    printSimpleTable('Metric changes',
+        ['Metric', 'Old median value', 'New median value',
+            'Relative difference', 'Times difference'],
+        tsvRows('metrics/changes.tsv'))
+
     print_report_errors()
 
     print("""
@@ -450,8 +455,8 @@ elif args.report == 'all-queries':
         columns = [
             # Changed #0
             # Unstable #1
-            'Old, s', #2
-            'New, s', #3
+            'Old,&nbsp;s', #2
+            'New,&nbsp;s', #3
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #4
             'Times speedup / slowdown',                 #5
             'p&nbsp;<&nbsp;0.001 threshold',          #6
