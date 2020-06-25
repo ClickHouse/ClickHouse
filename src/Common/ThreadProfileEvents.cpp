@@ -158,7 +158,7 @@ static const PerfEventInfo raw_events_info[] = {
     //HARDWARE_EVENT(PERF_COUNT_HW_BUS_CYCLES, PerfBusCycles),
     HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, PerfStalledCyclesFrontend),
     HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_BACKEND, PerfStalledCyclesBackend),
-    //HARDWARE_EVENT(PERF_COUNT_HW_REF_CPU_CYCLES, PerfRefCpuCycles),
+    HARDWARE_EVENT(PERF_COUNT_HW_REF_CPU_CYCLES, PerfRefCpuCycles),
 
     // `cpu-clock` is a bit broken according to this: https://stackoverflow.com/a/56967896
     //SOFTWARE_EVENT(PERF_COUNT_SW_CPU_CLOCK, PerfCpuClock),

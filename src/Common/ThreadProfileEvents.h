@@ -158,7 +158,7 @@ struct PerfEventValue
     UInt64 time_running = 0;
 };
 
-static constexpr size_t NUMBER_OF_RAW_EVENTS = 12;
+static constexpr size_t NUMBER_OF_RAW_EVENTS = 13;
 
 struct PerfDescriptorsHolder : boost::noncopyable
 {
