@@ -877,11 +877,15 @@ arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
 
 **Параметры**
 
--   `agg_func` — Имя агрегатной функции, которая должна быть константой [string](../../sql-reference/data-types/string.md).
--   `ranges` — Диапазоны для агрегирования, которые должны быть [array](../../sql-reference/data-types/array.md) of [tuples](../../sql-reference/data-types/tuple.md) который содержит индекс и длину каждого диапазона.
--   `arr` — Любое количество столбцов типа [array](../../sql-reference/data-types/array.md) в качестве параметров агрегатной функции.
+-   `agg_func` — Имя агрегатной функции, которая должна быть [строковой](../../sql-reference/data-types/string.md) константой.
+-   `ranges` — Диапазоны для агрегирования, которые должны быть [массивом](../../sql-reference/data-types/array.md) of [кортежей](../../sql-reference/data-types/tuple.md) который содержит индекс и длину каждого диапазона.
+-   `arr` — Любое количество столбцов типа [Array](../../sql-reference/data-types/array.md) в качестве параметров агрегатной функции.
 
 **Возвращаемое значение**
+
+- Массив, содержащий результаты агрегатной функции для указанных диапазонов.
+
+Тип: [Array](../../sql-reference/data-types/array.md).
 
 **Пример**
 

@@ -888,9 +888,13 @@ arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
 
 -   `agg_func` — The name of an aggregate function which should be a constant [string](../../sql-reference/data-types/string.md).
 -   `ranges` — The ranges to aggretate which should be an [array](../../sql-reference/data-types/array.md) of [tuples](../../sql-reference/data-types/tuple.md) which containing the index and the length of each range.
--   `arr` — Any number of [array](../../sql-reference/data-types/array.md) type columns as the parameters of the aggregation function.
+-   `arr` — Any number of [Array](../../sql-reference/data-types/array.md) type columns as the parameters of the aggregation function.
 
 **Returned value**
+
+- Array containing results of the aggregate function over specified ranges.
+
+Type: [Array](../../sql-reference/data-types/array.md).
 
 **Example**
 
