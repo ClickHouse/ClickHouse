@@ -91,7 +91,7 @@ private:
     std::pair<String, UInt16> parsed_address;
     std::pair<String, String> login_password;
 
-    uv_loop_t * loop;
+    std::unique_ptr<uv_loop_t> loop;
     std::unique_ptr<RabbitMQHandler> event_handler;
     std::unique_ptr<AMQP::TcpConnection> connection; /// Connection for all consumers
 
