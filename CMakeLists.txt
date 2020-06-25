@@ -271,6 +271,24 @@ if (OS_LINUX AND NOT SANITIZE)
     set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 endif ()
 
+# For static linking, disable position-independend code for a slight increase in
+# efficiency. This is disabled for AArch64, so that we can run the same binary on
+# Android which doesn't support ET_EXEC binaries.
+if (MAKE_STATIC_LIBRARIES AND NOT ARCH_ARM)
+    set (CMAKE_POSITION_INDEPENDENT_CODE 0)
+    if (OS_LINUX)
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
+        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no-pie")
+    endif ()
+else ()
+    set (CMAKE_POSITION_INDEPENDENT_CODE 1)
+
+    # Without this, the executable type is still ET_EXEC
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-pie")
+endif ()
+
+
 include(cmake/dbms_glob_sources.cmake)
 
 if (OS_LINUX)
@@ -286,29 +304,6 @@ endif ()
 ######################################
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
-
-# For static linking, disable position-independend code for a slight increase in
-# efficiency. This is disabled for AArch64, so that we can run the same binary on
-# Android which doesn't support ET_EXEC binaries.
-if (MAKE_STATIC_LIBRARIES AND NOT ARCH_ARM)
-    set (CMAKE_POSITION_INDEPENDENT_CODE 0)
-    if (OS_LINUX)
-        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
-        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no-pie")
-    endif ()
-else ()
-    set (CMAKE_POSITION_INDEPENDENT_CODE 1)
-    # Without this, the executable type is still ET_EXEC
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-pie")
-    # Without these flags, we'll get errors in base/common/tests/unit_tests_libcommon like the following:
-    # ld.lld: error: cannot preempt symbol: std::__1::__fs::filesystem::filesystem_error::what() const
-    # >>> defined in contrib/libcxx-cmake/libcxx.a(operations.cpp.o)
-    # >>> referenced by operations.cpp
-    # >>>               operations.cpp.o:(vtable for std::__1::__fs::filesystem::filesystem_error) in archive contrib/libcxx-cmake/libcxx.a
-    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fPIC")
-    set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fPIC")
-endif ()
 
 # Using "include-what-you-use" tool.
 option (USE_INCLUDE_WHAT_YOU_USE "Use 'include-what-you-use' tool" OFF)
