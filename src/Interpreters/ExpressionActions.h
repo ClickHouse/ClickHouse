@@ -4,6 +4,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Common/SipHash.h>
 #include <Common/UInt128.h>
 #include <unordered_map>
@@ -24,7 +25,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class Context;
 class TableJoin;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
@@ -42,7 +42,6 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class ExpressionActions;
-class CompiledExpressionCache;
 
 /** Action on the block.
   */
@@ -156,14 +155,30 @@ class ExpressionActions
 public:
     using Actions = std::vector<ExpressionAction>;
 
-    ExpressionActions(const NamesAndTypesList & input_columns_, const Context & context_);
+    ExpressionActions(const NamesAndTypesList & input_columns_, const Context & context_)
+        : input_columns(input_columns_), settings(context_.getSettingsRef())
+    {
+        for (const auto & input_elem : input_columns)
+            sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
+
+#if USE_EMBEDDED_COMPILER
+    compilation_cache = context_.getCompiledExpressionCache();
+#endif
+    }
 
     /// For constant columns the columns themselves can be contained in `input_columns_`.
-    ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Context & context_);
-
-    ~ExpressionActions();
-
-    ExpressionActions(const ExpressionActions & other) = default;
+    ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Context & context_)
+        : settings(context_.getSettingsRef())
+    {
+        for (const auto & input_elem : input_columns_)
+        {
+            input_columns.emplace_back(input_elem.name, input_elem.type);
+            sample_block.insert(input_elem);
+        }
+#if USE_EMBEDDED_COMPILER
+        compilation_cache = context_.getCompiledExpressionCache();
+#endif
+    }
 
     /// Add the input column.
     /// The name of the column must not match the names of the intermediate columns that occur when evaluating the expression.
@@ -213,8 +228,6 @@ public:
 
     /// Execute the expression on the block with continuation.
     void execute(Block & block, ExtraBlockPtr & not_processed, size_t & start_action) const;
-
-    bool hasJoinOrArrayJoin() const;
 
     /// Check if joined subquery has totals.
     bool hasTotalsInJoin() const;

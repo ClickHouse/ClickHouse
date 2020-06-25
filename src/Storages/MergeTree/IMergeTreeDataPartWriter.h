@@ -61,9 +61,10 @@ public:
     using StreamPtr = std::unique_ptr<Stream>;
 
     IMergeTreeDataPartWriter(
-        const MergeTreeData::DataPartPtr & data_part,
+        DiskPtr disk,
+        const String & part_path,
+        const MergeTreeData & storage,
         const NamesAndTypesList & columns_list,
-        const StorageMetadataPtr & metadata_snapshot_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
@@ -117,10 +118,9 @@ protected:
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
-    MergeTreeData::DataPartPtr data_part;
+    DiskPtr disk;
     String part_path;
     const MergeTreeData & storage;
-    StorageMetadataPtr metadata_snapshot;
     NamesAndTypesList columns_list;
     const String marks_file_extension;
 
@@ -138,7 +138,7 @@ protected:
     size_t next_mark = 0;
     size_t next_index_offset = 0;
 
-    /// Number of marks in data from which skip indices have to start
+    /// Number of marsk in data from which skip indices have to start
     /// aggregation. I.e. it's data mark number, not skip indices mark.
     size_t skip_index_data_mark = 0;
 

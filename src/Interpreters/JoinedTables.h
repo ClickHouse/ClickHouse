@@ -3,18 +3,15 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/StorageID.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
 
 class ASTSelectQuery;
+class Context;
 class TableJoin;
 struct SelectQueryOptions;
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Joined tables' columns resolver.
 /// We want to get each table structure at most once per table occurance. Or even better once per table.
@@ -33,11 +30,10 @@ public:
     bool resolveTables();
 
     /// Make fake tables_with_columns[0] in case we have predefined input in InterpreterSelectQuery
-    void makeFakeTable(StoragePtr storage, const StorageMetadataPtr & metadata_snapshot, const Block & source_header);
+    void makeFakeTable(StoragePtr storage, const Block & source_header);
     std::shared_ptr<TableJoin> makeTableJoin(const ASTSelectQuery & select_query);
 
-    const TablesWithColumns & tablesWithColumns() const { return tables_with_columns; }
-    TablesWithColumns moveTablesWithColumns() { return std::move(tables_with_columns); }
+    const std::vector<TableWithColumnNamesAndTypes> & tablesWithColumns() const { return tables_with_columns; }
 
     bool isLeftTableSubquery() const;
     bool isLeftTableFunction() const;
@@ -52,7 +48,7 @@ public:
 private:
     Context context;
     std::vector<const ASTTableExpression *> table_expressions;
-    TablesWithColumns tables_with_columns;
+    std::vector<TableWithColumnNamesAndTypes> tables_with_columns;
 
     /// Legacy (duplicated left table values)
     ASTPtr left_table_expression;

@@ -225,14 +225,11 @@ enum class LoadBalancing
     /// a replica is selected among the replicas with the minimum number of errors
     /// with the minimum number of distinguished characters in the replica name and local hostname
     NEAREST_HOSTNAME,
-    // replicas with the same number of errors are accessed in the same order
-    // as they are specified in the configuration.
+    /// replicas are walked through strictly in order; the number of errors does not matter
     IN_ORDER,
     /// if first replica one has higher number of errors,
     ///   pick a random one from replicas with minimum number of errors
     FIRST_OR_RANDOM,
-    // round robin across replicas with the same number of errors.
-    ROUND_ROBIN,
 };
 using SettingLoadBalancing = SettingEnum<LoadBalancing>;
 
@@ -253,15 +250,6 @@ enum class JoinAlgorithm
     PREFER_PARTIAL_MERGE,
 };
 using SettingJoinAlgorithm = SettingEnum<JoinAlgorithm>;
-
-
-enum class SpecialSort
-{
-    NOT_SPECIFIED = 0,
-    OPENCL_BITONIC,
-};
-using SettingSpecialSort = SettingEnum<SpecialSort>;
-
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode
@@ -302,7 +290,6 @@ using SettingDateTimeInputFormat = SettingEnum<FormatSettings::DateTimeInputForm
 enum class LogsLevel
 {
     none = 0,    /// Disable
-    fatal,
     error,
     warning,
     information,
@@ -331,7 +318,7 @@ using SettingLogQueriesType = SettingEnum<QueryLogElementType>;
 
 enum class SettingsBinaryFormat
 {
-    OLD,     /// Part of the settings are serialized as strings, and other part as variants. This is the old behaviour.
+    OLD,     /// Part of the settings are serialized as strings, and other part as varints. This is the old behaviour.
     STRINGS, /// All settings are serialized as strings. Before each value the flag `is_ignorable` is serialized.
     DEFAULT = STRINGS,
 };

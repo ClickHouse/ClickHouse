@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
-#include <Disks/createVolume.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <IO/HTTPCommon.h>
@@ -63,10 +62,8 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
     static std::atomic_uint total_sends {0};
 
-    if ((data_settings->replicated_max_parallel_sends
-            && total_sends >= data_settings->replicated_max_parallel_sends)
-        || (data_settings->replicated_max_parallel_sends_for_table
-            && data.current_table_sends >= data_settings->replicated_max_parallel_sends_for_table))
+    if ((data_settings->replicated_max_parallel_sends && total_sends >= data_settings->replicated_max_parallel_sends)
+        || (data_settings->replicated_max_parallel_sends_for_table && data.current_table_sends >= data_settings->replicated_max_parallel_sends_for_table))
     {
         response.setStatus(std::to_string(HTTP_TOO_MANY_REQUESTS));
         response.setReason("Too many concurrent fetches, try again later");
@@ -84,7 +81,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     ++data.current_table_sends;
     SCOPE_EXIT({--data.current_table_sends;});
 
-    LOG_TRACE(log, "Sending part {}", part_name);
+    LOG_TRACE(log, "Sending part " << part_name);
 
     try
     {
@@ -115,7 +112,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         {
             String file_name = it.first;
 
-            auto disk = part->volume->getDisk();
+            auto disk = part->disk;
             String path = part->getFullRelativePath() + file_name;
 
             UInt64 size = disk->getFileSize(path);
@@ -184,9 +181,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     bool to_detached,
     const String & tmp_prefix_)
 {
-    if (blocker.isCancelled())
-        throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
-
     /// Validation of the input that may come from malicious replica.
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
     const auto data_settings = data.getSettings();
@@ -299,8 +293,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
 
         if (blocker.isCancelled())
         {
-            /// NOTE The is_cancelled flag also makes sense to check every time you read over the network,
-            /// performing a poll with a not very large timeout.
+            /// NOTE The is_cancelled flag also makes sense to check every time you read over the network, performing a poll with a not very large timeout.
             /// And now we check it only between read chunks (in the `copyData` function).
             disk->removeRecursive(part_download_path);
             throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
@@ -320,8 +313,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
 
     assertEOF(in);
 
-    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
-    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
+    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, reservation->getDisk(), part_relative_path);
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);

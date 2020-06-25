@@ -18,8 +18,6 @@ public:
 
     String getName() const override { return "ExpressionTransform"; }
 
-    static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
-
 protected:
     void transform(Chunk & chunk) override;
 

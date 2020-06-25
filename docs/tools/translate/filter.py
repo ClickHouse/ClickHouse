@@ -160,18 +160,16 @@ def translate_filter(key, value, _format, _):
             attempts = 10
             if '#' in href:
                 href, anchor = href.split('#', 1)
-            if href.endswith('.md') and not href.startswith('/'):
-                parts = [part for part in os.environ['INPUT'].split('/') if len(part) == 2]
-                lang = parts[-1]
-                script_path = os.path.dirname(__file__)
-                base_path = os.path.abspath(f'{script_path}/../../{lang}')
-                href = os.path.join(
-                    os.path.relpath(base_path, os.path.dirname(os.environ['INPUT'])),
-                    os.path.relpath(href, base_path)
-                )
+
+            if filename:
+                while attempts and not os.path.exists(href):
+                    href = f'../{href}'
+                    attempts -= 1
             if anchor:
                 href = f'{href}#{anchor}'
-            value[2][0] = href
+
+            if attempts:
+                value[2][0] = href
         return cls(*value)
     elif key == 'Header':
         if value[1][0].islower() and '_' not in value[1][0]:  # Preserve some manually specified anchors
@@ -187,7 +185,6 @@ def translate_filter(key, value, _format, _):
 
 
 if __name__ == "__main__":
-    os.environ['INPUT'] = os.path.abspath(os.environ['INPUT'])
     pwd = os.path.dirname(filename or '.')
     if pwd:
         with util.cd(pwd):

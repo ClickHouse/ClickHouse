@@ -13,7 +13,7 @@ import util
 
 def yield_candidates():
     for page in range(1, 100):
-        url = f'https://api.github.com/repos/ClickHouse/ClickHouse/tags?per_page=100&page={page}'
+        url = 'https://api.github.com/repos/ClickHouse/ClickHouse/tags?per_page=100&page=%d' % page
         for candidate in requests.get(url).json():
             yield candidate
 

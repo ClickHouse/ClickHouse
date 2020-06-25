@@ -28,7 +28,6 @@ namespace ErrorCodes
 MergeTreeReaderWide::MergeTreeReaderWide(
     DataPartWidePtr data_part_,
     NamesAndTypesList columns_,
-    const StorageMetadataPtr & metadata_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     MarkRanges mark_ranges_,
@@ -37,14 +36,8 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
     : IMergeTreeReader(
-        std::move(data_part_),
-        std::move(columns_),
-        metadata_snapshot_,
-        uncompressed_cache_,
-        std::move(mark_cache_),
-        std::move(mark_ranges_),
-        std::move(settings_),
-        std::move(avg_value_size_hints_))
+        std::move(data_part_), std::move(columns_), uncompressed_cache_, std::move(mark_cache_),
+        std::move(mark_ranges_), std::move(settings_), std::move(avg_value_size_hints_))
 {
     try
     {
@@ -183,7 +176,7 @@ void MergeTreeReaderWide::addStreams(const String & name, const IDataType & type
             return;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            data_part->volume->getDisk(), data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
+            data_part->disk, data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
             data_part->getMarksCount(), all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part->index_granularity_info,

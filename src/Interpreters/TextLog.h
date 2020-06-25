@@ -25,7 +25,7 @@ struct TextLogElement
 
     static std::string name() { return "TextLog"; }
     static Block createBlock();
-    void appendToBlock(MutableColumns & columns) const;
+    void appendToBlock(Block & block) const;
 };
 
 class TextLog : public SystemLog<TextLogElement>

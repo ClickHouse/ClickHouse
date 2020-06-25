@@ -4,7 +4,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/Context.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
@@ -506,33 +505,6 @@ std::string ExpressionAction::toString() const
     return ss.str();
 }
 
-ExpressionActions::ExpressionActions(const NamesAndTypesList & input_columns_, const Context & context_)
-    : input_columns(input_columns_), settings(context_.getSettingsRef())
-{
-    for (const auto & input_elem : input_columns)
-        sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
-
-#if USE_EMBEDDED_COMPILER
-compilation_cache = context_.getCompiledExpressionCache();
-#endif
-}
-
-/// For constant columns the columns themselves can be contained in `input_columns_`.
-ExpressionActions::ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Context & context_)
-    : settings(context_.getSettingsRef())
-{
-    for (const auto & input_elem : input_columns_)
-    {
-        input_columns.emplace_back(input_elem.name, input_elem.type);
-        sample_block.insert(input_elem);
-    }
-#if USE_EMBEDDED_COMPILER
-    compilation_cache = context_.getCompiledExpressionCache();
-#endif
-}
-
-ExpressionActions::~ExpressionActions() = default;
-
 void ExpressionActions::checkLimits(Block & block) const
 {
     if (settings.max_temporary_columns && block.columns() > settings.max_temporary_columns)
@@ -689,15 +661,6 @@ void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed, si
         if (not_processed)
             start_action = i;
     }
-}
-
-bool ExpressionActions::hasJoinOrArrayJoin() const
-{
-    for (const auto & action : actions)
-        if (action.type == ExpressionAction::JOIN || action.type == ExpressionAction::ARRAY_JOIN)
-            return true;
-
-    return false;
 }
 
 bool ExpressionActions::hasTotalsInJoin() const

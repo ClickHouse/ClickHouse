@@ -5,13 +5,9 @@ toc_title: How to Build ClickHouse on Linux
 
 # How to Build ClickHouse for Development {#how-to-build-clickhouse-for-development}
 
-The following tutorial is based on the Ubuntu Linux system. With appropriate changes, it should also work on any other Linux distribution.
-
-Supported platforms:
-
--   x86\_64
--   AArch64
--   Power9 (experimental)
+The following tutorial is based on the Ubuntu Linux system.
+With appropriate changes, it should also work on any other Linux distribution.
+Supported platforms: x86\_64 and AArch64. Support for Power9 is experimental.
 
 ## Install Git, CMake, Python and Ninja {#install-git-cmake-python-and-ninja}
 
@@ -25,16 +21,7 @@ Or cmake3 instead of cmake on older systems.
 
 There are several ways to do this.
 
-### Install from Repository {#install-from-repository}
-
-On Ubuntu 19.10 or newer:
-
-    $ sudo apt-get update
-    $ sudo apt-get install gcc-9 g++-9
-
 ### Install from a PPA Package {#install-from-a-ppa-package}
-
-On older Ubuntu:
 
 ``` bash
 $ sudo apt-get install software-properties-common
@@ -45,7 +32,7 @@ $ sudo apt-get install gcc-9 g++-9
 
 ### Install from Sources {#install-from-sources}
 
-See [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
+Look at [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
 ## Use GCC 9 for Builds {#use-gcc-9-for-builds}
 
@@ -74,6 +61,7 @@ $ mkdir build
 $ cd build
 $ cmake ..
 $ ninja
+$ cd ..
 ```
 
 To create an executable, run `ninja clickhouse`.

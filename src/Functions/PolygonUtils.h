@@ -6,7 +6,6 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
-#include <Common/SipHash.h>
 #include <ext/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
@@ -32,7 +31,7 @@
 #include <iterator>
 #include <cmath>
 #include <algorithm>
-
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -619,7 +618,7 @@ struct CallPointInPolygon<>
 };
 
 template <typename PointInPolygonImpl>
-NO_INLINE ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
+ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
     using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNativeNumbers>::Type;
     return Impl::call(x, y, impl);
@@ -627,27 +626,30 @@ NO_INLINE ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointIn
 
 
 template <typename Polygon>
-UInt128 sipHash128(Polygon && polygon)
+std::string serialize(Polygon && polygon)
 {
-    SipHash hash;
+    WriteBufferFromOwnString buffer;
 
-    auto hash_ring = [&hash](const auto & ring)
+    using RingType = typename std::decay_t<Polygon>::ring_type;
+
+    auto serializeRing = [&buffer](const RingType & ring)
     {
-        UInt32 size = ring.size();
-        hash.update(size);
-        hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
+        writeBinary(ring.size(), buffer);
+        for (const auto & point : ring)
+        {
+            writeBinary(point.x(), buffer);
+            writeBinary(point.y(), buffer);
+        }
     };
 
-    hash_ring(polygon.outer());
+    serializeRing(polygon.outer());
 
     const auto & inners = polygon.inners();
-    hash.update(inners.size());
+    writeBinary(inners.size(), buffer);
     for (auto & inner : inners)
-        hash_ring(inner);
+        serializeRing(inner);
 
-    UInt128 res;
-    hash.get128(res.low, res.high);
-    return res;
+    return buffer.str();
 }
 
 }

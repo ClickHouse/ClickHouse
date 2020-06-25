@@ -1,3 +1,4 @@
+#include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/ExpressionActions.h>

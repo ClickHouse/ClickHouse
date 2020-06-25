@@ -9,6 +9,8 @@ class FunctionFactory;
 
 void registerFunctionCurrentDatabase(FunctionFactory &);
 void registerFunctionCurrentUser(FunctionFactory &);
+void registerFunctionCurrentQuota(FunctionFactory &);
+void registerFunctionCurrentRowPolicies(FunctionFactory &);
 void registerFunctionHostName(FunctionFactory &);
 void registerFunctionFQDN(FunctionFactory &);
 void registerFunctionVisibleWidth(FunctionFactory &);
@@ -38,7 +40,6 @@ void registerFunctionIsNaN(FunctionFactory &);
 void registerFunctionIfNotFinite(FunctionFactory &);
 void registerFunctionThrowIf(FunctionFactory &);
 void registerFunctionVersion(FunctionFactory &);
-void registerFunctionBuildId(FunctionFactory &);
 void registerFunctionUptime(FunctionFactory &);
 void registerFunctionTimeZone(FunctionFactory &);
 void registerFunctionRunningAccumulate(FunctionFactory &);
@@ -57,7 +58,6 @@ void registerFunctionTransform(FunctionFactory &);
 void registerFunctionGetMacro(FunctionFactory &);
 void registerFunctionGetScalar(FunctionFactory &);
 void registerFunctionIsConstant(FunctionFactory &);
-void registerFunctionGlobalVariable(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -67,6 +67,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
     registerFunctionCurrentDatabase(factory);
     registerFunctionCurrentUser(factory);
+    registerFunctionCurrentQuota(factory);
+    registerFunctionCurrentRowPolicies(factory);
     registerFunctionHostName(factory);
     registerFunctionFQDN(factory);
     registerFunctionVisibleWidth(factory);
@@ -96,7 +98,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionIfNotFinite(factory);
     registerFunctionThrowIf(factory);
     registerFunctionVersion(factory);
-    registerFunctionBuildId(factory);
     registerFunctionUptime(factory);
     registerFunctionTimeZone(factory);
     registerFunctionRunningAccumulate(factory);
@@ -115,7 +116,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionGetMacro(factory);
     registerFunctionGetScalar(factory);
     registerFunctionIsConstant(factory);
-    registerFunctionGlobalVariable(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

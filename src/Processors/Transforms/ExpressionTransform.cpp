@@ -5,7 +5,7 @@
 namespace DB
 {
 
-Block ExpressionTransform::transformHeader(Block header, const ExpressionActionsPtr & expression)
+static Block transformHeader(Block header, const ExpressionActionsPtr & expression)
 {
     expression->execute(header, true);
     return header;

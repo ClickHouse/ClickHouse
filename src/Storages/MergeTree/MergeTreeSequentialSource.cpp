@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -11,15 +10,13 @@ namespace ErrorCodes
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
     const MergeTreeData & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
     MergeTreeData::DataPartPtr data_part_,
     Names columns_to_read_,
     bool read_with_direct_io_,
     bool take_column_types_from_storage,
     bool quiet)
-    : SourceWithProgress(metadata_snapshot_->getSampleBlockForColumns(columns_to_read_, storage_.getVirtuals(), storage_.getStorageID()))
+    : SourceWithProgress(storage_.getSampleBlockForColumns(columns_to_read_))
     , storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
     , data_part(std::move(data_part_))
     , columns_to_read(std::move(columns_to_read_))
     , read_with_direct_io(read_with_direct_io_)
@@ -27,23 +24,24 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 {
     if (!quiet)
     {
-        /// Print column name but don't pollute logs in case of many columns.
-        if (columns_to_read.size() == 1)
-            LOG_TRACE(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
-                data_part->getMarksCount(), data_part->name, data_part->rows_count, columns_to_read.front());
-        else
-            LOG_TRACE(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
-                data_part->getMarksCount(), data_part->name, data_part->rows_count);
+        std::stringstream message;
+        message << "Reading " << data_part->getMarksCount() << " marks from part " << data_part->name
+            << ", total " << data_part->rows_count
+            << " rows starting from the beginning of the part";
+        if (columns_to_read.size() == 1)    /// Print column name but don't pollute logs in case of many columns.
+            message << ", column " << columns_to_read.front();
+
+        LOG_TRACE(log, message.rdbuf());
     }
 
     addTotalRowsApprox(data_part->rows_count);
 
     /// Add columns because we don't want to read empty blocks
-    injectRequiredColumns(storage, metadata_snapshot, data_part, columns_to_read);
+    injectRequiredColumns(storage, data_part, columns_to_read);
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
-        const NamesAndTypesList & physical_columns = metadata_snapshot->getColumns().getAllPhysical();
+        const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
         columns_for_reader = physical_columns.addTypes(columns_to_read);
     }
     else
@@ -60,7 +58,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         .save_marks_in_cache = false
     };
 
-    reader = data_part->getReader(columns_for_reader, metadata_snapshot,
+    reader = data_part->getReader(columns_for_reader,
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
         /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings);
 }

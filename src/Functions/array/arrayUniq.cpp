@@ -66,41 +66,36 @@ private:
     template <typename T>
     struct MethodOneNumber
     {
-        using Set = ClearableHashSetWithStackMemory<T, DefaultHash<T>,
-            INITIAL_SIZE_DEGREE>;
-
+        using Set = ClearableHashSet<T, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
+                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
         using Method = ColumnsHashing::HashMethodOneNumber<typename Set::value_type, void, T, false>;
     };
 
     struct MethodString
     {
-        using Set = ClearableHashSetWithStackMemory<StringRef, StringRefHash,
-            INITIAL_SIZE_DEGREE>;
-
+        using Set = ClearableHashSet<StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
         using Method = ColumnsHashing::HashMethodString<typename Set::value_type, void, false, false>;
     };
 
     struct MethodFixedString
     {
-        using Set = ClearableHashSetWithStackMemory<StringRef, StringRefHash,
-            INITIAL_SIZE_DEGREE>;
-
+        using Set = ClearableHashSet<StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
         using Method = ColumnsHashing::HashMethodFixedString<typename Set::value_type, void, false, false>;
     };
 
     struct MethodFixed
     {
-        using Set = ClearableHashSetWithStackMemory<UInt128, UInt128HashCRC32,
-            INITIAL_SIZE_DEGREE>;
-
+        using Set = ClearableHashSet<UInt128, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
+                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
         using Method = ColumnsHashing::HashMethodKeysFixed<typename Set::value_type, UInt128, void, false, false, false>;
     };
 
     struct MethodHashed
     {
-        using Set = ClearableHashSetWithStackMemory<UInt128, UInt128TrivialHash,
-            INITIAL_SIZE_DEGREE>;
-
+        using Set = ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
         using Method = ColumnsHashing::HashMethodHashed<typename Set::value_type, void, false>;
     };
 
@@ -124,8 +119,7 @@ private:
 void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     const ColumnArray::Offsets * offsets = nullptr;
-    const size_t num_arguments = arguments.size();
-    assert(num_arguments > 0);
+    size_t num_arguments = arguments.size();
     ColumnRawPtrs data_columns(num_arguments);
 
     Columns array_holders;

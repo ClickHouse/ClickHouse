@@ -9,28 +9,21 @@
 namespace DB
 {
 
-StorageValues::StorageValues(
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    const Block & res_block_,
-    const NamesAndTypesList & virtuals_)
-    : IStorage(table_id_), res_block(res_block_), virtuals(virtuals_)
+StorageValues::StorageValues(const StorageID & table_id_, const ColumnsDescription & columns_, const Block & res_block_)
+    : IStorage(table_id_), res_block(res_block_)
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
-    setInMemoryMetadata(storage_metadata);
+    setColumns(columns_);
 }
 
 Pipes StorageValues::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    check(column_names, true);
 
     Pipes pipes;
 

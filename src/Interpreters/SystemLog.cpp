@@ -5,7 +5,6 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/MetricLog.h>
-#include <Interpreters/AsynchronousMetricLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
@@ -42,7 +41,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
     if (database != default_database_name)
     {
         /// System tables must be loaded before other tables, but loading order is undefined for all databases except `system`
-        LOG_ERROR(&Poco::Logger::get("SystemLog"), "Custom database name for a system table specified in config. Table `{}` will be created in `system` database instead of `{}`", table, database);
+        LOG_ERROR(&Logger::get("SystemLog"), "Custom database name for a system table specified in config. "
+                                             "Table `" << table << "` will be created in `system` database "
+                                             "instead of `" << database << "`");
         database = default_database_name;
     }
 
@@ -76,9 +77,12 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
     trace_log = createSystemLog<TraceLog>(global_context, "system", "trace_log", config, "trace_log");
     text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log");
     metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log");
-    asynchronous_metric_log = createSystemLog<AsynchronousMetricLog>(
-        global_context, "system", "asynchronous_metric_log", config,
-        "asynchronous_metric_log");
+
+    if (metric_log)
+    {
+        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds");
+        metric_log->startCollectMetric(collect_interval_milliseconds);
+    }
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -92,25 +96,13 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
         logs.emplace_back(text_log.get());
     if (metric_log)
         logs.emplace_back(metric_log.get());
-    if (asynchronous_metric_log)
-        logs.emplace_back(asynchronous_metric_log.get());
 
-    try
+    bool lazy_load = config.getBool("system_tables_lazy_load", true);
+    for (auto & log : logs)
     {
-        for (auto & log : logs)
-            log->startup();
-    }
-    catch (...)
-    {
-        /// join threads
-        shutdown();
-        throw;
-    }
-
-    if (metric_log)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds");
-        metric_log->startCollectMetric(collect_interval_milliseconds);
+        if (!lazy_load)
+            log->prepareTable();
+        log->startup();
     }
 }
 

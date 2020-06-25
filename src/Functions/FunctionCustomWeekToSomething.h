@@ -110,7 +110,7 @@ public:
         {
             CustomWeekTransformImpl<DataTypeDateTime64, ToDataType>::execute(
                 block, arguments, result, input_rows_count,
-                TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
+                DateTime64BasicTransformWrapper<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
         }
         else
             throw Exception(

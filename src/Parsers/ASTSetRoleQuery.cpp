@@ -1,5 +1,5 @@
 #include <Parsers/ASTSetRoleQuery.h>
-#include <Parsers/ASTRolesOrUsersSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Common/quoteString.h>
 
 

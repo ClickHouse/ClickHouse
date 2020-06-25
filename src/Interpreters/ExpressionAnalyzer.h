@@ -11,6 +11,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 
+
 namespace DB
 {
 
@@ -31,11 +32,8 @@ class ASTExpressionList;
 class ASTSelectQuery;
 struct ASTTablesInSelectQueryElement;
 
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-
 /// Create columns in block or return false if not possible
-bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
+bool sanitizeBlock(Block & block);
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
@@ -176,7 +174,6 @@ struct ExpressionAnalysisResult
 
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
-    bool optimize_aggregation_in_order = false;
 
     ExpressionActionsPtr before_join;   /// including JOIN
     ExpressionActionsPtr before_where;
@@ -198,13 +195,11 @@ struct ExpressionAnalysisResult
     ConstantFilterDescription where_constant_filter_description;
     /// Actions by every element of ORDER BY
     ManyExpressionActions order_by_elements_actions;
-    ManyExpressionActions group_by_elements_actions;
 
     ExpressionAnalysisResult() = default;
 
     ExpressionAnalysisResult(
         SelectQueryExpressionAnalyzer & query_analyzer,
-        const StorageMetadataPtr & metadata_snapshot,
         bool first_stage,
         bool second_stage,
         bool only_types,
@@ -235,14 +230,11 @@ public:
         const ASTPtr & query_,
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
-        const StorageMetadataPtr & metadata_snapshot_,
         const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
         const SelectQueryOptions & options_ = {})
-        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_)
-        , metadata_snapshot(metadata_snapshot_)
-        , required_result_columns(required_result_columns_)
-        , query_options(options_)
+    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_)
+    ,   required_result_columns(required_result_columns_), query_options(options_)
     {
     }
 
@@ -266,7 +258,6 @@ public:
     void appendProjectResult(ExpressionActionsChain & chain) const;
 
 private:
-    StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.
     NameSet required_result_columns;
     SelectQueryOptions query_options;
@@ -314,7 +305,7 @@ private:
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
-    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
+    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     /// After aggregation:

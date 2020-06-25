@@ -8,7 +8,6 @@
 
 #include <Poco/File.h>
 #include <common/logger_useful.h>
-#include <common/errnoToString.h>
 #include <Common/ClickHouseRevision.h>
 #include <common/LocalDateTime.h>
 
@@ -44,9 +43,9 @@ StatusFile::StatusFile(const std::string & path_)
         }
 
         if (!contents.empty())
-            LOG_INFO(&Poco::Logger::get("StatusFile"), "Status file {} already exists - unclean restart. Contents:\n{}", path, contents);
+            LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists - unclean restart. Contents:\n" << contents);
         else
-            LOG_INFO(&Poco::Logger::get("StatusFile"), "Status file {} already exists and is empty - probably unclean hardware restart.", path);
+            LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists and is empty - probably unclean hardware restart.");
     }
 
     fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
@@ -91,10 +90,10 @@ StatusFile::StatusFile(const std::string & path_)
 StatusFile::~StatusFile()
 {
     if (0 != close(fd))
-        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot close file {}, {}", path, errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
+        LOG_ERROR(&Logger::get("StatusFile"), "Cannot close file " << path << ", " << errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
 
     if (0 != unlink(path.c_str()))
-        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
+        LOG_ERROR(&Logger::get("StatusFile"), "Cannot unlink file " << path << ", " << errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
 }
 
 }

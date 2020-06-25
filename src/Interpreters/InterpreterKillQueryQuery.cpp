@@ -261,7 +261,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             CancellationCode code = CancellationCode::Unknown;
             if (!query.test)
             {
-                auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+                auto storage = DatabaseCatalog::instance().tryGetTable(table_id);
                 if (!storage)
                     code = CancellationCode::NotFound;
                 else
@@ -302,11 +302,10 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + queryToString(where_expression);
 
-    BlockIO block_io = executeQuery(select_query, context.getGlobalContext(), true);
-    auto stream = block_io.getInputStream();
-    Block res = stream->read();
+    BlockIO block_io = executeQuery(select_query, context.getGlobalContext(), true, QueryProcessingStage::Complete, false, false);
+    Block res = block_io.in->read();
 
-    if (res && stream->read())
+    if (res && block_io.in->read())
         throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
 
     return res;

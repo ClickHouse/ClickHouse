@@ -481,15 +481,8 @@ void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
     M(RANDOM, "random") \
     M(NEAREST_HOSTNAME, "nearest_hostname") \
     M(IN_ORDER, "in_order") \
-    M(FIRST_OR_RANDOM, "first_or_random") \
-    M(ROUND_ROBIN, "round_robin")
+    M(FIRST_OR_RANDOM, "first_or_random")
 IMPLEMENT_SETTING_ENUM(LoadBalancing, LOAD_BALANCING_LIST_OF_NAMES, ErrorCodes::UNKNOWN_LOAD_BALANCING)
-
-
-#define SPECIAL_SORT_ALGORITHM_NAMES(M) \
-    M(NOT_SPECIFIED, "not_specified") \
-    M(OPENCL_BITONIC, "opencl_bitonic")
-IMPLEMENT_SETTING_ENUM(SpecialSort, SPECIAL_SORT_ALGORITHM_NAMES, ErrorCodes::UNKNOWN_JOIN)
 
 
 #define JOIN_STRICTNESS_LIST_OF_NAMES(M) \
@@ -542,7 +535,6 @@ IMPLEMENT_SETTING_ENUM(FormatSettings::DateTimeInputFormat, DATE_TIME_INPUT_FORM
 
 #define LOGS_LEVEL_LIST_OF_NAMES(M) \
     M(none, "none") \
-    M(fatal, "fatal") \
     M(error, "error") \
     M(warning, "warning") \
     M(information, "information") \
@@ -600,8 +592,8 @@ namespace details
 
     void SettingsCollectionUtils::warningNameNotFound(const StringRef & name)
     {
-        static auto * log = &Poco::Logger::get("Settings");
-        LOG_WARNING(log, "Unknown setting {}, skipping", name);
+        static auto * log = &Logger::get("Settings");
+        LOG_WARNING(log, "Unknown setting " << name << ", skipping");
     }
 
     void SettingsCollectionUtils::throwNameNotFound(const StringRef & name)

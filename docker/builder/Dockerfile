@@ -23,7 +23,6 @@ RUN apt-get update -y \
             python-termcolor \
             sudo \
             tzdata \
-            llvm-10 \
             clang-10 \
             clang-tidy-10 \
             lld-10 \

@@ -17,7 +17,6 @@ namespace ErrorCodes
 MergeTreeReaderCompact::MergeTreeReaderCompact(
     DataPartCompactPtr data_part_,
     NamesAndTypesList columns_,
-    const StorageMetadataPtr & metadata_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     MarkRanges mark_ranges_,
@@ -25,23 +24,15 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     ValueSizeMap avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
-    : IMergeTreeReader(
-        std::move(data_part_),
-        std::move(columns_),
-        metadata_snapshot_,
-        uncompressed_cache_,
-        mark_cache_,
-        std::move(mark_ranges_),
-        std::move(settings_),
-        std::move(avg_value_size_hints_))
+    : IMergeTreeReader(std::move(data_part_), std::move(columns_),
+        uncompressed_cache_, mark_cache_, std::move(mark_ranges_),
+        std::move(settings_), std::move(avg_value_size_hints_))
     , marks_loader(
-          data_part->volume->getDisk(),
-          mark_cache,
-          data_part->index_granularity_info.getMarksFilePath(data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME),
-          data_part->getMarksCount(),
-          data_part->index_granularity_info,
-          settings.save_marks_in_cache,
-          data_part->getColumns().size())
+        data_part->disk,
+        mark_cache,
+        data_part->index_granularity_info.getMarksFilePath(data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME),
+        data_part->getMarksCount(), data_part->index_granularity_info,
+        settings.save_marks_in_cache, data_part->getColumns().size())
 {
     size_t buffer_size = settings.max_read_buffer_size;
     const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
@@ -49,10 +40,10 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            fullPath(data_part->volume->getDisk(), full_data_path),
+            fullPath(data_part->disk, full_data_path),
             [this, full_data_path, buffer_size]()
             {
-                return data_part->volume->getDisk()->readFile(
+                return data_part->disk->readFile(
                     full_data_path,
                     buffer_size,
                     0,
@@ -71,7 +62,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     {
         auto buffer =
             std::make_unique<CompressedReadBufferFromFile>(
-                data_part->volume->getDisk()->readFile(full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, 0));
+                data_part->disk->readFile(full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, 0));
 
         if (profile_callback_)
             buffer->setProfileCallback(profile_callback_, clock_type_);

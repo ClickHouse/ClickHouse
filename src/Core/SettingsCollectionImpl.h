@@ -7,8 +7,6 @@
   */
 
 #include <Common/SettingsChanges.h>
-#include <Common/FieldVisitors.h>
-
 
 namespace DB
 {
@@ -93,16 +91,7 @@ Field SettingsCollection<Derived>::const_reference::getValue() const
 template <class Derived>
 Field SettingsCollection<Derived>::valueToCorrespondingType(size_t index, const Field & value)
 {
-    try
-    {
-        return members()[index].value_to_corresponding_type(value);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format("in attempt to set the value of setting to {}",
-                                 applyVisitor(FieldVisitorToString(), value)));
-        throw;
-    }
+    return members()[index].value_to_corresponding_type(value);
 }
 
 

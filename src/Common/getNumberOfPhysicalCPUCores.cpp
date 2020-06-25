@@ -1,10 +1,17 @@
-#include "getNumberOfPhysicalCPUCores.h"
+#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <thread>
 
-#if USE_CPUID
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#else
 #    include <libcpuid/libcpuid.h>
 #endif
 
-#include <thread>
+#if USE_CPUID
+#    include <libcpuid/libcpuid.h>
+#elif USE_CPUINFO
+#    include <cpuinfo.h>
+#endif
 
 
 unsigned getNumberOfPhysicalCPUCores()
@@ -29,6 +36,14 @@ unsigned getNumberOfPhysicalCPUCores()
 
     if (res != 0)
         return res;
+
+#elif USE_CPUINFO
+    uint32_t cores = 0;
+    if (cpuinfo_initialize())
+        cores = cpuinfo_get_cores_count();
+
+    if (cores)
+        return cores;
 #endif
 
     /// As a fallback (also for non-x86 architectures) assume there are no hyper-threading on the system.

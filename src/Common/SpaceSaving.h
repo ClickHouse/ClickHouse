@@ -67,7 +67,9 @@ private:
 template
 <
     typename TKey,
-    typename Hash = DefaultHash<TKey>
+    typename Hash = DefaultHash<TKey>,
+    typename Grower = HashTableGrower<>,
+    typename Allocator = HashTableAllocator
 >
 class SpaceSaving
 {
@@ -378,7 +380,7 @@ private:
             counter_map[counter->key] = counter;
     }
 
-    using CounterMap = HashMapWithStackMemory<TKey, Counter *, Hash, 4>;
+    using CounterMap = HashMap<TKey, Counter *, Hash, Grower, Allocator>;
 
     CounterMap counter_map;
     std::vector<Counter *> counter_list;

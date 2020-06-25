@@ -86,8 +86,7 @@ public:
         if (0 == needle_size)
             return;
 
-        UTF8SequenceBuffer l_seq;
-        UTF8SequenceBuffer u_seq;
+        UTF8SequenceBuffer l_seq, u_seq;
 
         if (*needle < 0x80u)
         {
@@ -231,6 +230,7 @@ public:
     {
         if (0 == needle_size)
             return haystack;
+
 
         while (haystack < haystack_end)
         {

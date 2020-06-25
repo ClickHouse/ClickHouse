@@ -1,6 +1,5 @@
 #include <unistd.h>
 #include <errno.h>
-#include <cassert>
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -91,8 +90,6 @@ WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
     {
         if (fd >= 0)
             next();
-        else
-            assert(!offset() && "attempt to write after close");
     }
     catch (...)
     {
