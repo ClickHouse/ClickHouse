@@ -858,12 +858,21 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 query_plan.addStep(std::move(row_level_security_step));
             }
 
+            if (expressions.before_join)
+            {
+                QueryPlanStepPtr before_join_step = std::make_unique<ExpressionStep>(
+                    query_plan.getCurrentDataStream(),
+                    expressions.before_join,
+                    true);
+                query_plan.addStep(std::move(before_join_step));
+            }
+
             if (expressions.hasJoin())
             {
                 Block join_result_sample;
-                JoinPtr join = expressions.before_join->getTableJoinAlgo();
+                JoinPtr join = expressions.join->getTableJoinAlgo();
 
-                join_result_sample = ExpressionTransform::transformHeader(query_plan.getCurrentDataStream().header, expressions.before_join);
+                join_result_sample = ExpressionTransform::transformHeader(query_plan.getCurrentDataStream().header, expressions.join);
 
                 bool inflating_join = false;
                 if (join)
@@ -873,25 +882,25 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                         inflating_join = isCross(hash_join->getKind());
                 }
 
-                QueryPlanStepPtr before_join_step;
+                QueryPlanStepPtr join_step;
                 if (inflating_join)
                 {
-                    before_join_step = std::make_unique<InflatingExpressionStep>(
+                    join_step = std::make_unique<InflatingExpressionStep>(
                             query_plan.getCurrentDataStream(),
-                            expressions.before_join,
+                            expressions.join,
                             true);
 
                 }
                 else
                 {
-                    before_join_step = std::make_unique<ExpressionStep>(
+                    join_step = std::make_unique<ExpressionStep>(
                             query_plan.getCurrentDataStream(),
-                            expressions.before_join,
+                            expressions.join,
                             true);
                 }
 
-                before_join_step->setStepDescription("JOIN");
-                query_plan.addStep(std::move(before_join_step));
+                join_step->setStepDescription("JOIN");
+                query_plan.addStep(std::move(join_step));
 
                 if (join)
                 {
