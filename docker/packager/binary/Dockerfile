@@ -63,6 +63,7 @@ RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
     && cd apple-libtapi \
     && INSTALLPREFIX=/cctools ./build.sh \
     && ./install.sh \
+    && cd .. \
     && rm -rf apple-libtapi
 
 # Build and install tools for cross-linking to Darwin
@@ -71,6 +72,7 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=x86_64-apple-darwin \
     && make install \
+    && cd ../.. \
     && rm -rf cctools-port
 
 # Download toolchain for Darwin
