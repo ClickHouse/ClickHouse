@@ -41,6 +41,7 @@ public:
     };
 
     void explain(WriteBuffer & buffer, const ExplainOptions & options);
+    void explainPipeline(WriteBuffer & buffer);
 
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.

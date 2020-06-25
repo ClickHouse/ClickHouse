@@ -2,7 +2,6 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPipeline.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <stack>
 
@@ -257,6 +256,54 @@ void QueryPlan::explain(WriteBuffer & buffer, const ExplainOptions & options)
         if (frame.next_child < frame.node->children.size())
         {
             stack.push(Frame{frame.node->children[frame.next_child]});
+            ++frame.next_child;
+        }
+        else
+            stack.pop();
+    }
+}
+
+static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings)
+{
+    settings.out << String(settings.offset, settings.ident_char) << "(" << step.getName() << ")\n";
+    size_t current_offset = settings.offset;
+    step.describePipeline(settings);
+    if (current_offset == settings.offset)
+        settings.offset += settings.ident;
+}
+
+void QueryPlan::explainPipeline(WriteBuffer & buffer)
+{
+    checkInitialized();
+
+    IQueryPlanStep::FormatSettings settings{.out = buffer};
+
+    struct Frame
+    {
+        Node * node;
+        size_t offset = 0;
+        bool is_description_printed = false;
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> stack;
+    stack.push(Frame{.node = root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+
+        if (!frame.is_description_printed)
+        {
+            settings.offset = frame.offset;
+            explainPipelineStep(*frame.node->step, settings);
+            frame.offset = settings.offset;
+            frame.is_description_printed = true;
+        }
+
+        if (frame.next_child < frame.node->children.size())
+        {
+            stack.push(Frame{frame.node->children[frame.next_child], frame.offset});
             ++frame.next_child;
         }
         else

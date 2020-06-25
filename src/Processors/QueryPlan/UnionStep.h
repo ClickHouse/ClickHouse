@@ -14,9 +14,12 @@ public:
 
     QueryPipelinePtr updatePipeline(QueryPipelines pipelines) override;
 
+    void describePipeline(FormatSettings & settings) const override;
+
 private:
     Block header;
     size_t max_threads;
+    Processors processors;
 };
 
 }

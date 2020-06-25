@@ -16,6 +16,7 @@ public:
         ParsedAST, /// 'EXPLAIN AST SELECT ...'
         AnalyzedSyntax, /// 'EXPLAIN SYNTAX SELECT ...'
         QueryPlan, /// 'EXPLAIN SELECT ...'
+        QueryPipeline, /// 'EXPLAIN PIPELINE ...'
     };
 
     ASTExplainQuery(ExplainKind kind_, bool old_syntax_)
@@ -78,6 +79,7 @@ private:
             case ParsedAST: return old_syntax ? "AST" : "EXPLAIN AST";
             case AnalyzedSyntax: return old_syntax ? "ANALYZE" : "EXPLAIN SYNTAX";
             case QueryPlan: return "EXPLAIN";
+            case QueryPipeline: return "EXPLAIN PIPELINE";
         }
 
         __builtin_unreachable();
