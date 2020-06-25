@@ -864,6 +864,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                     query_plan.getCurrentDataStream(),
                     expressions.before_join,
                     true);
+                before_join_step->setStepDescription("Before JOIN");
                 query_plan.addStep(std::move(before_join_step));
             }
 
@@ -874,45 +875,22 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
                 join_result_sample = ExpressionTransform::transformHeader(query_plan.getCurrentDataStream().header, expressions.join);
 
-                bool inflating_join = false;
-                if (join)
-                {
-                    inflating_join = true;
-                    if (auto * hash_join = typeid_cast<HashJoin *>(join.get()))
-                        inflating_join = isCross(hash_join->getKind());
-                }
-
-                QueryPlanStepPtr join_step;
-                if (inflating_join)
-                {
-                    join_step = std::make_unique<InflatingExpressionStep>(
-                            query_plan.getCurrentDataStream(),
-                            expressions.join,
-                            true);
-
-                }
-                else
-                {
-                    join_step = std::make_unique<ExpressionStep>(
-                            query_plan.getCurrentDataStream(),
-                            expressions.join,
-                            true);
-                }
+                QueryPlanStepPtr join_step = std::make_unique<InflatingExpressionStep>(
+                    query_plan.getCurrentDataStream(),
+                    expressions.join,
+                    true);
 
                 join_step->setStepDescription("JOIN");
                 query_plan.addStep(std::move(join_step));
 
-                if (join)
+                if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
                 {
-                    if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
-                    {
-                        auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
-                        auto add_non_joined_rows_step = std::make_unique<AddingDelayedStreamStep>(
-                                query_plan.getCurrentDataStream(), std::move(source));
+                    auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
+                    auto add_non_joined_rows_step = std::make_unique<AddingDelayedStreamStep>(
+                            query_plan.getCurrentDataStream(), std::move(source));
 
-                        add_non_joined_rows_step->setStepDescription("Add non-joined rows after JOIN");
-                        query_plan.addStep(std::move(add_non_joined_rows_step));
-                    }
+                    add_non_joined_rows_step->setStepDescription("Add non-joined rows after JOIN");
+                    query_plan.addStep(std::move(add_non_joined_rows_step));
                 }
             }
 
