@@ -1,6 +1,7 @@
 <test>
     <settings>
         <max_threads>4</max_threads>
+        <max_memory_usage>20G</max_memory_usage>
         <use_uncompressed_cache>1</use_uncompressed_cache>
         <merge_tree_max_rows_to_use_cache>2000000000</merge_tree_max_rows_to_use_cache>
         <merge_tree_max_bytes_to_use_cache>10000000000</merge_tree_max_bytes_to_use_cache>
