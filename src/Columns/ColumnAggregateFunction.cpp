@@ -135,7 +135,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     res->reserve(data.size());
 
     for (auto * val : data)
-        func->insertResultInto(val, *res);
+        func->insertResultInto(val, *res, &column_aggregate_func.createOrGetArena());
 
     return res;
 }

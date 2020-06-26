@@ -5,9 +5,11 @@
 
 #include <random>
 #include <functional>
+#include <pcg-random/pcg_random.hpp>
 
 #include <common/logger_useful.h>
 #include <common/find_symbols.h>
+#include <Common/randomSeed.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/PODArray.h>
 #include <Common/thread_local_rng.h>
@@ -168,9 +170,8 @@ struct ZooKeeperArgs
         }
 
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        std::random_device rd;
-        std::mt19937 g(rd());
-        std::shuffle(hosts_strings.begin(), hosts_strings.end(), g);
+        pcg64 generator(randomSeed());
+        std::shuffle(hosts_strings.begin(), hosts_strings.end(), generator);
 
         for (auto & host : hosts_strings)
         {

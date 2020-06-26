@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 
@@ -70,6 +71,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
+    extern const int CANNOT_PARSE_UUID;
 }
 
 class InputStreamReadBufferAdapter : public avro::InputStream
@@ -176,6 +178,19 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
     {
         case avro::AVRO_STRING: [[fallthrough]];
         case avro::AVRO_BYTES:
+            if (target.isUUID())
+            {
+                return [tmp = std::string()](IColumn & column, avro::Decoder & decoder) mutable
+                {
+                    decoder.decodeString(tmp);
+                    if (tmp.length() != 36)
+                        throw Exception(std::string("Cannot parse uuid ") + tmp, ErrorCodes::CANNOT_PARSE_UUID);
+
+                    UUID uuid;
+                    parseUUID(reinterpret_cast<const UInt8 *>(tmp.data()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
+                    assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
+                };
+            }
             if (target.isString() || target.isFixedString())
             {
                 return [tmp = std::string()](IColumn & column, avro::Decoder & decoder) mutable

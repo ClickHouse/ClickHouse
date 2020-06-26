@@ -50,7 +50,7 @@ function find_reference_sha
 
         # FIXME sometimes we have testing tags on commits without published builds --
         # normally these are documentation commits. Loop to skip them.
-        if curl --fail --head "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/performance/performance.tgz"
+        if curl --fail --head "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/clickhouse_build_check/performance/performance.tgz"
         then
             break
         fi

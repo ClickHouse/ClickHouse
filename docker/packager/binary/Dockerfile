@@ -59,14 +59,21 @@ ENV CC=clang-10
 ENV CXX=clang++-10
 
 # libtapi is required to support .tbh format from recent MacOS SDKs
-RUN git clone https://github.com/tpoechtrager/apple-libtapi.git
-RUN cd apple-libtapi && INSTALLPREFIX=/cctools ./build.sh && ./install.sh
-RUN rm -rf apple-libtapi
+RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
+    && cd apple-libtapi \
+    && INSTALLPREFIX=/cctools ./build.sh \
+    && ./install.sh \
+    && cd .. \
+    && rm -rf apple-libtapi
 
 # Build and install tools for cross-linking to Darwin
-RUN git clone https://github.com/tpoechtrager/cctools-port.git
-RUN cd cctools-port/cctools && ./configure --prefix=/cctools --with-libtapi=/cctools --target=x86_64-apple-darwin && make install
-RUN rm -rf cctools-port
+RUN git clone https://github.com/tpoechtrager/cctools-port.git \
+    && cd cctools-port/cctools \
+    && ./configure --prefix=/cctools --with-libtapi=/cctools \
+        --target=x86_64-apple-darwin \
+    && make install \
+    && cd ../.. \
+    && rm -rf cctools-port
 
 # Download toolchain for Darwin
 RUN wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
