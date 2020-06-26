@@ -30,6 +30,7 @@
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
+#include <Common/FileSyncGuard.h>
 #include <cmath>
 #include <numeric>
 #include <iomanip>
@@ -695,6 +696,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         gathering_column_names.clear();
     }
 
+    std::optional<FileSyncGuard> sync_guard;
+    if (data.getSettings()->sync_part_directory)
+        sync_guard.emplace(disk, new_part_tmp_path);
+
     /** Read from all parts, merge and write into a new one.
       * In passing, we calculate expression for sorting.
       */
@@ -991,9 +996,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     else
         to.writeSuffixAndFinalizePart(new_data_part, need_sync, &storage_columns, &checksums_gathered_columns);
 
-    if (need_sync)
-        new_data_part->volume->getDisk()->sync(new_part_tmp_path);
-
     return new_data_part;
 }
 
@@ -1088,6 +1090,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         static_cast<double>(source_part->getBytesOnDisk()) / data.getTotalActiveSizeInBytes());
 
     disk->createDirectories(new_part_tmp_path);
+
+    std::optional<FileSyncGuard> sync_guard;
+    if (data.getSettings()->sync_part_directory)
+        sync_guard.emplace(disk, new_part_tmp_path);
 
     /// Don't change granularity type while mutating subset of columns
     auto mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(new_data_part->getType())
@@ -1186,9 +1192,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         finalizeMutatedPart(source_part, new_data_part, need_remove_expired_values);
     }
-
-    if (need_sync)
-        new_data_part->volume->getDisk()->sync(new_part_tmp_path);
 
     return new_data_part;
 }

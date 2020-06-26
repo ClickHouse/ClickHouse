@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_FSYNC;
+    extern const int CANNOT_CLOSE_FILE;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -191,18 +192,6 @@ void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
     Poco::File(disk_path + from_path).renameTo(disk_path + to_path);
 }
 
-void DiskLocal::sync(const String & path) const
-{
-    String full_path = disk_path + path;
-    int fd = ::open(full_path.c_str(), O_RDONLY);
-    if (-1 == fd)
-        throwFromErrnoWithPath("Cannot open file " + full_path, full_path,
-                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
-
-    if (-1 == fsync(fd))
-        throwFromErrnoWithPath("Cannot fsync " + full_path, full_path, ErrorCodes::CANNOT_FSYNC);
-}
-
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 {
     return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
@@ -297,6 +286,28 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
         Poco::File(disk_path + from_path).copyTo(to_disk->getPath() + to_path); /// Use more optimal way.
     else
         IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
+}
+
+int DiskLocal::open(const String & path, mode_t mode) const
+{
+    String full_path = disk_path + path;
+    int fd = ::open(full_path.c_str(), mode);
+    if (-1 == fd)
+        throwFromErrnoWithPath("Cannot open file " + full_path, full_path,
+                        errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+    return fd;
+}
+
+void DiskLocal::close(int fd) const
+{
+    if (-1 == ::close(fd))
+        throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
+}
+
+void DiskLocal::sync(int fd) const
+{
+    if (-1 == ::fsync(fd))
+        throw Exception("Cannot fsync", ErrorCodes::CANNOT_FSYNC);
 }
 
 DiskPtr DiskLocalReservation::getDisk(size_t i) const

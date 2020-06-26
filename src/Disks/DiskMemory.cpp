@@ -261,11 +261,6 @@ void DiskMemory::moveDirectory(const String & /*from_path*/, const String & /*to
     throw Exception("Method moveDirectory is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void DiskMemory::sync(const String & /*path*/) const
-{
-    throw Exception("Method sync is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
 DiskDirectoryIteratorPtr DiskMemory::iterateDirectory(const String & path)
 {
     std::lock_guard lock(mutex);
@@ -411,6 +406,21 @@ void DiskMemory::createFile(const String &)
 void DiskMemory::setReadOnly(const String &)
 {
     throw Exception("Method setReadOnly is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+int DiskMemory::open(const String & /*path*/, mode_t /*mode*/) const
+{
+    throw Exception("Method open is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskMemory::close(int /*fd*/) const
+{
+    throw Exception("Method close is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskMemory::sync(int /*fd*/) const
+{
+    throw Exception("Method sync is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
