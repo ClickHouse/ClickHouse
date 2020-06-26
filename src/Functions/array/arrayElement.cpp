@@ -732,10 +732,18 @@ DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments)
 {
     const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
-        throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "First argument for function '{}' must be array, got '{}' instead",
+            getName(), arguments[0]->getName());
+    }
 
     if (!isInteger(arguments[1]))
-        throw Exception("Second argument for function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Second argument for function '{}' must be integer, got '{}' instead",
+            getName(), arguments[1]->getName());
+    }
 
     return array_type->getNestedType();
 }

@@ -338,14 +338,41 @@ server_logs_level = "warning"
 
 
 def check_server_started(client, retry_count):
+    print("Connecting to ClickHouse server...", end='')
+    sys.stdout.flush()
     while retry_count > 0:
         clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
         (stdout, stderr) = clickhouse_proc.communicate("SELECT 1")
-        if clickhouse_proc.returncode != 0 or not stdout.startswith("1"):
+
+        if clickhouse_proc.returncode == 0 and stdout.startswith("1"):
+            print(" OK")
+            sys.stdout.flush()
+            return True
+
+        if clickhouse_proc.returncode == 210:
+            # Connection refused, retry
+            print('.', end = '')
+            sys.stdout.flush()
             retry_count -= 1
             sleep(0.5)
-        else:
-            return True
+            continue
+
+        # Other kind of error, fail.
+        print('')
+        print("Client invocation failed with code ", clickhouse_proc.returncode, ": ")
+        # We can't print this, because for some reason this is python 2,
+        # and args appeared in 3.3. To hell with it.
+        # print(''.join(clickhouse_proc.args))
+        print("stdout: ")
+        print(stdout)
+        print("stderr: ")
+        print(stderr)
+        sys.stdout.flush()
+        return False
+
+    print('')
+    print('All connection tries failed')
+    sys.stdout.flush()
 
     return False
 

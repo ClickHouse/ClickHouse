@@ -16,12 +16,15 @@ MergeTreeThreadSelectBlockInputProcessor::MergeTreeThreadSelectBlockInputProcess
     size_t preferred_block_size_bytes_,
     size_t preferred_max_column_in_block_size_bytes_,
     const MergeTreeData & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_)
     :
-    MergeTreeBaseSelectProcessor{pool_->getHeader(), storage_, prewhere_info_, max_block_size_rows_,
+    MergeTreeBaseSelectProcessor{
+        pool_->getHeader(), storage_, metadata_snapshot_, prewhere_info_,
+        max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     thread{thread_},
@@ -71,12 +74,12 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
             owned_uncompressed_cache = storage.global_context.getUncompressedCache();
         owned_mark_cache = storage.global_context.getMarkCache();
 
-        reader = task->data_part->getReader(task->columns, rest_mark_ranges,
+        reader = task->data_part->getReader(task->columns, metadata_snapshot, rest_mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
             IMergeTreeReader::ValueSizeMap{}, profile_callback);
 
         if (prewhere_info)
-            pre_reader = task->data_part->getReader(task->pre_columns, rest_mark_ranges,
+            pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, rest_mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 IMergeTreeReader::ValueSizeMap{}, profile_callback);
     }
@@ -87,12 +90,12 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
         {
             auto rest_mark_ranges = pool->getRestMarks(*task->data_part, task->mark_ranges[0]);
             /// retain avg_value_size_hints
-            reader = task->data_part->getReader(task->columns, rest_mark_ranges,
+            reader = task->data_part->getReader(task->columns, metadata_snapshot, rest_mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 reader->getAvgValueSizeHints(), profile_callback);
 
             if (prewhere_info)
-                pre_reader = task->data_part->getReader(task->pre_columns, rest_mark_ranges,
+                pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, rest_mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 reader->getAvgValueSizeHints(), profile_callback);
         }

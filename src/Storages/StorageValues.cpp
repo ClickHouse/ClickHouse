@@ -16,18 +16,21 @@ StorageValues::StorageValues(
     const NamesAndTypesList & virtuals_)
     : IStorage(table_id_), res_block(res_block_), virtuals(virtuals_)
 {
-    setColumns(columns_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    setInMemoryMetadata(storage_metadata);
 }
 
 Pipes StorageValues::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    check(column_names, true);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     Pipes pipes;
 
