@@ -1,8 +1,6 @@
 
 #pragma once
 
-#include "config_core.h"
-
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
