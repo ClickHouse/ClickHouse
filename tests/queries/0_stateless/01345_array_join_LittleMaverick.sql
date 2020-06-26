@@ -18,7 +18,7 @@ SELECT
 FROM test ARRAY JOIN nested as nestedJoined
 WHERE (status IN (
     SELECT status
-    FROM temp.test ARRAY JOIN nested as nestedJoined
+    FROM test ARRAY JOIN nested as nestedJoined
     GROUP BY status 
     ORDER BY count() DESC 
     LIMIT 10)) AND (id IN ('1', '2'))
