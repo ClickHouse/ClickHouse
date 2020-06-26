@@ -58,8 +58,6 @@ public:
 
     void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
 
-    void sync(const String & path) const override;
-
     DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
     void moveFile(const String & from_path, const String & to_path) override;
@@ -97,6 +95,10 @@ public:
     void createFile(const String & path) override;
 
     void setReadOnly(const String & path) override;
+
+    int open(const String & path, mode_t mode) const override;
+    void close(int fd) const override;
+    void sync(int fd) const override;
 
 private:
     bool tryReserve(UInt64 bytes);

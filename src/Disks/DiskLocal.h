@@ -59,8 +59,6 @@ public:
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
-    void sync(const String & path) const override;
-
     DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
     void createFile(const String & path) override;
@@ -100,6 +98,10 @@ public:
     void setReadOnly(const String & path) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
+
+    int open(const String & path, mode_t mode) const override;
+    void close(int fd) const override;
+    void sync(int fd) const override;
 
 private:
     bool tryReserve(UInt64 bytes);

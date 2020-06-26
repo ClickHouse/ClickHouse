@@ -12,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
 #include <Common/typeid_cast.h>
+#include <Common/FileSyncGuard.h>
 
 
 namespace ProfileEvents
@@ -259,7 +260,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         new_data_part->volume->getDisk()->removeRecursive(full_path);
     }
 
-    new_data_part->volume->getDisk()->createDirectories(full_path);
+    const auto disk = new_data_part->volume->getDisk();
+    disk->createDirectories(full_path);
+
+    std::optional<FileSyncGuard> sync_guard;
+    if (data.getSettings()->sync_part_directory)
+        sync_guard.emplace(disk, full_path);
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
@@ -308,10 +314,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
     out.writeSuffixAndFinalizePart(new_data_part, sync_on_insert);
-
-    /// Sync part directory.
-    if (sync_on_insert)
-        new_data_part->volume->getDisk()->sync(full_path);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());

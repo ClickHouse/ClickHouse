@@ -105,9 +105,6 @@ public:
     /// Move directory from `from_path` to `to_path`.
     virtual void moveDirectory(const String & from_path, const String & to_path) = 0;
 
-    /// Do fsync on directory.
-    virtual void sync(const String & path) const = 0;
-
     /// Return iterator to the contents of the specified directory.
     virtual DiskDirectoryIteratorPtr iterateDirectory(const String & path) = 0;
 
@@ -174,6 +171,15 @@ public:
 
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
+
+    /// Wrapper for POSIX open
+    virtual int open(const String & path, mode_t mode) const = 0;
+
+    /// Wrapper for POSIX close
+    virtual void close(int fd) const = 0;
+
+    /// Wrapper for POSIX fsync
+    virtual void sync(int fd) const = 0;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;

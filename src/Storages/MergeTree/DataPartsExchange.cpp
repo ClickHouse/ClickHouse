@@ -2,6 +2,7 @@
 #include <Disks/createVolume.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
+#include <Common/FileSyncGuard.h>
 #include <IO/HTTPCommon.h>
 #include <ext/scope_guard.h>
 #include <Poco/File.h>
@@ -224,9 +225,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     int server_protocol_version = parse<int>(in.getResponseCookie("server_protocol_version", "0"));
 
     ReservationPtr reservation;
+    size_t sum_files_size = 0;
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
     {
-        size_t sum_files_size;
         readBinary(sum_files_size, in);
         if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
         {
@@ -247,7 +248,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         reservation = data.makeEmptyReservationOnLargestDisk();
     }
 
-    return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
+    bool sync = (data_settings->min_compressed_bytes_to_sync_after_fetch
+                    && sum_files_size >= data_settings->min_compressed_bytes_to_sync_after_fetch);
+
+    return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(reservation), in);
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
@@ -255,6 +259,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
     const String & replica_path,
     bool to_detached,
     const String & tmp_prefix_,
+    bool sync,
     const ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
 {
@@ -275,6 +280,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 
     disk->createDirectories(part_download_path);
+
+    std::optional<FileSyncGuard> sync_guard;
+    if (data.getSettings()->sync_part_directory)
+        sync_guard.emplace(disk, part_download_path);
 
     MergeTreeData::DataPart::Checksums checksums;
     for (size_t i = 0; i < files; ++i)
@@ -316,6 +325,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt")
             checksums.addFile(file_name, file_size, expected_hash);
+
+        if (sync)
+            hashing_out.sync();
     }
 
     assertEOF(in);
