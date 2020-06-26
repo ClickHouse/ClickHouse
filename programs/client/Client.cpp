@@ -1,5 +1,6 @@
 #include "TestHint.h"
 #include "ConnectionParameters.h"
+#include "QueryFuzzer.h"
 #include "Suggest.h"
 
 #if USE_REPLXX
@@ -211,6 +212,9 @@ private:
     NameToNameMap query_parameters;
 
     ConnectionParameters connection_parameters;
+
+    QueryFuzzer fuzzer;
+    int query_fuzzer_runs;
 
     void initialize(Poco::Util::Application & self) override
     {
@@ -768,7 +772,14 @@ private:
 
         if (!config().has("multiquery"))
         {
+            assert(!query_fuzzer_runs);
             processTextAsSingleQuery(text);
+            return true;
+        }
+
+        if (query_fuzzer_runs)
+        {
+            processWithFuzzing(text);
             return true;
         }
 
@@ -869,6 +880,100 @@ private:
         return true;
     }
 
+
+    // Returns whether we can continue.
+    bool processWithFuzzing(const String & text)
+    {
+        /// Several queries separated by ';'.
+        /// INSERT data is ended by the end of line, not ';'.
+
+        const char * begin = text.data();
+        const char * end = begin + text.size();
+
+        while (begin < end)
+        {
+            // Skip whitespace before the query
+            while (isWhitespaceASCII(*begin) || *begin == ';')
+            {
+                ++begin;
+            }
+
+            const auto this_query_begin = begin;
+            ASTPtr orig_ast = parseQuery(begin, end, true);
+
+            if (!orig_ast)
+            {
+                // Can't continue after a parsing error
+                return false;
+            }
+
+            auto as_insert = orig_ast->as<ASTInsertQuery>();
+            if (as_insert && as_insert->data)
+            {
+                // INSERT data is ended by newline
+                as_insert->end = find_first_symbols<'\n'>(as_insert->data, end);
+                begin = as_insert->end;
+            }
+
+            full_query = text.substr(this_query_begin - text.data(),
+                begin - text.data());
+
+            ASTPtr fuzz_base = orig_ast;
+            for (int fuzz_step = 0; fuzz_step < query_fuzzer_runs; fuzz_step++)
+            {
+                ASTPtr ast_to_process;
+                try
+                {
+                    auto base_before_fuzz = fuzz_base->formatForErrorMessage();
+                    ast_to_process = fuzz_base->clone();
+                    fuzzer.fuzzMain(ast_to_process);
+                    auto base_after_fuzz = fuzz_base->formatForErrorMessage();
+
+                    // Debug AST cloning errors.
+                    assert(base_before_fuzz == base_after_fuzz);
+
+                    auto fuzzed_text = ast_to_process->formatForErrorMessage();
+                    if (fuzz_step > 0 && fuzzed_text == base_before_fuzz)
+                    {
+                        fprintf(stderr, "got boring ast\n");
+                        continue;
+                    }
+
+                    parsed_query = ast_to_process;
+                    query_to_send = parsed_query->formatForErrorMessage();
+
+                    processParsedSingleQuery();
+                }
+                catch (...)
+                {
+                    last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    received_exception_from_server = true;
+                    std::cerr << "Error on processing query: " << ast_to_process->formatForErrorMessage() << std::endl << last_exception_received_from_server->message();
+                }
+
+                if (received_exception_from_server && !ignore_error)
+                {
+                    // fuzz again
+                    fprintf(stderr, "got error, will fuzz again\n");
+                    continue;
+                }
+                else if (ast_to_process->formatForErrorMessage().size() > 500)
+                {
+                    // ast too long, please no; start from original ast
+                    fprintf(stderr, "current ast too long, won't elaborate\n");
+                    fuzz_base = orig_ast;
+                }
+                else
+                {
+                    // fuzz starting from this successful query
+                    fprintf(stderr, "using this ast as etalon\n");
+                    fuzz_base = ast_to_process;
+                }
+            }
+        }
+
+        return true;
+    }
 
     void processTextAsSingleQuery(const String & text_)
     {
@@ -1894,6 +1999,7 @@ public:
             ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
+            ("query-fuzzer-runs", po::value<int>()->default_value(0), "query fuzzer runs")
         ;
 
         Settings cmd_settings;
@@ -2045,6 +2151,12 @@ public:
         if (options.count("highlight"))
             config().setBool("highlight", options["highlight"].as<bool>());
 
+        if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
+        {
+            // Fuzzer implies multiquery
+            config().setBool("multiquery", true);
+        }
+
         argsToConfig(common_arguments, config(), 100);
 
         clearPasswordFromCommandLine(argc, argv);
@@ -2056,10 +2168,54 @@ public:
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 
+using signal_function = void(int, siginfo_t*, void*);
+
+/// Setup signal handlers.
+static void add_signal_handler(const std::vector<int> & signals, signal_function handler)
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = handler;
+    sa.sa_flags = SA_SIGINFO;
+
+    {
+#if defined(OS_DARWIN)
+        sigemptyset(&sa.sa_mask);
+        for (auto signal : signals)
+            sigaddset(&sa.sa_mask, signal);
+#else
+        if (sigemptyset(&sa.sa_mask))
+            throw Poco::Exception("Cannot set signal handler.");
+
+        for (auto signal : signals)
+            if (sigaddset(&sa.sa_mask, signal))
+                throw Poco::Exception("Cannot set signal handler.");
+#endif
+
+        for (auto signal : signals)
+            if (sigaction(signal, &sa, nullptr))
+                throw Poco::Exception("Cannot set signal handler.");
+    }
+};
+
+/** Handler for "fault" or diagnostic signals. */
+static void signalHandler(int sig, siginfo_t * /*info*/, void * context)
+{
+    const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
+    const StackTrace stack_trace(signal_context);
+    std::cerr << fmt::format("Received signal {} at: {}", sig,
+        stack_trace.toString()) << std::endl;
+
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
     try
     {
+        add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE,
+            SIGPIPE}, signalHandler);
         DB::Client client;
         client.init(argc, argv);
         return client.run();
