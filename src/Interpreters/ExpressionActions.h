@@ -206,7 +206,7 @@ public:
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
 
-    /// Execute the expression on the block with continuation.
+    /// Execute the expression on the block with continuation. This method in only supported for single JOIN.
     void execute(Block & block, ExtraBlockPtr & not_processed) const;
 
     bool hasJoinOrArrayJoin() const;
