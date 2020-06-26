@@ -105,7 +105,7 @@ DatabaseReplicated::DatabaseReplicated(
     snapshot_period = context_.getConfigRef().getInt("database_replicated_snapshot_period", 10);
     LOG_DEBUG(log, "Snapshot period is set to " << snapshot_period << " log entries per one snapshot");
 
-    background_log_executor = global_context.getReplicatedSchedulePool().createTask(database_name + "(DatabaseReplicated::background_executor)", [this]{ runBackgroundLogExecutor();} );
+    background_log_executor = context_.getReplicatedSchedulePool().createTask(database_name + "(DatabaseReplicated::background_executor)", [this]{ runBackgroundLogExecutor();} );
 
     background_log_executor->scheduleAfter(500);
 }
@@ -206,9 +206,9 @@ void DatabaseReplicated::writeLastExecutedToDiskAndZK() {
 void DatabaseReplicated::executeFromZK(String & path) {
         current_zookeeper = getZooKeeper();
         String query_to_execute = current_zookeeper->get(path, {}, NULL);
-        ReadBufferFromString istr(query_to_execute);
-        String dummy_string;
-        WriteBufferFromString ostr(dummy_string);
+        //ReadBufferFromString istr(query_to_execute);
+        //String dummy_string;
+        //WriteBufferFromString ostr(dummy_string);
 
         try
         {
@@ -216,7 +216,8 @@ void DatabaseReplicated::executeFromZK(String & path) {
             current_context->getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY;
             current_context->setCurrentDatabase(database_name);
             current_context->setCurrentQueryId(""); // generate random query_id
-            executeQuery(istr, ostr, false, *current_context, {});
+            //executeQuery(istr, ostr, false, *current_context, {});
+            executeQuery(query_to_execute, *current_context);
         }
         catch (...)
         {
@@ -248,9 +249,9 @@ void DatabaseReplicated::createSnapshot() {
         String table_name = iterator->name();
         auto query = getCreateQueryFromMetadata(getObjectMetadataPath(table_name), true);
         String statement = queryToString(query);
-        current_zookeeper->createIfNotExists(snapshot_path + "/" + table_name, statement);
+        current_zookeeper->create(snapshot_path + "/" + table_name, statement, zkutil::CreateMode::Persistent);
     }
-    current_zookeeper->createIfNotExists(snapshot_path + "/.completed", String());
+    current_zookeeper->create(snapshot_path + "/.completed", String(), zkutil::CreateMode::Persistent);
 
     RemoveOutdatedSnapshotsAndLog();
 }
