@@ -1,5 +1,7 @@
 #include <Processors/Formats/Impl/ORCBlockOutputFormat.h>
 
+#if USE_ORC
+
 #include <Common/assert_cast.h>
 #include <Formats/FormatFactory.h>
 
@@ -129,11 +131,12 @@ ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & t
     }
 }
 
-template <typename NumberType, typename NumberVectorBatch>
-void ORCBlockOutputFormat::ORCBlockOutputFormat::writeNumbers(
+template <typename NumberType, typename NumberVectorBatch, typename ConvertFunc>
+void ORCBlockOutputFormat::writeNumbers(
         orc::ColumnVectorBatch * orc_column,
         const IColumn & column,
-        const PaddedPODArray<UInt8> * null_bytemap)
+        const PaddedPODArray<UInt8> * null_bytemap,
+        ConvertFunc convert)
 {
     NumberVectorBatch * number_orc_column = dynamic_cast<NumberVectorBatch *>(orc_column);
     const auto & number_column = assert_cast<const ColumnVector<NumberType> &>(column);
@@ -146,16 +149,13 @@ void ORCBlockOutputFormat::ORCBlockOutputFormat::writeNumbers(
             number_orc_column->notNull[i] = 0;
             continue;
         }
-        if constexpr (std::is_same<NumberType, UInt8>::value)
-            number_orc_column->data[i] = static_cast<unsigned char>(number_column.getElement(i));
-        else
-            number_orc_column->data[i] = number_column.getElement(i);
+        number_orc_column->data[i] = convert(number_column.getElement(i));
     }
     number_orc_column->numElements = number_column.size();
 }
 
 template <typename Decimal, typename DecimalVectorBatch, typename ConvertFunc>
-void ORCBlockOutputFormat::ORCBlockOutputFormat::writeDecimals(
+void ORCBlockOutputFormat::writeDecimals(
         orc::ColumnVectorBatch * orc_column,
         const IColumn & column,
         DataTypePtr & type,
@@ -181,7 +181,7 @@ void ORCBlockOutputFormat::ORCBlockOutputFormat::writeDecimals(
 }
 
 template <typename ColumnType>
-void ORCBlockOutputFormat::ORCBlockOutputFormat::writeStrings(
+void ORCBlockOutputFormat::writeStrings(
         orc::ColumnVectorBatch * orc_column,
         const IColumn & column,
         const PaddedPODArray<UInt8> * null_bytemap)
@@ -205,7 +205,7 @@ void ORCBlockOutputFormat::ORCBlockOutputFormat::writeStrings(
 }
 
 template <typename ColumnType, typename GetSecondsFunc, typename GetNanosecondsFunc>
-void ORCBlockOutputFormat::ORCBlockOutputFormat::writeDateTimes(
+void ORCBlockOutputFormat::writeDateTimes(
         orc::ColumnVectorBatch * orc_column,
         const IColumn & column,
         const PaddedPODArray<UInt8> * null_bytemap,
@@ -244,53 +244,53 @@ void ORCBlockOutputFormat::writeColumn(
     {
         case TypeIndex::Int8:
         {
-            writeNumbers<Int8, orc::LongVectorBatch>(orc_column, column, null_bytemap);
+            writeNumbers<Int8, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int8 & value){ return value ;});
             break;
         }
         case TypeIndex::UInt8:
         {
-            writeNumbers<UInt8, orc::LongVectorBatch>(orc_column, column, null_bytemap);
+            writeNumbers<UInt8, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt8 & value){ return uint8_t(value) ;});
             break;
         }
         case TypeIndex::Int16:
         {
-            writeNumbers<Int16, orc::LongVectorBatch>(orc_column, column, null_bytemap);
+            writeNumbers<Int16, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int16 & value){ return value ;});
             break;
         }
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
         {
-            writeNumbers<UInt16, orc::LongVectorBatch>(orc_column, column, null_bytemap);
+            writeNumbers<UInt16, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt16 & value){ return value ;});
             break;
         }
         case TypeIndex::Int32:
         {
-            writeNumbers<Int32, orc::LongVectorBatch>(orc_column, column, null_bytemap);
+            writeNumbers<Int32, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int32 & value){ return value ;});
             break;
         }
         case TypeIndex::UInt32:
         {
-            writeNumbers<UInt32, orc::LongVectorBatch>(orc_column, column, null_bytemap);
+            writeNumbers<UInt32, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt32 & value){ return value ;});
             break;
         }
         case TypeIndex::Int64:
         {
-            writeNumbers<Int64, orc::LongVectorBatch>(orc_column, column, null_bytemap);
+            writeNumbers<Int64, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int64 & value){ return value ;});
             break;
         }
         case TypeIndex::UInt64:
         {
-            writeNumbers<UInt64,orc::LongVectorBatch>(orc_column, column, null_bytemap);
+            writeNumbers<UInt64,orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt64 & value){ return value ;});
             break;
         }
         case TypeIndex::Float32:
         {
-            writeNumbers<Float32, orc::DoubleVectorBatch>(orc_column, column, null_bytemap);
+            writeNumbers<Float32, orc::DoubleVectorBatch>(orc_column, column, null_bytemap, [](const Float32 & value){ return value ;});
             break;
         }
         case TypeIndex::Float64:
         {
-            writeNumbers<Float64, orc::DoubleVectorBatch>(orc_column, column, null_bytemap);
+            writeNumbers<Float64, orc::DoubleVectorBatch>(orc_column, column, null_bytemap, [](const Float64 & value){ return value ;});
             break;
         }
         case TypeIndex::FixedString:
@@ -368,6 +368,7 @@ void ORCBlockOutputFormat::writeColumn(
             auto nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
             const ColumnArray::Offsets & offsets = list_column.getOffsets();
             list_orc_column->resize(list_column.size());
+            /// The length of list i in ListVectorBatch is offsets[i+1] - offsets[i].
             list_orc_column->offsets[0] = 0;
             for (size_t i = 0; i != list_column.size(); ++i)
             {
@@ -439,3 +440,15 @@ void registerOutputFormatProcessorORC(FormatFactory & factory)
 }
 
 }
+
+#else
+
+namespace DB
+{
+    class FormatFactory;
+    void registerOutputFormatProcessorORC(FormatFactory &)
+    {
+    }
+}
+
+#endif

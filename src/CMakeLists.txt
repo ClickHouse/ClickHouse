@@ -364,11 +364,13 @@ target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_C
 
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
 
-target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR})
-configure_file (
-        "${ORC_INCLUDE_DIR}/orc/orc-config.hh.in"
-        "${ORC_INCLUDE_DIR}/orc/orc-config.hh"
-)
+if (USE_ORC)
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR})
+    configure_file (
+            "${ORC_INCLUDE_DIR}/orc/orc-config.hh.in"
+            "${ORC_INCLUDE_DIR}/orc/orc-config.hh"
+    )
+endif ()
 
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
