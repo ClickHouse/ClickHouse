@@ -16,6 +16,7 @@
 #include <Storages/StorageView.h>
 #include <sstream>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/printPipeline.h>
 
 namespace DB
 {
@@ -114,6 +115,7 @@ namespace
 struct QueryPlanSettings
 {
     QueryPlan::ExplainPlanOptions query_plan_options;
+
     constexpr static char name[] = "PLAN";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
@@ -127,11 +129,14 @@ struct QueryPlanSettings
 struct QueryPipelineSettings
 {
     QueryPlan::ExplainPipelineOptions query_pipeline_options;
+    bool graph = false;
+
     constexpr static char name[] = "PIPELINE";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
             {"header", query_pipeline_options.header},
+            {"graph", graph},
     };
 };
 
@@ -212,10 +217,16 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
     if (ast.getKind() == ASTExplainQuery::ParsedAST)
     {
+        if (ast.getSettings())
+            throw Exception("Settings are not supported for EXPLAIN AST query.", ErrorCodes::UNKNOWN_SETTING);
+
         dumpAST(ast, ss);
     }
     else if (ast.getKind() == ASTExplainQuery::AnalyzedSyntax)
     {
+        if (ast.getSettings())
+            throw Exception("Settings are not supported for EXPLAIN SYNTAX query.", ErrorCodes::UNKNOWN_SETTING);
+
         ExplainAnalyzedSyntaxVisitor::Data data{.context = context};
         ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
@@ -245,10 +256,18 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
-        plan.buildQueryPipeline();
+        auto pipeline = plan.buildQueryPipeline();
 
         WriteBufferFromOStream buffer(ss);
-        plan.explainPipeline(buffer, settings.query_pipeline_options);
+
+        if (settings.graph)
+        {
+            printPipeline(pipeline->getProcessors(), buffer);
+        }
+        else
+        {
+            plan.explainPipeline(buffer, settings.query_pipeline_options);
+        }
     }
 
     fillColumn(*res_columns[0], ss.str());
