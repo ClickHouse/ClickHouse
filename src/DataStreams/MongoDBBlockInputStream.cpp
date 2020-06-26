@@ -2,37 +2,167 @@
 #include <string>
 #include <vector>
 
+#include <common/logger_useful.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Element.h>
+#include <Poco/MongoDB/Database.h>
 #include <Poco/MongoDB/ObjectId.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
+#include <Common/assert_cast.h>
+#include <Common/quoteString.h>
+#include <ext/range.h>
+#include <DataStreams/MongoDBBlockInputStream.h>
+#include <Poco/URI.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Version.h>
+
+// only after poco
+// naming conflict:
+// Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
+// src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <IO/WriteHelpers.h>
 #include <Common/FieldVisitors.h>
-#include <Common/assert_cast.h>
-#include <ext/range.h>
-#include "DictionaryStructure.h"
-#include "MongoDBBlockInputStream.h"
-
+#include <ext/enumerate.h>
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int UNSUPPORTED_METHOD;
+    extern const int MONGODB_CANNOT_AUTHENTICATE;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
+
+#if POCO_VERSION < 0x01070800
+/// See https://pocoproject.org/forum/viewtopic.php?f=10&t=6326&p=11426&hilit=mongodb+auth#p11485
+void authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password)
+{
+    Poco::MongoDB::Database db(database);
+
+    /// Challenge-response authentication.
+    std::string nonce;
+
+    /// First step: request nonce.
+    {
+        auto command = db.createCommand();
+        command->setNumberToReturn(1);
+        command->selector().add<Int32>("getnonce", 1);
+
+        Poco::MongoDB::ResponseMessage response;
+        connection.sendRequest(*command, response);
+
+        if (response.documents().empty())
+            throw Exception(
+                "Cannot authenticate in MongoDB: server returned empty response for 'getnonce' command",
+                ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+
+        auto doc = response.documents()[0];
+        try
+        {
+            double ok = doc->get<double>("ok", 0);
+            if (ok != 1)
+                throw Exception(
+                    "Cannot authenticate in MongoDB: server returned response for 'getnonce' command that"
+                    " has field 'ok' missing or having wrong value",
+                    ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+
+            nonce = doc->get<std::string>("nonce", "");
+            if (nonce.empty())
+                throw Exception(
+                    "Cannot authenticate in MongoDB: server returned response for 'getnonce' command that"
+                    " has field 'nonce' missing or empty",
+                    ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+        catch (Poco::NotFoundException & e)
+        {
+            throw Exception(
+                "Cannot authenticate in MongoDB: server returned response for 'getnonce' command that has missing required field: "
+                    + e.displayText(),
+                ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+    }
+
+    /// Second step: use nonce to calculate digest and send it back to the server.
+    /// Digest is hex_md5(n.nonce + username + hex_md5(username + ":mongo:" + password))
+    {
+        std::string first = user + ":mongo:" + password;
+
+        Poco::MD5Engine md5;
+        md5.update(first);
+        std::string digest_first(Poco::DigestEngine::digestToHex(md5.digest()));
+        std::string second = nonce + user + digest_first;
+        md5.reset();
+        md5.update(second);
+        std::string digest_second(Poco::DigestEngine::digestToHex(md5.digest()));
+
+        auto command = db.createCommand();
+        command->setNumberToReturn(1);
+        command->selector()
+            .add<Int32>("authenticate", 1)
+            .add<std::string>("user", user)
+            .add<std::string>("nonce", nonce)
+            .add<std::string>("key", digest_second);
+
+        Poco::MongoDB::ResponseMessage response;
+        connection.sendRequest(*command, response);
+
+        if (response.empty())
+            throw Exception(
+                "Cannot authenticate in MongoDB: server returned empty response for 'authenticate' command",
+                ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+
+        auto doc = response.documents()[0];
+        try
+        {
+            double ok = doc->get<double>("ok", 0);
+            if (ok != 1)
+                throw Exception(
+                    "Cannot authenticate in MongoDB: server returned response for 'authenticate' command that"
+                    " has field 'ok' missing or having wrong value",
+                    ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+        catch (Poco::NotFoundException & e)
+        {
+            throw Exception(
+                "Cannot authenticate in MongoDB: server returned response for 'authenticate' command that has missing required field: "
+                    + e.displayText(),
+                ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+    }
+}
+#endif
+
+std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select)
+{
+    auto cursor = std::make_unique<Poco::MongoDB::Cursor>(database, collection);
+
+    /// Looks like selecting _id column is implicit by default.
+    if (!sample_block_to_select.has("_id"))
+        cursor->query().returnFieldSelector().add("_id", 0);
+
+    for (const auto & column : sample_block_to_select)
+        cursor->query().returnFieldSelector().add(column.name, 1);
+    return cursor;
+}
 
 MongoDBBlockInputStream::MongoDBBlockInputStream(
     std::shared_ptr<Poco::MongoDB::Connection> & connection_,
     std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
     const Block & sample_block,
-    const UInt64 max_block_size_)
-    : connection(connection_), cursor{std::move(cursor_)}, max_block_size{max_block_size_}
+    UInt64 max_block_size_,
+    bool strict_check_names_)
+    : connection(connection_)
+    , cursor{std::move(cursor_)}
+    , max_block_size{max_block_size_}
+    , strict_check_names{strict_check_names_}
 {
     description.init(sample_block);
 }
@@ -192,13 +322,17 @@ Block MongoDBBlockInputStream::readImpl()
     {
         Poco::MongoDB::ResponseMessage & response = cursor->next(*connection);
 
-        for (const auto & document : response.documents())
+        for (auto & document : response.documents())
         {
             ++num_rows;
 
             for (const auto idx : ext::range(0, size))
             {
                 const auto & name = description.sample_block.getByPosition(idx).name;
+
+                if (strict_check_names && !document->exists(name))
+                    throw Exception(fmt::format("Column {} is absent in MongoDB collection", backQuote(name)), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+
                 const Poco::MongoDB::Element::Ptr value = document->get(name);
 
                 if (value.isNull() || value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
