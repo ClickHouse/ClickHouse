@@ -79,7 +79,7 @@ public:
         bool empty() const { return processors.empty(); }
         void emplace(ProcessorPtr processor);
         void emplace(Processors processors_);
-        Processors * getCollectedProcessors() const;
+        Processors * getCollectedProcessors() const { return collected_processors; }
         Processors * setCollectedProcessors(Processors * collected_processors);
         Processors & get() { return processors; }
         Processors detach() { return std::move(processors); }

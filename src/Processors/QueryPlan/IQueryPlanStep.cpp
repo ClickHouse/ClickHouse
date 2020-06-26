@@ -18,6 +18,38 @@ const DataStream & IQueryPlanStep::getOutputStream() const
     return *output_stream;
 }
 
+static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep::FormatSettings & settings)
+{
+    String prefix(settings.offset, settings.ident_char);
+    prefix += "Header";
+
+    if (count > 1)
+        prefix += " x " + std::to_string(count) + " ";
+
+    prefix += ": ";
+
+    settings.out << prefix;
+
+    if (!header)
+    {
+        settings.out << " empty\n";
+        return;
+    }
+
+    prefix.assign(prefix.size(), settings.ident_char);
+    bool first = true;
+
+    for (const auto & elem : header)
+    {
+        if (!first)
+            settings.out << prefix;
+
+        first = false;
+        elem.dumpStructure(settings.out, true);
+        settings.out << '\n';
+    }
+}
+
 static void doDescribeProcessor(const IProcessor & processor, size_t count, IQueryPlanStep::FormatSettings & settings)
 {
     settings.out << String(settings.offset, settings.ident_char) << processor.getName();
@@ -30,6 +62,28 @@ static void doDescribeProcessor(const IProcessor & processor, size_t count, IQue
         settings.out << " " << std::to_string(num_inputs) << " -> " << std::to_string(num_outputs);
 
     settings.out << '\n';
+
+    if (settings.write_header)
+    {
+        const Block * last_header = nullptr;
+        size_t num_equal_headers = 0;
+
+        for (const auto & port : processor.getOutputs())
+        {
+            if (last_header && !blocksHaveEqualStructure(*last_header, port.getHeader()))
+            {
+                doDescribeHeader(*last_header, num_equal_headers, settings);
+                num_equal_headers = 0;
+            }
+
+            ++num_equal_headers;
+            last_header = &port.getHeader();
+        }
+
+        if (last_header)
+            doDescribeHeader(*last_header, num_equal_headers, settings);
+    }
+
     settings.offset += settings.ident;
 }
 

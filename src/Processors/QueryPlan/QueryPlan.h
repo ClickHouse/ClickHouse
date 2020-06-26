@@ -33,15 +33,24 @@ public:
 
     QueryPipelinePtr buildQueryPipeline();
 
-    struct ExplainOptions
+    struct ExplainPlanOptions
     {
+        /// Add output header to step.
         bool header = false;
+        /// Add description of step.
         bool description = true;
+        /// Add detailed information about step actions.
         bool actions = false;
     };
 
-    void explain(WriteBuffer & buffer, const ExplainOptions & options);
-    void explainPipeline(WriteBuffer & buffer);
+    struct ExplainPipelineOptions
+    {
+        /// Show header of output ports.
+        bool header = false;
+    };
+
+    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
+    void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
 
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.
