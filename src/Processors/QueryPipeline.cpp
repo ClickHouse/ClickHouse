@@ -879,12 +879,11 @@ QueryPipelineProcessorsCollector::~QueryPipelineProcessorsCollector()
 
 Processors QueryPipelineProcessorsCollector::detachProcessors(size_t group)
 {
-    Processors res;
-    res.swap(processors);
-
     for (auto & processor : processors)
         processor->setQueryPlanStep(step, group);
 
+    Processors res;
+    res.swap(processors);
     return res;
 }
 
