@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -109,6 +110,9 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     String database_name = get_string_from_block(arguments[arg++]);
     String table_name = get_string_from_block(arguments[arg++]);
     String column_name = get_string_from_block(arguments[arg++]);
+
+    if (table_name.empty())
+        throw Exception("Table name is empty", ErrorCodes::UNKNOWN_TABLE);
 
     bool has_column;
     if (host_name.empty())
