@@ -36,18 +36,14 @@ function configure
     while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
-    # Remove logs etc, because they will be updated, and sharing them between
-    # servers with hardlink might cause unpredictable behavior.
-    rm db0/data/system/* -rf ||:
-    rm db0/metadata/system/* -rf ||:
-
     # Make copies of the original db for both servers. Use hardlinks instead
-    # of copying. Be careful to remove preprocessed configs and system tables,or
-    # it can lead to weird effects.
+    # of copying to save space. Before that, remove preprocessed configs and
+    # system tables, because sharing them between servers with hardlinks may
+    # lead to weird effects.
     rm -r left/db ||:
     rm -r right/db ||:
     rm -r db0/preprocessed_configs ||:
-    rm -r db/{data,metadata}/system ||:
+    rm -r db0/{data,metadata}/system ||:
     cp -al db0/ left/db/
     cp -al db0/ right/db/
 }
@@ -131,6 +127,11 @@ function run_tests
         test_files=$(ls "$test_prefix"/*.xml)
     fi
 
+    # Determine which concurrent benchmarks to run. For now, the only test
+    # we run as a concurrent benchmark is 'website'. Run it as benchmark if we
+    # are also going to run it as a normal test.
+    for test in $test_files; do echo $test; done | sed -n '/website/p' > benchmarks-to-run.txt
+
     # Delete old report files.
     for x in {test-times,wall-clock-times}.tsv
     do
@@ -138,15 +139,18 @@ function run_tests
         touch "$x"
     done
 
+    # Randomize test order.
+    test_files=$(for f in $test_files; do echo "$f"; done | sort -R)
+
     # Run the tests.
     test_name="<none>"
     for test in $test_files
     do
-        # Check that both servers are alive, to fail faster if they die.
+        # Check that both servers are alive, and restart them if they die.
         clickhouse-client --port 9001 --query "select 1 format Null" \
-            || { echo $test_name >> left-server-died.log ; restart ; continue ; }
+            || { echo $test_name >> left-server-died.log ; restart ; }
         clickhouse-client --port 9002 --query "select 1 format Null" \
-            || { echo $test_name >> right-server-died.log ; restart ; continue ; }
+            || { echo $test_name >> right-server-died.log ; restart ; }
 
         test_name=$(basename "$test" ".xml")
         echo test "$test_name"
@@ -159,6 +163,30 @@ function run_tests
     unset TIMEFORMAT
 
     wait
+}
+
+# Run some queries concurrently and report the resulting TPS. This additional
+# (relatively) short test helps detect concurrency-related effects, because the
+# main performance comparison testing is done query-by-query.
+function run_benchmark
+{
+    rm -rf benchmark ||:
+    mkdir benchmark ||:
+
+    # The list is built by run_tests.
+    for file in $(cat benchmarks-to-run.txt)
+    do
+        name=$(basename "$file" ".xml")
+
+        "$script_dir/perf.py" --print-queries "$file" > "benchmark/$name-queries.txt"
+        "$script_dir/perf.py" --print-settings "$file" > "benchmark/$name-settings.txt"
+
+        readarray -t settings < "benchmark/$name-settings.txt"
+        command=(clickhouse-benchmark --concurrency 6 --cumulative --iterations 1000 --randomize 1 --delay 0 --continue_on_errors "${settings[@]}")
+
+        "${command[@]}" --port 9001 --json "benchmark/$name-left.json" < "benchmark/$name-queries.txt"
+        "${command[@]}" --port 9002 --json "benchmark/$name-right.json" < "benchmark/$name-queries.txt"
+    done
 }
 
 function get_profiles_watchdog
@@ -188,10 +216,13 @@ function get_profiles
     # Collect the profiles
     clickhouse-client --port 9001 --query "set query_profiler_cpu_time_period_ns = 0"
     clickhouse-client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
-    clickhouse-client --port 9001 --query "set query_profiler_cpu_time_period_ns = 0"
-    clickhouse-client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
-    clickhouse-client --port 9001 --query "system flush logs"
-    clickhouse-client --port 9002 --query "system flush logs"
+    clickhouse-client --port 9001 --query "system flush logs" &
+
+    clickhouse-client --port 9002 --query "set query_profiler_cpu_time_period_ns = 0"
+    clickhouse-client --port 9002 --query "set query_profiler_real_time_period_ns = 0"
+    clickhouse-client --port 9002 --query "system flush logs" &
+
+    wait
 
     clickhouse-client --port 9001 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
     clickhouse-client --port 9001 --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
@@ -219,7 +250,7 @@ function build_log_column_definitions
 {
 # FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
 # absolutely atrocious way. This should be done by the file() function itself.
-for x in {right,left}-{addresses,{query,query-thread,trace,metric}-log}.tsv
+for x in {right,left}-{addresses,{query,query-thread,trace,{async-,}metric}-log}.tsv
 do
     paste -d' ' \
         <(sed -n '1{s/\t/\n/g;p;q}' "$x" | sed 's/\(^.*$\)/"\1"/') \
@@ -263,25 +294,54 @@ create view right_query_log as select *
     from file('right-query-log.tsv', TSVWithNamesAndTypes,
         '$(cat "right-query-log.tsv.columns")');
 
-create table query_metrics engine File(TSV, -- do not add header -- will parse with grep
-        'analyze/query-run-metrics.tsv')
-    as select
-        test, query_index, 0 run, version,
-        [
-            -- server-reported time
-            query_duration_ms / toFloat64(1000)
-            , toFloat64(memory_usage)
-            -- client-reported time
-            , query_runs.time
-        ] metrics
-    from (
-        select query_duration_ms, memory_usage, query_id, 0 version from left_query_log
-        union all
-        select query_duration_ms, memory_usage, query_id, 1 version from right_query_log
-    ) query_logs
+create view query_logs as
+    select *, 0 version from left_query_log
+    union all
+    select *, 1 version from right_query_log
+    ;
+
+create table query_run_metrics_full engine File(TSV, 'analyze/query-run-metrics-full.tsv')
+    as
+    with (
+        -- sumMapState with the list of all keys with '-0.' values. Negative zero is because
+        -- sumMap removes keys with positive zeros.
+        with (select groupUniqArrayArray(ProfileEvents.Names) from query_logs) as all_names
+            select arrayReduce('sumMapState', [(all_names, arrayMap(x->-0., all_names))])
+        ) as all_metrics
+    select test, query_index, version, query_id,
+        (finalizeAggregation(
+            arrayReduce('sumMapMergeState',
+                [
+                    all_metrics,
+                    arrayReduce('sumMapState',
+                        [(ProfileEvents.Names,
+                            arrayMap(x->toFloat64(x), ProfileEvents.Values))]
+                    ),
+                    arrayReduce('sumMapState', [(
+                        ['client_time', 'server_time'],
+                        arrayMap(x->if(x != 0., x, -0.), [
+                            toFloat64(query_runs.time),
+                            toFloat64(query_duration_ms / 1000.)]))])
+                ]
+            )) as metrics_tuple).1 metric_names,
+        metrics_tuple.2 metric_values
+    from query_logs
     right join query_runs
-    using (query_id, version)
-    order by test, query_index
+        on query_logs.query_id = query_runs.query_id
+            and query_logs.version = query_runs.version
+    ;
+
+create table query_run_metrics engine File(
+        TSV, -- do not add header -- will parse with grep
+        'analyze/query-run-metrics.tsv')
+    as select test, query_index, 0 run, version, metric_values
+    from query_run_metrics_full
+    where test = 'arithmetic'
+    order by test, query_index, run, version
+    ;
+
+create table query_run_metric_names engine File(TSV, 'analyze/query-run-metric-names.tsv')
+    as select metric_names from query_run_metrics_full limit 1
     ;
 "
 
@@ -291,7 +351,6 @@ create table query_metrics engine File(TSV, -- do not add header -- will parse w
 # query. We also don't have lateral joins. So I just put all runs of each
 # query into a separate file, and then compute randomization distribution
 # for each file. I do this in parallel using GNU parallel.
-query_index=1
 IFS=$'\n'
 for prefix in $(cut -f1,2 "analyze/query-run-metrics.tsv" | sort | uniq)
 do
@@ -331,18 +390,32 @@ create view query_display_names as select * from
         'test text, query_index int, query_display_name text')
     ;
 
-create table query_metric_stats engine File(TSVWithNamesAndTypes,
-        'report/query-metric-stats.tsv') as
+-- WITH, ARRAY JOIN and CROSS JOIN do not like each other:
+--  https://github.com/ClickHouse/ClickHouse/issues/11868
+--  https://github.com/ClickHouse/ClickHouse/issues/11757
+-- Because of this, we make a view with arrays first, and then apply all the
+-- array joins.
+
+create view query_metric_stat_arrays as
+    with (select * from file('analyze/query-run-metric-names.tsv',
+        TSV, 'n Array(String)')) as metric_name
     select metric_name, left, right, diff, stat_threshold, test, query_index,
         query_display_name
     from file ('analyze/query-reports.tsv', TSV, 'left Array(float),
         right Array(float), diff Array(float), stat_threshold Array(float),
         test text, query_index int') reports
-    left array join ['server_time', 'memory', 'client_time'] as metric_name,
-        left, right, diff, stat_threshold
     left join query_display_names
         on reports.test = query_display_names.test
             and reports.query_index = query_display_names.query_index
+    ;
+
+create table query_metric_stats engine File(TSVWithNamesAndTypes,
+        'report/query-metric-stats.tsv')
+    as
+    select metric_name, left, right, diff, stat_threshold, test, query_index,
+        query_display_name
+    from query_metric_stat_arrays
+    left array join metric_name, left, right, diff, stat_threshold
     ;
 
 -- Main statistics for queries -- query time as reported in query log.
@@ -363,7 +436,8 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
         not short and not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
         
         left, right, diff, stat_threshold,
-        if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
+        --if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
+        0.10 as report_threshold,
         test, query_index, query_display_name
     from query_metric_stats
     left join file('analyze/report-thresholds.tsv', TSV,
@@ -699,6 +773,64 @@ unset IFS
 grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' >> run-errors.tsv ||:
 }
 
+function report_metrics
+{
+rm -rf metrics ||:
+mkdir metrics
+
+clickhouse-local --stacktrace --verbose --query "
+create view right_async_metric_log as
+    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes,
+        'event_date Date, event_time DateTime, name String, value Float64')
+    ;
+
+-- Use the right log as time reference because it may have higher precision.
+create table metrics engine File(TSV, 'metrics/metrics.tsv') as
+    with (select min(event_time) from right_async_metric_log) as min_time
+    select name metric, r.event_time - min_time event_time, l.value as left, r.value as right
+    from right_async_metric_log r
+    asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes,
+        'event_date Date, event_time DateTime, name String, value Float64') l
+    on l.name = r.name and r.event_time <= l.event_time
+    order by metric, event_time
+    ;
+
+-- Show metrics that have changed
+create table changes engine File(TSV, 'metrics/changes.tsv') as
+    select metric, median(left) as left, median(right) as right,
+        floor((right - left) / left, 3) diff,
+        floor(if(left > right, left / right, right / left), 3) times_diff
+    from metrics
+    group by metric
+    having abs(diff) > 0.05 and isFinite(diff)
+    order by diff desc
+    ;
+"
+
+IFS=$'\n'
+for prefix in $(cut -f1 "metrics/metrics.tsv" | sort | uniq)
+do
+    file="metrics/$prefix.tsv"
+    grep "^$prefix	" "metrics/metrics.tsv" | cut -f2- > "$file"
+
+    gnuplot -e "
+        set datafile separator '\t';
+        set terminal png size 960,540;
+        set xtics time format '%tH:%tM';
+        set title '$prefix' noenhanced offset 0,-3;
+        set key left top;
+        plot
+            '$file' using 1:2 with lines title 'Left'
+            , '$file' using 1:3 with lines title 'Right'
+            ;
+    " \
+        | convert - -filter point -resize "200%" "metrics/$prefix.png" &
+
+done
+wait
+unset IFS
+}
+
 # Check that local and client are in PATH
 clickhouse-local --version > /dev/null
 clickhouse-client --version > /dev/null
@@ -716,13 +848,28 @@ case "$stage" in
     # Ignore the errors to collect the log and build at least some report, anyway
     time run_tests ||:
     ;&
+"run_benchmark")
+    time run_benchmark 2> >(tee -a run-errors.tsv 1>&2) ||:
+    ;&
 "get_profiles")
-    # Getting profiles inexplicably hangs sometimes, so try to save some logs if
-    # this happens again. Give the servers some time to collect all info, then
-    # trace and kill. Start in a subshell, so that both function don't interfere
-    # with each other's jobs through `wait`. Also make the subshell have its own
-    # process group, so that we can then kill it with all its child processes.
-    # Somehow it doesn't kill the children by itself when dying.
+    # Check for huge pages.
+    cat /sys/kernel/mm/transparent_hugepage/enabled > thp-enabled.txt ||:
+    cat /proc/meminfo > meminfo.txt ||:
+    for pid in $(pgrep -f clickhouse-server)
+    do
+        cat "/proc/$pid/smaps" > "$pid-smaps.txt" ||:
+    done
+
+    # Sleep for five minutes to see how the servers enter a quiescent state (e.g.
+    # how fast the memory usage drops).
+    sleep 300
+
+    # We had a bug where getting profiles froze sometimes, so try to save some
+    # logs if this happens again. Give the servers some time to collect all info,
+    # then trace and kill. Start in a subshell, so that both function don't
+    # interfere with each other's jobs through `wait`. Also make the subshell
+    # have its own process group, so that we can then kill it with all its child
+    # processes. Somehow it doesn't kill the children by itself when dying.
     set -m
     ( get_profiles_watchdog ) &
     watchdog_pid=$!
@@ -749,7 +896,11 @@ case "$stage" in
     ;&
 "report")
     time report ||:
-
+    ;&
+"report_metrics")
+    time report_metrics ||:
+    ;&
+"report_html")
     time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
     time "$script_dir/report.py" > report.html
     ;&

@@ -68,7 +68,7 @@ private:
 public:
     MergeTreeReadPool(
         const size_t threads_, const size_t sum_marks_, const size_t min_marks_for_concurrent_read_,
-        RangesInDataParts parts_, const MergeTreeData & data_, const PrewhereInfoPtr & prewhere_info_,
+        RangesInDataParts parts_, const MergeTreeData & data_, const StorageMetadataPtr & metadata_snapshot_, const PrewhereInfoPtr & prewhere_info_,
         const bool check_columns_, const Names & column_names_,
         const BackoffSettings & backoff_settings_, size_t preferred_block_size_bytes_,
         const bool do_not_steal_tasks_ = false);
@@ -95,6 +95,7 @@ private:
         RangesInDataParts & parts, const size_t min_marks_for_concurrent_read);
 
     const MergeTreeData & data;
+    StorageMetadataPtr metadata_snapshot;
     Names column_names;
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;

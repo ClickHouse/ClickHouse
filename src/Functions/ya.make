@@ -92,6 +92,7 @@ SRCS(
     array/emptyArrayToSingle.cpp
     array/hasAll.cpp
     array/hasAny.cpp
+    array/hasSubstr.cpp
     array/has.cpp
     array/indexOf.cpp
     array/length.cpp

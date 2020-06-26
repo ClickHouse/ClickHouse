@@ -27,11 +27,11 @@ function download
     # might have the same version on left and right
     if ! [ "$left_sha" = "$right_sha" ]
     then
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv  &
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$right_pr/$right_sha/performance/performance.tgz" -O- | tar -C right --strip-components=1 -zxv &
+        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/clickhouse_build_check/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv  &
+        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$right_pr/$right_sha/clickhouse_build_check/performance/performance.tgz" -O- | tar -C right --strip-components=1 -zxv &
     else
         mkdir right ||:
-        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv && cp -a left/* right &
+        wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/clickhouse_build_check/performance/performance.tgz" -O- | tar -C left --strip-components=1 -zxv && cp -a left/* right &
     fi
 
     for dataset_name in $datasets

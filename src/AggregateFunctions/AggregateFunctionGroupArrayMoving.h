@@ -158,7 +158,7 @@ public:
         this->data(place).sum = value.back();
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         const auto & data = this->data(place);
         size_t size = data.value.size();
