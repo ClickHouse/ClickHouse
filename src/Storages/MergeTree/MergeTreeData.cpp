@@ -58,7 +58,6 @@
 #include <typeinfo>
 #include <typeindex>
 #include <unordered_set>
-#include <algorithm>
 
 
 namespace ProfileEvents
