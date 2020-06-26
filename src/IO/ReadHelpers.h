@@ -455,7 +455,8 @@ void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readStringUntilEOF(String & s, ReadBuffer & buf);
 
-// Doesn't read the EOL itself.
+// Reads the line until EOL, unescaping backslash escape sequences.
+// Buffer pointer is left at EOL, don't forget to advance it.
 void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
 

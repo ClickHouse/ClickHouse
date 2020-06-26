@@ -861,7 +861,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         };
 
         /// This object will periodically calculate some metrics.
-        AsynchronousMetrics async_metrics(*global_context);
+        AsynchronousMetrics async_metrics(*global_context,
+            config().getUInt("asynchronous_metrics_update_period_s", 60));
         attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         for (const auto & listen_host : listen_hosts)
