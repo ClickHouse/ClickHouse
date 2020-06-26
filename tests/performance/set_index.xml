@@ -3,14 +3,14 @@
     <fill_query>INSERT INTO test_in SELECT number FROM numbers(500000000)</fill_query>
 
     <!-- IN is used at index analysis -->
-    <query>SELECT count() FROM test_in WHERE a IN (SELECT rand(1) FROM numbers(100000)) SETTINGS max_rows_to_read = 1, read_overflow_mode = 'break'</query>
+    <query>SELECT count() FROM test_in WHERE a IN (SELECT rand(1) FROM numbers(200000)) SETTINGS max_rows_to_read = 1, read_overflow_mode = 'break'</query>
 
-    <query>SELECT count() FROM test_in WHERE toInt64(a) IN (SELECT toInt64(rand(1)) FROM numbers(100000)) settings max_rows_to_read=1, read_overflow_mode='break'</query>
+    <query>SELECT count() FROM test_in WHERE toInt64(a) IN (SELECT toInt64(rand(1)) FROM numbers(200000)) settings max_rows_to_read=1, read_overflow_mode='break'</query>
 
      <!-- Analyze only one range -->
-    <query>SELECT count() FROM test_in WHERE -toInt64(a) IN (SELECT toInt64(rand(1)) FROM numbers(100000)) settings max_rows_to_read=1, read_overflow_mode='break'</query>
-    <!-- Analyze all ranges -->
-    <query>SELECT count() FROM test_in WHERE -toInt64(a) NOT IN (SELECT toInt64(rand(1)) FROM numbers(100000)) settings max_rows_to_read=1, read_overflow_mode='break'</query>
+    <query>SELECT count() FROM test_in WHERE -toInt64(a) IN (SELECT toInt64(rand(1)) FROM numbers(200000)) settings max_rows_to_read=1, read_overflow_mode='break'</query>
+    <!-- Analyze all ranges. The query is short because nothing is selected. -->
+    <query short="1">SELECT count() FROM test_in WHERE -toInt64(a) NOT IN (SELECT toInt64(rand(1)) FROM numbers(200000)) settings max_rows_to_read=1, read_overflow_mode='break'</query>
 
     <!--
         Test with explicitly defined large set (10000 elemnets).
