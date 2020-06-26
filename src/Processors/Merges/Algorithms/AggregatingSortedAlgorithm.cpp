@@ -223,7 +223,7 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::finishGroup()
     /// Write the simple aggregation result for the current group.
     for (auto & desc : def.columns_to_simple_aggregate)
     {
-        desc.function->insertResultInto(desc.state.data(), *desc.column);
+        desc.function->insertResultInto(desc.state.data(), *desc.column, arena.get());
         desc.destroyState();
     }
 

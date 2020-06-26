@@ -23,13 +23,13 @@ static String formattedAST(const ASTPtr & ast)
     return ss.str();
 }
 
-ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data)
+ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
 
     const auto data_settings = data.getSettings();
-    sampling_expression = formattedAST(data.getSamplingKeyAST());
+    sampling_expression = formattedAST(metadata_snapshot->getSamplingKeyAST());
     index_granularity = data_settings->index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
@@ -40,28 +40,28 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     /// So rules in zookeeper metadata is following:
     /// - When we have only ORDER BY, than store it in "primary key:" row of /metadata
     /// - When we have both, than store PRIMARY KEY in "primary key:" row and ORDER BY in "sorting key:" row of /metadata
-    if (!data.isPrimaryKeyDefined())
-        primary_key = formattedAST(data.getSortingKey().expression_list_ast);
+    if (!metadata_snapshot->isPrimaryKeyDefined())
+        primary_key = formattedAST(metadata_snapshot->getSortingKey().expression_list_ast);
     else
     {
-        primary_key = formattedAST(data.getPrimaryKey().expression_list_ast);
-        sorting_key = formattedAST(data.getSortingKey().expression_list_ast);
+        primary_key = formattedAST(metadata_snapshot->getPrimaryKey().expression_list_ast);
+        sorting_key = formattedAST(metadata_snapshot->getSortingKey().expression_list_ast);
     }
 
     data_format_version = data.format_version;
 
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        partition_key = formattedAST(data.getPartitionKey().expression_list_ast);
+        partition_key = formattedAST(metadata_snapshot->getPartitionKey().expression_list_ast);
 
-    ttl_table = formattedAST(data.getTableTTLs().definition_ast);
+    ttl_table = formattedAST(metadata_snapshot->getTableTTLs().definition_ast);
 
-    skip_indices = data.getSecondaryIndices().toString();
+    skip_indices = metadata_snapshot->getSecondaryIndices().toString();
     if (data.canUseAdaptiveGranularity())
         index_granularity_bytes = data_settings->index_granularity_bytes;
     else
         index_granularity_bytes = 0;
 
-    constraints = data.getConstraints().toString();
+    constraints = metadata_snapshot->getConstraints().toString();
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
