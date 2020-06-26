@@ -178,7 +178,7 @@ void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
 
 
 static void explainStep(
-    WriteBuffer & buffer, IQueryPlanStep & step, size_t ident, const QueryPlan::ExplainOptions & options)
+    WriteBuffer & buffer, IQueryPlanStep & step, size_t ident, const QueryPlan::ExplainPlanOptions & options)
 {
     std::string prefix(ident, ' ');
     buffer << prefix;
@@ -227,7 +227,7 @@ static void explainStep(
     }
 }
 
-void QueryPlan::explain(WriteBuffer & buffer, const ExplainOptions & options)
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
 {
     checkInitialized();
 
@@ -272,11 +272,11 @@ static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSet
         settings.offset += settings.ident;
 }
 
-void QueryPlan::explainPipeline(WriteBuffer & buffer)
+void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options)
 {
     checkInitialized();
 
-    IQueryPlanStep::FormatSettings settings{.out = buffer};
+    IQueryPlanStep::FormatSettings settings{.out = buffer, .write_header = options.header};
 
     struct Frame
     {

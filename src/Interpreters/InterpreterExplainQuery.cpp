@@ -111,9 +111,10 @@ static void fillColumn(IColumn & column, const std::string & str)
 namespace
 {
 
-struct ExplainSettings
+struct QueryPlanSettings
 {
-    QueryPlan::ExplainOptions query_plan_options;
+    QueryPlan::ExplainPlanOptions query_plan_options;
+    constexpr static char name[] = "PLAN";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
@@ -121,6 +122,23 @@ struct ExplainSettings
             {"description", query_plan_options.description},
             {"actions", query_plan_options.actions}
     };
+};
+
+struct QueryPipelineSettings
+{
+    QueryPlan::ExplainPipelineOptions query_pipeline_options;
+    constexpr static char name[] = "PIPELINE";
+
+    std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
+    {
+            {"header", query_pipeline_options.header},
+    };
+};
+
+template <typename Settings>
+struct ExplainSettings : public Settings
+{
+    using Settings::boolean_settings;
 
     bool has(const std::string & name) const
     {
@@ -151,21 +169,20 @@ struct ExplainSettings
     }
 };
 
-}
-
-ExplainSettings checkAndGetSettings(const ASTPtr & ast_settings)
+template <typename Settings>
+ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 {
     if (!ast_settings)
         return {};
 
-    ExplainSettings settings;
+    ExplainSettings<Settings> settings;
     const auto & set_query = ast_settings->as<ASTSetQuery &>();
 
     for (const auto & change : set_query.changes)
     {
         if (!settings.has(change.name))
-            throw Exception("Unknown setting \"" + change.name + "\" for EXPLAIN query. Supported settings: " +
-                            settings.getSettingsList(), ErrorCodes::UNKNOWN_SETTING);
+            throw Exception("Unknown setting \"" + change.name + "\" for EXPLAIN " + Settings::name + " query. "
+                            "Supported settings: " + settings.getSettingsList(), ErrorCodes::UNKNOWN_SETTING);
 
         if (change.value.getType() != Field::Types::UInt64)
             throw Exception("Invalid type " + std::string(change.value.getTypeName()) + " for setting \"" + change.name +
@@ -182,10 +199,11 @@ ExplainSettings checkAndGetSettings(const ASTPtr & ast_settings)
     return settings;
 }
 
+}
+
 BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 {
     const auto & ast = query->as<ASTExplainQuery &>();
-    auto settings = checkAndGetSettings(ast.getSettings());
 
     Block sample_block = getSampleBlock();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
@@ -208,19 +226,21 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
             throw Exception("Only SELECT is supported for EXPLAIN query", ErrorCodes::INCORRECT_QUERY);
 
+        auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
         QueryPlan plan;
 
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
 
         WriteBufferFromOStream buffer(ss);
-        plan.explain(buffer, settings.query_plan_options);
+        plan.explainPlan(buffer, settings.query_plan_options);
     }
     else if (ast.getKind() == ASTExplainQuery::QueryPipeline)
     {
         if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
             throw Exception("Only SELECT is supported for EXPLAIN query", ErrorCodes::INCORRECT_QUERY);
 
+        auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
         QueryPlan plan;
 
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
@@ -228,7 +248,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         plan.buildQueryPipeline();
 
         WriteBufferFromOStream buffer(ss);
-        plan.explainPipeline(buffer);
+        plan.explainPipeline(buffer, settings.query_pipeline_options);
     }
 
     fillColumn(*res_columns[0], ss.str());

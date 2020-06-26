@@ -61,6 +61,7 @@ public:
         size_t offset = 0;
         const size_t ident = 2;
         const char ident_char = ' ';
+        const bool write_header = false;
     };
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
