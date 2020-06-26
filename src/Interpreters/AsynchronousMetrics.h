@@ -25,7 +25,10 @@ typedef std::unordered_map<std::string, AsynchronousMetricValue> AsynchronousMet
 class AsynchronousMetrics
 {
 public:
-    AsynchronousMetrics(Context & context_, int update_period_seconds)
+    // The default value of update_period_seconds is for ClickHouse-over-YT
+    // in Arcadia -- it uses its own server implementation that also uses these
+    // metrics.
+    AsynchronousMetrics(Context & context_, int update_period_seconds = 60)
         : context(context_),
           update_period(update_period_seconds),
           thread([this] { run(); })
