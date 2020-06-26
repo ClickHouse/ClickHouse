@@ -38,7 +38,7 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
         {
             const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
 
-            Field value = convertFieldToType(value_field, *sample_block.getByPosition(0).type, value_type_ptr.get());
+            Field value = convertFieldToTypeOrThrow(value_field, *sample_block.getByPosition(0).type, value_type_ptr.get());
             res_columns[0]->insert(value);
         }
     }
@@ -51,11 +51,11 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
             const Tuple & value_tuple = value_field.safeGet<Tuple>();
 
             if (value_tuple.size() != sample_block.columns())
-                throw Exception("Values size should match with number of columns", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Values size should match with number of columns", ErrorCodes::BAD_ARGUMENTS);
 
             for (size_t j = 0; j < value_tuple.size(); ++j)
             {
-                Field value = convertFieldToType(value_tuple[j], *sample_block.getByPosition(j).type, value_types_tuple[j].get());
+                Field value = convertFieldToTypeOrThrow(value_tuple[j], *sample_block.getByPosition(j).type, value_types_tuple[j].get());
                 res_columns[j]->insert(value);
             }
         }
