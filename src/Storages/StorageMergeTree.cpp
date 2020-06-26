@@ -204,7 +204,9 @@ BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Sto
 {
 
     const auto & settings = context.getSettingsRef();
-    return std::make_shared<MergeTreeBlockOutputStream>(*this, metadata_snapshot, settings.max_partitions_per_insert_block, settings.insert_in_memory_parts_timeout.totalMilliseconds());
+    return std::make_shared<MergeTreeBlockOutputStream>(
+        *this, metadata_snapshot, settings.max_partitions_per_insert_block,
+        settings.insert_in_memory_parts_timeout.totalMilliseconds());
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const
@@ -1091,14 +1093,14 @@ void StorageMergeTree::alterPartition(
             case PartitionCommand::FREEZE_PARTITION:
             {
                 auto lock = lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-                freezePartition(command.partition, command.with_name, context, lock);
+                freezePartition(command.partition, metadata_snapshot, command.with_name, context, lock);
             }
             break;
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
                 auto lock = lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-                freezeAll(command.with_name, context, lock);
+                freezeAll(command.with_name, metadata_snapshot, context, lock);
             }
             break;
 
@@ -1115,6 +1117,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
+        auto metadata_snapshot = getInMemoryMetadataPtr();
         String partition_id = getPartitionIDFromQuery(partition, context);
 
         /// TODO: should we include PreComitted parts like in Replicated case?
@@ -1128,7 +1131,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
             for (const auto & part : parts_to_remove)
             {
                 LOG_INFO(log, "Detaching {}", part->relative_path);
-                part->makeCloneInDetached("");
+                part->makeCloneInDetached("", metadata_snapshot);
             }
         }
 
@@ -1189,7 +1192,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        dst_parts.emplace_back(cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info));
+        dst_parts.emplace_back(cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot));
     }
 
     /// ATTACH empty part set
@@ -1273,7 +1276,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        dst_parts.emplace_back(dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info));
+        dst_parts.emplace_back(dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot));
     }
 
     /// empty part set

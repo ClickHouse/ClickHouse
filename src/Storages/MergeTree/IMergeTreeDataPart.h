@@ -311,7 +311,7 @@ public:
     virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
 
     /// Makes clone of a part in detached/ directory via hard links
-    virtual void makeCloneInDetached(const String & prefix) const;
+    virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Makes full clone of part in detached/ on another disk
     void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;

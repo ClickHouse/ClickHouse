@@ -512,7 +512,7 @@ public:
            TableLockHolder & table_lock_holder);
 
     /// Freezes all parts.
-    void freezeAll(const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
+    void freezeAll(const String & with_name, const StorageMetadataPtr & metadata_snapshot, const Context & context, TableLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
@@ -534,7 +534,7 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
+    void freezePartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
 
 
 public:
@@ -567,7 +567,7 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPartOnSameDisk(
-        const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info);
+        const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
@@ -829,7 +829,7 @@ protected:
 
     /// Common part for |freezePartition()| and |freezeAll()|.
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
-    void freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
+    void freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context);
 
     bool canReplacePartition(const DataPartPtr & src_part) const;
 

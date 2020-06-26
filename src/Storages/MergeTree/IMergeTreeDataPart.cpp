@@ -808,7 +808,7 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix) const
     renameTo(getRelativePathForDetachedPart(prefix), true);
 }
 
-void IMergeTreeDataPart::makeCloneInDetached(const String & prefix) const
+void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
     String destination_path = storage.relative_data_path + getRelativePathForDetachedPart(prefix);
 

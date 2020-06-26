@@ -38,6 +38,7 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
 
 IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
     const NamesAndTypesList & columns_to_read,
+    const StorageMetadataPtr & metadata_snapshot,
     const MarkRanges & mark_ranges,
     UncompressedCache * /* uncompressed_cache */,
     MarkCache * /* mark_cache */,
@@ -47,21 +48,23 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
 {
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartInMemory>(shared_from_this());
     return std::make_unique<MergeTreeReaderInMemory>(
-        ptr, columns_to_read, mark_ranges, reader_settings);
+        ptr, columns_to_read, metadata_snapshot, mark_ranges, reader_settings);
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
     const NamesAndTypesList & columns_list,
+    const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & /* indices_to_recalc */,
     const CompressionCodecPtr & /* default_codec */,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & /* computed_index_granularity */) const
 {
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartInMemory>(shared_from_this());
-    return std::make_unique<MergeTreeDataPartWriterInMemory>(ptr, columns_list, writer_settings);
+    return std::make_unique<MergeTreeDataPartWriterInMemory>(
+        ptr, columns_list, metadata_snapshot, writer_settings);
 }
 
-void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const String & new_relative_path) const
+void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const
 {
     const auto & disk = volume->getDisk();
     String destination_path = base_path + new_relative_path;
@@ -82,17 +85,17 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
     disk->createDirectories(destination_path);
 
     auto compression_codec = storage.global_context.chooseCompressionCodec(0, 0);
-    auto indices = MergeTreeIndexFactory::instance().getMany(storage.getSecondaryIndices());
-    MergedBlockOutputStream out(new_data_part, columns, indices, compression_codec);
+    auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, indices, compression_codec);
     out.writePrefix();
     out.write(block);
     out.writeSuffixAndFinalizePart(new_data_part);
 }
 
-void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix) const
+void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const
 {
     String detached_path = getRelativePathForDetachedPart(prefix);
-    flushToDisk(storage.getRelativeDataPath(), detached_path);
+    flushToDisk(storage.getRelativeDataPath(), detached_path, metadata_snapshot);
 }
 
 bool MergeTreeDataPartInMemory::waitUntilMerged(size_t timeout_ms) const

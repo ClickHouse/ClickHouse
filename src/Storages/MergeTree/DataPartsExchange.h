@@ -53,6 +53,7 @@ public:
 
     /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
     MergeTreeData::MutableDataPartPtr fetchPart(
+        const StorageMetadataPtr & metadata_snapshot,
         const String & part_name,
         const String & replica_path,
         const String & host,
@@ -78,6 +79,7 @@ private:
 
     MergeTreeData::MutableDataPartPtr downloadPartToMemory(
             const String & part_name,
+            const StorageMetadataPtr & metadata_snapshot,
             ReservationPtr reservation,
             PooledReadWriteBufferFromHTTP & in);
 

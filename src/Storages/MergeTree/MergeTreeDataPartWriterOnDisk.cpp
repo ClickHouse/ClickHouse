@@ -65,13 +65,14 @@ void MergeTreeDataPartWriterOnDisk::Stream::addToChecksums(MergeTreeData::DataPa
 MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : IMergeTreeDataPartWriter(data_part_,
-        columns_list_, indices_to_recalc_,
+        columns_list_, metadata_snapshot_, indices_to_recalc_,
         index_granularity_, settings_)
     , part_path(data_part_->getFullRelativePath())
     , marks_file_extension(marks_file_extension_)
@@ -156,7 +157,7 @@ void MergeTreeDataPartWriterOnDisk::fillIndexGranularity(size_t index_granularit
 
 void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 {
-    if (storage.hasPrimaryKey())
+    if (metadata_snapshot->hasPrimaryKey())
     {
         index_file_stream = data_part->volume->getDisk()->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
@@ -216,7 +217,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
     while (index_mark < total_marks && current_row < rows)
     {
-        if (storage.hasPrimaryKey())
+        if (metadata_snapshot->hasPrimaryKey())
         {
             for (size_t j = 0; j < primary_columns_num; ++j)
             {

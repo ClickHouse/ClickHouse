@@ -18,7 +18,9 @@ public:
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , max_parts_per_block(max_parts_per_block_)
-        , in_memory_parts_timeout(in_memory_parts_timeout_) {}
+        , in_memory_parts_timeout(in_memory_parts_timeout_)
+    {
+    }
 
     Block getHeader() const override;
     void write(const Block & block) override;

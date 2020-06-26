@@ -137,11 +137,12 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
 void Service::sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out)
 {
+    auto metadata_snapshot = data.getInMemoryMetadataPtr();
     auto part_in_memory = asInMemoryPart(part);
     if (!part_in_memory)
         throw Exception("Part " + part->name + " is not stored in memory", ErrorCodes::LOGICAL_ERROR);
 
-    NativeBlockOutputStream block_out(out, 0, data.getSampleBlock());
+    NativeBlockOutputStream block_out(out, 0, metadata_snapshot->getSampleBlock());
     part->checksums.write(out);
     block_out.write(part_in_memory->block);
 }
@@ -202,6 +203,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
+    const StorageMetadataPtr & metadata_snapshot,
     const String & part_name,
     const String & replica_path,
     const String & host,
@@ -280,12 +282,13 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
         readStringBinary(part_type, in);
 
-    return part_type == "InMemory" ? downloadPartToMemory(part_name, std::move(reservation), in)
+    return part_type == "InMemory" ? downloadPartToMemory(part_name, metadata_snapshot, std::move(reservation), in)
         : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     const String & part_name,
+    const StorageMetadataPtr & metadata_snapshot,
     ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
 {
@@ -303,9 +306,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());
     new_data_part->minmax_idx.update(block, data.minmax_idx_columns);
-    new_data_part->partition.create(data, block, 0);
+    new_data_part->partition.create(metadata_snapshot, block, 0);
 
-    MergedBlockOutputStream part_out(new_data_part, block.getNamesAndTypesList(), {}, nullptr);
+    MergedBlockOutputStream part_out(new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, nullptr);
     part_out.writePrefix();
     part_out.write(block);
     part_out.writeSuffixAndFinalizePart(new_data_part);
