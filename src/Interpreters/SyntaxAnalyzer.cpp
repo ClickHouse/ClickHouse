@@ -1016,6 +1016,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
     result.aggregates = getAggregates(query, *select_query);
     result.collectUsedColumns(query, true);
+    result.ast_join = select_query->join();
 
     if (result.optimize_trivial_count)
         result.optimize_trivial_count = settings.optimize_trivial_count_query &&
