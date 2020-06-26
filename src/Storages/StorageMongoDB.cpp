@@ -14,8 +14,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
-
-#include <Dictionaries/MongoDBBlockInputStream.h>
+#include <DataStreams/MongoDBBlockInputStream.h>
 
 namespace DB
 {
@@ -47,20 +46,23 @@ StorageMongoDB::StorageMongoDB(
     , global_context(context_)
     , connection{std::make_shared<Poco::MongoDB::Connection>(host, port)}
 {
-    setColumns(columns_);
-    setConstraints(constraints_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 }
 
 
 Pipes StorageMongoDB::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned)
 {
-    check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
 #if POCO_VERSION >= 0x01070800
     Poco::MongoDB::Database poco_db(database_name);
@@ -73,13 +75,13 @@ Pipes StorageMongoDB::read(
     Block sample_block;
     for (const String & column_name : column_names)
     {
-        auto column_data = getColumns().getPhysical(column_name);
+        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
         sample_block.insert({ column_data.type, column_data.name });
     }
 
     Pipes pipes;
     pipes.emplace_back(std::make_shared<SourceFromInputStream>(
-            std::make_shared<MongoDBBlockInputStream>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size)));
+            std::make_shared<MongoDBBlockInputStream>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size, true)));
 
     return pipes;
 }
@@ -105,7 +107,6 @@ void registerStorageMongoDB(StorageFactory & factory)
         const String & collection = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
-
 
         return StorageMongoDB::create(
             args.table_id,

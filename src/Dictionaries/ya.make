@@ -53,7 +53,6 @@ SRCS(
     HTTPDictionarySource.cpp
     LibraryDictionarySource.cpp
     LibraryDictionarySourceExternal.cpp
-    MongoDBBlockInputStream.cpp
     MongoDBDictionarySource.cpp
     MySQLDictionarySource.cpp
     PolygonDictionary.cpp

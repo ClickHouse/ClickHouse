@@ -44,6 +44,7 @@ SRCS(
     SquashingBlockOutputStream.cpp
     SquashingTransform.cpp
     TTLBlockInputStream.cpp
+    MongoDBBlockInputStream.cpp
 )
 
 END()
