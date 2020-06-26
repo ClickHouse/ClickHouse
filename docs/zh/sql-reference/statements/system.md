@@ -5,23 +5,23 @@ toc_title: SYSTEM
 
 # SYSTEM Queries {#query-language-system}
 
--   [内置字典重载](#query_language-system-reload-emdedded-dictionaries)
--   [重载所有字典](#query_language-system-reload-dictionaries)
--   [字典重载](#query_language-system-reload-dictionary)
--   [删除DNS缓存](#query_language-system-drop-dns-cache)
--   [删除MARK缓存](#query_language-system-drop-mark-cache)
--   [删除UNCOMPRESSED缓存](#query_language-system-drop-uncompressed-cache)
--   [删除COMPILED EXPRESSION缓存](#query_language-system-drop-compiled-expression-cache)
--   [删除REPLICA](#query_language-system-drop-replica)
--   [刷新日志](#query_language-system-flush_logs)
--   [配置重载](#query_language-system-reload-config)
--   [关闭服务](#query_language-system-shutdown)
--   [kill](#query_language-system-kill)
--   [停止分布式发送](#query_language-system-stop-distributed-sends)
+-   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
+-   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
+-   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
+-   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
+-   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
+-   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
+-   [DROP COMPILED EXPRESSION CACHE](#query_language-system-drop-compiled-expression-cache)
+-   [DROP REPLICA](#query_language-system-drop-replica)
+-   [FLUSH LOGS](#query_language-system-flush_logs)
+-   [RELOAD CONFIG](#query_language-system-reload-config)
+-   [SHUTDOWN](#query_language-system-shutdown)
+-   [KILL](#query_language-system-kill)
+-   [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends)
 -   [FLUSH DISTRIBUTED](#query_language-system-flush-distributed)
 -   [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
--   [停止 MERGES](#query_language-system-stop-merges)
--   [启动 MERGES](#query_language-system-start-merges)
+-   [STOP MERGES](#query_language-system-stop-merges)
+-   [START MERGES](#query_language-system-start-merges)
 -   [STOP TTL MERGES](#query_language-stop-ttl-merges)
 -   [START TTL MERGES](#query_language-start-ttl-merges)
 -   [STOP MOVES](#query_language-stop-moves)
@@ -154,8 +154,10 @@ ClickHouse可以管理 [MergeTree](../../engines/table-engines/mergetree-family/
 SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 ```
 
-!!! 注意 "Note"
+
+!!! note "Note"
     `DETACH / ATTACH` 表操作会在后台进行表的merge操作，甚至当所有MergeTree表的合并操作已经停止的情况下。
+
 
 ### START MERGES {#query_language-system-start-merges}
 
