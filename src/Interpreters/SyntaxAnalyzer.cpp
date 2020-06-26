@@ -555,14 +555,11 @@ void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_miltiif)
         OptimizeIfChainsVisitor().visit(query);
 }
 
-void optimizeArithmeticOperationsInAgr(ASTPtr & query, bool optimize_arithmetic_operations_in_agr_func)
+void optimizeAggregationFunctions(ASTPtr & query)
 {
-    if (optimize_arithmetic_operations_in_agr_func)
-    {
-        /// Removing arithmetic operations from functions
-        ArithmeticOperationsInAgrFuncVisitor::Data data = {};
-        ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
-    }
+    /// Move arithmetic operations out of aggregation functions
+    ArithmeticOperationsInAgrFuncVisitor::Data data;
+    ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
 void optimizeAnyInput(ASTPtr & query)
@@ -952,7 +949,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
         /// Move arithmetic operations out of aggregation functions
-        optimizeArithmeticOperationsInAgr(query, settings.optimize_arithmetic_operations_in_aggregate_functions);
+        if (settings.optimize_arithmetic_operations_in_aggregate_functions)
+            optimizeAggregationFunctions(query);
 
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
