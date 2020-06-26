@@ -123,7 +123,7 @@ private:
     };
     bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
-    bool send_logs    = false;           /// send_logs_level passed, do not use previous cursor position, to avoid overlaps with logs
+    bool has_received_logs = false;      /// We have received some logs, do not use previous cursor position, to avoid overlaps with logs
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
@@ -398,6 +398,7 @@ private:
             { TokenType::GreaterOrEquals, Replxx::Color::INTENSE },
             { TokenType::Concatenation, Replxx::Color::INTENSE },
             { TokenType::At, Replxx::Color::INTENSE },
+            { TokenType::DoubleAt, Replxx::Color::MAGENTA },
 
             { TokenType::EndOfStream, Replxx::Color::DEFAULT },
 
@@ -907,8 +908,6 @@ private:
 
             connection->forceConnected(connection_parameters.timeouts);
 
-            send_logs = context.getSettingsRef().send_logs_level != LogsLevel::none;
-
             ASTPtr input_function;
             if (insert && insert->select)
                 insert->tryFindInputFunction(input_function);
@@ -986,7 +985,10 @@ private:
     /// Process the query that doesn't require transferring data blocks to the server.
     void processOrdinaryQuery()
     {
-        /// We will always rewrite query (even if there are no query_parameters) because it will help to find errors in query formatter.
+        /// Rewrite query only when we have query parameters.
+        /// Note that if query is rewritten, comments in query are lost.
+        /// But the user often wants to see comments in server logs, query log, processlist, etc.
+        if (!query_parameters.empty())
         {
             /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
             ReplaceQueryParameterVisitor visitor(query_parameters);
@@ -1475,7 +1477,8 @@ private:
                 }
                 else
                 {
-                    out_logs_buf = std::make_unique<WriteBufferFromFile>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                    out_logs_buf = std::make_unique<WriteBufferFromFile>(
+                        server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
                     wb = out_logs_buf.get();
                 }
             }
@@ -1514,6 +1517,7 @@ private:
 
     void onLogData(Block & block)
     {
+        has_received_logs = true;
         initLogsOutputStream();
         logs_out_stream->write(block);
         logs_out_stream->flush();
@@ -1549,7 +1553,7 @@ private:
     void clearProgress()
     {
         written_progress_chars = 0;
-        if (!send_logs)
+        if (!has_received_logs)
             std::cerr << "\r" CLEAR_TO_END_OF_LINE;
     }
 
@@ -1577,7 +1581,7 @@ private:
 
         const char * indicator = indicators[increment % 8];
 
-        if (!send_logs && written_progress_chars)
+        if (!has_received_logs && written_progress_chars)
             message << '\r';
 
         size_t prefix_size = message.count();
@@ -1631,7 +1635,7 @@ private:
 
         message << CLEAR_TO_END_OF_LINE;
 
-        if (send_logs)
+        if (has_received_logs)
             message << '\n';
 
         ++increment;

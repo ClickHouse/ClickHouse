@@ -18,8 +18,10 @@ public:
     using ValueSizeMap = std::map<std::string, double>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, IDataType::DeserializeBinaryBulkStatePtr>;
 
-    IMergeTreeReader(const MergeTreeData::DataPartPtr & data_part_,
+    IMergeTreeReader(
+        const MergeTreeData::DataPartPtr & data_part_,
         const NamesAndTypesList & columns_,
+        const StorageMetadataPtr & metadata_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         const MarkRanges & all_mark_ranges_,
@@ -77,6 +79,7 @@ protected:
     MergeTreeReaderSettings settings;
 
     const MergeTreeData & storage;
+    StorageMetadataPtr metadata_snapshot;
     MarkRanges all_mark_ranges;
 
     using ColumnPosition = std::optional<size_t>;

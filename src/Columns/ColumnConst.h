@@ -197,6 +197,14 @@ public:
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }
 
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override
+    {
+        return data->compareColumn(rhs, rhs_row_num, row_indexes,
+                                   compare_results, direction, nan_direction_hint);
+    }
+
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream &) override

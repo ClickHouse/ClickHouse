@@ -147,6 +147,11 @@ public:
     {
         throw Exception("Method updateHashFast is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
+    {
+        throw Exception("Method compareColumn is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 };
 
 using ColumnUniquePtr = IColumnUnique::ColumnUniquePtr;

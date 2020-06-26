@@ -17,6 +17,7 @@ public:
     MergeTreeReaderCompact(
         DataPartCompactPtr data_part_,
         NamesAndTypesList columns_,
+        const StorageMetadataPtr & metadata_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         MarkRanges mark_ranges_,
