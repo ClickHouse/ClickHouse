@@ -39,8 +39,12 @@ void InflatingExpressionTransform::transform(Chunk & chunk)
     {
         /// We have to make chunk empty before return
         block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+
+        /// Drop totals if both out stream and joined stream doesn't have ones.
+        /// See comment in ExpressionTransform.h
         if (default_totals && !expression->hasTotalsInJoin())
             return;
+
         expression->executeOnTotals(block);
     }
     else
