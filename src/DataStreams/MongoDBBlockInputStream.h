@@ -46,6 +46,9 @@ private:
     const UInt64 max_block_size;
     ExternalResultDescription description;
     bool all_read = false;
+
+    /// if true stream will check, that all required fields present in MongoDB
+    /// collection, otherwise throw exception.
     bool strict_check_names;
 };
 
