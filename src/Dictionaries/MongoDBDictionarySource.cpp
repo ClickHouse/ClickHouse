@@ -34,7 +34,6 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 
 }
 
-
 #include <common/logger_useful.h>
 #include <Poco/MongoDB/Array.h>
 #include <Poco/MongoDB/Connection.h>
@@ -65,8 +64,6 @@ namespace ErrorCodes
 
 
 static const UInt64 max_block_size = 8192;
-
-
 
 
 MongoDBDictionarySource::MongoDBDictionarySource(
@@ -143,16 +140,12 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
 {
 }
 
-
 MongoDBDictionarySource::~MongoDBDictionarySource() = default;
-
-
 
 BlockInputStreamPtr MongoDBDictionarySource::loadAll()
 {
     return std::make_shared<MongoDBBlockInputStream>(connection, createCursor(db, collection, sample_block), sample_block, max_block_size);
 }
-
 
 BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
@@ -234,7 +227,6 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_column
 
     return std::make_shared<MongoDBBlockInputStream>(connection, std::move(cursor), sample_block, max_block_size);
 }
-
 
 std::string MongoDBDictionarySource::toString() const
 {

@@ -35,7 +35,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
-    extern const int UNSUPPORTED_METHOD;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
