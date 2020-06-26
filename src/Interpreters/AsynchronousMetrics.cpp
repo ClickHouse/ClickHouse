@@ -58,45 +58,44 @@ AsynchronousMetricValues AsynchronousMetrics::getValues() const
     return values;
 }
 
+static auto get_next_update_time(std::chrono::seconds update_period)
+{
+    using namespace std::chrono;
+
+    const auto now = time_point_cast<seconds>(system_clock::now());
+
+    // Use seconds since the start of the hour, because we don't know when
+    // the epoch started, maybe on some weird fractional time.
+    const auto start_of_hour = time_point_cast<seconds>(time_point_cast<hours>(now));
+    const auto seconds_passed = now - start_of_hour;
+
+    // Rotate time forward by half a period -- e.g. if a period is a minute,
+    // we'll collect metrics on start of minute + 30 seconds. This is to
+    // achieve temporal separation with MetricTransmitter. Don't forget to
+    // rotate it back.
+    const auto rotation = update_period / 2;
+
+    const auto periods_passed = (seconds_passed + rotation) / update_period;
+    const auto seconds_next = (periods_passed + 1) * update_period - rotation;
+    const auto time_next = start_of_hour + seconds_next;
+
+    return time_next;
+}
 
 void AsynchronousMetrics::run()
 {
     setThreadName("AsyncMetrics");
-
-    const auto period = std::chrono::seconds(
-        context.getSettingsRef().asynchronous_metrics_update_period_s);
-
-    const auto get_next_update_time = [period]
-    {
-        using namespace std::chrono;
-
-        const auto now = time_point_cast<seconds>(system_clock::now());
-
-        // Use seconds since the start of the hour, because we don't know when
-        // the epoch started, maybe on some weird fractional time.
-        const auto start_of_hour = time_point_cast<seconds>(time_point_cast<hours>(now));
-        const auto seconds_passed = now - start_of_hour;
-
-        // Rotate time forward by half a period -- e.g. if a period is a minute,
-        // we'll collect metrics on start of minute + 30 seconds. This is to
-        // achieve temporal separation with MetricTransmitter. Don't forget to
-        // rotate it back.
-        const auto rotation = period / 2;
-
-        const auto periods_passed = (seconds_passed + rotation) / period;
-        const auto seconds_next = (periods_passed + 1) * period - rotation;
-        const auto time_next = start_of_hour + seconds_next;
-
-        return time_next;
-    };
 
     while (true)
     {
         {
             // Wait first, so that the first metric collection is also on even time.
             std::unique_lock lock{mutex};
-            if (wait_cond.wait_until(lock, get_next_update_time(), [this] { return quit; }))
+            if (wait_cond.wait_until(lock, get_next_update_time(update_period),
+                [this] { return quit; }))
+            {
                 break;
+            }
         }
 
         try
@@ -329,7 +328,7 @@ void AsynchronousMetrics::update()
     // Try to add processor frequencies, ignoring errors.
     try
     {
-        ReadBufferFromFile buf("/proc/cpuinfo");
+        ReadBufferFromFile buf("/proc/cpuinfo", 32768 /* buf_size */);
 
         // We need the following lines:
         // core id : 4
@@ -339,6 +338,9 @@ void AsynchronousMetrics::update()
         while (!buf.eof())
         {
             std::string s;
+            // We don't have any backslash escape sequences in /proc/cpuinfo, so
+            // this function will read the line until EOL, which is exactly what
+            // we need.
             readEscapedStringUntilEOL(s, buf);
             // It doesn't read the EOL itself.
             ++buf.position();
