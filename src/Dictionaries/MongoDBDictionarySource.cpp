@@ -69,8 +69,7 @@ static const UInt64 max_block_size = 8192;
 
 #if POCO_VERSION < 0x01070800
 /// See https://pocoproject.org/forum/viewtopic.php?f=10&t=6326&p=11426&hilit=mongodb+auth#p11485
-static void
-authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password)
+void authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password)
 {
     Poco::MongoDB::Database db(database);
 
@@ -246,8 +245,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
 MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
 
-static std::unique_ptr<Poco::MongoDB::Cursor>
-createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select)
+std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select)
 {
     auto cursor = std::make_unique<Poco::MongoDB::Cursor>(database, collection);
 
@@ -257,7 +255,6 @@ createCursor(const std::string & database, const std::string & collection, const
 
     for (const auto & column : sample_block_to_select)
         cursor->query().returnFieldSelector().add(column.name, 1);
-
     return cursor;
 }
 
