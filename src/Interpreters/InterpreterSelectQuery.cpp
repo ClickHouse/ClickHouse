@@ -863,8 +863,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             {
                 QueryPlanStepPtr before_join_step = std::make_unique<ExpressionStep>(
                     query_plan.getCurrentDataStream(),
-                    expressions.before_join,
-                    true);
+                    expressions.before_join);
                 before_join_step->setStepDescription("Before JOIN");
                 query_plan.addStep(std::move(before_join_step));
             }
@@ -879,8 +878,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
                 QueryPlanStepPtr join_step = std::make_unique<InflatingExpressionStep>(
                     query_plan.getCurrentDataStream(),
-                    expressions.join,
-                    true);
+                    expressions.join);
 
                 join_step->setStepDescription("JOIN");
                 query_plan.addStep(std::move(join_step));
