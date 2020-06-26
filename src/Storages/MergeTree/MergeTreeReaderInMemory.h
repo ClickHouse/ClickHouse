@@ -17,6 +17,7 @@ public:
     MergeTreeReaderInMemory(
         DataPartInMemoryPtr data_part_,
         NamesAndTypesList columns_,
+        const StorageMetadataPtr & metadata_snapshot_,
         MarkRanges mark_ranges_,
         MergeTreeReaderSettings settings_);
 

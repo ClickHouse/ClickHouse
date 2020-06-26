@@ -24,9 +24,6 @@ void MergeTreeBlockOutputStream::write(const Block & block)
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot);
     MergeTreeData::DataPartsVector inserted_parts;
-=======
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, );
->>>>>>> master
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;

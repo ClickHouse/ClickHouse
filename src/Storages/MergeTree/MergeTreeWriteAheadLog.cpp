@@ -78,7 +78,7 @@ void MergeTreeWriteAheadLog::rotate(const std::lock_guard<std::mutex> &)
     init();
 }
 
-MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore()
+MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const StorageMetadataPtr & metadata_snapshot)
 {
     std::lock_guard lock(write_mutex);
 
@@ -151,12 +151,12 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore()
 
         if (action_type == ActionType::ADD_PART)
         {
-            MergedBlockOutputStream part_out(part, block.getNamesAndTypesList(), {}, nullptr);
+            MergedBlockOutputStream part_out(part, metadata_snapshot, block.getNamesAndTypesList(), {}, nullptr);
 
             part->minmax_idx.update(block, storage.minmax_idx_columns);
-            part->partition.create(storage, block, 0);
-            if (storage.hasSortingKey())
-                storage.getSortingKey().expression->execute(block);
+            part->partition.create(metadata_snapshot, block, 0);
+            if (metadata_snapshot->hasSortingKey())
+                metadata_snapshot->getSortingKey().expression->execute(block);
 
             part_out.writePrefix();
             part_out.write(block);

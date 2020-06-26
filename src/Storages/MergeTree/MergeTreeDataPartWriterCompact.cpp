@@ -15,10 +15,6 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
         indices_to_recalc_, marks_file_extension_,
         default_codec_, settings_, index_granularity_)
-=======
-    : IMergeTreeDataPartWriter(
-        data_part_, columns_list_,  indices_to_recalc_, marks_file_extension_, default_codec_, settings_, index_granularity_)
->>>>>>> master
 {
     using DataPart = MergeTreeDataPartCompact;
     String data_file_name = DataPart::DATA_FILE_NAME;

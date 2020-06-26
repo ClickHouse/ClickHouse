@@ -23,15 +23,16 @@ public:
 
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
+        const StorageMetadataPtr & metadata_snapshot,
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
-
     MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
@@ -41,9 +42,9 @@ public:
     bool hasColumnFiles(const String & column_name, const IDataType & /* type */) const override { return !!getColumnPosition(column_name); }
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const override;
-    void makeCloneInDetached(const String & prefix) const override;
+    void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const override;
 
-    void flushToDisk(const String & base_path, const String & new_relative_path) const;
+    void flushToDisk(const String & base_path, const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const;
 
     bool waitUntilMerged(size_t timeout_ms) const;
     void notifyMerged() const;

@@ -64,6 +64,7 @@ public:
     MergeTreeDataPartWriterOnDisk(
         const MergeTreeData::DataPartPtr & data_part_,
         const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,

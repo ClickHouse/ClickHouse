@@ -22,6 +22,7 @@ public:
     IMergeTreeDataPartWriter(
         const MergeTreeData::DataPartPtr & data_part_,
         const NamesAndTypesList & columns_list_,
+        const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeWriterSettings & settings_);
 
     IMergeTreeDataPartWriter(

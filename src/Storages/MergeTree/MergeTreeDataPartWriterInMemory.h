@@ -11,6 +11,7 @@ public:
     MergeTreeDataPartWriterInMemory(
         const DataPartInMemoryPtr & part_,
         const NamesAndTypesList & columns_list_,
+        const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeWriterSettings & settings_);
 
     /// You can write only one block. In-memory part can be written only at INSERT.
