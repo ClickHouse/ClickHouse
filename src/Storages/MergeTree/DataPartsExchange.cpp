@@ -279,7 +279,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     }
 
     String part_type = "Wide";
-    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
+    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
         readStringBinary(part_type, in);
 
     return part_type == "InMemory" ? downloadPartToMemory(part_name, metadata_snapshot, std::move(reservation), in)
