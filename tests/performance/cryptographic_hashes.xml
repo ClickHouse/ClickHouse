@@ -8,6 +8,11 @@
                <value>SHA224</value>
                <value>SHA256</value>
                <value>halfMD5</value>
+          </values>
+        </substitution>
+        <substitution>
+           <name>hash_fast</name>
+           <values>
                <value>sipHash64</value>
                <value>sipHash128</value>
            </values>
@@ -23,6 +28,13 @@
            <name>string_slow</name>
            <values>
                <value>materialize('Lorem ipsum dolor sit amet, consectetur adipiscing elit. Mauris sollicitudin nisi ac erat mollis dapibus. Maecenas leo purus, bibendum eu erat eget, iaculis molestie tortor. Phasellus maximus odio nec mauris ultrices dictum. Morbi efficitur nisl eget congue mollis. Vestibulum pharetra diam vitae urna interdum, eget ultricies justo sollicitudin. Nunc sit amet purus id leo tempus dignissim. Donec ac lacus ut orci tempus scelerisque quis ultricies nibh. Nullam lobortis, erat ac ullamcorper interdum, odio nisl elementum quam, ut malesuada massa nunc eget quam. Nam suscipit neque quis sapien ultricies imperdiet. Maecenas augue libero, finibus tristique sagittis et, semper nec arcu. Morbi non tortor ultrices, sollicitudin justo sed, accumsan ligula. Nullam at ipsum in nibh auctor ullamcorper. Nullam laoreet neque id lorem condimentum tincidunt. Nullam vel orci nibh. Ut sit amet sem faucibus, fringilla orci at, lacinia enim. Mauris imperdiet ex id scelerisque eleifend. Ut tincidunt massa nibh, viverra pharetra metus')</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>table_fast</name>
+           <values>
+               <value>zeros(10000000)</value>
+               <value>zeros_mt(100000000)</value>
            </values>
         </substitution>
         <substitution>
@@ -43,4 +55,6 @@
 
     <query>SELECT ignore({crypto_hash_func}({string})) FROM {table} FORMAT Null</query>
     <query>SELECT ignore({crypto_hash_func}({string_slow})) FROM {table_slow} FORMAT Null</query>
+    <query>SELECT ignore({hash_fast}({string})) FROM {table_fast} FORMAT Null</query>
+    <query>SELECT ignore({hash_fast}({string_slow})) FROM {table} FORMAT Null</query>
 </test>

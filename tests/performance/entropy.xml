@@ -1,10 +1,7 @@
 <test>
-
     <preconditions>
-        <table_exists>test.hits</table_exists>
+        <table_exists>hits_100m_single</table_exists>
     </preconditions>
-
-
 
     <substitutions>
         <substitution>
@@ -23,5 +20,5 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT entropy({args}) FROM test.hits</query>
+    <query>SELECT entropy({args}) FROM hits_100m_single</query>
 </test>
