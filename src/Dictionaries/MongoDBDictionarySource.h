@@ -15,6 +15,7 @@ namespace Util
 namespace MongoDB
 {
     class Connection;
+    class Cursor;
 }
 }
 
@@ -25,6 +26,10 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
+
+void authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password);
+
+std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select);
 
 /// Allows loading dictionaries from a MongoDB collection
 class MongoDBDictionarySource final : public IDictionarySource
