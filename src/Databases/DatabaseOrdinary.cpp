@@ -1,4 +1,4 @@
-#include <boost/filesystem.hpp>
+#include <filesystem>
 
 #include <Core/Settings.h>
 #include <Databases/DatabaseOnDisk.h>
@@ -25,7 +25,7 @@
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 namespace DB
 {
