@@ -1223,61 +1223,31 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 /// Conversion that is allowed for partition key.
 /// Partition key should be serialized in the same way after conversion.
 /// NOTE: The list is not complete.
-/// TODO: Provide generic code.
 bool isSafeForPartitionKeyConversion(const IDataType * from, const IDataType * to)
 {
     if (from->getName() == to->getName())
         return true;
 
     /// Enums are serialized in partition key as numbers - so conversion from Enum to number is Ok.
+    /// But only for types of identical width because they are serialized as binary in minmax index.
     /// But not from number to Enum because Enum does not necessarily represents all numbers.
-    /// Numbers are serialized in text - so extending the type of number is Ok.
-    /// Conversion to/from Floats and DateTimes can also be allowed, but we don't enable it deliberately.
 
-    static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
-        {
-            { typeid(DataTypeEnum8),    typeid(DataTypeEnum8)  },
-            { typeid(DataTypeEnum8),    typeid(DataTypeEnum16) },
-            { typeid(DataTypeEnum8),    typeid(DataTypeInt8)   },
-            { typeid(DataTypeEnum8),    typeid(DataTypeInt16)  },
-            { typeid(DataTypeEnum8),    typeid(DataTypeInt32)  },
-            { typeid(DataTypeEnum8),    typeid(DataTypeInt64)  },
-
-            { typeid(DataTypeEnum16),   typeid(DataTypeEnum16) },
-            { typeid(DataTypeEnum16),   typeid(DataTypeInt16)  },
-            { typeid(DataTypeEnum16),   typeid(DataTypeInt32)  },
-            { typeid(DataTypeEnum16),   typeid(DataTypeInt64)  },
-
-            { typeid(DataTypeUInt8),    typeid(DataTypeUInt16) },
-            { typeid(DataTypeUInt8),    typeid(DataTypeUInt32) },
-            { typeid(DataTypeUInt8),    typeid(DataTypeUInt64) },
-            { typeid(DataTypeUInt8),    typeid(DataTypeInt16)  },
-            { typeid(DataTypeUInt8),    typeid(DataTypeInt32)  },
-            { typeid(DataTypeUInt8),    typeid(DataTypeInt64)  },
-
-            { typeid(DataTypeInt8),     typeid(DataTypeInt16)  },
-            { typeid(DataTypeInt8),     typeid(DataTypeInt32)  },
-            { typeid(DataTypeInt8),     typeid(DataTypeInt64)  },
-
-            { typeid(DataTypeUInt16),   typeid(DataTypeUInt32) },
-            { typeid(DataTypeUInt16),   typeid(DataTypeUInt64) },
-            { typeid(DataTypeUInt16),   typeid(DataTypeInt32)  },
-            { typeid(DataTypeUInt16),   typeid(DataTypeInt64)  },
-
-            { typeid(DataTypeInt16),    typeid(DataTypeInt32)  },
-            { typeid(DataTypeInt16),    typeid(DataTypeInt64)  },
-
-            { typeid(DataTypeUInt32),   typeid(DataTypeUInt64) },
-            { typeid(DataTypeUInt32),   typeid(DataTypeInt64)  },
-
-            { typeid(DataTypeInt32),    typeid(DataTypeInt64)  },
-        };
-
-    auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
-    for (auto it = it_range.first; it != it_range.second; ++it)
+    if (const auto * from_enum8 = typeid_cast<const DataTypeEnum8 *>(from))
     {
-        if (it->second == typeid(*to))
+        if (const auto * to_enum8 = typeid_cast<const DataTypeEnum8 *>(to))
+            return to_enum8->contains(*from_enum8);
+        if (typeid_cast<const DataTypeInt8 *>(to))
             return true;
+        return false;
+    }
+
+    if (const auto * from_enum16 = typeid_cast<const DataTypeEnum16 *>(from))
+    {
+        if (const auto * to_enum16 = typeid_cast<const DataTypeEnum16 *>(to))
+            return to_enum16->contains(*from_enum16);
+        if (typeid_cast<const DataTypeInt16 *>(to))
+            return true;
+        return false;
     }
 
     return false;
@@ -1396,7 +1366,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                     if (it == old_types.end() || !isSafeForPartitionKeyConversion(it->second, command.data_type.get()))
                         throw Exception("ALTER of partition key column " + backQuoteIfNeed(command.column_name) + " from type "
                                 + it->second->getName() + " to type " + command.data_type->getName()
-                                + " is not safe because it can change the representation of partition key in data part name",
+                                + " is not safe because it can change the representation of partition key",
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
                 }
             }
