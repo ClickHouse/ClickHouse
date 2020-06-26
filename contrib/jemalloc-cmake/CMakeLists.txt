@@ -27,7 +27,7 @@ if (ENABLE_JEMALLOC)
             # avoid spurious latencies and additional work associated with
             # MADV_DONTNEED. See
             # https://github.com/ClickHouse/ClickHouse/issues/11121 for motivation.
-            set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,thp:never,dirty_decay_ms:30000,muzzy_decay_ms:30000")
+            set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,thp:never")
         else()
             set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0")
         endif()
