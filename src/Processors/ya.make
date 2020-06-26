@@ -105,6 +105,7 @@ SRCS(
     OffsetTransform.cpp
     Pipe.cpp
     Port.cpp
+    printPipeline.cpp
     QueryPipeline.cpp
     ResizeProcessor.cpp
     Sources/DelayedSource.cpp

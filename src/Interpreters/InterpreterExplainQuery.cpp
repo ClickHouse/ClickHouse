@@ -130,6 +130,7 @@ struct QueryPipelineSettings
 {
     QueryPlan::ExplainPipelineOptions query_pipeline_options;
     bool graph = false;
+    bool compact = true;
 
     constexpr static char name[] = "PIPELINE";
 
@@ -137,6 +138,7 @@ struct QueryPipelineSettings
     {
             {"header", query_pipeline_options.header},
             {"graph", graph},
+            {"compact", compact},
     };
 };
 
@@ -262,7 +264,10 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
         if (settings.graph)
         {
-            printPipeline(pipeline->getProcessors(), buffer);
+            if (settings.compact)
+                printPipelineCompact(pipeline->getProcessors(), buffer, settings.query_pipeline_options.header);
+            else
+                printPipeline(pipeline->getProcessors(), buffer);
         }
         else
         {

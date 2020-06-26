@@ -312,8 +312,8 @@ private:
 
     bool has_quota = false;
 
-    IQueryPlanStep * query_plan_step;
-    size_t query_plan_step_group;
+    IQueryPlanStep * query_plan_step = nullptr;
+    size_t query_plan_step_group = 0;
 };
 
 
