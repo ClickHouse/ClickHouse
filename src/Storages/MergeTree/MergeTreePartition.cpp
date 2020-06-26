@@ -89,7 +89,8 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
 
 void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const
 {
-    const auto & partition_key_sample = storage.getInMemoryMetadataPtr()->getPartitionKey().sample_block;
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
     size_t key_size = partition_key_sample.columns();
 
     if (key_size == 0)
@@ -138,7 +139,9 @@ void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & dis
 
 void MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
-    store(storage.getInMemoryMetadataPtr()->getPartitionKey().sample_block, disk, part_path, checksums);
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
+    store(partition_key_sample, disk, part_path, checksums);
 }
 
 void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
