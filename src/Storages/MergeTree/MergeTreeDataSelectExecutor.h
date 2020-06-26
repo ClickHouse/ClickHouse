@@ -106,7 +106,8 @@ private:
         MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
-        const Settings & settings) const;
+        const Settings & settings,
+        const MergeTreeReaderSettings & reader_settings) const;
 };
 
 }
