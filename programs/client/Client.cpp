@@ -132,7 +132,12 @@ private:
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
     String query_id;                     /// Current query_id.
-    String query;                        /// Current query.
+    String full_query; /// Current query as it was given to the client.
+
+    // Current query as it will be sent to the server. It may differ from the
+    // full query for INSERT queries, for which the data that follows the query
+    // is stripped and sent separately.
+    String query_to_send;
 
     String format;                       /// Query results output format.
     bool is_default_format = true;       /// false, if format is set in the config or command line.
@@ -763,7 +768,7 @@ private:
 
         if (!config().has("multiquery"))
         {
-            processSingleQuery(text);
+            processTextAsSingleQuery(text);
             return true;
         }
 
@@ -777,7 +782,7 @@ private:
         {   /// disable logs if expects errors
             TestHint test_hint(test_mode, text);
             if (test_hint.clientError() || test_hint.serverError())
-                processSingleQuery("SET send_logs_level = 'none'");
+                processTextAsSingleQuery("SET send_logs_level = 'none'");
         }
 
         /// Several queries separated by ';'.
@@ -828,9 +833,17 @@ private:
             {
                 auto ast_to_process = orig_ast;
                 if (insert && insert->data)
+                {
                     ast_to_process = nullptr;
-
-                processSingleQuery(str, ast_to_process);
+                    processTextAsSingleQuery(str);
+                }
+                else
+                {
+                    parsed_query = ast_to_process;
+                    full_query = str;
+                    query_to_send = str;
+                    processParsedSingleQuery();
+                }
             }
             catch (...)
             {
@@ -857,34 +870,51 @@ private:
     }
 
 
-    void processSingleQuery(const String & line, ASTPtr parsed_query_ = nullptr)
+    void processTextAsSingleQuery(const String & text_)
+    {
+        full_query = text_;
+
+        /// Some parts of a query (result output and formatting) are executed
+        /// client-side. Thus we need to parse the query.
+        const char * begin = full_query.data();
+        parsed_query = parseQuery(begin, begin + full_query.size(), false);
+
+        if (!parsed_query)
+            return;
+
+        // An INSERT query may have the data that follow query text. Remove the
+        /// Send part of query without data, because data will be sent separately.
+        auto * insert = parsed_query->as<ASTInsertQuery>();
+        if (insert && insert->data)
+        {
+            query_to_send = full_query.substr(0, insert->data - full_query.data());
+        }
+        else
+        {
+            query_to_send = full_query;
+        }
+
+        processParsedSingleQuery();
+    }
+
+    // Parameters are in global variables:
+    // 'parsed_query' -- the query AST,
+    // 'query_to_send' -- the query text that is sent to server,
+    // 'full_query' -- for INSERT queries, contains the query and the data that
+    // follow it. Its memory is referenced by ASTInsertQuery::begin, end.
+    void processParsedSingleQuery()
     {
         resetOutput();
         received_exception_from_server = false;
 
         if (echo_queries)
         {
-            writeString(line, std_out);
+            writeString(full_query, std_out);
             writeChar('\n', std_out);
             std_out.next();
         }
 
         watch.restart();
-
-        query = line;
-
-        /// Some parts of a query (result output and formatting) are executed client-side.
-        /// Thus we need to parse the query.
-        parsed_query = parsed_query_;
-        if (!parsed_query)
-        {
-            const char * begin = query.data();
-            parsed_query = parseQuery(begin, begin + query.size(), false);
-        }
-
-        if (!parsed_query)
-            return;
-
         processed_rows = 0;
         progress.reset();
         show_progress_bar = false;
@@ -996,7 +1026,7 @@ private:
             visitor.visit(parsed_query);
 
             /// Get new query after substitutions. Note that it cannot be done for INSERT query with embedded data.
-            query = serializeAST(*parsed_query);
+            query_to_send = serializeAST(*parsed_query);
         }
 
         int retries_left = 10;
@@ -1008,7 +1038,7 @@ private:
             {
                 connection->sendQuery(
                     connection_parameters.timeouts,
-                    query,
+                    query_to_send,
                     query_id,
                     QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
@@ -1043,18 +1073,13 @@ private:
     /// Process the query that requires transferring data blocks to the server.
     void processInsertQuery()
     {
-        /// Send part of query without data, because data will be sent separately.
-        const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
-        String query_without_data = parsed_insert_query.data
-            ? query.substr(0, parsed_insert_query.data - query.data())
-            : query;
-
+        const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
         if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
         connection->sendQuery(
             connection_parameters.timeouts,
-            query_without_data,
+            query_to_send,
             query_id,
             QueryProcessingStage::Complete,
             &context.getSettingsRef(),
