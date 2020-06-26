@@ -724,10 +724,15 @@ size_t roundRowsOrBytesToMarks(
     size_t rows_granularity,
     size_t bytes_granularity)
 {
+    /// Marks are placed whenever threshold on rows or bytes is met.
+    /// So we have to return the number of marks on whatever estimate is higher - by rows or by bytes.
+
+    size_t res = (rows_setting + rows_granularity - 1) / rows_granularity;
+
     if (bytes_granularity == 0)
-        return (rows_setting + rows_granularity - 1) / rows_granularity;
+        return res;
     else
-        return (bytes_setting + bytes_granularity - 1) / bytes_granularity;
+        return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
 }
 
 }
@@ -759,7 +764,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         sum_marks += sum_marks_in_parts[i];
 
         if (parts[i].data_part->index_granularity_info.is_adaptive)
-            adaptive_parts++;
+            ++adaptive_parts;
     }
 
     size_t index_granularity_bytes = 0;
@@ -890,7 +895,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         sum_marks += sum_marks_in_parts[i];
 
         if (parts[i].data_part->index_granularity_info.is_adaptive)
-            adaptive_parts++;
+            ++adaptive_parts;
     }
 
     size_t index_granularity_bytes = 0;
