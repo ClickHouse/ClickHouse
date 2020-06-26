@@ -82,6 +82,7 @@ public:
         Processors * getCollectedProcessors() const { return collected_processors; }
         Processors * setCollectedProcessors(Processors * collected_processors);
         Processors & get() { return processors; }
+        const Processors & get() const { return processors; }
         Processors detach() { return std::move(processors); }
     private:
         /// All added processors.
@@ -195,6 +196,9 @@ public:
     /// Convert query pipeline to single or several pipes.
     Pipe getPipe() &&;
     Pipes getPipes() &&;
+
+    /// Get internal processors.
+    const Processors & getProcessors() const { return processors.get(); }
 
 private:
     /// Destruction order: processors, header, locks, temporary storages, local contexts
