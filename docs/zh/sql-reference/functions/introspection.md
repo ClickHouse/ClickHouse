@@ -20,7 +20,7 @@ toc_title: "\u81EA\u7701"
 
         For security reasons introspection functions are disabled by default.
 
-ClickHouse将探查器报告保存到 [trace\_log](../../operations/system-tables.md#system_tables-trace_log) 系统表. 确保正确配置了表和探查器。
+ClickHouse将探查器报告保存到 [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) 系统表. 确保正确配置了表和探查器。
 
 ## addressToLine {#addresstoline}
 

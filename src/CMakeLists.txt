@@ -88,6 +88,7 @@ list (APPEND dbms_sources
     AggregateFunctions/AggregateFunctionFactory.cpp
     AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
     AggregateFunctions/AggregateFunctionState.cpp
+    AggregateFunctions/AggregateFunctionCount.cpp
     AggregateFunctions/parseAggregateFunctionParameters.cpp)
 
 list (APPEND dbms_headers
@@ -96,6 +97,7 @@ list (APPEND dbms_headers
     AggregateFunctions/AggregateFunctionFactory.h
     AggregateFunctions/AggregateFunctionCombinatorFactory.h
     AggregateFunctions/AggregateFunctionState.h
+    AggregateFunctions/AggregateFunctionCount.cpp
     AggregateFunctions/FactoryHelpers.h
     AggregateFunctions/parseAggregateFunctionParameters.h)
 
@@ -157,6 +159,7 @@ add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
+add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
@@ -381,6 +384,6 @@ if (ENABLE_TESTS AND USE_GTEST)
         -Wno-gnu-zero-variadic-macro-arguments
     )
 
-    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils)
+    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_aggregate_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils)
     add_check(unit_tests_dbms)
 endif ()

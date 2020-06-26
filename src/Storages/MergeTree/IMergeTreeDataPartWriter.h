@@ -27,6 +27,7 @@ public:
     IMergeTreeDataPartWriter(
         const MergeTreeData::DataPartPtr & data_part_,
         const NamesAndTypesList & columns_list_,
+        const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeIndices & skip_indices_,
         const MergeTreeIndexGranularity & index_granularity_,
         const MergeTreeWriterSettings & settings_);
@@ -66,6 +67,7 @@ protected:
 
     MergeTreeData::DataPartPtr data_part;
     const MergeTreeData & storage;
+    StorageMetadataPtr metadata_snapshot;
     NamesAndTypesList columns_list;
     MergeTreeIndices skip_indices;
     MergeTreeIndexGranularity index_granularity;

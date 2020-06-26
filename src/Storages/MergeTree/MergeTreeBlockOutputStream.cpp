@@ -14,7 +14,7 @@ namespace ErrorCodes
 
 Block MergeTreeBlockOutputStream::getHeader() const
 {
-    return storage.getSampleBlock();
+    return metadata_snapshot->getSampleBlock();
 }
 
 
@@ -22,13 +22,16 @@ void MergeTreeBlockOutputStream::write(const Block & block)
 {
     storage.delayInsertOrThrowIfNeeded();
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot);
     MergeTreeData::DataPartsVector inserted_parts;
+=======
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, );
+>>>>>>> master
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot);
         storage.renameTempPartAndAdd(part, &storage.increment);
         inserted_parts.push_back(part);
 

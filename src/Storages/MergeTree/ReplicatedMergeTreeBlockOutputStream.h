@@ -22,9 +22,14 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeBlockOutputStream : public IBlockOutputStream
 {
 public:
-    ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_,
-        size_t quorum_, size_t quorum_timeout_ms_, size_t max_parts_per_block_,
-        size_t insert_in_memory_parts_timeout_ms_, bool deduplicate_);
+    ReplicatedMergeTreeBlockOutputStream(
+        StorageReplicatedMergeTree & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        size_t quorum_,
+        size_t quorum_timeout_ms_,
+        size_t max_parts_per_block_,
+        size_t insert_in_memory_parts_timeout_ms_,
+        bool deduplicate_);
 
     Block getHeader() const override;
     void writePrefix() override;
@@ -55,6 +60,7 @@ private:
     void commitPart(zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id);
 
     StorageReplicatedMergeTree & storage;
+    StorageMetadataPtr metadata_snapshot;
     size_t quorum;
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;

@@ -163,6 +163,8 @@ public:
 
     ~ExpressionActions();
 
+    ExpressionActions(const ExpressionActions & other) = default;
+
     /// Add the input column.
     /// The name of the column must not match the names of the intermediate columns that occur when evaluating the expression.
     /// The expression must not have any PROJECT actions.
@@ -211,6 +213,8 @@ public:
 
     /// Execute the expression on the block with continuation.
     void execute(Block & block, ExtraBlockPtr & not_processed, size_t & start_action) const;
+
+    bool hasJoinOrArrayJoin() const;
 
     /// Check if joined subquery has totals.
     bool hasTotalsInJoin() const;

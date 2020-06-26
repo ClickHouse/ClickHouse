@@ -13,6 +13,7 @@ public:
     MergeTreeDataPartWriterWide(
         const MergeTreeData::DataPartPtr & data_part,
         const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,

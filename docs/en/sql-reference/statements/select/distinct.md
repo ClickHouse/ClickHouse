@@ -6,23 +6,23 @@ toc_title: DISTINCT
 
 If `SELECT DISTINCT` is specified, only unique rows will remain in a query result. Thus only a single row will remain out of all the sets of fully matching rows in the result.
 
-## Null Processing
+## Null Processing {#null-processing}
 
-`DISTINCT` works with [NULL](../../syntax.md#null-literal) as if `NULL` were a specific value, and `NULL==NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` occur only once. It differs from `NULL` processing in most other contexts.
+`DISTINCT` works with [NULL](../../../sql-reference/syntax.md#null-literal) as if `NULL` were a specific value, and `NULL==NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` occur only once. It differs from `NULL` processing in most other contexts.
 
-## Alternatives
+## Alternatives {#alternatives}
 
-It is possible to obtain the same result by applying [GROUP BY](group-by.md) across the same set of values as specified as `SELECT` clause, without using any aggregate functions. But there are few differences from `GROUP BY` approach:
+It is possible to obtain the same result by applying [GROUP BY](../../../sql-reference/statements/select/group-by.md) across the same set of values as specified as `SELECT` clause, without using any aggregate functions. But there are few differences from `GROUP BY` approach:
 
 -   `DISTINCT` can be applied together with `GROUP BY`.
--   When [ORDER BY](order-by.md) is omitted and [LIMIT](limit.md) is defined, the query stops running immediately after the required number of different rows has been read.
+-   When [ORDER BY](../../../sql-reference/statements/select/order-by.md) is omitted and [LIMIT](../../../sql-reference/statements/select/limit.md) is defined, the query stops running immediately after the required number of different rows has been read.
 -   Data blocks are output as they are processed, without waiting for the entire query to finish running.
 
-## Limitations
+## Limitations {#limitations}
 
 `DISTINCT` is not supported if `SELECT` has at least one array column.
 
-## Examples
+## Examples {#examples}
 
 ClickHouse supports using the `DISTINCT` and `ORDER BY` clauses for different columns in one query. The `DISTINCT` clause is executed before the `ORDER BY` clause.
 

@@ -660,8 +660,12 @@ void Context::setUser(const String & name, const String & password, const Poco::
     auto lock = getLock();
 
     client_info.current_user = name;
-    client_info.current_password = password;
     client_info.current_address = address;
+
+#if defined(ARCADIA_BUILD)
+    /// This is harmful field that is used only in foreign "Arcadia" build.
+    client_info.current_password = password;
+#endif
 
     auto new_user_id = getAccessControlManager().find<User>(name);
     std::shared_ptr<const ContextAccess> new_access;
@@ -1058,8 +1062,8 @@ void Context::setCurrentDatabase(const String & name)
 {
     DatabaseCatalog::instance().assertDatabaseExists(name);
     auto lock = getLock();
-    calculateAccessRights();
     current_database = name;
+    calculateAccessRights();
 }
 
 

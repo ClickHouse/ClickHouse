@@ -1025,7 +1025,7 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0.
 
-## optimize_skip_unused_shards {#optimize-skip-unused-shards}
+## optimize\_skip\_unused\_shards {#optimize-skip-unused-shards}
 
 Включает или отключает пропуск неиспользуемых шардов для запросов [SELECT](../../sql-reference/statements/select/index.md) , в которых условие ключа шардирования задано в секции `WHERE/PREWHERE`. Предполагается, что данные распределены с помощью ключа шардирования, в противном случае настройка ничего не делает.
 
@@ -1036,15 +1036,39 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0
 
-## force_optimize_skip_unused_shards {#force-optimize-skip-unused-shards}
+## optimize\_skip\_unused\_shards\_nesting {#optimize-skip-unused-shards-nesting}
+
+Контролирует настройку [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) (поэтому все еще требует `optimize_skip_unused_shards`) в зависимости от вложенности распределенного запроса (когда у вас есть `Distributed` таблица которая смотрит на другую `Distributed` таблицу).
+
+Возможные значения:
+
+-    0 — Выключена, `optimize_skip_unused_shards` работает всегда.
+-    1 — Включает `optimize_skip_unused_shards` только для 1-ого уровня вложенности.
+-    2 — Включает `optimize_skip_unused_shards` для 1-ого и 2-ого уровня вложенности.
+
+Значение по умолчанию: 0
+
+## force\_optimize\_skip\_unused\_shards {#force-optimize-skip-unused-shards}
 
 Разрешает или запрещает выполнение запроса, если настройка [optimize_skip_unused_shards](#optimize-skip-unused-shards) включена, а пропуск неиспользуемых шардов невозможен. Если данная настройка включена и пропуск невозможен, ClickHouse генерирует исключение.
 
 Возможные значения:
 
--   0 — Выключена. ClickHouse не генерирует исключение.
--   1 — Включена. Выполнение запроса запрещается, только если у таблицы есть ключ шардирования.
--   2 — Включена. Выполнение запроса запрещается, даже если для таблицы не определен ключ шардирования.
+-    0 — Выключена, `force_optimize_skip_unused_shards` работает всегда.
+-    1 — Включает `force_optimize_skip_unused_shards` только для 1-ого уровня вложенности.
+-    2 — Включает `force_optimize_skip_unused_shards` для 1-ого и 2-ого уровня вложенности.
+
+Значение по умолчанию: 0
+
+## force\_optimize\_skip\_unused\_shards\_nesting {#settings-force_optimize_skip_unused_shards_nesting}
+
+Контролирует настройку [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards) (поэтому все еще требует `optimize_skip_unused_shards`) в зависимости от вложенности распределенного запроса (когда у вас есть `Distributed` таблица которая смотрит на другую `Distributed` таблицу).
+
+Возможные значения:
+
+-   0 - Disabled, `force_optimize_skip_unused_shards` works on all levels.
+-   1 — Enables `force_optimize_skip_unused_shards` only for the first level.
+-   2 — Enables `force_optimize_skip_unused_shards` up to the second level.
 
 Значение по умолчанию: 0
 
@@ -1181,6 +1205,74 @@ Default value: 0.
 
 Значение по умолчанию: 16.
 
+## transform_null_in {#transform_null_in}
+
+Разрешает сравнивать значения [NULL](../../sql-reference/syntax.md#null-literal) в операторе [IN](../../sql-reference/operators/in.md).
+
+По умолчанию, значения `NULL` нельзя сравнивать, поскольку `NULL` обозначает неопределённое значение. Следовательно, сравнение `expr = NULL` должно всегда возвращать `false`. С этой настройкой `NULL = NULL` возвращает `true` в операторе `IN`.
+
+Possible values:
+
+-   0 — Сравнение значений `NULL` в операторе `IN` возвращает `false`.
+-   1 — Сравнение значений `NULL` в операторе `IN` возвращает `true`.
+
+Значение по умолчанию: 0.
+
+**Пример** 
+
+Рассмотрим таблицу `null_in`:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+│    3 │     3 │
+└──────┴───────┘
+```
+
+Consider the `null_in` table:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+│    3 │     3 │
+└──────┴───────┘
+```
+
+Запрос:
+
+```sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
+```
+
+Ответ:
+
+```text
+┌──idx─┬────i─┐
+│    1 │    1 │
+└──────┴──────┘
+```
+
+Запрос:
+
+```sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
+```
+
+Ответ:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+└──────┴───────┘
+```
+
+**См. также** 
+
+-   [Обработка значения NULL в операторе IN](../../sql-reference/operators/in.md#in-null-processing)
+
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
 Задает количество потоков для выполнения фонового сброса данных в таблицах с движком [Buffer](../../engines/table-engines/special/buffer.md). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
@@ -1220,5 +1312,35 @@ Default value: 0.
 -   Положительное целое число.
 
 Значение по умолчанию: 16.
+
+## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
+
+Устанавливает минимальное количество строк в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
+
+Допустимые значения:
+
+-   Положительное целое число.
+-   0 — Склейка блоков выключена.
+
+Значение по умолчанию: 1048576.
+
+**См. также:**
+
+-   [min_insert_block_size_rows](#min-insert-block-size-rows)
+
+## min_insert_block_size_bytes_for_materialized_views {#min-insert-block-size-bytes-for-materialized-views}
+
+Устанавливает минимальное количество байтов в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
+
+Допустимые значения:
+
+-   Положительное целое число.
+-   0 — Склейка блоков выключена.
+
+Значение по умолчанию: 268435456.
+
+**См. также:**
+
+-   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

@@ -352,7 +352,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected)
         && ParserExpression().parse(pos, expr_node, expected)
         && ParserKeyword("AS").ignore(pos, expected)
-        && ParserIdentifierWithOptionalParameters().parse(pos, type_node, expected)
+        && ParserDataType().parse(pos, type_node, expected)
         && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
     {
         /// Convert to canonical representation in functional form: CAST(expr, 'type')
@@ -1233,7 +1233,7 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ++pos;
 
     auto old_pos = pos;
-    ParserIdentifierWithOptionalParameters type_parser;
+    ParserDataType type_parser;
     if (!type_parser.ignore(pos, expected))
     {
         expected.add(pos, "substitution type");
@@ -1250,6 +1250,52 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ++pos;
     node = std::make_shared<ASTQueryParameter>(name, type);
+    return true;
+}
+
+
+bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (pos->type != TokenType::DoubleAt)
+        return false;
+
+    ++pos;
+
+    if (pos->type != TokenType::BareWord)
+    {
+        expected.add(pos, "variable name");
+        return false;
+    }
+
+    String name(pos->begin, pos->end);
+    ++pos;
+
+    /// SELECT @@session|global.variable style
+    if (pos->type == TokenType::Dot)
+    {
+        ++pos;
+
+        if (pos->type != TokenType::BareWord)
+        {
+            expected.add(pos, "variable name");
+            return false;
+        }
+        name = String(pos->begin, pos->end);
+        ++pos;
+    }
+
+    auto name_literal = std::make_shared<ASTLiteral>(name);
+
+    auto expr_list_args = std::make_shared<ASTExpressionList>();
+    expr_list_args->children.push_back(std::move(name_literal));
+
+    auto function_node = std::make_shared<ASTFunction>();
+    function_node->name = "globalVariable";
+    function_node->arguments = expr_list_args;
+    function_node->children.push_back(expr_list_args);
+
+    node = function_node;
+    node->setAlias("@@" + name);
     return true;
 }
 
@@ -1276,7 +1322,8 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
         || ParserCompoundIdentifier().parse(pos, node, expected)
-        || ParserSubstitution().parse(pos, node, expected);
+        || ParserSubstitution().parse(pos, node, expected)
+        || ParserMySQLGlobalVariable().parse(pos, node, expected);
 }
 
 

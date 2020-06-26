@@ -1,7 +1,7 @@
 -- TODO: correct testing with real unique shards
 
 -- Avoid "Connection failed at try №1" messages.
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 SET connect_timeout_with_failover_ms = 5000;
 
 set optimize_distributed_group_by_sharding_key=1;

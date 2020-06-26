@@ -41,6 +41,7 @@
 #include <Functions/DateTimeTransforms.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Functions/toFixedString.h>
 
 
 namespace DB
@@ -58,7 +59,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_UUID;
-    extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
@@ -1262,94 +1262,6 @@ public:
     }
 };
 
-/** Conversion to fixed string is implemented only for strings.
-  */
-class FunctionToFixedString : public IFunction
-{
-public:
-    static constexpr auto name = "toFixedString";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToFixedString>(); }
-    static FunctionPtr create() { return std::make_shared<FunctionToFixedString>(); }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const Block &) const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (!isUnsignedInteger(arguments[1].type))
-            throw Exception("Second argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_COLUMN);
-        if (!arguments[1].column)
-            throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-        if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
-
-        const size_t n = arguments[1].column->getUInt(0);
-        return std::make_shared<DataTypeFixedString>(n);
-    }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
-    {
-        const auto n = block.getByPosition(arguments[1]).column->getUInt(0);
-        return executeForN(block, arguments, result, n);
-    }
-
-    static void executeForN(Block & block, const ColumnNumbers & arguments, const size_t result, const size_t n)
-    {
-        const auto & column = block.getByPosition(arguments[0]).column;
-
-        if (const auto column_string = checkAndGetColumn<ColumnString>(column.get()))
-        {
-            auto column_fixed = ColumnFixedString::create(n);
-
-            auto & out_chars = column_fixed->getChars();
-            const auto & in_chars = column_string->getChars();
-            const auto & in_offsets = column_string->getOffsets();
-
-            out_chars.resize_fill(in_offsets.size() * n);
-
-            for (size_t i = 0; i < in_offsets.size(); ++i)
-            {
-                const size_t off = i ? in_offsets[i - 1] : 0;
-                const size_t len = in_offsets[i] - off - 1;
-                if (len > n)
-                    throw Exception("String too long for type FixedString(" + toString(n) + ")",
-                        ErrorCodes::TOO_LARGE_STRING_SIZE);
-                memcpy(&out_chars[i * n], &in_chars[off], len);
-            }
-
-            block.getByPosition(result).column = std::move(column_fixed);
-        }
-        else if (const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
-        {
-            const auto src_n = column_fixed_string->getN();
-            if (src_n > n)
-                throw Exception{"String too long for type FixedString(" + toString(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE};
-
-            auto column_fixed = ColumnFixedString::create(n);
-
-            auto & out_chars = column_fixed->getChars();
-            const auto & in_chars = column_fixed_string->getChars();
-            const auto size = column_fixed_string->size();
-            out_chars.resize_fill(size * n);
-
-            for (const auto i : ext::range(0, size))
-                memcpy(&out_chars[i * n], &in_chars[i * src_n], src_n);
-
-            block.getByPosition(result).column = std::move(column_fixed);
-        }
-        else
-            throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
-    }
-};
-
 
 /// Monotonicity.
 
@@ -2377,10 +2289,13 @@ public:
     using MonotonicityForRange = FunctionCast::MonotonicityForRange;
 
     static constexpr auto name = "CAST";
-    static FunctionOverloadResolverImplPtr create(const Context &) { return createImpl(); }
-    static FunctionOverloadResolverImplPtr createImpl() { return std::make_unique<CastOverloadResolver>(); }
 
-    CastOverloadResolver() {}
+    static FunctionOverloadResolverImplPtr create(const Context & context);
+    static FunctionOverloadResolverImplPtr createImpl(bool keep_nullable) { return std::make_unique<CastOverloadResolver>(keep_nullable); }
+
+    CastOverloadResolver(bool keep_nullable_)
+        : keep_nullable(keep_nullable_)
+    {}
 
     String getName() const override { return name; }
 
@@ -2415,13 +2330,18 @@ protected:
                 " Instead there is a column with the following structure: " + column->dumpStructure(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return DataTypeFactory::instance().get(type_col->getValue<String>());
+        DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
+        if (keep_nullable && arguments.front().type->isNullable())
+            return makeNullable(type);
+        return type;
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
 private:
+    bool keep_nullable;
+
     template <typename DataType>
     static auto monotonicityForType(const DataType * const)
     {
