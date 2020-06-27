@@ -728,6 +728,10 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
         metadata_copy.primary_key.definition_ast = nullptr;
     }
 
+    /// Changes in columns may lead to changes in secondary indices
+    for (auto & index : metadata_copy.secondary_indices)
+        index.recalculateWithNewColumns(metadata_copy.columns, context);
+
     /// Changes in columns may lead to changes in TTL expressions.
     auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
     for (const auto & [name, ast] : column_ttl_asts)

@@ -89,7 +89,10 @@ struct CustomizeFunctionsData
 };
 
 char countdistinct[] = "countdistinct";
-using CustomizeFunctionsVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<countdistinct>>, true>;
+using CustomizeCountDistinctVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<countdistinct>>, true>;
+
+char countifdistinct[] = "countifdistinct";
+using CustomizeCountIfDistinctVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<countifdistinct>>, true>;
 
 char in[] = "in";
 using CustomizeInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<in>>, true>;
@@ -103,6 +106,26 @@ using CustomizeGlobalInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunc
 char globalNotIn[] = "globalnotin";
 using CustomizeGlobalNotInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<globalNotIn>>, true>;
 
+template <char const * func_suffix>
+struct CustomizeFunctionsSuffixData
+{
+    using TypeToVisit = ASTFunction;
+
+    const String & customized_func_suffix;
+
+    void visit(ASTFunction & func, ASTPtr &)
+    {
+        if (endsWith(Poco::toLower(func.name), func_suffix))
+        {
+            size_t prefix_len = func.name.length() - strlen(func_suffix);
+            func.name = func.name.substr(0, prefix_len) + customized_func_suffix;
+        }
+    }
+};
+
+/// Swap 'if' and 'distinct' suffixes to make execution more optimal.
+char ifDistinct[] = "ifdistinct";
+using CustomizeIfDistinctVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsSuffixData<ifDistinct>>, true>;
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
@@ -555,14 +578,11 @@ void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_miltiif)
         OptimizeIfChainsVisitor().visit(query);
 }
 
-void optimizeArithmeticOperationsInAgr(ASTPtr & query, bool optimize_arithmetic_operations_in_agr_func)
+void optimizeAggregationFunctions(ASTPtr & query)
 {
-    if (optimize_arithmetic_operations_in_agr_func)
-    {
-        /// Removing arithmetic operations from functions
-        ArithmeticOperationsInAgrFuncVisitor::Data data = {};
-        ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
-    }
+    /// Move arithmetic operations out of aggregation functions
+    ArithmeticOperationsInAgrFuncVisitor::Data data;
+    ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
 void optimizeAnyInput(ASTPtr & query)
@@ -714,7 +734,7 @@ void SyntaxAnalyzerResult::collectSourceColumns(bool add_special)
 {
     if (storage)
     {
-        const ColumnsDescription & columns = storage->getColumns();
+        const ColumnsDescription & columns = metadata_snapshot->getColumns();
 
         auto columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
         if (source_columns.empty())
@@ -952,7 +972,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
         /// Move arithmetic operations out of aggregation functions
-        optimizeArithmeticOperationsInAgr(query, settings.optimize_arithmetic_operations_in_aggregate_functions);
+        if (settings.optimize_arithmetic_operations_in_aggregate_functions)
+            optimizeAggregationFunctions(query);
 
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
@@ -995,6 +1016,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
     result.aggregates = getAggregates(query, *select_query);
     result.collectUsedColumns(query, true);
+    result.ast_join = select_query->join();
 
     if (result.optimize_trivial_count)
         result.optimize_trivial_count = settings.optimize_trivial_count_query &&
@@ -1005,14 +1027,19 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
-SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage, bool allow_aggregations) const
+SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
+    ASTPtr & query,
+    const NamesAndTypesList & source_columns,
+    ConstStoragePtr storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    bool allow_aggregations) const
 {
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
 
     const auto & settings = context.getSettingsRef();
 
-    SyntaxAnalyzerResult result(source_columns, storage, false);
+    SyntaxAnalyzerResult result(source_columns, storage, metadata_snapshot, false);
 
     normalize(query, result.aliases, settings);
 
@@ -1041,8 +1068,14 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
 
 void SyntaxAnalyzer::normalize(ASTPtr & query, Aliases & aliases, const Settings & settings)
 {
-    CustomizeFunctionsVisitor::Data data{settings.count_distinct_implementation};
-    CustomizeFunctionsVisitor(data).visit(query);
+    CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
+    CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
+
+    CustomizeCountIfDistinctVisitor::Data data_count_if_distinct{settings.count_distinct_implementation.toString() + "If"};
+    CustomizeCountIfDistinctVisitor(data_count_if_distinct).visit(query);
+
+    CustomizeIfDistinctVisitor::Data data_distinct_if{"DistinctIf"};
+    CustomizeIfDistinctVisitor(data_distinct_if).visit(query);
 
     if (settings.transform_null_in)
     {

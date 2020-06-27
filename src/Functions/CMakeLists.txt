@@ -96,6 +96,13 @@ if(USE_RAPIDJSON)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
 endif()
 
+option(ENABLE_MULTITARGET_CODE "" ON)
+if (ENABLE_MULTITARGET_CODE)
+    add_definitions(-DENABLE_MULTITARGET_CODE=1)
+else()
+    add_definitions(-DENABLE_MULTITARGET_CODE=0)
+endif()
+
 add_subdirectory(GatherUtils)
 target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_gatherutils)
 
