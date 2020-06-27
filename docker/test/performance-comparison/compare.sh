@@ -274,10 +274,11 @@ for test_file in $(find . -maxdepth 1 -name "*-raw.tsv" -print)
 do
     test_name=$(basename "$test_file" "-raw.tsv")
     sed -n "s/^query\t/$test_name\t/p" < "$test_file" >> "analyze/query-runs.tsv"
-    sed -n "s/^client-time/$test_name/p" < "$test_file" >> "analyze/client-times.tsv"
-    sed -n "s/^report-threshold/$test_name/p" < "$test_file" >> "analyze/report-thresholds.tsv"
-    sed -n "s/^skipped/$test_name/p" < "$test_file" >> "analyze/skipped-tests.tsv"
-    sed -n "s/^display-name/$test_name/p" < "$test_file" >> "analyze/query-display-names.tsv"
+    sed -n "s/^client-time\t/$test_name\t/p" < "$test_file" >> "analyze/client-times.tsv"
+    sed -n "s/^report-threshold\t/$test_name\t/p" < "$test_file" >> "analyze/report-thresholds.tsv"
+    sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
+    sed -n "s/^display-name\t/$test_name\t/p" < "$test_file" >> "analyze/query-display-names.tsv"
+    sed -n "s/^partial\t/$test_name\t/p" < "$test_file" >> "analyze/partial-queries.tsv"
 done
 unset IFS
 
@@ -285,6 +286,18 @@ unset IFS
 clickhouse-local --query "
 create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
     'test text, query_index int, query_id text, version UInt8, time float');
+
+create view partial_queries as select test, query_index
+    from file('analyze/partial-queries.tsv', TSV,
+        'test text, query_index int, servers Array(int)');
+
+create table partial_query_times engine File(TSVWithNamesAndTypes,
+        'analyze/partial-query-times.tsv')
+    as select test, query_index, stddevPop(time) time_stddev, median(time) time_median
+    from query_runs
+    where (test, query_index) in partial_queries
+    group by test, query_index
+    ;
 
 create view left_query_log as select *
     from file('left-query-log.tsv', TSVWithNamesAndTypes,
@@ -329,6 +342,7 @@ create table query_run_metrics_full engine File(TSV, 'analyze/query-run-metrics-
     right join query_runs
         on query_logs.query_id = query_runs.query_id
             and query_logs.version = query_runs.version
+    where (test, query_index) not in partial_queries
     ;
 
 create table query_run_metrics engine File(
@@ -351,6 +365,7 @@ create table query_run_metric_names engine File(TSV, 'analyze/query-run-metric-n
 # query. We also don't have lateral joins. So I just put all runs of each
 # query into a separate file, and then compute randomization distribution
 # for each file. I do this in parallel using GNU parallel.
+( set +x # do not bloat the log
 IFS=$'\n'
 for prefix in $(cut -f1,2 "analyze/query-run-metrics.tsv" | sort | uniq)
 do
@@ -367,6 +382,7 @@ do
 done
 wait
 unset IFS
+)
 
 parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 }
@@ -390,12 +406,20 @@ create view query_display_names as select * from
         'test text, query_index int, query_display_name text')
     ;
 
+create table partial_queries_report engine File(TSV, 'report/partial-queries-report.tsv')
+    as select floor(time_median, 3) m, floor(time_stddev / time_median, 3) v,
+        test, query_index, query_display_name
+    from file('analyze/partial-query-times.tsv', TSVWithNamesAndTypes,
+        'test text, query_index int, time_stddev float, time_median float') t
+    join query_display_names using (test, query_index)
+    order by test, query_index
+    ;
+
 -- WITH, ARRAY JOIN and CROSS JOIN do not like each other:
 --  https://github.com/ClickHouse/ClickHouse/issues/11868
 --  https://github.com/ClickHouse/ClickHouse/issues/11757
 -- Because of this, we make a view with arrays first, and then apply all the
 -- array joins.
-
 create view query_metric_stat_arrays as
     with (select * from file('analyze/query-run-metric-names.tsv',
         TSV, 'n Array(String)')) as metric_name
@@ -859,10 +883,6 @@ case "$stage" in
     do
         cat "/proc/$pid/smaps" > "$pid-smaps.txt" ||:
     done
-
-    # Sleep for five minutes to see how the servers enter a quiescent state (e.g.
-    # how fast the memory usage drops).
-    sleep 300
 
     # We had a bug where getting profiles froze sometimes, so try to save some
     # logs if this happens again. Give the servers some time to collect all info,
