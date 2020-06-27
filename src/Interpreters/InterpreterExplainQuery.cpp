@@ -225,7 +225,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         if (ast.getSettings())
             throw Exception("Settings are not supported for EXPLAIN AST query.", ErrorCodes::UNKNOWN_SETTING);
 
-        dumpAST(ast, ss);
+        dumpAST(*ast.getExplainedQuery(), ss);
     }
     else if (ast.getKind() == ASTExplainQuery::AnalyzedSyntax)
     {
