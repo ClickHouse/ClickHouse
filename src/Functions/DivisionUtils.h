@@ -44,6 +44,13 @@ inline bool divisionLeadsToFPE(A a, B b)
     return false;
 }
 
+template <typename A, typename B>
+inline auto checkedDivision(A a, B b)
+{
+    throwIfDivisionLeadsToFPE(a, b);
+    return a / b;
+}
+
 
 #pragma GCC diagnostic pop
 
@@ -56,14 +63,12 @@ struct DivideIntegralImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        throwIfDivisionLeadsToFPE(a, b);
-
         /// Otherwise overflow may occur due to integer promotion. Example: int8_t(-1) / uint64_t(2).
         /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
         if constexpr (is_integral_v<A> && is_integral_v<B> && (is_signed_v<A> || is_signed_v<B>))
-            return std::make_signed_t<A>(a) / std::make_signed_t<B>(b);
+            return checkedDivision(std::make_signed_t<A>(a), std::make_signed_t<B>(b));
         else
-            return a / b;
+            return checkedDivision(a, b);
     }
 
 #if USE_EMBEDDED_COMPILER
