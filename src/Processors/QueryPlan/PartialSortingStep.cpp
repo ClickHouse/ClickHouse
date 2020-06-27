@@ -2,6 +2,7 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -50,14 +51,12 @@ void PartialSortingStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-Strings PartialSortingStep::describeActions() const
+void PartialSortingStep::describeActions(FormatSettings & settings) const
 {
-    Strings res = {"Sort description: " + dumpSortDescription(sort_description, input_streams.front().header)};
-
-    if (limit)
-        res.emplace_back("Limit " + std::to_string(limit));
-
-    return res;
+    String prefix(settings.offset, ' ');
+    settings.out << prefix << "Sort description: ";
+    dumpSortDescription(sort_description, input_streams.front().header, settings.out);
+    settings.out << '\n';
 }
 
 }

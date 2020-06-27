@@ -28,7 +28,7 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
-    Strings describeActions() const override;
+    void describeActions(FormatSettings &) const override;
     void describePipeline(FormatSettings & settings) const override;
 
 private:

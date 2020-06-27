@@ -1,40 +1,40 @@
 #include <Core/SortDescription.h>
 #include <Core/Block.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
 
-String dumpSortDescription(const SortDescription & description, const Block & header)
+void dumpSortDescription(const SortDescription & description, const Block & header, WriteBuffer & out)
 {
-    String res;
+    bool first = true;
 
     for (const auto & desc : description)
     {
-        if (!res.empty())
-            res += ", ";
+        if (!first)
+            out << ", ";
+        first = false;
 
         if (!desc.column_name.empty())
-            res += desc.column_name;
+            out << desc.column_name;
         else
         {
             if (desc.column_number < header.columns())
-                res += header.getByPosition(desc.column_number).name;
+                out << header.getByPosition(desc.column_number).name;
             else
-                res += "?";
+                out << "?";
 
-            res += " (pos " + std::to_string(desc.column_number) + ")";
+            out << " (pos " << desc.column_number << ")";
         }
 
         if (desc.direction > 0)
-            res += " ASC";
+            out << " ASC";
         else
-            res += " DESC";
+            out << " DESC";
 
         if (desc.with_fill)
-            res += " WITH FILL";
+            out << " WITH FILL";
     }
-
-    return res;
 }
 
 }

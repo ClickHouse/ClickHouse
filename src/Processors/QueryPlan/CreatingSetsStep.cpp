@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -35,21 +36,20 @@ void CreatingSetsStep::transformPipeline(QueryPipeline & pipeline)
     pipeline.addCreatingSetsTransform(std::move(creating_sets));
 }
 
-Strings CreatingSetsStep::describeActions() const
+void CreatingSetsStep::describeActions(FormatSettings & settings) const
 {
-    Strings res;
+    String prefix(settings.offset, ' ');
+
     for (const auto & set : subqueries_for_sets)
     {
-        String str;
+        settings.out << prefix;
         if (set.second.set)
-            str += "Set: ";
+            settings.out << "Set: ";
         else if (set.second.join)
-            str += "Join: ";
+            settings.out << "Join: ";
 
-        str += set.first;
+        settings.out << set.first << '\n';
     }
-
-    return res;
 }
 
 }

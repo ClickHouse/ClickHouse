@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/Transforms/FillingTransform.h>
 #include <Processors/QueryPipeline.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -27,9 +28,11 @@ void FillingStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-Strings FillingStep::describeActions() const
+void FillingStep::describeActions(FormatSettings & settings) const
 {
-    return {"Sort description: " + dumpSortDescription(sort_description, input_streams.front().header)};
+    settings.out << String(settings.offset, ' ');
+    dumpSortDescription(sort_description, input_streams.front().header, settings.out);
+    settings.out << '\n';
 }
 
 }

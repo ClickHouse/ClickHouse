@@ -1,82 +1,101 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Common/FieldVisitors.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
 
-Strings AggregateDescription::explain() const
+void AggregateDescription::explain(WriteBuffer & out, size_t ident) const
 {
-    Strings res;
+    String prefix(ident, ' ');
 
-    res.emplace_back(column_name);
+    out << prefix << column_name << '\n';
 
-    auto get_params_string = [](const Array & arr)
+    auto dump_params = [&](const Array & arr)
     {
-        String params_str;
+        bool first = true;
         for (const auto & param : arr)
         {
-            if (!params_str.empty())
-                params_str += ", ";
+            if (!first)
+                out << ", ";
 
-            params_str += applyVisitor(FieldVisitorToString(), param);
+            first = false;
+
+            out << applyVisitor(FieldVisitorToString(), param);
         }
-
-        return params_str;
     };
 
     if (function)
     {
-        String types_str;
-        for (const auto & type : function->getArgumentTypes())
-        {
-            if (!types_str.empty())
-                types_str += ", ";
+        out << prefix << "  Function: " << function->getName();
 
-            types_str += type->getName();
+        const auto & params = function->getParameters();
+        if (!params.empty())
+        {
+            out << "(";
+            dump_params(params);
+            out << ")";
         }
 
-        auto params_str = get_params_string(function->getParameters());
-        if (!params_str.empty())
-            params_str = "(" + params_str + ")";
+        out << "(";
 
-        res.emplace_back("  Function: " + function->getName() + params_str + '(' + types_str + ") -> " +
-                         function->getReturnType()->getName());
+        bool first = true;
+        for (const auto & type : function->getArgumentTypes())
+        {
+            if (!first)
+                out << ", ";
+            first = false;
+
+            out << type->getName();
+        }
+
+        out << ")\n";
     }
     else
-        res.emplace_back("  Function: nullptr");
+        out << prefix << "  Function: nullptr\n";
 
     if (!parameters.empty())
-        res.emplace_back("  Parameters: " + get_params_string(parameters));
-
-    String arguments_names_str;
-    for (const auto & arg : argument_names)
     {
-        if (!arguments_names_str.empty())
-            arguments_names_str += ", ";
-
-        arguments_names_str += arg;
+        out << prefix << "  Parameters: ";
+        dump_params(parameters);
+        out << '\n';
     }
 
-    if (arguments_names_str.empty())
-        arguments_names_str = "none";
+    out << prefix << "  Arguments: ";
 
-    res.emplace_back("  Arguments: " + arguments_names_str);
-
-    String arguments_pos_str;
-    for (auto arg : arguments)
+    if (argument_names.empty())
+        out << "none\n";
+    else
     {
-        if (!arguments_pos_str.empty())
-            arguments_pos_str += ", ";
+        bool first = true;
+        for (const auto & arg : argument_names)
+        {
+            if (!first)
+                out << ", ";
+            first = false;
 
-        arguments_pos_str += std::to_string(arg);
+            out << arg;
+        }
+        out << "\n";
     }
 
-    if (arguments_pos_str.empty())
-        arguments_pos_str = "none";
+    out << prefix << "  Argument positions: ";
 
-    res.emplace_back("  Argument positions: " + arguments_pos_str);
+    if (arguments.empty())
+        out << "none\n";
+    else
+    {
+        bool first = true;
+        for (auto arg : arguments)
+        {
+            if (!first)
+                out << ", ";
+            first = false;
 
-    return res;
+            out << arg;
+        }
+        out << '\n';
+    }
 }
 
 }

@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/OffsetTransform.h>
 #include <Processors/QueryPipeline.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -30,9 +31,9 @@ void OffsetStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-Strings OffsetStep::describeActions() const
+void OffsetStep::describeActions(FormatSettings & settings) const
 {
-    return {"Offset " + std::to_string(offset)};
+    settings.out << String(settings.offset, ' ') << "Offset " << offset << '\n';
 }
 
 }

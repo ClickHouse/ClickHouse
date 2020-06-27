@@ -178,60 +178,55 @@ void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
 
 
 static void explainStep(
-    WriteBuffer & buffer, IQueryPlanStep & step, size_t ident, const QueryPlan::ExplainPlanOptions & options)
+    const IQueryPlanStep & step,
+    IQueryPlanStep::FormatSettings & settings,
+    const QueryPlan::ExplainPlanOptions & options)
 {
-    std::string prefix(ident, ' ');
-    buffer << prefix;
-    buffer << step.getName();
+    std::string prefix(settings.offset, ' ');
+    settings.out << prefix;
+    settings.out << step.getName();
 
     const auto & description = step.getStepDescription();
     if (options.description && !description.empty())
-        buffer <<" (" << description << ')';
+        settings.out <<" (" << description << ')';
 
-    buffer.write('\n');
+    settings.out.write('\n');
 
     if (options.header)
     {
-        buffer << prefix;
+        settings.out << prefix;
 
         if (!step.hasOutputStream())
-            buffer << "No header";
+            settings.out << "No header";
         else if (!step.getOutputStream().header)
-            buffer << "Empty header";
+            settings.out << "Empty header";
         else
         {
-            buffer << "Header: ";
+            settings.out << "Header: ";
             bool first = true;
 
             for (const auto & elem : step.getOutputStream().header)
             {
                 if (!first)
-                    buffer << "\n" << prefix << "        ";
+                    settings.out << "\n" << prefix << "        ";
 
                 first = false;
-                elem.dumpStructure(buffer, true);
+                elem.dumpStructure(settings.out);
             }
         }
 
-        buffer.write('\n');
+        settings.out.write('\n');
     }
 
     if (options.actions)
-    {
-        auto actions = step.describeActions();
-        if (!actions.empty())
-        {
-            for (auto & action : actions)
-                buffer << prefix << action << '\n';
-        }
-    }
+        step.describeActions(settings);
 }
 
 void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
 {
     checkInitialized();
 
-    size_t ident = 2;
+    IQueryPlanStep::FormatSettings settings{.out = buffer, .write_header = options.header};
 
     struct Frame
     {
@@ -249,7 +244,8 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 
         if (!frame.is_description_printed)
         {
-            explainStep(buffer, *frame.node->step, (stack.size() - 1) * ident, options);
+            settings.offset = (stack.size() - 1) * settings.ident;
+            explainStep(*frame.node->step, settings, options);
             frame.is_description_printed = true;
         }
 

@@ -72,6 +72,6 @@ struct SortColumnDescription
 using SortDescription = std::vector<SortColumnDescription>;
 
 class Block;
-String dumpSortDescription(const SortDescription & description, const Block & header);
+void dumpSortDescription(const SortDescription & description, const Block & header, WriteBuffer & out);
 
 }

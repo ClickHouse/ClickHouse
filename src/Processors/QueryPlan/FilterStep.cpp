@@ -2,6 +2,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPipeline.h>
 #include <Interpreters/ExpressionActions.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -55,16 +56,19 @@ void FilterStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-Strings FilterStep::describeActions() const
+void FilterStep::describeActions(FormatSettings & settings) const
 {
-    Strings res;
-    res.emplace_back("Filter column: " + filter_column_name);
+    String prefix(settings.offset, ' ');
+    settings.out << prefix << "Filter column: " << filter_column_name << '\n';
 
+    bool first = true;
     for (const auto & action : expression->getActions())
-        res.emplace_back((res.size() == 1 ? "Actions: "
-                                          : "         ") + action.toString());
-
-    return res;
+    {
+        settings.out << prefix << (first ? "Actions: "
+                                         : "         ");
+        first = false;
+        settings.out << action.toString() << '\n';
+    }
 }
 
 }

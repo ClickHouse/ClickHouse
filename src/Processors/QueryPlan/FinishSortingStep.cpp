@@ -4,6 +4,7 @@
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -69,17 +70,20 @@ void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
     }
 }
 
-Strings FinishSortingStep::describeActions() const
+void FinishSortingStep::describeActions(FormatSettings & settings) const
 {
-    Strings res = {
-        "Prefix sort description: " + dumpSortDescription(prefix_description, input_streams.front().header),
-        "Result sort description: " + dumpSortDescription(result_description, input_streams.front().header)
-    };
+    String prefix(settings.offset, ' ');
+
+    settings.out << prefix << "Prefix sort description: ";
+    dumpSortDescription(prefix_description, input_streams.front().header, settings.out);
+    settings.out << '\n';
+
+    settings.out << prefix << "Result sort description: ";
+    dumpSortDescription(result_description, input_streams.front().header, settings.out);
+    settings.out << '\n';
 
     if (limit)
-        res.emplace_back("Limit " + std::to_string(limit));
-
-    return res;
+        settings.out << prefix << "Limit " << limit << '\n';
 }
 
 }
