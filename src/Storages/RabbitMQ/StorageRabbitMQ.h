@@ -91,9 +91,9 @@ private:
     std::pair<String, UInt16> parsed_address;
     std::pair<String, String> login_password;
 
-    std::unique_ptr<uv_loop_t> loop;
-    std::unique_ptr<RabbitMQHandler> event_handler;
-    std::unique_ptr<AMQP::TcpConnection> connection; /// Connection for all consumers
+    std::shared_ptr<uv_loop_t> loop;
+    std::shared_ptr<RabbitMQHandler> event_handler;
+    std::shared_ptr<AMQP::TcpConnection> connection; /// Connection for all consumers
 
     Poco::Semaphore semaphore;
     std::mutex mutex;
@@ -101,15 +101,19 @@ private:
 
     size_t next_channel_id = 1; /// Must >= 1 because it is used as a binding key, which has to be > 0
     bool update_channel_id = false;
+    std::atomic<bool> loop_started = false;
 
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder heartbeat_task;
+    BackgroundSchedulePool::TaskHolder looping_task;
+
     std::atomic<bool> stream_cancelled{false};
 
     ConsumerBufferPtr createReadBuffer();
 
     void threadFunc();
     void heartbeatFunc();
+    void loopingFunc();
 
     void pingConnection() { connection->heartbeat(); }
     bool streamToViews();

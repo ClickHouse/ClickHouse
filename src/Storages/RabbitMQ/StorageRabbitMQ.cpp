@@ -39,16 +39,17 @@ namespace DB
 
 enum
 {
-    Connection_setup_sleep = 200,
-    Connection_setup_retries_max = 1000
 };
 
+static const auto CONNECT_SLEEP = 200;
+static const auto RETRIES_MAX = 1000;
 static const auto RESCHEDULE_MS = 500;
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CONNECT_RABBITMQ;
 }
 
 
@@ -79,27 +80,25 @@ StorageRabbitMQ::StorageRabbitMQ(
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
         , login_password(std::make_pair(
-                    rabbitmq_context.getConfigRef().getString("rabbitmq_username", "root"),
-                    rabbitmq_context.getConfigRef().getString("rabbitmq_password", "clickhouse")))
+                    global_context.getConfigRef().getString("rabbitmq_username", "root"),
+                    global_context.getConfigRef().getString("rabbitmq_password", "clickhouse")))
         , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
 {
     loop = std::make_unique<uv_loop_t>();
     uv_loop_init(loop.get());
 
-    event_handler = std::make_unique<RabbitMQHandler>(loop.get(), log);
-    connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(), AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
+    event_handler = std::make_shared<RabbitMQHandler>(loop.get(), log);
+    connection = std::make_shared<AMQP::TcpConnection>(event_handler.get(), AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
 
     size_t cnt_retries = 0;
-    while (!connection->ready() && ++cnt_retries != Connection_setup_retries_max)
+    while (!connection->ready() && ++cnt_retries != RETRIES_MAX)
     {
         uv_run(loop.get(), UV_RUN_NOWAIT);
-        std::this_thread::sleep_for(std::chrono::milliseconds(Connection_setup_sleep));
+        std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
     }
 
     if (!connection->ready())
-    {
-        LOG_ERROR(log, "Cannot set up connection for consumer");
-    }
+        throw Exception("Cannot set up connection for consumers", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
 
     rabbitmq_context.makeQueryContext();
     StorageInMemoryMetadata storage_metadata;
@@ -118,6 +117,10 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     /// Make sure that local exchange name is unique for each table and is not the same as client's exchange name
     local_exchange_name = exchange_name + "_" + table_name;
+
+    /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
+    looping_task = global_context.getSchedulePool().createTask("RabbitMQLoopingTask", [this]{ loopingFunc(); });
+    looping_task->deactivate();
 }
 
 
@@ -129,6 +132,13 @@ void StorageRabbitMQ::heartbeatFunc()
         connection->heartbeat();
         heartbeat_task->scheduleAfter(RESCHEDULE_MS * 10);
     }
+}
+
+
+void StorageRabbitMQ::loopingFunc()
+{
+    LOG_DEBUG(log, "Starting event looping iterations");
+    event_handler->startLoop();
 }
 
 
@@ -154,8 +164,13 @@ Pipes StorageRabbitMQ::read(
                     *this, metadata_snapshot, context, column_names, log)));
     }
 
-    LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
+    if (!loop_started)
+    {
+        loop_started = true;
+        looping_task->activateAndSchedule();
+    }
 
+    LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
     return pipes;
 }
 
@@ -198,6 +213,9 @@ void StorageRabbitMQ::shutdown()
 
     streaming_task->deactivate();
     heartbeat_task->deactivate();
+
+    event_handler->stop();
+    looping_task->deactivate();
 
     connection->close();
 }
@@ -246,7 +264,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-        consumer_channel, *event_handler, exchange_name, routing_keys,
+        consumer_channel, event_handler, exchange_name, routing_keys,
         next_channel_id, log, row_delimiter, bind_by_id, num_queues,
         exchange_type, local_exchange_name, stream_cancelled);
 }
@@ -352,6 +370,12 @@ bool StorageRabbitMQ::streamToViews()
         limits.speed_limits.max_execution_time = settings.stream_flush_interval_ms;
         limits.timeout_overflow_mode = OverflowMode::BREAK;
         stream->setLimits(limits);
+    }
+
+    if (!loop_started)
+    {
+        loop_started = true;
+        looping_task->activateAndSchedule();
     }
 
     // Join multiple streams if necessary
