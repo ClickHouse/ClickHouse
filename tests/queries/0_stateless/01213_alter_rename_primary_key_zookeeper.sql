@@ -51,6 +51,6 @@ ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN key2 TO renamed_key2
 
 ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN key3 TO renamed_key3; --{serverError 47}
 
-ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN value1 TO renamed_value1; --{serverError 524}
+ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN value1 TO renamed_value1; --{serverError 47}
 
 DROP TABLE IF EXISTS table_for_rename_with_primary_key;
