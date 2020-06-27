@@ -150,16 +150,16 @@ struct ExplainSettings : public Settings
 {
     using Settings::boolean_settings;
 
-    bool has(const std::string & name) const
+    bool has(const std::string & name_) const
     {
-        return boolean_settings.count(name) > 0;
+        return boolean_settings.count(name_) > 0;
     }
 
-    void setBooleanSetting(const std::string & name, bool value)
+    void setBooleanSetting(const std::string & name_, bool value)
     {
-        auto it = boolean_settings.find(name);
+        auto it = boolean_settings.find(name_);
         if (it == boolean_settings.end())
-            throw Exception("Unknown setting for ExplainSettings: " + name, ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Unknown setting for ExplainSettings: " + name_, ErrorCodes::LOGICAL_ERROR);
 
         it->second.get() = value;
     }
