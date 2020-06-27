@@ -852,7 +852,7 @@ protected:
 
 private:
     /// RAII Wrapper for atomic work with currently moving parts
-    /// Acuire them in constructor and remove them in destructor
+    /// Acquire them in constructor and remove them in destructor
     /// Uses data.currently_moving_parts_mutex
     struct CurrentlyMovingPartsTagger
     {

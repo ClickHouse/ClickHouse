@@ -3726,7 +3726,7 @@ void StorageReplicatedMergeTree::alter(
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy);
         }
 
-        /// We can be sure, that in case of successfull commit in zookeeper our
+        /// We can be sure, that in case of successful commit in zookeeper our
         /// version will increments by 1. Because we update with version check.
         int new_metadata_version = metadata_version + 1;
 

@@ -1935,7 +1935,7 @@ void Context::reloadConfig() const
 {
     /// Use mutex if callback may be changed after startup.
     if (!shared->config_reload_callback)
-        throw Exception("Can't reload config beacuse config_reload_callback is not set.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Can't reload config because config_reload_callback is not set.", ErrorCodes::LOGICAL_ERROR);
 
     shared->config_reload_callback();
 }
