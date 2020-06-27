@@ -16,6 +16,7 @@ create_table_sql_template = """
     `name` varchar(50) NOT NULL,
     `age` int  NOT NULL default 0,
     `money` int NOT NULL default 0,
+    `source` enum('IP','URL') DEFAULT 'IP',
     PRIMARY KEY (`id`)) ENGINE=InnoDB;
     """
 
@@ -112,6 +113,19 @@ def test_table_function(started_cluster):
     node1.query("INSERT INTO {} SELECT id + 100000, name, age, money FROM {}".format('TABLE FUNCTION ' + table_function, table_function))
     assert node1.query("SELECT sum(`money`) FROM {}".format(table_function)).rstrip() == '60000'
     conn.close()
+
+
+def test_enum_type(started_cluster):
+    table_name = 'test_enum_type'
+    conn = get_mysql_conn()
+    create_mysql_table(conn, table_name)
+    node1.query('''
+CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, source Enum8('IP' = 1, 'URL' = 2)) ENGINE = MySQL('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse', 1);
+'''.format(table_name, table_name))
+    node1.query("INSERT INTO {}(id, name, age, money, source) VALUES (1,'name',0, 0, 'URL')".format(table_name))
+    assert node1.query("SELECT source FROM {} LIMIT 1".format(table_name)).rstrip() == 'URL'
+    conn.close()
+
 
 
 def get_mysql_conn():
