@@ -54,6 +54,10 @@ namespace Regexps
         return {likePatternToRegexp(pattern), flags};
     }
 
+    /** Returns holder of an object from Pool.
+      * You must hold the ownership while using the object.
+      * In destructor, it returns the object back to the Pool for further reuse.
+      */
     template <bool like, bool no_capture>
     inline Pool::Pointer get(const std::string & pattern)
     {
