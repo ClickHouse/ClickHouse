@@ -88,6 +88,7 @@ Block InterpreterExplainQuery::getSampleBlock()
     return block;
 }
 
+/// Split str by line feed and write as separate row to ColumnString.
 static void fillColumn(IColumn & column, const std::string & str)
 {
     size_t start = 0;
@@ -111,6 +112,8 @@ static void fillColumn(IColumn & column, const std::string & str)
 
 namespace
 {
+
+/// Settings. Different for each explain type.
 
 struct QueryPlanSettings
 {
