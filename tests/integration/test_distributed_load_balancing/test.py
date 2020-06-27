@@ -43,6 +43,13 @@ def bootstrap():
             currentDatabase(),
             data)
         """.format())
+        n.query("""
+        CREATE TABLE dist_priority AS data
+        Engine=Distributed(
+            replicas_priority_cluster,
+            currentDatabase(),
+            data)
+        """.format())
 
 def make_uuid():
     return uuid.uuid4().hex
@@ -56,7 +63,7 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
-def get_node(query_node, *args, **kwargs):
+def get_node(query_node, table='dist', *args, **kwargs):
     query_id = make_uuid()
 
     settings = {
@@ -70,7 +77,7 @@ def get_node(query_node, *args, **kwargs):
     else:
         kwargs['settings'].update(settings)
 
-    query_node.query('SELECT * FROM dist', *args, **kwargs)
+    query_node.query('SELECT * FROM ' + table, *args, **kwargs)
 
     for n in cluster.instances.values():
         n.query('SYSTEM FLUSH LOGS')
@@ -126,6 +133,14 @@ def test_load_balancing_round_robin():
         unique_nodes.add(get_node(n1, settings={'load_balancing': 'round_robin'}))
     assert len(unique_nodes) == nodes, unique_nodes
     assert unique_nodes == set(['n1', 'n2', 'n3'])
+
+def test_load_balancing_priority_round_robin():
+    unique_nodes = set()
+    for _ in range(0, nodes):
+        unique_nodes.add(get_node(n1, 'dist_priority', settings={'load_balancing': 'round_robin'}))
+    assert len(unique_nodes) == 2, unique_nodes
+    # n2 has bigger priority in config
+    assert unique_nodes == set(['n1', 'n3'])
 
 def test_distributed_replica_max_ignored_errors():
     settings = {

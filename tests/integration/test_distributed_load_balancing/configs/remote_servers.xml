@@ -17,6 +17,27 @@
             </shard>
         </replicas_cluster>
 
+        <replicas_priority_cluster>
+            <shard>
+                <replica>
+                    <host>n1</host>
+                    <port>9000</port>
+                    <priority>0</priority>
+                </replica>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                    <!-- <priority>1</priority> -->
+                </replica>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                    <priority>0</priority>
+                </replica>
+            </shard>
+        </replicas_priority_cluster>
+
+        <!-- For JOIN with system.clusters -->
         <shards_cluster>
             <node>
                 <host>n1</host>
