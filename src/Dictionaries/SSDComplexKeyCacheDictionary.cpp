@@ -915,7 +915,11 @@ size_t SSDComplexKeyCachePartition::getBytesAllocated() const
 void SSDComplexKeyCachePartition::remove()
 {
     std::unique_lock lock(rw_lock);
-    std::filesystem::remove(std::filesystem::path(path + BIN_FILE_EXT));
+    try {
+        std::filesystem::remove(std::filesystem::path(path + BIN_FILE_EXT));
+    } catch (const std::exception & e) {
+        throw Exception{Exception::CreateFromSTDTag::CreateFromSTD, e};
+    }
 }
 
 SSDComplexKeyCacheStorage::SSDComplexKeyCacheStorage(
@@ -1344,7 +1348,7 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
             path, max_partitions_count, file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys)
     , log(&Poco::Logger::get("SSDComplexKeyCacheDictionary"))
 {
-    LOG_INFO(log, "Using storage path '" << path << "'.");
+    LOG_INFO(log, "Using storage path '{}'.", path);
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
 

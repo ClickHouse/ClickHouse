@@ -22,7 +22,7 @@
 #include <IO/WriteBufferAIO.h>
 #include <list>
 #include <pcg_random.hpp>
-#include <Poco/Logger.h
+#include <Poco/Logger.h>
 #include <shared_mutex>
 #include <variant>
 #include <vector>
