@@ -3748,8 +3748,8 @@ void StorageReplicatedMergeTree::alter(
 
         std::optional<EphemeralLocksInAllPartitions> lock_holder;
 
-        /// No we will prepare mutations record
-        /// This code pretty same with mutate() function but process results slightly differently
+        /// Now we will prepare mutations record.
+        /// This code pretty same with mutate() function but process results slightly differently.
         if (alter_entry->have_mutation)
         {
             String mutations_path = zookeeper_path + "/mutations";
