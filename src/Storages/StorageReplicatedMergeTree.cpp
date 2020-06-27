@@ -3697,6 +3697,9 @@ void StorageReplicatedMergeTree::alter(
         if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata->sorting_key.definition_ast))
             future_metadata_in_zk.sorting_key = serializeAST(*future_metadata.sorting_key.expression_list_ast);
 
+        if (ast_to_str(future_metadata.partition_key.definition_ast) != ast_to_str(current_metadata->partition_key.definition_ast))
+            future_metadata_in_zk.partition_key = serializeAST(*future_metadata.partition_key.expression_list_ast);
+
         if (ast_to_str(future_metadata.table_ttl.definition_ast) != ast_to_str(current_metadata->table_ttl.definition_ast))
             future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.table_ttl.definition_ast);
 
@@ -3797,7 +3800,8 @@ void StorageReplicatedMergeTree::alter(
         else if (rc == Coordination::Error::ZBADVERSION)
         {
             if (results[0]->error != Coordination::Error::ZOK)
-                throw Exception("Metadata on replica is not up to date with common metadata in Zookeeper. Cannot alter", ErrorCodes::CANNOT_ASSIGN_ALTER);
+                throw Exception("Metadata on replica is not up to date with common metadata in Zookeeper. Cannot alter",
+                    ErrorCodes::CANNOT_ASSIGN_ALTER);
 
             continue;
         }
@@ -3806,7 +3810,6 @@ void StorageReplicatedMergeTree::alter(
             throw Coordination::Exception("Alter cannot be assigned because of Zookeeper error", rc);
         }
     }
-
 
     table_lock_holder.reset();
 
