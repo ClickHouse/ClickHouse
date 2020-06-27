@@ -127,7 +127,7 @@ DatabaseOnDisk::DatabaseOnDisk(
     const String & metadata_path_,
     const String & data_path_,
     const String & logger,
-    const Context & context)
+    Context & context)
     : DatabaseWithOwnTablesBase(name, logger, context)
     , metadata_path(metadata_path_)
     , data_path(data_path_)

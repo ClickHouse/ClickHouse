@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
 
+
 namespace DB
 {
 /** DatabaseReplicated engine
@@ -33,6 +34,8 @@ class DatabaseReplicated : public DatabaseAtomic
 public:
     DatabaseReplicated(const String & name_, const String & metadata_path_, const String & zookeeper_path_, const String & replica_name_, Context & context);
 
+    ~DatabaseReplicated();
+
     void drop(const Context & /*context*/) override;
 
     String getEngineName() const override { return "Replicated"; }
@@ -47,7 +50,7 @@ private:
 
     void runBackgroundLogExecutor();
     
-    void executeFromZK(String & path);
+    void executeFromZK(String & path, bool yield);
 
     void writeLastExecutedToDiskAndZK();
 
@@ -56,6 +59,10 @@ private:
     void RemoveOutdatedSnapshotsAndLog();
 
     std::unique_ptr<Context> current_context; // to run executeQuery
+
+    //BlockIO execution_result;
+    std::mutex log_name_mutex;
+    String log_name_to_exec_with_result;
 
     int snapshot_period;
 

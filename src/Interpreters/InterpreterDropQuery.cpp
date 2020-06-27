@@ -93,7 +93,7 @@ BlockIO InterpreterDropQuery::executeToTable(
         {
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->shutdown();
-            TableStructureWriteLockHolder table_lock;
+            TableExclusiveLockHolder table_lock;
             if (database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table from memory, don't touch data and metadata
@@ -111,7 +111,6 @@ BlockIO InterpreterDropQuery::executeToTable(
             auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
             /// Drop table data, don't touch metadata
-            auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
                 database->propose(query_ptr);
             } else {

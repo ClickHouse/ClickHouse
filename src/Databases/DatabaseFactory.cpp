@@ -148,8 +148,9 @@ DatabasePtr DatabaseFactory::getImpl(
 
         const auto & arguments = engine->arguments->children;
 
-        const auto zoo_path = arguments[0]->as<ASTLiteral>()->value.safeGet<String>();
-        const auto replica_name = arguments[1]->as<ASTLiteral>()->value.safeGet<String>();
+        const auto & zoo_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
+        const auto & replica_name  = safeGetLiteralValue<String>(arguments[1], "Replicated");
+
         return std::make_shared<DatabaseReplicated>(database_name, metadata_path, zoo_path, replica_name, context);
     }
 
