@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/MergeSortingStep.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -48,15 +49,15 @@ void MergeSortingStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-Strings MergeSortingStep::describeActions() const
+void MergeSortingStep::describeActions(FormatSettings & settings) const
 {
-    Strings res = {"Sort description: " + dumpSortDescription(description, input_streams.front().header)};
+    String prefix(settings.offset, ' ');
+    settings.out << prefix << "Sort description: ";
+    dumpSortDescription(description, input_streams.front().header, settings.out);
+    settings.out << '\n';
 
     if (limit)
-        res.emplace_back("Limit " + std::to_string(limit));
-
-    return res;
+        settings.out << prefix << "Limit " << limit << '\n';
 }
-
 
 }

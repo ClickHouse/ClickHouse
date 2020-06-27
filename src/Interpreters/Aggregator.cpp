@@ -29,6 +29,7 @@
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <Disks/StoragePolicy.h>
+#include <IO/Operators.h>
 
 
 namespace ProfileEvents
@@ -150,44 +151,41 @@ Block Aggregator::Params::getHeader(
     return materializeBlock(res);
 }
 
-Strings Aggregator::Params::explain() const
+void Aggregator::Params::explain(WriteBuffer & out, size_t ident) const
 {
     Strings res;
     const auto & header = src_header ? src_header
                                      : intermediate_header;
-    String keys_str;
-    for (auto key : keys)
+
+    String prefix(ident, ' ');
+
     {
-        if (!keys_str.empty())
-            keys_str += ", ";
+        /// Dump keys.
+        out << prefix << "Keys: ";
 
-        if (key >= header.columns())
-            keys_str += "unknown position " + std::to_string(key);
-        else
-            keys_str += header.getByPosition(key).name;
+        bool first = true;
+        for (auto key : keys)
+        {
+            if (!first)
+                out << ", ";
+            first = false;
+
+            if (key >= header.columns())
+                out << "unknown position " << key;
+            else
+                out << header.getByPosition(key).name;
+        }
+
+        out << '\n';
     }
-
-    res.emplace_back("Keys: " + std::move(keys_str));
 
     if (!aggregates.empty())
     {
-        bool first = true;
+        out << prefix << "Aggregates:\n";
+
         for (const auto & aggregate : aggregates)
-        {
-            auto aggregate_strings = aggregate.explain();
-            for (const auto & aggregate_str : aggregate_strings)
-            {
-                if (first)
-                    res.emplace_back("Aggregates: " + aggregate_str);
-                else
-                    res.emplace_back("            " + aggregate_str);
-
-                first = false;
-            }
-        }
+            aggregate.explain(out, ident + 4);
     }
-
-    return res;
 }
 
 Aggregator::Aggregator(const Params & params_)

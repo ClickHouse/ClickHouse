@@ -3,6 +3,7 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Interpreters/ExpressionActions.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -62,17 +63,20 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
     __builtin_unreachable();
 }
 
-Strings TotalsHavingStep::describeActions() const
+void TotalsHavingStep::describeActions(FormatSettings & settings) const
 {
-    Strings res;
-    res.emplace_back("Filter column: " + filter_column_name);
-    res.emplace_back("Mode: " + totalsModeToString(totals_mode, auto_include_threshold));
+    String prefix(settings.offset, ' ');
+    settings.out << prefix << "Filter column: " << filter_column_name << '\n';
+    settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
 
+    bool first = true;
     for (const auto & action : expression->getActions())
-        res.emplace_back((res.size() == 2 ? "Actions: "
-                                          : "         ") + action.toString());
-
-    return res;
+    {
+        settings.out << prefix << (first ? "Actions: "
+                                         : "         ");
+        first = false;
+        settings.out << action.toString() << '\n';
+    }
 }
 
 }

@@ -3,6 +3,7 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/InflatingExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -50,19 +51,23 @@ void ExpressionStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-static Strings getActionsDescription(const ExpressionActionsPtr & expression)
+static void doDescribeActions(const ExpressionActionsPtr & expression, IQueryPlanStep::FormatSettings & settings)
 {
-    Strings res;
-    for (const auto & action : expression->getActions())
-        res.emplace_back((res.empty() ? "Actions: "
-                                      : "         ") + action.toString());
+    String prefix(settings.offset, ' ');
+    bool first = true;
 
-    return res;
+    for (const auto & action : expression->getActions())
+    {
+        settings.out << prefix << (first ? "Actions: "
+                                         : "         ");
+        first = false;
+        settings.out << action.toString() << '\n';
+    }
 }
 
-Strings ExpressionStep::describeActions() const
+void ExpressionStep::describeActions(FormatSettings & settings) const
 {
-    return getActionsDescription(expression);
+    doDescribeActions(expression, settings);
 }
 
 InflatingExpressionStep::InflatingExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_)
@@ -93,9 +98,9 @@ void InflatingExpressionStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-Strings InflatingExpressionStep::describeActions() const
+void InflatingExpressionStep::describeActions(FormatSettings & settings) const
 {
-    return getActionsDescription(expression);
+    doDescribeActions(expression, settings);
 }
 
 }

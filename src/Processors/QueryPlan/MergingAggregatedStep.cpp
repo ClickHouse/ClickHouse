@@ -63,9 +63,9 @@ void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline)
     pipeline.enableQuotaForCurrentStreams();
 }
 
-Strings MergingAggregatedStep::describeActions() const
+void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
-    return params->params.explain();
+    return params->params.explain(settings.out, settings.offset);
 }
 
 }

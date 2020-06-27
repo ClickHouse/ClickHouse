@@ -925,7 +925,7 @@ public:
         }
 
         /// Returns keys and aggregated for EXPLAIN query
-        Strings explain() const;
+        void explain(WriteBuffer & out, size_t ident) const;
     };
 
     Aggregator(const Params & params_);

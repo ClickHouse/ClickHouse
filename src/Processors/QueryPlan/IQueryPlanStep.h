@@ -65,7 +65,7 @@ public:
     };
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
-    virtual Strings describeActions() const { return {}; }
+    virtual void describeActions(FormatSettings & /*settings*/) const {}
 
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}

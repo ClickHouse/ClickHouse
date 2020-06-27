@@ -24,7 +24,7 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
-    Strings describeActions() const override;
+    void describeActions(FormatSettings & settings) const override;
 
 private:
     SortDescription description;

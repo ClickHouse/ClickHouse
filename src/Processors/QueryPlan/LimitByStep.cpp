@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/QueryPipeline.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -37,23 +38,30 @@ void LimitByStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-Strings LimitByStep::describeActions() const
+void LimitByStep::describeActions(FormatSettings & settings) const
 {
-    Strings res;
-    String columns_str;
-    for (const auto & column : columns)
-    {
-        if (!columns_str.empty())
-            columns_str += ", ";
+    String prefix(settings.offset, ' ');
 
-        columns_str += column;
+    settings.out << prefix << "Columns: ";
+
+    if (columns.empty())
+        settings.out << "none\n";
+    else
+    {
+        bool first = true;
+        for (const auto & column : columns)
+        {
+            if (!first)
+                settings.out << ", ";
+            first = false;
+
+            settings.out << column;
+        }
+        settings.out << '\n';
     }
 
-    return {
-        "Columns: " + columns_str,
-        "Length " + std::to_string(group_length),
-        "Offset " + std::to_string(group_offset),
-    };
+    settings.out << prefix << "Length " << group_length << '\n';
+    settings.out << prefix << "Offset " << group_offset << '\n';
 }
 
 }

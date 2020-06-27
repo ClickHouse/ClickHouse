@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/LimitTransform.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -35,30 +36,30 @@ void LimitStep::transformPipeline(QueryPipeline & pipeline)
     pipeline.addPipe({std::move(transform)});
 }
 
-Strings LimitStep::describeActions() const
+void LimitStep::describeActions(FormatSettings & settings) const
 {
-    Strings res;
-    res.emplace_back("Limit " + std::to_string(limit));
-    res.emplace_back("Offset " + std::to_string(offset));
+    String prefix(settings.offset, ' ');
+    settings.out << prefix << "Limit " << limit << '\n';
+    settings.out << prefix << "Offset " << offset << '\n';
 
     if (with_ties || always_read_till_end)
     {
+        settings.out << prefix;
+
         String str;
         if (with_ties)
-            str += "WITH TIES";
+            settings.out << "WITH TIES";
 
         if (always_read_till_end)
         {
-            if (!str.empty())
-                str += ", ";
+            if (!with_ties)
+                settings.out << ", ";
 
-            str += "Reads all data";
+            settings.out << "Reads all data";
         }
 
-        res.emplace_back(str);
+        settings.out << '\n';
     }
-
-    return res;
 }
 
 }
