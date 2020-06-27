@@ -267,6 +267,8 @@
                 <replica>
                     <host>localhost</host>
                     <port>9000</port>
+                    <!-- Optional. Priority of the replica for load_balancing. Default: 1 (less value has more priority). -->
+                    <!-- <priority>1</priority> -->
                 </replica>
             </shard>
         </test_shard_localhost>
