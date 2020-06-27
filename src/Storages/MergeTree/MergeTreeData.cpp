@@ -1237,7 +1237,7 @@ bool isSafeForPartitionKeyConversion(const IDataType * from, const IDataType * t
         if (const auto * to_enum8 = typeid_cast<const DataTypeEnum8 *>(to))
             return to_enum8->contains(*from_enum8);
         if (typeid_cast<const DataTypeInt8 *>(to))
-            return true;
+            return true;    // NOLINT
         return false;
     }
 
@@ -1246,7 +1246,7 @@ bool isSafeForPartitionKeyConversion(const IDataType * from, const IDataType * t
         if (const auto * to_enum16 = typeid_cast<const DataTypeEnum16 *>(to))
             return to_enum16->contains(*from_enum16);
         if (typeid_cast<const DataTypeInt16 *>(to))
-            return true;
+            return true;    // NOLINT
         return false;
     }
 
