@@ -755,10 +755,12 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     }
 }
 
-void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
+void StorageReplicatedMergeTree::setTableStructure(
+ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+
     if (new_columns != new_metadata.columns)
     {
         new_metadata.columns = new_columns;
@@ -769,6 +771,10 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
             auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, global_context, new_metadata.primary_key);
             new_metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
+
+        /// The type of partition key expression may change
+        if (new_metadata.partition_key.definition_ast != nullptr)
+            new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, global_context);
     }
 
     if (!metadata_diff.empty())
@@ -812,12 +818,13 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         {
             ParserTTLExpressionList parser;
             auto ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-            new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl_for_table_ast, new_metadata.columns, global_context, new_metadata.primary_key);
+            new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                ttl_for_table_ast, new_metadata.columns, global_context, new_metadata.primary_key);
         }
     }
 
-    /// Even if the primary/sorting keys didn't change we must reinitialize it
-    /// because primary key column types might have changed.
+    /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
+    /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
     setProperties(new_metadata, old_metadata);
 
