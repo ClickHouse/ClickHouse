@@ -22,6 +22,7 @@
 #include <IO/WriteBufferAIO.h>
 #include <list>
 #include <pcg_random.hpp>
+#include <Poco/Logger.h
 #include <shared_mutex>
 #include <variant>
 #include <vector>
@@ -130,6 +131,9 @@ using AttributeValueVariant = std::variant<
         Float64,
         String>;
 
+/*
+    The pool for storing complex keys.
+*/
 template <typename A>
 class ComplexKeysPoolImpl
 {
@@ -243,6 +247,11 @@ struct KeyDeleter
     ComplexKeysPool & keys_pool;
 };
 
+
+/*
+    Class for operations with cache file and index.
+    Supports GET/SET operations.
+*/
 class SSDComplexKeyCachePartition
 {
 public:
@@ -418,6 +427,9 @@ private:
 using SSDComplexKeyCachePartitionPtr = std::shared_ptr<SSDComplexKeyCachePartition>;
 
 
+/*
+    Class for managing SSDCachePartition and getting data from source.
+*/
 class SSDComplexKeyCacheStorage
 {
 public:
@@ -490,7 +502,7 @@ private:
     std::list<SSDComplexKeyCachePartitionPtr> partitions;
     std::list<SSDComplexKeyCachePartitionPtr> partition_delete_queue;
 
-    Logger * const log;
+    Poco::Logger * const log;
 
     mutable pcg64 rnd_engine;
 
@@ -503,6 +515,9 @@ private:
 };
 
 
+/*
+    Dictionary interface
+*/
 class SSDComplexKeyCacheDictionary final : public IDictionaryBase
 {
 public:
@@ -681,7 +696,7 @@ private:
     std::map<std::string, size_t> attribute_index_by_name;
     std::vector<AttributeValueVariant> null_values;
     mutable SSDComplexKeyCacheStorage storage;
-    Logger * const log;
+    Poco::Logger * const log;
 
     mutable size_t bytes_allocated = 0;
 };
