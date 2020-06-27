@@ -9,6 +9,8 @@ namespace DB
 void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool with_header)
 {
     struct Node;
+
+    /// Group by processors name, QueryPlanStep and group in this step.
     struct Key
     {
         size_t group;
@@ -23,6 +25,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
         }
     };
 
+    /// Group ports by header.
     struct EdgeData
     {
         Block header;
@@ -39,22 +42,26 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
     };
 
     std::map<Key, Node> graph;
+
     auto get_key = [](const IProcessor & processor)
     {
         return Key{processor.getQueryPlanStepGroup(), processor.getQueryPlanStep(), processor.getName()};
     };
 
+    /// Fill nodes.
     for (const auto & processor : processors)
     {
         auto res = graph.emplace(get_key(*processor), Node());
-        res.first->second.agents.emplace_back(processor.get());
+        auto & node = res.first->second;
+        node.agents.emplace_back(processor.get());
 
         if (res.second)
-            res.first->second.id = graph.size();
+            node.id = graph.size();
     }
 
     Block empty_header;
 
+    /// Fill edges.
     for (const auto & processor : processors)
     {
         auto & from =  graph[get_key(*processor)];
@@ -66,8 +73,12 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
 
             auto & to = graph[get_key(port.getInputPort().getProcessor())];
             auto & edge = from.edges[&to];
-            const auto & header = with_header ? port.getHeader() : empty_header;
 
+            /// Use empty header for each edge if with_header is false.
+            const auto & header = with_header ? port.getHeader()
+                                              : empty_header;
+
+            /// Group by header.
             bool found = false;
             for (auto & item : edge)
             {
@@ -84,6 +95,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
         }
     }
 
+    /// Group processors by it's QueryPlanStep.
     std::map<IQueryPlanStep *, std::vector<const Node *>> steps_map;
 
     for (const auto & item : graph)
@@ -97,6 +109,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
     size_t next_step = 0;
     for (const auto & item : steps_map)
     {
+        /// Use separate clusters for each step.
         if (item.first != nullptr)
         {
             out << "    subgraph cluster_" << next_step << " {\n";
