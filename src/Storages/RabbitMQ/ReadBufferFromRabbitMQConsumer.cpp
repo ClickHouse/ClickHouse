@@ -33,7 +33,7 @@ namespace ExchangeType
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
-        RabbitMQHandler & eventHandler_,
+        HandlerPtr eventHandler_,
         const String & exchange_name_,
         const Names & routing_keys_,
         const size_t channel_id_,
@@ -116,8 +116,6 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
 
         return;
     }
-
-    /// For special purposes to use the flexibility of routing provided by rabbitmq - choosing exchange types is supported.
 
     AMQP::ExchangeType type;
     if      (exchange_type == ExchangeType::FANOUT)         type = AMQP::ExchangeType::fanout;
@@ -247,7 +245,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
         });
 
         /* Subscription can probably be moved back to readPrefix(), but not sure whether it is better in regard to speed, because
-         * if moved there, it must(!) be wrapped inside a channel->onReady callback or any other (and the looping), otherwise
+         * if moved there, it must(!) be wrapped inside a channel->onReady callback or any other, otherwise
          * consumer might fail to subscribe and no resubscription will help.
          */
         subscribe(queues.back());
@@ -280,7 +278,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
                 AMQP::Table binding_arguments;
                 std::vector<String> matching;
 
-                /// It is not parsed for the second time - if it was parsed above, then it would go to the first if statement, not here.
+                /// It is not parsed for the second time - if it was parsed above, then it would never end up here.
                 for (const auto & header : routing_keys)
                 {
                     boost::split(matching, header, [](char c){ return c == '='; });
@@ -367,15 +365,6 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
                 std::lock_guard lock(mutex);
                 received.push_back(message_received);
             }
-
-            /* As event loop is blocking to the thread that started it and a single thread should not be blocked while
-             * executing all callbacks on the connection (not only its own), then there should be some point to unblock.
-             * loop_started == 1 if current consumer is started the loop and not another.
-             */
-            if (!loop_started.load() && !event_handler.checkStopIsScheduled())
-            {
-                stopEventLoopWithTimeout();
-            }
         }
     })
     .onError([&](const char * message)
@@ -415,19 +404,13 @@ void ReadBufferFromRabbitMQConsumer::checkSubscription()
 
 void ReadBufferFromRabbitMQConsumer::stopEventLoop()
 {
-    event_handler.stop();
-}
-
-
-void ReadBufferFromRabbitMQConsumer::stopEventLoopWithTimeout()
-{
-    event_handler.stopWithTimeout();
+    event_handler->stop();
 }
 
 
 void ReadBufferFromRabbitMQConsumer::startEventLoop(std::atomic<bool> & loop_started)
 {
-    event_handler.startConsumerLoop(loop_started);
+    event_handler->startConsumerLoop(loop_started);
 }
 
 
@@ -439,20 +422,11 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
     if (current == messages.end())
     {
         if (received.empty())
-        {
-            /// Run the onReceived callbacks to save the messages that have been received by now, blocks current thread.
-            startEventLoop(loop_started);
-            loop_started.store(false);
-        }
-
-        if (received.empty())
             return false;
-
-        messages.clear();
 
         /// Needed to avoid data race because this vector can be used at the same time by another thread in onReceived callback.
         std::lock_guard lock(mutex);
-
+        messages.clear();
         messages.swap(received);
         current = messages.begin();
     }
