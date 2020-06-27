@@ -336,7 +336,6 @@ create table query_run_metrics engine File(
         'analyze/query-run-metrics.tsv')
     as select test, query_index, 0 run, version, metric_values
     from query_run_metrics_full
-    where test = 'arithmetic'
     order by test, query_index, run, version
     ;
 
