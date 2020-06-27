@@ -435,8 +435,7 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
         not short and not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
         
         left, right, diff, stat_threshold,
-        --if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
-        0.10 as report_threshold,
+        if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
         test, query_index, query_display_name
     from query_metric_stats
     left join file('analyze/report-thresholds.tsv', TSV,
