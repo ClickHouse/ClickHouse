@@ -13,9 +13,8 @@ create table ttl_00933_1 (d DateTime, a Int, b Int) engine = MergeTree order by 
 insert into ttl_00933_1 values (now(), 1, 2);
 insert into ttl_00933_1 values (now(), 3, 4);
 insert into ttl_00933_1 values (now() + 1000, 5, 6);
+select sleep(1.1) format Null;
 optimize table ttl_00933_1 final; -- check ttl merge for part with both expired and unexpired values
-select sleep(1.1) format Null; -- wait if very fast merge happen
-optimize table ttl_00933_1 final;
 select a, b from ttl_00933_1;
 
 drop table if exists ttl_00933_1;
@@ -24,7 +23,6 @@ create table ttl_00933_1 (d DateTime, a Int ttl d + interval 1 DAY) engine = Mer
 insert into ttl_00933_1 values (toDateTime('2000-10-10 00:00:00'), 1);
 insert into ttl_00933_1 values (toDateTime('2000-10-10 00:00:00'), 2);
 insert into ttl_00933_1 values (toDateTime('2000-10-10 00:00:00'), 3);
-select sleep(0.7) format Null; -- wait if very fast merge happen
 optimize table ttl_00933_1 final;
 select * from ttl_00933_1 order by d;
 
@@ -34,7 +32,6 @@ create table ttl_00933_1 (d DateTime, a Int) engine = MergeTree order by tuple()
 insert into ttl_00933_1 values (toDateTime('2000-10-10 00:00:00'), 1);
 insert into ttl_00933_1 values (toDateTime('2000-10-10 00:00:00'), 2);
 insert into ttl_00933_1 values (toDateTime('2100-10-10 00:00:00'), 3);
-select sleep(0.7) format Null; -- wait if very fast merge happen
 optimize table ttl_00933_1 final;
 select * from ttl_00933_1 order by d;
 
@@ -43,7 +40,6 @@ drop table if exists ttl_00933_1;
 create table ttl_00933_1 (d Date, a Int) engine = MergeTree order by a partition by toDayOfMonth(d) ttl d + interval 1 day;
 insert into ttl_00933_1 values (toDate('2000-10-10'), 1);
 insert into ttl_00933_1 values (toDate('2100-10-10'), 2);
-select sleep(0.7) format Null; -- wait if very fast merge happen
 optimize table ttl_00933_1 final;
 select * from ttl_00933_1 order by d;
 
@@ -52,7 +48,6 @@ drop table if exists ttl_00933_1;
 create table ttl_00933_1 (b Int, a Int ttl now()-1000) engine = MergeTree order by tuple() partition by tuple();
 show create table ttl_00933_1;
 insert into ttl_00933_1 values (1, 1);
-select sleep(0.7) format Null; -- wait if very fast merge happen
 optimize table ttl_00933_1 final;
 select * from ttl_00933_1;
 
@@ -61,7 +56,6 @@ drop table if exists ttl_00933_1;
 create table ttl_00933_1 (b Int, a Int ttl now()+1000) engine = MergeTree order by tuple() partition by tuple();
 show create table ttl_00933_1;
 insert into ttl_00933_1 values (1, 1);
-select sleep(0.7) format Null; -- wait if very fast merge happen
 optimize table ttl_00933_1 final;
 select * from ttl_00933_1;
 
@@ -70,7 +64,6 @@ drop table if exists ttl_00933_1;
 create table ttl_00933_1 (b Int, a Int ttl today()-1) engine = MergeTree order by tuple() partition by tuple();
 show create table ttl_00933_1;
 insert into ttl_00933_1 values (1, 1);
-select sleep(0.7) format Null; -- wait if very fast merge happen
 optimize table ttl_00933_1 final;
 select * from ttl_00933_1;
 
@@ -79,7 +72,6 @@ drop table if exists ttl_00933_1;
 create table ttl_00933_1 (b Int, a Int ttl today()+1) engine = MergeTree order by tuple() partition by tuple();
 show create table ttl_00933_1;
 insert into ttl_00933_1 values (1, 1);
-select sleep(0.7) format Null; -- wait if very fast merge happen
 optimize table ttl_00933_1 final;
 select * from ttl_00933_1;
 
