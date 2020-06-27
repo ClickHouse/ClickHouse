@@ -100,7 +100,7 @@ DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata
 }
 
 DatabaseOrdinary::DatabaseOrdinary(
-    const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context_)
+    const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, Context & context_)
     : DatabaseWithDictionaries(name_, metadata_path_, data_path_, logger, context_)
 {
 }
