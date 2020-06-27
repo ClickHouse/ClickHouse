@@ -120,7 +120,6 @@ def test_load_balancing_first_or_random():
     assert len(unique_nodes) == 1, unique_nodes
     assert unique_nodes == set(['n1'])
 
-# TODO: last_used will be reset on config reload, hence may fail
 def test_load_balancing_round_robin():
     unique_nodes = set()
     for _ in range(0, nodes):
