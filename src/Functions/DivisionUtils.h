@@ -66,7 +66,8 @@ struct DivideIntegralImpl
         /// Otherwise overflow may occur due to integer promotion. Example: int8_t(-1) / uint64_t(2).
         /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
         if constexpr (is_integral_v<A> && is_integral_v<B> && (is_signed_v<A> || is_signed_v<B>))
-            return checkedDivision(std::make_signed_t<A>(a), std::make_signed_t<B>(b));
+            return checkedDivision(std::make_signed_t<A>(a),
+                sizeof(A) > sizeof(B) ? std::make_signed_t<A>(b) : std::make_signed_t<B>(b));
         else
             return checkedDivision(a, b);
     }
