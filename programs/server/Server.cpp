@@ -781,7 +781,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (!hasLinuxCapability(CAP_SYS_NICE))
     {
-        LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."
+        LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_priority' will have no effect."
             " It could happen due to incorrect ClickHouse package installation."
             " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep {}'."
             " Note that it will not work on 'nosuid' mounted filesystems.",
