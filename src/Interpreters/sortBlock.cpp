@@ -179,7 +179,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         {
             EqualRanges ranges;
             ranges.emplace_back(0, perm.size());
-            for (const auto& column : columns_with_sort_desc)
+            for (const auto & column : columns_with_sort_desc)
             {
                 while (!ranges.empty() && limit && limit <= ranges.back().first)
                     ranges.pop_back();
@@ -205,7 +205,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         {
             EqualRanges ranges;
             ranges.emplace_back(0, perm.size());
-            for (const auto& column : columns_with_sort_desc)
+            for (const auto & column : columns_with_sort_desc)
             {
                 while (!ranges.empty() && limit && limit <= ranges.back().first)
                 {
