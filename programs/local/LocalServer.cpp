@@ -78,10 +78,12 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    if (config().has("logger") || config().has("logger.level") || config().has("logger.log"))
+    if (config().has("logger.console") || config().has("logger.level") || config().has("logger.log"))
     {
+        // force enable logging
+        config().setString("logger", "logger");
         // sensitive data rules are not used here
-        buildLoggers(config(), logger(), self.commandName());
+        buildLoggers(config(), logger(), "clickhouse-local");
     }
     else
     {
@@ -498,6 +500,7 @@ void LocalServer::init(int argc, char ** argv)
         ("stacktrace", "print stack traces of exceptions")
         ("echo", "print query before execution")
         ("verbose", "print query and other debugging info")
+        ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
         ("ignore-error", "do not stop processing if a query failed")
@@ -553,6 +556,8 @@ void LocalServer::init(int argc, char ** argv)
         config().setBool("echo", true);
     if (options.count("verbose"))
         config().setBool("verbose", true);
+    if (options.count("logger.console"))
+        config().setBool("logger.console", options["logger.console"].as<bool>());
     if (options.count("logger.log"))
         config().setString("logger.log", options["logger.log"].as<std::string>());
     if (options.count("logger.level"))
