@@ -16,7 +16,7 @@ INSERT INTO test VALUES ('goodbye', 'test');
 OPTIMIZE TABLE test FINAL;
 SELECT * FROM test ORDER BY x;
 SYSTEM SYNC REPLICA test2;
-SELECT * FROM test2;
+SELECT * FROM test2 ORDER BY x;
 SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test' AND active ORDER BY partition;
 SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test2' AND active ORDER BY partition;
 
@@ -29,7 +29,7 @@ INSERT INTO test VALUES (111, 'abc');
 OPTIMIZE TABLE test FINAL;
 SELECT * FROM test ORDER BY x;
 SYSTEM SYNC REPLICA test2;
-SELECT * FROM test2;
+SELECT * FROM test2 ORDER BY x;
 SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test' AND active ORDER BY partition;
 SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test2' AND active ORDER BY partition;
 
