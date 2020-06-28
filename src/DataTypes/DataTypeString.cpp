@@ -397,7 +397,7 @@ void registerDataTypeString(DataTypeFactory & factory)
 {
     factory.registerDataType("String", create);
 
-    /// These synonyms are added for compatibility.
+    /// These synonims are added for compatibility.
 
     factory.registerAlias("CHAR", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("NCHAR", "String", DataTypeFactory::CaseInsensitive);
