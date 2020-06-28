@@ -18,6 +18,8 @@
 namespace Memory
 {
 
+#ifndef USE_TCMALLOC_CPP
+
 inline ALWAYS_INLINE void * newImpl(std::size_t size)
 {
     auto * ptr = malloc(size);
@@ -32,6 +34,25 @@ inline ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
 {
     return malloc(size);
 }
+
+#else
+
+inline ALWAYS_INLINE void * newImpl(std::size_t size)
+{
+    auto * ptr = TCMallocInternalNew(size);
+    if (likely(ptr != nullptr))
+        return ptr;
+
+    /// @note no std::get_new_handler logic implemented
+    throw std::bad_alloc{};
+}
+
+inline ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
+{
+    return TCMallocInternalNewNothrow(size, std::nothrow_t());
+}
+
+#endif
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 {
