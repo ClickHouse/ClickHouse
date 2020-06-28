@@ -324,13 +324,16 @@ struct DateTimeAddIntervalImpl
             const IColumn & delta_column = *block.getByPosition(arguments[1]).column;
 
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
-                op.vectorConstant(sources->getData(), col_to->getData(), delta_const_column->getField().get<Int64>(), time_zone);
+                op.vectorConstant(sources->getData(), col_to->getData(), delta_const_column->getInt(0), time_zone);
             else
                 op.vectorVector(sources->getData(), col_to->getData(), delta_column, time_zone);
         }
         else if (const auto * sources_const = checkAndGetColumnConst<FromColumnType>(source_col.get()))
         {
-            op.constantVector(sources_const->template getValue<FromValueType>(), col_to->getData(), *block.getByPosition(arguments[1]).column, time_zone);
+            op.constantVector(
+                sources_const->template getValue<FromValueType>(),
+                col_to->getData(),
+                *block.getByPosition(arguments[1]).column, time_zone);
         }
         else
         {
@@ -390,6 +393,7 @@ public:
         {
             if (!WhichDataType(arguments[0].type).isDateTime()
                 || !WhichDataType(arguments[2].type).isString())
+            {
                 throw Exception(
                     "Function " + getName() + " supports 2 or 3 arguments. The 1st argument "
                     "must be of type Date or DateTime. The 2nd argument must be number. "
@@ -397,6 +401,7 @@ public:
                     "a constant string with timezone name. The timezone argument is allowed "
                     "only when the 1st argument has the type DateTime",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
         }
 
         switch (arguments[0].type->getTypeId())
@@ -416,7 +421,8 @@ public:
         }
     }
 
-    // Helper templates to deduce return type based on argument type, since some overloads may promote or denote types, e.g. addSeconds(Date, 1) => DateTime
+    /// Helper templates to deduce return type based on argument type, since some overloads may promote or denote types,
+    /// e.g. addSeconds(Date, 1) => DateTime
     template <typename FieldType>
     using TransformExecuteReturnType = decltype(std::declval<Transform>().execute(FieldType(), 0, std::declval<DateLUTImpl>()));
 
@@ -463,15 +469,18 @@ public:
 
         if (which.isDate())
         {
-            DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(Transform{}, block, arguments, result);
+            DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(
+                Transform{}, block, arguments, result);
         }
         else if (which.isDateTime())
         {
-            DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(Transform{}, block, arguments, result);
+            DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(
+                Transform{}, block, arguments, result);
         }
         else if (const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(from_type))
         {
-            DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(Transform{datetime64_type->getScale()}, block, arguments, result);
+            DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(
+                Transform{datetime64_type->getScale()}, block, arguments, result);
         }
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of first argument of function " + getName(),
