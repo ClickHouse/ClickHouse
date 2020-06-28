@@ -299,7 +299,7 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(
 
     return GeohashesInBoxPreparedArgs
     {
-        UInt64(lon_items) * lat_items,
+        std::max<UInt64>(1, UInt64(lon_items) * lat_items),
         lon_items,
         lat_items,
         lon_min,
@@ -312,9 +312,7 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(
 
 UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
 {
-    if (args.longitude_items == 0
-        || args.latitude_items == 0
-        || args.precision == 0
+    if (args.precision == 0
         || args.precision > MAX_PRECISION
         || args.longitude_step <= 0
         || args.latitude_step <= 0)
