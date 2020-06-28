@@ -132,7 +132,7 @@ void LocalServer::tryInitPath()
             // This is a directory that is left by a previous run of
             // clickhouse-local that had the same pid and did not complete
             // correctly. Remove it, with an additional sanity check.
-            if (default_path.parent_path() != tmp)
+            if (!std::filesystem::equivalent(default_path.parent_path(), tmp))
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "The temporary directory of clickhouse-local '{}' is not"
@@ -267,6 +267,7 @@ try
     context->shutdown();
     context.reset();
 
+    status.reset();
     cleanup();
 
     return Application::EXIT_OK;
@@ -433,7 +434,7 @@ void LocalServer::cleanup()
         const auto dir = *temporary_directory_to_delete;
         temporary_directory_to_delete.reset();
 
-        if (dir.parent_path() != tmp)
+        if (!std::filesystem::equivalent(dir.parent_path(), tmp))
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "The temporary directory of clickhouse-local '{}' is not inside"
