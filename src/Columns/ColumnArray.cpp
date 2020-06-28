@@ -43,7 +43,7 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
         throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
 
     size_t size = offsets_concrete->size();
-    if (size != 0)
+    if (size != 0 && nested_column)
     {
         /// This will also prevent possible overflow in offset.
         if (nested_column->size() != offsets_concrete->getData()[size - 1])
