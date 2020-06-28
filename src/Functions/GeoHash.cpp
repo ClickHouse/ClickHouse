@@ -3,6 +3,7 @@
 #include <cassert>
 #include <Functions/GeoHash.h>
 
+
 namespace DB
 {
 
@@ -271,10 +272,10 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(
 
     if (longitude_max < longitude_min
         || latitude_max < latitude_min
-        || isnan(longitude_min)
-        || isnan(longitude_max)
-        || isnan(latitude_min)
-        || isnan(latitude_max))
+        || std::isnan(longitude_min)
+        || std::isnan(longitude_max)
+        || std::isnan(latitude_min)
+        || std::isnan(latitude_max))
     {
         return {};
     }
