@@ -83,20 +83,21 @@ public:
             return;
         }
 
-        std::optional<NameAndTypePair> data_type_and_name;
-        if (data.identifier)
-            data_type_and_name = getIdentifierTypeAndName(data);
-
-        if (!data_type_and_name)
+        if (data.identifier && !data.data_type)
         {
-            data.monotonicity.is_monotonic = false;
-            return;
-        }
+            auto data_type_and_name = getIdentifierTypeAndName(data);
 
-        if (!data.data_type)
-        {
-            data.data_type = data_type_and_name->type;
-            data.name = data_type_and_name->name;
+            if (!data_type_and_name)
+            {
+                data.monotonicity.is_monotonic = false;
+                return;
+            }
+
+            if (!data.data_type)
+            {
+                data.data_type = data_type_and_name->type;
+                data.name = data_type_and_name->name;
+            }
         }
 
         ColumnsWithTypeAndName args;

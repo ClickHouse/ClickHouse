@@ -541,8 +541,8 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, bool op
             MonotonicityCheckVisitor(monotonicity_checker_data).visit(order_by_function);
             if (monotonicity_checker_data.monotonicity.is_monotonic)
             {
-                order_by_function = monotonicity_checker_data.identifier->clone();
-                order_by_function->setAlias("");
+                order_by_element->children[0] = monotonicity_checker_data.identifier->clone();
+                order_by_element->children[0]->setAlias("");
                 if (!monotonicity_checker_data.monotonicity.is_positive)
                     order_by_element->direction *= -1;
             }
