@@ -68,10 +68,12 @@ void bootstrap()
     std::cerr << "kNumClasses: " << kNumClasses << '\n';
 }
 // XXX: does not helps anyway, but let's keep for now
-void nfree(void *ptr, size_t size) { TCMallocInternalDeleteSized(ptr, size); }
+void free_(void *ptr, size_t size) { TCMallocInternalDeleteSized(ptr, size); }
+void* malloc_(size_t size) { return TCMallocInternalNew(size); }
 #else
 void bootstrap() {}
-void nfree(void *ptr, size_t /*size*/) { free(ptr); }
+void free_(void *ptr, size_t /*size*/) { free(ptr); }
+void* malloc_(size_t size) { return malloc(size); }
 #endif
 
 
@@ -81,7 +83,7 @@ void alloc_loop()
     {
         size_t size = 4096;
 
-        void * buf = malloc(size);
+        void * buf = malloc_(size);
         if (!buf)
             abort();
         memset(buf, 0, size);
@@ -107,8 +109,8 @@ void alloc_loop()
         {
             size_t next_size = size * 4;
 
-            nfree(buf, size);
-            void * new_buf = malloc(next_size);
+            free_(buf, size);
+            void * new_buf = malloc_(next_size);
             if (!new_buf)
                 abort();
             buf = new_buf;
@@ -117,7 +119,7 @@ void alloc_loop()
             size = next_size;
         }
 
-        nfree(buf, size);
+        free_(buf, size);
     }
 }
 
