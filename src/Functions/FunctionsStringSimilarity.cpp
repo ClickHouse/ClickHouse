@@ -138,7 +138,7 @@ struct NgramDistanceImpl
 
             /// This is not a really true case insensitive utf8. We zero the 5-th bit of every byte.
             /// And first bit of first byte if there are two bytes.
-            /// For ASCII it works https://catonmat.net/ascii-case-conversion-trick. For most cyrrilic letters also does.
+            /// For ASCII it works https://catonmat.net/ascii-case-conversion-trick. For most cyrillic letters also does.
             /// For others, we don't care now. Lowering UTF is not a cheap operation.
             if constexpr (case_insensitive)
             {

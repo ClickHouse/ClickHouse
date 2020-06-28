@@ -22,7 +22,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class JoinedTables
 {
 public:
-    JoinedTables(Context && contex, const ASTSelectQuery & select_query);
+    JoinedTables(Context && context, const ASTSelectQuery & select_query);
 
     void reset(const ASTSelectQuery & select_query)
     {
