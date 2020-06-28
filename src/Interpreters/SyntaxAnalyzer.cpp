@@ -505,8 +505,11 @@ void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, bool optimize_duplicate
     }
 }
 
-/// If ORDER BY has argument x followed by f(x) transfroms it to ORDER BY x
-void optimizeRedundantFunctionsInOrderBy(ASTSelectQuery * select_query, bool optimize_redundant_functions_in_order_by)
+/// If ORDER BY has argument x followed by f(x) transfroms it to ORDER BY x.
+/// Optimize ORDER BY x, y, f(x), g(x, y), f(h(x)), t(f(x), g(x)) into ORDER BY x, y
+/// in case if f(), g(), h(), t() are deterministic (in scope of query).
+/// Don't optimize ORDER BY f(x), g(x), x even if f(x) is bijection for x or g(x).
+void optimizeRedundantFunctionsInOrderBy(ASTSelectQuery * select_query, bool optimize_redundant_functions_in_order_by, const Context & context)
 {
     if (optimize_redundant_functions_in_order_by)
     {
@@ -519,31 +522,34 @@ void optimizeRedundantFunctionsInOrderBy(ASTSelectQuery * select_query, bool opt
         ASTs result;
         result.reserve(order_by->children.size());
 
-        for (auto & child : order_by->children)
+        /// Order by contains ASTOrderByElement as children, not ASTIdentifier or ASTFunction.
+        for (auto & order_by_element : order_by->children)
         {
-            if (child->children.empty())
+            if (order_by_element->children.empty())
                 continue;
 
-            if (child->children[0]->as<ASTFunction>())
+            ASTPtr & name_or_function = order_by_element->children[0];
+            if (name_or_function->as<ASTFunction>())
             {
                 if (!keys.empty())
                 {
-                    RedundantFunctionsInOrderByVisitor::Data data{keys};
-                    RedundantFunctionsInOrderByVisitor(data).visit(child);
+                    RedundantFunctionsInOrderByVisitor::Data data{keys, context};
+                    RedundantFunctionsInOrderByVisitor(data).visit(name_or_function);
                     if (data.should_be_erased)
                         continue;
                 }
             }
 
-            if (auto * identifier = child->children[0]->as<ASTIdentifier>())
+            if (auto * identifier = name_or_function->as<ASTIdentifier>())
             {
-                if (!keys.count(getIdentifierName(identifier)))
-                    keys.insert(getIdentifierName(identifier));
+                String identifier_name = getIdentifierName(identifier);
+                if (!keys.count(identifier_name))
+                    keys.emplace(std::move(identifier_name));
                 else
                     continue;
             }
 
-            result.push_back(child);
+            result.push_back(order_by_element);
         }
 
         order_by->children = std::move(result);
@@ -1034,7 +1040,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeDuplicateOrderByAndDistinct(query, settings.optimize_duplicate_order_by_and_distinct, context);
 
         /// Remove functions from ORDER BY if its argument is also in ORDER BY
-        optimizeRedundantFunctionsInOrderBy(select_query, settings.optimize_redundant_functions_in_order_by);
+        optimizeRedundantFunctionsInOrderBy(select_query, settings.optimize_redundant_functions_in_order_by, context);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);

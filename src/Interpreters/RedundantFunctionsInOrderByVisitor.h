@@ -15,7 +15,8 @@ public:
     struct Data
     {
         std::unordered_set<String> & keys;
-        bool should_be_erased = false;
+        const Context & context;
+        bool should_be_erased = true;
         bool done = false;
     };
 
@@ -33,20 +34,48 @@ public:
         if (data.done)
             return;
 
-        auto arguments = ast_function.arguments;
-
-        if (arguments->children.size() != 1)
+        if (ast_function.name == "lambda")
         {
+            data.should_be_erased = false;
             data.done = true;
             return;
         }
 
-        auto * identifier = arguments->children[0]->as<ASTIdentifier>();
-        if (!identifier)
-            return;
+        auto arguments = ast_function.arguments;
 
-        if (data.keys.count(getIdentifierName(identifier)))
-            data.should_be_erased = true;
+        if (!arguments || arguments->children.empty())
+        {
+            data.should_be_erased = false;
+            data.done = true;
+            return;
+        }
+
+        /// If we meet function as argument then we have already checked
+        /// arguments of it and if it can be erased
+        for (const auto & identifier_or_function : arguments->children)
+        {
+            auto * identifier = identifier_or_function->as<ASTIdentifier>();
+            if (identifier && !data.keys.count(getIdentifierName(identifier)))
+            {
+                data.should_be_erased = false;
+                data.done = true;
+                return;
+            }
+
+            if (!identifier && !identifier_or_function->as<ASTFunction>())
+            {
+                data.should_be_erased = false;
+                data.done = true;
+                return;
+            }
+        }
+
+        const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
+        if (!function->isDeterministicInScopeOfQuery())
+        {
+            data.should_be_erased = false;
+            data.done = true;
+        }
     }
 
     static bool needChildVisit(const ASTPtr &, const ASTPtr &)
