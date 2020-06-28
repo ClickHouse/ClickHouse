@@ -27,10 +27,11 @@ public:
     {
         const TablesWithColumns & tables;
         const Context & context;
+        std::unordered_map<String, ASTPtr> & group_by_function_hashes;
         ASTIdentifier * identifier = nullptr;
         Monotonicity monotonicity{true, true, true};
         DataTypePtr data_type = nullptr;
-        bool first = true;
+        String name{};
     };
 
     static void visit(const ASTPtr & ast, Data & data)
@@ -55,36 +56,36 @@ public:
             return;
         }
 
-        if (data.first)
-        {
-            data.identifier = ast_function.arguments->children[0]->as<ASTIdentifier>();
-        }
-
         if (!data.identifier)
         {
-            data.monotonicity.is_monotonic = false;
-            return;
-        }
+            data.identifier = ast_function.arguments->children[0]->as<ASTIdentifier>();
 
-        if (AggregateFunctionFactory::instance().isAggregateFunctionName(ast_function.name))
-        {
-            data.monotonicity.is_monotonic = false;
-            return;
-        }
-
-        const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
-        auto pos = IdentifierSemantic::getMembership(*data.identifier);
-        if (!pos)
-        {
-            pos = IdentifierSemantic::chooseTableColumnMatch(*data.identifier, data.tables, true);
-            if (!pos)
+            if (!data.identifier)
             {
                 data.monotonicity.is_monotonic = false;
                 return;
             }
         }
 
-        auto data_type_and_name = data.tables[*pos].columns.tryGetByName(data.identifier->shortName());
+        /// if GROUP BY contains the same function ORDER BY shouldn't be optimized
+        auto hash = ast_function.getTreeHash();
+        String key = toString(hash.first) + '_' + toString(hash.second);
+        if (data.group_by_function_hashes.find(key) != data.group_by_function_hashes.end())
+        {
+            data.monotonicity.is_monotonic = false;
+            return;
+        }
+
+        /// if ORDER BY contains aggregate function it shouldn't be optimized
+        if (AggregateFunctionFactory::instance().isAggregateFunctionName(ast_function.name))
+        {
+            data.monotonicity.is_monotonic = false;
+            return;
+        }
+
+        std::optional<NameAndTypePair> data_type_and_name;
+        if (data.identifier)
+            data_type_and_name = getIdentifierTypeAndName(data);
 
         if (!data_type_and_name)
         {
@@ -92,15 +93,15 @@ public:
             return;
         }
 
-        if (data.first)
+        if (!data.data_type)
         {
             data.data_type = data_type_and_name->type;
-            data.first = false;
+            data.name = data_type_and_name->name;
         }
-        auto name = data_type_and_name->name;
 
         ColumnsWithTypeAndName args;
-        args.emplace_back(data.data_type, name);
+        args.emplace_back(data.data_type, data.name);
+        const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
         auto function_base = function->build(args);
 
         auto cur_data = data.data_type;
@@ -124,6 +125,21 @@ public:
         return true;
     }
 
+    static std::optional<NameAndTypePair> getIdentifierTypeAndName(Data & data)
+    {
+        auto pos = IdentifierSemantic::getMembership(*data.identifier);
+        if (!pos)
+        {
+            pos = IdentifierSemantic::chooseTableColumnMatch(*data.identifier, data.tables, true);
+            if (!pos)
+            {
+                data.monotonicity.is_monotonic = false;
+                return {};
+            }
+        }
+
+        return data.tables[*pos].columns.tryGetByName(data.identifier->shortName());
+    }
 };
 
 using MonotonicityCheckVisitor = InDepthNodeVisitor<MonotonicityCheckMatcher, false>;

@@ -516,33 +516,31 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, bool op
         if (!order_by)
             return;
 
+        auto group_by = select_query->groupBy();
+        std::unordered_map<String, ASTPtr> group_by_function_hashes;
+        if (group_by)
+        {
+            for (auto & elem: group_by->children)
+            {
+                auto hash = elem->getTreeHash();
+                String key = toString(hash.first) + '_' + toString(hash.second);
+                group_by_function_hashes[key] = elem;
+            }
+        }
+
         for (size_t i = 0; i < order_by->children.size(); ++i)
         {
             auto child = order_by->children[i];
             if (child->children.empty() || !child->children[0]->as<ASTFunction>())
                 continue;
 
-            MonotonicityCheckVisitor::Data monotonicity_checker_data{tables_with_columns, context};
-            MonotonicityCheckVisitor(monotonicity_checker_data).visit(child);
+            auto * order_by_element = child->as<ASTOrderByElement>();
+            auto order_by_function = order_by_element->children[0];
+
+            MonotonicityCheckVisitor::Data monotonicity_checker_data{tables_with_columns, context, group_by_function_hashes};
+            MonotonicityCheckVisitor(monotonicity_checker_data).visit(order_by_function);
             if (monotonicity_checker_data.monotonicity.is_monotonic)
             {
-                auto * order_by_element = child->as<ASTOrderByElement>();
-                auto uuid_to_check_in_group_by = order_by_element->children[0]->getTreeHash();
-                auto group_by = select_query->groupBy();
-                if (group_by)
-                {
-                    bool has_the_same_ast_in_group_by = false;
-                    for (const auto & elem: group_by->children)
-                    {
-                        if (elem->getTreeHash() == uuid_to_check_in_group_by)
-                        {
-                            has_the_same_ast_in_group_by = true;
-                            break;
-                        }
-                    }
-                    if (has_the_same_ast_in_group_by)
-                        continue;
-                }
                 order_by_element->children[0] = monotonicity_checker_data.identifier->clone();
                 order_by_element->children[0]->setAlias("");
                 if (!monotonicity_checker_data.monotonicity.is_positive)
