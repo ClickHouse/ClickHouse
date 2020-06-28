@@ -431,8 +431,8 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
     if (!allow_ddl_ && !grant_option)
         merged_access->revoke(table_and_dictionary_ddl);
 
-    if (!allow_introspection_ && !grant_option)
-        merged_access->revoke(AccessType::INTROSPECTION);
+    if (allow_introspection_)
+        merged_access->grant(AccessType::INTROSPECTION);
 
     /// Anyone has access to the "system" database.
     merged_access->grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);

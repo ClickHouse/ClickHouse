@@ -162,6 +162,10 @@ namespace
                 user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG, dictionary);
         }
 
+        /// For users from users.xml access to the introspection functions can be enabled by the setting
+        /// 'allow_introspection_functions'.
+        user->access.revoke(AccessType::INTROSPECTION);
+
         bool access_management = config.getBool(user_config + ".access_management", false);
         if (!access_management)
         {
