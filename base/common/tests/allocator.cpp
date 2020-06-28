@@ -86,6 +86,23 @@ void alloc_loop()
             abort();
         memset(buf, 0, size);
 
+        /// tcmalloc is faster only when it uses front-end only [1], since only
+        /// it allows parallel access w/o locks, otherwise locking is required
+        /// and it is slower.
+        ///
+        ///   [1]: https://github.com/google/tcmalloc/blob/master/docs/design.md#the-tcmalloc-front-end
+        ///
+        /// If allocation is done only up to 256K (i.e. `size < 256<<10`):
+        ///
+        ///    - tcmalloc
+        ///      real    0m2.335s
+        ///      user    0m28.804s
+        ///      sys     0m0.010s
+        ///
+        ///    - jemalloc
+        ///      real    0m2.567s
+        ///      user    0m32.748s
+        ///      sys     0m0.020s
         while (size < 1048576)
         {
             size_t next_size = size * 4;
