@@ -5,7 +5,7 @@
 #include <IO/ReadBuffer.h>
 #include <amqpcpp.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Common/ConcurrentBoundedQueue.h>
 #include <event2/event.h>
 
 namespace Poco
@@ -74,10 +74,9 @@ private:
     std::atomic<bool> loop_started = false, consumer_error = false;
     std::atomic<size_t> count_subscribed = 0, wait_subscribed;
 
+    ConcurrentBoundedQueue<String> messages;
+    String current;
     std::vector<String> queues;
-    Messages received;
-    Messages messages;
-    Messages::iterator current;
     std::unordered_map<String, bool> subscribed_queue;
 
     /* Note: as all consumers share the same connection => they also share the same
