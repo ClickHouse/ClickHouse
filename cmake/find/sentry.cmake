@@ -7,8 +7,6 @@ endif ()
 
 if (NOT OS_FREEBSD AND NOT SPLIT_SHARED_LIBRARIES AND NOT_UNBUNDLED AND NOT (OS_DARWIN AND COMPILER_CLANG))
     option (USE_SENTRY "Use Sentry" ON)
-    set (CURL_LIBRARY ${ClickHouse_SOURCE_DIR}/contrib/curl/lib)
-    set (CURL_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/curl/include)
     set (SENTRY_TRANSPORT "curl" CACHE STRING "")
     set (SENTRY_BACKEND "none" CACHE STRING "")
     set (SENTRY_EXPORT_SYMBOLS OFF CACHE BOOL "")
