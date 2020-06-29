@@ -1,4 +1,5 @@
 <test>
+    <tags><tag>long</tag></tags>
     <substitutions>
        <substitution>
            <name>datetime_transform</name>
