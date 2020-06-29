@@ -32,7 +32,7 @@ public:
     virtual void transformPipeline(QueryPipeline & pipeline) = 0;
 
 protected:
-    /// Clear distinct_columns if res_header doesn't contain all af them.
+    /// Clear distinct_columns if res_header doesn't contain all of them.
     static void updateDistinctColumns(const Block & res_header, NameSet & distinct_columns);
 };
 
