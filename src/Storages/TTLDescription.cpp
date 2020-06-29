@@ -220,7 +220,7 @@ TTLDescription TTLDescription::getTTLFromAST(
 
                 if (value->as<ASTFunction>())
                 {
-                    auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, true);
+                    auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
                     auto expr_actions = ExpressionAnalyzer(value, syntax_result, context).getActions(false);
                     for (const auto & column : expr_actions->getRequiredColumns())
                     {
@@ -249,7 +249,7 @@ TTLDescription TTLDescription::getTTLFromAST(
 
             for (auto [name, value] : aggregations)
             {
-                auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, true);
+                auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
                 auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, context);
 
                 TTLAggregateDescription set_part;

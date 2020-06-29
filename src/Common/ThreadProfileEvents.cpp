@@ -159,14 +159,19 @@ static const PerfEventInfo raw_events_info[] = {
     HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, PerfStalledCyclesFrontend),
     HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_BACKEND, PerfStalledCyclesBackend),
     HARDWARE_EVENT(PERF_COUNT_HW_REF_CPU_CYCLES, PerfRefCpuCycles),
+
     // `cpu-clock` is a bit broken according to this: https://stackoverflow.com/a/56967896
     SOFTWARE_EVENT(PERF_COUNT_SW_CPU_CLOCK, PerfCpuClock),
     SOFTWARE_EVENT(PERF_COUNT_SW_TASK_CLOCK, PerfTaskClock),
     SOFTWARE_EVENT(PERF_COUNT_SW_CONTEXT_SWITCHES, PerfContextSwitches),
     SOFTWARE_EVENT(PERF_COUNT_SW_CPU_MIGRATIONS, PerfCpuMigrations),
     SOFTWARE_EVENT(PERF_COUNT_SW_ALIGNMENT_FAULTS, PerfAlignmentFaults),
-    SOFTWARE_EVENT(PERF_COUNT_SW_EMULATION_FAULTS, PerfEmulationFaults)
+    SOFTWARE_EVENT(PERF_COUNT_SW_EMULATION_FAULTS, PerfEmulationFaults),
+    SOFTWARE_EVENT(PERF_COUNT_SW_PAGE_FAULTS_MIN, PerfPageFaultsMinor),
+    SOFTWARE_EVENT(PERF_COUNT_SW_PAGE_FAULTS_MAJ, PerfPageFaultsMajor)
 };
+
+static_assert(sizeof(raw_events_info) / sizeof(raw_events_info[0]) == NUMBER_OF_RAW_EVENTS);
 
 #undef HARDWARE_EVENT
 #undef SOFTWARE_EVENT

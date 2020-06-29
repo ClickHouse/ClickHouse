@@ -83,18 +83,29 @@ static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & bl
 
 
 DistributedBlockOutputStream::DistributedBlockOutputStream(
-        const Context & context_, StorageDistributed & storage_, const ASTPtr & query_ast_, const ClusterPtr & cluster_,
-        bool insert_sync_, UInt64 insert_timeout_)
-        : context(context_), storage(storage_), query_ast(query_ast_), query_string(queryToString(query_ast_)),
-        cluster(cluster_), insert_sync(insert_sync_),
-        insert_timeout(insert_timeout_), log(&Poco::Logger::get("DistributedBlockOutputStream"))
+    const Context & context_,
+    StorageDistributed & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    const ASTPtr & query_ast_,
+    const ClusterPtr & cluster_,
+    bool insert_sync_,
+    UInt64 insert_timeout_)
+    : context(context_)
+    , storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+    , query_ast(query_ast_)
+    , query_string(queryToString(query_ast_))
+    , cluster(cluster_)
+    , insert_sync(insert_sync_)
+    , insert_timeout(insert_timeout_)
+    , log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
 }
 
 
 Block DistributedBlockOutputStream::getHeader() const
 {
-    return storage.getSampleBlock();
+    return metadata_snapshot->getSampleBlock();
 }
 
 
@@ -109,7 +120,7 @@ void DistributedBlockOutputStream::write(const Block & block)
 
     /* They are added by the AddingDefaultBlockOutputStream, and we will get
      * different number of columns eventually */
-    for (const auto & col : storage.getColumns().getMaterialized())
+    for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
     {
         if (ordinary_block.has(col.name))
         {
