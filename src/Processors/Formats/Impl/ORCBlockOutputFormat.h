@@ -1,5 +1,8 @@
 #pragma once
+
+#if !defined(ARCADIA_BUILD)
 #include "config_formats.h"
+#endif
 
 #if USE_ORC
 #include <IO/WriteBuffer.h>

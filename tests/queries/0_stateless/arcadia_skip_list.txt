@@ -57,6 +57,7 @@
 01044_h3_edge_angle
 01046_materialized_view_with_join_over_distributed
 01050_clickhouse_dict_source_with_subquery
+01053_ssd_dictionary
 01059_storage_file_brotli
 01070_h3_get_base_cell
 01070_h3_hex_area_m2
@@ -114,6 +115,7 @@
 01273_h3EdgeAngle_range_check
 01274_alter_rename_column_distributed
 01276_system_licenses
+01280_ssd_complex_key_dictionary
 01291_distributed_low_cardinality_memory_efficient
 01292_create_user
 01293_show_clusters
@@ -121,7 +123,7 @@
 01294_system_distributed_on_cluster
 01297_alter_distributed
 01303_aggregate_function_nothing_serde
+01307_orc_output_format 
+01308_orc_output_format_arrays 
 01319_query_formatting_in_server_log
 01326_build_id
-01053_ssd_dictionary
-01280_ssd_complex_key_dictionary

@@ -38,7 +38,6 @@ SRCS(
     Formats/Impl/NullFormat.cpp
     Formats/Impl/ODBCDriver2BlockOutputFormat.cpp
     Formats/Impl/ODBCDriverBlockOutputFormat.cpp
-    Formats/Impl/ORCBlockOutputFormat.cpp
     Formats/Impl/PostgreSQLOutputFormat.cpp
     Formats/Impl/PrettyBlockOutputFormat.cpp
     Formats/Impl/PrettyCompactBlockOutputFormat.cpp
