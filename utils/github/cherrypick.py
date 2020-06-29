@@ -17,12 +17,22 @@ Third run creates PR from backport branch (with merged previous PR) to release b
 from query import Query as RemoteRepo
 
 import argparse
+from enum import Enum
 import logging
 import os
 import sys
 
 
 class CherryPick:
+    class Status(Enum):
+        DISCARDED = 'discarded'
+        NOT_INITIATED = 'not started'
+        FIRST_MERGEABLE = 'waiting for 1st stage'
+        FIRST_CONFLICTS = 'conflicts on 1st stage'
+        SECOND_MERGEABLE = 'waiting for 2nd stage'
+        SECOND_CONFLICTS = 'conflicts on 2nd stage'
+        MERGED = 'backported'
+
     def __init__(self, token, owner, name, team, pr_number, target_branch):
         self._gh = RemoteRepo(token, owner=owner, name=name, team=team)
         self._pr = self._gh.get_pull_request(pr_number)
@@ -39,6 +49,16 @@ class CherryPick:
         return self._gh.find_pull_request(base=self.backport_branch, head=self.cherrypick_branch)
 
     def createCherryPickPullRequest(self, repo_path):
+        DESCRIPTION = (
+            'This pull-request is a first step of an automated backporting.\n'
+            'It contains changes like after calling a local command `git cherry-pick`.\n'
+            'If you intend to continue backporting this changes, then resolve all conflicts if any.\n'
+            'Otherwise, if you do not want to backport them, then just close this pull-request.\n'
+            '\n'
+            'The check results does not matter at this step - you can safely ignore them.\n'
+            'Also this pull-request will be merged automatically as it reaches the mergeable state, but you always can merge it manually.\n'
+        )
+
         # FIXME: replace with something better than os.system()
         git_prefix = 'git -C {} -c "user.email=robot-clickhouse@yandex-team.ru" -c "user.name=robot-clickhouse" '.format(repo_path)
         base_commit_oid = self._pr['mergeCommit']['parents']['nodes'][0]['oid']
@@ -58,7 +78,7 @@ class CherryPick:
         pr = self._gh.create_pull_request(source=self.cherrypick_branch, target=self.backport_branch,
             title='Cherry pick #{number} to {target}: {title}'.format(
                 number=self._pr['number'], target=self.target_branch, title=self._pr['title'].replace('"', '\\"')),
-            description='Original pull-request #{}'.format(self._pr['number']))
+            description='Original pull-request #{}\n\n{}'.format(self._pr['number'], DESCRIPTION))
 
         # FIXME: use `team` to leave a single eligible assignee.
         self._gh.add_assignee(pr, self._pr['author'])
@@ -75,11 +95,25 @@ class CherryPick:
     def getBackportPullRequest(self):
         return self._gh.find_pull_request(base=self.target_branch, head=self.backport_branch)
 
-    def createBackportPullRequest(self, cherrypick_pr):
+    def createBackportPullRequest(self, cherrypick_pr, repo_path):
+        DESCRIPTION = (
+            'This pull-request is a last step of an automated backporting.\n'
+            'Treat it as a standard pull-request: look at the checks and resolve conflicts.\n'
+            'Merge it only if you intend to backport changes to the target branch, otherwise just close it.\n'
+        )
+
+        git_prefix = 'git -C {} -c "user.email=robot-clickhouse@yandex-team.ru" -c "user.name=robot-clickhouse" '.format(repo_path)
+
+        os.system(git_prefix + 'checkout -f ' + self.backport_branch)
+        os.system(git_prefix + 'pull --ff-only origin ' + self.backport_branch)
+        os.system(git_prefix + 'reset --soft `{git} merge-base {target} {backport}`'.format(git=git_prefix, target=self.target_branch, backport=self.backport_branch))
+        os.system(git_prefix + 'commit -a -m "Squash backport branch"')
+        os.system(git_prefix + 'push -f origin {branch}:{branch}'.format(branch=self.backport_branch))
+
         pr = self._gh.create_pull_request(source=self.backport_branch, target=self.target_branch,
             title='Backport #{number} to {target}: {title}'.format(
                 number=self._pr['number'], target=self.target_branch, title=self._pr['title'].replace('"', '\\"')),
-            description='Original pull-request #{}\nCherry-pick pull-request #{}'.format(self._pr['number'], cherrypick_pr['number']))
+            description='Original pull-request #{}\nCherry-pick pull-request #{}\n\n{}'.format(self._pr['number'], cherrypick_pr['number'], DESCRIPTION))
 
         # FIXME: use `team` to leave a single eligible assignee.
         self._gh.add_assignee(pr, self._pr['author'])
@@ -90,34 +124,56 @@ class CherryPick:
         return pr
 
 
-def run(token, pr, branch, repo):
+def run(token, pr, branch, repo, dry_run=False):
     cp = CherryPick(token, 'ClickHouse', 'ClickHouse', 'core', pr, branch)
 
     pr1 = cp.getCherryPickPullRequest()
     if not pr1:
-        pr1 = cp.createCherryPickPullRequest(repo)
-        logging.info('Created PR with cherry-pick of %s to %s: %s', pr, branch, pr1['url'])
+        if not dry_run:
+            pr1 = cp.createCherryPickPullRequest(repo)
+            logging.debug('Created PR with cherry-pick of %s to %s: %s', pr, branch, pr1['url'])
+        else:
+            return CherryPick.Status.NOT_INITIATED
     else:
-        logging.info('Found PR with cherry-pick of %s to %s: %s', pr, branch, pr1['url'])
+        logging.debug('Found PR with cherry-pick of %s to %s: %s', pr, branch, pr1['url'])
 
     if not pr1['merged'] and pr1['mergeable'] == 'MERGEABLE' and not pr1['closed']:
-        pr1 = cp.mergeCherryPickPullRequest(pr1)
-        logging.info('Merged PR with cherry-pick of %s to %s: %s', pr, branch, pr1['url'])
+        if not dry_run:
+            pr1 = cp.mergeCherryPickPullRequest(pr1)
+            logging.debug('Merged PR with cherry-pick of %s to %s: %s', pr, branch, pr1['url'])
 
     if not pr1['merged']:
-        logging.info('Waiting for PR with cherry-pick of %s to %s: %s', pr, branch, pr1['url'])
-        return  # cherry-pick is rejected
+        logging.debug('Waiting for PR with cherry-pick of %s to %s: %s', pr, branch, pr1['url'])
+
+        if pr1['closed']:
+            return CherryPick.Status.DISCARDED
+        elif pr1['mergeable'] == 'CONFLICTING':
+            return CherryPick.Status.FIRST_CONFLICTS
+        else:
+            return CherryPick.Status.FIRST_MERGEABLE
 
     pr2 = cp.getBackportPullRequest()
     if not pr2:
-        pr2 = cp.createBackportPullRequest(pr1)
-        logging.info('Created PR with backport of %s to %s: %s', pr, branch, pr2['url'])
+        if not dry_run:
+            pr2 = cp.createBackportPullRequest(pr1, repo)
+            logging.debug('Created PR with backport of %s to %s: %s', pr, branch, pr2['url'])
+        else:
+            return CherryPick.Status.FIRST_MERGEABLE
     else:
-        logging.info('Found PR with backport of %s to %s: %s', pr, branch, pr2['url'])
+        logging.debug('Found PR with backport of %s to %s: %s', pr, branch, pr2['url'])
+
+    if pr2['merged']:
+        return CherryPick.Status.MERGED
+    elif pr2['closed']:
+        return CherryPick.Status.DISCARDED
+    elif pr2['mergeable'] == 'CONFLICTING':
+        return CherryPick.Status.SECOND_CONFLICTS
+    else:
+        return CherryPick.Status.SECOND_MERGEABLE
 
 
 if __name__ == "__main__":
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+    logging.basicConfig(format='%(message)s', stream=sys.stdout, level=logging.DEBUG)
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--token',  '-t', type=str, required=True, help='token for Github access')

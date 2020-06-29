@@ -274,7 +274,7 @@ class Query:
         query = _QUERY.format(id=id, pull_request_data = self._PULL_REQUEST)
         return self._run(query, is_mutation=True)['mergePullRequest']['pullRequest']
 
-    # FIXME: figure out how to add more assignees
+    # FIXME: figure out how to add more assignees at once
     def add_assignee(self, pr, assignee):
         _QUERY = '''
             addAssigneesToAssignable(input: {{

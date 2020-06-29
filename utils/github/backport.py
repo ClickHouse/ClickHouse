@@ -74,10 +74,9 @@ def run(token, repo_bare, til, number, run_cherrypick):
                 backport_map[pr['number']].remove(m.group(1))
 
     for pr, branches in backport_map.items():
-        logging.info('PR %s needs to be backported to:', pr)
+        logging.info('PR #%s needs to be backported to:', pr)
         for branch in branches:
-            logging.info('\t%s', branch)
-            run_cherrypick(token, pr, branch)
+            logging.info('\t%s %s', branch, run_cherrypick(token, pr, branch).value)
 
     # print API costs
     logging.info('\nGitHub API total costs per query:')
@@ -86,14 +85,20 @@ def run(token, repo_bare, til, number, run_cherrypick):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
-
     parser = argparse.ArgumentParser()
     parser.add_argument('--token',     type=str, required=True, help='token for Github access')
     parser.add_argument('--repo-bare', type=str, required=True, help='path to bare repository', metavar='PATH')
     parser.add_argument('--repo-full', type=str, required=True, help='path to full repository', metavar='PATH')
     parser.add_argument('--til',       type=str,                help='check PRs from HEAD til this commit', metavar='COMMIT')
     parser.add_argument('-n',          type=int, dest='number', help='number of last release branches to consider')
+    parser.add_argument('--dry-run',   action='store_true',     help='do not create or merge any PRs', default=False)
+    parser.add_argument('--verbose', '-v', action='store_true', help='more verbose output', default=False)
     args = parser.parse_args()
 
-    run(args.token, args.repo_bare, args.til, args.number, lambda token, pr, branch: cherrypick.run(token, pr, branch, args.repo_full))
+    if args.verbose:
+        logging.basicConfig(format='%(message)s', stream=sys.stdout, level=logging.DEBUG)
+    else:
+        logging.basicConfig(format='%(message)s', stream=sys.stdout, level=logging.INFO)
+
+    cherrypick_run = lambda token, pr, branch: cherrypick.run(token, pr, branch, args.repo_full, args.dry_run)
+    run(args.token, args.repo_bare, args.til, args.number, cherrypick_run)
