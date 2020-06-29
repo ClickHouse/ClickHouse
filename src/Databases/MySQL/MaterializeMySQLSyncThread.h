@@ -33,6 +33,8 @@ public:
 
     void startSynchronization();
 
+    static bool isMySQLSyncThread();
+
 private:
     Poco::Logger * log;
     const Context & global_context;

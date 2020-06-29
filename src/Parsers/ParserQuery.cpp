@@ -17,6 +17,7 @@
 #include <Parsers/ParserCreateSettingsProfileQuery.h>
 #include <Parsers/ParserDropAccessEntityQuery.h>
 #include <Parsers/ParserGrantQuery.h>
+#include <Parsers/MySQL/ParserMySQLQuery.h>
 
 
 namespace DB
@@ -38,6 +39,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDropAccessEntityQuery drop_access_entity_p;
     ParserGrantQuery grant_p;
     ParserSetRoleQuery set_role_p;
+    MySQLParser::ParserMySQLQuery mysql_query_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -51,7 +53,8 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_row_policy_p.parse(pos, node, expected)
         || create_settings_profile_p.parse(pos, node, expected)
         || drop_access_entity_p.parse(pos, node, expected)
-        || grant_p.parse(pos, node, expected);
+        || grant_p.parse(pos, node, expected)
+        || mysql_query_p.parse(pos, node, expected);
 
     return res;
 }

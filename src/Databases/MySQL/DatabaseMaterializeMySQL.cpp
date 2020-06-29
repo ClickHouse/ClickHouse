@@ -1,6 +1,7 @@
 #include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 #include <Databases/MySQL/DatabaseMaterializeTablesIterator.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/StorageMaterializeMySQL.h>
@@ -9,8 +10,6 @@
 
 namespace DB
 {
-
-static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
 
 namespace ErrorCodes
 {
@@ -121,7 +120,7 @@ time_t DatabaseMaterializeMySQL::getObjectMetadataModificationTime(const String 
 
 void DatabaseMaterializeMySQL::createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query)
 {
-    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+    if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
         throw Exception("MySQL database in locality_data mode does not support create table.", ErrorCodes::NOT_IMPLEMENTED);
 
     getNestedDatabase()->createTable(context, name, table, query);
@@ -129,7 +128,7 @@ void DatabaseMaterializeMySQL::createTable(const Context & context, const String
 
 void DatabaseMaterializeMySQL::dropTable(const Context & context, const String & name, bool no_delay)
 {
-    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+    if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
         throw Exception("MySQL database in locality_data mode does not support drop table.", ErrorCodes::NOT_IMPLEMENTED);
 
     getNestedDatabase()->dropTable(context, name, no_delay);
@@ -137,7 +136,7 @@ void DatabaseMaterializeMySQL::dropTable(const Context & context, const String &
 
 void DatabaseMaterializeMySQL::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
 {
-    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+    if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
         throw Exception("MySQL database in locality_data mode does not support attach table.", ErrorCodes::NOT_IMPLEMENTED);
 
     getNestedDatabase()->attachTable(name, table, relative_table_path);
@@ -145,7 +144,7 @@ void DatabaseMaterializeMySQL::attachTable(const String & name, const StoragePtr
 
 StoragePtr DatabaseMaterializeMySQL::detachTable(const String & name)
 {
-    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+    if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
         throw Exception("MySQL database in locality_data mode does not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
 
     return getNestedDatabase()->detachTable(name);
@@ -153,7 +152,7 @@ StoragePtr DatabaseMaterializeMySQL::detachTable(const String & name)
 
 void DatabaseMaterializeMySQL::renameTable(const Context & context, const String & name, IDatabase & to_database, const String & to_name, bool exchange)
 {
-    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+    if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
         throw Exception("MySQL database in locality_data mode does not support rename table.", ErrorCodes::NOT_IMPLEMENTED);
 
     getNestedDatabase()->renameTable(context, name, to_database, to_name, exchange);
@@ -161,7 +160,7 @@ void DatabaseMaterializeMySQL::renameTable(const Context & context, const String
 
 void DatabaseMaterializeMySQL::alterTable(const Context & context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
-    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+    if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
         throw Exception("MySQL database in locality_data mode does not support alter table.", ErrorCodes::NOT_IMPLEMENTED);
 
     getNestedDatabase()->alterTable(context, table_id, metadata);
@@ -184,7 +183,7 @@ bool DatabaseMaterializeMySQL::isTableExist(const String & name, const Context &
 
 StoragePtr DatabaseMaterializeMySQL::tryGetTable(const String & name, const Context & context) const
 {
-    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+    if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
         return std::make_shared<StorageMaterializeMySQL>(getNestedDatabase()->tryGetTable(name, context));
 
     return getNestedDatabase()->tryGetTable(name, context);
@@ -192,7 +191,7 @@ StoragePtr DatabaseMaterializeMySQL::tryGetTable(const String & name, const Cont
 
 DatabaseTablesIteratorPtr DatabaseMaterializeMySQL::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
 {
-    if (getThreadName() != MYSQL_BACKGROUND_THREAD_NAME)
+    if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
     {
         DatabaseTablesIteratorPtr iterator = getNestedDatabase()->getTablesIterator(context, filter_by_table_name);
         return std::make_unique<DatabaseMaterializeTablesIterator>(std::move(iterator));
