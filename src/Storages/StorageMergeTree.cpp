@@ -205,8 +205,7 @@ BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Sto
 
     const auto & settings = context.getSettingsRef();
     return std::make_shared<MergeTreeBlockOutputStream>(
-        *this, metadata_snapshot, settings.max_partitions_per_insert_block,
-        settings.insert_in_memory_parts_timeout.totalMilliseconds());
+        *this, metadata_snapshot, settings.max_partitions_per_insert_block);
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const
@@ -696,23 +695,6 @@ bool StorageMergeTree::merge(
             merging_tagger->reserved_space, deduplicate, force_ttl);
 
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
-
-        DataPartsVector parts_to_remove_immediately;
-        {
-            auto lock = lockParts();
-            for (const auto & part : future_part.parts)
-            {
-                if (auto part_in_memory = asInMemoryPart(part))
-                {
-                    part_in_memory->notifyMerged();
-                    modifyPartState(part_in_memory, DataPartState::Deleting);
-                    parts_to_remove_immediately.push_back(part_in_memory);
-                }
-            }
-        }
-
-        removePartsFinally(parts_to_remove_immediately);
-
         merging_tagger->is_successful = true;
         write_part_log({});
     }

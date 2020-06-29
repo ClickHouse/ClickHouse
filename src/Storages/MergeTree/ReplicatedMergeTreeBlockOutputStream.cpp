@@ -36,14 +36,12 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     size_t quorum_,
     size_t quorum_timeout_ms_,
     size_t max_parts_per_block_,
-    size_t insert_in_memory_parts_timeout_ms_,
     bool deduplicate_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , quorum(quorum_)
     , quorum_timeout_ms(quorum_timeout_ms_)
     , max_parts_per_block(max_parts_per_block_)
-    , insert_in_memory_parts_timeout_ms(insert_in_memory_parts_timeout_ms_)
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
 {
@@ -376,14 +374,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         transaction.rollback();
         throw Exception("Unexpected ZooKeeper error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
                         + Coordination::errorMessage(multi_code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
-    }
-
-    auto part_in_memory = asInMemoryPart(part);
-    if (part_in_memory && storage.getSettings()->in_memory_parts_insert_sync)
-    {
-        if (!part_in_memory->waitUntilMerged(insert_in_memory_parts_timeout_ms))
-            throw Exception("Timeout exceeded while waiting to write part "
-                + part->name + " on disk", ErrorCodes::TIMEOUT_EXCEEDED);
     }
 
     if (quorum)

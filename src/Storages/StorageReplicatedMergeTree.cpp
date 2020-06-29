@@ -1371,20 +1371,6 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
             throw;
         }
 
-        DataPartsVector parts_to_remove_immediatly;
-        for (const auto & part_ptr : parts)
-        {
-            if (auto part_in_memory = asInMemoryPart(part_ptr))
-            {
-                modifyPartState(part_in_memory, DataPartState::Deleting);
-                part_in_memory->notifyMerged();
-                parts_to_remove_immediatly.push_back(part_in_memory);
-            }
-        }
-
-        tryRemovePartsFromZooKeeperWithRetries(parts_to_remove_immediatly);
-        removePartsFinally(parts_to_remove_immediatly);
-
         /** Removing old parts from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
           */
 
@@ -3490,7 +3476,6 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
         *this, metadata_snapshot, query_settings.insert_quorum,
         query_settings.insert_quorum_timeout.totalMilliseconds(),
         query_settings.max_partitions_per_insert_block,
-        query_settings.insert_in_memory_parts_timeout.totalMilliseconds(),
         deduplicate);
 }
 
@@ -4045,7 +4030,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, const
     PartsTemporaryRename renamed_parts(*this, "detached/");
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
-    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, 0, false);   /// TODO Allow to use quorum here.
+    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false);   /// TODO Allow to use quorum here.
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
         String old_name = loaded_parts[i]->name;

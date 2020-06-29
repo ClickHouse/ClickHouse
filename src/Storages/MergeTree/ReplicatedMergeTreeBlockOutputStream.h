@@ -28,7 +28,6 @@ public:
         size_t quorum_,
         size_t quorum_timeout_ms_,
         size_t max_parts_per_block_,
-        size_t insert_in_memory_parts_timeout_ms_,
         bool deduplicate_);
 
     Block getHeader() const override;
@@ -64,7 +63,6 @@ private:
     size_t quorum;
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
-    size_t insert_in_memory_parts_timeout_ms;
 
     bool deduplicate = true;
     bool last_block_is_duplicate = false;
