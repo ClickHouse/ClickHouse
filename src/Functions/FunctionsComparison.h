@@ -980,9 +980,6 @@ private:
         size_t tuple_size,
         size_t input_rows_count)
     {
-        ColumnsWithTypeAndName bin_args = {{ nullptr, std::make_shared<DataTypeUInt8>(), "" },
-                                           { nullptr, std::make_shared<DataTypeUInt8>(), "" }};
-
         Block tmp_block;
 
         /// Pairwise comparison of the inequality of all elements; on the equality of all elements except the last.
@@ -1044,7 +1041,7 @@ private:
             ColumnsWithTypeAndName or_args = {{ nullptr, tmp_block.getByPosition(or_lhs_pos).type, "" },
                                               { nullptr, tmp_block.getByPosition(or_rhs_pos).type, "" }};
 
-            auto func_or_adaptor = func_or->build(bin_args);
+            auto func_or_adaptor = func_or->build(or_args);
             tmp_block.getByPosition(tmp_block.columns() - 1).type = func_or_adaptor->getReturnType();
             func_or_adaptor->execute(tmp_block, {or_lhs_pos, or_rhs_pos}, tmp_block.columns() - 1, input_rows_count);
 
@@ -1169,7 +1166,7 @@ public:
         /// NOTE: Nullable types are special case.
         /// (BTW, this function use default implementation for Nullable, so Nullable types cannot be here. Check just in case.)
         /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are sometimes equal sometimes not).
-        if (left_type->equals(*right_type) && !left_type->isNullable() && col_left_untyped == col_right_untyped)
+        if (left_type->equals(*right_type) && !left_type->isNullable() && !isTuple(left_type) && col_left_untyped == col_right_untyped)
         {
             /// Always true: =, <=, >=
             if constexpr (std::is_same_v<Op<int, int>, EqualsOp<int, int>>
