@@ -9,7 +9,7 @@ namespace DB
 namespace MySQLParser
 {
 
-class ParserQuery : public IParserBase
+class ParserMySQLQuery : public IParserBase
 {
 protected:
     const char * getName() const override { return "MySQL Query"; }
@@ -18,7 +18,5 @@ protected:
 };
 
 }
-
-ASTPtr tryParseMySQLQuery(const std::string & query, size_t max_query_size, size_t max_parser_depth);
 
 }

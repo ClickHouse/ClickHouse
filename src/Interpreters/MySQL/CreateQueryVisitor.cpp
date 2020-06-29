@@ -7,7 +7,6 @@
 #include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/queryToString.h>
 #include <Poco/String.h>
-#include <Common/quoteString.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -27,55 +26,6 @@ namespace ErrorCodes
 
 namespace MySQLVisitor
 {
-
-static String convertDataType(const String & type_name, const ASTPtr & arguments, bool is_unsigned)
-{
-    if (type_name == "TINYINT")
-        return is_unsigned ? "UInt8" : "Int8";
-    else if (type_name == "BOOL" || type_name == "BOOLEAN")
-        return "UInt8";
-    else if (type_name == "SMALLINT")
-        return is_unsigned ? "UInt16" : "Int16";
-    else if (type_name == "INT" || type_name == "MEDIUMINT" || type_name == "INTEGER")
-        return is_unsigned ? "UInt32" : "Int32";
-    else if (type_name == "BIGINT")
-        return is_unsigned ? "UInt64" : "Int64";
-    else if (type_name == "FLOAT")
-        return "Float32";
-    else if (type_name == "DOUBLE" || type_name == "PRECISION" || type_name == "REAL")
-        return "Float64";
-    else if (type_name == "DECIMAL" || type_name == "DEC" || type_name == "NUMERIC" || type_name == "FIXED")
-    {
-        if (!arguments)
-            return "Decimal(10, 0)";
-        else if (arguments->children.size() == 1)
-            return "Decimal(" + queryToString(arguments) + ", 0)";
-        else if (arguments->children.size() == 2)
-            return "Decimal(" + queryToString(arguments) + ")";
-        else
-            throw Exception("Decimal data type family must have exactly two arguments: precision and scale", ErrorCodes::UNKNOWN_TYPE);
-    }
-
-
-    if (type_name == "DATE")
-        return "Date";
-    else if (type_name == "DATETIME" || type_name == "TIMESTAMP")
-        return "DateTime";
-    else if (type_name == "TIME")
-        return "DateTime64";
-    else if (type_name == "YEAR")
-        return "Int16";
-
-    if (type_name == "BINARY")
-        return arguments ? "FixedString(" + queryToString(arguments) + ")" : "FixedString(1)";
-
-    return "String";
-}
-
-static String convertDataType(const String & type_name, const ASTPtr & arguments, bool is_unsigned, bool is_nullable)
-{
-    return (is_nullable ? "Nullable(" : "") + convertDataType(type_name, arguments, is_unsigned) + (is_nullable ? ")" : "");
-}
 
 void CreateQueryMatcher::visit(ASTPtr & ast, Data & data)
 {
@@ -143,14 +93,8 @@ void CreateQueryMatcher::visit(const MySQLParser::ASTDeclareColumn & declare_col
         }
     }
 
-    if (ASTFunction * function = declare_column.data_type->as<ASTFunction>())
-        data.columns_name_and_type.emplace_back(declare_column.name,
-            DataTypeFactory::instance().get(convertDataType(Poco::toUpper(function->name), function->arguments, is_unsigned, is_nullable)));
-    else if (ASTIdentifier * identifier = declare_column.data_type->as<ASTIdentifier>())
-        data.columns_name_and_type.emplace_back(declare_column.name,
-            DataTypeFactory::instance().get(convertDataType(Poco::toUpper(identifier->name), ASTPtr{}, is_unsigned, is_nullable)));
-    else
-        throw Exception("Unsupported MySQL data type " + queryToString(declare_column.data_type) + ".", ErrorCodes::NOT_IMPLEMENTED);
+    data.columns_name_and_type.emplace_back(declare_column.name, DataTypeFactory::instance().get(
+        (is_nullable ? "Nullable(" : "") + queryToString(declare_column.data_type) + (is_nullable ? ")" : "")));
 }
 
 void CreateQueryMatcher::visit(const MySQLParser::ASTDeclarePartitionOptions & declare_partition_options, const ASTPtr &, Data & data)

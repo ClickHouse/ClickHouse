@@ -34,6 +34,8 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
+static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
+
 static BlockIO tryToExecuteQuery(const String & query_to_execute, const Context & context_, const String & comment)
 {
     try
@@ -98,7 +100,7 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
 
 void MaterializeMySQLSyncThread::synchronization()
 {
-    setThreadName("MySQLDBSync");
+    setThreadName(MYSQL_BACKGROUND_THREAD_NAME);
 
     try
     {
@@ -375,6 +377,10 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
         /// TODO: 执行DDL.
         /// TODO: 直接使用Interpreter执行即可
     }
+}
+bool MaterializeMySQLSyncThread::isMySQLSyncThread()
+{
+    return getThreadName() == MYSQL_BACKGROUND_THREAD_NAME;
 }
 
 void MaterializeMySQLSyncThread::Buffers::add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes)
