@@ -128,7 +128,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
             out << "        n" << node->id << " [label=\"" << processor->getName();
 
             if (node->agents.size() > 1)
-                out << " x " << node->agents.size();
+                out << " × " << node->agents.size();
 
             const auto & description = processor->getDescription();
             if (!description.empty())
@@ -156,7 +156,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
                 out << "  n" << item.second.id << " -> " << "n" << edge.first->id << " [label=\"";
 
                 if (data.count > 1)
-                    out << "x " << data.count;
+                    out << "× " << data.count;
 
                 if (with_header)
                 {
