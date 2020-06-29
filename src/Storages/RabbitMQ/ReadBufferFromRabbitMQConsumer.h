@@ -6,7 +6,6 @@
 #include <amqpcpp.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <event2/event.h>
 
 namespace Poco
 {
