@@ -85,6 +85,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
             context.getRemoteHostFilter().checkURL(avro_schema_registry_url);
     }
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
+    format_settings.avro.allow_missing_fields = settings.input_format_avro_allow_missing_fields;
 
     return format_settings;
 }
