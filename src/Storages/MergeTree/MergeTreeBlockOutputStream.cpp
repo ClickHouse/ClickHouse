@@ -23,14 +23,12 @@ void MergeTreeBlockOutputStream::write(const Block & block)
     storage.delayInsertOrThrowIfNeeded();
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot);
-    MergeTreeData::DataPartsVector inserted_parts;
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;
 
         MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot);
         storage.renameTempPartAndAdd(part, &storage.increment);
-        inserted_parts.push_back(part);
 
         PartLog::addNewPart(storage.global_context, part, watch.elapsed());
 
@@ -48,17 +46,6 @@ void MergeTreeBlockOutputStream::write(const Block & block)
         {
             /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
             storage.merging_mutating_task_handle->signalReadyToRun();
-        }
-    }
-
-    if (storage.getSettings()->in_memory_parts_insert_sync)
-    {
-        for (const auto & part : inserted_parts)
-        {
-            auto part_in_memory = asInMemoryPart(part);
-            if (!part_in_memory->waitUntilMerged(in_memory_parts_timeout))
-                throw Exception("Timeout exceeded while waiting to write part "
-                    + part->name + " on disk", ErrorCodes::TIMEOUT_EXCEEDED);
         }
     }
 }

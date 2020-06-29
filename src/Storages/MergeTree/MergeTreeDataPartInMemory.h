@@ -46,9 +46,6 @@ public:
 
     void flushToDisk(const String & base_path, const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const;
 
-    bool waitUntilMerged(size_t timeout_ms) const;
-    void notifyMerged() const;
-
     /// Returns hash of parts's block
     Checksum calculateBlockChecksum() const;
 

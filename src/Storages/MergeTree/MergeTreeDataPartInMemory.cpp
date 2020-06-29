@@ -98,21 +98,6 @@ void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const
     flushToDisk(storage.getRelativeDataPath(), detached_path, metadata_snapshot);
 }
 
-bool MergeTreeDataPartInMemory::waitUntilMerged(size_t timeout_ms) const
-{
-    auto lock = storage.lockParts();
-    return is_merged.wait_for(lock, std::chrono::milliseconds(timeout_ms),
-        [this]() { return state != State::Committed; });
-}
-
-void MergeTreeDataPartInMemory::notifyMerged() const
-{
-    LOG_DEBUG(&Poco::Logger::get("InMemPart"), "notifiedMerged");
-    LOG_DEBUG(&Poco::Logger::get("InMemPart"), "state {}", stateString());
-
-    is_merged.notify_all();
-}
-
 void MergeTreeDataPartInMemory::renameTo(const String & new_relative_path, bool /* remove_new_dir_if_exists */) const
 {
     relative_path = new_relative_path;
