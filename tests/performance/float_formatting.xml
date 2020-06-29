@@ -1,4 +1,9 @@
-<test>
+<!--
+    The tests times are wildly different, e.g. toString(number % 100)
+    is 10 times faster than toString(number % 100 + 0.5). The shorter
+    queries are somewhat unstable, so ignore differences less than 10%.
+-->
+<test max_ignored_relative_difference="0.1">
     <substitutions>
        <substitution>
            <name>expr</name>
