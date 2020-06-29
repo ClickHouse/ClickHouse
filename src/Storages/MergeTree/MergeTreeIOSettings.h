@@ -10,7 +10,7 @@ struct MergeTreeReaderSettings
     size_t min_bytes_to_use_direct_io = 0;
     size_t min_bytes_to_use_mmap_io = 0;
     size_t max_read_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-    /// If save_marks_in_cache is false, then, if marks are not in cache, 
+    /// If save_marks_in_cache is false, then, if marks are not in cache,
     ///  we will load them but won't save in the cache, to avoid evicting other data.
     bool save_marks_in_cache = false;
 };
@@ -33,4 +33,5 @@ struct MergeTreeWriterSettings
 
     size_t estimated_size = 0;
 };
+
 }

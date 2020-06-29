@@ -177,7 +177,7 @@ namespace detail
  *         /// There could be as many implementation for every target as you want.
  *         selector.registerImplementation<TargetArch::Default, MyDefaultImpl>();
  *     #if USE_MULTITARGET_CODE
- *         selector.registreImplementation<TargetArch::AVX2, TargetSpecific::AVX2::MyAVX2Impl>();
+ *         selector.registerImplementation<TargetArch::AVX2, TargetSpecific::AVX2::MyAVX2Impl>();
  *     #endif
  *     }
  *
