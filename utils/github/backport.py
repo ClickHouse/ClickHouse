@@ -76,7 +76,7 @@ def run(token, repo_bare, til, number, run_cherrypick):
     for pr, branches in backport_map.items():
         logging.info('PR #%s needs to be backported to:', pr)
         for branch in branches:
-            logging.info('\t%s %s', branch, run_cherrypick(token, pr, branch).value)
+            logging.info('\t%s %s', branch, run_cherrypick(token, pr, branch))
 
     # print API costs
     logging.info('\nGitHub API total costs per query:')

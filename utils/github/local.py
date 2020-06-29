@@ -12,7 +12,7 @@ import os
 import re
 
 
-class RepositoryBase:
+class RepositoryBase(object):
     def __init__(self, repo_path):
         self._repo = git.Repo(repo_path, search_parent_directories=(not repo_path))
 
