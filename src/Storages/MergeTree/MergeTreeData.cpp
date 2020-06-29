@@ -932,8 +932,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     if (settings->in_memory_parts_enable_wal && !write_ahead_log)
     {
-        auto disk = makeEmptyReservationOnLargestDisk()->getDisk();
-        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, std::move(disk));
+        auto reservation = reserveSpace(settings->write_ahead_log_max_bytes);
+        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, reservation->getDisk());
     }
 
     calculateColumnSizesImpl();
@@ -1020,7 +1020,8 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 
             if (part.unique() && /// Grab only parts that are not used by anyone (SELECTs for example).
                 ((part_remove_time < now &&
-                now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds()) || force))
+                now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds()) || force
+                || isInMemoryPart(part))) /// Remove in-memory parts immediatly to not store excessive data in RAM
             {
                 parts_to_delete.emplace_back(it);
             }

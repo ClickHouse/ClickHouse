@@ -351,7 +351,7 @@ protected:
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
-    virtual void calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
+    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
     String getRelativePathForDetachedPart(const String & prefix) const;
 
