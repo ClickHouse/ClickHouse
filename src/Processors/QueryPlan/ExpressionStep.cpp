@@ -11,21 +11,10 @@ static ITransformingStep::DataStreamTraits getTraits(const ExpressionActionsPtr 
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = !expression->hasJoinOrArrayJoin()
+            .preserves_distinct_columns = !expression->hasJoinOrArrayJoin(),
+            .returns_single_stream = false,
+            .preserves_number_of_streams = true,
     };
-}
-
-static void filterDistinctColumns(const Block & res_header, NameSet & distinct_columns)
-{
-    if (distinct_columns.empty())
-        return;
-
-    NameSet new_distinct_columns;
-    for (const auto & column : res_header)
-        if (distinct_columns.count(column.name))
-            new_distinct_columns.insert(column.name);
-
-    distinct_columns.swap(new_distinct_columns);
 }
 
 ExpressionStep::ExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_)
@@ -36,9 +25,7 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, ExpressionActio
     , expression(std::move(expression_))
 {
     /// Some columns may be removed by expression.
-    /// TODO: also check aliases, functions and some types of join
-    filterDistinctColumns(output_stream->header, output_stream->distinct_columns);
-    filterDistinctColumns(output_stream->header, output_stream->local_distinct_columns);
+    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
 void ExpressionStep::transformPipeline(QueryPipeline & pipeline)
@@ -57,8 +44,7 @@ InflatingExpressionStep::InflatingExpressionStep(const DataStream & input_stream
         getTraits(expression_))
     , expression(std::move(expression_))
 {
-    filterDistinctColumns(output_stream->header, output_stream->distinct_columns);
-    filterDistinctColumns(output_stream->header, output_stream->local_distinct_columns);
+    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
 void InflatingExpressionStep::transformPipeline(QueryPipeline & pipeline)
