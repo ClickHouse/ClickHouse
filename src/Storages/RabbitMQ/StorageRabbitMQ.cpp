@@ -138,7 +138,7 @@ void StorageRabbitMQ::heartbeatFunc()
 void StorageRabbitMQ::loopingFunc()
 {
     LOG_DEBUG(log, "Starting event looping iterations");
-    event_handler->startLoop();
+    event_handler->startBackgroundLoop();
 }
 
 

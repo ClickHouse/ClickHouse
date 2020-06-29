@@ -1,10 +1,14 @@
 #include <common/logger_useful.h>
+#include <Common/Exception.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 
 namespace DB
 {
 
-static const auto Lock_timeout = 50;
+namespace ErrorCodes
+{
+    extern const int CANNOT_CONNECT_RABBITMQ;
+}
 
 /* The object of this class is shared between concurrent consumers (who share the same connection == share the same
  * event loop and handler).
@@ -23,15 +27,14 @@ void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * mes
 
     if (!connection->usable() || !connection->ready())
     {
-        LOG_ERROR(log, "Connection lost completely");
+        throw Exception("Connection error", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
     }
-
-    stop();
 }
 
 
-void RabbitMQHandler::startLoop()
+void RabbitMQHandler::startBackgroundLoop()
 {
+    /// stop_loop variable is updated in a separate thread
     while (!stop_loop)
     {
         uv_run(loop, UV_RUN_NOWAIT);
@@ -39,24 +42,13 @@ void RabbitMQHandler::startLoop()
 }
 
 
-void RabbitMQHandler::startConsumerLoop(std::atomic<bool> & loop_started)
+void RabbitMQHandler::startLoop()
 {
-    std::lock_guard lock(mutex_before_event_loop);
-    uv_run(loop, UV_RUN_NOWAIT);
-}
-
-
-void RabbitMQHandler::startProducerLoop()
-{
-    uv_run(loop, UV_RUN_NOWAIT);
-}
-
-
-void RabbitMQHandler::stop()
-{
-    //std::lock_guard lock(mutex_before_loop_stop);
-    //uv_stop(loop);
-    stop_loop = true;
+    if (starting_loop.try_lock())
+    {
+        uv_run(loop, UV_RUN_NOWAIT);
+        starting_loop.unlock();
+    }
 }
 
 }

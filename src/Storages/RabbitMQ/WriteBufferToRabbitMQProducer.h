@@ -14,8 +14,7 @@
 namespace DB
 {
 
-using ProducerPtr = std::shared_ptr<AMQP::TcpChannel>;
-using Messages = std::vector<String>;
+using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 
 class WriteBufferToRabbitMQProducer : public WriteBuffer
 {
@@ -60,7 +59,7 @@ private:
     std::unique_ptr<uv_loop_t> loop;
     std::unique_ptr<RabbitMQHandler> event_handler;
     std::unique_ptr<AMQP::TcpConnection> connection;
-    ProducerPtr producer_channel;
+    ChannelPtr producer_channel;
 
     ConcurrentBoundedQueue<String> payloads;
     size_t next_queue = 0;
