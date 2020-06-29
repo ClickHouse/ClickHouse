@@ -30,7 +30,7 @@ namespace ExchangeType
     static const String HEADERS = "headers";
 }
 
-static const auto QUEUE_SIZE = 50000; /// Equals capacity of single rabbitmq queue
+static const auto QUEUE_SIZE = 50000; /// Equals capacity of a single rabbitmq queue
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
@@ -60,7 +60,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , local_default_exchange(local_exchange + "_" + ExchangeType::DIRECT)
         , local_hash_exchange(local_exchange + "_" + ExchangeType::HASH)
         , stopped(stopped_)
-        , messages(QUEUE_SIZE)
+        , messages(QUEUE_SIZE * num_queues)
 {
     exchange_type_set = exchange_type != ExchangeType::DEFAULT;
 
@@ -125,7 +125,7 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
 
     /* Declare client's exchange of the specified type and bind it to hash-exchange (if it is not already hash-exchange), which
      * will evenly distribute messages between all consumers. (This enables better scaling as without hash-exchange - the only
-     * option to avoid getting the same messages more than once - is having only one consumer with one queue, which is not good.)
+     * option to avoid getting the same messages more than once - is having only one consumer with one queue)
      */
     consumer_channel->declareExchange(exchange_name, type).onError([&](const char * message)
     {
@@ -243,7 +243,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
         });
 
         /* Subscription can probably be moved back to readPrefix(), but not sure whether it is better in regard to speed, because
-         * if moved there, it must(!) be wrapped inside a channel->onReady callback or any other, otherwise
+         * if moved there, it must(!) be wrapped inside a channel->onSuccess callback or any other, otherwise
          * consumer might fail to subscribe and no resubscription will help.
          */
         subscribe(queues.back());
@@ -327,7 +327,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
      */
     while (!default_bindings_created && !default_bindings_error || (exchange_type_set && !bindings_created && !bindings_error))
     {
-        startEventLoop(loop_started);
+        startEventLoop();
     }
 }
 
@@ -378,7 +378,7 @@ void ReadBufferFromRabbitMQConsumer::checkSubscription()
     /// These variables are updated in a separate thread.
     while (count_subscribed != wait_subscribed && !consumer_error)
     {
-        startEventLoop(loop_started);
+        startEventLoop();
     }
 
     LOG_TRACE(log, "Consumer {} is subscribed to {} queues", channel_id, count_subscribed);
@@ -395,15 +395,9 @@ void ReadBufferFromRabbitMQConsumer::checkSubscription()
 }
 
 
-void ReadBufferFromRabbitMQConsumer::stopEventLoop()
+void ReadBufferFromRabbitMQConsumer::startEventLoop()
 {
-    event_handler->stop();
-}
-
-
-void ReadBufferFromRabbitMQConsumer::startEventLoop(std::atomic<bool> & loop_started)
-{
-    event_handler->startConsumerLoop(loop_started);
+    event_handler->startLoop();
 }
 
 

@@ -44,8 +44,6 @@ public:
     auto getExchange() const { return exchange_name; }
 
 private:
-    using Messages = std::vector<String>;
-
     ChannelPtr consumer_channel;
     HandlerPtr event_handler;
 
@@ -70,7 +68,7 @@ private:
     bool local_exchange_declared = false, local_hash_exchange_declared = false;
     bool exchange_type_set = false, hash_exchange = false;
 
-    std::atomic<bool> loop_started = false, consumer_error = false;
+    std::atomic<bool> consumer_error = false;
     std::atomic<size_t> count_subscribed = 0, wait_subscribed;
 
     ConcurrentBoundedQueue<String> messages;
@@ -78,21 +76,12 @@ private:
     std::vector<String> queues;
     std::unordered_map<String, bool> subscribed_queue;
 
-    /* Note: as all consumers share the same connection => they also share the same
-     * event loop, which can be started by any consumer and the loop is blocking only to the thread that
-     * started it, and the loop executes ALL active callbacks on the connection => in case num_consumers > 1,
-     * at most two threads will be present: main thread and the one that executes callbacks (1 thread if
-     * main thread is the one that started the loop).
-     */
-    std::mutex mutex;
-
     bool nextImpl() override;
 
     void initExchange();
     void initQueueBindings(const size_t queue_id);
     void subscribe(const String & queue_name);
-    void startEventLoop(std::atomic<bool> & loop_started);
-    void stopEventLoop();
+    void startEventLoop();
 
 };
 }

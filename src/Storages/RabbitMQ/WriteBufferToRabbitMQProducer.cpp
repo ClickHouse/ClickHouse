@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int CANNOT_CONNECT_RABBITMQ;
 }
 
-static const auto QUEUE_SIZE = 100000;
+static const auto QUEUE_SIZE = 50000;
 static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 1000;
 static const auto LOOP_WAIT = 10;
@@ -47,7 +47,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , delim(delimiter)
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
-        , payloads(QUEUE_SIZE)
+        , payloads(QUEUE_SIZE * num_queues)
 {
 
     loop = std::make_unique<uv_loop_t>();
@@ -127,6 +127,7 @@ void WriteBufferToRabbitMQProducer::countRow()
 void WriteBufferToRabbitMQProducer::writingFunc()
 {
     String payload;
+
     while (!stop_loop || !payloads.empty())
     {
         while (!payloads.empty())
@@ -142,10 +143,7 @@ void WriteBufferToRabbitMQProducer::writingFunc()
             {
                 producer_channel->publish(exchange_name, routing_key, payload);
             }
-
-            ++message_counter;
         }
-
         startEventLoop();
     }
 }
@@ -183,7 +181,7 @@ void WriteBufferToRabbitMQProducer::finilizeProducer()
 
     if (use_transactional_channel)
     {
-        std::atomic<bool> answer_received = false;
+        std::atomic<bool> answer_received = false, wait_rollback = false;
         producer_channel->commitTransaction()
         .onSuccess([&]()
         {
@@ -193,12 +191,22 @@ void WriteBufferToRabbitMQProducer::finilizeProducer()
         .onError([&](const char * message)
         {
             answer_received = true;
-            LOG_TRACE(log, "None of messages were publishd: {}", message);
-            /// Probably should do something here
+            wait_rollback = true;
+            LOG_TRACE(log, "Publishing not successful: {}", message);
+            producer_channel->rollbackTransaction()
+            .onSuccess([&]()
+            {
+                wait_rollback = false;
+            })
+            .onError([&](const char * message)
+            {
+                LOG_ERROR(log, "Failed to rollback transaction: {}", message);
+                wait_rollback = false;
+            });
         });
 
         size_t count_retries = 0;
-        while (!answer_received && ++count_retries != RETRIES_MAX)
+        while ((!answer_received || wait_rollback) && ++count_retries != RETRIES_MAX)
         {
             startEventLoop();
             std::this_thread::sleep_for(std::chrono::milliseconds(LOOP_WAIT));
@@ -217,7 +225,7 @@ void WriteBufferToRabbitMQProducer::nextImpl()
 
 void WriteBufferToRabbitMQProducer::startEventLoop()
 {
-    event_handler->startProducerLoop();
+    event_handler->startLoop();
 }
 
 }
