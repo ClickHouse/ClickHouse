@@ -18,7 +18,7 @@ message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
-# glibc-compatibility library relies to fixed version of libc headers
+# glibc-compatibility library relies to constant version of libc headers
 # (because minor changes in function attributes between different glibc versions will introduce incompatibilities)
 # This is for x86_64. For other architectures we have separate toolchains.
 if (ARCH_AMD64 AND NOT_UNBUNDLED)

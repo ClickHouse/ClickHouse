@@ -11,12 +11,23 @@ $CLICKHOUSE_CLIENT --query "CREATE USER user IDENTIFIED WITH PLAINTEXT_PASSWORD 
 # False positive result due to race condition with sleeps is Ok.
 
 $CLICKHOUSE_CLIENT --user user --password hello --query "SELECT sleep(1)" &
-sleep 0.1
+
+# Wait for query to start executing. At that time, the password should be cleared.
+while true; do
+    sleep 0.1
+    $CLICKHOUSE_CLIENT --query "SHOW PROCESSLIST" | grep -q 'SELECT sleep(1)' && break;
+done
+
 ps auxw | grep -F -- '--password' | grep -F hello ||:
 wait
 
 $CLICKHOUSE_CLIENT --user user --password=hello --query "SELECT sleep(1)" &
-sleep 0.1
+
+while true; do
+    sleep 0.1
+    $CLICKHOUSE_CLIENT --query "SHOW PROCESSLIST" | grep -q 'SELECT sleep(1)' && break;
+done
+
 ps auxw | grep -F -- '--password' | grep -F hello ||:
 wait
 

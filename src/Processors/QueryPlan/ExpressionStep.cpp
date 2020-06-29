@@ -17,13 +17,12 @@ static ITransformingStep::DataStreamTraits getTraits(const ExpressionActionsPtr 
     };
 }
 
-ExpressionStep::ExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_, bool default_totals_)
+ExpressionStep::ExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_)
     : ITransformingStep(
         input_stream_,
-        ExpressionTransform::transformHeader(input_stream_.header, expression_),
+        Transform::transformHeader(input_stream_.header, expression_),
         getTraits(expression_))
     , expression(std::move(expression_))
-    , default_totals(default_totals_)
 {
     /// Some columns may be removed by expression.
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
@@ -31,28 +30,19 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, ExpressionActio
 
 void ExpressionStep::transformPipeline(QueryPipeline & pipeline)
 {
-    /// In case joined subquery has totals, and we don't, add default chunk to totals.
-    bool add_default_totals = false;
-    if (default_totals && !pipeline.hasTotals())
-    {
-        pipeline.addDefaultTotals();
-        add_default_totals = true;
-    }
-
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
-        return std::make_shared<ExpressionTransform>(header, expression, on_totals, add_default_totals);
+        return std::make_shared<Transform>(header, expression, on_totals);
     });
 }
 
-InflatingExpressionStep::InflatingExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_, bool default_totals_)
+InflatingExpressionStep::InflatingExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_)
     : ITransformingStep(
         input_stream_,
-        ExpressionTransform::transformHeader(input_stream_.header, expression_),
+        Transform::transformHeader(input_stream_.header, expression_),
         getTraits(expression_))
     , expression(std::move(expression_))
-    , default_totals(default_totals_)
 {
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
@@ -61,7 +51,7 @@ void InflatingExpressionStep::transformPipeline(QueryPipeline & pipeline)
 {
     /// In case joined subquery has totals, and we don't, add default chunk to totals.
     bool add_default_totals = false;
-    if (default_totals && !pipeline.hasTotals())
+    if (!pipeline.hasTotals())
     {
         pipeline.addDefaultTotals();
         add_default_totals = true;
@@ -70,7 +60,7 @@ void InflatingExpressionStep::transformPipeline(QueryPipeline & pipeline)
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
-        return std::make_shared<InflatingExpressionTransform>(header, expression, on_totals, add_default_totals);
+        return std::make_shared<Transform>(header, expression, on_totals, add_default_totals);
     });
 }
 

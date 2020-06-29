@@ -55,6 +55,10 @@ struct IndexDescription
     /// unintentionaly share AST variables and modify them.
     IndexDescription(const IndexDescription & other);
     IndexDescription & operator=(const IndexDescription & other);
+
+    /// Recalculate index with new columns because index expression may change
+    /// if something change in columns.
+    void recalculateWithNewColumns(const ColumnsDescription & new_columns, const Context & context);
 };
 
 /// All secondary indices in storage

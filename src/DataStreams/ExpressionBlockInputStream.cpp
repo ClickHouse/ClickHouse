@@ -44,33 +44,4 @@ Block ExpressionBlockInputStream::readImpl()
     return res;
 }
 
-Block InflatingExpressionBlockInputStream::readImpl()
-{
-    if (!initialized)
-    {
-        if (expression->resultIsAlwaysEmpty())
-            return {};
-
-        initialized = true;
-    }
-
-    Block res;
-    bool keep_going = not_processed && not_processed->empty(); /// There's data inside expression.
-
-    if (!not_processed || keep_going)
-    {
-        not_processed.reset();
-
-        res = children.back()->read();
-        if (res || keep_going)
-            expression->execute(res, not_processed, action_number);
-    }
-    else
-    {
-        res = std::move(not_processed->block);
-        expression->execute(res, not_processed, action_number);
-    }
-    return res;
-}
-
 }

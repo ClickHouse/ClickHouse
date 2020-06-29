@@ -58,48 +58,44 @@ AsynchronousMetricValues AsynchronousMetrics::getValues() const
     return values;
 }
 
+static auto get_next_update_time(std::chrono::seconds update_period)
+{
+    using namespace std::chrono;
+
+    const auto now = time_point_cast<seconds>(system_clock::now());
+
+    // Use seconds since the start of the hour, because we don't know when
+    // the epoch started, maybe on some weird fractional time.
+    const auto start_of_hour = time_point_cast<seconds>(time_point_cast<hours>(now));
+    const auto seconds_passed = now - start_of_hour;
+
+    // Rotate time forward by half a period -- e.g. if a period is a minute,
+    // we'll collect metrics on start of minute + 30 seconds. This is to
+    // achieve temporal separation with MetricTransmitter. Don't forget to
+    // rotate it back.
+    const auto rotation = update_period / 2;
+
+    const auto periods_passed = (seconds_passed + rotation) / update_period;
+    const auto seconds_next = (periods_passed + 1) * update_period - rotation;
+    const auto time_next = start_of_hour + seconds_next;
+
+    return time_next;
+}
 
 void AsynchronousMetrics::run()
 {
     setThreadName("AsyncMetrics");
-
-    const auto get_next_update_time = []
-    {
-        using namespace std::chrono;
-
-        // The period doesn't really have to be configurable, but sometimes you
-        // need to change it by recompilation to debug something. The generic
-        // code is left here so that you don't have to ruin your mood by touching
-        // std::chrono.
-        const seconds period(60);
-
-        const auto now = time_point_cast<seconds>(system_clock::now());
-
-        // Use seconds since the start of the hour, because we don't know when
-        // the epoch started, maybe on some weird fractional time.
-        const auto start_of_hour = time_point_cast<seconds>(time_point_cast<hours>(now));
-        const auto seconds_passed = now - start_of_hour;
-
-        // Rotate time forward by half a period -- e.g. if a period is a minute,
-        // we'll collect metrics on start of minute + 30 seconds. This is to
-        // achieve temporal separation with MetricTransmitter. Don't forget to
-        // rotate it back.
-        const auto rotation = period / 2;
-
-        const auto periods_passed = (seconds_passed + rotation) / period;
-        const auto seconds_next = (periods_passed + 1) * period - rotation;
-        const auto time_next = start_of_hour + seconds_next;
-
-        return time_next;
-    };
 
     while (true)
     {
         {
             // Wait first, so that the first metric collection is also on even time.
             std::unique_lock lock{mutex};
-            if (wait_cond.wait_until(lock, get_next_update_time(), [this] { return quit; }))
+            if (wait_cond.wait_until(lock, get_next_update_time(update_period),
+                [this] { return quit; }))
+            {
                 break;
+            }
         }
 
         try
@@ -328,6 +324,48 @@ void AsynchronousMetrics::update()
     saveAllArenasMetric<size_t>(new_values, "dirty_purged");
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
 #endif
+
+    // Try to add processor frequencies, ignoring errors.
+    try
+    {
+        ReadBufferFromFile buf("/proc/cpuinfo", 32768 /* buf_size */);
+
+        // We need the following lines:
+        // core id : 4
+        // cpu MHz : 4052.941
+        // They contain tabs and are interspersed with other info.
+        int core_id = 0;
+        while (!buf.eof())
+        {
+            std::string s;
+            // We don't have any backslash escape sequences in /proc/cpuinfo, so
+            // this function will read the line until EOL, which is exactly what
+            // we need.
+            readEscapedStringUntilEOL(s, buf);
+            // It doesn't read the EOL itself.
+            ++buf.position();
+
+            if (s.rfind("core id", 0) == 0)
+            {
+                if (auto colon = s.find_first_of(':'))
+                {
+                    core_id = std::stoi(s.substr(colon + 2));
+                }
+            }
+            else if (s.rfind("cpu MHz", 0) == 0)
+            {
+                if (auto colon = s.find_first_of(':'))
+                {
+                    auto mhz = std::stod(s.substr(colon + 2));
+                    new_values[fmt::format("CPUFrequencyMHz_{}", core_id)] = mhz;
+                }
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
     /// Add more metrics as you wish.
 

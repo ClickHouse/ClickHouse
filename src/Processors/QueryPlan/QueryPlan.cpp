@@ -91,7 +91,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
     {
         if (isInitialized())
             throw Exception("Cannot add step " + step->getName() + " to QueryPlan because "
-                            "step has no inputs, but QueryPlan is already initialised", ErrorCodes::LOGICAL_ERROR);
+                            "step has no inputs, but QueryPlan is already initialized", ErrorCodes::LOGICAL_ERROR);
 
         nodes.emplace_back(Node{.step = std::move(step)});
         root = &nodes.back();
@@ -102,7 +102,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
     {
         if (!isInitialized())
             throw Exception("Cannot add step " + step->getName() + " to QueryPlan because "
-                            "step has input, but QueryPlan is not initialised", ErrorCodes::LOGICAL_ERROR);
+                            "step has input, but QueryPlan is not initialized", ErrorCodes::LOGICAL_ERROR);
 
         const auto & root_header = root->step->getOutputStream().header;
         const auto & step_header = step->getInputStreams().front().header;
