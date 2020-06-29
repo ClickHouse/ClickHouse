@@ -29,7 +29,7 @@ def reset_after_test():
 
 
 def test_settings_profile():
-    # Set settings and constraints via CREATE SETTINGS PROFILE ... TO user 
+    # Set settings and constraints via CREATE SETTINGS PROFILE ... TO user
     instance.query("CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin")
     assert instance.query("SHOW CREATE SETTINGS PROFILE xyz") == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin\n"
     assert instance.query("SELECT value FROM system.settings WHERE name = 'max_memory_usage'", user="robin") == "100000001\n"
@@ -117,9 +117,39 @@ def test_alter_and_drop():
     instance.query("SET max_memory_usage = 120000000", user="robin")
 
 
+def test_show_profiles():
+    instance.query("CREATE SETTINGS PROFILE xyz")
+    assert instance.query("SHOW SETTINGS PROFILES") == "default\nreadonly\nxyz\n"
+    assert instance.query("SHOW PROFILES") == "default\nreadonly\nxyz\n"
+
+    assert instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE xyz\n"
+    assert instance.query("SHOW CREATE SETTINGS PROFILE default") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, use_uncompressed_cache = 0, load_balancing = \\'random\\'\n"
+    assert instance.query("SHOW CREATE PROFILES") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, use_uncompressed_cache = 0, load_balancing = \\'random\\'\n"\
+                                                     "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"\
+                                                     "CREATE SETTINGS PROFILE xyz\n"
+
+    expected_access = "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, use_uncompressed_cache = 0, load_balancing = \\'random\\'\n"\
+                      "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"\
+                      "CREATE SETTINGS PROFILE xyz\n"
+    assert expected_access in instance.query("SHOW ACCESS")
+
+
+def test_allow_ddl():
+    assert "Not enough privileges" in instance.query_and_get_error("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
+    assert "DDL queries are prohibited" in instance.query_and_get_error("CREATE TABLE tbl(a Int32) ENGINE=Log", settings={"allow_ddl":0})
+
+    assert "Not enough privileges" in instance.query_and_get_error("GRANT CREATE ON tbl TO robin", user="robin")
+    assert "DDL queries are prohibited" in instance.query_and_get_error("GRANT CREATE ON tbl TO robin", settings={"allow_ddl":0})
+
+    instance.query("GRANT CREATE ON tbl TO robin")
+    instance.query("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
+    instance.query("DROP TABLE tbl")
+
+
+>>>>>>> f3f005d5b9... Merge pull request #12015 from vitlibar/fix-access-rights-allow-ddl-0
 def test_allow_introspection():
     assert "Not enough privileges" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
-    
+
     instance.query("GRANT ALL ON *.* TO robin")
     assert "Introspection functions are disabled" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
 
