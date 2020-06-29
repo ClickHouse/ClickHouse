@@ -5,6 +5,7 @@
 namespace DB
 {
 
+/// Implements modifier WITH FILL of ORDER BY clause. See FillingTransform.
 class FillingStep : public ITransformingStep
 {
 public:
