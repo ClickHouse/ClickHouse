@@ -188,8 +188,8 @@ static const PerfEventInfo raw_events_info[] = {
 
     CACHE_EVENT(PERF_COUNT_HW_CACHE_DTLB, PerfDataTLBReferences, ACCESS),
     CACHE_EVENT(PERF_COUNT_HW_CACHE_DTLB, PerfDataTLBMisses, MISS),
-    CACHE_EVENT(PERF_COUNT_HW_CACHE_DTLB, PerfInstructionTLBReferences, ACCESS),
-    CACHE_EVENT(PERF_COUNT_HW_CACHE_DTLB, PerfInstructionTLBMisses, MISS),
+    CACHE_EVENT(PERF_COUNT_HW_CACHE_ITLB, PerfInstructionTLBReferences, ACCESS),
+    CACHE_EVENT(PERF_COUNT_HW_CACHE_ITLB, PerfInstructionTLBMisses, MISS),
 };
 
 static_assert(sizeof(raw_events_info) / sizeof(raw_events_info[0]) == NUMBER_OF_RAW_EVENTS);
