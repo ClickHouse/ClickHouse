@@ -180,7 +180,7 @@ static const PerfEventInfo raw_events_info[] = {
     SOFTWARE_EVENT(PERF_COUNT_SW_CPU_MIGRATIONS, PerfCpuMigrations),
     SOFTWARE_EVENT(PERF_COUNT_SW_ALIGNMENT_FAULTS, PerfAlignmentFaults),
     SOFTWARE_EVENT(PERF_COUNT_SW_EMULATION_FAULTS, PerfEmulationFaults),
-    
+
     // Don't add them -- they are the same as SoftPageFaults and HardPageFaults,
     // match well numerically.
     // SOFTWARE_EVENT(PERF_COUNT_SW_PAGE_FAULTS_MIN, PerfPageFaultsMinor),
