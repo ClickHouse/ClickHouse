@@ -157,7 +157,11 @@ function run_tests
 
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
         # the grep is to filter out set -x output and keep only time output
-        { time "$script_dir/perf.py" --host localhost localhost --port 9001 9002 -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" || continue
+        { \
+            time "$script_dir/perf.py" --host localhost localhost --port 9001 9002 \
+                -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; \
+        } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" \
+            || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
     done
 
     unset TIMEFORMAT
@@ -793,7 +797,7 @@ unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
-grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' >> run-errors.tsv ||:
+grep -H -m2 -i '' ./*-err.log | sed 's/:/\t/' >> run-errors.tsv ||:
 }
 
 function report_metrics
