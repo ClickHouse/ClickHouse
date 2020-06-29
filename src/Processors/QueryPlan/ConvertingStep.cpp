@@ -75,7 +75,7 @@ void ConvertingStep::describeActions(FormatSettings & settings) const
         else
         {
             dump_description(to, to_const);
-            settings.out << " <- ";
+            settings.out << " ← ";
             dump_description(from, from_const);
         }
 

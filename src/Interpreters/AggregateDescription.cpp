@@ -49,7 +49,7 @@ void AggregateDescription::explain(WriteBuffer & out, size_t ident) const
             out << type->getName();
         }
 
-        out << ")\n";
+        out << ") → " << function->getReturnType()->getName() << "\n";
     }
     else
         out << prefix << "  Function: nullptr\n";

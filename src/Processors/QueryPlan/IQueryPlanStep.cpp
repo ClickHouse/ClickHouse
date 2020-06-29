@@ -24,7 +24,7 @@ static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep:
     prefix += "Header";
 
     if (count > 1)
-        prefix += " x " + std::to_string(count) + " ";
+        prefix += " × " + std::to_string(count) + " ";
 
     prefix += ": ";
 
@@ -54,12 +54,12 @@ static void doDescribeProcessor(const IProcessor & processor, size_t count, IQue
 {
     settings.out << String(settings.offset, settings.ident_char) << processor.getName();
     if (count > 1)
-        settings.out << " x " << std::to_string(count);
+        settings.out << " × " << std::to_string(count);
 
     size_t num_inputs = processor.getInputs().size();
     size_t num_outputs = processor.getOutputs().size();
     if (num_inputs != 1 || num_outputs != 1)
-        settings.out << " " << std::to_string(num_inputs) << " -> " << std::to_string(num_outputs);
+        settings.out << " " << std::to_string(num_inputs) << " → " << std::to_string(num_outputs);
 
     settings.out << '\n';
 
