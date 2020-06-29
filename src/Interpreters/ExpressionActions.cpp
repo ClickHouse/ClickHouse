@@ -323,8 +323,20 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
     }
 }
 
+void ExpressionAction::execute(Block & block, ExtraBlockPtr & not_processed) const
+{
+    switch (type)
+    {
+        case JOIN:
+            join->joinBlock(block, not_processed);
+            break;
 
-void ExpressionAction::execute(Block & block, bool dry_run, ExtraBlockPtr & not_processed) const
+        default:
+            throw Exception("Unexpected expression call", ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
+void ExpressionAction::execute(Block & block, bool dry_run) const
 {
     size_t input_rows_count = block.rows();
 
@@ -362,10 +374,7 @@ void ExpressionAction::execute(Block & block, bool dry_run, ExtraBlockPtr & not_
         }
 
         case JOIN:
-        {
-            join->joinBlock(block, not_processed);
-            break;
-        }
+            throw Exception("Unexpected JOIN expression call", ErrorCodes::LOGICAL_ERROR);
 
         case PROJECT:
         {
@@ -676,19 +685,13 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
     }
 }
 
-/// @warning It's a tricky method that allows to continue ONLY ONE action in reason of one-to-many ALL JOIN logic.
-void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed, size_t & start_action) const
+void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed) const
 {
-    size_t i = start_action;
-    start_action = 0;
-    for (; i < actions.size(); ++i)
-    {
-        actions[i].execute(block, false, not_processed);
-        checkLimits(block);
+    if (actions.size() != 1)
+        throw Exception("Continuation over multiple expressions is not supported", ErrorCodes::LOGICAL_ERROR);
 
-        if (not_processed)
-            start_action = i;
-    }
+    actions[0].execute(block, not_processed);
+    checkLimits(block);
 }
 
 bool ExpressionActions::hasJoinOrArrayJoin() const

@@ -4,7 +4,6 @@
 #include <Poco/Path.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/Stopwatch.h>
 #include <Parsers/formatAST.h>
 #include <Common/renameat2.h>
 #include <Storages/StorageMaterializedView.h>

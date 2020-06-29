@@ -26,24 +26,32 @@ public:
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & /* metadata_snapshot */) const override
     {
-        return getTargetTable()->mayBenefitFromIndexForIn(left_in_operand, query_context);
+        auto target_table = getTargetTable();
+        auto metadata_snapshot = target_table->getInMemoryMetadataPtr();
+        return target_table->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     void drop() override;
 
-    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
-    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
+    bool optimize(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ASTPtr & partition,
+        bool final,
+        bool deduplicate,
+        const Context & context) override;
 
-    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
 
-    void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
+    void alterPartition(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
@@ -63,6 +71,7 @@ public:
 
     Pipes read(
         const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,

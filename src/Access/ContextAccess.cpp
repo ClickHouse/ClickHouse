@@ -428,7 +428,7 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
         merged_access->revoke(AccessType::CREATE_TEMPORARY_TABLE);
     }
 
-    if (!allow_ddl_ && !grant_option)
+    if (!allow_ddl_)
         merged_access->revoke(table_and_dictionary_ddl);
 
     if (!allow_introspection_ && !grant_option)

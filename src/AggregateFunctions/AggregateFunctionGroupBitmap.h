@@ -48,7 +48,7 @@ public:
         this->data(place).rbs.read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }
@@ -113,7 +113,7 @@ public:
         this->data(place).rbs.read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }

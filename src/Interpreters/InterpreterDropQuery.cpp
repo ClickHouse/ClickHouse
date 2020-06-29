@@ -93,7 +93,7 @@ BlockIO InterpreterDropQuery::executeToTable(
         {
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->shutdown();
-            TableStructureWriteLockHolder table_lock;
+            TableExclusiveLockHolder table_lock;
             if (database->getEngineName() != "Atomic")
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table from memory, don't touch data and metadata
@@ -105,8 +105,9 @@ BlockIO InterpreterDropQuery::executeToTable(
             table->checkTableCanBeDropped();
 
             auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+            auto metadata_snapshot = table->getInMemoryMetadataPtr();
             /// Drop table data, don't touch metadata
-            table->truncate(query_ptr, context, table_lock);
+            table->truncate(query_ptr, metadata_snapshot, context, table_lock);
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
@@ -115,7 +116,7 @@ BlockIO InterpreterDropQuery::executeToTable(
 
             table->shutdown();
 
-            TableStructureWriteLockHolder table_lock;
+            TableExclusiveLockHolder table_lock;
             if (database->getEngineName() != "Atomic")
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
@@ -187,7 +188,8 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             {
                 auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
                 /// Drop table data, don't touch metadata
-                table->truncate(query_ptr, context, table_lock);
+                auto metadata_snapshot = table->getInMemoryMetadataPtr();
+                table->truncate(query_ptr, metadata_snapshot, context, table_lock);
             }
             else if (kind == ASTDropQuery::Kind::Drop)
             {

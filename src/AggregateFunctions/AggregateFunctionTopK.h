@@ -79,7 +79,7 @@ public:
         set.read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
@@ -200,7 +200,7 @@ public:
         this->data(place).value.merge(this->data(rhs).value);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
