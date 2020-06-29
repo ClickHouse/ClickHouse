@@ -10,6 +10,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class ExpressionTransform;
 class InflatingExpressionTransform;
 
+/// Calculates specified expression. See ExpressionTransform.
 class ExpressionStep : public ITransformingStep
 {
 public:
@@ -33,7 +34,7 @@ public:
     using Transform = InflatingExpressionTransform;
 
     explicit InflatingExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_);
-    String getName() const override { return "Expression"; }
+    String getName() const override { return "InflatingExpression"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
 

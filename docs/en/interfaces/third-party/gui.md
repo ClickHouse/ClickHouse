@@ -95,6 +95,10 @@ Features:
 
 [cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) is a script to generate [PlantUML](https://plantuml.com/) diagram of tables’ schemes.
 
+### xeus-clickhouse {#xeus-clickhouse}
+
+[xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) is a Jupyter kernal for ClickHouse, which supports query CH data using SQL in Jupyter.
+
 ## Commercial {#commercial}
 
 ### DataGrip {#datagrip}

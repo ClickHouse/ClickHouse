@@ -127,7 +127,7 @@ ReadFromStorageStep::ReadFromStorageStep(
 
     processors = collector.detachProcessors();
 
-    output_stream = DataStream{.header = pipeline->getHeader()};
+    output_stream = DataStream{.header = pipeline->getHeader(), .has_single_port = pipeline->getNumStreams() == 1};
 }
 
 ReadFromStorageStep::~ReadFromStorageStep() = default;

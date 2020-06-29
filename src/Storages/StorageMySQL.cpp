@@ -8,6 +8,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Common/parseAddress.h>
@@ -85,6 +86,11 @@ Pipes StorageMySQL::read(
     for (const String & column_name : column_names_)
     {
         auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
+
+        WhichDataType which(column_data.type);
+        /// Convert enum to string.
+        if (which.isEnum())
+            column_data.type = std::make_shared<DataTypeString>();
         sample_block.insert({ column_data.type, column_data.name });
     }
 

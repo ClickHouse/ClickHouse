@@ -11,7 +11,9 @@ static ITransformingStep::DataStreamTraits getTraits()
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = false /// Actually, we may check that distinct names are in aggregation keys
+            .preserves_distinct_columns = false, /// Actually, we may check that distinct names are in aggregation keys
+            .returns_single_stream = true,
+            .preserves_number_of_streams = false,
     };
 }
 

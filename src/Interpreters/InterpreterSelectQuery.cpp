@@ -46,7 +46,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/AddingDelayedStreamStep.h>
+#include <Processors/QueryPlan/AddingDelayedSourceStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -886,7 +886,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
                 {
                     auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
-                    auto add_non_joined_rows_step = std::make_unique<AddingDelayedStreamStep>(
+                    auto add_non_joined_rows_step = std::make_unique<AddingDelayedSourceStep>(
                             query_plan.getCurrentDataStream(), std::move(source));
 
                     add_non_joined_rows_step->setStepDescription("Add non-joined rows after JOIN");

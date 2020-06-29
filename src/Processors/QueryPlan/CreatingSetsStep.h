@@ -6,6 +6,7 @@
 namespace DB
 {
 
+/// Creates sets for subqueries and JOIN. See CreatingSetsTransform.
 class CreatingSetsStep : public ITransformingStep
 {
 public:
