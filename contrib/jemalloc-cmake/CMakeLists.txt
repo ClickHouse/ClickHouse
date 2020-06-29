@@ -29,7 +29,7 @@ if (ENABLE_JEMALLOC)
             # https://github.com/ClickHouse/ClickHouse/issues/11121 for motivation.
             set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:10000")
         else()
-            set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0")
+            set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:10000")
         endif()
         # CACHE variable is empty, to allow changing defaults without necessity
         # to purge cache
