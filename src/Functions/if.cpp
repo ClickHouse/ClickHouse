@@ -487,7 +487,7 @@ private:
                 conditional(ConstSource<StringSource>(*col_then_const), ConstSource<FixedStringSource>(*col_else_const_fixed), sink, cond_data);
             else if (col_then_const_fixed && col_else_const)
                 conditional(ConstSource<FixedStringSource>(*col_then_const_fixed), ConstSource<StringSource>(*col_else_const), sink, cond_data);
-            if (col_then_fixed && col_else_fixed)
+            else if (col_then_fixed && col_else_fixed)
                 conditional(FixedStringSource(*col_then_fixed), FixedStringSource(*col_else_fixed), sink, cond_data);
             else if (col_then_fixed && col_else_const_fixed)
                 conditional(FixedStringSource(*col_then_fixed), ConstSource<FixedStringSource>(*col_else_const_fixed), sink, cond_data);
