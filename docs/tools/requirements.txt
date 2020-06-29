@@ -9,7 +9,7 @@ closure==20191111
 cssmin==0.2.0
 future==0.18.2
 htmlmin==0.1.12
-idna==2.9
+idna==2.10
 Jinja2==2.11.2
 jinja2-highlight==0.6.1
 jsmin==2.2.2

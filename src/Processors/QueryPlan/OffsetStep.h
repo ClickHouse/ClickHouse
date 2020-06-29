@@ -5,6 +5,7 @@
 namespace DB
 {
 
+/// Executes OFFSET (without LIMIT). See OffsetTransform.
 class OffsetStep : public ITransformingStep
 {
 public:

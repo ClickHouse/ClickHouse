@@ -13,13 +13,19 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
 
 /// Description of data stream.
+/// Single logical data stream may relate to many ports of pipeline.
 class DataStream
 {
 public:
     Block header;
 
+    /// Tuples with those columns are distinct.
+    /// It doesn't mean that columns are distinct separately.
+    /// Removing any column from this list brakes this invariant.
     NameSet distinct_columns = {};
-    NameSet local_distinct_columns = {}; /// Those columns are distinct in separate thread, but not in general.
+
+    /// QueryPipeline has single port. Totals or extremes ports are not counted.
+    bool has_single_port = false;
 
     /// Things which may be added:
     /// * sort description
