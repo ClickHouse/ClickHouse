@@ -13,16 +13,19 @@
 namespace DB
 {
 
-enum
+namespace ErrorCodes
 {
-    Connection_setup_sleep = 200,
-    Loop_retries_max = 1000,
-    Loop_wait = 10,
-    Batch = 10000
-};
+    extern const int CANNOT_CONNECT_RABBITMQ;
+}
+
+static const auto QUEUE_SIZE = 100000;
+static const auto CONNECT_SLEEP = 200;
+static const auto RETRIES_MAX = 1000;
+static const auto LOOP_WAIT = 10;
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         std::pair<String, UInt16> & parsed_address,
+        Context & global_context,
         std::pair<String, String> & login_password_,
         const String & routing_key_,
         const String exchange_,
@@ -44,6 +47,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , delim(delimiter)
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
+        , payloads(QUEUE_SIZE)
 {
 
     loop = std::make_unique<uv_loop_t>();
@@ -57,15 +61,15 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
      * different threads (as outputStreams are asynchronous) with the same connection leads to internal library errors.
      */
     size_t cnt_retries = 0;
-    while (!connection->ready() && ++cnt_retries != Loop_retries_max)
+    while (!connection->ready() && ++cnt_retries != RETRIES_MAX)
     {
         uv_run(loop.get(), UV_RUN_NOWAIT);
-        std::this_thread::sleep_for(std::chrono::milliseconds(Connection_setup_sleep));
+        std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
     }
 
     if (!connection->ready())
     {
-        LOG_ERROR(log, "Cannot set up connection for producer!");
+        throw Exception("Cannot set up connection for producer", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
     }
 
     producer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
@@ -76,15 +80,19 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
     {
         producer_channel->startTransaction();
     }
+
+    writing_task = global_context.getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });
+    writing_task->deactivate();
 }
 
 
 WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
-    finilizeProducer();
-    connection->close();
-    event_handler->stop();
+    stop_loop.store(true);
+    writing_task->deactivate();
+    checkExchange();
 
+    connection->close();
     assert(rows == 0 && chunks.empty());
 }
 
@@ -111,26 +119,34 @@ void WriteBufferToRabbitMQProducer::countRow()
         chunks.clear();
         set(nullptr, 0);
 
-        next_queue = next_queue % num_queues + 1;
+        payloads.push(payload);
+    }
+}
 
-        if (bind_by_id)
+
+void WriteBufferToRabbitMQProducer::writingFunc()
+{
+    String payload;
+    while (!stop_loop || !payloads.empty())
+    {
+        while (!payloads.empty())
         {
-            producer_channel->publish(exchange_name, std::to_string(next_queue), payload);
-        }
-        else
-        {
-            producer_channel->publish(exchange_name, routing_key, payload);
+            payloads.pop(payload);
+            next_queue = next_queue % num_queues + 1;
+
+            if (bind_by_id)
+            {
+                producer_channel->publish(exchange_name, std::to_string(next_queue), payload);
+            }
+            else
+            {
+                producer_channel->publish(exchange_name, routing_key, payload);
+            }
+
+            ++message_counter;
         }
 
-        ++message_counter;
-
-        /* Run event loop to actually publish, checking exchange is just a point to stop the event loop. Messages are not sent
-         * without looping and looping after every batch is much better than processing all the messages in one time.
-         */
-        if ((message_counter %= Batch) == 0)
-        {
-            checkExchange();
-        }
+        startEventLoop();
     }
 }
 
@@ -182,10 +198,10 @@ void WriteBufferToRabbitMQProducer::finilizeProducer()
         });
 
         size_t count_retries = 0;
-        while (!answer_received && ++count_retries != Loop_retries_max)
+        while (!answer_received && ++count_retries != RETRIES_MAX)
         {
             startEventLoop();
-            std::this_thread::sleep_for(std::chrono::milliseconds(Loop_wait));
+            std::this_thread::sleep_for(std::chrono::milliseconds(LOOP_WAIT));
         }
     }
 }
