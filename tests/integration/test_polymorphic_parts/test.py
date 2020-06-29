@@ -437,34 +437,6 @@ def test_in_memory_deduplication(start_cluster):
     assert node9.query("SELECT date, id, s FROM deduplication_table") == "2020-03-03\t1\tfoo\n"
     assert node10.query("SELECT date, id, s FROM deduplication_table") == "2020-03-03\t1\tfoo\n"
 
-def test_in_memory_sync_insert(start_cluster):
-    node9.query("ALTER TABLE sync_table MODIFY SETTING in_memory_parts_insert_sync = 1")
-    node10.query("ALTER TABLE sync_table MODIFY SETTING in_memory_parts_insert_sync = 1")
-    node9.query("SYSTEM STOP MERGES sync_table")
-    node10.query("SYSTEM STOP MERGES sync_table")
-
-    pool = Pool(5)
-    tasks = []
-    for i in range(5):
-        tasks.append(pool.apply_async(insert_random_data, ('sync_table', node9, 50)))
-
-    time.sleep(5)
-    assert node9.query("SELECT count() FROM sync_table") == "250\n"
-    assert node9.query("SELECT part_type, count() FROM system.parts WHERE table = 'sync_table' AND active GROUP BY part_type") == "InMemory\t5\n"
-
-    for task in tasks:
-        assert not task.ready()
-
-    node9.query("SYSTEM START MERGES sync_table")
-    node10.query("SYSTEM START MERGES sync_table")
-    assert_eq_with_retry(node9, "OPTIMIZE TABLE sync_table FINAL SETTINGS optimize_throw_if_noop = 1", "")
-
-    for task in tasks:
-        task.get()
-
-    assert node9.query("SELECT count() FROM sync_table") == "250\n"
-    assert node9.query("SELECT part_type, count() FROM system.parts WHERE table = 'sync_table' AND active GROUP BY part_type") == "Compact\t1\n"
-
 # Checks that restoring from WAL works after table schema changed
 def test_in_memory_alters(start_cluster):
     def check_parts_type(parts_num):

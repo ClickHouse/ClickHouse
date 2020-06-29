@@ -54,8 +54,8 @@ public:
 private:
     mutable std::condition_variable is_merged;
 
-    /// Compact parts doesn't support per column size, only total size
-    void calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
+    /// Calculates uncompressed sizes in memory.
+    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };
 
 using DataPartInMemoryPtr = std::shared_ptr<const MergeTreeDataPartInMemory>;

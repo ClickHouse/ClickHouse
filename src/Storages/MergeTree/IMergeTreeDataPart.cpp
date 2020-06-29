@@ -903,7 +903,7 @@ void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
     if (getColumns().empty() || checksums.empty())
         throw Exception("Cannot calculate columns sizes when columns or checksums are not initialized", ErrorCodes::LOGICAL_ERROR);
 
-    calculateEachColumnSizesOnDisk(columns_sizes, total_columns_size);
+    calculateEachColumnSizes(columns_sizes, total_columns_size);
 }
 
 ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & /* type */) const

@@ -103,8 +103,7 @@ void MergeTreeDataPartInMemory::renameTo(const String & new_relative_path, bool 
     relative_path = new_relative_path;
 }
 
-/// Calculates uncompressed sizes in memory.
-void MergeTreeDataPartInMemory::calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
+void MergeTreeDataPartInMemory::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
 {
     auto it = checksums.files.find("data.bin");
     if (it != checksums.files.end())
