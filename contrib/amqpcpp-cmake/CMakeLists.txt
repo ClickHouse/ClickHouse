@@ -40,5 +40,5 @@ target_compile_options (amqp-cpp
 
 target_include_directories (amqp-cpp PUBLIC ${LIBRARY_DIR}/include)
 
-target_link_libraries (amqp-cpp PUBLIC libevent ssl)
+target_link_libraries (amqp-cpp PUBLIC ssl)
 
