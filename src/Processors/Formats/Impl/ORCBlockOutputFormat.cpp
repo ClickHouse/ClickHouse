@@ -1,6 +1,6 @@
 #include <Processors/Formats/Impl/ORCBlockOutputFormat.h>
 
-#if USE_ORC && !defined(ARCADIA_BUILD)
+#if USE_ORC
 
 #include <Common/assert_cast.h>
 #include <Formats/FormatFactory.h>

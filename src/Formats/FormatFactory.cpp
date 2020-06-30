@@ -362,6 +362,7 @@ FormatFactory::FormatFactory()
 #if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorCapnProto(*this);
     registerInputFormatProcessorORC(*this);
+    registerOutputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
     registerInputFormatProcessorArrow(*this);
@@ -396,7 +397,6 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorNull(*this);
     registerOutputFormatProcessorMySQLWire(*this);
     registerOutputFormatProcessorMarkdown(*this);
-    registerOutputFormatProcessorORC(*this);
     registerOutputFormatProcessorPostgreSQLWire(*this);
 }
 
