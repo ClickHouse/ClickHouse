@@ -1,6 +1,6 @@
 [submodule "contrib/poco"]
 	path = contrib/poco
-	url = https://github.com/ClickHouse-Extras/poco
+	url = https://github.com/ClickHouse-Extras/poco.git
 	branch = clickhouse
 [submodule "contrib/zstd"]
 	path = contrib/zstd
