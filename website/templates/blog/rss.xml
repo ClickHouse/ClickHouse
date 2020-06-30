@@ -2,7 +2,7 @@
      xmlns:atom="http://www.w3.org/2005/Atom"
      xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
-    <title>{{ _('ClickHouse Blog') }}</title>
+    <title>{{ config.site_name }}</title>
     <link>{{ config.site_url }}</link>
     <atom:link href="{{ config.site_url }}rss.xml" rel="self" type="application/rss+xml" />
     <description></description>
