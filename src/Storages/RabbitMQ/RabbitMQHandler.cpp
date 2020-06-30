@@ -35,7 +35,7 @@ void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * mes
 void RabbitMQHandler::startBackgroundLoop()
 {
     /// stop_loop variable is updated in a separate thread
-    while (!stop_loop)
+    while (!stop_loop.load())
     {
         uv_run(loop, UV_RUN_NOWAIT);
     }

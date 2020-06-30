@@ -34,7 +34,7 @@ static const auto QUEUE_SIZE = 50000; /// Equals capacity of a single rabbitmq q
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
-        HandlerPtr eventHandler_,
+        HandlerPtr event_handler_,
         const String & exchange_name_,
         const Names & routing_keys_,
         const size_t channel_id_,
@@ -47,7 +47,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
         , consumer_channel(std::move(consumer_channel_))
-        , event_handler(eventHandler_)
+        , event_handler(event_handler_)
         , exchange_name(exchange_name_)
         , routing_keys(routing_keys_)
         , channel_id(channel_id_)

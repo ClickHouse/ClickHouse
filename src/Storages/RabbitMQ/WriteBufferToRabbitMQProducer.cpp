@@ -153,9 +153,7 @@ void WriteBufferToRabbitMQProducer::checkExchange()
 {
     std::atomic<bool> exchange_declared = false, exchange_error = false;
 
-    /* The AMQP::passive flag indicates that it should only be checked if there is a valid exchange with the given name
-     * and makes it declared on the current producer_channel.
-     */
+    /// The AMQP::passive flag indicates that it should only be checked if there is a valid exchange with the given name.
     producer_channel->declareExchange(exchange_name, AMQP::direct, AMQP::passive)
     .onSuccess([&]()
     {
@@ -177,6 +175,7 @@ void WriteBufferToRabbitMQProducer::checkExchange()
 
 void WriteBufferToRabbitMQProducer::finilizeProducer()
 {
+    /// This will make sure everything is published
     checkExchange();
 
     if (use_transactional_channel)
