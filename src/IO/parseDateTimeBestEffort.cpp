@@ -349,6 +349,10 @@ ReturnType parseDateTimeBestEffortImpl(
 
 
                     }
+
+                    if (month > 12)
+                        std::swap(month, day_of_month);
+
                     if (checkChar('/', in) || checkChar('.', in) || checkChar('-', in))
                     {
                         if (year)
@@ -537,6 +541,22 @@ ReturnType parseDateTimeBestEffortImpl(
         month = 1;
     if (!day_of_month)
         day_of_month = 1;
+
+    auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
+
+    auto checkDate = [](const auto & is_leap_year_, const auto & month_, const auto & day_)
+    {
+        if ((month_ == 1 || month_ == 3 || month_ == 5 || month_ == 7 || month_ == 8 || month_ == 10 || month_ == 12) && day_ >=1 && day_ <= 31)
+            return true;
+        else if (month_ == 2 && ((is_leap_year_ && day_ >= 1 && day_ <= 29) || (!is_leap_year_ && day_ >= 1 && day_ <= 28)))
+            return true;
+        else if ((month_ == 4 || month_ == 6 || month_ == 9 || month_ == 11) && day_ >= 1 && day_ <= 30)
+            return true;
+        return false;
+    };
+
+    if (!checkDate(is_leap_year, month, day_of_month))
+        return on_error("Cannot read DateTime: logical error, unexpected date: " + std::to_string(year) + "-" + std::to_string(month) + "-" + std::to_string(day_of_month), ErrorCodes::LOGICAL_ERROR);
 
     if (is_pm && hour < 12)
         hour += 12;
