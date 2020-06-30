@@ -637,7 +637,7 @@ bool SelectQueryExpressionAnalyzer::appendPrewhere(
     step.can_remove_required_output.push_back(true);
 
     auto filter_type = step.actions->getSampleBlock().getByName(prewhere_column_name).type;
-    if (!isInteger(filter_type))
+    if (!isInteger(removeNullable(filter_type)))
         throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -728,7 +728,7 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     getRootActions(select_query->where(), only_types, step.actions);
 
     auto filter_type = step.actions->getSampleBlock().getByName(where_column_name).type;
-    if (!isInteger(filter_type))
+    if (!isInteger(removeNullable(filter_type)))
         throw Exception("Invalid type for filter in WHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
