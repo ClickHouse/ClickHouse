@@ -11,10 +11,9 @@ import bs4
 import closure
 import cssmin
 import htmlmin
-import jinja2
 import jsmin
 
-import mdx_clickhouse
+import util
 
 
 def handle_iframe(iframe, soup):
@@ -121,22 +120,7 @@ def minify_html(content):
 
 def build_website(args):
     logging.info('Building website')
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader([
-            args.website_dir,
-            os.path.join(args.docs_dir, '_includes')
-        ]),
-        extensions=[
-            'jinja2.ext.i18n',
-            'jinja2_highlight.HighlightExtension'
-        ]
-    )
-    env.extend(jinja2_highlight_cssclass='syntax p-3 my-3')
-    translations_dir = os.path.join(args.website_dir, 'locale')
-    env.install_gettext_translations(
-        mdx_clickhouse.get_translations(translations_dir, 'en'),
-        newstyle=True
-    )
+    env = util.init_jinja2_env(args)
 
     shutil.copytree(
         args.website_dir,
