@@ -729,7 +729,7 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
 
     auto filter_type = step.actions->getSampleBlock().getByName(where_column_name).type;
     if (!isInteger(filter_type))
-        throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
+        throw Exception("Invalid type for filter in WHERE: " + filter_type->getName(),
                         ErrorCodes::LOGICAL_ERROR);
 
     return true;
