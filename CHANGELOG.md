@@ -346,7 +346,7 @@
 * Fix error `Size of offsets doesn't match size of column` for queries with `PREWHERE column in (subquery)` and `ARRAY JOIN`. [#11580](https://github.com/ClickHouse/ClickHouse/pull/11580) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * All queries in HTTP session have had the same query_id. It is fixed. [#11578](https://github.com/ClickHouse/ClickHouse/pull/11578) ([tavplubix](https://github.com/tavplubix)).
 * Now clickhouse-server docker container will prefer IPv6 checking server aliveness. [#11550](https://github.com/ClickHouse/ClickHouse/pull/11550) ([Ivan Starkov](https://github.com/istarkov)).
-* Fix shard_num/replica_num for <node> (breaks use_compact_format_in_distributed_parts_names). [#11528](https://github.com/ClickHouse/ClickHouse/pull/11528) ([Azat Khuzhin](https://github.com/azat)).
+* Fix shard_num/replica_num for `<node>` (breaks use_compact_format_in_distributed_parts_names). [#11528](https://github.com/ClickHouse/ClickHouse/pull/11528) ([Azat Khuzhin](https://github.com/azat)).
 * Fix memory leak when exception is thrown in the middle of aggregation with -State functions. This fixes [#8995](https://github.com/ClickHouse/ClickHouse/issues/8995). [#11496](https://github.com/ClickHouse/ClickHouse/pull/11496) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Fix wrong results of distributed queries when alias could override qualified column name. Fixes [#9672](https://github.com/ClickHouse/ClickHouse/issues/9672) [#9714](https://github.com/ClickHouse/ClickHouse/issues/9714). [#9972](https://github.com/ClickHouse/ClickHouse/pull/9972) ([Artem Zuikov](https://github.com/4ertus2)).
 
