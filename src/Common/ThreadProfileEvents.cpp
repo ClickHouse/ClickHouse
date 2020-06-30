@@ -188,7 +188,7 @@ static const PerfEventInfo raw_events_info[] = {
 
     CACHE_EVENT(PERF_COUNT_HW_CACHE_DTLB, PerfDataTLBReferences, ACCESS),
     CACHE_EVENT(PERF_COUNT_HW_CACHE_DTLB, PerfDataTLBMisses, MISS),
-    
+
     // Apparently it doesn't make sense to treat these values as relative:
     // https://stackoverflow.com/questions/49933319/how-to-interpret-perf-itlb-loads-itlb-load-misses
     CACHE_EVENT(PERF_COUNT_HW_CACHE_ITLB, PerfInstructionTLBReferences, ACCESS),
