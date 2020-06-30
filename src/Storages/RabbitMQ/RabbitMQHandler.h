@@ -15,7 +15,7 @@ class RabbitMQHandler : public AMQP::LibUvHandler
 {
 
 public:
-    RabbitMQHandler(uv_loop_t * evbase_, Poco::Logger * log_);
+    RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_);
     void onError(AMQP::TcpConnection * connection, const char * message) override;
 
     void stop() { stop_loop.store(true); }

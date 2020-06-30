@@ -37,10 +37,6 @@
 namespace DB
 {
 
-enum
-{
-};
-
 static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 1000;
 static const auto RESCHEDULE_MS = 500;

@@ -63,7 +63,6 @@ private:
 
     ConcurrentBoundedQueue<String> payloads;
     size_t next_queue = 0;
-    UInt64 message_counter = 0;
 
     Poco::Logger * log;
     const std::optional<char> delim;
