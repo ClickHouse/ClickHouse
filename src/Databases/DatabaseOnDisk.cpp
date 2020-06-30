@@ -308,6 +308,27 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
 
 void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const IteratingFunction & iterating_function) const
 {
+    auto process_tmp_drop_metadata_file = [&](const String & file_name)
+    {
+        assert(getEngineName() != "Atomic");
+        static const char * tmp_drop_ext = ".sql.tmp_drop";
+        const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
+        if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
+        {
+            Poco::File(getMetadataPath() + file_name).renameTo(getMetadataPath() + object_name + ".sql");
+            LOG_WARNING(log, "Object " << backQuote(object_name) << " was not dropped previously and will be restored");
+            iterating_function(object_name + ".sql");
+        }
+        else
+        {
+            LOG_INFO(log, "Removing file " << getMetadataPath() << file_name);
+            Poco::File(getMetadataPath() + file_name).remove();
+        }
+    };
+
+    /// Metadata files to load: name and flag for .tmp_drop files
+    std::set<std::pair<String, bool>> metadata_files;
+
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
     {
@@ -323,19 +344,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         if (endsWith(dir_it.name(), tmp_drop_ext))
         {
-            const std::string object_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
-            if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
-            {
-                /// TODO maybe complete table drop and remove all table data (including data on other volumes and metadata in ZK)
-                Poco::File(dir_it->path()).renameTo(getMetadataPath() + object_name + ".sql");
-                LOG_WARNING(log, "Object " << backQuote(object_name) << " was not dropped previously and will be restored");
-                iterating_function(object_name + ".sql");
-            }
-            else
-            {
-                LOG_INFO(log, "Removing file " << dir_it->path());
-                Poco::File(dir_it->path()).remove();
-            }
+            metadata_files.emplace(dir_it.name(), false);
             continue;
         }
 
@@ -350,12 +359,27 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         /// The required files have names like `table_name.sql`
         if (endsWith(dir_it.name(), ".sql"))
         {
-            iterating_function(dir_it.name());
+            /// The required files have names like `table_name.sql`
+            metadata_files.emplace(dir_it.name(), true);
         }
         else
             throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + getMetadataPath(),
                 ErrorCodes::INCORRECT_FILE_NAME);
     }
+
+    /// Read and parse metadata in parallel
+    ThreadPool pool(SettingMaxThreads().getAutoValue());
+    for (const auto & file : metadata_files)
+    {
+        pool.scheduleOrThrowOnError([&]()
+        {
+            if (file.second)
+                iterating_function(file.first);
+            else
+                process_tmp_drop_metadata_file(file.first);
+        });
+    }
+    pool.wait();
 }
 
 ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const Context & context, const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/) const
