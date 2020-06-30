@@ -62,7 +62,7 @@ public:
  * OR
  *      R execute(DateTime64 value, Int64 scale_factor, ... , const TimeZoneImpl &)
  *
- * Wehere R and T could be arbitrary types.
+ * Where R and T could be arbitrary types.
 */
 template <typename Transform>
 class TransformDateTime64 : public Transform

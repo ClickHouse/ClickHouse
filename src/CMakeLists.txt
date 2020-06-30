@@ -159,6 +159,7 @@ add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
+add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
@@ -277,6 +278,7 @@ dbms_target_link_libraries (
         clickhouse_parsers
         lz4
         Poco::JSON
+        Poco::MongoDB
         string_utils
     PUBLIC
         ${MYSQLXX_LIBRARY}
