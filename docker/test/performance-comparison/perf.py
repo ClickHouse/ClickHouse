@@ -66,7 +66,8 @@ for e in root.findall('query'):
     if 'short' in e.attrib:
         new_queries, [is_short] = substitute_parameters([e.text], [[e.attrib['short']]])
         for i, s in enumerate(is_short):
-            if eval(s):
+            # Don't print this if we only need to print the queries.
+            if eval(s) and not args.print_queries:
                 print(f'short\t{i + len(test_queries)}')
     else:
         new_queries = substitute_parameters([e.text])
