@@ -38,6 +38,8 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -387,6 +389,16 @@ StorageGenerateRandom::StorageGenerateRandom(const StorageID & table_id_, const 
     UInt64 max_array_length_, UInt64 max_string_length_, std::optional<UInt64> random_seed_)
     : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
 {
+    static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
+    static constexpr size_t MAX_STRING_SIZE = 1 << 30;
+
+    if (max_array_length > MAX_ARRAY_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in GenerateRandom: {}, maximum: {}",
+                        max_array_length, MAX_ARRAY_SIZE);
+    if (max_string_length > MAX_STRING_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in GenerateRandom: {}, maximum: {}",
+                        max_string_length, MAX_STRING_SIZE);
+
     random_seed = random_seed_ ? sipHash64(*random_seed_) : randomSeed();
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -421,7 +433,6 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
         if (engine_args.size() == 3)
             max_array_length = engine_args[2]->as<const ASTLiteral &>().value.safeGet<UInt64>();
-
 
         return StorageGenerateRandom::create(args.table_id, args.columns, max_array_length, max_string_length, random_seed);
     });

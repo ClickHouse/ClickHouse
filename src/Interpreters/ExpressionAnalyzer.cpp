@@ -453,14 +453,6 @@ const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() cons
     return getSelectQuery();
 }
 
-void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const
-{
-    if (chain.steps.empty())
-    {
-        chain.steps.emplace_back(std::make_shared<ExpressionActions>(columns, context));
-    }
-}
-
 /// "Big" ARRAY JOIN.
 void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool array_join_is_left) const
 {
@@ -487,8 +479,7 @@ bool SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & cha
     if (!array_join_expression_list)
         return false;
 
-    initChain(chain, sourceColumns());
-    ExpressionActionsChain::Step & step = chain.steps.back();
+    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
 
     getRootActions(array_join_expression_list, only_types, step.actions);
 
@@ -502,18 +493,20 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, JoinPtr j
     actions->add(ExpressionAction::ordinaryJoin(syntax->analyzed_join, join));
 }
 
-bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types)
 {
-    const ASTTablesInSelectQueryElement * ast_join = getSelectQuery()->join();
-    if (!ast_join)
-        return false;
-
-    JoinPtr table_join = makeTableJoin(*ast_join);
-
-    initChain(chain, sourceColumns());
-    ExpressionActionsChain::Step & step = chain.steps.back();
+    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
 
     getRootActions(analyzedJoin().leftKeysList(), only_types, step.actions);
+    return true;
+}
+
+bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain)
+{
+    JoinPtr table_join = makeTableJoin(*syntax->ast_join);
+
+    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
+
     addJoinAction(step.actions, table_join);
     return true;
 }
@@ -637,8 +630,7 @@ bool SelectQueryExpressionAnalyzer::appendPrewhere(
     if (!select_query->prewhere())
         return false;
 
-    initChain(chain, sourceColumns());
-    auto & step = chain.getLastStep();
+    auto & step = chain.lastStep(sourceColumns());
     getRootActions(select_query->prewhere(), only_types, step.actions);
     String prewhere_column_name = select_query->prewhere()->getColumnName();
     step.required_output.push_back(prewhere_column_name);
@@ -705,8 +697,7 @@ bool SelectQueryExpressionAnalyzer::appendPrewhere(
 
 void SelectQueryExpressionAnalyzer::appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name)
 {
-    initChain(chain, sourceColumns());
-    ExpressionActionsChain::Step & step = chain.steps.back();
+    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
 
     // FIXME: assert(filter_info);
     step.actions = std::move(actions);
@@ -723,8 +714,7 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     if (!select_query->where())
         return false;
 
-    initChain(chain, sourceColumns());
-    ExpressionActionsChain::Step & step = chain.steps.back();
+    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
 
     step.required_output.push_back(select_query->where()->getColumnName());
     step.can_remove_required_output = {true};
@@ -742,8 +732,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     if (!select_query->groupBy())
         return false;
 
-    initChain(chain, sourceColumns());
-    ExpressionActionsChain::Step & step = chain.steps.back();
+    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
 
     ASTs asts = select_query->groupBy()->children;
     for (const auto & ast : asts)
@@ -769,8 +758,7 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
 {
     const auto * select_query = getAggregatingQuery();
 
-    initChain(chain, sourceColumns());
-    ExpressionActionsChain::Step & step = chain.steps.back();
+    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
 
     for (const auto & desc : aggregate_descriptions)
         for (const auto & name : desc.argument_names)
@@ -801,8 +789,7 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
     if (!select_query->having())
         return false;
 
-    initChain(chain, aggregated_columns);
-    ExpressionActionsChain::Step & step = chain.steps.back();
+    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     step.required_output.push_back(select_query->having()->getColumnName());
     getRootActions(select_query->having(), only_types, step.actions);
@@ -814,8 +801,7 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
 {
     const auto * select_query = getSelectQuery();
 
-    initChain(chain, aggregated_columns);
-    ExpressionActionsChain::Step & step = chain.steps.back();
+    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     getRootActions(select_query->select(), only_types, step.actions);
 
@@ -831,8 +817,7 @@ bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain
     if (!select_query->orderBy())
         return false;
 
-    initChain(chain, aggregated_columns);
-    ExpressionActionsChain::Step & step = chain.steps.back();
+    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     getRootActions(select_query->orderBy(), only_types, step.actions);
 
@@ -864,8 +849,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     if (!select_query->limitBy())
         return false;
 
-    initChain(chain, aggregated_columns);
-    ExpressionActionsChain::Step & step = chain.steps.back();
+    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     getRootActions(select_query->limitBy(), only_types, step.actions);
 
@@ -890,8 +874,7 @@ void SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain &
 {
     const auto * select_query = getSelectQuery();
 
-    initChain(chain, aggregated_columns);
-    ExpressionActionsChain::Step & step = chain.steps.back();
+    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     NamesWithAliases result_columns;
 
@@ -939,8 +922,7 @@ void SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain &
 
 void ExpressionAnalyzer::appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types)
 {
-    initChain(chain, sourceColumns());
-    ExpressionActionsChain::Step & step = chain.steps.back();
+    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
     getRootActions(expr, only_types, step.actions);
     step.required_output.push_back(expr->getColumnName());
 }
@@ -1101,10 +1083,18 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         query_analyzer.appendArrayJoin(chain, only_types || !first_stage);
 
-        if (query_analyzer.appendJoin(chain, only_types || !first_stage))
+        if (query_analyzer.hasTableJoin())
         {
-            before_join = chain.getLastActions();
-            if (!hasJoin())
+            query_analyzer.appendJoinLeftKeys(chain, only_types || !first_stage);
+
+            before_join = chain.getLastActions(true);
+            if (before_join)
+                chain.addStep();
+
+            query_analyzer.appendJoin(chain);
+
+            join = chain.getLastActions();
+            if (!join)
                 throw Exception("No expected JOIN", ErrorCodes::LOGICAL_ERROR);
             chain.addStep();
         }
@@ -1153,11 +1143,11 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         }
 
         bool join_allow_read_in_order = true;
-        if (before_join)
+        if (hasJoin())
         {
             /// You may find it strange but we support read_in_order for HashJoin and do not support for MergeJoin.
-            auto join = before_join->getTableJoinAlgo();
-            join_allow_read_in_order = typeid_cast<HashJoin *>(join.get()) && !join->hasStreamWithNonJoinedRows();
+            auto join_algo = join->getTableJoinAlgo();
+            join_allow_read_in_order = typeid_cast<HashJoin *>(join_algo.get()) && !join_algo->hasStreamWithNonJoinedRows();
         }
 
         optimize_read_in_order =

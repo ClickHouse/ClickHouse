@@ -307,11 +307,11 @@ Logging settings.
 
 Keys:
 
--   level – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
--   log – The log file. Contains all the entries according to `level`.
--   errorlog – Error log file.
--   size – Size of the file. Applies to `log`and`errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
--   count – The number of archived log files that ClickHouse stores.
+-   `level` – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
+-   `log` – The log file. Contains all the entries according to `level`.
+-   `errorlog` – Error log file.
+-   `size` – Size of the file. Applies to `log`and`errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
+-   `count` – The number of archived log files that ClickHouse stores.
 
 **Example**
 
@@ -347,6 +347,30 @@ Keys:
 -   facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the “LOG\_” prefix: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, and so on).
     Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON otherwise.`
 -   format – Message format. Possible values: `bsd` and `syslog.`
+
+## send_crash_reports {#server_configuration_parameters-logger}
+
+Settings for opt-in sending crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
+Enabling it, especially in pre-production environments, is greatly appreciated.
+
+The server will need an access to public Internet via IPv4 (at the time of writing IPv6 is not supported by Sentry) for this feature to be functioning properly.
+
+Keys:
+
+-   `enabled` – Boolean flag to enable the feature. Set to `true` to allow sending crash reports.
+-   `endpoint` – Overrides the Sentry endpoint.
+-   `anonymize` - Avoid attaching the server hostname to crash report.
+-   `http_proxy` - Configure HTTP proxy for sending crash reports.
+-   `debug` - Sets the Sentry client into debug mode.
+-   `tmp_path` - Filesystem path for temporary crash report state.
+
+**Recommended way to use**
+
+``` xml
+<send_crash_reports>
+    <enabled>true</enabled>
+</send_crash_reports>
+```
 
 ## macros {#macros}
 
