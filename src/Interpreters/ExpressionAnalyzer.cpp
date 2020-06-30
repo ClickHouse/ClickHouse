@@ -636,6 +636,11 @@ bool SelectQueryExpressionAnalyzer::appendPrewhere(
     step.required_output.push_back(prewhere_column_name);
     step.can_remove_required_output.push_back(true);
 
+    auto filter_type = step.actions->getSampleBlock().getByName(prewhere_column_name).type;
+    if (!isInteger(filter_type))
+        throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
+                        ErrorCodes::LOGICAL_ERROR);
+
     {
         /// Remove unused source_columns from prewhere actions.
         auto tmp_actions = std::make_shared<ExpressionActions>(sourceColumns(), context);
@@ -716,10 +721,16 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
 
     ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
 
-    step.required_output.push_back(select_query->where()->getColumnName());
+    auto where_column_name = select_query->where()->getColumnName();
+    step.required_output.push_back(where_column_name);
     step.can_remove_required_output = {true};
 
     getRootActions(select_query->where(), only_types, step.actions);
+
+    auto filter_type = step.actions->getSampleBlock().getByName(where_column_name).type;
+    if (!isInteger(filter_type))
+        throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
+                        ErrorCodes::LOGICAL_ERROR);
 
     return true;
 }
