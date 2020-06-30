@@ -165,11 +165,18 @@ def test_show_profiles():
 
 
 def test_allow_introspection():
+    assert "Introspection functions are disabled" in instance.query_and_get_error("SELECT demangle('a')")
     assert "Not enough privileges" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
-    
-    instance.query("GRANT ALL ON *.* TO robin")
-    assert "Introspection functions are disabled" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
+    assert "Not enough privileges" in instance.query_and_get_error("SELECT demangle('a')", user="robin", settings={"allow_introspection_functions":1})
 
+    assert "Introspection functions are disabled" in instance.query_and_get_error("GRANT demangle ON *.* TO robin")
+    assert "Not enough privileges" in instance.query_and_get_error("GRANT demangle ON *.* TO robin", user="robin")
+    assert "Not enough privileges" in instance.query_and_get_error("GRANT demangle ON *.* TO robin", user="robin", settings={"allow_introspection_functions":1})
+
+    assert instance.query("SELECT demangle('a')", settings={"allow_introspection_functions":1}) == "signed char\n"
+    instance.query("GRANT demangle ON *.* TO robin", settings={"allow_introspection_functions":1})
+
+    assert "Introspection functions are disabled" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
     instance.query("ALTER USER robin SETTINGS allow_introspection_functions=1")
     assert instance.query("SELECT demangle('a')", user="robin") == "signed char\n"
 
@@ -182,5 +189,5 @@ def test_allow_introspection():
     instance.query("DROP SETTINGS PROFILE xyz")
     assert "Introspection functions are disabled" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
 
-    instance.query("REVOKE ALL ON *.* FROM robin")
+    instance.query("REVOKE demangle ON *.* FROM robin", settings={"allow_introspection_functions":1})
     assert "Not enough privileges" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
