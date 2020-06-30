@@ -50,6 +50,13 @@ def bootstrap():
             currentDatabase(),
             data)
         """.format())
+        n.query("""
+        CREATE TABLE dist_priority_negative AS data
+        Engine=Distributed(
+            replicas_priority_negative_cluster,
+            currentDatabase(),
+            data)
+        """.format())
 
 def make_uuid():
     return uuid.uuid4().hex
@@ -134,10 +141,14 @@ def test_load_balancing_round_robin():
     assert len(unique_nodes) == nodes, unique_nodes
     assert unique_nodes == set(['n1', 'n2', 'n3'])
 
-def test_load_balancing_priority_round_robin():
+@pytest.mark.parametrize('dist_table', [
+    ('dist_priority'),
+    ('dist_priority_negative'),
+])
+def test_load_balancing_priority_round_robin(dist_table):
     unique_nodes = set()
     for _ in range(0, nodes):
-        unique_nodes.add(get_node(n1, 'dist_priority', settings={'load_balancing': 'round_robin'}))
+        unique_nodes.add(get_node(n1, dist_table, settings={'load_balancing': 'round_robin'}))
     assert len(unique_nodes) == 2, unique_nodes
     # n2 has bigger priority in config
     assert unique_nodes == set(['n1', 'n3'])
