@@ -4,6 +4,7 @@
 namespace DB
 {
 
+/// Step which takes empty pipeline and initializes it. Returns single logical DataStream.
 class ISourceStep : public IQueryPlanStep
 {
 public:
