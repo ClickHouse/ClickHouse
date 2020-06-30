@@ -33,7 +33,7 @@ private:
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
     /// State of port's pair.
-    /// Chunks from different port pairs are not mixed for berret cache locality.
+    /// Chunks from different port pairs are not mixed for better cache locality.
     struct PortsData
     {
         Chunk current_chunk;

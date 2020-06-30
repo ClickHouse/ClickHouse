@@ -43,6 +43,8 @@ void registerStorageJDBC(StorageFactory & factory);
 void registerStorageMySQL(StorageFactory & factory);
 #endif
 
+void registerStorageMongoDB(StorageFactory & factory);
+
 #if USE_RDKAFKA
 void registerStorageKafka(StorageFactory & factory);
 #endif

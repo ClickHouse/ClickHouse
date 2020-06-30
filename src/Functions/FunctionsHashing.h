@@ -349,7 +349,7 @@ struct MurmurHash3Impl128
 
 /// http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
 /// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
-///  but obtain the same result as it is done in singed integers with two's complement arithmetic.
+///  but obtain the same result as it is done in signed integers with two's complement arithmetic.
 struct JavaHashImpl
 {
     static constexpr auto name = "javaHash";
