@@ -618,16 +618,44 @@ bool KeyCondition::tryPrepareSetIndex(
     const ASTPtr & right_arg = args[1];
 
     PreparedSetKey set_key;
+    SetPtr prepared_set;
     if (right_arg->as<ASTSubquery>() || right_arg->as<ASTIdentifier>())
+    {
         set_key = PreparedSetKey::forSubquery(*right_arg);
+
+        auto set_it = prepared_sets.find(set_key);
+        if (set_it == prepared_sets.end())
+            return false;
+
+        prepared_set = set_it->second;
+    }
     else
-        set_key = PreparedSetKey::forLiteral(*right_arg, data_types);
+    {
+        auto set_it = std::find_if(
+            prepared_sets.begin(),
+           prepared_sets.end(),
+           [&](const auto &e)
+            {
+                if (e.first.ast_hash == right_arg->getTreeHash())
+                {
+                    for (size_t i = 0; i < data_types.size(); i++)
+                    {
+                        if (!recursiveRemoveLowCardinality(data_types[i])->equals(*e.first.types[indexes_mapping[i].tuple_index]))
+                        {
+                            return false;
+                        }
+                    }
 
-    auto set_it = prepared_sets.find(set_key);
-    if (set_it == prepared_sets.end())
-        return false;
+                    return true;
+                }
 
-    const SetPtr & prepared_set = set_it->second;
+                return false;
+        });
+        if (set_it == prepared_sets.end())
+            return false;
+
+        prepared_set = set_it->second;
+    }
 
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())
