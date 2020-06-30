@@ -4,6 +4,8 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
+#include "ANTLRInputStream.h"
+
 namespace DB
 {
 
@@ -21,7 +23,7 @@ antlrcpp::Any ParserTreeVisitor::visitQueryList(ClickHouseParser::QueryListConte
 
 antlrcpp::Any ParserTreeVisitor::visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *ctx)
 {
-    ASTPtr select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+    auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
     select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
 
     for (auto * stmt : ctx->selectStmt())
@@ -36,7 +38,7 @@ antlrcpp::Any ParserTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtCon
 {
     using Expression = ASTSelectQuery::Expression;
 
-    std::shared_ptr<ASTSelectQuery> select_stmt = std::make_shared<ASTSelectQuery>();
+    auto select_stmt = std::make_shared<ASTSelectQuery>();
 
     select_stmt->setExpression(Expression::WITH, ctx->withClause()->accept(this));
     select_stmt->setExpression(Expression::TABLES, ctx->fromClause()->accept(this));
@@ -52,6 +54,13 @@ antlrcpp::Any ParserTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtCon
     select_stmt->setExpression(Expression::SETTINGS, ctx->settingsClause()->accept(this));
 
     return select_stmt;
+}
+
+ASTPtr parseQuery(const String & query)
+{
+    antlrcpp::ANTLRInputStream input(query);
+    ParserTreeVisitor visitor;
+
 }
 
 }

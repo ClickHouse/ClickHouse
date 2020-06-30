@@ -19,8 +19,7 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ParserQuery.h>
-#include <Parsers/parseQuery.h>
+#include <ParsersNew/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/Lexer.h>
@@ -237,8 +236,7 @@ static void setQuerySpecificSettings(ASTPtr & ast, Context & context)
 }
 
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
-    const char * begin,
-    const char * end,
+    const String & query,
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage,
@@ -257,7 +255,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     const Settings & settings = context.getSettingsRef();
 
-    ParserQuery parser(end, settings.enable_debug_queries);
     ASTPtr ast;
     const char * query_end;
 
@@ -268,8 +265,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     try
     {
-        /// TODO Parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+        /// TODO: Parser should fail early when max_query_size limit is reached.
+        ast = parseQuery(query);
 
         auto * insert_query = ast->as<ASTInsertQuery>();
 
