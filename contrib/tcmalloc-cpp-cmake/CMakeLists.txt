@@ -98,9 +98,9 @@ if (${ENABLE_TCMALLOC_CPP})
     # for RSEQ (restartable sequences) support
     # define that we have __thread support
     list (APPEND DEFINITIONS -D_GLIBCXX_HAVE_TLS)
-    # increase number of size classes
-    # (although it does not changes allocator-perf time, let's keep it for now)
-    list (APPEND DEFINITIONS -DTCMALLOC_256K_PAGES)
+    # increase number of size classes and maximum allocation size that can be
+    # satisfied by front-end (i.e. lock-free).
+    list (APPEND DEFINITIONS -DTCMALLOC_4M_MAX_SIZE)
 
     # XXX: disable new/delete overrides
     #
