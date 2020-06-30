@@ -89,7 +89,7 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
                 num_rows_to_insert = 1;
         }
 
-        /// Insert ready roes if any.
+        /// Insert ready rows if any.
         while (num_rows_to_insert)
         {
             const auto & row = current_keys.front();

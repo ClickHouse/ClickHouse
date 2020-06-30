@@ -7,6 +7,7 @@ import csv
 import itertools
 import json
 import os
+import os.path
 import pprint
 import sys
 import traceback
@@ -330,6 +331,9 @@ if args.report == 'main':
     print_test_times()
 
     def print_benchmark_results():
+        if not os.path.isfile('benchmark/website-left.json'):
+            return
+
         json_reports = [json.load(open(f'benchmark/website-{x}.json')) for x in ['left', 'right']]
         stats = [next(iter(x.values()))["statistics"] for x in json_reports]
         qps = [x["QPS"] for x in stats]
