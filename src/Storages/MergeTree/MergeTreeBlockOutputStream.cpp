@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TIMEOUT_EXCEEDED;
-}
-
 Block MergeTreeBlockOutputStream::getHeader() const
 {
     return metadata_snapshot->getSampleBlock();
