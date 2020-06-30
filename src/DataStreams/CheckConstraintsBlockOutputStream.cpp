@@ -59,8 +59,6 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
                 /// Is violated.
                 if (!value)
                 {
-                    Names related_columns = constraint_expr->getRequiredColumns();
-
                     std::stringstream exception_message;
 
                     exception_message << "Constraint " << backQuote(constraint_ptr->name)
