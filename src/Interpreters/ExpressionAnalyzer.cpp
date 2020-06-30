@@ -639,7 +639,7 @@ bool SelectQueryExpressionAnalyzer::appendPrewhere(
     auto filter_type = step.actions->getSampleBlock().getByName(prewhere_column_name).type;
     if (!isInteger(filter_type))
         throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
-                        ErrorCodes::LOGICAL_ERROR);
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     {
         /// Remove unused source_columns from prewhere actions.
@@ -730,7 +730,7 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     auto filter_type = step.actions->getSampleBlock().getByName(where_column_name).type;
     if (!isInteger(filter_type))
         throw Exception("Invalid type for filter in WHERE: " + filter_type->getName(),
-                        ErrorCodes::LOGICAL_ERROR);
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return true;
 }
