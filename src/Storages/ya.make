@@ -3,6 +3,7 @@ LIBRARY()
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/sparsehash
+    contrib/libs/poco/MongoDB
 )
 
 SRCS(
@@ -179,6 +180,7 @@ SRCS(
     TTLDescription.cpp
     KeyDescription.cpp
     SelectQueryDescription.cpp
+    StorageMongoDB.cpp
 )
 
 END()
