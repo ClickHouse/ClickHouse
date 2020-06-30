@@ -6,6 +6,7 @@
 #include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -14,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 
@@ -316,13 +318,20 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
             prewhere_info->alias_actions->execute(block);
 
         prewhere_info->prewhere_actions->execute(block);
+
+        auto & ctn = block.getByName(prewhere_info->prewhere_column_name);
+        if (!WhichDataType(ctn.type).isUInt8())
+        {
+            const auto * nullable = typeid_cast<const DataTypeNullable *>(ctn.type.get());
+            if (!nullable || !WhichDataType(nullable->getNestedType()).isUInt8())
+                throw Exception("Illegal type " + ctn.type->getName() + " of column " + ctn.name
+                    + " for filter in PREWHERE. Must be UInt8 or Nullable(UInt8).", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+        }
+
         if (prewhere_info->remove_prewhere_column)
             block.erase(prewhere_info->prewhere_column_name);
         else
-        {
-            auto & ctn = block.getByName(prewhere_info->prewhere_column_name);
             ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
-        }
 
         if (!block)
             block.insert({nullptr, std::make_shared<DataTypeNothing>(), "_nothing"});
