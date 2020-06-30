@@ -27,6 +27,7 @@
                 <replica>
                     <host>n2</host>
                     <port>9000</port>
+                    <!-- will not be quieried, if n1 and n3 has errors_count == 0 -->
                     <!-- <priority>1</priority> -->
                 </replica>
                 <replica>
@@ -36,6 +37,27 @@
                 </replica>
             </shard>
         </replicas_priority_cluster>
+
+        <replicas_priority_negative_cluster>
+            <shard>
+                <replica>
+                    <host>n1</host>
+                    <port>9000</port>
+                    <priority>-1</priority>
+                </replica>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                    <!-- will not be quieried, if n1 and n3 has errors_count == 0 -->
+                    <priority>0</priority>
+                </replica>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                    <priority>-1</priority>
+                </replica>
+            </shard>
+        </replicas_priority_negative_cluster>
 
         <!-- For JOIN with system.clusters -->
         <shards_cluster>
