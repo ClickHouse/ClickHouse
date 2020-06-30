@@ -41,6 +41,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/PODArray.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
@@ -663,7 +664,14 @@ private:
         else
         {
             query_id = config().getString("query_id", "");
-            nonInteractive();
+            if (query_fuzzer_runs)
+            {
+                nonInteractiveWithFuzzing();
+            }
+            else
+            {
+                nonInteractive();
+            }
 
             /// If exception code isn't zero, we should return non-zero return code anyway.
             if (last_exception_received_from_server)
@@ -763,6 +771,68 @@ private:
         }
 
         processQueryText(text);
+    }
+
+    void nonInteractiveWithFuzzing()
+    {
+        if (config().has("query"))
+        {
+            // Poco configuration should not process substitutions in form of
+            // ${...} inside query
+            processWithFuzzing(config().getRawString("query"));
+            return;
+        }
+
+        /// If 'query' parameter is not set, read a query from stdin.
+        /// The query is read entirely into memory (streaming is disabled).
+        ReadBufferFromFileDescriptor in(STDIN_FILENO);
+        std::string text;
+        while (!in.eof())
+        {
+            readStringInto(text, in);
+            // Append the separator as well
+            if (!in.eof())
+            {
+                text.append(1, *in.position());
+                ++in.position();
+            }
+
+            fprintf(stderr, "will now parse '%s'\n", text.c_str());
+
+            const auto new_end = processWithFuzzing(text);
+
+            if (new_end > &text[0])
+            {
+                const auto rest_size = text.size() - (new_end - &text[0]);
+
+                fprintf(stderr, "total %zd, rest %zd\n", text.size(), rest_size);
+
+                memcpy(&text[0], new_end, rest_size);
+                text.resize(rest_size);
+            }
+            else
+            {
+                fprintf(stderr, "total %zd, can't parse\n", text.size());
+            }
+
+            if (!connection->isConnected())
+            {
+                // Uh-oh...
+                std::cerr << "Lost connection to the server." << std::endl;
+                last_exception_received_from_server.reset(new Exception(210, "~"));
+                return;
+            }
+
+            if (text.size() > 1024 * 1024)
+            {
+                // Some pathological situation where the text is larger than 1MB
+                // and we still cannot parse a single query in it. Abort.
+                std::cerr << "Read too much text and still can't parse a query."
+                     " Aborting." << std::endl;
+                last_exception_received_from_server.reset(new Exception(1, "~"));
+                return;
+            }
+        }
     }
 
     bool processQueryText(const String & text)
@@ -881,8 +951,8 @@ private:
     }
 
 
-    // Returns whether we can continue.
-    bool processWithFuzzing(const String & text)
+    // Returns the last position we could parse.
+    const char * processWithFuzzing(const String & text)
     {
         /// Several queries separated by ';'.
         /// INSERT data is ended by the end of line, not ';'.
@@ -904,7 +974,7 @@ private:
             if (!orig_ast)
             {
                 // Can't continue after a parsing error
-                return false;
+                return begin;
             }
 
             auto as_insert = orig_ast->as<ASTInsertQuery>();
@@ -972,7 +1042,7 @@ private:
             }
         }
 
-        return true;
+        return end;
     }
 
     void processTextAsSingleQuery(const String & text_)
@@ -2153,8 +2223,13 @@ public:
 
         if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
         {
-            // Fuzzer implies multiquery
+            // Fuzzer implies multiquery.
             config().setBool("multiquery", true);
+
+            // Ignore errors in parsing queries.
+            // TODO stop using parseQuery.
+            config().setBool("ignore-error", true);
+            ignore_error = true;
         }
 
         argsToConfig(common_arguments, config(), 100);
@@ -2164,9 +2239,6 @@ public:
 };
 
 }
-
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 using signal_function = void(int, siginfo_t*, void*);
 
@@ -2210,12 +2282,16 @@ static void signalHandler(int sig, siginfo_t * /*info*/, void * context)
     raise(sig);
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
     try
     {
         add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE,
             SIGPIPE}, signalHandler);
+
         DB::Client client;
         client.init(argc, argv);
         return client.run();
