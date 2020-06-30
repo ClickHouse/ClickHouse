@@ -150,14 +150,14 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
     {
         if constexpr (result_is_nullable)
         {
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
-                nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn());
+                nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
                 to_concrete.getNullMapData().push_back(0);
             }
             else
@@ -167,7 +167,7 @@ public:
         }
         else
         {
-            nested_function->insertResultInto(nestedPlace(place), to);
+            nested_function->insertResultInto(nestedPlace(place), to, arena);
         }
     }
 

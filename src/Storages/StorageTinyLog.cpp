@@ -109,8 +109,8 @@ private:
 class TinyLogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit TinyLogBlockOutputStream(StorageTinyLog & storage_)
-        : storage(storage_), lock(storage_.rwlock)
+    explicit TinyLogBlockOutputStream(StorageTinyLog & storage_, const StorageMetadataPtr & metadata_snapshot_)
+        : storage(storage_), metadata_snapshot(metadata_snapshot_), lock(storage_.rwlock)
     {
     }
 
@@ -126,13 +126,14 @@ public:
         }
     }
 
-    Block getHeader() const override { return storage.getSampleBlock(); }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
     void write(const Block & block) override;
     void writeSuffix() override;
 
 private:
     StorageTinyLog & storage;
+    StorageMetadataPtr metadata_snapshot;
     std::unique_lock<std::shared_mutex> lock;
     bool done = false;
 
@@ -236,8 +237,9 @@ void TinyLogSource::readData(const String & name, const IDataType & type, IColum
 }
 
 
-IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(const String & name,
-                                                                           WrittenStreams & written_streams)
+IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(
+    const String & name,
+    WrittenStreams & written_streams)
 {
     return [&] (const IDataType::SubstreamPath & path) -> WriteBuffer *
     {
@@ -246,12 +248,13 @@ IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(const
         if (!written_streams.insert(stream_name).second)
             return nullptr;
 
-        const auto & columns = storage.getColumns();
+        const auto & columns = metadata_snapshot->getColumns();
         if (!streams.count(stream_name))
-            streams[stream_name] = std::make_unique<Stream>(storage.disk,
-                                                            storage.files[stream_name].data_file_path,
-                                                            columns.getCodecOrDefault(name),
-                                                            storage.max_compress_block_size);
+            streams[stream_name] = std::make_unique<Stream>(
+                storage.disk,
+                storage.files[stream_name].data_file_path,
+                columns.getCodecOrDefault(name),
+                storage.max_compress_block_size);
 
         return &streams[stream_name]->compressed;
     };
@@ -308,7 +311,7 @@ void TinyLogBlockOutputStream::writeSuffix()
 
 void TinyLogBlockOutputStream::write(const Block & block)
 {
-    storage.check(block, true);
+    metadata_snapshot->check(block, true);
 
     /// The set of written offset columns so that you do not write shared columns for nested structures multiple times
     WrittenStreams written_streams;
@@ -336,8 +339,10 @@ StorageTinyLog::StorageTinyLog(
     , file_checker(disk, table_path + "sizes.json")
     , log(&Poco::Logger::get("StorageTinyLog"))
 {
-    setColumns(columns_);
-    setConstraints(constraints_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
@@ -348,7 +353,7 @@ StorageTinyLog::StorageTinyLog(
         disk->createDirectories(table_path);
     }
 
-    for (const auto & col : getColumns().getAllPhysical())
+    for (const auto & col : storage_metadata.getColumns().getAllPhysical())
         addFiles(col.name, *col.type);
 }
 
@@ -392,29 +397,29 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const Storage
 
 Pipes StorageTinyLog::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
-    check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     Pipes pipes;
 
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
     pipes.emplace_back(std::make_shared<TinyLogSource>(
-        max_block_size, Nested::collect(getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
+        max_block_size, Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
 
     return pipes;
 }
 
 
-BlockOutputStreamPtr StorageTinyLog::write(
-    const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageTinyLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
-    return std::make_shared<TinyLogBlockOutputStream>(*this);
+    return std::make_shared<TinyLogBlockOutputStream>(*this, metadata_snapshot);
 }
 
 
@@ -424,7 +429,8 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context
     return file_checker.check();
 }
 
-void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageTinyLog::truncate(
+    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -433,7 +439,7 @@ void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWri
     files.clear();
     file_checker = FileChecker{disk, table_path + "sizes.json"};
 
-    for (const auto &column : getColumns().getAllPhysical())
+    for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 }
 

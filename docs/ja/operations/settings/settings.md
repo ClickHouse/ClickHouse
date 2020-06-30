@@ -1048,17 +1048,6 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 
 デフォルト値:0
 
-## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
-
-リセット [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) 入れ子の場合 `Distributed` テーブル
-
-可能な値:
-
--   1 — Enabled.
--   0 — Disabled.
-
-デフォルト値は0です。
-
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
 例外のスローを有効または無効にします。 [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) クエリがマージを実行しませんでした。

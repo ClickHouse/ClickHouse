@@ -1,5 +1,6 @@
 import collections
 import datetime
+import hashlib
 import logging
 import os
 
@@ -39,13 +40,17 @@ def build_nav_entry(root, args):
                 title = meta.get('toc_folder_title', 'hidden')
             prio = meta.get('toc_priority', 9999)
             logging.debug(f'Nav entry: {prio}, {title}, {path}')
-            if not content.strip():
+            if meta.get('toc_hidden') or not content.strip():
                 title = 'hidden'
+            if title == 'hidden':
+                title = 'hidden-' + hashlib.sha1(content.encode('utf-8')).hexdigest()
             if args.nav_limit and len(result_items) >= args.nav_limit:
                 break
             result_items.append((prio, title, path))
     result_items = sorted(result_items, key=lambda x: (x[0], x[1]))
     result = collections.OrderedDict([(item[1], item[2]) for item in result_items])
+    if index_meta.get('toc_hidden_folder'):
+        current_title += '|hidden-folder'
     return index_meta.get('toc_priority', 10000), current_title, result
 
 

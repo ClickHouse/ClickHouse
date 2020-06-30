@@ -92,6 +92,7 @@ SRCS(
     array/emptyArrayToSingle.cpp
     array/hasAll.cpp
     array/hasAny.cpp
+    array/hasSubstr.cpp
     array/has.cpp
     array/indexOf.cpp
     array/length.cpp
@@ -122,6 +123,7 @@ SRCS(
     blockNumber.cpp
     blockSerializedSize.cpp
     blockSize.cpp
+    buildId.cpp
     caseWithExpression.cpp
     cbrt.cpp
     coalesce.cpp
@@ -200,6 +202,7 @@ SRCS(
     getMacro.cpp
     getScalar.cpp
     getSizeOfEnumType.cpp
+    globalVariable.cpp
     greatCircleDistance.cpp
     greater.cpp
     greaterOrEquals.cpp
@@ -363,6 +366,7 @@ SRCS(
     subtractYears.cpp
     tan.cpp
     tanh.cpp
+    TargetSpecific.cpp
     tgamma.cpp
     throwIf.cpp
     timeSlot.cpp
@@ -374,6 +378,7 @@ SRCS(
     toDayOfMonth.cpp
     toDayOfWeek.cpp
     toDayOfYear.cpp
+    toFixedString.cpp
     toHour.cpp
     toISOWeek.cpp
     toISOYear.cpp
