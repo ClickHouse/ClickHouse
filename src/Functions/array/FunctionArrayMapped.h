@@ -73,7 +73,7 @@ public:
             if (!array_type)
                 throw Exception("Argument " + toString(i + 2) + " of function " + getName() + " must be array. Found "
                                 + arguments[i + 1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            nested_types[i] = removeLowCardinality(array_type->getNestedType());
+            nested_types[i] = array_type->getNestedType();
         }
 
         const DataTypeFunction * function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].get());
@@ -191,8 +191,6 @@ public:
                     if (!column_const_array)
                         throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                     column_array_ptr = column_const_array->convertToFullColumn();
-                    if (column_array_ptr->lowCardinality())
-                        column_array_ptr = column_array_ptr->convertToFullColumnIfLowCardinality();
                     column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
                 }
 
@@ -218,7 +216,7 @@ public:
                 }
 
                 arrays.emplace_back(ColumnWithTypeAndName(column_array->getDataPtr(),
-                                                          removeLowCardinality(array_type->getNestedType()),
+                                                          array_type->getNestedType(),
                                                           array_with_type_and_name.name));
             }
 
