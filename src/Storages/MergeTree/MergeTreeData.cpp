@@ -930,12 +930,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
     }
 
-    if (settings->in_memory_parts_enable_wal && !write_ahead_log)
-    {
-        auto reservation = reserveSpace(settings->write_ahead_log_max_bytes);
-        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, reservation->getDisk());
-    }
-
     calculateColumnSizesImpl();
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
@@ -1851,8 +1845,8 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
         if (part->state != IMergeTreeDataPart::State::Outdated)
             modifyPartState(part, IMergeTreeDataPart::State::Outdated);
 
-        if (isInMemoryPart(part) && write_ahead_log)
-            write_ahead_log->dropPart(part->name);
+        if (isInMemoryPart(part) && getSettings()->in_memory_parts_enable_wal)
+            getWriteAheadLog()->dropPart(part->name);
     }
 }
 
@@ -3513,8 +3507,15 @@ MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const 
     return result;
 }
 
-MergeTreeData::WriteAheadLogPtr MergeTreeData::getWriteAheadLog() const
+MergeTreeData::WriteAheadLogPtr MergeTreeData::getWriteAheadLog()
 {
+    std::lock_guard lock(write_ahead_log_mutex);
+    if (!write_ahead_log)
+    {
+        auto reservation = reserveSpace(getSettings()->write_ahead_log_max_bytes);
+        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, reservation->getDisk());
+    }
+
     return write_ahead_log;
 }
 

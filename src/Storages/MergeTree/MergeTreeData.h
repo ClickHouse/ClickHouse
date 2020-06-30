@@ -641,7 +641,7 @@ public:
     bool isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const;
 
     using WriteAheadLogPtr = std::shared_ptr<MergeTreeWriteAheadLog>;
-    WriteAheadLogPtr getWriteAheadLog() const;
+    WriteAheadLogPtr getWriteAheadLog();
 
     MergeTreeDataFormatVersion format_version;
 
@@ -904,6 +904,7 @@ private:
 
     bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason = nullptr) const;
 
+    std::mutex write_ahead_log_mutex;
     WriteAheadLogPtr write_ahead_log;
 };
 
