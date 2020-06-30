@@ -362,6 +362,7 @@ include (cmake/find/orc.cmake)
 include (cmake/find/avro.cmake)
 include (cmake/find/msgpack.cmake)
 include (cmake/find/cassandra.cmake)
+include (cmake/find/sentry.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)

@@ -1097,7 +1097,7 @@ const char * ParserAlias::restricted_keywords[] =
     "ASOF",
     "SEMI",
     "ANTI",
-    "ONLY", /// YQL synonym for ANTI
+    "ONLY", /// YQL synonim for ANTI. Note: YQL is the name of one of Yandex proprietary languages, completely unrelated to ClickHouse.
     "ON",
     "USING",
     "PREWHERE",
@@ -1270,6 +1270,20 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     String name(pos->begin, pos->end);
     ++pos;
 
+    /// SELECT @@session|global.variable style
+    if (pos->type == TokenType::Dot)
+    {
+        ++pos;
+
+        if (pos->type != TokenType::BareWord)
+        {
+            expected.add(pos, "variable name");
+            return false;
+        }
+        name = String(pos->begin, pos->end);
+        ++pos;
+    }
+
     auto name_literal = std::make_shared<ASTLiteral>(name);
 
     auto expr_list_args = std::make_shared<ASTExpressionList>();
@@ -1281,6 +1295,7 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     function_node->children.push_back(expr_list_args);
 
     node = function_node;
+    node->setAlias("@@" + name);
     return true;
 }
 

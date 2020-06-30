@@ -550,6 +550,9 @@ public:
     /// Gathers all changed values (e.g. for applying them later to another collection of settings).
     SettingsChanges changes() const;
 
+    // A debugging aid.
+    std::string dumpChangesToString() const;
+
     /// Applies change to concrete setting.
     void applyChange(const SettingChange & change);
 
