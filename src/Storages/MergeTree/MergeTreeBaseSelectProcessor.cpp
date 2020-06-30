@@ -6,6 +6,7 @@
 #include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -318,7 +319,7 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
         prewhere_info->prewhere_actions->execute(block);
         auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
 
-        if (!isInteger(prewhere_column.type))
+        if (!isInteger(removeNullable(prewhere_column.type)))
             throw Exception("Invalid type for filter in PREWHERE: " + prewhere_column.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
 
