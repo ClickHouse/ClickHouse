@@ -50,10 +50,10 @@ def adjust_markdown_html(content):
 
     for a in soup.find_all('a'):
         a_class = a.attrs.get('class')
-        a_src = a.attrs.get('src')
+        a_href = a.attrs.get('href')
         if a_class and 'headerlink' in a_class:
             a.string = '\xa0'
-        if a_src.startswith('http'):
+        if a_href and a_href.startswith('http'):
             a.attrs['target'] = '_blank'
 
     for iframe in soup.find_all('iframe'):
