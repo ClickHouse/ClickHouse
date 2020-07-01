@@ -57,7 +57,6 @@ See also the description of [max\_memory\_usage](#settings_max_memory_usage).
 ## max\_rows\_to\_read {#max-rows-to-read}
 
 The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
-When running a query in multiple threads, the following restrictions apply to each thread separately.
 
 A maximum number of rows that can be read from a table when running a query.
 
