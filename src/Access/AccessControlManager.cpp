@@ -40,27 +40,8 @@ class AccessControlManager::ContextAccessCache
 public:
     explicit ContextAccessCache(const AccessControlManager & manager_) : manager(manager_) {}
 
-    std::shared_ptr<const ContextAccess> getContextAccess(
-        const UUID & user_id,
-        const boost::container::flat_set<UUID> & current_roles,
-        bool use_default_roles,
-        const Settings & settings,
-        const String & current_database,
-        const ClientInfo & client_info)
+    std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params)
     {
-        ContextAccess::Params params;
-        params.user_id = user_id;
-        params.current_roles = current_roles;
-        params.use_default_roles = use_default_roles;
-        params.current_database = current_database;
-        params.readonly = settings.readonly;
-        params.allow_ddl = settings.allow_ddl;
-        params.allow_introspection = settings.allow_introspection_functions;
-        params.interface = client_info.interface;
-        params.http_method = client_info.http_method;
-        params.address = client_info.current_address.host();
-        params.quota_key = client_info.quota_key;
-
         std::lock_guard lock{mutex};
         auto x = cache.get(params);
         if (x)
@@ -119,7 +100,25 @@ std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
     const String & current_database,
     const ClientInfo & client_info) const
 {
-    return context_access_cache->getContextAccess(user_id, current_roles, use_default_roles, settings, current_database, client_info);
+    ContextAccessParams params;
+    params.user_id = user_id;
+    params.current_roles = current_roles;
+    params.use_default_roles = use_default_roles;
+    params.current_database = current_database;
+    params.readonly = settings.readonly;
+    params.allow_ddl = settings.allow_ddl;
+    params.allow_introspection = settings.allow_introspection_functions;
+    params.interface = client_info.interface;
+    params.http_method = client_info.http_method;
+    params.address = client_info.current_address.host();
+    params.quota_key = client_info.quota_key;
+    return getContextAccess(params);
+}
+
+
+std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(const ContextAccessParams & params) const
+{
+    return context_access_cache->getContextAccess(params);
 }
 
 
