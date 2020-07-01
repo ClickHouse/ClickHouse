@@ -25,7 +25,7 @@ ENV PKG_VERSION="pvs-studio-7.08.39365.50-amd64.deb"
 RUN wget "https://files.viva64.com/$PKG_VERSION"
 RUN sudo dpkg -i "$PKG_VERSION"
 
-CMD echo "Hello world" && cd /repo_folder && pvs-studio-analyzer credentials $LICENCE_NAME $LICENCE_KEY -o ./licence.lic  \
+CMD cd /repo_folder && pvs-studio-analyzer credentials $LICENCE_NAME $LICENCE_KEY -o ./licence.lic  \
     && cmake . && ninja re2_st && \
     pvs-studio-analyzer analyze -o pvs-studio.log -e contrib -j 4 -l ./licence.lic; \
     plog-converter -a GA:1,2 -t fullhtml -o /test_output/pvs-studio-html-report pvs-studio.log; \
