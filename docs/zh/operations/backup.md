@@ -7,7 +7,7 @@ toc_title: "\u6570\u636E\u5907\u4EFD"
 
 # 数据备份 {#data-backup}
 
-碌莽禄While: [复制](../engines/table_engines/mergetree_family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [您不能使用类似MergeTree的引擎删除包含超过50Gb数据的表](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). 但是，这些保障措施并不涵盖所有可能的情况，可以规避。
+碌莽禄While: [复制](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [您不能使用类似MergeTree的引擎删除包含超过50Gb数据的表](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). 但是，这些保障措施并不涵盖所有可能的情况，可以规避。
 
 为了有效地减少可能的人为错误，您应该仔细准备备份和还原数据的策略 **提前**.
 
@@ -22,7 +22,7 @@ toc_title: "\u6570\u636E\u5907\u4EFD"
 
 ## 文件系统快照 {#filesystem-snapshots}
 
-某些本地文件系统提供快照功能（例如, [ZFS](https://en.wikipedia.org/wiki/ZFS)），但它们可能不是提供实时查询的最佳选择。 一个可能的解决方案是使用这种文件系统创建额外的副本，并将它们从 [分布](../engines/table_engines/special/distributed.md) 用于以下目的的表 `SELECT` 查询。 任何修改数据的查询都无法访问此类副本上的快照。 作为奖励，这些副本可能具有特殊的硬件配置，每个服务器附加更多的磁盘，这将是经济高效的。
+某些本地文件系统提供快照功能（例如, [ZFS](https://en.wikipedia.org/wiki/ZFS)），但它们可能不是提供实时查询的最佳选择。 一个可能的解决方案是使用这种文件系统创建额外的副本，并将它们从 [分布](../engines/table-engines/special/distributed.md) 用于以下目的的表 `SELECT` 查询。 任何修改数据的查询都无法访问此类副本上的快照。 作为奖励，这些副本可能具有特殊的硬件配置，每个服务器附加更多的磁盘，这将是经济高效的。
 
 ## ﾂ环板-ｮﾂ嘉ｯﾂ偲 {#clickhouse-copier}
 
@@ -34,7 +34,7 @@ toc_title: "\u6570\u636E\u5907\u4EFD"
 
 ClickHouse允许使用 `ALTER TABLE ... FREEZE PARTITION ...` 查询以创建表分区的本地副本。 这是使用硬链接来实现 `/var/lib/clickhouse/shadow/` 文件夹中，所以它通常不会占用旧数据的额外磁盘空间。 创建的文件副本不由ClickHouse服务器处理，所以你可以把它们留在那里：你将有一个简单的备份，不需要任何额外的外部系统，但它仍然会容易出现硬件问题。 出于这个原因，最好将它们远程复制到另一个位置，然后删除本地副本。 分布式文件系统和对象存储仍然是一个不错的选择，但是具有足够大容量的正常附加文件服务器也可以工作（在这种情况下，传输将通过网络文件系统 [rsync](https://en.wikipedia.org/wiki/Rsync)).
 
-有关与分区操作相关的查询的详细信息，请参阅 [更改文档](../sql_reference/statements/alter.md#alter_manipulations-with-partitions).
+有关与分区操作相关的查询的详细信息，请参阅 [更改文档](../sql-reference/statements/alter.md#alter_manipulations-with-partitions).
 
 第三方工具可用于自动化此方法: [ﾂ环板backupｮﾂ嘉ｯﾂ偲](https://github.com/AlexAkulov/clickhouse-backup).
 

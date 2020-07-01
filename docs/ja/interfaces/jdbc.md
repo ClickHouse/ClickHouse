@@ -9,11 +9,7 @@ toc_title: "JDBC\u30C9\u30E9\u30A4\u30D0"
 
 -   **[公式ドライバー](https://github.com/ClickHouse/clickhouse-jdbc)**
 -   サードパーティドライバ:
-<<<<<<< HEAD
-    -   [ﾂつｨﾂ姪"ﾂつ"ﾂ債ﾂつｹ](https://github.com/housepower/ClickHouse-Native-JDBC)
-=======
     -   [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC)
->>>>>>> upstream/master
     -   [clickhouse4j](https://github.com/blynkkk/clickhouse4j)
 
 [元の記事](https://clickhouse.tech/docs/en/interfaces/jdbc/) <!--hide-->

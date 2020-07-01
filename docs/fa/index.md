@@ -1,4 +1,4 @@
-<div markdown="1" markdown="1" dir="rtl">
+<div markdown="1" markdown="1" markdown="1" dir="rtl">
 
 # ClickHouse چیست؟ {#clickhouse-chyst}
 
@@ -63,11 +63,11 @@ ClickHouse یک مدیریت دیتابیس (DBMS) ستون گرا برای پر
 
 **ردیف گرا**
 
-![Row oriented](images/row_oriented.gif#)
+![Row oriented](images/row-oriented.gif#)
 
 **ستون گرا**
 
-![Column oriented](images/column_oriented.gif#)
+![Column oriented](images/column-oriented.gif#)
 
 تفاوت را دیدید؟ بیشتر بخوانید تا یاد بگیرید چرا این اتفاق رخ میدهد.
 

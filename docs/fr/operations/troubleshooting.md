@@ -14,21 +14,12 @@ toc_title: "D\xE9pannage"
 
 ## Installation {#troubleshooting-installation-errors}
 
-<<<<<<< HEAD
-### Vous ne pouvez pas obtenir de paquets deb à partir du référentiel Clickhouse avec Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
-
--   Vérifiez les paramètres du pare-feu.
--   Si vous ne pouvez pas accéder au référentiel pour quelque raison que ce soit, téléchargez les packages comme décrit dans [Prise en main](../getting_started/index.md) article et les installer manuellement en utilisant le `sudo dpkg -i <packages>` commande. Vous aurez aussi besoin d' `tzdata` paquet.
-
-## Connexion au serveur {#troubleshooting-accepts-no-connections}
-=======
 ### Vous ne pouvez pas obtenir de paquets deb à partir du référentiel ClickHouse avec Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Vérifiez les paramètres du pare-feu.
 -   Si vous ne pouvez pas accéder au référentiel pour quelque raison que ce soit, téléchargez les packages comme décrit dans [Prise en main](../getting-started/index.md) article et les installer manuellement en utilisant le `sudo dpkg -i <packages>` commande. Vous aurez aussi besoin d' `tzdata` paquet.
 
 ## Connexion au Serveur {#troubleshooting-accepts-no-connections}
->>>>>>> upstream/master
 
 Problèmes possibles:
 
@@ -114,7 +105,7 @@ Vérifier:
 
 -   Paramètres du point de terminaison.
 
-    Vérifier [listen\_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) et [tcp\_port](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) paramètre.
+    Vérifier [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) et [tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) paramètre.
 
     Clickhouse server accepte les connexions localhost uniquement par défaut.
 
@@ -126,8 +117,8 @@ Vérifier:
 
     Vérifier:
 
-    -   Le [tcp\_port\_secure](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) paramètre.
-    -   Paramètres pour [SSL sertificates](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
+    -   Le [tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) paramètre.
+    -   Paramètres pour [SSL sertificates](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     Utilisez les paramètres appropriés lors de la connexion. Par exemple, l'utilisation de la `port_secure` paramètre avec `clickhouse_client`.
 

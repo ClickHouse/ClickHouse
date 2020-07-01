@@ -1,6 +1,6 @@
 ---
 toc_priority: 7
-toc_title: 歴史
+toc_title: "\u6B74\u53F2"
 ---
 
 # ClickHouseの歴史 {#clickhousenoli-shi}
@@ -48,4 +48,4 @@ Yandex.Metricaには、Metrageと呼ばれるデータを集計するための�
 
 OLAPServerの制限を取り除き、レポートのための非集計データを扱う問題を解決するために、私達は ClickHouse DBMSを開発しました。
 
-[Original article](https://clickhouse.yandex/docs/en/introduction/history/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/introduction/history/) <!--hide-->

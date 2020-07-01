@@ -7,11 +7,7 @@ machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
-<<<<<<< HEAD
-Cambia el comportamiento de [subconsultas distribuidas](../../sql_reference/statements/select.md).
-=======
 Cambia el comportamiento de [subconsultas distribuidas](../../sql-reference/operators/in.md).
->>>>>>> upstream/master
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -20,7 +16,7 @@ Restricción:
 -   Solo se aplica para las subconsultas IN y JOIN.
 -   Solo si la sección FROM utiliza una tabla distribuida que contiene más de un fragmento.
 -   Si la subconsulta se refiere a una tabla distribuida que contiene más de un fragmento.
--   No se usa para un valor de tabla [remoto](../../sql_reference/table_functions/remote.md) función.
+-   No se usa para un valor de tabla [remoto](../../sql-reference/table-functions/remote.md) función.
 
 Valores posibles:
 
@@ -55,7 +51,7 @@ Si `enable_optimize_predicate_expression = 0`, entonces el tiempo de ejecución 
 
 ## fallback\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
-Fuerza una consulta a una réplica obsoleta si los datos actualizados no están disponibles. Ver [Replicación](../../engines/table_engines/mergetree_family/replication.md).
+Fuerza una consulta a una réplica obsoleta si los datos actualizados no están disponibles. Ver [Replicación](../../engines/table-engines/mergetree-family/replication.md).
 
 ClickHouse selecciona la más relevante de las réplicas obsoletas de la tabla.
 
@@ -69,7 +65,7 @@ Deshabilita la ejecución de consultas si el índice no se puede usar por fecha.
 
 Funciona con tablas de la familia MergeTree.
 
-Si `force_index_by_date=1`, ClickHouse comprueba si la consulta tiene una condición de clave de fecha que se puede usar para restringir intervalos de datos. Si no hay una condición adecuada, arroja una excepción. Sin embargo, no comprueba si la condición reduce la cantidad de datos a leer. Por ejemplo, la condición `Date != ' 2000-01-01 '` es aceptable incluso cuando coincide con todos los datos de la tabla (es decir, ejecutar la consulta requiere un escaneo completo). Para obtener más información acerca de los intervalos de datos en las tablas MergeTree, vea [Método de codificación de datos:](../../engines/table_engines/mergetree_family/mergetree.md).
+Si `force_index_by_date=1`, ClickHouse comprueba si la consulta tiene una condición de clave de fecha que se puede usar para restringir intervalos de datos. Si no hay una condición adecuada, arroja una excepción. Sin embargo, no comprueba si la condición reduce la cantidad de datos a leer. Por ejemplo, la condición `Date != ' 2000-01-01 '` es aceptable incluso cuando coincide con todos los datos de la tabla (es decir, ejecutar la consulta requiere un escaneo completo). Para obtener más información acerca de los intervalos de datos en las tablas MergeTree, vea [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md).
 
 ## force\_primary\_key {#force-primary-key}
 
@@ -77,7 +73,7 @@ Deshabilita la ejecución de consultas si no es posible la indexación mediante 
 
 Funciona con tablas de la familia MergeTree.
 
-Si `force_primary_key=1`, ClickHouse comprueba si la consulta tiene una condición de clave principal que se puede usar para restringir rangos de datos. Si no hay una condición adecuada, arroja una excepción. Sin embargo, no comprueba si la condición reduce la cantidad de datos a leer. Para obtener más información acerca de los intervalos de datos en las tablas MergeTree, consulte [Método de codificación de datos:](../../engines/table_engines/mergetree_family/mergetree.md).
+Si `force_primary_key=1`, ClickHouse comprueba si la consulta tiene una condición de clave principal que se puede usar para restringir rangos de datos. Si no hay una condición adecuada, arroja una excepción. Sin embargo, no comprueba si la condición reduce la cantidad de datos a leer. Para obtener más información acerca de los intervalos de datos en las tablas MergeTree, consulte [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md).
 
 ## Formato\_esquema {#format-schema}
 
@@ -138,11 +134,7 @@ Valor predeterminado: 0.
 
 ## Nombre de la red inalámbrica (SSID): {#setting-max_http_get_redirects}
 
-<<<<<<< HEAD
-Limita el número máximo de saltos de redirección HTTP GET para [URL](../../engines/table_engines/special/url.md)-mesas de motor. La configuración se aplica a ambos tipos de tablas: las creadas por [CREATE TABLE](../../query_language/create/#create-table-query) consulta y por el [URL](../../sql_reference/table_functions/url.md) función de la tabla.
-=======
 Limita el número máximo de saltos de redirección HTTP GET para [URL](../../engines/table-engines/special/url.md)-mesas de motor. La configuración se aplica a ambos tipos de tablas: las creadas por [CREATE TABLE](../../sql-reference/statements/create.md#create-table-query) consulta y por el [URL](../../sql-reference/table-functions/url.md) función de la tabla.
->>>>>>> upstream/master
 
 Valores posibles:
 
@@ -178,7 +170,7 @@ Si ambos `input_format_allow_errors_num` y `input_format_allow_errors_ratio` se 
 
 ## input\_format\_values\_interpret\_expressions {#settings-input_format_values_interpret_expressions}
 
-Habilita o deshabilita el analizador SQL completo si el analizador de secuencias rápidas no puede analizar los datos. Esta configuración sólo se utiliza para [Valor](../../interfaces/formats.md#data-format-values) formato en la inserción de datos. Para obtener más información sobre el análisis de sintaxis, consulte [Sintaxis](../../sql_reference/syntax.md) apartado.
+Habilita o deshabilita el analizador SQL completo si el analizador de secuencias rápidas no puede analizar los datos. Esta configuración sólo se utiliza para [Valor](../../interfaces/formats.md#data-format-values) formato en la inserción de datos. Para obtener más información sobre el análisis de sintaxis, consulte [Sintaxis](../../sql-reference/syntax.md) apartado.
 
 Valores posibles:
 
@@ -194,7 +186,7 @@ Valor predeterminado: 1.
 
 Ejemplo de uso
 
-Inserte el [FechaHora](../../sql_reference/data_types/datetime.md) valor de tipo con los diferentes ajustes.
+Inserte el [FechaHora](../../sql-reference/data-types/datetime.md) valor de tipo con los diferentes ajustes.
 
 ``` sql
 SET input_format_values_interpret_expressions = 0;
@@ -354,7 +346,7 @@ Valor predeterminado: 1.
 
 Permite elegir un analizador de la representación de texto de fecha y hora.
 
-La configuración no se aplica a [Funciones de fecha y hora](../../sql_reference/functions/date_time_functions.md).
+La configuración no se aplica a [Funciones de fecha y hora](../../sql-reference/functions/date-time-functions.md).
 
 Valores posibles:
 
@@ -370,16 +362,12 @@ Valor predeterminado: `'basic'`.
 
 Ver también:
 
--   [Tipo de datos DateTime.](../../sql_reference/data_types/datetime.md)
--   [Funciones para trabajar con fechas y horas.](../../sql_reference/functions/date_time_functions.md)
+-   [Tipo de datos DateTime.](../../sql-reference/data-types/datetime.md)
+-   [Funciones para trabajar con fechas y horas.](../../sql-reference/functions/date-time-functions.md)
 
 ## Por favor, introduzca su dirección de correo electrónico {#settings-join_default_strictness}
 
-<<<<<<< HEAD
-Establece el rigor predeterminado para [Cláusulas JOIN](../../sql_reference/statements/select.md#select-join).
-=======
 Establece el rigor predeterminado para [Cláusulas JOIN](../../sql-reference/statements/select/join.md#select-join).
->>>>>>> upstream/master
 
 Valores posibles:
 
@@ -395,7 +383,7 @@ Valor predeterminado: `ALL`.
 Cambia el comportamiento de las operaciones de unión con `ANY` rigor.
 
 !!! warning "Atención"
-    Esta configuración sólo se aplica a `JOIN` operaciones con [Unir](../../engines/table_engines/special/join.md) mesas de motores.
+    Esta configuración sólo se aplica a `JOIN` operaciones con [Unir](../../engines/table-engines/special/join.md) mesas de motores.
 
 Valores posibles:
 
@@ -406,15 +394,6 @@ Valor predeterminado: 0.
 
 Ver también:
 
-<<<<<<< HEAD
--   [Cláusula JOIN](../../sql_reference/statements/select.md#select-join)
--   [Unirse al motor de tabla](../../engines/table_engines/special/join.md)
--   [Por favor, introduzca su dirección de correo electrónico](#settings-join_default_strictness)
-
-## Sistema abierto. {#join_use_nulls}
-
-Establece el tipo de [JOIN](../../sql_reference/statements/select.md) comportamiento. Al fusionar tablas, pueden aparecer celdas vacías. ClickHouse los rellena de manera diferente según esta configuración.
-=======
 -   [Cláusula JOIN](../../sql-reference/statements/select/join.md#select-join)
 -   [Unirse al motor de tabla](../../engines/table-engines/special/join.md)
 -   [Por favor, introduzca su dirección de correo electrónico](#settings-join_default_strictness)
@@ -422,12 +401,11 @@ Establece el tipo de [JOIN](../../sql_reference/statements/select.md) comportami
 ## Sistema abierto {#join_use_nulls}
 
 Establece el tipo de [JOIN](../../sql-reference/statements/select/join.md) comportamiento. Al fusionar tablas, pueden aparecer celdas vacías. ClickHouse los rellena de manera diferente según esta configuración.
->>>>>>> upstream/master
 
 Valores posibles:
 
 -   0 — The empty cells are filled with the default value of the corresponding field type.
--   1 — `JOIN` se comporta de la misma manera que en SQL estándar. El tipo del campo correspondiente se convierte en [NULL](../../sql_reference/data_types/nullable.md#data_type-nullable), y las celdas vacías se llenan con [NULL](../../sql_reference/syntax.md).
+-   1 — `JOIN` se comporta de la misma manera que en SQL estándar. El tipo del campo correspondiente se convierte en [NULL](../../sql-reference/data-types/nullable.md#data_type-nullable), y las celdas vacías se llenan con [NULL](../../sql-reference/syntax.md).
 
 Valor predeterminado: 0.
 
@@ -447,11 +425,7 @@ Por defecto: 1,000,000. Solo funciona cuando se lee desde los motores MergeTree.
 
 ## merge\_tree\_min\_rows\_for\_concurrent\_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
-<<<<<<< HEAD
-Si el número de filas que se leerán de un fichero [Método de codificación de datos:](../../engines/table_engines/mergetree_family/mergetree.md) tabla supera `merge_tree_min_rows_for_concurrent_read` luego ClickHouse intenta realizar una lectura simultánea de este archivo en varios hilos.
-=======
 Si el número de filas que se leerán de un fichero [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md) mesa excede `merge_tree_min_rows_for_concurrent_read` luego ClickHouse intenta realizar una lectura simultánea de este archivo en varios hilos.
->>>>>>> upstream/master
 
 Valores posibles:
 
@@ -461,7 +435,7 @@ Valor predeterminado: 163840.
 
 ## merge\_tree\_min\_bytes\_for\_concurrent\_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
-Si el número de bytes a leer de un archivo de un [Método de codificación de datos:](../../engines/table_engines/mergetree_family/mergetree.md)-La tabla del motor excede `merge_tree_min_bytes_for_concurrent_read`, entonces ClickHouse intenta leer simultáneamente este archivo en varios subprocesos.
+Si el número de bytes a leer de un archivo de un [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md)-La tabla del motor excede `merge_tree_min_bytes_for_concurrent_read`, entonces ClickHouse intenta leer simultáneamente este archivo en varios subprocesos.
 
 Valor posible:
 
@@ -503,7 +477,7 @@ Valor predeterminado: 8.
 
 Si ClickHouse debería leer más de `merge_tree_max_rows_to_use_cache` en una consulta, no usa la memoria caché de bloques sin comprimir.
 
-La memoria caché de bloques sin comprimir almacena datos extraídos para consultas. ClickHouse utiliza esta memoria caché para acelerar las respuestas a pequeñas consultas repetidas. Esta configuración protege la memoria caché del deterioro de las consultas que leen una gran cantidad de datos. El [Uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) configuración del servidor define el tamaño de la memoria caché de bloques sin comprimir.
+La memoria caché de bloques sin comprimir almacena datos extraídos para consultas. ClickHouse utiliza esta memoria caché para acelerar las respuestas a pequeñas consultas repetidas. Esta configuración protege la memoria caché del deterioro de las consultas que leen una gran cantidad de datos. El [Uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuración del servidor define el tamaño de la memoria caché de bloques sin comprimir.
 
 Valores posibles:
 
@@ -515,7 +489,7 @@ Default value: 128 ✕ 8192.
 
 Si ClickHouse debería leer más de `merge_tree_max_bytes_to_use_cache` bytes en una consulta, no usa el caché de bloques sin comprimir.
 
-La memoria caché de bloques sin comprimir almacena datos extraídos para consultas. ClickHouse utiliza esta memoria caché para acelerar las respuestas a pequeñas consultas repetidas. Esta configuración protege la memoria caché del deterioro de las consultas que leen una gran cantidad de datos. El [Uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) configuración del servidor define el tamaño de la memoria caché de bloques sin comprimir.
+La memoria caché de bloques sin comprimir almacena datos extraídos para consultas. ClickHouse utiliza esta memoria caché para acelerar las respuestas a pequeñas consultas repetidas. Esta configuración protege la memoria caché del deterioro de las consultas que leen una gran cantidad de datos. El [Uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuración del servidor define el tamaño de la memoria caché de bloques sin comprimir.
 
 Valor posible:
 
@@ -523,11 +497,7 @@ Valor posible:
 
 Valor predeterminado: 2013265920.
 
-<<<<<<< HEAD
-## Todos los derechos reservados. {#settings-min-bytes-to-use-direct-io}
-=======
 ## Todos los derechos reservados {#settings-min-bytes-to-use-direct-io}
->>>>>>> upstream/master
 
 El volumen de datos mínimo necesario para utilizar el acceso directo de E/S al disco de almacenamiento.
 
@@ -544,7 +514,7 @@ Valor predeterminado: 0.
 
 Configuración del registro de consultas.
 
-Las consultas enviadas a ClickHouse con esta configuración se registran de acuerdo con las reglas [query\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-log) parámetro de configuración del servidor.
+Las consultas enviadas a ClickHouse con esta configuración se registran de acuerdo con las reglas [query\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) parámetro de configuración del servidor.
 
 Ejemplo:
 
@@ -574,7 +544,7 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Configuración del registro de subprocesos de consulta.
 
-Los subprocesos de consultas ejecutados por ClickHouse con esta configuración se registran de acuerdo con las reglas en el [Sistema abierto.](../server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) parámetro de configuración del servidor.
+Los subprocesos de consultas ejecutados por ClickHouse con esta configuración se registran de acuerdo con las reglas en el [Sistema abierto.](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) parámetro de configuración del servidor.
 
 Ejemplo:
 
@@ -618,7 +588,7 @@ Valor predeterminado: 268435456.
 
 ## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
-Deshabilita las réplicas rezagadas para consultas distribuidas. Ver [Replicación](../../engines/table_engines/mergetree_family/replication.md).
+Deshabilita las réplicas rezagadas para consultas distribuidas. Ver [Replicación](../../engines/table-engines/mergetree-family/replication.md).
 
 Establece el tiempo en segundos. Si una réplica tiene un retraso superior al valor establecido, no se utiliza esta réplica.
 
@@ -663,7 +633,7 @@ No confunda bloques para la compresión (un fragmento de memoria que consta de b
 
 ## Descripción del producto {#min-compress-block-size}
 
-Para [Método de codificación de datos:](../../engines/table_engines/mergetree_family/mergetree.md)" tabla. Para reducir la latencia al procesar consultas, un bloque se comprime al escribir la siguiente marca si su tamaño es al menos ‘min\_compress\_block\_size’. De forma predeterminada, 65.536.
+Para [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md)" tabla. Para reducir la latencia al procesar consultas, un bloque se comprime al escribir la siguiente marca si su tamaño es al menos ‘min\_compress\_block\_size’. De forma predeterminada, 65.536.
 
 El tamaño real del bloque, si los datos sin comprimir son menores que ‘max\_compress\_block\_size’, no es menor que este valor y no menor que el volumen de datos para una marca.
 
@@ -741,7 +711,7 @@ Para obtener más información, consulte la sección “Extreme values”.
 ## Use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
 Si se debe usar una memoria caché de bloques sin comprimir. Acepta 0 o 1. De forma predeterminada, 0 (deshabilitado).
-El uso de la memoria caché sin comprimir (solo para tablas de la familia MergeTree) puede reducir significativamente la latencia y aumentar el rendimiento cuando se trabaja con un gran número de consultas cortas. Habilite esta configuración para los usuarios que envían solicitudes cortas frecuentes. También preste atención al [Uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+El uso de la memoria caché sin comprimir (solo para tablas de la familia MergeTree) puede reducir significativamente la latencia y aumentar el rendimiento cuando se trabaja con un gran número de consultas cortas. Habilite esta configuración para los usuarios que envían solicitudes cortas frecuentes. También preste atención al [Uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
 Para consultas que leen al menos un volumen algo grande de datos (un millón de filas o más), la memoria caché sin comprimir se desactiva automáticamente para ahorrar espacio para consultas realmente pequeñas. Esto significa que puede mantener el ‘use\_uncompressed\_cache’ ajuste siempre establecido en 1.
 
@@ -910,7 +880,7 @@ Ver también:
 -   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
-## insert\_quorum\_timeout {#settings-insert_quorum-timeout}
+## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
 Escribir en tiempo de espera de quórum en segundos. Si el tiempo de espera ha pasado y aún no se ha realizado ninguna escritura, ClickHouse generará una excepción y el cliente debe repetir la consulta para escribir el mismo bloque en la misma réplica o en cualquier otra réplica.
 
@@ -994,11 +964,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-<<<<<<< HEAD
-## Todos los derechos reservados. {#settings-max-network-bandwidth-for-user}
-=======
 ## Todos los derechos reservados {#settings-max-network-bandwidth-for-user}
->>>>>>> upstream/master
 
 Limita la velocidad del intercambio de datos a través de la red en bytes por segundo. Esta configuración se aplica a todas las consultas que se ejecutan simultáneamente realizadas por un único usuario.
 
@@ -1009,11 +975,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-<<<<<<< HEAD
-## Todos los derechos reservados. {#settings-max-network-bandwidth-for-all-users}
-=======
 ## Todos los derechos reservados {#settings-max-network-bandwidth-for-all-users}
->>>>>>> upstream/master
 
 Limita la velocidad a la que se intercambian datos a través de la red en bytes por segundo. Esta configuración se aplica a todas las consultas que se ejecutan simultáneamente en el servidor.
 
@@ -1026,15 +988,15 @@ Valor predeterminado: 0.
 
 ## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
-Especifica cuál de las `uniq*` se deben utilizar para realizar el [COUNT(DISTINCT …)](../../sql_reference/aggregate_functions/reference.md#agg_function-count) construcción.
+Especifica cuál de las `uniq*` se deben utilizar para realizar el [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) construcción.
 
 Valores posibles:
 
--   [uniq](../../sql_reference/aggregate_functions/reference.md#agg_function-uniq)
--   [uniqCombined](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined)
--   [UniqCombined64](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined64)
--   [uniqHLL12](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqhll12)
--   [uniqExact](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqexact)
+-   [uniq](../../sql-reference/aggregate-functions/reference.md#agg_function-uniq)
+-   [uniqCombined](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined)
+-   [UniqCombined64](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqhll12)
+-   [uniqExact](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqexact)
 
 Valor predeterminado: `uniqExact`.
 
@@ -1086,20 +1048,9 @@ Valores posibles:
 
 Valor predeterminado: 0
 
-## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
-
-Restablecer [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) para anidados `Distributed` tabla
-
-Valores posibles:
-
--   1 — Enabled.
--   0 — Disabled.
-
-Valor predeterminado: 0.
-
 ## Optize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
-Habilita o deshabilita el lanzamiento de una excepción [OPTIMIZE](../../sql_reference/statements/misc.md#misc_operations-optimize) la consulta no realizó una fusión.
+Habilita o deshabilita el lanzamiento de una excepción [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) la consulta no realizó una fusión.
 
 Predeterminada, `OPTIMIZE` devuelve con éxito incluso si no hizo nada. Esta configuración le permite diferenciar estas situaciones y obtener el motivo en un mensaje de excepción.
 
@@ -1119,7 +1070,7 @@ Controla la rapidez con la que se ponen a cero los errores en las tablas distrib
 
 Ver también:
 
--   [Motor de tabla distribuido](../../engines/table_engines/special/distributed.md)
+-   [Motor de tabla distribuido](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 
 ## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
@@ -1131,12 +1082,12 @@ El recuento de errores de cada réplica está limitado a este valor, lo que impi
 
 Ver también:
 
--   [Motor de tabla distribuido](../../engines/table_engines/special/distributed.md)
+-   [Motor de tabla distribuido](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## Distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
 
-Intervalo base para el [Distribuido](../../engines/table_engines/special/distributed.md) motor de tabla para enviar datos. El intervalo real crece exponencialmente en caso de errores.
+Intervalo base para el [Distribuido](../../engines/table-engines/special/distributed.md) motor de tabla para enviar datos. El intervalo real crece exponencialmente en caso de errores.
 
 Valores posibles:
 
@@ -1146,7 +1097,7 @@ Valor predeterminado: 100 milisegundos.
 
 ## Distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-Intervalo máximo para el [Distribuido](../../engines/table_engines/special/distributed.md) motor de tabla para enviar datos. Limita el crecimiento exponencial del intervalo establecido en el [Distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) configuración.
+Intervalo máximo para el [Distribuido](../../engines/table-engines/special/distributed.md) motor de tabla para enviar datos. Limita el crecimiento exponencial del intervalo establecido en el [Distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) configuración.
 
 Valores posibles:
 
@@ -1158,7 +1109,7 @@ Valor predeterminado: 30000 milisegundos (30 segundos).
 
 Habilita/deshabilita el envío de datos insertados en lotes.
 
-Cuando el envío por lotes está habilitado, el [Distribuido](../../engines/table_engines/special/distributed.md) El motor de tabla intenta enviar varios archivos de datos insertados en una operación en lugar de enviarlos por separado. El envío por lotes mejora el rendimiento del clúster al utilizar mejor los recursos del servidor y de la red.
+Cuando el envío por lotes está habilitado, el [Distribuido](../../engines/table-engines/special/distributed.md) El motor de tabla intenta enviar varios archivos de datos insertados en una operación en lugar de enviarlos por separado. El envío por lotes mejora el rendimiento del clúster al utilizar mejor los recursos del servidor y de la red.
 
 Valores posibles:
 
@@ -1184,7 +1135,7 @@ Valor predeterminado: 0.
 
 ## query\_profiler\_real\_time\_period\_ns {#query_profiler_real_time_period_ns}
 
-Establece el período para un temporizador de reloj real del [perfilador de consultas](../../operations/optimizing_performance/sampling_query_profiler.md). El temporizador de reloj real cuenta el tiempo del reloj de pared.
+Establece el período para un temporizador de reloj real del [perfilador de consultas](../../operations/optimizing-performance/sampling-query-profiler.md). El temporizador de reloj real cuenta el tiempo del reloj de pared.
 
 Valores posibles:
 
@@ -1197,17 +1148,17 @@ Valores posibles:
 
 -   0 para apagar el temporizador.
 
-Tipo: [UInt64](../../sql_reference/data_types/int_uint.md).
+Tipo: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Valor predeterminado: 1000000000 nanosegundos (una vez por segundo).
 
 Ver también:
 
--   Tabla del sistema [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   Tabla del sistema [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
 
 ## Los resultados de la prueba {#query_profiler_cpu_time_period_ns}
 
-Establece el período para un temporizador de reloj de CPU [perfilador de consultas](../../operations/optimizing_performance/sampling_query_profiler.md). Este temporizador solo cuenta el tiempo de CPU.
+Establece el período para un temporizador de reloj de CPU [perfilador de consultas](../../operations/optimizing-performance/sampling-query-profiler.md). Este temporizador solo cuenta el tiempo de CPU.
 
 Valores posibles:
 
@@ -1220,17 +1171,17 @@ Valores posibles:
 
 -   0 para apagar el temporizador.
 
-Tipo: [UInt64](../../sql_reference/data_types/int_uint.md).
+Tipo: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Valor predeterminado: 1000000000 nanosegundos.
 
 Ver también:
 
--   Tabla del sistema [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   Tabla del sistema [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
 
 ## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
-Habilita deshabilita [funciones de introspecciones](../../sql_reference/functions/introspection.md) para la creación de perfiles de consultas.
+Habilita deshabilita [funciones de introspecciones](../../sql-reference/functions/introspection.md) para la creación de perfiles de consultas.
 
 Valores posibles:
 
@@ -1241,8 +1192,8 @@ Valor predeterminado: 0.
 
 **Ver también**
 
--   [Analizador de consultas de muestreo](../optimizing_performance/sampling_query_profiler.md)
--   Tabla del sistema [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   [Analizador de consultas de muestreo](../optimizing-performance/sampling-query-profiler.md)
+-   Tabla del sistema [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
 
 ## input\_format\_parallel\_parsing {#input-format-parallel-parsing}
 
@@ -1258,11 +1209,7 @@ Habilitar el análisis paralelo de los formatos de datos para preservar el orden
 
 El tamaño mínimo de fragmento en bytes, que cada subproceso analizará en paralelo.
 
-<<<<<<< HEAD
-## Sistema abierto. {#settings-output_format_avro_codec}
-=======
 ## Sistema abierto {#settings-output_format_avro_codec}
->>>>>>> upstream/master
 
 Establece el códec de compresión utilizado para el archivo Avro de salida.
 
@@ -1276,11 +1223,7 @@ Valores posibles:
 
 Valor predeterminado: `snappy` (si está disponible) o `deflate`.
 
-<<<<<<< HEAD
-## Sistema abierto. {#settings-output_format_avro_sync_interval}
-=======
 ## Sistema abierto {#settings-output_format_avro_sync_interval}
->>>>>>> upstream/master
 
 Establece el tamaño mínimo de datos (en bytes) entre los marcadores de sincronización para el archivo Avro de salida.
 
@@ -1290,11 +1233,7 @@ Valores posibles: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Valor predeterminado: 32768 (32 KiB)
 
-<<<<<<< HEAD
-## Todos los derechos reservados. {#settings-format_avro_schema_registry_url}
-=======
 ## Todos los derechos reservados {#settings-format_avro_schema_registry_url}
->>>>>>> upstream/master
 
 Establece la URL del Registro de esquemas confluentes para usar con [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) formato
 

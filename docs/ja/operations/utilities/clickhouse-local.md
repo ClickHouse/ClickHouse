@@ -9,11 +9,7 @@ toc_title: "\uFF82\u3064\uFF68\uFF82\u59EA\"\uFF82\u50B5\uFF82\u3064\uFF79"
 
 その `clickhouse-local` プログラムで行う高速処理が地元のファイルを展開に合わせて構成されていますClickHouseサーバーです。
 
-<<<<<<< HEAD
-データを受け入れを表すテーブル、クエリを利用して [クリックハウスsql方言](../../sql_reference/index.md).
-=======
 データを受け入れを表すテーブル、クエリを利用して [クリックハウスSQL方言](../../sql-reference/index.md).
->>>>>>> upstream/master
 
 `clickhouse-local` ClickHouse serverと同じコアを使用するため、ほとんどの機能と同じフォーマットとテーブルエンジンのセットをサポートします。
 

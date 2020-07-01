@@ -5,11 +5,7 @@ toc_priority: 0
 toc_title: "Aper\xE7u"
 ---
 
-<<<<<<< HEAD
-# Qu'est-ce que ClickHouse? {#what-is-clickhouse}
-=======
 # Qu'Est-Ce Que ClickHouse? {#what-is-clickhouse}
->>>>>>> upstream/master
 
 ClickHouse est un système de gestion de base de données orienté colonne (SGBD) pour le traitement analytique en ligne des requêtes (OLAP).
 
@@ -68,11 +64,11 @@ Les bases de données orientées colonne sont mieux adaptées aux scénarios OLA
 
 **SGBD orienté ligne**
 
-![Row-oriented](images/row_oriented.gif#)
+![Row-oriented](images/row-oriented.gif#)
 
 **SGBD orienté colonne**
 
-![Column-oriented](images/column_oriented.gif#)
+![Column-oriented](images/column-oriented.gif#)
 
 Vous voyez la différence?
 

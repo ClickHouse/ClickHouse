@@ -1,7 +1,7 @@
 ---
-toc_folder_title: Интерфейсы
+toc_folder_title: "\u0418\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u044B"
 toc_priority: 14
-toc_title: Введение
+toc_title: "\u0412\u0432\u0435\u0434\u0435\u043D\u0438\u0435"
 ---
 
 # Интерфейсы {#interfaces}
@@ -20,7 +20,7 @@ ClickHouse предоставляет два сетевых интерфейса
 
 Существует также широкий спектр сторонних библиотек для работы с ClickHouse:
 
--   [Клиентские библиотеки](third-party/client_libraries.md);
+-   [Клиентские библиотеки](third-party/client-libraries.md);
 -   [Библиотеки для интеграции](third-party/integrations.md);
 -   [Визуальные интерфейсы](third-party/gui.md).
 

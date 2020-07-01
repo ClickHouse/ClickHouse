@@ -14,7 +14,7 @@ toc_title: Nube
 
 [Servicio administrado de Yandex para ClickHouse](https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link3) proporciona las siguientes características clave:
 
--   Servicio ZooKeeper totalmente gestionado para [Replicación de ClickHouse](../engines/table_engines/mergetree_family/replication.md)
+-   Servicio ZooKeeper totalmente gestionado para [Replicación de ClickHouse](../engines/table-engines/mergetree-family/replication.md)
 -   Múltiples opciones de tipo de almacenamiento
 -   Réplicas en diferentes zonas de disponibilidad
 -   Cifrado y aislamiento

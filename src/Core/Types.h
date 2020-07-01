@@ -85,17 +85,17 @@ template <> inline constexpr bool IsNumber<Float64> = true;
 
 template <typename T> struct TypeName;
 
-template <> struct TypeName<UInt8>   { static const char * get() { return "UInt8";   } };
-template <> struct TypeName<UInt16>  { static const char * get() { return "UInt16";  } };
-template <> struct TypeName<UInt32>  { static const char * get() { return "UInt32";  } };
-template <> struct TypeName<UInt64>  { static const char * get() { return "UInt64";  } };
-template <> struct TypeName<Int8>    { static const char * get() { return "Int8";    } };
-template <> struct TypeName<Int16>   { static const char * get() { return "Int16";   } };
-template <> struct TypeName<Int32>   { static const char * get() { return "Int32";   } };
-template <> struct TypeName<Int64>   { static const char * get() { return "Int64";   } };
-template <> struct TypeName<Float32> { static const char * get() { return "Float32"; } };
-template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
-template <> struct TypeName<String>  { static const char * get() { return "String";  } };
+template <> struct TypeName<UInt8>   { static constexpr const char * get() { return "UInt8";   } };
+template <> struct TypeName<UInt16>  { static constexpr const char * get() { return "UInt16";  } };
+template <> struct TypeName<UInt32>  { static constexpr const char * get() { return "UInt32";  } };
+template <> struct TypeName<UInt64>  { static constexpr const char * get() { return "UInt64";  } };
+template <> struct TypeName<Int8>    { static constexpr const char * get() { return "Int8";    } };
+template <> struct TypeName<Int16>   { static constexpr const char * get() { return "Int16";   } };
+template <> struct TypeName<Int32>   { static constexpr const char * get() { return "Int32";   } };
+template <> struct TypeName<Int64>   { static constexpr const char * get() { return "Int64";   } };
+template <> struct TypeName<Float32> { static constexpr const char * get() { return "Float32"; } };
+template <> struct TypeName<Float64> { static constexpr const char * get() { return "Float64"; } };
+template <> struct TypeName<String>  { static constexpr const char * get() { return "String";  } };
 
 template <typename T> struct TypeId;
 template <> struct TypeId<UInt8>    { static constexpr const TypeIndex value = TypeIndex::UInt8;  };
@@ -115,7 +115,7 @@ using Strings = std::vector<String>;
 
 using Int128 = __int128;
 template <> inline constexpr bool IsNumber<Int128> = true;
-template <> struct TypeName<Int128> { static const char * get() { return "Int128";  } };
+template <> struct TypeName<Int128> { static constexpr const char * get() { return "Int128";  } };
 template <> struct TypeId<Int128>   { static constexpr const TypeIndex value = TypeIndex::Int128; };
 
 /// Own FieldType for Decimal.
@@ -161,9 +161,9 @@ using Decimal128 = Decimal<Int128>;
 
 using DateTime64 = Decimal64;
 
-template <> struct TypeName<Decimal32>   { static const char * get() { return "Decimal32";   } };
-template <> struct TypeName<Decimal64>   { static const char * get() { return "Decimal64";   } };
-template <> struct TypeName<Decimal128>  { static const char * get() { return "Decimal128";  } };
+template <> struct TypeName<Decimal32>   { static constexpr const char * get() { return "Decimal32";   } };
+template <> struct TypeName<Decimal64>   { static constexpr const char * get() { return "Decimal64";   } };
+template <> struct TypeName<Decimal128>  { static constexpr const char * get() { return "Decimal128";  } };
 
 template <> struct TypeId<Decimal32>    { static constexpr const TypeIndex value = TypeIndex::Decimal32; };
 template <> struct TypeId<Decimal64>    { static constexpr const TypeIndex value = TypeIndex::Decimal64; };
@@ -183,7 +183,7 @@ template <> inline Int32 Decimal32::getScaleMultiplier(UInt32 scale) { return co
 template <> inline Int64 Decimal64::getScaleMultiplier(UInt32 scale) { return common::exp10_i64(scale); }
 template <> inline Int128 Decimal128::getScaleMultiplier(UInt32 scale) { return common::exp10_i128(scale); }
 
-inline const char * getTypeName(TypeIndex idx)
+inline constexpr const char * getTypeName(TypeIndex idx)
 {
     switch (idx)
     {

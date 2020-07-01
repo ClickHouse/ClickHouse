@@ -1,7 +1,4 @@
-<test>
-
-
-
+<test max_ignored_relative_change="0.2">
     <create_query>CREATE TABLE ints (i64 Int64, i32 Int32, i16 Int16, i8 Int8) ENGINE = Memory</create_query>
 
     <fill_query>INSERT INTO ints SELECT number AS i64, i64 AS i32, i64 AS i16, i64 AS i8 FROM numbers(10000)</fill_query>

@@ -23,11 +23,7 @@ Función:
 
 [Documentación de Tabix](https://tabix.io/doc/).
 
-<<<<<<< HEAD
-### Sistema abierto. {#houseops}
-=======
 ### Sistema abierto {#houseops}
->>>>>>> upstream/master
 
 [Sistema abierto.](https://github.com/HouseOps/HouseOps) Es una interfaz de usuario / IDE para OSX, Linux y Windows.
 
@@ -82,11 +78,7 @@ Función:
 -   Vista previa de datos de tabla.
 -   Búsqueda de texto completo.
 
-<<<<<<< HEAD
-### Sistema abierto. {#clickhouse-cli}
-=======
 ### Sistema abierto {#clickhouse-cli}
->>>>>>> upstream/master
 
 [Sistema abierto.](https://github.com/hatarist/clickhouse-cli) es un cliente de línea de comandos alternativo para ClickHouse, escrito en Python 3.
 
@@ -97,11 +89,7 @@ Función:
 -   Soporte de buscapersonas para la salida de datos.
 -   Comandos similares a PostgreSQL personalizados.
 
-<<<<<<< HEAD
-### Sistema abierto. {#clickhouse-flamegraph}
-=======
 ### Sistema abierto {#clickhouse-flamegraph}
->>>>>>> upstream/master
 
 [Sistema abierto.](https://github.com/Slach/clickhouse-flamegraph) es una herramienta especializada para visualizar el `system.trace_log` como [Flamegraph](http://www.brendangregg.com/flamegraphs.html).
 

@@ -28,26 +28,16 @@ ClickHouseは、ハードウェアリソースの状態を単独で監視しま�
 
 ClickHouse serverには、自己状態の監視のための計測器が組み込まれています。
 
-<<<<<<< HEAD
-追跡サーバのイベントサーバーを利用ます。 を見る [ロガー](server_configuration_parameters/settings.md#server_configuration_parameters-logger) 設定ファイルのセクション。
-=======
 追跡サーバのイベントサーバーを利用ます。 を参照。 [ロガー](server-configuration-parameters/settings.md#server_configuration_parameters-logger) 設定ファイルのセクション。
->>>>>>> upstream/master
 
 クリックハウス収集:
 
 -   異なるメトリクスのサーバがどのように利用計算資源です。
 -   クエリ処理に関する一般的な統計。
 
-<<<<<<< HEAD
-メトリックは次の場所にあります [システム。指標](../operations/system_tables.md#system_tables-metrics), [システム。イベント](../operations/system_tables.md#system_tables-events)、と [システム。asynchronous\_metrics](../operations/system_tables.md#system_tables-asynchronous_metrics) テーブル。
-
-を設定することができclickhouse輸出の指標に [黒鉛](https://github.com/graphite-project). を見る [グラファイト部](server_configuration_parameters/settings.md#server_configuration_parameters-graphite) クリックハウスサーバー設定ファイルで。 を設定する前に輸出のメトリックトに設定する必要があります黒鉛は以下の公式 [ガイド](https://graphite.readthedocs.io/en/latest/install.html).
-=======
 メトリックは、次のとおりです。 [システムメトリック](../operations/system-tables.md#system_tables-metrics), [システムイベント](../operations/system-tables.md#system_tables-events),and [システムasynchronous\_metrics](../operations/system-tables.md#system_tables-asynchronous_metrics) テーブル
 
 を設定することができClickHouse輸出の指標に [黒鉛](https://github.com/graphite-project). を参照。 [グラファイト部](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) ClickHouseサーバー設定ファイル内。 指標のエクスポートを設定する前に、公式に従ってGraphiteを設定する必要があります [ガイド](https://graphite.readthedocs.io/en/latest/install.html).
->>>>>>> upstream/master
 
 を設定することができClickHouse輸出の指標に [プロメテウス](https://prometheus.io). を参照。 [プロメテウス節](server-configuration-parameters/settings.md#server_configuration_parameters-prometheus) ClickHouseサーバー設定ファイル内。 メトリックのエクスポートを設定する前に、公式に従ってPrometheusを設定してください [ガイド](https://prometheus.io/docs/prometheus/latest/installation/).
 

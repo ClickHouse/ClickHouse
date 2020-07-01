@@ -7,11 +7,7 @@ toc_title: "\u30C7\u30FC\u30BF\u30D0\u30C3\u30AF\u30A2"
 
 # データバックア {#data-backup}
 
-<<<<<<< HEAD
-しばらく [複製](../engines/table_engines/mergetree_family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [50Gbを超えるデータを含むMergeTreeのようなエンジンでテーブルを削除することはできません](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). しかし、これらの保障措置がカバーしないすべてのケースで回避.
-=======
 ながら [複製](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [50Gbを超えるデータを含むMergeTreeのようなエンジンでは、テーブルを削除することはできません](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). しかし、これらの保障措置がカバーしないすべてのケースで回避.
->>>>>>> upstream/master
 
 ヒューマンエラーを効果的に軽減するには、データのバックアップと復元のための戦略を慎重に準備する必要があります **事前に**.
 
@@ -26,11 +22,7 @@ toc_title: "\u30C7\u30FC\u30BF\u30D0\u30C3\u30AF\u30A2"
 
 ## ファイルシステ {#filesystem-snapshots}
 
-<<<<<<< HEAD
-一部地域のファイルシステムをスナップショット機能(例えば, [ZFS](https://en.wikipedia.org/wiki/ZFS)ものではないのでいただける住ます。 可能な解決策は、この種のファイルシステムを使用して追加のレプリカを作成し、それらを [分散](../engines/table_engines/special/distributed.md) 使用されるテーブル `SELECT` クエリ。 スナップショットなどを複製するものでなければならないのクエリがデータを変更する. ボーナスパーツとして、これらのレプリカが特別なハードウェア構成によりディスクに付属のサーバ、コスト効果的です。
-=======
 一部地域のファイルシステムをスナップショット機能(例えば, [ZFS](https://en.wikipedia.org/wiki/ZFS)しかし、ライブクエリを提供するための最良の選択ではないかもしれません。 可能な解決策は、この種のファイルシステムで追加のレプリカを作成し、それらを [分散](../engines/table-engines/special/distributed.md) 以下の目的で使用されるテーブル `SELECT` クエリ。 スナップショットなどを複製するものでなければならないのクエリがデータを変更する. ボーナスパーツとして、これらのレプリカが特別なハードウェア構成によりディスクに付属のサーバ、コスト効果的です。
->>>>>>> upstream/master
 
 ## クリックハウス-複写機 {#clickhouse-copier}
 
@@ -42,11 +34,7 @@ toc_title: "\u30C7\u30FC\u30BF\u30D0\u30C3\u30AF\u30A2"
 
 ClickHouseは、 `ALTER TABLE ... FREEZE PARTITION ...` クエリをコピーのテーブル割. これはハードリンクを使って実装される。 `/var/lib/clickhouse/shadow/` それは通常、古いデータのための余分なディスク領域を消費しません。 作成されたファイルのコピーはClickHouse serverによって処理されないので、そこに残すことができます：追加の外部システムを必要としない簡単なバックアップ このため、リモートで別の場所にコピーしてからローカルコピーを削除する方が良いでしょう。 分散ファイルシステムとオブジェクトストアはまだこのための良いオプションですが、十分な容量を持つ通常の添付ファイルサーバも同様に動作 [rsync](https://en.wikipedia.org/wiki/Rsync)).
 
-<<<<<<< HEAD
-パーティション操作に関連するクエリの詳細については、 [変更文書](../sql_reference/statements/alter.md#alter_manipulations-with-partitions).
-=======
 パーティション操作に関連するクエリの詳細については、 [文書の変更](../sql-reference/statements/alter.md#alter_manipulations-with-partitions).
->>>>>>> upstream/master
 
 第三者ツールを自動化するこのアプローチ: [clickhouse-バックアップ](https://github.com/AlexAkulov/clickhouse-backup).
 

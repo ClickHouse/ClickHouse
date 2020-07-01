@@ -22,7 +22,7 @@ toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 
 همچنین طیف گسترده ای از کتابخانه های شخص ثالث برای کار با کلیک وجود دارد:
 
--   [کتابخانه های مشتری](third-party/client_libraries.md)
+-   [کتابخانه های مشتری](third-party/client-libraries.md)
 -   [یکپارچگی](third-party/integrations.md)
 -   [رابط های بصری](third-party/gui.md)
 

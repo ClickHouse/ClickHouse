@@ -24,15 +24,9 @@ El volumen requerido de RAM depende de:
 -   La complejidad de las consultas.
 -   La cantidad de datos que se procesan en las consultas.
 
-<<<<<<< HEAD
-Para calcular el volumen requerido de RAM, debe estimar el tamaño de los datos temporales para [GROUP BY](../sql_reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql_reference/statements/select.md#select-distinct), [JOIN](../sql_reference/statements/select.md#select-join) y otras operaciones que utilice.
-
-ClickHouse puede usar memoria externa para datos temporales. Ver [GROUP BY en memoria externa](../sql_reference/statements/select.md#select-group-by-in-external-memory) para más detalles.
-=======
 Para calcular el volumen requerido de RAM, debe estimar el tamaño de los datos temporales para [GROUP BY](../sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select/distinct.md#select-distinct), [JOIN](../sql-reference/statements/select/join.md#select-join) y otras operaciones que utilice.
 
 ClickHouse puede usar memoria externa para datos temporales. Ver [GROUP BY en memoria externa](../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) para más detalles.
->>>>>>> upstream/master
 
 ## Archivo de intercambio {#swap-file}
 
@@ -64,4 +58,4 @@ El ancho de banda de la red es fundamental para procesar consultas distribuidas 
 
 ClickHouse está desarrollado principalmente para la familia de sistemas operativos Linux. La distribución de Linux recomendada es Ubuntu. El `tzdata` paquete debe ser instalado en el sistema.
 
-ClickHouse también puede funcionar en otras familias de sistemas operativos. Ver detalles en el [Primeros pasos](../getting_started/index.md) sección de la documentación.
+ClickHouse también puede funcionar en otras familias de sistemas operativos. Ver detalles en el [Primeros pasos](../getting-started/index.md) sección de la documentación.

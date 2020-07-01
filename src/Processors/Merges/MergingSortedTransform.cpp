@@ -43,21 +43,17 @@ void MergingSortedTransform::onFinish()
 
     const auto & merged_data = algorithm.getMergedData();
 
-    auto * log = &Logger::get("MergingSortedTransform");
+    auto * log = &Poco::Logger::get("MergingSortedTransform");
 
     double seconds = total_stopwatch.elapsedSeconds();
 
-    std::stringstream message;
-    message << std::fixed << std::setprecision(2)
-            << "Merge sorted " << merged_data.totalChunks() << " blocks, " << merged_data.totalMergedRows() << " rows"
-            << " in " << seconds << " sec.";
-
-    if (seconds != 0)
-        message << ", "
-                << merged_data.totalMergedRows() / seconds << " rows/sec., "
-                << merged_data.totalAllocatedBytes() / 1000000.0 / seconds << " MB/sec.";
-
-    LOG_DEBUG(log, message.str());
+    if (!seconds)
+        LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in 0 sec.", merged_data.totalChunks(), merged_data.totalMergedRows());
+    else
+        LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in {} sec., {} rows/sec., {}/sec",
+            merged_data.totalChunks(), merged_data.totalMergedRows(), seconds,
+            merged_data.totalMergedRows() / seconds,
+            ReadableSize(merged_data.totalAllocatedBytes() / seconds));
 }
 
 }

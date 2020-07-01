@@ -16,13 +16,8 @@ toc_title: "\u30C8\u30E9\u30D6\u30EB\u30B7"
 
 ### Apt-getではClickHouseリポジトリからDebパッケージを取得できません {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
-<<<<<<< HEAD
--   ファイア
--   できない場合はアクセスリポジトリのために、何らかの理由でダウンロードパッケージに記載のとおり [はじめに](../getting_started/index.md) を使用して手動でインストールします。 `sudo dpkg -i <packages>` 司令部 また、必要になります `tzdata` パッケージ。
-=======
 -   ファイアウォールの設定
 -   できない場合はアクセスリポジトリのために、何らかの理由でダウンロードパッケージに記載のとおり [はじめに](../getting-started/index.md) 記事とを使用して手動でインストール `sudo dpkg -i <packages>` コマンド また、必要になります `tzdata` パッケージ。
->>>>>>> upstream/master
 
 ## サーバーへの接続 {#troubleshooting-accepts-no-connections}
 
@@ -110,11 +105,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 -   エンドポイント設定。
 
-<<<<<<< HEAD
-    チェック [listen\_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) と [tcp\_portgenericname](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) 設定。
-=======
     チェック [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) と [tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) 設定。
->>>>>>> upstream/master
 
     ClickHouse serverはデフォルトでのみlocalhost接続を受け入れます。
 
@@ -126,13 +117,8 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
     チェック:
 
-<<<<<<< HEAD
-    -   その [tcp\_port\_secure](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) 設定。
-    -   の設定 [SSL sertificates](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
-=======
     -   その [tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) 設定。
     -   の設定 [SSLセルティクス](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
->>>>>>> upstream/master
 
     適切なパラメータを接続 たとえば、 `port_secure` 変数との `clickhouse_client`.
 

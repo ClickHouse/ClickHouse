@@ -99,7 +99,7 @@ Dans le rapport, vous pouvez trouver:
 
 -   Percentiles du temps d'exécution des requêtes.
 
-## Mode de comparaison {#clickhouse-benchmark-comparison-mode}
+## Mode De Comparaison {#clickhouse-benchmark-comparison-mode}
 
 `clickhouse-benchmark` peut comparer les performances pour deux serveurs clickhouse en cours d'exécution.
 

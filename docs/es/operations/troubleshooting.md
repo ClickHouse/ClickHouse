@@ -14,14 +14,10 @@ toc_title: "Soluci\xF3n de problemas"
 
 ## Instalación {#troubleshooting-installation-errors}
 
-<<<<<<< HEAD
-### No puede obtener paquetes Deb del repositorio de Clickhouse con Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
-=======
 ### No puede obtener paquetes Deb del repositorio ClickHouse con Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
->>>>>>> upstream/master
 
 -   Compruebe la configuración del firewall.
--   Si no puede acceder al repositorio por cualquier motivo, descargue los paquetes como se describe en el [Primeros pasos](../getting_started/index.md) artículo e instálelos manualmente usando el `sudo dpkg -i <packages>` comando. También necesitará el `tzdata` paquete.
+-   Si no puede acceder al repositorio por cualquier motivo, descargue los paquetes como se describe en el [Primeros pasos](../getting-started/index.md) artículo e instálelos manualmente usando el `sudo dpkg -i <packages>` comando. También necesitará el `tzdata` paquete.
 
 ## Conexión al servidor {#troubleshooting-accepts-no-connections}
 
@@ -109,7 +105,7 @@ Comprobar:
 
 -   Configuración del punto final.
 
-    Comprobar [listen\_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) y [Tcp\_port](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) configuración.
+    Comprobar [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) y [Tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) configuración.
 
     El servidor ClickHouse acepta conexiones localhost solo de forma predeterminada.
 
@@ -121,8 +117,8 @@ Comprobar:
 
     Comprobar:
 
-    -   El [Tcp\_port\_secure](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) configuración.
-    -   Ajustes para [Sertificados SSL](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
+    -   El [Tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) configuración.
+    -   Ajustes para [Sertificados SSL](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     Utilice los parámetros adecuados mientras se conecta. Por ejemplo, utilice el `port_secure` parámetro con `clickhouse_client`.
 

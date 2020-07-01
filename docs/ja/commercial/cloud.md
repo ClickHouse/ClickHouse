@@ -14,13 +14,8 @@ toc_title: "\u30AF\u30E9\u30A6\u30C9"
 
 [ClickHouseのためのYandexの管理サービス](https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link3) 次の主な機能を提供します:
 
-<<<<<<< HEAD
--   完全に管理されたzookeeperサービス [ClickHouse複製](../engines/table_engines/mergetree_family/replication.md)
--   複数ストレージタイプの選択
-=======
 -   完全に管理された飼育係サービス [クリックハウス複製](../engines/table-engines/mergetree-family/replication.md)
 -   複数の記憶域タイプの選択肢
->>>>>>> upstream/master
 -   異なる可用性ゾーンのレプリカ
 -   暗号化と分離
 -   自動メンテナンス

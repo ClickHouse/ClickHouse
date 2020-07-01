@@ -7,8 +7,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -36,8 +36,11 @@ Authentication::Digest Authentication::getPasswordDoubleSHA1() const
 
         case DOUBLE_SHA1_PASSWORD:
             return password_hash;
+
+        case MAX_TYPE:
+            break;
     }
-    throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception("getPasswordDoubleSHA1(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
@@ -71,8 +74,11 @@ bool Authentication::isCorrectPassword(const String & password_) const
 
             return encodeSHA1(first_sha1) == password_hash;
         }
+
+        case MAX_TYPE:
+            break;
     }
-    throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception("Cannot check if the password is correct for authentication type " + toString(type), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

@@ -99,9 +99,9 @@ world
 
 Массивы форматируются в виде списка значений через запятую в квадратных скобках. Элементы массива - числа форматируются как обычно, а даты, даты-с-временем и строки - в одинарных кавычках с такими же правилами экранирования, как указано выше.
 
-[NULL](../sql_reference/syntax.md) форматируется как `\N`.
+[NULL](../sql-reference/syntax.md) форматируется как `\N`.
 
-Каждый элемент структуры типа [Nested](../sql_reference/data_types/nested_data_structures/nested.md) представляется как отдельный массив.
+Каждый элемент структуры типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) представляется как отдельный массив.
 
 Например:
 
@@ -302,7 +302,7 @@ SearchPhrase=дизайн штор        count()=1064
 SearchPhrase=баку       count()=1000
 ```
 
-[NULL](../sql_reference/syntax.md) форматируется как `\N`.
+[NULL](../sql-reference/syntax.md) форматируется как `\N`.
 
 ``` sql
 SELECT * FROM t_null FORMAT TSKV
@@ -432,7 +432,7 @@ JSON совместим с JavaScript. Для этого, дополнитель
 
 Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
-ClickHouse поддерживает [NULL](../sql_reference/syntax.md), который при выводе JSON будет отображен как `null`.
+ClickHouse поддерживает [NULL](../sql-reference/syntax.md), который при выводе JSON будет отображен как `null`.
 
 Смотрите также формат [JSONEachRow](#jsoneachrow) .
 
@@ -507,7 +507,7 @@ ClickHouse игнорирует пробелы между элементами �
 
 **Обработка пропущенных значений**
 
-ClickHouse заменяет опущенные значения значениями по умолчанию для соответствующих [data types](../sql_reference/data_types/index.md).
+ClickHouse заменяет опущенные значения значениями по умолчанию для соответствующих [data types](../sql-reference/data-types/index.md).
 
 Если указано `DEFAULT expr`, то ClickHouse использует различные правила подстановки в зависимости от настройки [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields).
 
@@ -525,7 +525,7 @@ CREATE TABLE IF NOT EXISTS example_table
 -   Если `input_format_defaults_for_omitted_fields = 1`, то значение по умолчанию для `x` равно `0`, а значение по умолчанию `a` равно `x * 2`.
 
 !!! note "Предупреждение"
-    Если `insert_sample_with_metadata = 1`, то при обработке запросов ClickHouse потребляет больше вычислительных ресурсов, чем если `insert_sample_with_metadata = 0`.
+    Если `input_format_defaults_for_omitted_fields = 1`, то при обработке запросов ClickHouse потребляет больше вычислительных ресурсов, чем если `input_format_defaults_for_omitted_fields = 0`.
 
 ### Выборка данных {#vyborka-dannykh}
 
@@ -552,7 +552,7 @@ CREATE TABLE IF NOT EXISTS example_table
 
 ### Использование вложенных структур {#jsoneachrow-nested}
 
-Если у вас есть таблица со столбцами типа [Nested](../sql_reference/data_types/nested_data_structures/nested.md), то в неё можно вставить данные из JSON-документа с такой же структурой. Функциональность включается настройкой [input\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json).
+Если у вас есть таблица со столбцами типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md), то в неё можно вставить данные из JSON-документа с такой же структурой. Функциональность включается настройкой [input\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 Например, рассмотрим следующую таблицу:
 
@@ -626,7 +626,7 @@ SELECT * FROM json_each_row_nested
 Рисуется полная сетка таблицы и, таким образом, каждая строчка занимает две строки в терминале.
 Каждый блок результата выводится в виде отдельной таблицы. Это нужно, чтобы можно было выводить блоки без буферизации результата (буферизация потребовалась бы, чтобы заранее вычислить видимую ширину всех значений.)
 
-[NULL](../sql_reference/syntax.md) выводится как `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) выводится как `ᴺᵁᴸᴸ`.
 
 ``` sql
 SELECT * FROM t_null
@@ -728,7 +728,7 @@ FixedString представлены просто как последовате�
 
 Array представлены как длина в формате varint (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), а затем элементы массива, подряд.
 
-Для поддержки [NULL](../sql_reference/syntax.md#null-literal) перед каждым значением типа [Nullable](../sql_reference/data_types/nullable.md) следует байт содержащий 1 или 0. Если байт 1, то значение равно NULL, и этот байт интерпретируется как отдельное значение (т.е. после него следует значение следующего поля). Если байт 0, то после байта следует значение поля (не равно NULL).
+Для поддержки [NULL](../sql-reference/syntax.md#null-literal) перед каждым значением типа [Nullable](../sql-reference/data-types/nullable.md) следует байт содержащий 1 или 0. Если байт 1, то значение равно NULL, и этот байт интерпретируется как отдельное значение (т.е. после него следует значение следующего поля). Если байт 0, то после байта следует значение поля (не равно NULL).
 
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
@@ -740,7 +740,7 @@ Array представлены как длина в формате varint (unsig
 
 ## Values {#data-format-values}
 
-Выводит каждую строку в скобках. Строки разделены запятыми. После последней строки запятой нет. Значения внутри скобок также разделены запятыми. Числа выводятся в десятичном виде без кавычек. Массивы выводятся в квадратных скобках. Строки, даты, даты-с-временем выводятся в кавычках. Правила экранирования и особенности парсинга аналогичны формату [TabSeparated](#tabseparated). При форматировании, лишние пробелы не ставятся, а при парсинге - допустимы и пропускаются (за исключением пробелов внутри значений типа массив, которые недопустимы). [NULL](../sql_reference/syntax.md) представляется как `NULL`.
+Выводит каждую строку в скобках. Строки разделены запятыми. После последней строки запятой нет. Значения внутри скобок также разделены запятыми. Числа выводятся в десятичном виде без кавычек. Массивы выводятся в квадратных скобках. Строки, даты, даты-с-временем выводятся в кавычках. Правила экранирования и особенности парсинга аналогичны формату [TabSeparated](#tabseparated). При форматировании, лишние пробелы не ставятся, а при парсинге - допустимы и пропускаются (за исключением пробелов внутри значений типа массив, которые недопустимы). [NULL](../sql-reference/syntax.md) представляется как `NULL`.
 
 Минимальный набор символов, которых вам необходимо экранировать при передаче в Values формате: одинарная кавычка и обратный слеш.
 
@@ -750,7 +750,7 @@ Array представлены как длина в формате varint (unsig
 
 Выводит каждое значение на отдельной строке, с указанием имени столбца. Формат удобно использовать для вывода одной-нескольких строк, если каждая строка состоит из большого количества столбцов.
 
-[NULL](../sql_reference/syntax.md) выводится как `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) выводится как `ᴺᵁᴸᴸ`.
 
 Пример:
 
@@ -928,7 +928,7 @@ message MessageType {
 ```
 
 ClickHouse попытается найти столбец с именем `x.y.z` (или `x_y_z`, или `X.y_Z` и т.п.).
-Вложенные сообщения удобно использовать в качестве соответствия для [вложенной структуры данных](../sql_reference/data_types/nested_data_structures/nested.md).
+Вложенные сообщения удобно использовать в качестве соответствия для [вложенной структуры данных](../sql-reference/data-types/nested-data-structures/nested.md).
 
 Значения по умолчанию, определённые в схеме `proto2`, например,
 
@@ -940,7 +940,7 @@ message MessageType {
 }
 ```
 
-не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql_reference/statements/create.md#create-default-values).
+не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql-reference/statements/create.md#create-default-values).
 
 ClickHouse пишет и читает сообщения `Protocol Buffers` в формате `length-delimited`. Это означает, что перед каждым сообщением пишется его длина
 в формате [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints). См. также [как читать и записывать сообщения Protocol Buffers в формате length-delimited в различных языках программирования](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
@@ -951,25 +951,25 @@ ClickHouse пишет и читает сообщения `Protocol Buffers` в �
 
 ### Соответствие типов данных {#sootvetstvie-tipov-dannykh}
 
-Таблица ниже содержит поддерживаемые типы данных и их соответствие [типам данных](../sql_reference/data_types/index.md) ClickHouse для запросов `INSERT` и `SELECT`.
+Таблица ниже содержит поддерживаемые типы данных и их соответствие [типам данных](../sql-reference/data-types/index.md) ClickHouse для запросов `INSERT` и `SELECT`.
 
 | Тип данных Parquet (`INSERT`) | Тип данных ClickHouse                                     | Тип данных Parquet (`SELECT`) |
 |-------------------------------|-----------------------------------------------------------|-------------------------------|
-| `UINT8`, `BOOL`               | [UInt8](../sql_reference/data_types/int_uint.md)          | `UINT8`                       |
-| `INT8`                        | [Int8](../sql_reference/data_types/int_uint.md)           | `INT8`                        |
-| `UINT16`                      | [UInt16](../sql_reference/data_types/int_uint.md)         | `UINT16`                      |
-| `INT16`                       | [Int16](../sql_reference/data_types/int_uint.md)          | `INT16`                       |
-| `UINT32`                      | [UInt32](../sql_reference/data_types/int_uint.md)         | `UINT32`                      |
-| `INT32`                       | [Int32](../sql_reference/data_types/int_uint.md)          | `INT32`                       |
-| `UINT64`                      | [UInt64](../sql_reference/data_types/int_uint.md)         | `UINT64`                      |
-| `INT64`                       | [Int64](../sql_reference/data_types/int_uint.md)          | `INT64`                       |
-| `FLOAT`, `HALF_FLOAT`         | [Float32](../sql_reference/data_types/float.md)           | `FLOAT`                       |
-| `DOUBLE`                      | [Float64](../sql_reference/data_types/float.md)           | `DOUBLE`                      |
-| `DATE32`                      | [Date](../sql_reference/data_types/date.md)               | `UINT16`                      |
-| `DATE64`, `TIMESTAMP`         | [DateTime](../sql_reference/data_types/datetime.md)       | `UINT32`                      |
-| `STRING`, `BINARY`            | [String](../sql_reference/data_types/string.md)           | `STRING`                      |
-| —                             | [FixedString](../sql_reference/data_types/fixedstring.md) | `STRING`                      |
-| `DECIMAL`                     | [Decimal](../sql_reference/data_types/decimal.md)         | `DECIMAL`                     |
+| `UINT8`, `BOOL`               | [UInt8](../sql-reference/data-types/int-uint.md)          | `UINT8`                       |
+| `INT8`                        | [Int8](../sql-reference/data-types/int-uint.md)           | `INT8`                        |
+| `UINT16`                      | [UInt16](../sql-reference/data-types/int-uint.md)         | `UINT16`                      |
+| `INT16`                       | [Int16](../sql-reference/data-types/int-uint.md)          | `INT16`                       |
+| `UINT32`                      | [UInt32](../sql-reference/data-types/int-uint.md)         | `UINT32`                      |
+| `INT32`                       | [Int32](../sql-reference/data-types/int-uint.md)          | `INT32`                       |
+| `UINT64`                      | [UInt64](../sql-reference/data-types/int-uint.md)         | `UINT64`                      |
+| `INT64`                       | [Int64](../sql-reference/data-types/int-uint.md)          | `INT64`                       |
+| `FLOAT`, `HALF_FLOAT`         | [Float32](../sql-reference/data-types/float.md)           | `FLOAT`                       |
+| `DOUBLE`                      | [Float64](../sql-reference/data-types/float.md)           | `DOUBLE`                      |
+| `DATE32`                      | [Date](../sql-reference/data-types/date.md)               | `UINT16`                      |
+| `DATE64`, `TIMESTAMP`         | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                      |
+| `STRING`, `BINARY`            | [String](../sql-reference/data-types/string.md)           | `STRING`                      |
+| —                             | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                      |
+| `DECIMAL`                     | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                     |
 
 ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
 
@@ -991,7 +991,7 @@ $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Pa
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [HDFS](../engines/table_engines/integrations/hdfs.md).
+Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [HDFS](../engines/table-engines/integrations/hdfs.md).
 
 ## ORC {#data-format-orc}
 
@@ -999,24 +999,24 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 ### Соответствие типов данных {#sootvetstvie-tipov-dannykh-1}
 
-Таблица показывает поддержанные типы данных и их соответствие [типам данных](../sql_reference/data_types/index.md) ClickHouse для запросов `INSERT`.
+Таблица показывает поддержанные типы данных и их соответствие [типам данных](../sql-reference/data-types/index.md) ClickHouse для запросов `INSERT`.
 
 | Тип данных ORC (`INSERT`) | Тип данных ClickHouse                               |
 |---------------------------|-----------------------------------------------------|
-| `UINT8`, `BOOL`           | [UInt8](../sql_reference/data_types/int_uint.md)    |
-| `INT8`                    | [Int8](../sql_reference/data_types/int_uint.md)     |
-| `UINT16`                  | [UInt16](../sql_reference/data_types/int_uint.md)   |
-| `INT16`                   | [Int16](../sql_reference/data_types/int_uint.md)    |
-| `UINT32`                  | [UInt32](../sql_reference/data_types/int_uint.md)   |
-| `INT32`                   | [Int32](../sql_reference/data_types/int_uint.md)    |
-| `UINT64`                  | [UInt64](../sql_reference/data_types/int_uint.md)   |
-| `INT64`                   | [Int64](../sql_reference/data_types/int_uint.md)    |
-| `FLOAT`, `HALF_FLOAT`     | [Float32](../sql_reference/data_types/float.md)     |
-| `DOUBLE`                  | [Float64](../sql_reference/data_types/float.md)     |
-| `DATE32`                  | [Date](../sql_reference/data_types/date.md)         |
-| `DATE64`, `TIMESTAMP`     | [DateTime](../sql_reference/data_types/datetime.md) |
-| `STRING`, `BINARY`        | [String](../sql_reference/data_types/string.md)     |
-| `DECIMAL`                 | [Decimal](../sql_reference/data_types/decimal.md)   |
+| `UINT8`, `BOOL`           | [UInt8](../sql-reference/data-types/int-uint.md)    |
+| `INT8`                    | [Int8](../sql-reference/data-types/int-uint.md)     |
+| `UINT16`                  | [UInt16](../sql-reference/data-types/int-uint.md)   |
+| `INT16`                   | [Int16](../sql-reference/data-types/int-uint.md)    |
+| `UINT32`                  | [UInt32](../sql-reference/data-types/int-uint.md)   |
+| `INT32`                   | [Int32](../sql-reference/data-types/int-uint.md)    |
+| `UINT64`                  | [UInt64](../sql-reference/data-types/int-uint.md)   |
+| `INT64`                   | [Int64](../sql-reference/data-types/int-uint.md)    |
+| `FLOAT`, `HALF_FLOAT`     | [Float32](../sql-reference/data-types/float.md)     |
+| `DOUBLE`                  | [Float64](../sql-reference/data-types/float.md)     |
+| `DATE32`                  | [Date](../sql-reference/data-types/date.md)         |
+| `DATE64`, `TIMESTAMP`     | [DateTime](../sql-reference/data-types/datetime.md) |
+| `STRING`, `BINARY`        | [String](../sql-reference/data-types/string.md)     |
+| `DECIMAL`                 | [Decimal](../sql-reference/data-types/decimal.md)   |
 
 ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
 
@@ -1032,7 +1032,7 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-Для обмена данных с Hadoop можно использовать [движок таблиц HDFS](../engines/table_engines/integrations/hdfs.md).
+Для обмена данных с Hadoop можно использовать [движок таблиц HDFS](../engines/table-engines/integrations/hdfs.md).
 
 ## Схема формата {#formatschema}
 
@@ -1045,6 +1045,6 @@ $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT OR
 относительно текущей директории на клиенте. Если клиент используется в [batch режиме](../interfaces/cli.md#cli_usage), то в записи схемы допускается только относительный путь, из соображений безопасности.
 
 Если для ввода/вывода данных используется [HTTP-интерфейс](../interfaces/http.md), то файл со схемой должен располагаться на сервере в каталоге,
-указанном в параметре [format\_schema\_path](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-format_schema_path) конфигурации сервера.
+указанном в параметре [format\_schema\_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path) конфигурации сервера.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/formats/) <!--hide-->

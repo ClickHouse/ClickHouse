@@ -110,9 +110,9 @@ Solo se escapa un pequeño conjunto de símbolos. Puede tropezar fácilmente con
 
 Las matrices se escriben como una lista de valores separados por comas entre corchetes. Los elementos numéricos de la matriz tienen el formato normal. `Date` y `DateTime` están escritos entre comillas simples. Las cadenas se escriben entre comillas simples con las mismas reglas de escape que las anteriores.
 
-[NULL](../sql_reference/syntax.md) se formatea como `\N`.
+[NULL](../sql-reference/syntax.md) se formatea como `\N`.
 
-Cada elemento de [Anidar](../sql_reference/data_types/nested_data_structures/nested.md) estructuras se representa como una matriz.
+Cada elemento de [Anidar](../sql-reference/data-types/nested-data-structures/nested.md) estructuras se representa como una matriz.
 
 Por ejemplo:
 
@@ -332,7 +332,7 @@ SearchPhrase=curtain designs        count()=1064
 SearchPhrase=baku       count()=1000
 ```
 
-[NULL](../sql_reference/syntax.md) se formatea como `\N`.
+[NULL](../sql-reference/syntax.md) se formatea como `\N`.
 
 ``` sql
 SELECT * FROM t_null FORMAT TSKV
@@ -464,7 +464,7 @@ Si la consulta contiene GROUP BY, rows\_before\_limit\_at\_least es el número e
 
 Este formato solo es apropiado para generar un resultado de consulta, pero no para analizar (recuperar datos para insertar en una tabla).
 
-Soporta ClickHouse [NULL](../sql_reference/syntax.md), que se muestra como `null` en la salida JSON.
+Soporta ClickHouse [NULL](../sql-reference/syntax.md), que se muestra como `null` en la salida JSON.
 
 Ver también el [JSONEachRow](#jsoneachrow) formato.
 
@@ -541,7 +541,7 @@ ClickHouse ignora los espacios entre los elementos y las comas después de los o
 
 **Procesamiento de valores omitidos**
 
-ClickHouse sustituye los valores omitidos por los valores predeterminados para el [tipos de datos](../sql_reference/data_types/index.md).
+ClickHouse sustituye los valores omitidos por los valores predeterminados para el [tipos de datos](../sql-reference/data-types/index.md).
 
 Si `DEFAULT expr` se especifica, ClickHouse utiliza diferentes reglas de sustitución dependiendo de la [Entrada\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) configuración.
 
@@ -586,7 +586,7 @@ A diferencia de la [JSON](#json) formato, no hay sustitución de secuencias UTF-
 
 ### Uso de estructuras anidadas {#jsoneachrow-nested}
 
-Si tienes una mesa con [Anidar](../sql_reference/data_types/nested_data_structures/nested.md) columnas de tipo de datos, puede insertar datos JSON con la misma estructura. Habilite esta función con el [Entrada\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) configuración.
+Si tienes una mesa con [Anidar](../sql-reference/data-types/nested-data-structures/nested.md) columnas de tipo de datos, puede insertar datos JSON con la misma estructura. Habilite esta función con el [Entrada\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) configuración.
 
 Por ejemplo, considere la siguiente tabla:
 
@@ -660,7 +660,7 @@ Salidas de datos como tablas de arte Unicode, también utilizando secuencias de 
 Se dibuja una cuadrícula completa de la tabla, y cada fila ocupa dos líneas en la terminal.
 Cada bloque de resultados se muestra como una tabla separada. Esto es necesario para que los bloques se puedan generar sin resultados de almacenamiento en búfer (el almacenamiento en búfer sería necesario para calcular previamente el ancho visible de todos los valores).
 
-[NULL](../sql_reference/syntax.md) se emite como `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) se emite como `ᴺᵁᴸᴸ`.
 
 Ejemplo (mostrado para el [PrettyCompact](#prettycompact) formato):
 
@@ -747,7 +747,7 @@ Lo mismo que el ajuste anterior.
 
 Lo mismo que el ajuste anterior.
 
-## Bienvenido a WordPress. {#prettyspace}
+## Bienvenido a WordPress {#prettyspace}
 
 Difiere de [PrettyCompact](#prettycompact) en ese espacio en blanco (caracteres de espacio) se usa en lugar de la cuadrícula.
 
@@ -764,7 +764,7 @@ FixedString se representa simplemente como una secuencia de bytes.
 
 La matriz se representa como una longitud varint (sin signo [LEB128](https://en.wikipedia.org/wiki/LEB128)), seguido de elementos sucesivos de la matriz.
 
-Para [NULL](../sql_reference/syntax.md#null-literal) soporte, se añade un byte adicional que contiene 1 o 0 antes de cada [NULL](../sql_reference/data_types/nullable.md) valor. Si 1, entonces el valor es `NULL` y este byte se interpreta como un valor separado. Si es 0, el valor después del byte no es `NULL`.
+Para [NULL](../sql-reference/syntax.md#null-literal) soporte, se añade un byte adicional que contiene 1 o 0 antes de cada [NULL](../sql-reference/data-types/nullable.md) valor. Si 1, entonces el valor es `NULL` y este byte se interpreta como un valor separado. Si es 0, el valor después del byte no es `NULL`.
 
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
@@ -776,7 +776,7 @@ Similar a [RowBinary](#rowbinary), pero con encabezado añadido:
 
 ## Valor {#data-format-values}
 
-Imprime cada fila entre paréntesis. Las filas están separadas por comas. No hay coma después de la última fila. Los valores dentro de los corchetes también están separados por comas. Los números se emiten en formato decimal sin comillas. Las matrices se emiten entre corchetes. Las cadenas, fechas y fechas con horas se generan entre comillas. Las reglas de escape y el análisis son similares a las [TabSeparated](#tabseparated) formato. Durante el formateo, los espacios adicionales no se insertan, pero durante el análisis, se permiten y omiten (excepto los espacios dentro de los valores de la matriz, que no están permitidos). [NULL](../sql_reference/syntax.md) se representa como `NULL`.
+Imprime cada fila entre paréntesis. Las filas están separadas por comas. No hay coma después de la última fila. Los valores dentro de los corchetes también están separados por comas. Los números se emiten en formato decimal sin comillas. Las matrices se emiten entre corchetes. Las cadenas, fechas y fechas con horas se generan entre comillas. Las reglas de escape y el análisis son similares a las [TabSeparated](#tabseparated) formato. Durante el formateo, los espacios adicionales no se insertan, pero durante el análisis, se permiten y omiten (excepto los espacios dentro de los valores de la matriz, que no están permitidos). [NULL](../sql-reference/syntax.md) se representa como `NULL`.
 
 The minimum set of characters that you need to escape when passing data in Values ​​format: single quotes and backslashes.
 
@@ -788,7 +788,7 @@ Ver también: [input\_format\_values\_interpret\_expressions](../operations/sett
 
 Imprime cada valor en una línea independiente con el nombre de columna especificado. Este formato es conveniente para imprimir solo una o varias filas si cada fila consta de un gran número de columnas.
 
-[NULL](../sql_reference/syntax.md) se emite como `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) se emite como `ᴺᵁᴸᴸ`.
 
 Ejemplo:
 
@@ -967,7 +967,7 @@ message MessageType {
 ```
 
 ClickHouse intenta encontrar una columna llamada `x.y.z` (o `x_y_z` o `X.y_Z` y así sucesivamente).
-Los mensajes anidados son adecuados para [estructuras de datos anidados](../sql_reference/data_types/nested_data_structures/nested.md).
+Los mensajes anidados son adecuados para [estructuras de datos anidados](../sql-reference/data-types/nested-data-structures/nested.md).
 
 Valores predeterminados definidos en un esquema protobuf como este
 
@@ -979,7 +979,7 @@ message MessageType {
 }
 ```
 
-no se aplican; el [valores predeterminados de la tabla](../sql_reference/statements/create.md#create-default-values) se utilizan en lugar de ellos.
+no se aplican; el [valores predeterminados de la tabla](../sql-reference/statements/create.md#create-default-values) se utilizan en lugar de ellos.
 
 ClickHouse entra y emite mensajes protobuf en el `length-delimited` formato.
 Significa que antes de cada mensaje debe escribirse su longitud como un [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
@@ -993,25 +993,10 @@ El formato ClickHouse Avro admite lectura y escritura [Archivos de datos Avro](h
 
 ### Coincidencia de tipos de datos {#data_types-matching}
 
-La siguiente tabla muestra los tipos de datos admitidos y cómo coinciden con ClickHouse [tipos de datos](../sql_reference/data_types/index.md) en `INSERT` y `SELECT` consulta.
+La siguiente tabla muestra los tipos de datos admitidos y cómo coinciden con ClickHouse [tipos de datos](../sql-reference/data-types/index.md) en `INSERT` y `SELECT` consulta.
 
 | Tipo de datos Avro `INSERT`                 | Tipo de datos ClickHouse                                                                                                | Tipo de datos Avro `SELECT`  |
 |---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|------------------------------|
-<<<<<<< HEAD
-| `boolean`, `int`, `long`, `float`, `double` | [¿cómo funciona?)](../sql_reference/data_types/int_uint.md), [UInt(8\|16\|32)](../sql_reference/data_types/int_uint.md) | `int`                        |
-| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql_reference/data_types/int_uint.md), [UInt64](../sql_reference/data_types/int_uint.md)                     | `long`                       |
-| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql_reference/data_types/float.md)                                                                         | `float`                      |
-| `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql_reference/data_types/float.md)                                                                         | `double`                     |
-| `bytes`, `string`, `fixed`, `enum`          | [Cadena](../sql_reference/data_types/string.md)                                                                         | `bytes`                      |
-| `bytes`, `string`, `fixed`                  | [Cadena fija (N)](../sql_reference/data_types/fixedstring.md)                                                           | `fixed(N)`                   |
-| `enum`                                      | [Enum (8\|16)](../sql_reference/data_types/enum.md)                                                                     | `enum`                       |
-| `array(T)`                                  | [Matriz (T)](../sql_reference/data_types/array.md)                                                                      | `array(T)`                   |
-| `union(null, T)`, `union(T, null)`          | [Nivel de Cifrado WEP)](../sql_reference/data_types/date.md)                                                            | `union(null, T)`             |
-| `null`                                      | [Nullable (nada)](../sql_reference/data_types/special_data_types/nothing.md)                                            | `null`                       |
-| `int (date)` \*                             | [Fecha](../sql_reference/data_types/date.md)                                                                            | `int (date)` \*              |
-| `long (timestamp-millis)` \*                | [¿qué puedes encontrar en neodigit)](../sql_reference/data_types/datetime.md)                                           | `long (timestamp-millis)` \* |
-| `long (timestamp-micros)` \*                | [Cómo hacer esto?)](../sql_reference/data_types/datetime.md)                                                            | `long (timestamp-micros)` \* |
-=======
 | `boolean`, `int`, `long`, `float`, `double` | [¿Cómo funciona?)](../sql-reference/data-types/int-uint.md), [UInt(8\|16\|32)](../sql-reference/data-types/int-uint.md) | `int`                        |
 | `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql-reference/data-types/int-uint.md), [UInt64](../sql-reference/data-types/int-uint.md)                     | `long`                       |
 | `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql-reference/data-types/float.md)                                                                         | `float`                      |
@@ -1025,7 +1010,6 @@ La siguiente tabla muestra los tipos de datos admitidos y cómo coinciden con Cl
 | `int (date)` \*                             | [Fecha](../sql-reference/data-types/date.md)                                                                            | `int (date)` \*              |
 | `long (timestamp-millis)` \*                | [¿Qué puedes encontrar en Neodigit)](../sql-reference/data-types/datetime.md)                                           | `long (timestamp-millis)` \* |
 | `long (timestamp-micros)` \*                | [Cómo hacer esto?)](../sql-reference/data-types/datetime.md)                                                            | `long (timestamp-micros)` \* |
->>>>>>> upstream/master
 
 \* [Tipos lógicos Avro](http://avro.apache.org/docs/current/spec.html#Logical+Types)
 
@@ -1088,7 +1072,7 @@ $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-
 3 c
 ```
 
-Utilizar `AvroConfluent` con [Kafka](../engines/table_engines/integrations/kafka.md):
+Utilizar `AvroConfluent` con [Kafka](../engines/table-engines/integrations/kafka.md):
 
 ``` sql
 CREATE TABLE topic1_stream
@@ -1117,25 +1101,25 @@ SELECT * FROM topic1_stream;
 
 ### Coincidencia de tipos de datos {#data_types-matching-2}
 
-La siguiente tabla muestra los tipos de datos admitidos y cómo coinciden con ClickHouse [tipos de datos](../sql_reference/data_types/index.md) en `INSERT` y `SELECT` consulta.
+La siguiente tabla muestra los tipos de datos admitidos y cómo coinciden con ClickHouse [tipos de datos](../sql-reference/data-types/index.md) en `INSERT` y `SELECT` consulta.
 
 | Tipo de datos de parquet (`INSERT`) | Tipo de datos ClickHouse                                  | Tipo de datos de parquet (`SELECT`) |
 |-------------------------------------|-----------------------------------------------------------|-------------------------------------|
-| `UINT8`, `BOOL`                     | [UInt8](../sql_reference/data_types/int_uint.md)          | `UINT8`                             |
-| `INT8`                              | [Int8](../sql_reference/data_types/int_uint.md)           | `INT8`                              |
-| `UINT16`                            | [UInt16](../sql_reference/data_types/int_uint.md)         | `UINT16`                            |
-| `INT16`                             | [Int16](../sql_reference/data_types/int_uint.md)          | `INT16`                             |
-| `UINT32`                            | [UInt32](../sql_reference/data_types/int_uint.md)         | `UINT32`                            |
-| `INT32`                             | [Int32](../sql_reference/data_types/int_uint.md)          | `INT32`                             |
-| `UINT64`                            | [UInt64](../sql_reference/data_types/int_uint.md)         | `UINT64`                            |
-| `INT64`                             | [Int64](../sql_reference/data_types/int_uint.md)          | `INT64`                             |
-| `FLOAT`, `HALF_FLOAT`               | [Float32](../sql_reference/data_types/float.md)           | `FLOAT`                             |
-| `DOUBLE`                            | [Float64](../sql_reference/data_types/float.md)           | `DOUBLE`                            |
-| `DATE32`                            | [Fecha](../sql_reference/data_types/date.md)              | `UINT16`                            |
-| `DATE64`, `TIMESTAMP`               | [FechaHora](../sql_reference/data_types/datetime.md)      | `UINT32`                            |
-| `STRING`, `BINARY`                  | [Cadena](../sql_reference/data_types/string.md)           | `STRING`                            |
-| —                                   | [Cadena fija](../sql_reference/data_types/fixedstring.md) | `STRING`                            |
-| `DECIMAL`                           | [Decimal](../sql_reference/data_types/decimal.md)         | `DECIMAL`                           |
+| `UINT8`, `BOOL`                     | [UInt8](../sql-reference/data-types/int-uint.md)          | `UINT8`                             |
+| `INT8`                              | [Int8](../sql-reference/data-types/int-uint.md)           | `INT8`                              |
+| `UINT16`                            | [UInt16](../sql-reference/data-types/int-uint.md)         | `UINT16`                            |
+| `INT16`                             | [Int16](../sql-reference/data-types/int-uint.md)          | `INT16`                             |
+| `UINT32`                            | [UInt32](../sql-reference/data-types/int-uint.md)         | `UINT32`                            |
+| `INT32`                             | [Int32](../sql-reference/data-types/int-uint.md)          | `INT32`                             |
+| `UINT64`                            | [UInt64](../sql-reference/data-types/int-uint.md)         | `UINT64`                            |
+| `INT64`                             | [Int64](../sql-reference/data-types/int-uint.md)          | `INT64`                             |
+| `FLOAT`, `HALF_FLOAT`               | [Float32](../sql-reference/data-types/float.md)           | `FLOAT`                             |
+| `DOUBLE`                            | [Float64](../sql-reference/data-types/float.md)           | `DOUBLE`                            |
+| `DATE32`                            | [Fecha](../sql-reference/data-types/date.md)              | `UINT16`                            |
+| `DATE64`, `TIMESTAMP`               | [FechaHora](../sql-reference/data-types/datetime.md)      | `UINT32`                            |
+| `STRING`, `BINARY`                  | [Cadena](../sql-reference/data-types/string.md)           | `STRING`                            |
+| —                                   | [Cadena fija](../sql-reference/data-types/fixedstring.md) | `STRING`                            |
+| `DECIMAL`                           | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                           |
 
 ClickHouse admite una precisión configurable de `Decimal` tipo. El `INSERT` consulta trata el Parquet `DECIMAL` tipo como el ClickHouse `Decimal128` tipo.
 
@@ -1157,7 +1141,7 @@ Puede seleccionar datos de una tabla ClickHouse y guardarlos en algún archivo e
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-Para intercambiar datos con Hadoop, puede usar [Motor de mesa HDFS](../engines/table_engines/integrations/hdfs.md).
+Para intercambiar datos con Hadoop, puede usar [Motor de mesa HDFS](../engines/table-engines/integrations/hdfs.md).
 
 ## ORC {#data-format-orc}
 
@@ -1165,24 +1149,24 @@ Para intercambiar datos con Hadoop, puede usar [Motor de mesa HDFS](../engines/t
 
 ### Coincidencia de tipos de datos {#data_types-matching-3}
 
-La siguiente tabla muestra los tipos de datos admitidos y cómo coinciden con ClickHouse [tipos de datos](../sql_reference/data_types/index.md) en `INSERT` consulta.
+La siguiente tabla muestra los tipos de datos admitidos y cómo coinciden con ClickHouse [tipos de datos](../sql-reference/data-types/index.md) en `INSERT` consulta.
 
 | Tipo de datos ORC (`INSERT`) | Tipo de datos ClickHouse                             |
 |------------------------------|------------------------------------------------------|
-| `UINT8`, `BOOL`              | [UInt8](../sql_reference/data_types/int_uint.md)     |
-| `INT8`                       | [Int8](../sql_reference/data_types/int_uint.md)      |
-| `UINT16`                     | [UInt16](../sql_reference/data_types/int_uint.md)    |
-| `INT16`                      | [Int16](../sql_reference/data_types/int_uint.md)     |
-| `UINT32`                     | [UInt32](../sql_reference/data_types/int_uint.md)    |
-| `INT32`                      | [Int32](../sql_reference/data_types/int_uint.md)     |
-| `UINT64`                     | [UInt64](../sql_reference/data_types/int_uint.md)    |
-| `INT64`                      | [Int64](../sql_reference/data_types/int_uint.md)     |
-| `FLOAT`, `HALF_FLOAT`        | [Float32](../sql_reference/data_types/float.md)      |
-| `DOUBLE`                     | [Float64](../sql_reference/data_types/float.md)      |
-| `DATE32`                     | [Fecha](../sql_reference/data_types/date.md)         |
-| `DATE64`, `TIMESTAMP`        | [FechaHora](../sql_reference/data_types/datetime.md) |
-| `STRING`, `BINARY`           | [Cadena](../sql_reference/data_types/string.md)      |
-| `DECIMAL`                    | [Decimal](../sql_reference/data_types/decimal.md)    |
+| `UINT8`, `BOOL`              | [UInt8](../sql-reference/data-types/int-uint.md)     |
+| `INT8`                       | [Int8](../sql-reference/data-types/int-uint.md)      |
+| `UINT16`                     | [UInt16](../sql-reference/data-types/int-uint.md)    |
+| `INT16`                      | [Int16](../sql-reference/data-types/int-uint.md)     |
+| `UINT32`                     | [UInt32](../sql-reference/data-types/int-uint.md)    |
+| `INT32`                      | [Int32](../sql-reference/data-types/int-uint.md)     |
+| `UINT64`                     | [UInt64](../sql-reference/data-types/int-uint.md)    |
+| `INT64`                      | [Int64](../sql-reference/data-types/int-uint.md)     |
+| `FLOAT`, `HALF_FLOAT`        | [Float32](../sql-reference/data-types/float.md)      |
+| `DOUBLE`                     | [Float64](../sql-reference/data-types/float.md)      |
+| `DATE32`                     | [Fecha](../sql-reference/data-types/date.md)         |
+| `DATE64`, `TIMESTAMP`        | [FechaHora](../sql-reference/data-types/datetime.md) |
+| `STRING`, `BINARY`           | [Cadena](../sql-reference/data-types/string.md)      |
+| `DECIMAL`                    | [Decimal](../sql-reference/data-types/decimal.md)    |
 
 ClickHouse soporta la precisión configurable de la `Decimal` tipo. El `INSERT` consulta trata el ORC `DECIMAL` tipo como el ClickHouse `Decimal128` tipo.
 
@@ -1198,7 +1182,7 @@ Puede insertar datos ORC de un archivo en la tabla ClickHouse mediante el siguie
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-Para intercambiar datos con Hadoop, puede usar [Motor de mesa HDFS](../engines/table_engines/integrations/hdfs.md).
+Para intercambiar datos con Hadoop, puede usar [Motor de mesa HDFS](../engines/table-engines/integrations/hdfs.md).
 
 ## Esquema de formato {#formatschema}
 
@@ -1214,7 +1198,7 @@ puede contener una ruta absoluta o una ruta relativa al directorio actual en el 
 Si utiliza el cliente en el [modo por lotes](../interfaces/cli.md#cli_usage), la ruta de acceso al esquema debe ser relativa por razones de seguridad.
 
 Si introduce o emite datos a través del [Interfaz HTTP](../interfaces/http.md) el nombre de archivo especificado en el esquema de formato
-debe estar ubicado en el directorio especificado en [format\_schema\_path](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-format_schema_path)
+debe estar ubicado en el directorio especificado en [format\_schema\_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
 en la configuración del servidor.
 
 ## Salto de errores {#skippingerrors}

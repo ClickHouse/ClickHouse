@@ -9,7 +9,7 @@ toc_title: clickhouse-yerel
 
 Bu `clickhouse-local` program, ClickHouse sunucusunu dağıtmak ve yapılandırmak zorunda kalmadan yerel dosyalar üzerinde hızlı işlem yapmanızı sağlar.
 
-Tabloları temsil eden verileri kabul eder ve bunları kullanarak sorgular [ClickHouse SQL lehçesi](../../sql_reference/index.md).
+Tabloları temsil eden verileri kabul eder ve bunları kullanarak sorgular [ClickHouse SQL lehçesi](../../sql-reference/index.md).
 
 `clickhouse-local` ClickHouse server ile aynı çekirdeği kullanır, bu nedenle özelliklerin çoğunu ve aynı format ve tablo motorlarını destekler.
 

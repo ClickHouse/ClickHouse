@@ -39,6 +39,9 @@ public:
             registerFunction(name, &Function::create, case_sensitiveness);
     }
 
+    /// This function is used by YQL - internal Yandex product that depends on ClickHouse by source code.
+    std::vector<std::string> getAllNames() const;
+
     /// Throws an exception if not found.
     FunctionOverloadResolverPtr get(const std::string & name, const Context & context) const;
 
@@ -50,7 +53,7 @@ public:
     FunctionOverloadResolverImplPtr tryGetImpl(const std::string & name, const Context & context) const;
 
 private:
-    using Functions = std::unordered_map<std::string, Creator>;
+    using Functions = std::unordered_map<std::string, Value>;
 
     Functions functions;
     Functions case_insensitive_functions;
@@ -61,9 +64,9 @@ private:
         return std::make_unique<DefaultOverloadResolver>(Function::create(context));
     }
 
-    const Functions & getCreatorMap() const override { return functions; }
+    const Functions & getMap() const override { return functions; }
 
-    const Functions & getCaseInsensitiveCreatorMap() const override { return case_insensitive_functions; }
+    const Functions & getCaseInsensitiveMap() const override { return case_insensitive_functions; }
 
     String getFactoryName() const override { return "FunctionFactory"; }
 
@@ -71,7 +74,7 @@ private:
     /// No locking, you must register all functions before usage of get.
     void registerFunction(
             const std::string & name,
-            Creator creator,
+            Value creator,
             CaseSensitiveness case_sensitiveness = CaseSensitive);
 };
 

@@ -14,6 +14,7 @@ toc_title: "\u7D71\u5408"
 
 -   リレーショナルデータベース管理システム
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-データリーダー](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-レプリケーター](https://github.com/larsnovikov/horgh-replicator)
@@ -27,6 +28,7 @@ toc_title: "\u7D71\u5408"
 -   メッセージキュ
     -   [カフカ](https://kafka.apache.org)
         -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) （用途 [Goクライアント](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   ストリーム処理
     -   [フリンク](https://flink.apache.org)
         -   [フリンク-クリックハウス-シンク](https://github.com/ivi-ru/flink-clickhouse-sink)
@@ -44,13 +46,8 @@ toc_title: "\u7D71\u5408"
     -   [黒鉛](https://graphiteapp.org)
         -   [グラファウス](https://github.com/yandex/graphouse)
         -   [カーボンクリックハウス](https://github.com/lomik/carbon-clickhouse) +
-<<<<<<< HEAD
-        -   [黒鉛-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) -staledパーティションを最適化します。 [\*グラフィットマージツリー](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) からのルールの場合 [ロールアップ構成](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration) 適用できます
-=======
         -   [グラファイト-クリック](https://github.com/lomik/graphite-clickhouse)
         -   [黒鉛-ch-オプティマイザー](https://github.com/innogames/graphite-ch-optimizer) -staled仕切りを最大限に活用する [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) からのルールの場合 [ロールアップ構成](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) 応用できます
->>>>>>> upstream/master
     -   [グラファナ](https://grafana.com/)
         -   [クリックハウス-グラファナ](https://github.com/Vertamedia/clickhouse-grafana)
     -   [プロメテウス](https://prometheus.io/)
@@ -82,25 +79,15 @@ toc_title: "\u7D71\u5408"
         -   [sqlalchemy-クリックハウス](https://github.com/cloudflare/sqlalchemy-clickhouse) （用途 [インフィclickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [パンダ](https://pandas.pydata.org)
         -   [パンダハウス](https://github.com/kszucs/pandahouse)
-<<<<<<< HEAD
-- PHP
-    -   [Doctrine](https://www.doctrine-project.org/)
-        -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
-=======
 -   PHP
     -   [教義](https://www.doctrine-project.org/)
         -   [dbal-クリックハウス](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
->>>>>>> upstream/master
 -   R
     -   [dplyr](https://db.rstudio.com/dplyr/)
         -   [RClickHouse](https://github.com/IMSMWU/RClickHouse) （用途 [クリックハウス-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-<<<<<<< HEAD
-        -   [クリックハウス-hdfs-ローダー](https://github.com/jaykelin/clickhouse-hdfs-loader) (用途 [JDBC](../../sql_reference/table_functions/jdbc.md))
-=======
         -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) （用途 [JDBC](../../sql-reference/table-functions/jdbc.md))
->>>>>>> upstream/master
 -   Scala
     -   [アッカ](https://akka.io)
         -   [clickhouse-scala-クライアント](https://github.com/crobox/clickhouse-scala-client)
@@ -113,5 +100,11 @@ toc_title: "\u7D71\u5408"
 -   エリクサー
     -   [Ecto](https://github.com/elixir-ecto/ecto)
         -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
+-   Ruby
+    -   [Ruby on rails](https://rubyonrails.org/)
+        -   [activecube](https://github.com/bitquery/activecube)
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord) 
+    -   [GraphQL](https://github.com/graphql)
+        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
 [元の記事](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

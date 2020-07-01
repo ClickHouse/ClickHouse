@@ -26,7 +26,6 @@ add_executable (int_hashes_perf int_hashes_perf.cpp)
 target_link_libraries (int_hashes_perf PRIVATE clickhouse_common_io)
 
 add_executable (simple_cache simple_cache.cpp)
-target_include_directories (simple_cache PRIVATE ${DBMS_INCLUDE_DIR})
 target_link_libraries (simple_cache PRIVATE common)
 
 add_executable (compact_array compact_array.cpp)
@@ -34,10 +33,11 @@ target_link_libraries (compact_array PRIVATE clickhouse_common_io)
 
 add_executable (radix_sort radix_sort.cpp)
 target_link_libraries (radix_sort PRIVATE clickhouse_common_io)
+target_include_directories(radix_sort SYSTEM PRIVATE ${PDQSORT_INCLUDE_DIR})
 
 if (USE_OPENCL)
     add_executable (bitonic_sort bitonic_sort.cpp)
-    target_link_libraries (bitonic_sort PRIVATE clickhouse_common_io ${OPENCL_LINKER_FLAGS})
+    target_link_libraries (bitonic_sort PRIVATE clickhouse_common_io ${OPENCL_LINKER_FLAGS} ${OpenCL_LIBRARIES})
 endif ()
 
 add_executable (arena_with_free_lists arena_with_free_lists.cpp)
@@ -48,6 +48,9 @@ target_link_libraries (pod_array PRIVATE clickhouse_common_io)
 
 add_executable (thread_creation_latency thread_creation_latency.cpp)
 target_link_libraries (thread_creation_latency PRIVATE clickhouse_common_io)
+
+add_executable (array_cache array_cache.cpp)
+target_link_libraries (array_cache PRIVATE clickhouse_common_io)
 
 add_executable (space_saving space_saving.cpp)
 target_link_libraries (space_saving PRIVATE clickhouse_common_io)
@@ -73,3 +76,6 @@ target_link_libraries (chaos_sanitizer PRIVATE clickhouse_common_io)
 
 add_executable (memory_statistics_os_perf memory_statistics_os_perf.cpp)
 target_link_libraries (memory_statistics_os_perf PRIVATE clickhouse_common_io)
+
+add_executable (procfs_metrics_provider_perf procfs_metrics_provider_perf.cpp)
+target_link_libraries (procfs_metrics_provider_perf PRIVATE clickhouse_common_io)

@@ -14,7 +14,7 @@ toc_title: Nuage
 
 [Service géré Yandex pour ClickHouse](https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link3) offre les fonctionnalités suivantes:
 
--   Service ZooKeeper entièrement géré pour [Réplication de ClickHouse](../engines/table_engines/mergetree_family/replication.md)
+-   Service ZooKeeper entièrement géré pour [Réplication de ClickHouse](../engines/table-engines/mergetree-family/replication.md)
 -   Choix multiples de type de stockage
 -   Répliques dans différentes zones de disponibilité
 -   Le chiffrement et l'isolement

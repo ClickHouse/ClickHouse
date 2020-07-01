@@ -9,11 +9,7 @@ toc_title: "\u30B3\u30DE\u30F3\u30C9\u884C\u30AF\u30E9\u30A4\u30A2\u30F3\u30C8"
 
 ClickHouseスネイティブコマンドラインのクライアント: `clickhouse-client`. クライア 詳細については、 [設定](#interfaces_cli_configuration).
 
-<<<<<<< HEAD
-[設置](../getting_started/index.md) それから `clickhouse-client` パッケージとコマンドでそれを実行 `clickhouse-client`.
-=======
 [インスト](../getting-started/index.md) それから `clickhouse-client` パッケージ化し、コマンドで実行します `clickhouse-client`.
->>>>>>> upstream/master
 
 ``` bash
 $ clickhouse-client
@@ -93,11 +89,7 @@ $ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = 
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
-<<<<<<< HEAD
--   `data type` — [データ型](../sql_reference/data_types/index.md) アプリのパラメータ値の。 たとえば、次のようなデータ構造 `(integer, ('string', integer))` を持つことができ `Tuple(UInt8, Tuple(String, UInt8))` デー [整数](../sql_reference/data_types/int_uint.md) タイプ）。
-=======
 -   `data type` — [データ型](../sql-reference/data-types/index.md) アプリのパラメータ値の たとえば、次のようなデータ構造 `(integer, ('string', integer))` を持つことができ `Tuple(UInt8, Tuple(String, UInt8))` データ型(別のデータ型も使用できます [整数](../sql-reference/data-types/int-uint.md) タイプ）。
->>>>>>> upstream/master
 
 #### 例 {#example}
 

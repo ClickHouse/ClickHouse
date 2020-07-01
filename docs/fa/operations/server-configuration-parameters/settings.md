@@ -210,7 +210,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 **مثال**
 
 ``` xml
-<https>0000</https>
+<https_port>9999</https_port>
 ```
 
 ## نقلقولهای جدید از این نویسنده {#server_configuration_parameters-http_server_default_response}

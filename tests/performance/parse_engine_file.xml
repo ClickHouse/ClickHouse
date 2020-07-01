@@ -1,11 +1,8 @@
-<test>
+<test max_ignored_relative_change="0.2">
     
     <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
 
     <fill_query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 100000</fill_query>
-
-
-
 
     <substitutions>
         <substitution>

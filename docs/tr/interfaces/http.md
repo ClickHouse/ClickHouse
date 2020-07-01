@@ -11,7 +11,7 @@ HTTP arayüzü, herhangi bir programlama dilinden herhangi bir platformda Clickh
 
 Varsayılan olarak, clickhouse-server, 8123 numaralı bağlantı noktasında HTTP dinler (bu, yapılandırmada değiştirilebilir).
 
-Parametreler olmadan bir GET / request yaparsanız, 200 yanıt kodunu ve tanımlanan dizeyi döndürür [http\_server\_default\_response](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-http_server_default_response) varsayılan değer “Ok.” (sonunda bir çizgi besleme ile)
+Parametreler olmadan bir GET / request yaparsanız, 200 yanıt kodunu ve tanımlanan dizeyi döndürür [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) varsayılan değer “Ok.” (sonunda bir çizgi besleme ile)
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -364,25 +364,10 @@ $ curl -v 'http://localhost:8123/predefined_query'
 * Connection #0 to host localhost left intact
 
 
-<<<<<<< HEAD
-`http_server_default_response` tanımlanmadı ve Clickhouse'a bir HTTP isteği gönderildi. Sonuç aşağıdaki gibidir:
-
-``` xml
-<http_handlers>
-    <root_handler/>
-</http_handlers>
-```
-
-    $ curl 'http://localhost:8123'
-    Ok.
-
-`http_server_default_response` tanımlanır ve Clickhouse'a bir HTTP isteği gönderilir. Sonuç aşağıdaki gibidir:
-=======
 * Connection #0 to host localhost left intact
 ```
 
 Örnekten görebileceğiniz gibi, Eğer `<http_handlers>` yapılandırmada yapılandırılır.xml dosyası ve `<http_handlers>` birçok içerebilir `<rule>s`. ClickHouse, önceden tanımlanmış türe alınan HTTP istekleriyle eşleşir `<rule>` ve ilk eşleşen işleyiciyi çalıştırır. Ardından, Maç başarılı olursa, ClickHouse ilgili önceden tanımlanmış sorguyu yürütecektir.
->>>>>>> upstream/master
 
 > Şimdi `<rule>` Yapılandır configureılabilir `<method>`, `<headers>`, `<url>`,`<handler>`:
 > `<method>` HTTP isteğinin yöntem bölümünü eşleştirmekten sorumludur. `<method>` tam tanımına uygundur [yöntem](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) HTTP protokolünde. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin yöntem kısmıyla eşleşmez.
@@ -412,11 +397,7 @@ Sonraki farklı yapılandırma yöntemleri `<type>`.
 
 `<query>` değer, önceden tanımlanmış bir sorgudur `<predefined_query_handler>`, bir HTTP isteği eşleştirildiğinde ve sorgunun sonucu döndürüldüğünde ClickHouse tarafından yürütülür. Bu bir zorunluluktur yapılandırma.
 
-<<<<<<< HEAD
-`<ping_handler>` geçerli ClickHouse sunucusunun durumunu araştırmak için kullanılabilir. ClickHouse HTTP Sunucusu normal olduğunda, Clickhouse'a erişme `<ping_handler>` dön willecektir **Tamam.**.
-=======
 Aşağıdaki örnek değerleri tanımlar `max_threads` ve `max_alter_threads` ayarlar, ardından bu ayarların başarıyla ayarlanıp ayarlanmadığını kontrol etmek için sistem tablosunu sorgular.
->>>>>>> upstream/master
 
 Örnek:
 
@@ -476,21 +457,7 @@ max_threads 1
 max_alter_threads   2
 ```
 
-<<<<<<< HEAD
-## predefined\_query\_handler {#predefined_query_handler}
-
-Yapılandırabilirsiniz `<method>`, `<headers>`, `<url>` ve `<queries>` içinde `<predefined_query_handler>`.
-
-`<method>` HTTP isteğinin yöntem bölümünü eşleştirmekten sorumludur. `<method>` tam tanımına uygundur [yöntem](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) HTTP protokolünde. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin yöntem kısmıyla eşleşmez
-
-`<url>` HTTP isteğinin url bölümünü eşleştirmekten sorumludur. İle uyumludur [RE2](https://github.com/google/re2)'In düzenli ifadeleri. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin url kısmıyla eşleşmez
-
-`<headers>` HTTP isteğinin başlık kısmını eşleştirmekten sorumludur. Bu re2 düzenli ifadeler ile uyumludur. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin başlık kısmıyla eşleşmez
-
-`<queries>` değer, önceden tanımlanmış bir sorgudur `<predefined_query_handler>`, bir HTTP isteği eşleştirildiğinde ve sorgunun sonucu döndürüldüğünde ClickHouse tarafından yürütülür. Bu bir zorunluluktur yapılandırma.
-=======
 ## sabit {#static}
->>>>>>> upstream/master
 
 `<static>` dön canebilir [content\_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [durum](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) ve response\_content. response\_content belirtilen içeriği döndürebilir
 
@@ -554,10 +521,6 @@ Yapılandırmadan içeriği bulun istemciye gönder.
 </http_handlers>
 ```
 
-<<<<<<< HEAD
-ClickHouse ayıklar ve karşılık gelen değeri yürütür `<query_param_name>` HTTP isteğinin url'sindeki değer.
-ClickHouse varsayılan ayarı `<query_param_name>` oluyor `/query` . İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanım yoksa, param iletilmez.
-=======
 ``` bash
 $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 *   Trying ::1...
@@ -579,7 +542,6 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 * Connection #0 to host localhost left intact
 <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
 ```
->>>>>>> upstream/master
 
 İstemciye gönder dosyadan içeriği bulun.
 

@@ -5,11 +5,7 @@ toc_priority: 61
 toc_title: Sistema abierto.
 ---
 
-<<<<<<< HEAD
-# Sistema abierto. {#clickhouse-benchmark}
-=======
 # Sistema abierto {#clickhouse-benchmark}
->>>>>>> upstream/master
 
 Se conecta a un servidor ClickHouse y envía repetidamente las consultas especificadas.
 

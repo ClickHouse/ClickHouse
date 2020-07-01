@@ -47,7 +47,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 
 ### Uso de una tabla de motor de archivo {#using-a-file-engine-table}
 
-Ver [File](../engines/table_engines/special/file.md).
+Ver [File](../engines/table-engines/special/file.md).
 
 ### Uso de la redirección de línea de comandos {#using-command-line-redirection}
 

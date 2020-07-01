@@ -11,11 +11,7 @@ HTTPイトのご利用ClickHouseにプラットフォームからゆるプログ
 
 デフォルトでは、clickhouse-serverはポート8123でHTTPをリッスンします（これは設定で変更できます）。
 
-<<<<<<< HEAD
-パラメータを指定せずにget/requestを実行すると、200個の応答コードと、以下で定義されている文字列が返されます [http\_server\_default\_response](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-http_server_default_response) デフォルト値 “Ok.” （最後にラインフィード付き)
-=======
 パラメータなしでGET/requestを行うと、200の応答コードとで定義された文字列が返されます [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) デフォルト値 “Ok.” （最後に改行があります)
->>>>>>> upstream/master
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -463,11 +459,7 @@ max_alter_threads   2
 
 ## 静的 {#static}
 
-<<<<<<< HEAD
-`<url>` HTTPリクエストのurl部分を照合する責任があります。 それはと互換性があります [RE2](https://github.com/google/re2)'の正規表現。 これはオプションの設定です。 構成ファイルで定義されていない場合は、HTTP要求のurl部分と一致しません
-=======
 `<static>` 戻れる [content\_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [状態](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) そしてresponse\_content。 response\_contentは、指定された内容を返すことができます
->>>>>>> upstream/master
 
 例:
 

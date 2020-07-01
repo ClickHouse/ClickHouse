@@ -1,4 +1,3 @@
-
 # ClickHouse 测试 {#clickhouse-ce-shi}
 
 ## 功能性测试 {#gong-neng-xing-ce-shi}

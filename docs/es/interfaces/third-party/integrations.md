@@ -3,23 +3,16 @@ toc_priority: 27
 toc_title: Integrations
 ---
 
-<<<<<<< HEAD
-# Bibliotecas de integración de desarrolladores externos {#integration-libraries-from-third-party-developers}
-=======
 # Integration Libraries from Third-party Developers {#integration-libraries-from-third-party-developers}
->>>>>>> upstream/master
 
 !!! warning "Disclaimer"
     Yandex does **not** maintain the tools and libraries listed below and haven’t done any extensive testing to ensure their quality.
 
-<<<<<<< HEAD
-## Productos de infraestructura {#infrastructure-products}
-=======
 ## Infrastructure Products {#infrastructure-products}
->>>>>>> upstream/master
 
 -   Relational database management systems
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
@@ -33,6 +26,7 @@ toc_title: Integrations
 -   Message queues
     -   [Kafka](https://kafka.apache.org)
         -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   Stream processing
     -   [Flink](https://flink.apache.org)
         -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
@@ -49,15 +43,9 @@ toc_title: Integrations
 -   Monitoring
     -   [Graphite](https://graphiteapp.org)
         -   [graphouse](https://github.com/yandex/graphouse)
-<<<<<<< HEAD
-        -   [de carbono-clickhouse](https://github.com/lomik/carbon-clickhouse) +
-        -   [Sistema abierto.](https://github.com/lomik/graphite-clickhouse)
-        -   [Grafito-ch-optimizador](https://github.com/innogames/graphite-ch-optimizer) - optimiza las particiones [\*GraphiteMergeTree](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) reglas de [Configuración de rollup](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration) podría ser aplicado
-=======
         -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
         -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
         -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) could be applied
->>>>>>> upstream/master
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometheus](https://prometheus.io/)
@@ -82,23 +70,14 @@ toc_title: Integrations
     -   [MaxMind](https://dev.maxmind.com/geoip/)
         -   [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
 
-<<<<<<< HEAD
-## Programación de ecosistemas de lenguaje {#programming-language-ecosystems}
-=======
 ## Programming Language Ecosystems {#programming-language-ecosystems}
->>>>>>> upstream/master
 
 -   Python
     -   [SQLAlchemy](https://www.sqlalchemy.org)
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [pandas](https://pandas.pydata.org)
-<<<<<<< HEAD
-        -   [Pandahouse](https://github.com/kszucs/pandahouse)
-- PHP
-=======
         -   [pandahouse](https://github.com/kszucs/pandahouse)
 -   PHP
->>>>>>> upstream/master
     -   [Doctrine](https://www.doctrine-project.org/)
         -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
@@ -106,13 +85,8 @@ toc_title: Integrations
         -   [RClickHouse](https://github.com/IMSMWU/RClickHouse) (uses [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-<<<<<<< HEAD
-        -   [Sistema abierto.](https://github.com/jaykelin/clickhouse-hdfs-loader) (utilizar [JDBC](../../sql_reference/table_functions/jdbc.md))
--   Ciudad
-=======
         -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../../sql-reference/table-functions/jdbc.md))
 -   Scala
->>>>>>> upstream/master
     -   [Akka](https://akka.io)
         -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
 -   C\#
@@ -124,5 +98,11 @@ toc_title: Integrations
 -   Elixir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
         -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
+-   Ruby
+    -   [Ruby on Rails](https://rubyonrails.org/)
+        -   [activecube](https://github.com/bitquery/activecube)
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
+    -   [GraphQL](https://github.com/graphql)
+        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

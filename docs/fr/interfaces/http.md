@@ -11,7 +11,7 @@ L'interface HTTP vous permet D'utiliser ClickHouse sur n'importe quelle plate-fo
 
 Par défaut, clickhouse-server écoute HTTP sur le port 8123 (cela peut être modifié dans la configuration).
 
-Si vous faites une requête GET / sans Paramètres, elle renvoie le code de réponse 200 et la chaîne définie dans [http\_server\_default\_response](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-http_server_default_response) valeur par défaut “Ok.” (avec un saut de ligne à la fin)
+Si vous faites une requête GET / sans Paramètres, elle renvoie le code de réponse 200 et la chaîne définie dans [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) valeur par défaut “Ok.” (avec un saut de ligne à la fin)
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -362,28 +362,9 @@ $ curl -v 'http://localhost:8123/predefined_query'
 "ReplicatedSend" 0
 
 * Connection #0 to host localhost left intact
-<<<<<<< HEAD
-```
-
-Comme vous pouvez le voir dans l'exemple, si `<http_handlers>` est configuré dans la configuration.fichier xml, ClickHouse fera correspondre les requêtes HTTP reçues au type prédéfini dans `<http_handlers>`, puis ClickHouse exécutera la requête prédéfinie correspondante si la correspondance est réussie.
-
-Maintenant `<http_handlers>` pouvez configurer `<root_handler>`, `<ping_handler>`, `<replicas_status_handler>`, `<dynamic_query_handler>` et `<no_handler_description>` .
-
-## root\_handler {#root_handler}
-=======
->>>>>>> upstream/master
 
 
-<<<<<<< HEAD
-`http_server_default_response` n'est pas défini et une requête HTTP est envoyée à ClickHouse. Le résultat est comme suit:
-
-``` xml
-<http_handlers>
-    <root_handler/>
-</http_handlers>
-=======
 * Connection #0 to host localhost left intact
->>>>>>> upstream/master
 ```
 
 Comme vous pouvez le voir dans l'exemple, si `<http_handlers>` est configuré dans la configuration.fichier xml et `<http_handlers>` peut contenir beaucoup `<rule>s`. ClickHouse fera correspondre les requêtes HTTP reçues au type prédéfini `<rule>` et la première appariés exécute le gestionnaire. Ensuite, ClickHouse exécutera la requête prédéfinie correspondante si la correspondance est réussie.
@@ -416,11 +397,7 @@ Viennent ensuite les méthodes de configuration pour les différents `<type>`.
 
 `<query>` la valeur est une requête prédéfinie de `<predefined_query_handler>`, qui est exécuté par ClickHouse lorsqu'une requête HTTP est mise en correspondance et que le résultat de la requête est renvoyé. C'est une configuration incontournable.
 
-<<<<<<< HEAD
-`<ping_handler>` peut être utilisé pour sonder la santé du serveur clickhouse actuel. Lorsque le serveur HTTP ClickHouse est normal, l'accès à ClickHouse via `<ping_handler>` sera de retour **OK.**.
-=======
 L'exemple suivant définit les valeurs de `max_threads` et `max_alter_threads` Paramètres, puis interroge la table système pour vérifier si ces paramètres ont été définis avec succès.
->>>>>>> upstream/master
 
 Exemple:
 
@@ -453,15 +430,11 @@ max_alter_threads   2
 
 ## dynamic\_query\_handler {#dynamic_query_handler}
 
-<<<<<<< HEAD
-`<replicas_status_handler>` est utilisé pour détecter l'état du nœud de réplica et le retour **OK.** si le nœud réplique n'a pas de délai. S'il y a un retard, renvoyez le retard spécifique. La valeur de `<replicas_status_handler>` prend en charge la personnalisation. Si vous ne spécifiez pas `<replicas_status_handler>`, ClickHouse réglage par défaut `<replicas_status_handler>` être **/ replicas\_status**.
-=======
 Dans `<dynamic_query_handler>`, la requête est écrite sous la forme de param de la requête HTTP. La différence est que dans `<predefined_query_handler>`, la requête est écrite dans le fichier de configuration. Vous pouvez configurer `<query_param_name>` dans `<dynamic_query_handler>`.
 
 Clickhouse extrait et exécute la valeur correspondant au `<query_param_name>` valeur dans l'url de la requête HTTP. La valeur par défaut de `<query_param_name>` être `/query` . C'est une option de configuration. Si il n'y a pas de définition dans le fichier de configuration, le paramètre n'est pas passé.
 
 Pour expérimenter cette fonctionnalité, l'exemple définit les valeurs de max\_threads et max\_alter\_threads et demande si les paramètres ont été définis avec succès.
->>>>>>> upstream/master
 
 Exemple:
 
@@ -484,27 +457,9 @@ max_threads 1
 max_alter_threads   2
 ```
 
-<<<<<<< HEAD
-## predefined\_query\_handler {#predefined_query_handler}
-
-Vous pouvez configurer `<method>`, `<headers>`, `<url>` et `<queries>` dans `<predefined_query_handler>`.
-
-`<method>` est responsable de la correspondance de la partie méthode de la requête HTTP. `<method>` entièrement conforme à la définition de [méthode](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) dans le protocole HTTP. C'est une option de configuration. S'il n'est pas défini dans le fichier de configuration, il ne correspond pas à la partie méthode de la requête HTTP
-
-`<url>` est responsable de la correspondance de la partie url de la requête HTTP. Il est compatible avec [RE2](https://github.com/google/re2)s 'expressions régulières. C'est une option de configuration. S'il n'est pas défini dans le fichier de configuration, il ne correspond pas à la partie url de la requête HTTP
-
-`<headers>` est responsable de la correspondance de la partie d'en-tête de la requête HTTP. Il est compatible avec les expressions régulières de RE2. C'est une option de configuration. S'il n'est pas défini dans le fichier de configuration, il ne correspond pas à la partie d'en-tête de la requête HTTP
-
-`<queries>` la valeur est une requête prédéfinie de `<predefined_query_handler>`, qui est exécuté par ClickHouse lorsqu'une requête HTTP est mise en correspondance et que le résultat de la requête est renvoyé. C'est une configuration incontournable.
-
-`<predefined_query_handler>` prend en charge les paramètres de réglage et les valeurs query\_params.
-
-L'exemple suivant définit les valeurs de `max_threads` et `max_alter_threads` Paramètres, puis interroge la table système pour vérifier si ces paramètres ont été définis avec succès.
-=======
 ## statique {#static}
 
 `<static>` peut-retour [content\_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [statut](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) et response\_content. response\_content peut renvoyer le contenu spécifié
->>>>>>> upstream/master
 
 Exemple:
 
@@ -548,25 +503,11 @@ $ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
 Say Hi!%
 ```
 
-<<<<<<< HEAD
-!!! note "Note"
-    Dans un `<predefined_query_handler>`, un `<queries>` prend en charge un seul `<query>` d'un type d'insertion.
-
-## dynamic\_query\_handler {#dynamic_query_handler}
-=======
 Trouvez le contenu de la configuration envoyer au client.
->>>>>>> upstream/master
 
 ``` xml
 <get_config_static_handler><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></get_config_static_handler>
 
-<<<<<<< HEAD
-Clickhouse extrait et exécute la valeur correspondant au `<query_param_name>` valeur dans l'url de la requête HTTP.
-ClickHouse réglage par défaut `<query_param_name>` être `/query` . C'est une option de configuration. Si il n'y a pas de définition dans le fichier de configuration, le paramètre n'est pas passé.
-
-Pour expérimenter cette fonctionnalité, l'exemple définit les valeurs de max\_threads et max\_alter\_threads et demande si les paramètres ont été définis avec succès.
-La différence est que dans `<predefined_query_handler>`, la requête est écrite dans le fichier de configuration. Mais dans `<dynamic_query_handler>`, la requête est écrite sous la forme de param de la requête HTTP.
-=======
 <http_handlers>
         <rule>
             <methods>GET</methods>
@@ -601,7 +542,6 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 * Connection #0 to host localhost left intact
 <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
 ```
->>>>>>> upstream/master
 
 Trouvez le contenu du fichier envoyé au client.
 

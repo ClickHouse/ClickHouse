@@ -82,11 +82,11 @@ public:
     template <typename T>
     static constexpr bool is_vector_load_result_type = std::is_same_v<T, LoadResults> || std::is_same_v<T, Loadables>;
 
-    ExternalLoader(const String & type_name_, Logger * log);
+    ExternalLoader(const String & type_name_, Poco::Logger * log);
     virtual ~ExternalLoader();
 
     /// Adds a repository which will be used to read configurations from.
-    ext::scope_guard addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> config_repository);
+    ext::scope_guard addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> config_repository) const;
 
     void setConfigSettings(const ExternalLoaderConfigSettings & settings_);
 

@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Pinebook Pro (AArch64, 4 GiB RAM)",
+        "system":       "Pinebook Pro",
+        "system_full":       "Pinebook Pro (AArch64, 4 GiB RAM)",
         "time":         "2020-03-08 00:00:00",
+        "kind":         "laptop",
         "result":
         [
             [0.021, 0.009, 0.007],

@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Common/IGrabberAllocator.h>
+#include <Common/LRUCache.h>
 #include <Common/SipHash.h>
 #include <Common/UInt128.h>
 #include <Common/ProfileEvents.h>
 #include <IO/BufferWithOwnMemory.h>
 
-#include <cstddef>
 
 namespace ProfileEvents
 {
@@ -17,36 +16,34 @@ namespace ProfileEvents
 
 namespace DB
 {
-struct UncompressedCell
+
+
+struct UncompressedCacheCell
 {
     Memory<> data;
     size_t compressed_size;
     UInt32 additional_bytes;
-    void * heap_storage{nullptr}; /// Needed to pass to CacheUncompressedCell.
 };
 
-struct CacheUncompressedCell
+struct UncompressedSizeWeightFunction
 {
-    Memory<FakeMemoryAllocForIG> data;
-    size_t compressed_size;
-    UInt32 additional_bytes;
-
-    /// Called while initializing data in DB::IGrabberAllocator::RegionMetadata::init_value.
-    CacheUncompressedCell(const UncompressedCell& other)
-        : data(other.data, other.heap_storage), // calling copy-ctor with alloc params
-          compressed_size(other.compressed_size),
-          additional_bytes(other.additional_bytes) {}
+    size_t operator()(const UncompressedCacheCell & x) const
+    {
+        return x.data.size();
+    }
 };
 
-using UncompressedCacheBase = IGrabberAllocator<UInt128, CacheUncompressedCell, UInt128TrivialHash>;
 
-/**
- * Cache of decompressed blocks for implementation of CachedCompressedReadBuffer.
- */
-class UncompressedCache : public UncompressedCacheBase
+/** Cache of decompressed blocks for implementation of CachedCompressedReadBuffer. thread-safe.
+  */
+class UncompressedCache : public LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>
 {
+private:
+    using Base = LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
+
 public:
-    UncompressedCache(size_t max_size_in_bytes): UncompressedCacheBase(max_size_in_bytes) {}
+    UncompressedCache(size_t max_size_in_bytes)
+        : Base(max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file, size_t offset)
@@ -61,18 +58,25 @@ public:
         return key;
     }
 
-    ValuePtr get(const Key & key)
+    MappedPtr get(const Key & key)
     {
-        ValuePtr ptr = UncompressedCacheBase::get(key);
+        MappedPtr res = Base::get(key);
 
-        if (ptr)
+        if (res)
             ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
         else
             ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
 
-        return ptr;
+        return res;
+    }
+
+private:
+    void onRemoveOverflowWeightLoss(size_t weight_loss) override
+    {
+        ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, weight_loss);
     }
 };
-using UncompressedCachePtr = std::shared_ptr<UncompressedCache>;
-}
 
+using UncompressedCachePtr = std::shared_ptr<UncompressedCache>;
+
+}

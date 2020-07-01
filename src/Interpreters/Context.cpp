@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionCodecSelector.h>
+#include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -101,7 +102,6 @@ namespace ErrorCodes
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_SCALAR;
     extern const int AUTHENTICATION_FAILED;
     extern const int NOT_IMPLEMENTED;
 }
@@ -165,6 +165,8 @@ public:
 
         if (!session.unique())
             throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
+
+        session->context.client_info = context.client_info;
 
         return session;
     }
@@ -287,7 +289,7 @@ void NamedSession::release()
   */
 struct ContextShared
 {
-    Logger * log = &Logger::get("Context");
+    Poco::Logger * log = &Poco::Logger::get("Context");
 
     /// For access of most of shared objects. Recursive mutex.
     mutable std::recursive_mutex mutex;
@@ -295,6 +297,10 @@ struct ContextShared
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_models_mutex;
+    /// Separate mutex for storage policies. During server startup we may
+    /// initialize some important storages (system logs with MergeTree engine)
+    /// under context lock.
+    mutable std::mutex storage_policies_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
 
@@ -313,7 +319,7 @@ struct ContextShared
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
-    mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
+    mutable VolumeJBODPtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -347,6 +353,7 @@ struct ContextShared
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     std::optional<SystemLogs> system_logs;                  /// Used to log queries and operations on parts
+    std::optional<StorageS3Settings> storage_s3_settings;   /// Settings of S3 storage
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
@@ -540,7 +547,7 @@ String Context::getDictionariesLibPath() const
     return shared->dictionaries_lib_path;
 }
 
-VolumePtr Context::getTemporaryVolume() const
+VolumeJBODPtr Context::getTemporaryVolume() const
 {
     auto lock = getLock();
     return shared->tmp_volume;
@@ -565,9 +572,9 @@ void Context::setPath(const String & path)
         shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
 }
 
-VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
+VolumeJBODPtr Context::setTemporaryStorage(const String & path, const String & policy_name)
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
     if (policy_name.empty())
     {
@@ -576,17 +583,17 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
             shared->tmp_path += '/';
 
         auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);
-        shared->tmp_volume = std::make_shared<Volume>("_tmp_default", std::vector<DiskPtr>{disk}, 0);
+        shared->tmp_volume = std::make_shared<VolumeJBOD>("_tmp_default", std::vector<DiskPtr>{disk}, 0);
     }
     else
     {
-        StoragePolicyPtr tmp_policy = getStoragePolicySelector()->get(policy_name);
+        StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
              throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
-    if (shared->tmp_volume->disks.empty())
+    if (shared->tmp_volume->getDisks().empty())
          throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     return shared->tmp_volume;
@@ -648,15 +655,17 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
+void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
 {
     auto lock = getLock();
 
     client_info.current_user = name;
-    client_info.current_password = password;
     client_info.current_address = address;
-    if (!quota_key.empty())
-        client_info.quota_key = quota_key;
+
+#if defined(ARCADIA_BUILD)
+    /// This is harmful field that is used only in foreign "Arcadia" build.
+    client_info.current_password = password;
+#endif
 
     auto new_user_id = getAccessControlManager().find<User>(name);
     std::shared_ptr<const ContextAccess> new_access;
@@ -684,6 +693,12 @@ void Context::setUser(const String & name, const String & password, const Poco::
 std::shared_ptr<const User> Context::getUser() const
 {
     return getAccess()->getUser();
+}
+
+void Context::setQuotaKey(String quota_key_)
+{
+    auto lock = getLock();
+    client_info.quota_key = std::move(quota_key_);
 }
 
 String Context::getUserName() const
@@ -813,7 +828,11 @@ const Block & Context::getScalar(const String & name) const
 {
     auto it = scalars.find(name);
     if (scalars.end() == it)
-        throw Exception("Scalar " + backQuoteIfNeed(name) + " doesn't exist (internal bug)", ErrorCodes::UNKNOWN_SCALAR);
+    {
+        // This should be a logical error, but it fails the sql_fuzz test too
+        // often, so 'bad arguments' for now.
+        throw Exception("Scalar " + backQuoteIfNeed(name) + " doesn't exist (internal bug)", ErrorCodes::BAD_ARGUMENTS);
+    }
     return it->second;
 }
 
@@ -967,7 +986,16 @@ void Context::setSetting(const StringRef & name, const Field & value)
 
 void Context::applySettingChange(const SettingChange & change)
 {
-    setSetting(change.name, change.value);
+    try
+    {
+        setSetting(change.name, change.value);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("in attempt to set the value of setting '{}' to {}",
+                                 change.name, applyVisitor(FieldVisitorToString(), change.value)));
+        throw;
+    }
 }
 
 
@@ -1034,8 +1062,8 @@ void Context::setCurrentDatabase(const String & name)
 {
     DatabaseCatalog::instance().assertDatabaseExists(name);
     auto lock = getLock();
-    calculateAccessRights();
     current_database = name;
+    calculateAccessRights();
 }
 
 
@@ -1663,6 +1691,17 @@ std::shared_ptr<MetricLog> Context::getMetricLog()
 }
 
 
+std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->asynchronous_metric_log;
+}
+
+
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
     auto lock = getLock();
@@ -1684,18 +1723,37 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 
 DiskPtr Context::getDisk(const String & name) const
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
-    auto disk_selector = getDiskSelector();
+    auto disk_selector = getDiskSelector(lock);
 
     return disk_selector->get(name);
 }
 
-
-DiskSelectorPtr Context::getDiskSelector() const
+StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
+    auto policy_selector = getStoragePolicySelector(lock);
+
+    return policy_selector->get(name);
+}
+
+
+DisksMap Context::getDisksMap() const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+    return getDiskSelector(lock)->getDisksMap();
+}
+
+StoragePoliciesMap Context::getPoliciesMap() const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+    return getStoragePolicySelector(lock)->getPoliciesMap();
+}
+
+DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const
+{
     if (!shared->merge_tree_disk_selector)
     {
         constexpr auto config_name = "storage_configuration.disks";
@@ -1706,27 +1764,14 @@ DiskSelectorPtr Context::getDiskSelector() const
     return shared->merge_tree_disk_selector;
 }
 
-
-StoragePolicyPtr Context::getStoragePolicy(const String & name) const
+StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const
 {
-    auto lock = getLock();
-
-    auto policy_selector = getStoragePolicySelector();
-
-    return policy_selector->get(name);
-}
-
-
-StoragePolicySelectorPtr Context::getStoragePolicySelector() const
-{
-    auto lock = getLock();
-
     if (!shared->merge_tree_storage_policy_selector)
     {
         constexpr auto config_name = "storage_configuration.policies";
         const auto & config = getConfigRef();
 
-        shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector());
+        shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector(lock));
     }
     return shared->merge_tree_storage_policy_selector;
 }
@@ -1734,7 +1779,7 @@ StoragePolicySelectorPtr Context::getStoragePolicySelector() const
 
 void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
     if (shared->merge_tree_disk_selector)
         shared->merge_tree_disk_selector = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", *this);
@@ -1747,8 +1792,13 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         }
         catch (Exception & e)
         {
-            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: " << e.message());
+            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: {}", e.message());
         }
+    }
+
+    if (shared->storage_s3_settings)
+    {
+        shared->storage_s3_settings->loadFromConfig("s3", config);
     }
 }
 
@@ -1768,6 +1818,18 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     return *shared->merge_tree_settings;
 }
 
+const StorageS3Settings & Context::getStorageS3Settings() const
+{
+    auto lock = getLock();
+
+    if (!shared->storage_s3_settings)
+    {
+        const auto & config = getConfigRef();
+        shared->storage_s3_settings.emplace().loadFromConfig("s3", config);
+    }
+
+    return *shared->storage_s3_settings;
+}
 
 void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const
 {
@@ -1873,7 +1935,7 @@ void Context::reloadConfig() const
 {
     /// Use mutex if callback may be changed after startup.
     if (!shared->config_reload_callback)
-        throw Exception("Can't reload config beacuse config_reload_callback is not set.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Can't reload config because config_reload_callback is not set.", ErrorCodes::LOGICAL_ERROR);
 
     shared->config_reload_callback();
 }
@@ -2003,7 +2065,7 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
     auto lock = getLock();
 
     if (!shared->action_locks_manager)
-        shared->action_locks_manager = std::make_shared<ActionLocksManager>();
+        shared->action_locks_manager = std::make_shared<ActionLocksManager>(*this);
 
     return shared->action_locks_manager;
 }

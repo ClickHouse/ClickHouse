@@ -11,7 +11,6 @@
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
 #include <Storages/System/StorageSystemDetachedParts.h>
 #include <Storages/System/StorageSystemDictionaries.h>
-#include <Storages/System/StorageSystemLicenses.h>
 #include <Storages/System/StorageSystemEvents.h>
 #include <Storages/System/StorageSystemFormats.h>
 #include <Storages/System/StorageSystemFunctions.h>
@@ -29,6 +28,7 @@
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
+#include <Storages/System/StorageSystemDistributionQueue.h>
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Storages/System/StorageSystemTableEngines.h>
@@ -36,6 +36,9 @@
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemContributors.h>
+#if !defined(ARCADIA_BUILD)
+    #include <Storages/System/StorageSystemLicenses.h>
+#endif
 #include <Storages/System/StorageSystemDisks.h>
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <Storages/System/StorageSystemZeros.h>
@@ -122,6 +125,7 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     system_database.attachTable("mutations", StorageSystemMutations::create("mutations"));
     system_database.attachTable("replicas", StorageSystemReplicas::create("replicas"));
     system_database.attachTable("replication_queue", StorageSystemReplicationQueue::create("replication_queue"));
+    system_database.attachTable("distribution_queue", StorageSystemDistributionQueue::create("distribution_queue"));
     system_database.attachTable("dictionaries", StorageSystemDictionaries::create("dictionaries"));
     system_database.attachTable("models", StorageSystemModels::create("models"));
     system_database.attachTable("clusters", StorageSystemClusters::create("clusters"));

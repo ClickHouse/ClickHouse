@@ -122,13 +122,9 @@ Sıradan fonksiyonlar ve toplam fonksiyonlar vardır. Toplama işlevleri için b
 
 Ordinary functions don't change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`'s vectorized sorgu yürütme uygulamak için veri.
 
-Gibi bazı çeşitli fonksiyonlar vardır [blockSize](../sql_reference/functions/other_functions.md#function-blocksize), [rowNumberİnBlock](../sql_reference/functions/other_functions.md#function-rownumberinblock), ve [runningAccumulate](../sql_reference/functions/other_functions.md#function-runningaccumulate), blok işlemeyi istismar eden ve satırların bağımsızlığını ihlal eden.
+Gibi bazı çeşitli fonksiyonlar vardır [blockSize](../sql-reference/functions/other-functions.md#function-blocksize), [rowNumberİnBlock](../sql-reference/functions/other-functions.md#function-rownumberinblock), ve [runningAccumulate](../sql-reference/functions/other-functions.md#function-runningaccumulate), blok işlemeyi istismar eden ve satırların bağımsızlığını ihlal eden.
 
-<<<<<<< HEAD
-Clickhouse'un güçlü yazımı var, bu yüzden örtük tür dönüşümü yok. Bir işlev belirli bir tür kombinasyonunu desteklemiyorsa, bir istisna atar. Ancak, birçok farklı tür kombinasyonu için işlevler çalışabilir (aşırı yüklenebilir). Örneğin, `plus` fonksiyonu (uygulamak için `+` operatör) sayısal türlerin herhangi bir kombinasyonu için çalışır: `UInt8` + `Float32`, `UInt16` + `Int8` ve bu yüzden. Ayrıca, bazı variadic işlevleri gibi bağımsız değişkenlerin herhangi bir sayıda kabul edebilir `concat` işlev.
-=======
 Clickhouse'un güçlü yazımı var, bu yüzden örtük tür dönüşümü yok. Bir işlev belirli bir tür kombinasyonunu desteklemiyorsa, bir istisna atar. Ancak, birçok farklı tür kombinasyonu için işlevler çalışabilir (aşırı yüklenebilir). Örneğin, `plus` fonksiyonu (uygulamak için `+` operatör) sayısal türlerin herhangi bir kombinasyonu için çalışır: `UInt8` + `Float32`, `UInt16` + `Int8` ve bu yüzden. Ayrıca, bazı variadic işlevleri gibi bağımsız değişkenlerin herhangi bir sayıda kabul edebilir `concat` İşlev.
->>>>>>> upstream/master
 
 Bir işlev açıkça desteklenen veri türlerini gönderir ve desteklenen çünkü bir işlev uygulamak biraz rahatsız edici olabilir `IColumns`. Örneğin, `plus` işlev, sayısal türlerin ve sabit veya sabit olmayan sol ve sağ bağımsız değişkenlerin her birleşimi için bir C++ şablonunun örneklendirilmesiyle oluşturulan koda sahiptir.
 

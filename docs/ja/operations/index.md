@@ -15,15 +15,6 @@ ClickHouse操作マニュアルの以下の主要部:
 -   [トラブルシ](troubleshooting.md)
 -   [使用法の推奨事項](tips.md)
 -   [更新手順](update.md)
-<<<<<<< HEAD
--   [アクセス権](access_rights.md)
--   [データバック](backup.md)
--   [設定ファイル](configuration_files.md)
--   [クォータ](quotas.md)
--   [システム表](system_tables.md)
--   [サーバ設定パラメータ](server_configuration_parameters/index.md)
--   [ClickHouseでハードウェアをテストする方法](performance_test.md)
-=======
 -   [アクセス権](access-rights.md)
 -   [データバックア](backup.md)
 -   [設定ファイル](configuration-files.md)
@@ -31,7 +22,6 @@ ClickHouse操作マニュアルの以下の主要部:
 -   [システム表](system-tables.md)
 -   [サーバ構成パラメータ](server-configuration-parameters/index.md)
 -   [ClickHouseでハードウェアをテストする方法](performance-test.md)
->>>>>>> upstream/master
 -   [設定](settings/index.md)
 -   [ユーティリ](utilities/index.md)
 

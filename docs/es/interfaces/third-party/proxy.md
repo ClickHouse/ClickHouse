@@ -19,7 +19,7 @@ Función:
 
 Implementado en Go.
 
-## Bienvenido a WordPress. {#kittenhouse}
+## Bienvenido a WordPress {#kittenhouse}
 
 [Bienvenido a WordPress.](https://github.com/VKCOM/kittenhouse) está diseñado para ser un proxy local entre ClickHouse y el servidor de aplicaciones en caso de que sea imposible o inconveniente almacenar los datos INSERT en el lado de su aplicación.
 

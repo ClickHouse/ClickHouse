@@ -4,6 +4,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -102,6 +104,8 @@ public:
         Arena * arena) const override
     {
         nested_function->merge(place, rhs, arena);
+
+        place[size_of_data] |= rhs[size_of_data];
     }
 
     void serialize(
@@ -109,6 +113,8 @@ public:
         WriteBuffer & buf) const override
     {
         nested_function->serialize(place, buf);
+
+        writeChar(place[size_of_data], buf);
     }
 
     void deserialize(
@@ -117,6 +123,8 @@ public:
         Arena * arena) const override
     {
         nested_function->deserialize(place, buf, arena);
+
+        readChar(place[size_of_data], buf);
     }
 
     DataTypePtr getReturnType() const override
@@ -139,8 +147,9 @@ public:
     }
 
     void insertResultInto(
-        ConstAggregateDataPtr place,
-        IColumn & to) const override
+        AggregateDataPtr place,
+        IColumn & to,
+        Arena * arena) const override
     {
         if (place[size_of_data])
         {
@@ -149,20 +158,20 @@ public:
                 // -OrNull
 
                 if (inner_nullable)
-                    nested_function->insertResultInto(place, to);
+                    nested_function->insertResultInto(place, to, arena);
                 else
                 {
                     ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
 
                     col.getNullMapColumn().insertDefault();
-                    nested_function->insertResultInto(place, col.getNestedColumn());
+                    nested_function->insertResultInto(place, col.getNestedColumn(), arena);
                 }
             }
             else
             {
                 // -OrDefault
 
-                nested_function->insertResultInto(place, to);
+                nested_function->insertResultInto(place, to, arena);
             }
         }
         else

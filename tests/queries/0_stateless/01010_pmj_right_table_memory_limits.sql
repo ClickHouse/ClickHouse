@@ -1,4 +1,5 @@
 SET max_memory_usage = 32000000;
+SET join_on_disk_max_files_to_merge = 4;
 
 SELECT number * 200000 as n, j FROM numbers(5) nums
 ANY LEFT JOIN (
@@ -7,7 +8,7 @@ ANY LEFT JOIN (
 ) js2
 USING n; -- { serverError 241 }
 
-SET partial_merge_join = 1;
+SET join_algorithm = 'partial_merge';
 SET default_max_bytes_in_join = 0;
 
 SELECT number * 200000 as n, j FROM numbers(5) nums

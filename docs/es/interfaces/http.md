@@ -11,7 +11,7 @@ La interfaz HTTP le permite usar ClickHouse en cualquier plataforma desde cualqu
 
 De forma predeterminada, clickhouse-server escucha HTTP en el puerto 8123 (esto se puede cambiar en la configuración).
 
-Si realiza una solicitud GET / sin parámetros, devuelve 200 códigos de respuesta y la cadena que definió en [http\_server\_default\_response](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-http_server_default_response) valor predeterminado “Ok.” (con un avance de línea al final)
+Si realiza una solicitud GET / sin parámetros, devuelve 200 códigos de respuesta y la cadena que definió en [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) valor predeterminado “Ok.” (con un avance de línea al final)
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -395,11 +395,7 @@ A continuación están los métodos de configuración para los diferentes `<type
 
 `<predefined_query_handler>` admite la configuración de valores Settings y query\_params. Puede configurar `<query>` en el tipo de `<predefined_query_handler>`.
 
-<<<<<<< HEAD
-## Método de codificación de datos: {#ping_handler}
-=======
 `<query>` valor es una consulta predefinida de `<predefined_query_handler>`, que es ejecutado por ClickHouse cuando se hace coincidir una solicitud HTTP y se devuelve el resultado de la consulta. Es una configuración imprescindible.
->>>>>>> upstream/master
 
 En el ejemplo siguiente se definen los valores de `max_threads` y `max_alter_threads` configuración, a continuación, consulta la tabla del sistema para comprobar si estos ajustes se han establecido correctamente.
 
@@ -429,14 +425,10 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_alter_threads   2
 ```
 
-<<<<<<< HEAD
-## Sistema abierto. {#replicas_status_handler}
-=======
 !!! note "precaución"
     En uno `<predefined_query_handler>` sólo es compatible con uno `<query>` de un tipo de plaquita.
 
 ## Nombre de la red inalámbrica (SSID): {#dynamic_query_handler}
->>>>>>> upstream/master
 
 En `<dynamic_query_handler>`, consulta se escribe en forma de param de la solicitud HTTP. La diferencia es que en `<predefined_query_handler>`, consulta se escribe en el archivo de configuración. Puede configurar `<query_param_name>` en `<dynamic_query_handler>`.
 
@@ -465,11 +457,7 @@ max_threads 1
 max_alter_threads   2
 ```
 
-<<<<<<< HEAD
-## DirecciÃ³n de correo electrÃ³nico {#predefined_query_handler}
-=======
 ## estática {#static}
->>>>>>> upstream/master
 
 `<static>` puede volver [Content\_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [estatus](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) y response\_content. response\_content puede devolver el contenido especificado
 
@@ -515,14 +503,7 @@ $ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
 Say Hi!%
 ```
 
-<<<<<<< HEAD
-!!! note "Nota"
-    En uno `<predefined_query_handler>`, una `<queries>` sólo es compatible con uno `<query>` de un tipo de plaquita.
-
-## Nombre de la red inalámbrica (SSID): {#dynamic_query_handler}
-=======
 Busque el contenido de la configuración enviada al cliente.
->>>>>>> upstream/master
 
 ``` xml
 <get_config_static_handler><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></get_config_static_handler>

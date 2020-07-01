@@ -1,1 +1,0 @@
-../../en/sql_reference/ansi.md

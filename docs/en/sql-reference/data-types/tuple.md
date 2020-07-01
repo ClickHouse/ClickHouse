@@ -1,11 +1,11 @@
 ---
-toc_priority: 53
+toc_priority: 54
 toc_title: Tuple(T1, T2, ...)
 ---
 
 # Tuple(t1, T2, …) {#tuplet1-t2}
 
-A tuple of elements, each having an individual [type](index.md#data_types).
+A tuple of elements, each having an individual [type](../../sql-reference/data-types/index.md#data_types).
 
 Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](../../sql-reference/operators/in.md) and [Higher order functions](../../sql-reference/functions/higher-order-functions.md).
 
@@ -33,7 +33,7 @@ SELECT tuple(1,'a') AS x, toTypeName(x)
 
 ## Working with Data Types {#working-with-data-types}
 
-When creating a tuple on the fly, ClickHouse automatically detects the type of each argument as the minimum of the types which can store the argument value. If the argument is [NULL](../../sql-reference/syntax.md#null-literal), the type of the tuple element is [Nullable](nullable.md).
+When creating a tuple on the fly, ClickHouse automatically detects the type of each argument as the minimum of the types which can store the argument value. If the argument is [NULL](../../sql-reference/syntax.md#null-literal), the type of the tuple element is [Nullable](../../sql-reference/data-types/nullable.md).
 
 Example of automatic data type detection:
 

@@ -1,23 +1,13 @@
 ---
 machine_translated: true
-<<<<<<< HEAD
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
-toc_priority: 60
-toc_title: "\u8BBE\u7F6E"
-=======
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
->>>>>>> upstream/master
 ---
 
 # 设置 {#settings}
 
 ## 分布\_产品\_模式 {#distributed-product-mode}
 
-<<<<<<< HEAD
-改变的行为 [分布式子查询](../../sql_reference/statements/select.md).
-=======
 改变的行为 [分布式子查询](../../sql-reference/operators/in.md).
->>>>>>> upstream/master
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -26,7 +16,7 @@ ClickHouse applies this setting when the query contains the product of distribut
 -   仅适用于IN和JOIN子查询。
 -   仅当FROM部分使用包含多个分片的分布式表时。
 -   如果子查询涉及包含多个分片的分布式表。
--   不用于表值 [远程](../../sql_reference/table_functions/remote.md) 功能。
+-   不用于表值 [远程](../../sql-reference/table-functions/remote.md) 功能。
 
 可能的值:
 
@@ -61,7 +51,7 @@ ClickHouse applies this setting when the query contains the product of distribut
 
 ## fallback\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
-如果更新的数据不可用，则强制对过期副本进行查询。 看 [复制](../../engines/table_engines/mergetree_family/replication.md).
+如果更新的数据不可用，则强制对过期副本进行查询。 看 [复制](../../engines/table-engines/mergetree-family/replication.md).
 
 ClickHouse从表的过时副本中选择最相关的副本。
 
@@ -75,7 +65,7 @@ ClickHouse从表的过时副本中选择最相关的副本。
 
 适用于MergeTree系列中的表。
 
-如果 `force_index_by_date=1`，ClickHouse检查查询是否具有可用于限制数据范围的date键条件。 如果没有合适的条件，则会引发异常。 但是，它不检查条件是否减少了要读取的数据量。 例如，条件 `Date != ' 2000-01-01 '` 即使它与表中的所有数据匹配（即运行查询需要完全扫描），也是可以接受的。 有关MergeTree表中数据范围的详细信息，请参阅 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
+如果 `force_index_by_date=1`，ClickHouse检查查询是否具有可用于限制数据范围的date键条件。 如果没有合适的条件，则会引发异常。 但是，它不检查条件是否减少了要读取的数据量。 例如，条件 `Date != ' 2000-01-01 '` 即使它与表中的所有数据匹配（即运行查询需要完全扫描），也是可以接受的。 有关MergeTree表中数据范围的详细信息，请参阅 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
 ## force\_primary\_key {#force-primary-key}
 
@@ -83,7 +73,7 @@ ClickHouse从表的过时副本中选择最相关的副本。
 
 适用于MergeTree系列中的表。
 
-如果 `force_primary_key=1`，ClickHouse检查查询是否具有可用于限制数据范围的主键条件。 如果没有合适的条件，则会引发异常。 但是，它不检查条件是否减少了要读取的数据量。 有关MergeTree表中数据范围的详细信息，请参阅 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
+如果 `force_primary_key=1`，ClickHouse检查查询是否具有可用于限制数据范围的主键条件。 如果没有合适的条件，则会引发异常。 但是，它不检查条件是否减少了要读取的数据量。 有关MergeTree表中数据范围的详细信息，请参阅 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
 ## format\_schema {#format-schema}
 
@@ -144,7 +134,7 @@ ClickHouse从表的过时副本中选择最相关的副本。
 
 ## max\_http\_get\_redirects {#setting-max_http_get_redirects}
 
-限制HTTP GET重定向跳数的最大数量 [URL](../../engines/table_engines/special/url.md)-发动机表。 该设置适用于两种类型的表：由 [CREATE TABLE](../../sql_reference/statements/create.md#create-table-query) 查询和由 [url](../../sql_reference/table_functions/url.md) 表功能。
+限制HTTP GET重定向跳数的最大数量 [URL](../../engines/table-engines/special/url.md)-发动机表。 该设置适用于两种类型的表：由 [CREATE TABLE](../../sql-reference/statements/create.md#create-table-query) 查询和由 [url](../../sql-reference/table-functions/url.md) 表功能。
 
 可能的值:
 
@@ -180,7 +170,7 @@ ClickHouse从表的过时副本中选择最相关的副本。
 
 ## input\_format\_values\_interpret\_expressions {#settings-input_format_values_interpret_expressions}
 
-如果快速流解析器无法解析数据，则启用或禁用完整SQL解析器。 此设置仅用于 [值](../../interfaces/formats.md#data-format-values) 格式在数据插入。 有关语法分析的详细信息，请参阅 [语法](../../sql_reference/syntax.md) 科。
+如果快速流解析器无法解析数据，则启用或禁用完整SQL解析器。 此设置仅用于 [值](../../interfaces/formats.md#data-format-values) 格式在数据插入。 有关语法分析的详细信息，请参阅 [语法](../../sql-reference/syntax.md) 科。
 
 可能的值:
 
@@ -196,7 +186,7 @@ ClickHouse从表的过时副本中选择最相关的副本。
 
 使用示例
 
-插入 [日期时间](../../sql_reference/data_types/datetime.md) 使用不同的设置键入值。
+插入 [日期时间](../../sql-reference/data-types/datetime.md) 使用不同的设置键入值。
 
 ``` sql
 SET input_format_values_interpret_expressions = 0;
@@ -356,7 +346,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 允许选择日期和时间的文本表示的解析器。
 
-该设置不适用于 [日期和时间功能](../../sql_reference/functions/date_time_functions.md).
+该设置不适用于 [日期和时间功能](../../sql-reference/functions/date-time-functions.md).
 
 可能的值:
 
@@ -372,16 +362,12 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 另请参阅:
 
--   [日期时间数据类型。](../../sql_reference/data_types/datetime.md)
--   [用于处理日期和时间的函数。](../../sql_reference/functions/date_time_functions.md)
+-   [日期时间数据类型。](../../sql-reference/data-types/datetime.md)
+-   [用于处理日期和时间的函数。](../../sql-reference/functions/date-time-functions.md)
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
-<<<<<<< HEAD
-设置默认严格性 [加入子句](../../sql_reference/statements/select.md#select-join).
-=======
 设置默认严格性 [加入子句](../../sql-reference/statements/select/join.md#select-join).
->>>>>>> upstream/master
 
 可能的值:
 
@@ -397,7 +383,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 更改联接操作的行为 `ANY` 严格。
 
 !!! warning "注意"
-    此设置仅适用于 `JOIN` 操作与 [加入我们](../../engines/table_engines/special/join.md) 发动机表.
+    此设置仅适用于 `JOIN` 操作与 [加入我们](../../engines/table-engines/special/join.md) 发动机表.
 
 可能的值:
 
@@ -408,27 +394,18 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 另请参阅:
 
-<<<<<<< HEAD
--   [JOIN子句](../../sql_reference/statements/select.md#select-join)
--   [联接表引擎](../../engines/table_engines/special/join.md)
-=======
 -   [JOIN子句](../../sql-reference/statements/select/join.md#select-join)
 -   [联接表引擎](../../engines/table-engines/special/join.md)
->>>>>>> upstream/master
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
-<<<<<<< HEAD
-设置类型 [JOIN](../../sql_reference/statements/select.md) 行为 合并表时，可能会出现空单元格。 ClickHouse根据此设置以不同的方式填充它们。
-=======
 设置类型 [JOIN](../../sql-reference/statements/select/join.md) 行为 合并表时，可能会出现空单元格。 ClickHouse根据此设置以不同的方式填充它们。
->>>>>>> upstream/master
 
 可能的值:
 
 -   0 — The empty cells are filled with the default value of the corresponding field type.
--   1 — `JOIN` 其行为方式与标准SQL中的行为方式相同。 相应字段的类型将转换为 [可为空](../../sql_reference/data_types/nullable.md#data_type-nullable)，和空单元格填充 [NULL](../../sql_reference/syntax.md).
+-   1 — `JOIN` 其行为方式与标准SQL中的行为方式相同。 相应字段的类型将转换为 [可为空](../../sql-reference/data-types/nullable.md#data_type-nullable)，和空单元格填充 [NULL](../../sql-reference/syntax.md).
 
 默认值：0。
 
@@ -448,7 +425,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## merge\_tree\_min\_rows\_for\_concurrent\_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
-如果从a的文件中读取的行数 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md) 表超过 `merge_tree_min_rows_for_concurrent_read` 然后ClickHouse尝试在多个线程上从该文件执行并发读取。
+如果从a的文件中读取的行数 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) 表超过 `merge_tree_min_rows_for_concurrent_read` 然后ClickHouse尝试在多个线程上从该文件执行并发读取。
 
 可能的值:
 
@@ -458,7 +435,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## merge\_tree\_min\_bytes\_for\_concurrent\_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
-如果从一个文件中读取的字节数 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)-发动机表超过 `merge_tree_min_bytes_for_concurrent_read`，然后ClickHouse尝试在多个线程中并发读取此文件。
+如果从一个文件中读取的字节数 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-发动机表超过 `merge_tree_min_bytes_for_concurrent_read`，然后ClickHouse尝试在多个线程中并发读取此文件。
 
 可能的值:
 
@@ -500,7 +477,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 如果克里克豪斯应该阅读更多 `merge_tree_max_rows_to_use_cache` 在一个查询中的行，它不使用未压缩块的缓存。
 
-未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
+未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
 
 可能的值:
 
@@ -512,7 +489,7 @@ Default value: 128 ✕ 8192.
 
 如果克里克豪斯应该阅读更多 `merge_tree_max_bytes_to_use_cache` 在一个查询中的字节，它不使用未压缩块的缓存。
 
-未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
+未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
 
 可能的值:
 
@@ -537,7 +514,7 @@ ClickHouse在从表中读取数据时使用此设置。 如果要读取的所有
 
 设置查询日志记录。
 
-使用此设置发送到ClickHouse的查询将根据以下内容中的规则记录 [query\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-log) 服务器配置参数。
+使用此设置发送到ClickHouse的查询将根据以下内容中的规则记录 [query\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) 服务器配置参数。
 
 示例:
 
@@ -567,7 +544,7 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 设置查询线程日志记录。
 
-ClickHouse使用此设置运行的查询线程将根据以下命令中的规则记录 [query\_thread\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) 服务器配置参数。
+ClickHouse使用此设置运行的查询线程将根据以下命令中的规则记录 [query\_thread\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) 服务器配置参数。
 
 示例:
 
@@ -611,7 +588,7 @@ log_query_threads=1
 
 ## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
-禁用分布式查询的滞后副本。 看 [复制](../../engines/table_engines/mergetree_family/replication.md).
+禁用分布式查询的滞后副本。 看 [复制](../../engines/table-engines/mergetree-family/replication.md).
 
 以秒为单位设置时间。 如果副本滞后超过设定值，则不使用此副本。
 
@@ -656,7 +633,7 @@ log_query_threads=1
 
 ## min\_compress\_block\_size {#min-compress-block-size}
 
-为 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)"表。 为了减少处理查询时的延迟，在写入下一个标记时，如果块的大小至少为 ‘min\_compress\_block\_size’. 默认情况下，65,536。
+为 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)"表。 为了减少处理查询时的延迟，在写入下一个标记时，如果块的大小至少为 ‘min\_compress\_block\_size’. 默认情况下，65,536。
 
 块的实际大小，如果未压缩的数据小于 ‘max\_compress\_block\_size’，是不小于该值且不小于一个标记的数据量。
 
@@ -734,7 +711,7 @@ Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connectio
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
 是否使用未压缩块的缓存。 接受0或1。 默认情况下，0（禁用）。
-使用未压缩缓存（仅适用于MergeTree系列中的表）可以在处理大量短查询时显着减少延迟并提高吞吐量。 为频繁发送短请求的用户启用此设置。 还要注意 [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+使用未压缩缓存（仅适用于MergeTree系列中的表）可以在处理大量短查询时显着减少延迟并提高吞吐量。 为频繁发送短请求的用户启用此设置。 还要注意 [uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
 对于至少读取大量数据（一百万行或更多行）的查询，将自动禁用未压缩缓存，以节省真正小型查询的空间。 这意味着你可以保持 ‘use\_uncompressed\_cache’ 设置始终设置为1。
 
@@ -903,7 +880,7 @@ ClickHouse生成异常
 -   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
-## insert\_quorum\_timeout {#settings-insert_quorum-timeout}
+## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
 写入仲裁超时以秒为单位。 如果超时已经过去，并且还没有发生写入，ClickHouse将生成异常，客户端必须重复查询以将相同的块写入相同的副本或任何其他副本。
 
@@ -1011,15 +988,15 @@ ClickHouse生成异常
 
 ## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
-指定其中的 `uniq*` 函数应用于执行 [COUNT(DISTINCT …)](../../sql_reference/aggregate_functions/reference.md#agg_function-count) 建筑。
+指定其中的 `uniq*` 函数应用于执行 [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) 建筑。
 
 可能的值:
 
--   [uniq](../../sql_reference/aggregate_functions/reference.md#agg_function-uniq)
--   [uniqCombined](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined)
--   [uniqCombined64](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined64)
--   [uniqHLL12](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqhll12)
--   [uniqExact](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqexact)
+-   [uniq](../../sql-reference/aggregate-functions/reference.md#agg_function-uniq)
+-   [uniqCombined](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined)
+-   [uniqCombined64](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqhll12)
+-   [uniqExact](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqexact)
 
 默认值: `uniqExact`.
 
@@ -1071,20 +1048,9 @@ ClickHouse生成异常
 
 默认值：0
 
-## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
-
-重置 [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) 对于嵌套 `Distributed` 表
-
-可能的值:
-
--   1 — Enabled.
--   0 — Disabled.
-
-默认值：0。
-
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
-启用或禁用抛出异常，如果 [OPTIMIZE](../../sql_reference/statements/misc.md#misc_operations-optimize) 查询未执行合并。
+启用或禁用抛出异常，如果 [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) 查询未执行合并。
 
 默认情况下, `OPTIMIZE` 即使它没有做任何事情，也会成功返回。 此设置允许您区分这些情况并在异常消息中获取原因。
 
@@ -1104,7 +1070,7 @@ ClickHouse生成异常
 
 另请参阅:
 
--   [表引擎分布式](../../engines/table_engines/special/distributed.md)
+-   [表引擎分布式](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 
 ## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
@@ -1116,12 +1082,12 @@ ClickHouse生成异常
 
 另请参阅:
 
--   [表引擎分布式](../../engines/table_engines/special/distributed.md)
+-   [表引擎分布式](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
 
-对于基本间隔 [分布](../../engines/table_engines/special/distributed.md) 表引擎发送数据。 在发生错误时，实际间隔呈指数级增长。
+对于基本间隔 [分布](../../engines/table-engines/special/distributed.md) 表引擎发送数据。 在发生错误时，实际间隔呈指数级增长。
 
 可能的值:
 
@@ -1131,7 +1097,7 @@ ClickHouse生成异常
 
 ## distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-的最大间隔 [分布](../../engines/table_engines/special/distributed.md) 表引擎发送数据。 限制在设置的区间的指数增长 [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) 设置。
+的最大间隔 [分布](../../engines/table-engines/special/distributed.md) 表引擎发送数据。 限制在设置的区间的指数增长 [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) 设置。
 
 可能的值:
 
@@ -1143,7 +1109,7 @@ ClickHouse生成异常
 
 启用/禁用批量发送插入的数据。
 
-当批量发送被启用时， [分布](../../engines/table_engines/special/distributed.md) 表引擎尝试在一个操作中发送插入数据的多个文件，而不是单独发送它们。 批量发送通过更好地利用服务器和网络资源来提高集群性能。
+当批量发送被启用时， [分布](../../engines/table-engines/special/distributed.md) 表引擎尝试在一个操作中发送插入数据的多个文件，而不是单独发送它们。 批量发送通过更好地利用服务器和网络资源来提高集群性能。
 
 可能的值:
 
@@ -1169,7 +1135,7 @@ ClickHouse生成异常
 
 ## query\_profiler\_real\_time\_period\_ns {#query_profiler_real_time_period_ns}
 
-设置周期的实时时钟定时器 [查询探查器](../../operations/optimizing_performance/sampling_query_profiler.md). 真正的时钟计时器计数挂钟时间。
+设置周期的实时时钟定时器 [查询探查器](../../operations/optimizing-performance/sampling-query-profiler.md). 真正的时钟计时器计数挂钟时间。
 
 可能的值:
 
@@ -1182,17 +1148,17 @@ ClickHouse生成异常
 
 -   0用于关闭计时器。
 
-类型: [UInt64](../../sql_reference/data_types/int_uint.md).
+类型: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 默认值：1000000000纳秒（每秒一次）。
 
 另请参阅:
 
--   系统表 [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   系统表 [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
 
-设置周期的CPU时钟定时器 [查询探查器](../../operations/optimizing_performance/sampling_query_profiler.md). 此计时器仅计算CPU时间。
+设置周期的CPU时钟定时器 [查询探查器](../../operations/optimizing-performance/sampling-query-profiler.md). 此计时器仅计算CPU时间。
 
 可能的值:
 
@@ -1205,17 +1171,17 @@ ClickHouse生成异常
 
 -   0用于关闭计时器。
 
-类型: [UInt64](../../sql_reference/data_types/int_uint.md).
+类型: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 默认值：1000000000纳秒。
 
 另请参阅:
 
--   系统表 [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   系统表 [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
-启用禁用 [反省函数](../../sql_reference/functions/introspection.md) 用于查询分析。
+启用禁用 [反省函数](../../sql-reference/functions/introspection.md) 用于查询分析。
 
 可能的值:
 
@@ -1226,8 +1192,8 @@ ClickHouse生成异常
 
 **另请参阅**
 
--   [采样查询探查器](../optimizing_performance/sampling_query_profiler.md)
--   系统表 [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   [采样查询探查器](../optimizing-performance/sampling-query-profiler.md)
+-   系统表 [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## input\_format\_parallel\_parsing {#input-format-parallel-parsing}
 
@@ -1275,8 +1241,6 @@ ClickHouse生成异常
 
 默认值：空
 
-<<<<<<< HEAD
-=======
 ## background\_pool\_size {#background_pool_size}
 
 设置在表引擎中执行后台操作的线程数（例如，合并 [MergeTree引擎](../../engines/table-engines/mergetree-family/index.md) 表）。 此设置在ClickHouse服务器启动时应用，不能在用户会话中更改。 通过调整此设置，您可以管理CPU和磁盘负载。 较小的池大小使用较少的CPU和磁盘资源，但后台进程推进速度较慢，最终可能会影响查询性能。
@@ -1287,5 +1251,4 @@ ClickHouse生成异常
 
 默认值：16。
 
->>>>>>> upstream/master
 [原始文章](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

@@ -64,19 +64,23 @@ namespace
 
         bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
         {
-            if (ParserCreateUserQuery{}.enableAttachMode(true).parse(pos, node, expected))
-                return true;
-            if (ParserCreateRoleQuery{}.enableAttachMode(true).parse(pos, node, expected))
-                return true;
-            if (ParserCreateRowPolicyQuery{}.enableAttachMode(true).parse(pos, node, expected))
-                return true;
-            if (ParserCreateQuotaQuery{}.enableAttachMode(true).parse(pos, node, expected))
-                return true;
-            if (ParserCreateSettingsProfileQuery{}.enableAttachMode(true).parse(pos, node, expected))
-                return true;
-            if (ParserGrantQuery{}.enableAttachMode(true).parse(pos, node, expected))
-                return true;
-            return false;
+            ParserCreateUserQuery create_user_p;
+            ParserCreateRoleQuery create_role_p;
+            ParserCreateRowPolicyQuery create_policy_p;
+            ParserCreateQuotaQuery create_quota_p;
+            ParserCreateSettingsProfileQuery create_profile_p;
+            ParserGrantQuery grant_p;
+
+            create_user_p.useAttachMode();
+            create_role_p.useAttachMode();
+            create_policy_p.useAttachMode();
+            create_quota_p.useAttachMode();
+            create_profile_p.useAttachMode();
+            grant_p.useAttachMode();
+
+            return create_user_p.parse(pos, node, expected) || create_role_p.parse(pos, node, expected)
+                || create_policy_p.parse(pos, node, expected) || create_quota_p.parse(pos, node, expected)
+                || create_profile_p.parse(pos, node, expected) || grant_p.parse(pos, node, expected);
         }
     };
 
@@ -261,7 +265,9 @@ namespace
     /// Calculates the path for storing a map of name of access entity to UUID for access entities of some type.
     std::filesystem::path getListFilePath(const String & directory_path, EntityType type)
     {
-        std::string_view file_name = EntityTypeInfo::get(type).list_filename;
+        String file_name = EntityTypeInfo::get(type).plural_raw_name;
+        boost::to_lower(file_name);
+        file_name += ".list";
         return std::filesystem::path(directory_path).append(file_name);
     }
 
@@ -367,7 +373,7 @@ bool DiskAccessStorage::readLists()
         auto file_path = getListFilePath(directory_path, type);
         if (!std::filesystem::exists(file_path))
         {
-            LOG_WARNING(getLogger(), "File " + file_path.string() + " doesn't exist");
+            LOG_WARNING(getLogger(), "File {} doesn't exist", file_path.string());
             ok = false;
             break;
         }
@@ -496,7 +502,7 @@ void DiskAccessStorage::listsWritingThreadFunc()
 /// and then saves the files "users.list", "roles.list", etc. to the same directory.
 bool DiskAccessStorage::rebuildLists()
 {
-    LOG_WARNING(getLogger(), "Recovering lists in directory " + directory_path);
+    LOG_WARNING(getLogger(), "Recovering lists in directory {}", directory_path);
     clear();
 
     for (const auto & directory_entry : std::filesystem::directory_iterator(directory_path))

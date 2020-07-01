@@ -18,7 +18,7 @@ public:
     virtual int get() const = 0;
     virtual void set(int value) = 0;
 
-    MutablePtr mutate() const && { return deepMutate(); }
+    static MutablePtr mutate(Ptr ptr) { return ptr->deepMutate(); }
 };
 
 using ColumnPtr = IColumn::Ptr;
@@ -52,7 +52,7 @@ private:
     {
         std::cerr << "Mutating\n";
         auto res = shallowMutate();
-        res->wrapped = std::move(*wrapped).mutate();
+        res->wrapped = IColumn::mutate(std::move(wrapped));
         return res;
     }
 
@@ -72,11 +72,11 @@ int main(int, char **)
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mut = std::move(*y).mutate();
+        MutableColumnPtr mut = IColumn::mutate(std::move(y));
         mut->set(2);
 
-        std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";
-        std::cerr << "addresses: " << x.get() << ", " << y.get() << ", " << mut.get() << "\n";
+        std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
+        std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
         y = std::move(mut);
     }
 
@@ -91,11 +91,11 @@ int main(int, char **)
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mut = std::move(*y).mutate();
+        MutableColumnPtr mut = IColumn::mutate(std::move(y));
         mut->set(3);
 
-        std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";
-        std::cerr << "addresses: " << x.get() << ", " << y.get() << ", " << mut.get() << "\n";
+        std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
+        std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
         y = std::move(mut);
     }
 

@@ -14,6 +14,7 @@ toc_title: Entegrasyonlar
 
 -   İlişkisel veritabanı yönetim sistemleri
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-çoğaltıcı](https://github.com/larsnovikov/horgh-replicator)
@@ -27,6 +28,7 @@ toc_title: Entegrasyonlar
 -   Mesaj kuyrukları
     -   [Kafka](https://kafka.apache.org)
         -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (kullanma [Go client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   Akış işleme
     -   [Flink](https://flink.apache.org)
         -   [flink-clickhouse-lavabo](https://github.com/ivi-ru/flink-clickhouse-sink)
@@ -45,7 +47,7 @@ toc_title: Entegrasyonlar
         -   [graphouse](https://github.com/yandex/graphouse)
         -   [karbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
         -   [grafit-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        -   [grafit-ch-doktoru](https://github.com/innogames/graphite-ch-optimizer) - staled bölümleri optimize eder [\* Graphıtemergetree](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) eğer kurallar [toplaması yapılandırması](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration) uygulanabilir
+        -   [grafit-ch-doktoru](https://github.com/innogames/graphite-ch-optimizer) - staled bölümleri optimize eder [\* Graphıtemergetree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) eğer kurallar [toplaması yapılandırması](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) uygulanabilir
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometheus](https://prometheus.io/)
@@ -77,20 +79,15 @@ toc_title: Entegrasyonlar
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (kullanma [ınfi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [Pandalar](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
-<<<<<<< HEAD
-- PHP
-    -   [Doctrine](https://www.doctrine-project.org/)
-=======
 -   PHP
     -   [Doktrin](https://www.doctrine-project.org/)
->>>>>>> upstream/master
         -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [dplyr](https://db.rstudio.com/dplyr/)
         -   [RClickHouse](https://github.com/IMSMWU/RClickHouse) (kullanma [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-        -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (kullanma [JDBC](../../sql_reference/table_functions/jdbc.md))
+        -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (kullanma [JDBC](../../sql-reference/table-functions/jdbc.md))
 -   SC scalaala
     -   [Akka](https://akka.io)
         -   [clickhouse-Scala-istemci](https://github.com/crobox/clickhouse-scala-client)
@@ -103,5 +100,11 @@ toc_title: Entegrasyonlar
 -   İksir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
         -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
+-   Ruby
+    -   [Ruby on Rails](https://rubyonrails.org/)
+        -   [activecube](https://github.com/bitquery/activecube)
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
+    -   [GraphQL](https://github.com/graphql)
+        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
 [Orijinal makale](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

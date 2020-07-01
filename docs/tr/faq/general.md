@@ -29,11 +29,7 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 
 ### INTO OUTFİLE yan tümcesini kullanma {#using-into-outfile-clause}
 
-<<<<<<< HEAD
-Add an [INTO OUTFILE](../sql_reference/statements/select.md#into-outfile-clause) sorgunuza yan tümce.
-=======
 Add an [INTO OUTFILE](../sql-reference/statements/select/into-outfile.md#into-outfile-clause) sorgunuza yan tümce.
->>>>>>> upstream/master
 
 Mesela:
 
@@ -41,11 +37,7 @@ Mesela:
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-<<<<<<< HEAD
-Varsayılan olarak, ClickHouse kullanır [TabSeparated](../interfaces/formats.md#tabseparated) çıktı verileri için Biçim. Seçmek için [Veri formatı](../interfaces/formats.md), use the [FORMAT CLA clauseuse](../sql_reference/statements/select.md#format-clause).
-=======
 Varsayılan olarak, ClickHouse kullanır [TabSeparated](../interfaces/formats.md#tabseparated) çıktı verileri için Biçim. Seçmek için [Veri formatı](../interfaces/formats.md), use the [FORMAT CLA clauseuse](../sql-reference/statements/select/format.md#format-clause).
->>>>>>> upstream/master
 
 Mesela:
 
@@ -55,7 +47,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 
 ### Dosya altyapısı tablosu kullanma {#using-a-file-engine-table}
 
-Görmek [Dosya](../engines/table_engines/special/file.md).
+Görmek [Dosya](../engines/table-engines/special/file.md).
 
 ### Komut Satırı Yeniden Yönlendirmesini Kullanma {#using-command-line-redirection}
 

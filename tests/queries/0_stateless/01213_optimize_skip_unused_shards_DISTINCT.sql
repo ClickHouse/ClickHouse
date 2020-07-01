@@ -12,7 +12,6 @@ SELECT DISTINCT id FROM dist_01213 WHERE id = 1 SETTINGS distributed_group_by_no
 SELECT 'optimize_skip_unused_shards';
 SELECT DISTINCT id FROM dist_01213 WHERE id = 1 SETTINGS optimize_skip_unused_shards=1;
 -- check that querying all shards is ok
--- (there will be duplicates, since the INSERT was done via local table)
 SELECT 'optimize_skip_unused_shards lack of WHERE';
 SELECT DISTINCT id FROM dist_01213 SETTINGS optimize_skip_unused_shards=1;
 

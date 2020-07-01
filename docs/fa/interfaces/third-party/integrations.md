@@ -14,6 +14,7 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
 
 -   سیستم های مدیریت پایگاه داده رابطه ای
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [در حال بارگذاری](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [تاتر-خروجی زیر-داده خوان](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
@@ -27,6 +28,7 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
 -   صف پیام
     -   [کافکا](https://kafka.apache.org)
         -   [در حال بارگذاری](https://github.com/housepower/clickhouse_sinker) (استفاده [برو کارگیر](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   پردازش جریان
     -   [لرزش](https://flink.apache.org)
         -   [سینک فلینک-کلیک](https://github.com/ivi-ru/flink-clickhouse-sink)
@@ -45,7 +47,7 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
         -   [نمودار](https://github.com/yandex/graphouse)
         -   [کربن کلیک](https://github.com/lomik/carbon-clickhouse) +
         -   [گرافیت-تاتر](https://github.com/lomik/graphite-clickhouse)
-        -   [گرافیت-چ بهینه ساز](https://github.com/innogames/graphite-ch-optimizer) - بهینه سازی پارتیشن های ریخته شده در [اطلاعات دقیق](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) اگر قوانین از [پیکربندی رولپ](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration) می تواند اعمال شود
+        -   [گرافیت-چ بهینه ساز](https://github.com/innogames/graphite-ch-optimizer) - بهینه سازی پارتیشن های ریخته شده در [اطلاعات دقیق](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) اگر قوانین از [پیکربندی رولپ](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) می تواند اعمال شود
     -   [گرافانا](https://grafana.com/)
         -   [فاحشه خانه-گرافانا](https://github.com/Vertamedia/clickhouse-grafana)
     -   [پرومتیوس](https://prometheus.io/)
@@ -77,21 +79,15 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (استفاده [اطالعات.کلیک \_شورم](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [پانداها](https://pandas.pydata.org)
         -   [پانداهاوس](https://github.com/kszucs/pandahouse)
-<<<<<<< HEAD
-- PHP
-    -   [Doctrine](https://www.doctrine-project.org/)
-        -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
-=======
 -   PHP
     -   [دکترین](https://www.doctrine-project.org/)
         -   [خانه هوشمند](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
->>>>>>> upstream/master
 -   R
     -   [هواپیمای دوباله](https://db.rstudio.com/dplyr/)
         -   [خانه روستایی](https://github.com/IMSMWU/RClickHouse) (استفاده [صفحه اصلی](https://github.com/artpaul/clickhouse-cpp))
 -   جاوا
     -   [هادوپ](http://hadoop.apache.org)
-        -   [سرویس پرداخت درونبرنامهای پلی](https://github.com/jaykelin/clickhouse-hdfs-loader) (استفاده [JDBC](../../sql_reference/table_functions/jdbc.md))
+        -   [سرویس پرداخت درونبرنامهای پلی](https://github.com/jaykelin/clickhouse-hdfs-loader) (استفاده [JDBC](../../sql-reference/table-functions/jdbc.md))
 -   اسکالا
     -   [اککا](https://akka.io)
         -   [تاتر-اسکالا-کارفرما](https://github.com/crobox/clickhouse-scala-client)
@@ -104,5 +100,11 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
 -   اکسیر
     -   [Ecto](https://github.com/elixir-ecto/ecto)
         -   [حذف جستجو](https://github.com/appodeal/clickhouse_ecto)
-
+-   Ruby
+    -   [Ruby on Rails](https://rubyonrails.org/)
+        -   [activecube](https://github.com/bitquery/activecube)
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)        
+    -   [GraphQL](https://github.com/graphql)
+        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
+        
 [مقاله اصلی](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

@@ -27,19 +27,11 @@ toc_title: "ClickHouse\u30C6\u30B9\u30C8\u306E\u5B9F\u884C\u65B9\u6CD5"
 
 機能テストで分散クエリを使用する場合は、以下を利用できます `remote` テーブル関数 `127.0.0.{1..2}` または、サーバー設定ファイルで次のように定義済みのテストクラスタを使用できます `test_shard_localhost`.
 
-<<<<<<< HEAD
-いくつかのテストは `zookeeper`, `shard` または `long` 彼らの名前で。
-`zookeeper` ZooKeeperを使用しているテストのためのものです。 `shard` そのテストのためです
-サーバーのリッスンが必要 `127.0.0.*`; `distributed` または `global` 同じを持っている
-意味は... `long` 少し長く走るテストのためのものです。 あなたはできる
-次のテストグループを無効にする `--no-zookeeper`, `--no-shard` と
-=======
 いくつかのテストには `zookeeper`, `shard` または `long` 彼らの名前で。
 `zookeeper` ZooKeeperを使用しているテスト用です。 `shard` そのテストのためです
 サーバーにリッスンが必要 `127.0.0.*`; `distributed` または `global` 同じを持っている
 意味だ `long` 少し長く実行されるテストのためのものです。 あなたはできる
 disableこれらのグループの試験を使用 `--no-zookeeper`, `--no-shard` と
->>>>>>> upstream/master
 `--no-long` オプション、それぞれ。
 
 ## 既知のバグ {#known-bugs}

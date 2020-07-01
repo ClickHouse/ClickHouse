@@ -1,4 +1,3 @@
-
 # ClickHouse 架构概述 {#clickhouse-jia-gou-gai-shu}
 
 ClickHouse 是一个真正的列式数据库管理系统（DBMS)。在 ClickHouse 中，数据始终是按列存储的，包括矢量（向量或列块）执行的过程。只要有可能，操作都是基于矢量进行分派的，而不是单个的值，这被称为«矢量化查询执行»，它有利于降低实际的数据处理开销。
@@ -116,7 +115,7 @@ ClickHouse 是一个真正的列式数据库管理系统（DBMS)。在 ClickHous
 
 普通函数不会改变行数 - 它们的执行看起来就像是独立地处理每一行数据。实际上，函数不会作用于一个单独的行上，而是作用在以 `Block` 为单位的数据上，以实现向量查询执行。
 
-还有一些杂项函数，比如 [块大小](../sql_reference/functions/other_functions.md#function-blocksize)、[rowNumberInBlock](../sql_reference/functions/other_functions.md#function-rownumberinblock)，以及 [跑累积](../sql_reference/functions/other_functions.md#function-runningaccumulate)，它们对块进行处理，并且不遵从行的独立性。
+还有一些杂项函数，比如 [块大小](../sql-reference/functions/other-functions.md#function-blocksize)、[rowNumberInBlock](../sql-reference/functions/other-functions.md#function-rownumberinblock)，以及 [跑累积](../sql-reference/functions/other-functions.md#function-runningaccumulate)，它们对块进行处理，并且不遵从行的独立性。
 
 ClickHouse 具有强类型，因此隐式类型转换不会发生。如果函数不支持某个特定的类型组合，则会抛出异常。但函数可以通过重载以支持许多不同的类型组合。比如，`plus` 函数（用于实现 `+` 运算符）支持任意数字类型的组合：`UInt8` + `Float32`，`UInt16` + `Int8` 等。同时，一些可变参数的函数能够级接收任意数目的参数，比如 `concat` 函数。
 

@@ -10,7 +10,7 @@ toc_title: "Descripci\xF3n"
 
 Lista de instrucciones detalladas paso a paso que ayudan a resolver varias tareas usando ClickHouse:
 
--   [Tutorial sobre la configuración simple del clúster](../getting_started/tutorial.md)
--   [Aplicación de un modelo CatBoost en ClickHouse](apply_catboost_model.md)
+-   [Tutorial sobre la configuración simple del clúster](../getting-started/tutorial.md)
+-   [Aplicación de un modelo CatBoost en ClickHouse](apply-catboost-model.md)
 
 [Artículo Original](https://clickhouse.tech/docs/en/guides/) <!--hide-->

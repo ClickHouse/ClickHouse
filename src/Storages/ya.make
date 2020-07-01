@@ -3,6 +3,7 @@ LIBRARY()
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/sparsehash
+    contrib/libs/poco/MongoDB
 )
 
 SRCS(
@@ -121,6 +122,7 @@ SRCS(
     System/StorageSystemQuotasUsage.cpp
     System/StorageSystemReplicas.cpp
     System/StorageSystemReplicationQueue.cpp
+    System/StorageSystemDistributionQueue.cpp
     System/StorageSystemRoleGrants.cpp
     System/StorageSystemRoles.cpp
     System/StorageSystemRowPolicies.cpp
@@ -164,6 +166,7 @@ SRCS(
     StorageMySQL.cpp
     StorageNull.cpp
     StorageReplicatedMergeTree.cpp
+    StorageS3Settings.cpp
     StorageSet.cpp
     StorageStripeLog.cpp
     StorageTinyLog.cpp
@@ -173,6 +176,11 @@ SRCS(
     StorageXDBC.cpp
     transformQueryForExternalDatabase.cpp
     VirtualColumnUtils.cpp
+    extractKeyExpressionList.cpp
+    TTLDescription.cpp
+    KeyDescription.cpp
+    SelectQueryDescription.cpp
+    StorageMongoDB.cpp
 )
 
 END()

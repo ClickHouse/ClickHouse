@@ -34,7 +34,7 @@ sens. `long` est pour les tests qui s'exécutent légèrement plus longtemps qu'
 désactivez ces groupes de tests en utilisant `--no-zookeeper`, `--no-shard` et
 `--no-long` options, respectivement.
 
-## Bugs connus {#known-bugs}
+## Bugs Connus {#known-bugs}
 
 Si nous connaissons des bugs qui peuvent être facilement reproduits par des tests fonctionnels, nous plaçons des tests fonctionnels préparés dans `tests/queries/bugs` répertoire. Ces tests seront déplacés à `tests/queries/0_stateless` quand les bugs sont corrigés.
 
@@ -56,21 +56,13 @@ Ce n'est pas nécessairement d'avoir des tests unitaires si le code est déjà c
 
 Les tests de Performance permettent de mesurer et de comparer les performances d'une partie isolée de ClickHouse sur des requêtes synthétiques. Les Tests sont situés à `tests/performance`. Chaque test est représenté par `.xml` fichier avec description du cas de test. Les Tests sont exécutés avec `clickhouse performance-test` outil (qui est incorporé dans `clickhouse` binaire). Voir `--help` pour l'invocation.
 
-<<<<<<< HEAD
-Chaque essai un ou miltiple requêtes (éventuellement avec des combinaisons de paramètres) dans une boucle avec certaines conditions pour l'arrêt (comme “maximum execution speed is not changing in three seconds”) et mesurer certaines mesures sur les performances de la requête (comme “maximum execution speed”). Certains tests peuvent contenir des conditions préalables sur un ensemble de données de test préchargé.
-=======
 Chaque essai d'exécuter une ou plusieurs requêtes (éventuellement avec des combinaisons de paramètres) dans une boucle avec certaines conditions pour l'arrêt (comme “maximum execution speed is not changing in three seconds”) et mesurer certaines mesures sur les performances de la requête (comme “maximum execution speed”). Certains tests peuvent contenir des conditions préalables sur un ensemble de données de test préchargé.
->>>>>>> upstream/master
 
 Si vous souhaitez améliorer les performances de ClickHouse dans certains scénarios, et si des améliorations peuvent être observées sur des requêtes simples, il est fortement recommandé d'écrire un test de performance. Il est toujours logique d'utiliser `perf top` ou d'autres outils perf pendant vos tests.
 
 ## Outils et Scripts de Test {#test-tools-and-scripts}
 
-<<<<<<< HEAD
-Certains programmes dans `tests` directory ne sont pas des tests préparés, mais sont des outils de test. Par exemple, pour `Lexer` il est un outil `dbms/Parsers/tests/lexer` Cela fait juste la tokenisation de stdin et écrit le résultat colorisé dans stdout. Vous pouvez utiliser ce genre d'outils comme exemples de code et pour l'exploration et les tests manuels.
-=======
 Certains programmes dans `tests` directory ne sont pas des tests préparés, mais sont des outils de test. Par exemple, pour `Lexer` il est un outil `src/Parsers/tests/lexer` Cela fait juste la tokenisation de stdin et écrit le résultat colorisé dans stdout. Vous pouvez utiliser ce genre d'outils comme exemples de code et pour l'exploration et les tests manuels.
->>>>>>> upstream/master
 
 Vous pouvez également placer une paire de fichiers `.sh` et `.reference` avec l'outil pour l'exécuter sur une entrée prédéfinie - alors le résultat du script peut être comparé à `.reference` fichier. Ce genre de tests ne sont pas automatisés.
 
@@ -177,11 +169,7 @@ Bien que nous ne puissions pas exécuter tous les tests sur toutes les variantes
 
 Lorsque nous étendons le protocole réseau ClickHouse, nous testons manuellement que l'ancien clickhouse-client fonctionne avec le nouveau clickhouse-server et que le nouveau clickhouse-client fonctionne avec l'ancien clickhouse-server (simplement en exécutant des binaires à partir des paquets correspondants).
 
-<<<<<<< HEAD
-## L'Aide Du Compilateur {#help-from-the-compiler}
-=======
 ## L'aide du Compilateur {#help-from-the-compiler}
->>>>>>> upstream/master
 
 Code ClickHouse principal (qui est situé dans `dbms` annuaire) est construit avec `-Wall -Wextra -Werror` et avec quelques avertissements supplémentaires activés. Bien que ces options ne soient pas activées pour les bibliothèques tierces.
 
@@ -211,11 +199,6 @@ Version de débogage de `jemalloc` est utilisé pour la construction de débogag
 
 ## Fuzzing {#fuzzing}
 
-<<<<<<< HEAD
-Nous utilisons un simple test fuzz pour générer des requêtes SQL aléatoires et vérifier que le serveur ne meurt pas. Le test de Fuzz est effectué avec un désinfectant D'adresse. Vous pouvez le trouver dans `00746_sql_fuzzy.pl`. Ce test doit être exécuté en continu (pendant la nuit et plus longtemps).
-
-En décembre 2018, nous n'utilisons toujours pas de tests fuzz isolés du code de la bibliothèque.
-=======
 Clickhouse fuzzing est implémenté à la fois en utilisant [libFuzzer](https://llvm.org/docs/LibFuzzer.html) et des requêtes SQL aléatoires.
 Tous les tests de fuzz doivent être effectués avec des désinfectants (adresse et indéfini).
 
@@ -229,7 +212,6 @@ Google OSS-Fuzz peut être trouvé à `docker/fuzz`.
 
 Nous utilisons également un simple test fuzz pour générer des requêtes SQL aléatoires et vérifier que le serveur ne meurt pas en les exécutant.
 Vous pouvez le trouver dans `00746_sql_fuzzy.pl`. Ce test doit être exécuté en continu (pendant la nuit et plus longtemps).
->>>>>>> upstream/master
 
 ## Audit De Sécurité {#security-audit}
 

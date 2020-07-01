@@ -1,4 +1,3 @@
-
 # ﾂ环板Utilityｮﾂ嘉ｯ {#clickhouse-utility}
 
 -   [ﾂ环板-ｮﾂ嘉ｯﾂ偲](clickhouse-local.md) — Allows running SQL queries on data without stopping the ClickHouse server, similar to how `awk` 做到这一点。

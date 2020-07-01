@@ -10,12 +10,7 @@ toc_title: "Aper\xE7u"
 
 Liste des instructions détaillées étape par étape qui aident à résoudre diverses tâches en utilisant ClickHouse:
 
-<<<<<<< HEAD
--   [Tutoriel sur la configuration simple du cluster](../getting_started/tutorial.md)
--   [Application D'un modèle CatBoost dans ClickHouse](apply_catboost_model.md)
-=======
 -   [Tutoriel sur la configuration simple du cluster](../getting-started/tutorial.md)
 -   [Application D'un modèle CatBoost dans ClickHouse](apply-catboost-model.md)
->>>>>>> upstream/master
 
 [Article Original](https://clickhouse.tech/docs/en/guides/) <!--hide-->

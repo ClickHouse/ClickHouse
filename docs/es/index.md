@@ -64,11 +64,11 @@ Las bases de datos orientadas a columnas son más adecuadas para los escenarios 
 
 **DBMS orientado a filas**
 
-![Row-oriented](images/row_oriented.gif#)
+![Row-oriented](images/row-oriented.gif#)
 
 **DBMS orientado a columnas**
 
-![Column-oriented](images/column_oriented.gif#)
+![Column-oriented](images/column-oriented.gif#)
 
 Ver la diferencia?
 

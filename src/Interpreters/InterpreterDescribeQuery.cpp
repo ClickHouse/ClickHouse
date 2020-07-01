@@ -86,12 +86,12 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         {
             auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
             context.checkAccess(AccessType::SHOW_COLUMNS, table_id);
-            table = DatabaseCatalog::instance().getTable(table_id);
+            table = DatabaseCatalog::instance().getTable(table_id, context);
         }
 
-        auto table_lock = table->lockStructureForShare(
-                false, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        columns = table->getColumns();
+        auto table_lock = table->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
+        auto metadata_snapshot = table->getInMemoryMetadataPtr();
+        columns = metadata_snapshot->getColumns();
     }
 
     Block sample_block = getSampleBlock();
@@ -99,9 +99,6 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 
     for (const auto & column : columns)
     {
-        if (column.is_virtual)
-            continue;
-
         res_columns[0]->insert(column.name);
         res_columns[1]->insert(column.type->getName());
 

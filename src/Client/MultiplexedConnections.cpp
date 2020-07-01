@@ -94,7 +94,7 @@ void MultiplexedConnections::sendQuery(
     const String & query,
     const String & query_id,
     UInt64 stage,
-    const ClientInfo * client_info,
+    const ClientInfo & client_info,
     bool with_pending_data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -126,14 +126,14 @@ void MultiplexedConnections::sendQuery(
         {
             modified_settings.parallel_replica_offset = i;
             replica_states[i].connection->sendQuery(timeouts, query, query_id,
-                                                    stage, &modified_settings, client_info, with_pending_data);
+                stage, &modified_settings, &client_info, with_pending_data);
         }
     }
     else
     {
         /// Use single replica.
-        replica_states[0].connection->sendQuery(timeouts, query, query_id, stage,
-                                                &modified_settings, client_info, with_pending_data);
+        replica_states[0].connection->sendQuery(timeouts, query, query_id,
+                stage, &modified_settings, &client_info, with_pending_data);
     }
 
     sent_query = true;

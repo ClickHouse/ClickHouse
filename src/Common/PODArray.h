@@ -5,7 +5,6 @@
 #include <cassert>
 #include <algorithm>
 #include <memory>
-#include <utility>
 
 #include <boost/noncopyable.hpp>
 
@@ -64,8 +63,8 @@ namespace ErrorCodes
   * TODO Pass alignment to Allocator.
   * TODO Allow greater alignment than alignof(T). Example: array of char aligned to page size.
   */
-static constexpr size_t EmptyPODArraySize = 1024;
-extern const char EmptyPODArray[EmptyPODArraySize];
+static constexpr size_t empty_pod_array_size = 1024;
+extern const char empty_pod_array[empty_pod_array_size];
 
 /** Base class that depend only on size of element, not on element itself.
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
@@ -82,10 +81,14 @@ protected:
     /// pad_left is also rounded up to 16 bytes to maintain alignment of allocated memory.
     static constexpr size_t pad_left = integerRoundUp(integerRoundUp(pad_left_, ELEMENT_SIZE), 16);
     /// Empty array will point to this static memory as padding.
-    static constexpr char * null = pad_left ? const_cast<char *>(EmptyPODArray) + EmptyPODArraySize : nullptr;
+    static constexpr char * null = pad_left ? const_cast<char *>(empty_pod_array) + empty_pod_array_size : nullptr;
 
-    static_assert(pad_left <= EmptyPODArraySize,
-            "Left Padding exceeds EmptyPODArraySize. Is the element size too large?");
+    static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
+
+    // If we are using allocator with inline memory, the minimal size of
+    // array must be in sync with the size of this memory.
+    static_assert(allocatorInitialBytes<TAllocator> == 0
+                  || allocatorInitialBytes<TAllocator> == initial_bytes);
 
     char * c_start          = null;    /// Does not include pad_left.
     char * c_end            = null;
@@ -97,20 +100,15 @@ protected:
     /// Minimum amount of memory to allocate for num_elements, including padding.
     static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right + pad_left; }
 
-    template <typename ... TAllocatorParams>
-    void alloc_for_num_elements(size_t num_elements, TAllocatorParams&& ...params)
+    void alloc_for_num_elements(size_t num_elements)
     {
-        alloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(num_elements)),
-              std::forward<TAllocatorParams>(params)...);
+        alloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(num_elements)));
     }
 
     template <typename ... TAllocatorParams>
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
-        c_start = c_end = reinterpret_cast<char *>(
-                TAllocator::alloc(bytes,
-                                  std::forward<TAllocatorParams>(allocator_params)...)) + pad_left;
-
+        c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...)) + pad_left;
         c_end_of_storage = c_start + bytes - pad_right - pad_left;
 
         if (pad_left)
@@ -141,15 +139,14 @@ protected:
         ptrdiff_t end_diff = c_end - c_start;
 
         c_start = reinterpret_cast<char *>(
-                TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes,
-                    std::forward<TAllocatorParams>(allocator_params)...))
+                TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...))
             + pad_left;
 
         c_end = c_start + end_diff;
         c_end_of_storage = c_start + bytes - pad_right - pad_left;
     }
 
-    constexpr bool isInitialized() const
+    bool isInitialized() const
     {
         return (c_start != null) && (c_end != null) && (c_end_of_storage != null);
     }
@@ -232,13 +229,21 @@ public:
     }
 
     template <typename ... TAllocatorParams>
-    void push_back_raw(const char * ptr, TAllocatorParams &&... allocator_params)
+    void push_back_raw(const void * ptr, TAllocatorParams &&... allocator_params)
     {
-        if (unlikely(c_end == c_end_of_storage))
-            reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
+        push_back_raw_many(1, ptr, std::forward<TAllocatorParams>(allocator_params)...);
+    }
 
-        memcpy(c_end, ptr, ELEMENT_SIZE);
-        c_end += byte_size(1);
+    template <typename ... TAllocatorParams>
+    void push_back_raw_many(size_t number_of_items, const void * ptr, TAllocatorParams &&... allocator_params)
+    {
+        size_t required_capacity = size() + number_of_items;
+        if (unlikely(required_capacity > capacity()))
+            reserve(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
+
+        size_t items_byte_size = byte_size(number_of_items);
+        memcpy(c_end, ptr, items_byte_size);
+        c_end += items_byte_size;
     }
 
     void protect()
@@ -264,9 +269,6 @@ public:
     }
 };
 
-struct alloc_tag_t {};
-constexpr alloc_tag_t alloc_tag;
-
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>
 {
@@ -290,27 +292,13 @@ public:
     using iterator = T *;
     using const_iterator = const T *;
 
-    PODArray() = default;
+
+    PODArray() {}
 
     PODArray(size_t n)
     {
         this->alloc_for_num_elements(n);
         this->c_end += this->byte_size(n);
-    }
-
-    template <typename ...TAllocatorParams>
-    PODArray(size_t n, alloc_tag_t, TAllocatorParams&& ...params)
-    {
-        this->alloc_for_num_elements(n, std::forward<TAllocatorParams>(params)...);
-        this->c_end += this->byte_size(n);
-    }
-
-    template <typename TOtherAlloc, typename ...TAllocatorParams>
-    explicit PODArray(
-            const PODArray<T, initial_bytes, TOtherAlloc, pad_right_, pad_left_> & other,
-            alloc_tag_t, TAllocatorParams && ...params)
-    {
-        insert(other.begin(), other.end(), std::forward<TAllocatorParams>(params)...);
     }
 
     PODArray(size_t n, const T & x)

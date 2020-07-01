@@ -13,6 +13,10 @@ namespace DB
   */
 struct FormatSettings
 {
+    /// Format will be used for streaming. Not every formats support it
+    /// Option means that each chunk of data need to be formatted independently. Also each chunk will be flushed at the end of processing.
+    bool enable_streaming = false;
+
     struct JSON
     {
         bool quote_64bit_integers = true;
@@ -38,6 +42,7 @@ struct FormatSettings
     {
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
+        UInt64 max_value_width = 10000;
         bool color = true;
     };
 
@@ -86,6 +91,11 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
+    struct Arrow
+    {
+        UInt64 row_group_size = 1000000;
+    } arrow;
+
     struct Parquet
     {
         UInt64 row_group_size = 1000000;
@@ -118,6 +128,7 @@ struct FormatSettings
         String schema_registry_url;
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
+        bool allow_missing_fields = false;
     };
 
     Avro avro;

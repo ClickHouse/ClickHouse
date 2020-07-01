@@ -5,10 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS table_for_bad_alters";
 
-$CLICKHOUSE_CLIENT -n --query "CREATE TABLE  table_for_bad_alters (
-  key UInt64,
-  value1 UInt8,
-  value2 String
+$CLICKHOUSE_CLIENT -n --query "CREATE TABLE table_for_bad_alters (
+    key UInt64,
+    value1 UInt8,
+    value2 String
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/table_for_bad_alters', '1')
 ORDER BY key;"
 

@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Intel Xeon E5-1650v3 3.5 GHz, 64 GB DDR4, RAID1 2×480 GB SSD (INTEL SSDSC2BB480G4)",
+        "system":       "Intel Xeon E5-1650v3",
+        "system_full":       "Intel Xeon E5-1650v3 3.5 GHz, 64 GB DDR4, RAID1 2×480 GB SSD (INTEL SSDSC2BB480G4)",
         "time":         "2020-01-26 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.005, 0.001, 0.001],

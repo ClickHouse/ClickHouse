@@ -7,7 +7,7 @@ toc_title: "MySQL\u63A5\u53E3"
 
 # MySQL接口 {#mysql-interface}
 
-ClickHouse支持MySQL线协议。 它可以通过启用 [mysql\_port](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-mysql_port) 在配置文件中设置:
+ClickHouse支持MySQL线协议。 它可以通过启用 [mysql\_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) 在配置文件中设置:
 
 ``` xml
 <mysql_port>9004</mysql_port>
@@ -37,8 +37,8 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 mysql>
 ```
 
-为了与所有MySQL客户端兼容，建议使用以下命令指定用户密码 [双SHA1](../operations/settings/settings_users.md#password_double_sha1_hex) 在配置文件中。
-如果使用用户密码指定 [SHA256](../operations/settings/settings_users.md#password_sha256_hex)，一些客户端将无法进行身份验证（mysqljs和旧版本的命令行工具mysql）。
+为了与所有MySQL客户端兼容，建议使用以下命令指定用户密码 [双SHA1](../operations/settings/settings-users.md#password_double_sha1_hex) 在配置文件中。
+如果使用用户密码指定 [SHA256](../operations/settings/settings-users.md#password_sha256_hex)，一些客户端将无法进行身份验证（mysqljs和旧版本的命令行工具mysql）。
 
 限制:
 

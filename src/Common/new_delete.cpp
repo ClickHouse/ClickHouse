@@ -10,6 +10,30 @@
 #   include <malloc/malloc.h>
 #endif
 
+#if defined(OS_DARWIN) && defined(BUNDLED_STATIC_JEMALLOC)
+extern "C"
+{
+extern void zone_register();
+}
+
+struct InitializeJemallocZoneAllocatorForOSX
+{
+    InitializeJemallocZoneAllocatorForOSX()
+    {
+        /// In case of OSX jemalloc register itself as a default zone allocator.
+        ///
+        /// But when you link statically then zone_register() will not be called,
+        /// and even will be optimized out:
+        ///
+        /// It is ok to call it twice (i.e. in case of shared libraries)
+        /// Since zone_register() is a no-op if the default zone is already replaced with something.
+        ///
+        /// https://github.com/jemalloc/jemalloc/issues/708
+        zone_register();
+    }
+} initializeJemallocZoneAllocatorForOSX;
+#endif
+
 /// Replace default new/delete with memory tracking versions.
 /// @sa https://en.cppreference.com/w/cpp/memory/new/operator_new
 ///     https://en.cppreference.com/w/cpp/memory/new/operator_delete
@@ -19,14 +43,16 @@ namespace Memory
 
 inline ALWAYS_INLINE void trackMemory(std::size_t size)
 {
+    std::size_t actual_size = size;
+
 #if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 5
     /// The nallocx() function allocates no memory, but it performs the same size computation as the mallocx() function
     /// @note je_mallocx() != je_malloc(). It's expected they don't differ much in allocation logic.
     if (likely(size != 0))
-        CurrentMemoryTracker::alloc(nallocx(size, 0));
-#else
-    CurrentMemoryTracker::alloc(size);
+        actual_size = nallocx(size, 0);
 #endif
+
+    CurrentMemoryTracker::alloc(actual_size);
 }
 
 inline ALWAYS_INLINE bool trackMemoryNoExcept(std::size_t size) noexcept

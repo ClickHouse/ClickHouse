@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+
+<yandex>
+    <http_handlers>
+        <rule>
+            <headers><XXX>xxx</XXX></headers>
+            <methods>GET</methods>
+            <url>/test_dynamic_handler_get</url>
+            <handler>
+                <type>dynamic_query_handler</type>
+                <query_param_name>get_dynamic_handler_query</query_param_name>
+            </handler>
+        </rule>
+    </http_handlers>
+</yandex>

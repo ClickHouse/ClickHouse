@@ -39,6 +39,12 @@ a:hover, a:active {
     line-height: 1.2;
 }
 
+.display-6 {
+    font-size: 1.75rem;
+    font-weight: 300;
+    line-height: 1.2;
+}
+
 .bg-dark-alt, .bg-dark-alt:focus {
     background: #36363F;
 }
@@ -193,4 +199,8 @@ a.btn-outline-yellow {
 
 .w-15 {
     width: 15% !important;
+}
+
+#feedback_email {
+    white-space: nowrap;
 }

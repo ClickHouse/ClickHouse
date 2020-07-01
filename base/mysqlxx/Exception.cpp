@@ -18,8 +18,6 @@ std::string errorMessage(MYSQL * driver)
     return res.str();
 }
 
-
-/// Для внутренних нужд библиотеки.
 void checkError(MYSQL * driver)
 {
     unsigned num = mysql_errno(driver);
@@ -28,8 +26,6 @@ void checkError(MYSQL * driver)
         throw Exception(errorMessage(driver), num);
 }
 
-
-/// Для внутренних нужд библиотеки.
 void onError(MYSQL * driver)
 {
     throw Exception(errorMessage(driver), mysql_errno(driver));

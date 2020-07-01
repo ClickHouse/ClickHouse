@@ -7,6 +7,7 @@
 
 -   Реляционные системы управления базами данных
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
@@ -20,6 +21,7 @@
 -   Очереди сообщений
     -   [Kafka](https://kafka.apache.org)
         -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (использует [Go client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   Потоковая обработка
     -   [Flink](https://flink.apache.org)
         -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
@@ -38,7 +40,7 @@
         -   [graphouse](https://github.com/yandex/graphouse)
         -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
         -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - оптимизирует партиции таблиц [\*GraphiteMergeTree](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) согласно правилам в [конфигурации rollup](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration)
+        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - оптимизирует партиции таблиц [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) согласно правилам в [конфигурации rollup](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration)
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometheus](https://prometheus.io/)
@@ -70,7 +72,7 @@
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (использует [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [pandas](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
-- PHP
+-   PHP
     -   [Doctrine](https://www.doctrine-project.org/)
         -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
@@ -78,7 +80,7 @@
     -   [RClickhouse](https://github.com/IMSMWU/RClickhouse) (использует [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-    -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (использует [JDBC](../../sql_reference/table_functions/jdbc.md))
+    -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (использует [JDBC](../../sql-reference/table-functions/jdbc.md))
 -   Scala
     -   [Akka](https://akka.io)
     -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
@@ -91,5 +93,11 @@
 -   Elixir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
     -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
-
+-   Ruby
+    -   [Ruby on Rails](https://rubyonrails.org/)
+        -   [activecube](https://github.com/bitquery/activecube)
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord) 
+    -   [GraphQL](https://github.com/graphql)
+        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
+        
 [Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/integrations/) <!--hide-->

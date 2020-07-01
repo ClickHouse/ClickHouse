@@ -24,15 +24,9 @@ ClickHouseを実装した並列データの処理-利用のすべてのハード
 -   クエリの複雑さ。
 -   クエリで処理されるデータの量。
 
-<<<<<<< HEAD
-計算に必要な量のram、推定値のサイズを一時的にデータのための [GROUP BY](../sql_reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql_reference/statements/select.md#select-distinct), [JOIN](../sql_reference/statements/select.md#select-join) そしてあなたが使用する他の操作。
-
-ClickHouseは、一時的なデータに外部メモリを使用できます。 見る [外部メモリによるグループ化](../sql_reference/statements/select.md#select-group-by-in-external-memory) 詳細については。
-=======
 RAMの必要量を計算するには、次のような一時データのサイズを推定する必要があります [GROUP BY](../sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select/distinct.md#select-distinct), [JOIN](../sql-reference/statements/select/join.md#select-join) そしてあなたが使用する他の操作。
 
 ClickHouseは一時データに外部メモリを使用できます。 見る [外部メモリのGROUP BY](../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) 詳細については.
->>>>>>> upstream/master
 
 ## Swapファイル {#swap-file}
 
@@ -64,4 +58,4 @@ ClickHouseをインストールするには、2GBの空きディスク領域が�
 
 ClickHouseの開発を中心に、Linuxの家族システムです。 推奨されるLinuxディストリビュ その `tzdata` パッケ
 
-ClickHouse働きかけることができ、その他業務システム。 の詳細を参照してください [はじめに](../getting_started/index.md) ドキュメントのセクション。
+ClickHouse働きかけることができ、その他業務システム。 の詳細を参照してください [はじめに](../getting-started/index.md) ドキュメントのセクション。

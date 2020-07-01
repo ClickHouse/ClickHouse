@@ -34,7 +34,7 @@ significado. `long` es para pruebas que duran un poco más de un segundo. Usted 
 deshabilitar estos grupos de pruebas utilizando `--no-zookeeper`, `--no-shard` y
 `--no-long` opciones, respectivamente.
 
-## Bugs conocidos {#known-bugs}
+## Bugs Conocidos {#known-bugs}
 
 Si conocemos algunos errores que se pueden reproducir fácilmente mediante pruebas funcionales, colocamos pruebas funcionales preparadas en `tests/queries/bugs` directorio. Estas pruebas se moverán a `tests/queries/0_stateless` cuando se corrigen errores.
 
@@ -165,11 +165,7 @@ Por ejemplo, construir con paquetes del sistema es una mala práctica, porque no
 
 Aunque no podemos ejecutar todas las pruebas en todas las variantes de compilaciones, queremos verificar al menos que varias variantes de compilación no estén rotas. Para este propósito utilizamos pruebas de construcción.
 
-<<<<<<< HEAD
-## Pruebas de compatibilidad de protocolos {#testing-for-protocol-compatibility}
-=======
 ## Pruebas de Compatibilidad de protocolos {#testing-for-protocol-compatibility}
->>>>>>> upstream/master
 
 Cuando ampliamos el protocolo de red ClickHouse, probamos manualmente que el antiguo clickhouse-client funciona con el nuevo clickhouse-server y el nuevo clickhouse-client funciona con el antiguo clickhouse-server (simplemente ejecutando binarios de los paquetes correspondientes).
 
@@ -210,13 +206,9 @@ LibFuzzer se usa para pruebas de fuzz aisladas del código de la biblioteca. Fuz
 El ejemplo de Fuzzer se puede encontrar en `src/Parsers/tests/lexer_fuzzer.cpp`. Las configuraciones, diccionarios y corpus específicos de LibFuzzer se almacenan en `tests/fuzz`.
 Le recomendamos que escriba pruebas fuzz para cada funcionalidad que maneje la entrada del usuario.
 
-<<<<<<< HEAD
-## Auditoría de seguridad {#security-audit}
-=======
 Fuzzers no se construyen de forma predeterminada. Para construir fuzzers ambos `-DENABLE_FUZZING=1` y `-DENABLE_TESTS=1` se deben establecer opciones.
 Recomendamos deshabilitar Jemalloc mientras se construyen fuzzers. Configuración utilizada para integrar
 Google OSS-Fuzz se puede encontrar en `docker/fuzz`.
->>>>>>> upstream/master
 
 También usamos una prueba de fuzz simple para generar consultas SQL aleatorias y verificar que el servidor no muera al ejecutarlas.
 Lo puedes encontrar en `00746_sql_fuzzy.pl`. Esta prueba debe ejecutarse de forma continua (de la noche a la mañana y más).

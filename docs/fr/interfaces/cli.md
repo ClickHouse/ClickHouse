@@ -9,11 +9,7 @@ toc_title: Client De Ligne De Commande
 
 ClickHouse fournit un client de ligne de commande natif: `clickhouse-client`. Le client prend en charge les options de ligne de commande et les fichiers de configuration. Pour plus d'informations, voir [Configuration](#interfaces_cli_configuration).
 
-<<<<<<< HEAD
-[Installer](../getting_started/index.md) à partir de la `clickhouse-client` package et l'exécuter avec la commande `clickhouse-client`.
-=======
 [Installer](../getting-started/index.md) à partir de la `clickhouse-client` package et l'exécuter avec la commande `clickhouse-client`.
->>>>>>> upstream/master
 
 ``` bash
 $ clickhouse-client
@@ -93,11 +89,7 @@ Formatez une requête comme d'habitude, puis placez les valeurs que vous souhait
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
-<<<<<<< HEAD
--   `data type` — [Type de données](../sql_reference/data_types/index.md) de l'application valeur de paramètre. Par exemple, une structure de données comme `(integer, ('string', integer))` peut avoir la `Tuple(UInt8, Tuple(String, UInt8))` type de données (vous pouvez également utiliser un autre [entier](../sql_reference/data_types/int_uint.md) type).
-=======
 -   `data type` — [Type de données](../sql-reference/data-types/index.md) de l'application valeur de paramètre. Par exemple, une structure de données comme `(integer, ('string', integer))` peut avoir la `Tuple(UInt8, Tuple(String, UInt8))` type de données (vous pouvez également utiliser un autre [entier](../sql-reference/data-types/int-uint.md) type).
->>>>>>> upstream/master
 
 #### Exemple {#example}
 
