@@ -10,7 +10,7 @@ namespace DB
 {
 
 /** A stream to input data in tsv format, but without escaping individual values.
-  * It only supports one string column
+  * It only supports columns without '\n' or '\t'
   */
 class TabSeparatedRawRowInputFormat : public TabSeparatedRowInputFormat
 {
@@ -33,23 +33,12 @@ public:
 
     bool readField(IColumn & column, const DataTypePtr & type, bool) override
     {
-        // TODO: possible to optimize
-        std::string buf;
+        char * pos = find_first_symbols<'\n', '\t'>(in.position(), in.buffer().end());
+        ReadBufferFromMemory cell(in.position(), pos - in.position());
 
-        while (!in.eof())
-        {
-            char c = *in.position();
+        type->deserializeAsWholeText(column, cell, format_settings);
 
-            if (c == '\n' || c == '\t')
-                break;
-
-            in.ignore();
-            buf.push_back(c);
-        }
-
-        ReadBufferFromString line_in(buf);
-
-        type->deserializeAsWholeText(column, line_in, format_settings);
+        in.position() = pos;
 
         return true;
     }
