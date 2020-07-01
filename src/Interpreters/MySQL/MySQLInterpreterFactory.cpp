@@ -1,4 +1,4 @@
-#include <Interpreters/MySQL/InterpreterMySQLCreateQuery.h>
+#include <Interpreters/MySQL/MySQLInterpreterFactory.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -13,10 +13,10 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/executeQuery.h>
 #include <Parsers/MySQL/ASTDeclareIndex.h>
 #include <Common/quoteString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 
 namespace DB
 {
@@ -31,14 +31,12 @@ namespace ErrorCodes
 namespace MySQLInterpreter
 {
 
-InterpreterMySQLCreateQuery::InterpreterMySQLCreateQuery(const ASTPtr & query_ptr_, Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+std::unique_ptr<IInterpreter> MySQLInterpreterFactory::get(ASTPtr & query, Context & context, QueryProcessingStage::Enum)
 {
-}
+    if (query->as<MySQLParser::ASTCreateQuery>())
+        return std::make_unique<InterpreterMySQLCreateQuery>(query, context);
 
-BlockIO InterpreterMySQLCreateQuery::execute()
-{
-    return InterpreterCreateQuery(getRewrittenQuery(), context).execute();
+    return std::unique_ptr<IInterpreter>();
 }
 
 static inline NamesAndTypesList getColumnsList(ASTExpressionList * columns_define)
@@ -235,10 +233,14 @@ static ASTPtr getOrderByPolicy(
     return order_by_expression;
 }
 
-ASTPtr InterpreterMySQLCreateQuery::getRewrittenQuery()
+void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery &, const Context &)
+{
+
+}
+
+ASTPtr InterpreterCreateImpl::getRewrittenQuery(const InterpreterCreateImpl::TQuery & create_query, const Context & context)
 {
     auto rewritten_query = std::make_shared<ASTCreateQuery>();
-    const auto & create_query = query_ptr->as<MySQLParser::ASTCreateQuery &>();
 
     /// This is dangerous, because the like table may not exists in ClickHouse
     if (create_query.like_table)
@@ -252,8 +254,10 @@ ASTPtr InterpreterMySQLCreateQuery::getRewrittenQuery()
     NamesAndTypesList columns_name_and_type = getColumnsList(create_defines->columns);
     const auto & [primary_keys, unique_keys, keys, increment_columns] = getKeys(create_defines->columns, create_defines->indices, context, columns_name_and_type);
 
+    const auto & database_name = context.resolveDatabase(create_query.database);
+
     if (primary_keys.empty())
-        throw Exception("The " + backQuoteIfNeed(create_query.database) + "." + backQuoteIfNeed(create_query.table)
+        throw Exception("The " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(create_query.table)
             + " cannot be materialized, because there is no primary keys.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto columns = std::make_shared<ASTColumns>();

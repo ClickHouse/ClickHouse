@@ -24,6 +24,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/Lexer.h>
+#include <Parsers/MySQL/ParserMySQLQuery.h>
 
 #include <Storages/StorageInput.h>
 
@@ -35,6 +36,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MySQL/MySQLInterpreterFactory.h>
 #include <Common/ProfileEvents.h>
 
 #include <Interpreters/DNSCacheUpdater.h>
@@ -237,6 +239,7 @@ static void setQuerySpecificSettings(ASTPtr & ast, Context & context)
     }
 }
 
+template <typename TInterpreterFactory = InterpreterFactory, typename TParser = ParserQuery>
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
     const char * end,
@@ -258,7 +261,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     const Settings & settings = context.getSettingsRef();
 
-    ParserQuery parser(end, settings.enable_debug_queries);
+    TParser parser(end, settings.enable_debug_queries);
     ASTPtr ast;
     const char * query_end;
 
@@ -363,7 +366,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// reset Input callbacks if query is not INSERT SELECT
             context.resetInputCallbacks();
 
-        auto interpreter = InterpreterFactory::get(ast, context, stage);
+        auto interpreter = TInterpreterFactory::get(ast, context, stage);
 
         std::shared_ptr<const EnabledQuota> quota;
         if (!interpreter->ignoreQuota())
@@ -852,6 +855,17 @@ void executeQuery(
     }
 
     streams.onFinish();
+}
+
+BlockIO executeMySQLDDLQuery(
+    const String & query, Context & context, bool internal, QueryProcessingStage::Enum stage, bool may_have_embedded_data
+)
+{
+    ASTPtr ast;
+    BlockIO streams;
+    std::tie(ast, streams) = executeQueryImpl<MySQLInterpreter::MySQLInterpreterFactory, MySQLParser::ParserMySQLQuery>(
+        query.data(), query.data() + query.size(), context, internal, stage, !may_have_embedded_data, nullptr);
+    return streams;
 }
 
 }

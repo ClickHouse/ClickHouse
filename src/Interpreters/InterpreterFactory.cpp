@@ -30,20 +30,22 @@
 #include <Parsers/ASTGrantQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterCreateUserQuery.h>
-#include <Interpreters/InterpreterCreateRoleQuery.h>
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
+#include <Interpreters/InterpreterCreateRoleQuery.h>
 #include <Interpreters/InterpreterCreateRowPolicyQuery.h>
 #include <Interpreters/InterpreterCreateSettingsProfileQuery.h>
+#include <Interpreters/InterpreterCreateUserQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
-#include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterDropAccessEntityQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
+#include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterGrantQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
@@ -55,17 +57,15 @@
 #include <Interpreters/InterpreterShowAccessEntitiesQuery.h>
 #include <Interpreters/InterpreterShowAccessQuery.h>
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
+#include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Interpreters/InterpreterShowPrivilegesQuery.h>
-#include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
-#include <Interpreters/InterpreterGrantQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/MySQL/InterpreterMySQLCreateQuery.h>
+#include <Interpreters/MySQL/MySQLInterpreterFactory.h>
 
 #include <Parsers/ASTSystemQuery.h>
 
@@ -246,12 +246,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else
     {
-        if (MaterializeMySQLSyncThread::isMySQLSyncThread())
-        {
-            if (query->as<MySQLParser::ASTCreateQuery>())
-                return std::make_unique<MySQLInterpreter::InterpreterMySQLCreateQuery>(query, context);
-        }
-
         throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
     }
 }

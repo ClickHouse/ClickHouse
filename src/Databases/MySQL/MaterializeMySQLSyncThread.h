@@ -44,6 +44,7 @@ private:
     mutable mysqlxx::Pool pool;
     mutable MySQLClient client;
     MaterializeMySQLSettings * settings;
+    String query_prefix;
 
     struct Buffers
     {
