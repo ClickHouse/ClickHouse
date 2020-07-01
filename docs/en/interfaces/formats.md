@@ -1093,7 +1093,7 @@ SELECT * FROM topic1_stream;
 ```
 
 !!! note "Warning"
-    Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart.
+    Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
 
 ## Parquet {#data-format-parquet}
 

@@ -992,7 +992,7 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 SELECT * FROM topic1_stream;
 ```
 !!! note "Внимание"
-    `format_avro_schema_registry_url` необходимо настроить в `users.xml`, чтобы сохранить значение после перезапуска.
+    `format_avro_schema_registry_url` необходимо настроить в `users.xml`, чтобы сохранить значение после перезапуска. Также можно использовать настройку `format_avro_schema_registry_url` табличного движка `Kafka`.
 
 ## Parquet {#data-format-parquet}
 
