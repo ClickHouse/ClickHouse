@@ -24,6 +24,7 @@ RUN apt-get --allow-unauthenticated update -y \
 RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/dpkg-deb
 RUN chmod +x dpkg-deb
 RUN cp dpkg-deb /usr/bin
+RUN echo "HELLO WORLD"
 
 
 # Libraries from OS are only needed to test the "unbundled" build (that is not used in production).
