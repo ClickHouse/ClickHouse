@@ -617,13 +617,10 @@ bool KeyCondition::tryPrepareSetIndex(
 
     const ASTPtr & right_arg = args[1];
 
-    PreparedSetKey set_key;
     SetPtr prepared_set;
     if (right_arg->as<ASTSubquery>() || right_arg->as<ASTIdentifier>())
     {
-        set_key = PreparedSetKey::forSubquery(*right_arg);
-
-        auto set_it = prepared_sets.find(set_key);
+        auto set_it = prepared_sets.find(PreparedSetKey::forSubquery(*right_arg));
         if (set_it == prepared_sets.end())
             return false;
 
@@ -631,25 +628,23 @@ bool KeyCondition::tryPrepareSetIndex(
     }
     else
     {
+        /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
+        /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
+        /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
+        /// that the types it was prepared with are compatible with the types of the primary key.
+        auto set_ast_hash = right_arg->getTreeHash();
         auto set_it = std::find_if(
-            prepared_sets.begin(),
-           prepared_sets.end(),
-           [&](const auto &e)
+            prepared_sets.begin(), prepared_sets.end(),
+            [&](const auto & candidate_entry)
             {
-                if (e.first.ast_hash == right_arg->getTreeHash())
-                {
-                    for (size_t i = 0; i < data_types.size(); i++)
-                    {
-                        if (!recursiveRemoveLowCardinality(data_types[i])->equals(*e.first.types[indexes_mapping[i].tuple_index]))
-                        {
-                            return false;
-                        }
-                    }
+                if (candidate_entry.first.ast_hash != set_ast_hash)
+                    return false;
 
-                    return true;
-                }
+                for (size_t i = 0; i < indexes_mapping.size(); ++i)
+                    if (!candidate_entry.second->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
+                        return false;
 
-                return false;
+                return true;
         });
         if (set_it == prepared_sets.end())
             return false;
@@ -663,7 +658,7 @@ bool KeyCondition::tryPrepareSetIndex(
 
     prepared_set->checkColumnsNumber(left_args_count);
     for (size_t i = 0; i < indexes_mapping.size(); ++i)
-        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, removeLowCardinality(data_types[i]));
+        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
 
