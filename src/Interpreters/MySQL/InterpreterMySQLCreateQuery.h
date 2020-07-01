@@ -22,7 +22,7 @@ private:
     ASTPtr query_ptr;
     Context & context;
 
-    String getRewrittenQuery();
+    ASTPtr getRewrittenQuery();
 };
 
 }

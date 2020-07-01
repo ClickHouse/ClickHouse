@@ -4,13 +4,14 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/queryToString.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/MySQL/ASTDeclareColumn.h>
 #include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/MySQL/ASTCreateDefines.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/executeQuery.h>
@@ -37,7 +38,7 @@ InterpreterMySQLCreateQuery::InterpreterMySQLCreateQuery(const ASTPtr & query_pt
 
 BlockIO InterpreterMySQLCreateQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), context, true);
+    return InterpreterCreateQuery(getRewrittenQuery(), context).execute();
 }
 
 static inline NamesAndTypesList getColumnsList(ASTExpressionList * columns_define)
@@ -234,49 +235,54 @@ static ASTPtr getOrderByPolicy(
     return order_by_expression;
 }
 
-String InterpreterMySQLCreateQuery::getRewrittenQuery()
+ASTPtr InterpreterMySQLCreateQuery::getRewrittenQuery()
 {
-    std::stringstream rewritten_query;
+    auto rewritten_query = std::make_shared<ASTCreateQuery>();
     const auto & create_query = query_ptr->as<MySQLParser::ASTCreateQuery &>();
 
     /// This is dangerous, because the like table may not exists in ClickHouse
     if (create_query.like_table)
         throw Exception("Cannot convert create like statement to ClickHouse SQL", ErrorCodes::NOT_IMPLEMENTED);
 
-    rewritten_query << "CREATE TABLE " << (create_query.if_not_exists ? "IF NOT EXISTS" : "") << backQuoteIfNeed(create_query.table);
-
     const auto & create_defines = create_query.columns_list->as<MySQLParser::ASTCreateDefines>();
 
     if (!create_defines || !create_defines->columns || create_defines->columns->children.empty())
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-    std::cout << "InterpreterMySQLCreateQuery::getRewrittenQuery() -1 \n";
     NamesAndTypesList columns_name_and_type = getColumnsList(create_defines->columns);
-    std::cout << "InterpreterMySQLCreateQuery::getRewrittenQuery() -2 \n";
     const auto & [primary_keys, unique_keys, keys, increment_columns] = getKeys(create_defines->columns, create_defines->indices, context, columns_name_and_type);
-    std::cout << "InterpreterMySQLCreateQuery::getRewrittenQuery() -3 \n";
 
     if (primary_keys.empty())
-        throw Exception(
-            "The " + backQuoteIfNeed(create_query.database) + "." + backQuoteIfNeed(create_query.table)
-                + " cannot be materialized, because there is no primary keys.",
-            ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("The " + backQuoteIfNeed(create_query.database) + "." + backQuoteIfNeed(create_query.table)
+            + " cannot be materialized, because there is no primary keys.", ErrorCodes::NOT_IMPLEMENTED);
 
+    auto columns = std::make_shared<ASTColumns>();
+
+    /// Add _sign and _version column.
     String sign_column_name = getUniqueColumnName(columns_name_and_type, "_sign");
     String version_column_name = getUniqueColumnName(columns_name_and_type, "_version");
-    rewritten_query << "(" << queryToString(InterpreterCreateQuery::formatColumns(columns_name_and_type))
-        << ", " << sign_column_name << " Int8, " << version_column_name << " UInt64" << ") "
-        << "ENGINE = ReplacingMergeTree(" + version_column_name + ")";
+    columns_name_and_type.emplace_back(NameAndTypePair{sign_column_name, std::make_shared<DataTypeInt8>()});
+    columns_name_and_type.emplace_back(NameAndTypePair{version_column_name, std::make_shared<DataTypeUInt64>()});
+    columns->set(columns->columns, InterpreterCreateQuery::formatColumns(columns_name_and_type));
+
+    auto storage = std::make_shared<ASTStorage>();
 
     /// The `partition by` expression must use primary keys, otherwise the primary keys will not be merge.
     if (ASTPtr partition_expression = getPartitionPolicy(primary_keys))
-        rewritten_query << " PARTITION BY " << queryToString(partition_expression);
+        storage->set(storage->partition_by, partition_expression);
 
     /// The `order by` expression must use primary keys, otherwise the primary keys will not be merge.
     if (ASTPtr order_by_expression = getOrderByPolicy(primary_keys, unique_keys, keys, increment_columns))
-        rewritten_query << " ORDER BY " << queryToString(order_by_expression);
+        storage->set(storage->order_by, order_by_expression);
 
-    return rewritten_query.str();
+    storage->set(storage->engine, makeASTFunction("ReplacingMergeTree", std::make_shared<ASTIdentifier>(version_column_name)));
+
+    rewritten_query->table = create_query.table;
+    rewritten_query->if_not_exists = create_query.if_not_exists;
+    rewritten_query->set(rewritten_query->storage, storage);
+    rewritten_query->set(rewritten_query->columns_list, columns);
+
+    return rewritten_query;
 }
 
 }
