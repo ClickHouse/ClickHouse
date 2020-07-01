@@ -213,9 +213,10 @@ if __name__ == "__main__":
         logging.info("Should place {} to output".format(args.with_binaries))
 
     dockerfile = os.path.join(ch_root, "docker/packager", image_type, "Dockerfile")
+    image_with_version = image_name + ":" + args.docker_image_version
     if image_type != "freebsd" and not check_image_exists_locally(image_name) or args.force_build_image:
-        if not pull_image(image_name) or args.force_build_image:
-            build_image(image_name, dockerfile)
+        if not pull_image(image_with_version) or args.force_build_image:
+            build_image(image_with_version, dockerfile)
     env_prepared = parse_env_variables(
         args.build_type, args.compiler, args.sanitizer, args.package_type, image_type,
         args.cache, args.distcc_hosts, args.unbundled, args.split_binary, args.clang_tidy,
