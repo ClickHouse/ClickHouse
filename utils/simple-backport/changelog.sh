@@ -29,6 +29,7 @@ find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
 "${find_prs[@]}" "changelog-log.txt" | sort -rn | uniq > "changelog-prs.txt"
 
 echo "$(wc -l < "changelog-prs.txt") PRs added between $from and $to."
+if [ $(wc -l < "changelog-prs.txt") -eq 0 ] ; then exit 0 ; fi
 
 function github_download()
 {
