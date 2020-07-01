@@ -1101,7 +1101,7 @@ Result:
 └───┴─────┘
 ```
 
-The subquery generates `sumState` for every number from `0` to `9`. `sumState` returns the state of the [sum](../../sql-reference/aggregate-functions/reference.md#agg_function-sum) function that contains the sum of a single number.
+The subquery generates `sumState` for every number from `0` to `9`. `sumState` returns the state of the [sum](../aggregate-functions/reference/sum.md) function that contains the sum of a single number.
 
 The whole query does the following:
 
