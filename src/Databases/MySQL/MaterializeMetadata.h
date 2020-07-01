@@ -27,7 +27,7 @@ struct MaterializeMetadata
 
     void transaction(const MySQLReplication::Position & position, const std::function<void()> & fun);
 
-    MaterializeMetadata(mysqlxx::PoolWithFailover::Entry & connection, const String & path, const String & database);
+    MaterializeMetadata(mysqlxx::PoolWithFailover::Entry & connection, const String & path, const String & database, bool & opened_transaction);
 };
 
 }

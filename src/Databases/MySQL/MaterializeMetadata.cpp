@@ -142,7 +142,7 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
     commitMetadata(fun, persistent_tmp_path, persistent_path);
 }
 
-MaterializeMetadata::MaterializeMetadata(mysqlxx::PoolWithFailover::Entry & connection, const String & path_, const String & database)
+MaterializeMetadata::MaterializeMetadata(mysqlxx::PoolWithFailover::Entry & connection, const String & path_, const String & database, bool & opened_transaction)
     : persistent_path(path_)
 {
     if (Poco::File(persistent_path).exists())
@@ -174,6 +174,7 @@ MaterializeMetadata::MaterializeMetadata(mysqlxx::PoolWithFailover::Entry & conn
         connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
         connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
 
+        opened_transaction = true;
         need_dumping_tables = fetchTablesCreateQuery(connection, database, fetchTablesInDB(connection, database));
         connection->query("UNLOCK TABLES;").execute();
     }

@@ -17,18 +17,21 @@ StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_stora
     : IStorage(nested_storage_->getStorageID()), nested_storage(nested_storage_)
 {
     ColumnsDescription columns_desc;
-    const ColumnsDescription & nested_columns_desc = nested_storage->getColumns();
+    const auto & nested_memory_metadata = nested_storage->getInMemoryMetadata();
+    const ColumnsDescription & nested_columns_desc = nested_memory_metadata.getColumns();
 
-    size_t index = 0;
     auto iterator = nested_columns_desc.begin();
-    for (; index < nested_columns_desc.size() - 2; ++index, ++iterator)
+    for (size_t index = 0; index < nested_columns_desc.size() - 2; ++index, ++iterator)
         columns_desc.add(*iterator);
 
-    setColumns(columns_desc);
+    StorageInMemoryMetadata in_memory_metadata;
+    in_memory_metadata.setColumns(columns_desc);
+    setInMemoryMetadata(in_memory_metadata);
 }
 
 Pipes StorageMaterializeMySQL::read(
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -36,8 +39,9 @@ Pipes StorageMaterializeMySQL::read(
     unsigned int num_streams)
 {
     NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
+    const StorageMetadataPtr & nested_metadata = nested_storage->getInMemoryMetadataPtr();
 
-    Block nested_header = nested_storage->getSampleBlockNonMaterialized();
+    Block nested_header = nested_metadata->getSampleBlockNonMaterialized();
     ColumnWithTypeAndName & sign_column = nested_header.getByPosition(nested_header.columns() - 2);
     ColumnWithTypeAndName & version_column = nested_header.getByPosition(nested_header.columns() - 1);
 
@@ -71,7 +75,7 @@ Pipes StorageMaterializeMySQL::read(
             expressions->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
     }
 
-    Pipes pipes = nested_storage->read(require_columns_name, query_info, context, processed_stage, max_block_size, num_streams);
+    Pipes pipes = nested_storage->read(require_columns_name, nested_metadata, query_info, context, processed_stage, max_block_size, num_streams);
 
     if (!expressions->children.empty() && !pipes.empty())
     {
@@ -92,7 +96,7 @@ Pipes StorageMaterializeMySQL::read(
 NamesAndTypesList StorageMaterializeMySQL::getVirtuals() const
 {
     NamesAndTypesList virtuals;
-    Block nested_header = nested_storage->getSampleBlockNonMaterialized();
+    Block nested_header = nested_storage->getInMemoryMetadata().getSampleBlockNonMaterialized();
     ColumnWithTypeAndName & sign_column = nested_header.getByPosition(nested_header.columns() - 2);
     ColumnWithTypeAndName & version_column = nested_header.getByPosition(nested_header.columns() - 1);
     virtuals.emplace_back(NameAndTypePair(sign_column.name, sign_column.type));

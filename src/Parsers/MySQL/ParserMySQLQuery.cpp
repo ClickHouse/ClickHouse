@@ -1,5 +1,6 @@
 #include <Parsers/MySQL/ParserMySQLQuery.h>
 
+#include <Common/setThreadName.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
@@ -15,7 +16,7 @@ namespace MySQLParser
 
 bool ParserMySQLQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
+    if (getThreadName() != "MySQLDBSync")
         return false;
 
     ParserDropQuery p_drop_query;
