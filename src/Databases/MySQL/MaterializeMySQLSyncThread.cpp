@@ -16,7 +16,6 @@
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/ReadBufferFromString.h>
 #    include <Interpreters/Context.h>
-#    include <Interpreters/MySQL/CreateQueryVisitor.h>
 #    include <Interpreters/executeQuery.h>
 #    include <Parsers/parseQuery.h>
 #    include <Storages/StorageMergeTree.h>
