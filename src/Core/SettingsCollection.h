@@ -295,6 +295,16 @@ enum class DistributedProductMode
 };
 using SettingDistributedProductMode = SettingEnum<DistributedProductMode>;
 
+/// The setting for executing distributed subqueries inside IN or JOIN sections.
+enum class ThreadIOPriorityClass
+{
+    none = 0,
+    realtime,
+    best_effort,
+    idle
+};
+using SettingThreadIOPriorityClass = SettingEnum<ThreadIOPriorityClass>;
+
 
 using SettingDateTimeInputFormat = SettingEnum<FormatSettings::DateTimeInputFormat>;
 

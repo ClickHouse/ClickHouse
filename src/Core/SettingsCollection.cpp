@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_OVERFLOW_MODE;
     extern const int UNKNOWN_TOTALS_MODE;
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE;
+    extern const int UNKNOWN_THREAD_IO_PRIORITY_CLASS;
     extern const int UNKNOWN_JOIN;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
@@ -525,6 +526,12 @@ IMPLEMENT_SETTING_ENUM(OverflowMode, OVERFLOW_MODE_LIST_OF_NAMES, ErrorCodes::UN
     M(ANY, "any")
 IMPLEMENT_SETTING_ENUM_WITH_TAG(OverflowMode, SettingOverflowModeGroupByTag, OVERFLOW_MODE_LIST_OF_NAMES_WITH_ANY, ErrorCodes::UNKNOWN_OVERFLOW_MODE)
 
+#define THREAD_IO_PRIORITY_CLASS_OF_NAMES(M) \
+    M(none, "none") \
+    M(realtime, "realtime") \
+    M(best_effort, "best_effort") \
+    M(idle, "idle")
+IMPLEMENT_SETTING_ENUM(ThreadIOPriorityClass, THREAD_IO_PRIORITY_CLASS_OF_NAMES, ErrorCodes::UNKNOWN_THREAD_IO_PRIORITY_CLASS)
 
 #define DISTRIBUTED_PRODUCT_MODE_LIST_OF_NAMES(M) \
     M(DENY, "deny") \

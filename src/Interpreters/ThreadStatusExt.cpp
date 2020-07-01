@@ -15,6 +15,7 @@
 
 #   include <sys/time.h>
 #   include <sys/resource.h>
+#   include <sys/syscall.h>
 #endif
 
 
@@ -56,6 +57,35 @@ void CurrentThread::defaultThreadDeleter()
         return;
     current_thread->detachQuery(true, true);
 }
+
+#define IOPRIO_CLASS_SHIFT	13
+#define IOPRIO_WHO_PROCESS  1
+
+inline void ThreadStatus::setThreadIOPriority(ThreadIOPriorityClass new_io_priority_class, int new_io_priority_level)
+{
+
+    #if defined(OS_LINUX)
+        // Attempts to set very high priorities (IOPRIO_CLASS_RT) require the CAP_SYS_ADMIN capability.
+        // Kernel versions up to 2.6.24 also required CAP_SYS_ADMIN to set a very low priority
+        // (IOPRIO_CLASS_IDLE), but since Linux 2.6.25, this is no longer required.
+
+        if (new_io_priority_class == ThreadIOPriorityClass::realtime && !hasLinuxCapability(CAP_SYS_ADMIN))
+            return;
+
+        if (!syscall(
+                SYS_ioprio_set,
+                IOPRIO_WHO_PROCESS,
+                0 /* calling thread */,
+                new_io_priority_level | static_cast<int>(new_io_priority_class) << IOPRIO_CLASS_SHIFT
+            ))
+        {
+            throwFromErrno("Cannot 'ioprio_set'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+        }
+
+    #endif
+}
+
+
 
 void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
 {
@@ -102,6 +132,16 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
                 throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
 
             os_thread_priority = new_os_thread_priority;
+        }
+
+        ThreadIOPriorityClass new_io_priority_class = settings.os_thread_io_priority_class;
+
+        if (new_io_priority_class != ThreadIOPriorityClass::none)
+        {
+            auto new_io_priority_level = settings.os_thread_io_priority_level;
+            LOG_TRACE(log, "Setting ionice to {}, {}", new_io_priority_class, new_io_priority_level);
+            setThreadIOPriority(new_io_priority_class, new_io_priority_level);
+            io_priority_class = new_io_priority_class;
         }
 #endif
     }
@@ -292,6 +332,13 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
             LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
 
         os_thread_priority = 0;
+    }
+
+    if (io_priority_class != ThreadIOPriorityClass::none)
+    {
+        LOG_TRACE(log, "Resetting ionice");
+        setThreadIOPriority(ThreadIOPriorityClass::none, 0);
+        io_priority_class = ThreadIOPriorityClass::none;
     }
 #endif
 }

@@ -157,6 +157,8 @@ struct Settings : public SettingsCollection<Settings>
     \
     M(SettingUInt64, priority, 0, "Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities.", 0) \
     M(SettingInt64, os_thread_priority, 0, "If non zero - set corresponding 'nice' value for query processing threads. Can be used to adjust query priority for OS scheduler.", 0) \
+    M(SettingThreadIOPriorityClass, os_thread_io_priority_class, ThreadIOPriorityClass::none, "IO priority class for the thread. Possible values are: none, realtime, best_effort, idle. See also: ioprio_set(2)", 0) \
+    M(SettingInt64, os_thread_io_priority_level, 0, "Have meaning only together with os_thread_io_priority_class. The IO priority level determines a priority relative to other processes of the same IO priority class. Priority levels range from 0 (highest) to 7 (lowest). See also: ioprio_set(2)", 0) \
     \
     M(SettingBool, log_queries, 1, "Log requests and write the log to the system table.", 0) \
     M(SettingLogQueriesType, log_queries_min_type, QueryLogElementType::QUERY_START, "Minimal type in query_log to log, possible values (from low to high): QUERY_START, QUERY_FINISH, EXCEPTION_BEFORE_START, EXCEPTION_WHILE_PROCESSING.", 0) \

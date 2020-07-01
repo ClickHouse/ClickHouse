@@ -92,6 +92,7 @@ public:
     const UInt64 thread_id = 0;
     /// Also called "nice" value. If it was changed to non-zero (when attaching query) - will be reset to zero when query is detached.
     Int32 os_thread_priority = 0;
+    ThreadIOPriorityClass io_priority_class = ThreadIOPriorityClass::none;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
@@ -208,6 +209,10 @@ protected:
     std::function<void()> fatal_error_callback;
 
 private:
+    // set I/O scheduling class and priority (wrapper for ioprio_set),
+    // has meaning only on linux & CFQ scheduler
+    inline void setThreadIOPriority(ThreadIOPriorityClass io_priority_class, int io_priority_level);
+
     void setupState(const ThreadGroupStatusPtr & thread_group_);
 };
 
