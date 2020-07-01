@@ -32,7 +32,7 @@
 
 Потребление памяти не полностью учитывается для состояний агрегатных функций `min`, `max`, `any`, `anyLast`, `argMin`, `argMax` от аргументов `String` и `Array`.
 
-Потребление памяти ограничивается также параметрами `max_memory_usage_for_user` и `max_server_memory_usage`.
+Потребление памяти ограничивается также параметрами `max_memory_usage_for_user` и [max_server_memory_usage](../server-configuration-parameters/settings.md#max_server_memory_usage).
 
 ## max\_memory\_usage\_for\_user {#max-memory-usage-for-user}
 
@@ -41,25 +41,6 @@
 Значения по умолчанию определены в файле [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L288). По умолчанию размер не ограничен (`max_memory_usage_for_user = 0`).
 
 Смотрите также описание настройки [max\_memory\_usage](#settings_max_memory_usage).
-
-## max_server_memory_usage {#max_server_memory_usage}
-
-Ограничивает объём оперативной памяти, используемой сервером ClickHouse. Настройка может быть задана только для профиля `default`.
-
-Возможные значения:
-
--   Положительное целое число.
--   0 — объём используемой памяти не ограничен.
-
-Значение по умолчанию: `0`.
-
-**Дополнительная информация**
-
-На серверах с небольшим объёмом RAM и файла подкачки может потребоваться настройка `max_server_memory_usage_to_ram_ratio > 1`.
-
-**См. также**
-
--   [max_memory_usage](#settings_max_memory_usage)
 
 ## max\_rows\_to\_read {#max-rows-to-read}
 

@@ -36,7 +36,7 @@ Memory usage is not monitored for the states of certain aggregate functions.
 
 Memory usage is not fully tracked for states of the aggregate functions `min`, `max`, `any`, `anyLast`, `argMin`, `argMax` from `String` and `Array` arguments.
 
-Memory consumption is also restricted by the parameters `max_memory_usage_for_user` and `max_server_memory_usage`.
+Memory consumption is also restricted by the parameters `max_memory_usage_for_user` and [max_server_memory_usage](../server-configuration-parameters/settings.md#max_server_memory_usage).
 
 ## max\_memory\_usage\_for\_user {#max-memory-usage-for-user}
 
@@ -46,24 +46,6 @@ Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHo
 
 See also the description of [max\_memory\_usage](#settings_max_memory_usage).
 
-## max_server_memory_usage {#max_server_memory_usage}
-
-Limits total RAM usage by the ClickHouse server. You can specify it only for the default profile.
-
-Possible values:
-
--   Positive integer.
--   0 — Unlimited.
-
-Default value: `0`.
-
-**Additional Info**
-
-On hosts with low RAM and swap, you possibly need setting `max_server_memory_usage_to_ram_ratio > 1`.
-
-**See also**
-
--   [max_memory_usage](#settings_max_memory_usage)
 
 ## max\_rows\_to\_read {#max-rows-to-read}
 
