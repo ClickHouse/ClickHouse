@@ -757,24 +757,17 @@ namespace MySQLReplication
                 event->parseEvent(payload);
 
                 auto query = std::static_pointer_cast<QueryEvent>(event);
-                if (query->schema == replicate_do_db)
+                switch (query->typ)
                 {
-                    switch (query->typ)
-                    {
-                        case BEGIN:
-                        case XA: {
-                            event = std::make_shared<DryRunEvent>();
-                            break;
-                        }
-                        default:
-                            position.updateLogPos(event->header.log_pos);
+                    case BEGIN:
+                    case XA: {
+                        event = std::make_shared<DryRunEvent>();
+                        break;
                     }
+                    default:
+                        position.updateLogPos(event->header.log_pos);
                 }
-                else
-                {
-                    event = std::make_shared<DryRunEvent>();
-                    position.updateLogPos(event->header.log_pos);
-                }
+
                 break;
             }
             case XID_EVENT: {

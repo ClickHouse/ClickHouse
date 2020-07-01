@@ -15,6 +15,9 @@ protected:
     const char * getName() const override { return "MySQL Query"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+public:
+    ParserMySQLQuery(const char *, bool) {}
 };
 
 }

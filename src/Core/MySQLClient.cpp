@@ -152,7 +152,8 @@ void MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String b
             try
             {
                 packet_sender->receivePacket(replication);
-                events.push(std::make_pair(replication.readOneEvent(), replication.getPosition()));
+                auto receive_event = replication.readOneEvent();
+                events.push(std::make_pair(receive_event, replication.getPosition()));
             }
             catch(...)
             {

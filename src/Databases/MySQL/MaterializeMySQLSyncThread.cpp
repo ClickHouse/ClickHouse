@@ -7,22 +7,20 @@
 #include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 
 #    include <cstdlib>
+#    include <common/sleep.h>
+#    include <Common/quoteString.h>
+#    include <Common/setThreadName.h>
 #    include <Columns/ColumnTuple.h>
-#    include <DataStreams/AddingVersionsBlockOutputStream.h>
-#    include <DataStreams/OneBlockInputStream.h>
 #    include <DataStreams/copyData.h>
+#    include <DataStreams/OneBlockInputStream.h>
+#    include <DataStreams/AddingVersionsBlockOutputStream.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/ReadBufferFromString.h>
 #    include <Interpreters/Context.h>
 #    include <Interpreters/executeQuery.h>
-#    include <Parsers/parseQuery.h>
 #    include <Storages/StorageMergeTree.h>
-#    include <Common/CurrentMetrics.h>
-#    include <Common/quoteString.h>
-#    include <Common/setThreadName.h>
-#    include <common/sleep.h>
 
 namespace DB
 {
@@ -35,18 +33,21 @@ namespace ErrorCodes
 
 static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
 
+template <bool execute_ddl = true>
 static BlockIO tryToExecuteQuery(const String & query_to_execute, const Context & context_, const String & database, const String & comment)
 {
     try
     {
-        LOG_DEBUG(&Poco::Logger::get("MaterializeMySQLSyncThread(" + database + ")"), "Try execute query: " + query_to_execute);
-
         Context context(context_);
         CurrentThread::QueryScope query_scope(context);
         context.setCurrentDatabase(database);
         context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         context.setCurrentQueryId(""); // generate random query_id
-        return executeQuery("/*" + comment + "*/ " + query_to_execute, context, true);
+
+        if constexpr (execute_ddl)
+            return executeMySQLDDLQuery("/*" + comment + "*/ " + query_to_execute, context, true);
+        else
+            return executeQuery("/*" + comment + "*/ " + query_to_execute, context, true);
     }
     catch (...)
     {
@@ -55,8 +56,6 @@ static BlockIO tryToExecuteQuery(const String & query_to_execute, const Context 
             "Query " + query_to_execute + " wasn't finished successfully");
         throw;
     }
-
-    LOG_DEBUG(&Poco::Logger::get("MaterializeMySQLSyncThread(" + database + ")"), "Executed query: " + query_to_execute);
 }
 
 static inline DatabaseMaterializeMySQL & getDatabase(const String & database_name)
@@ -97,6 +96,7 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     , mysql_database_name(mysql_database_name_), pool(std::move(pool_)), client(std::move(client_)), settings(settings_)
 {
     /// TODO: 做简单的check, 失败即报错
+    query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ")";
     startSynchronization();
 }
 
@@ -162,14 +162,15 @@ static inline void cleanOutdatedTables(const String & database_name, const Conte
     for (auto iterator = clean_database->getTablesIterator(context); iterator->isValid(); iterator->next())
     {
         String table_name = backQuoteIfNeed(iterator->name());
-        String comment = String("Clean ") + table_name + " for dump mysql.";
-        tryToExecuteQuery("DROP TABLE " + table_name, context, backQuoteIfNeed(database_name), comment);
+        String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
+        tryToExecuteQuery("DROP TABLE " + table_name, context, database_name, comment);
     }
 }
 
 static inline BlockOutputStreamPtr getTableOutput(const String & database_name, const String & table_name, const Context & context)
 {
-    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuoteIfNeed(table_name) + " VALUES", context, database_name, "");
+    String comment = "Materialize MySQL step 1: execute dump data";
+    BlockIO res = tryToExecuteQuery<false>("INSERT INTO " + backQuoteIfNeed(table_name) + " VALUES", context, database_name, comment);
 
     if (!res.out)
         throw Exception("LOGICAL ERROR:", ErrorCodes::LOGICAL_ERROR);
@@ -186,7 +187,7 @@ static inline void dumpDataForTables(
     for (; iterator != master_info.need_dumping_tables.end() && !is_cancelled(); ++iterator)
     {
         const auto & table_name = iterator->first;
-        String comment = String("Dumping ") + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name);
+        String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
         tryToExecuteQuery(iterator->second, context, database_name, comment);  /// create table.
 
         BlockOutputStreamPtr out = std::make_shared<AddingVersionsBlockOutputStream>(master_info.version, getTableOutput(database_name, table_name, context));
@@ -395,7 +396,8 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
 
         try
         {
-            tryToExecuteQuery(query_event.query, global_context, database_name, "");
+            String comment = "Materialize MySQL step 2: execute MySQL DDL for sync data";
+            tryToExecuteQuery(query_prefix + query_event.query, global_context, query_event.schema, comment);
         }
         catch (Exception & exception)
         {
