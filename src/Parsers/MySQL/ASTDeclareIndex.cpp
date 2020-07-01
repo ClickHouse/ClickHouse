@@ -159,7 +159,7 @@ bool ParserDeclareIndex::parseDeclareOrdinaryIndex(IParser::Pos & pos, String & 
                 return false;
         }
 
-        index_type = "BTREE";   /// default index type
+        index_type = "KEY_BTREE";   /// default index type
         if (p_identifier.parse(pos, temp_node, expected))
             index_name = temp_node->as<ASTIdentifier>()->name;
 
@@ -168,7 +168,7 @@ bool ParserDeclareIndex::parseDeclareOrdinaryIndex(IParser::Pos & pos, String & 
             if (!p_identifier.parse(pos, temp_node, expected))
                 return false;
 
-            index_type = temp_node->as<ASTIdentifier>()->name;
+            index_type = "KEY_" + temp_node->as<ASTIdentifier>()->name;
         }
     }
 

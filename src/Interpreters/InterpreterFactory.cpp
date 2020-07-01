@@ -28,6 +28,7 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTGrantQuery.h>
+#include <Parsers/MySQL/ASTCreateQuery.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
@@ -64,11 +65,13 @@
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/InterpreterGrantQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MySQL/InterpreterMySQLCreateQuery.h>
 
 #include <Parsers/ASTSystemQuery.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
+#include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 
 
 namespace ProfileEvents
@@ -242,6 +245,14 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
         return std::make_unique<InterpreterShowPrivilegesQuery>(query, context);
     }
     else
+    {
+        if (MaterializeMySQLSyncThread::isMySQLSyncThread())
+        {
+            if (query->as<MySQLParser::ASTCreateQuery>())
+                return std::make_unique<MySQLInterpreter::InterpreterMySQLCreateQuery>(query, context);
+        }
+
         throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
+    }
 }
 }

@@ -13,7 +13,6 @@
 #    include <DataStreams/copyData.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
-#    include <Databases/MySQL/queryConvert.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/ReadBufferFromString.h>
 #    include <Interpreters/Context.h>
@@ -32,29 +31,33 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
+    extern const int SYNTAX_ERROR;
 }
 
 static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
 
-static BlockIO tryToExecuteQuery(const String & query_to_execute, const Context & context_, const String & comment)
+static BlockIO tryToExecuteQuery(const String & query_to_execute, const Context & context_, const String & database, const String & comment)
 {
     try
     {
-        LOG_DEBUG(&Poco::Logger::get("MaterializeMySQLSyncThread"), "Try execute query: " + query_to_execute);
+        LOG_DEBUG(&Poco::Logger::get("MaterializeMySQLSyncThread(" + database + ")"), "Try execute query: " + query_to_execute);
 
         Context context(context_);
         CurrentThread::QueryScope query_scope(context);
+        context.setCurrentDatabase(database);
         context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         context.setCurrentQueryId(""); // generate random query_id
         return executeQuery("/*" + comment + "*/ " + query_to_execute, context, true);
     }
     catch (...)
     {
-        tryLogCurrentException("MaterializeMySQLSyncThread", "Query " + query_to_execute + " wasn't finished successfully");
+        tryLogCurrentException(
+            &Poco::Logger::get("MaterializeMySQLSyncThread(" + database + ")"),
+            "Query " + query_to_execute + " wasn't finished successfully");
         throw;
     }
 
-    LOG_DEBUG(&Poco::Logger::get("MaterializeMySQLSyncThread"), "Executed query: " + query_to_execute);
+    LOG_DEBUG(&Poco::Logger::get("MaterializeMySQLSyncThread(" + database + ")"), "Executed query: " + query_to_execute);
 }
 
 static inline DatabaseMaterializeMySQL & getDatabase(const String & database_name)
@@ -159,16 +162,15 @@ static inline void cleanOutdatedTables(const String & database_name, const Conte
 
     for (auto iterator = clean_database->getTablesIterator(context); iterator->isValid(); iterator->next())
     {
-        String table = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(iterator->name());
-        String comment = String("Clean ") + table + " for dump mysql.";
-        tryToExecuteQuery("DROP TABLE " + table, context, comment);
+        String table_name = backQuoteIfNeed(iterator->name());
+        String comment = String("Clean ") + table_name + " for dump mysql.";
+        tryToExecuteQuery("DROP TABLE " + table_name, context, backQuoteIfNeed(database_name), comment);
     }
 }
 
 static inline BlockOutputStreamPtr getTableOutput(const String & database_name, const String & table_name, const Context & context)
 {
-    String with_database_table_name = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name);
-    BlockIO res = tryToExecuteQuery("INSERT INTO " + with_database_table_name + " VALUES", context, "");
+    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuoteIfNeed(table_name) + " VALUES", context, database_name, "");
 
     if (!res.out)
         throw Exception("LOGICAL ERROR:", ErrorCodes::LOGICAL_ERROR);
@@ -185,9 +187,8 @@ static inline void dumpDataForTables(
     for (; iterator != master_info.need_dumping_tables.end() && !is_cancelled(); ++iterator)
     {
         const auto & table_name = iterator->first;
-        MySQLTableStruct table_struct = visitCreateQuery(iterator->second, context, database_name);
         String comment = String("Dumping ") + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name);
-        tryToExecuteQuery(toCreateQuery(table_struct, context), context, comment);
+        tryToExecuteQuery(iterator->second, context, database_name, comment);  /// create table.
 
         BlockOutputStreamPtr out = std::make_shared<AddingVersionsBlockOutputStream>(master_info.version, getTableOutput(database_name, table_name, context));
         MySQLBlockInputStream input(
@@ -201,6 +202,9 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
 {
     std::unique_lock<std::mutex> lock(sync_mutex);
 
+    bool opened_transaction = false;
+    mysqlxx::PoolWithFailover::Entry connection;
+
     while (!isCancelled())
     {
         try
@@ -210,9 +214,10 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
                 sync_cond.wait_for(lock, std::chrono::seconds(1));
             LOG_DEBUG(log, "Database status is OK.");
 
+            connection = pool.get();
+            opened_transaction = false;
 
-            mysqlxx::PoolWithFailover::Entry connection = pool.get();
-            MaterializeMetadata metadata(connection, getDatabase(database_name).getMetadataPath() + "/.metadata", mysql_database_name);
+            MaterializeMetadata metadata(connection, getDatabase(database_name).getMetadataPath() + "/.metadata", mysql_database_name, opened_transaction);
 
             if (!metadata.need_dumping_tables.empty())
             {
@@ -223,16 +228,29 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
                 });
             }
 
+            if (opened_transaction)
+                connection->query("COMMIT").execute();
+
             client.connect();
             client.startBinlogDump(std::rand(), mysql_database_name, metadata.binlog_file, metadata.binlog_position);
             return metadata;
         }
-        catch (mysqlxx::Exception & )
+        catch (...)
         {
             tryLogCurrentException(log);
 
-            /// Avoid busy loop when MySQL is not available.
-            sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
+            if (opened_transaction)
+                connection->query("ROLLBACK").execute();
+
+            try
+            {
+                throw;
+            }
+            catch (mysqlxx::Exception & )
+            {
+                /// Avoid busy loop when MySQL is not available.
+                sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
+            }
         }
     }
 
@@ -373,9 +391,20 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
     }
     else if (receive_event->type() == MYSQL_QUERY_EVENT)
     {
+        QueryEvent & query_event = static_cast<QueryEvent &>(*receive_event);
         flushBuffersData(buffers, metadata);
-        /// TODO: 执行DDL.
-        /// TODO: 直接使用Interpreter执行即可
+
+        try
+        {
+            tryToExecuteQuery(query_event.query, global_context, database_name, "");
+        }
+        catch (Exception & exception)
+        {
+            tryLogCurrentException(log);
+
+            if (exception.code() != ErrorCodes::SYNTAX_ERROR)
+                throw;
+        }
     }
 }
 bool MaterializeMySQLSyncThread::isMySQLSyncThread()
@@ -429,12 +458,13 @@ MaterializeMySQLSyncThread::Buffers::BufferAndSortingColumnsPtr MaterializeMySQL
     {
         StoragePtr storage = getDatabase(database).tryGetTable(table_name, context);
 
+        const StorageInMemoryMetadata & metadata = storage->getInMemoryMetadata();
         BufferAndSortingColumnsPtr & buffer_and_soring_columns = data.try_emplace(
-            table_name, std::make_shared<BufferAndSortingColumns>(storage->getSampleBlockNonMaterialized(), std::vector<size_t>{})).first->second;
+            table_name, std::make_shared<BufferAndSortingColumns>(metadata.getSampleBlockNonMaterialized(), std::vector<size_t>{})).first->second;
 
         if (StorageMergeTree * table_merge_tree = storage->as<StorageMergeTree>())
         {
-            Names required_for_sorting_key = table_merge_tree->getColumnsRequiredForSortingKey();
+            Names required_for_sorting_key = metadata.getColumnsRequiredForSortingKey();
 
             for (const auto & required_name_for_sorting_key : required_for_sorting_key)
                 buffer_and_soring_columns->second.emplace_back(

@@ -75,7 +75,7 @@ void CreateQueryMatcher::visit(const MySQLParser::ASTDeclareColumn & declare_col
     if (!declare_column.data_type)
         throw Exception("Missing type in definition of column.", ErrorCodes::UNKNOWN_TYPE);
 
-    bool is_nullable = true, is_unsigned = false;
+    bool is_nullable = true;
     if (declare_column.column_options)
     {
         if (MySQLParser::ASTDeclareOptions * options = declare_column.column_options->as<MySQLParser::ASTDeclareOptions>())
@@ -86,10 +86,10 @@ void CreateQueryMatcher::visit(const MySQLParser::ASTDeclareColumn & declare_col
             if (options->changes.count("primary_key"))
                 data.addPrimaryKey(std::make_shared<ASTIdentifier>(declare_column.name));
 
-            if (options->changes.count("is_unsigned"))
+         /*   if (options->changes.count("is_unsigned"))
                 is_unsigned = options->changes["is_unsigned"]->as<ASTLiteral>()->value.safeGet<UInt64>();
             else if (options->changes.count("zero_fill"))
-                is_unsigned = options->changes["zero_fill"]->as<ASTLiteral>()->value.safeGet<UInt64>();
+                is_unsigned = options->changes["zero_fill"]->as<ASTLiteral>()->value.safeGet<UInt64>();*/
         }
     }
 
