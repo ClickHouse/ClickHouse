@@ -299,10 +299,6 @@ if (USE_AMQPCPP)
     add_subdirectory (amqpcpp-cmake)
 endif()
 
-if (USE_LIBEVENT)
-    add_subdirectory(libevent-cmake)
-endif()
-
 if (USE_CASSANDRA)
     add_subdirectory (libuv)
     add_subdirectory (cassandra)

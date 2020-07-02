@@ -1,23 +1,23 @@
 #include <common/logger_useful.h>
+#include <Common/Exception.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 
 namespace DB
 {
 
-enum
+namespace ErrorCodes
 {
-    Lock_timeout = 50,
-    Loop_stop_timeout = 200
-};
+    extern const int CANNOT_CONNECT_RABBITMQ;
+}
 
-
+/* The object of this class is shared between concurrent consumers (who share the same connection == share the same
+ * event loop and handler).
+ */
 RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_) :
     AMQP::LibUvHandler(loop_),
     loop(loop_),
     log(log_)
 {
-    tv.tv_sec = 0;
-    tv.tv_usec = Loop_stop_timeout;
 }
 
 
@@ -27,47 +27,28 @@ void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * mes
 
     if (!connection->usable() || !connection->ready())
     {
-        LOG_ERROR(log, "Connection lost completely");
+        throw Exception("Connection error", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
     }
-
-    stop();
 }
 
 
-void RabbitMQHandler::startConsumerLoop(std::atomic<bool> & loop_started)
+void RabbitMQHandler::startBackgroundLoop()
 {
-    /* The object of this class is shared between concurrent consumers (who share the same connection == share the same
-     * event loop and handler). But the loop should not be attempted to start if it is already running.
-     */
-    bool expected = false;
-    if (loop_started.compare_exchange_strong(expected, true))
+    /// stop_loop variable is updated in a separate thread
+    while (!stop_loop.load())
     {
-        std::lock_guard lock(mutex_before_event_loop);
-        stop_scheduled = false;
-
         uv_run(loop, UV_RUN_NOWAIT);
-        loop_started.store(false);
     }
 }
 
 
-void RabbitMQHandler::startProducerLoop()
+void RabbitMQHandler::startLoop()
 {
-    uv_run(loop, UV_RUN_NOWAIT);
-}
-
-
-void RabbitMQHandler::stop()
-{
-    std::lock_guard lock(mutex_before_loop_stop);
-    uv_stop(loop);
-}
-
-
-void RabbitMQHandler::stopWithTimeout()
-{
-    stop_scheduled = true;
-    uv_stop(loop);
+    if (starting_loop.try_lock())
+    {
+        uv_run(loop, UV_RUN_NOWAIT);
+        starting_loop.unlock();
+    }
 }
 
 }

@@ -7,19 +7,21 @@
 #include <atomic>
 #include <amqpcpp.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 
 namespace DB
 {
 
-using ProducerPtr = std::shared_ptr<AMQP::TcpChannel>;
-using Messages = std::vector<String>;
+using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 
 class WriteBufferToRabbitMQProducer : public WriteBuffer
 {
 public:
     WriteBufferToRabbitMQProducer(
             std::pair<String, UInt16> & parsed_address,
+            Context & global_context,
             std::pair<String, String> & login_password_,
             const String & routing_key_,
             const String exchange_,
@@ -35,11 +37,13 @@ public:
     ~WriteBufferToRabbitMQProducer() override;
 
     void countRow();
-    void startEventLoop();
+    void activateWriting() { writing_task->activateAndSchedule(); }
 
 private:
     void nextImpl() override;
     void checkExchange();
+    void startEventLoop();
+    void writingFunc();
     void finilizeProducer();
 
     std::pair<String, String> & login_password;
@@ -49,13 +53,16 @@ private:
     const size_t num_queues;
     const bool use_transactional_channel;
 
+    BackgroundSchedulePool::TaskHolder writing_task;
+    std::atomic<bool> stop_loop = false;
+
     std::unique_ptr<uv_loop_t> loop;
     std::unique_ptr<RabbitMQHandler> event_handler;
     std::unique_ptr<AMQP::TcpConnection> connection;
-    ProducerPtr producer_channel;
+    ChannelPtr producer_channel;
 
+    ConcurrentBoundedQueue<String> payloads;
     size_t next_queue = 0;
-    UInt64 message_counter = 0;
 
     Poco::Logger * log;
     const std::optional<char> delim;
