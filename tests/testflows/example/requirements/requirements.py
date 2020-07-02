@@ -43,7 +43,6 @@ RQ_CH_SRS001_Example_Subgroup = Requirement(
         uid=None,
         description=(
         'This an example of a sub-requirement of the [RQ.CH-SRS001.Example](#rqch-srs001example).\n'
-        'CH_SRS001_Software_Requirements_Template.md\n'
         ),
         link=None
     )
