@@ -81,7 +81,7 @@ public:
     void setExtremes(const Block & extremes) { consumeExtremes(Chunk(extremes.getColumns(), extremes.rows())); }
 
     size_t getResultRows() const { return result_rows; }
-    size_t getResultBytes() const { return result_rows; }
+    size_t getResultBytes() const { return result_bytes; }
 
 private:
     /// Counters for consumed chunks. Are used for QueryLog.
