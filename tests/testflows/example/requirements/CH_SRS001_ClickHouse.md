@@ -15,8 +15,8 @@
   * 3.1 [SRS](#srs)
   * 3.2 [Some term that you will use](#some-term-that-you-will-use)
 * 4 [Requirements](#requirements)
-  * 4.1 [RQ.CH-SRS001.Example short description of the requirement ](#rqch-srs001example-short-description-of-the-requirement-)
-  * 4.2 [RQ.CH-SRS001.Example.Subgroup short description of the sub-requirement](#rqch-srs001examplesubgroup-short-description-of-the-sub-requirement)
+  * 4.1 [RQ.CH-SRS001.Example](#rqch-srs001example)
+  * 4.2 [RQ.CH-SRS001.Example.Subgroup](#rqch-srs001examplesubgroup)
   * 4.3 [RQ.CH-SRS001.Example.Select.1](#rqch-srs001exampleselect1)
 * 5 [References](#references)
 
@@ -90,7 +90,7 @@ the following prefix:
 then immediately followed by a one-line block that contains the 
 the `version` of the requirement.
 
-### RQ.CH-SRS001.Example short description of the requirement 
+### RQ.CH-SRS001.Example
 version: 1.0
 
 This is a long description of the requirement that can include any
@@ -111,7 +111,7 @@ name which is then followed by a number if any. For example,
 
 To keep names short, try to use abbreviations for the requirement's group name.
 
-### RQ.CH-SRS001.Example.Subgroup short description of the sub-requirement
+### RQ.CH-SRS001.Example.Subgroup
 version: 1.0
 
 This an example of a sub-requirement of the [RQ.CH-SRS001.Example](#rqch-srs001example).
