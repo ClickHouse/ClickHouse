@@ -11,7 +11,7 @@
 #    include <cstdlib>
 #endif
 
-#if USE_TCMALLOC_CPP
+#ifdef USE_TCMALLOC_CPP
 #    include <tcmalloc/tcmalloc.h>
 #endif
 
@@ -69,7 +69,7 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
     sdallocx(ptr, size, 0);
 }
 
-#elif USE_TCMALLOC_CPP
+#elif defined(USE_TCMALLOC_CPP)
 
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
 {
