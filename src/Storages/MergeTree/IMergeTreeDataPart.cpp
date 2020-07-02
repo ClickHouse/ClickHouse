@@ -666,7 +666,7 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     String to = storage.relative_data_path + new_relative_path + "/";
 
     std::optional<FileSyncGuard> sync_guard;
-    if (storage.getSettings()->sync_part_directory)
+    if (storage.getSettings()->fsync_part_directory)
         sync_guard.emplace(volume->getDisk(), to);
 
     if (!volume->getDisk()->exists(from))
