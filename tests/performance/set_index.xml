@@ -7,8 +7,8 @@
 
     <query>SELECT count() FROM test_in WHERE toInt64(a) IN (SELECT toInt64(rand(1)) FROM numbers(200000)) settings max_rows_to_read=1, read_overflow_mode='break'</query>
 
-     <!-- Analyze only one range -->
-    <query>SELECT count() FROM test_in WHERE -toInt64(a) IN (SELECT toInt64(rand(1)) FROM numbers(200000)) settings max_rows_to_read=1, read_overflow_mode='break'</query>
+     <!-- Analyze only one range. The query is short because nothing is selected. -->
+    <query short="1">SELECT count() FROM test_in WHERE -toInt64(a) IN (SELECT toInt64(rand(1)) FROM numbers(200000)) settings max_rows_to_read=1, read_overflow_mode='break'</query>
     <!-- Analyze all ranges. The query is short because nothing is selected. -->
     <query short="1">SELECT count() FROM test_in WHERE -toInt64(a) NOT IN (SELECT toInt64(rand(1)) FROM numbers(200000)) settings max_rows_to_read=1, read_overflow_mode='break'</query>
 
