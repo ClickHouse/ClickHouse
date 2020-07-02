@@ -28,6 +28,7 @@
 #include <common/demangle.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
+#include <AggregateFunctions/AggregateFunctionResample.h>
 #include <Disks/StoragePolicy.h>
 
 
@@ -1180,10 +1181,15 @@ Block Aggregator::prepareBlockAndFill(
             if (aggregate_functions[i]->isState())
             {
                 /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
-                ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*final_aggregate_columns[i]);
+                ColumnAggregateFunction * column_aggregate_func = nullptr;
+                /// Aggregate state can be wrapped into array if aggregate function ends with -Resample combinator.
+                if (auto * column_array = typeid_cast<ColumnArray *>(final_aggregate_columns[i].get()))
+                    column_aggregate_func = &assert_cast<ColumnAggregateFunction &>(column_array->getData());
+                else
+                    column_aggregate_func = &assert_cast<ColumnAggregateFunction &>(*final_aggregate_columns[i]);
 
                 for (auto & pool : data_variants.aggregates_pools)
-                    column_aggregate_func.addArena(pool);
+                    column_aggregate_func->addArena(pool);
             }
         }
     }
