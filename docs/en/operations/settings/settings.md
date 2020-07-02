@@ -1368,13 +1368,11 @@ Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Default value: 32768 (32 KiB)
 
-## format\_avro\_schema\_registry\_url {#settings-format_avro_schema_registry_url}
+## format\_avro\_schema\_registry\_url {#format_avro_schema_registry_url}
 
-Sets Confluent Schema Registry URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format
+Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format.
 
-Type: URL
-
-Default value: Empty
+Default value: `Empty`.
 
 ## background\_pool\_size {#background_pool_size}
 
