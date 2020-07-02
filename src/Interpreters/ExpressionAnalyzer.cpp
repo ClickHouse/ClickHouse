@@ -78,6 +78,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PREWHERE;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 namespace
@@ -637,9 +638,9 @@ bool SelectQueryExpressionAnalyzer::appendPrewhere(
     step.can_remove_required_output.push_back(true);
 
     auto filter_type = step.actions->getSampleBlock().getByName(prewhere_column_name).type;
-    if (!isInteger(removeNullable(filter_type)))
+    if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                        ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
     {
         /// Remove unused source_columns from prewhere actions.
@@ -728,9 +729,9 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     getRootActions(select_query->where(), only_types, step.actions);
 
     auto filter_type = step.actions->getSampleBlock().getByName(where_column_name).type;
-    if (!isInteger(removeNullable(filter_type)))
+    if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in WHERE: " + filter_type->getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                        ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
     return true;
 }

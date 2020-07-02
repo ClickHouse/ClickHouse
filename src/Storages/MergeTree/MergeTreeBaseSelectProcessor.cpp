@@ -319,7 +319,7 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
         prewhere_info->prewhere_actions->execute(block);
         auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
 
-        if (!isInteger(removeNullable(prewhere_column.type)))
+        if (!prewhere_column.type->canBeUsedInBooleanContext())
             throw Exception("Invalid type for filter in PREWHERE: " + prewhere_column.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
 
