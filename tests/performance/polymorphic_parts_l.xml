@@ -15,7 +15,7 @@
     </create_query>
     <create_query>
        CREATE TABLE hits_buffer AS hits_10m_single 
-       ENGINE = Buffer(merge, hits, 16, 10, 100, 10000, 1000000, 10000000, 100000000)
+       ENGINE = Buffer(default, hits_wide, 16, 10, 100, 10000, 1000000, 10000000, 100000000)
     </create_query>
 
     <!-- Emulate writing many parts with 1000 rows, because single insert query is too fast -->
