@@ -579,8 +579,8 @@ public:
 
 static bool needSyncPart(const size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
 {
-    return ((settings.min_rows_to_sync_after_merge && input_rows >= settings.min_rows_to_sync_after_merge)
-        || (settings.min_compressed_bytes_to_sync_after_merge && input_bytes >= settings.min_compressed_bytes_to_sync_after_merge));
+    return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
+        || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
 }
 
 
@@ -697,7 +697,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
 
     std::optional<FileSyncGuard> sync_guard;
-    if (data.getSettings()->sync_part_directory)
+    if (data.getSettings()->fsync_part_directory)
         sync_guard.emplace(disk, new_part_tmp_path);
 
     /** Read from all parts, merge and write into a new one.
@@ -1092,7 +1092,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     disk->createDirectories(new_part_tmp_path);
 
     std::optional<FileSyncGuard> sync_guard;
-    if (data.getSettings()->sync_part_directory)
+    if (data.getSettings()->fsync_part_directory)
         sync_guard.emplace(disk, new_part_tmp_path);
 
     /// Don't change granularity type while mutating subset of columns

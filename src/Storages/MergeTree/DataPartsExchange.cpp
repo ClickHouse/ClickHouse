@@ -248,8 +248,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         reservation = data.makeEmptyReservationOnLargestDisk();
     }
 
-    bool sync = (data_settings->min_compressed_bytes_to_sync_after_fetch
-                    && sum_files_size >= data_settings->min_compressed_bytes_to_sync_after_fetch);
+    bool sync = (data_settings->min_compressed_bytes_to_fsync_after_fetch
+                    && sum_files_size >= data_settings->min_compressed_bytes_to_fsync_after_fetch);
 
     return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(reservation), in);
 }
@@ -282,7 +282,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
     disk->createDirectories(part_download_path);
 
     std::optional<FileSyncGuard> sync_guard;
-    if (data.getSettings()->sync_part_directory)
+    if (data.getSettings()->fsync_part_directory)
         sync_guard.emplace(disk, part_download_path);
 
     MergeTreeData::DataPart::Checksums checksums;

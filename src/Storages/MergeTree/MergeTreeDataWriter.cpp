@@ -264,7 +264,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     disk->createDirectories(full_path);
 
     std::optional<FileSyncGuard> sync_guard;
-    if (data.getSettings()->sync_part_directory)
+    if (data.getSettings()->fsync_part_directory)
         sync_guard.emplace(disk, full_path);
 
     /// If we need to calculate some columns to sort.
@@ -309,7 +309,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
-    bool sync_on_insert = data.getSettings()->sync_after_insert;
+    bool sync_on_insert = data.getSettings()->fsync_after_insert;
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
