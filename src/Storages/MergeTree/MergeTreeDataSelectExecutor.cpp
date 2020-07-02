@@ -1021,7 +1021,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             }
         }
 
-        if (pipes.size() > 1)
+        if (pipes.size() >= settings.read_in_order_two_level_merge_threshold)
         {
             SortDescription sort_description;
             for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
@@ -1039,7 +1039,10 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             res.emplace_back(std::move(pipes), std::move(merging_sorted));
         }
         else
-            res.emplace_back(std::move(pipes.front()));
+        {
+            for (auto && pipe : pipes)
+                res.emplace_back(std::move(pipe));
+        }
     }
 
     return res;
