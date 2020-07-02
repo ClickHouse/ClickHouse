@@ -20,35 +20,27 @@ RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_) :
 {
 }
 
-
 void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * message)
 {
     LOG_ERROR(log, "Library error report: {}", message);
 
     if (!connection->usable() || !connection->ready())
-    {
         throw Exception("Connection error", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
-    }
 }
-
-
-void RabbitMQHandler::startBackgroundLoop()
-{
-    /// stop_loop variable is updated in a separate thread
-    while (!stop_loop.load())
-    {
-        uv_run(loop, UV_RUN_NOWAIT);
-    }
-}
-
 
 void RabbitMQHandler::startLoop()
 {
-    if (starting_loop.try_lock())
-    {
+    std::lock_guard lock(startup_mutex);
+    /// stop_loop variable is updated in a separate thread
+    while (!stop_loop.load())
         uv_run(loop, UV_RUN_NOWAIT);
-        starting_loop.unlock();
-    }
+}
+
+void RabbitMQHandler::iterateLoop()
+{
+    std::unique_lock lock(startup_mutex, std::defer_lock);
+    if (lock.try_lock())
+        uv_run(loop, UV_RUN_NOWAIT);
 }
 
 }

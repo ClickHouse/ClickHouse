@@ -27,11 +27,11 @@ public:
             HandlerPtr event_handler_,
             const String & exchange_name_,
             const Names & routing_keys_,
-            const size_t channel_id_,
+            size_t channel_id_,
             Poco::Logger * log_,
             char row_delimiter_,
-            const bool bind_by_id_,
-            const size_t num_queues_,
+            bool bind_by_id_,
+            size_t num_queues_,
             const String & exchange_type_,
             const String & local_exchange_,
             const std::atomic<bool> & stopped_);
@@ -47,14 +47,14 @@ private:
     ChannelPtr consumer_channel;
     HandlerPtr event_handler;
 
-    const String & exchange_name;
-    const Names & routing_keys;
+    const String exchange_name;
+    const Names routing_keys;
     const size_t channel_id;
     const bool bind_by_id;
     const size_t num_queues;
 
-    const String & exchange_type;
-    const String & local_exchange;
+    const String exchange_type;
+    const String local_exchange;
     const String local_default_exchange;
     const String local_hash_exchange;
 
@@ -81,7 +81,7 @@ private:
     void initExchange();
     void initQueueBindings(const size_t queue_id);
     void subscribe(const String & queue_name);
-    void startEventLoop();
+    void iterateEventLoop();
 
 };
 }
