@@ -54,7 +54,7 @@
     </substitutions>
 
     <query>SELECT ignore({hash_fast}({string_small})) FROM {numbers_medium} FORMAT Null</query>
-    <query>SELECT ignore({hast_slow}({string_large})) FROM {numbers_small} FORMAT Null</query>
+    <query>SELECT ignore({hash_slow}({string_large})) FROM {numbers_small} FORMAT Null</query>
     <query>SELECT ignore({hash_fast}({string_small})) FROM {numbers_large} FORMAT Null</query>
     <query>SELECT ignore({hash_fast}({string_large})) FROM {numbers_medium} FORMAT Null</query>
 </test>

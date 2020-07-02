@@ -26,7 +26,7 @@
 <query>SELECT uniq(UserID) FROM {table} FORMAT Null</query>
 <query>SELECT uniq(SearchPhrase) FROM {table} FORMAT Null</query>
 <query short="1">SELECT min(EventDate), max(EventDate) FROM {table}</query>
-<query>SELECT AdvEngineID, count() FROM hits_100m_single WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count() DESC LIMIT 10</query>
+<query short="1">SELECT AdvEngineID, count() FROM hits_100m_single WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count() DESC LIMIT 10</query>
 <query>SELECT RegionID, uniq(UserID) AS u FROM {table} GROUP BY RegionID ORDER BY u DESC LIMIT 10</query>
 <query>SELECT RegionID, sum(AdvEngineID), count() AS c, avg(ResolutionWidth), uniq(UserID) FROM {table} GROUP BY RegionID ORDER BY c DESC LIMIT 10</query>
 <query>SELECT MobilePhoneModel, uniq(UserID) AS u FROM hits_100m_single WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10</query>
