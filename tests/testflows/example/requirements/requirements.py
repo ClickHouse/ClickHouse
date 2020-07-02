@@ -5,8 +5,8 @@
 # using 'tfs requirements generate' command.
 from testflows.core import Requirement
 
-RQ_CH_SRS001_Example_short_description_of_the_requirement_ = Requirement(
-        name='RQ.CH-SRS001.Example short description of the requirement ',
+RQ_CH_SRS001_Example = Requirement(
+        name='RQ.CH-SRS001.Example',
         version='1.0',
         priority=None,
         group=None,
@@ -34,8 +34,8 @@ RQ_CH_SRS001_Example_short_description_of_the_requirement_ = Requirement(
         link=None
     )
 
-RQ_CH_SRS001_Example_Subgroup_short_description_of_the_sub_requirement = Requirement(
-        name='RQ.CH-SRS001.Example.Subgroup short description of the sub-requirement',
+RQ_CH_SRS001_Example_Subgroup = Requirement(
+        name='RQ.CH-SRS001.Example.Subgroup',
         version='1.0',
         priority=None,
         group=None,
