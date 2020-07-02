@@ -115,7 +115,6 @@ To keep names short, try to use abbreviations for the requirement's group name.
 version: 1.0
 
 This an example of a sub-requirement of the [RQ.CH-SRS001.Example](#rqch-srs001example).
-CH_SRS001_Software_Requirements_Template.md
 
 ### RQ.CH-SRS001.Example.Select.1
 version: 1.0
