@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 19
 toc_title: "\u0631\u0627\u0628\u0637 \u0642\u0627\u0645"
 ---
@@ -89,7 +89,7 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 └───┘
 ```
 
-روش پست انتقال داده ها برای درج نمایش داده شد لازم است. در این مورد می توانید ابتدا پرس و جو را در پارامتر نشانی وب بنویسید و از پست برای انتقال داده ها برای وارد کردن استفاده کنید. داده ها برای وارد کردن می تواند, مثلا, تخلیه تب جدا از خروجی زیر. در این راه وارد کردن پرس و جو جایگزین بارگذاری داده های محلی infile از mysql.
+روش پست انتقال داده ها برای درج نمایش داده شد لازم است. در این مورد می توانید ابتدا پرس و جو را در پارامتر نشانی وب بنویسید و از پست برای انتقال داده ها برای وارد کردن استفاده کنید. داده ها برای وارد کردن می تواند, مثلا, تخلیه تب جدا از خروجی زیر. در این راه وارد کردن پرس و جو جایگزین بارگذاری داده های محلی INFILE از MySQL.
 
 نمونه: ایجاد یک جدول:
 
@@ -303,13 +303,16 @@ $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VA
 
 ``` xml
 <http_handlers>
-  <predefine_query_handler>
-      <url>/metrics</url>
-        <method>GET</method>
-        <queries>
+    <rule>
+        <url>/predefined_query</url>
+        <methods>POST,GET</methods>
+        <handler>
+            <type>predefined_query_handler</type>
             <query>SELECT * FROM system.metrics LIMIT 5 FORMAT Template SETTINGS format_template_resultset = 'prometheus_template_output_format_resultset', format_template_row = 'prometheus_template_output_format_row', format_template_rows_between_delimiter = '\n'</query>
-        </queries>
-  </predefine_query_handler>
+        </handler>
+    </rule>
+    <rule>...</rule>
+    <rule>...</rule>
 </http_handlers>
 ```
 
@@ -318,21 +321,23 @@ $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VA
 <!-- -->
 
 ``` bash
-curl -vvv 'http://localhost:8123/metrics'
+$ curl -v 'http://localhost:8123/predefined_query'
 *   Trying ::1...
 * Connected to localhost (::1) port 8123 (#0)
-> GET /metrics HTTP/1.1
+> GET /predefined_query HTTP/1.1
 > Host: localhost:8123
 > User-Agent: curl/7.47.0
 > Accept: */*
 >
 < HTTP/1.1 200 OK
-< Date: Wed, 27 Nov 2019 08:54:25 GMT
+< Date: Tue, 28 Apr 2020 08:52:56 GMT
 < Connection: Keep-Alive
 < Content-Type: text/plain; charset=UTF-8
-< X-ClickHouse-Server-Display-Name: i-tl62qd0o
+< X-ClickHouse-Server-Display-Name: i-mloy5trc
 < Transfer-Encoding: chunked
-< X-ClickHouse-Query-Id: f39235f6-6ed7-488c-ae07-c7ceafb960f6
+< X-ClickHouse-Query-Id: 96fe0052-01e6-43ce-b12a-6b7370de6e8a
+< X-ClickHouse-Format: Template
+< X-ClickHouse-Timezone: Asia/Shanghai
 < Keep-Alive: timeout=3
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
 <
@@ -357,116 +362,61 @@ curl -vvv 'http://localhost:8123/metrics'
 "ReplicatedSend" 0
 
 * Connection #0 to host localhost left intact
+
+
+* Connection #0 to host localhost left intact
 ```
 
-همانطور که شما می توانید از مثال ببینید, اگر `<http_handlers>` در پیکربندی پیکربندی پیکربندی شده است.xml فایل ClickHouse را مطابقت با درخواست های HTTP به دریافت این نوع از پیش تعریف شده در `<http_handlers>`, سپس کلیک خانه پرس و جو مربوطه از پیش تعریف شده اجرا اگر بازی موفق است.
+همانطور که شما می توانید از مثال ببینید, اگر `<http_handlers>` در پیکربندی پیکربندی پیکربندی شده است.فایل و `<http_handlers>` می تواند شامل بسیاری از `<rule>s`. کلیک هاوس خواهد درخواست قام قام دریافت به نوع از پیش تعریف شده در مطابقت `<rule>` و اولین همسان اجرا می شود کنترل. سپس خانه را کلیک کنید پرس و جو از پیش تعریف شده مربوطه اجرا اگر بازی موفق است.
 
-حالا `<http_handlers>` می توانید پیکربندی کنید `<root_handler>`, `<ping_handler>`, `<replicas_status_handler>`, `<dynamic_query_handler>` و `<no_handler_description>` .
+> حالا `<rule>` می توانید پیکربندی کنید `<method>`, `<headers>`, `<url>`,`<handler>`:
+> `<method>` برای تطبیق روش بخشی از درخواست قام است. `<method>` به طور کامل مطابق با تعریف [روش](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) در پروتکل قام. این پیکربندی اختیاری است. اگر در فایل پیکربندی تعریف نشده, این کار بخش روش درخواست قام مطابقت ندارد.
+>
+> `<url>` وظیفه تطبیق بخشی نشانی وب از درخواست قام است. این سازگار با است [RE2](https://github.com/google/re2)عبارات منظم است. این پیکربندی اختیاری است. اگر در فایل پیکربندی تعریف نشده باشد با بخش نشانی وب درخواست قام مطابقت ندارد.
+>
+> `<headers>` برای تطبیق بخش هدر درخواست قام است. این است که سازگار با عبارات منظم را دوباره2 است. این پیکربندی اختیاری است. اگر در فایل پیکربندی تعریف نشده است, این کار بخش هدر درخواست قام مطابقت ندارد.
+>
+> `<handler>` شامل بخش پردازش اصلی. حالا `<handler>` می توانید پیکربندی کنید `<type>`, `<status>`, `<content_type>`, `<response_content>`, `<query>`, `<query_param_name>`.
+> \> `<type>` در حال حاضر پشتیبانی از سه نوع: **باز تعریف**, **هشدار داده می شود**, **ایستا**.
+> \>
+> \> `<query>` - استفاده از با نوع بازتعریف\_کرکی\_ هندلر, اجرا پرس و جو زمانی که کنترل نامیده می شود.
+> \>
+> \> `<query_param_name>` - استفاده با نوع داینامیک\_کرکی\_خندلر عصارهها و اجرا مقدار مربوط به `<query_param_name>` ارزش در پارامترهای درخواست قام.
+> \>
+> \> `<status>` - استفاده با نوع استاتیک, پاسخ کد وضعیت.
+> \>
+> \> `<content_type>` - استفاده با نوع استاتیک پاسخ [نوع محتوا](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+> \>
+> \> `<response_content>` - استفاده با نوع استاتیک, محتوای پاسخ ارسال شده به مشتری, هنگام استفاده از پیشوند ‘file://’ یا ‘config://’, پیدا کردن محتوا از فایل و یا پیکربندی ارسال به مشتری.
 
-## روی\_خندلر {#root_handler}
-
-`<root_handler>` بازگرداندن محتوای مشخص شده برای درخواست مسیر ریشه. محتوای بازگشتی خاص توسط پیکربندی شده است `http_server_default_response` در پیکربندی.. اگر مشخص نشده, برگشت **باشه**
-
-`http_server_default_response` تعریف نشده است و درخواست قام به کلیک ارسال می شود. نتیجه به شرح زیر است:
-
-``` xml
-<http_handlers>
-    <root_handler/>
-</http_handlers>
-```
-
-    $ curl 'http://localhost:8123'
-    Ok.
-
-`http_server_default_response` تعریف شده است و درخواست قام ارسال شده است به کلیک. نتیجه به شرح زیر است:
-
-``` xml
-<http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
-
-<http_handlers>
-    <root_handler/>
-</http_handlers>
-```
-
-    $ curl 'http://localhost:8123'
-    <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
-
-## پینگ\_ هندلر {#ping_handler}
-
-`<ping_handler>` می توان برای بررسی سلامت سرور فعلی کلیک استفاده کرد. زمانی که ClickHouse سرور HTTP طبیعی است دسترسی به ClickHouse از طریق `<ping_handler>` باز خواهد گشت **باشه**.
-
-مثال:
-
-``` xml
-<http_handlers>
-    <ping_handler>/ping</ping_handler>
-</http_handlers>
-```
-
-``` bash
-$ curl 'http://localhost:8123/ping'
-Ok.
-```
-
-## تکرار\_ستاتوس\_هندلر {#replicas_status_handler}
-
-`<replicas_status_handler>` برای تشخیص وضعیت گره ماکت و بازگشت استفاده می شود **باشه** اگر گره ماکت هیچ تاخیر. در صورتی که برای تاخیر وجود دارد, بازگشت تاخیر خاص. ارزش `<replicas_status_handler>` پشتیبانی از سفارشی سازی. اگر مشخص نکنید `<replicas_status_handler>` تنظیمات پیشفرض کلیک `<replicas_status_handler>` هست **/ بازتولیتوس**.
-
-مثال:
-
-``` xml
-<http_handlers>
-    <replicas_status_handler>/replicas_status</replicas_status_handler>
-</http_handlers>
-```
-
-هیچ مورد تاخیر:
-
-``` bash
-$ curl 'http://localhost:8123/replicas_status'
-Ok.
-```
-
-مورد تاخیر:
-
-``` bash
-$ curl 'http://localhost:8123/replicas_status'
-db.stats:  Absolute delay: 22. Relative delay: 22.
-```
+بعد روش پیکربندی برای متفاوت هستند `<type>`.
 
 ## باز تعریف {#predefined_query_handler}
 
-شما می توانید پیکربندی کنید `<method>`, `<headers>`, `<url>` و `<queries>` داخل `<predefined_query_handler>`.
+`<predefined_query_handler>` پشتیبانی از تنظیمات و مقادیر قوری\_پرم. شما می توانید پیکربندی کنید `<query>` در نوع `<predefined_query_handler>`.
 
-`<method>` برای تطبیق روش بخشی از درخواست قام است. `<method>` به طور کامل مطابق با تعریف [روش](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) در پروتکل قام. این پیکربندی اختیاری است. اگر در فایل پیکربندی تعریف نشده باشد با بخش روش درخواست قام مطابقت ندارد
-
-`<url>` وظیفه تطبیق بخشی نشانی وب از درخواست قام است. این سازگار با است [RE2](https://github.com/google/re2)عبارات منظم است. این پیکربندی اختیاری است. اگر در فایل پیکربندی تعریف نشده باشد با بخش نشانی وب درخواست قام مطابقت ندارد
-
-`<headers>` برای تطبیق بخش هدر درخواست قام است. این است که سازگار با عبارات منظم را دوباره2 است. این پیکربندی اختیاری است. اگر در فایل پیکربندی تعریف نشده باشد با بخش هدر درخواست قام مطابقت ندارد
-
-`<queries>` مقدار پرس و جو از پیش تعریف شده است `<predefined_query_handler>`, است که توسط کلیکهاوس اجرا زمانی که یک درخواست قام همسان است و در نتیجه از پرس و جو بازگشته است. این پیکربندی باید است.
-
-`<predefined_query_handler>` پشتیبانی از تنظیمات و مقادیر قوری\_پرم.
+`<query>` مقدار پرس و جو از پیش تعریف شده است `<predefined_query_handler>`, است که توسط کلیکهاوس اجرا زمانی که یک درخواست قام همسان است و در نتیجه از پرس و جو بازگشته است. این پیکربندی باید است.
 
 مثال زیر مقادیر را تعریف می کند `max_threads` و `max_alter_threads` تنظیمات, سپس نمایش داده شد جدول سیستم برای بررسی اینکه این تنظیمات با موفقیت تعیین شد.
 
 مثال:
 
 ``` xml
-<root_handlers>
-    <predefined_query_handler>
+<http_handlers>
+    <rule>
+        <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
         <method>GET</method>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>
             <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
         </headers>
-        <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
-        <queries>
+        <handler>
+            <type>predefined_query_handler</type>
             <query>SELECT value FROM system.settings WHERE name = {name_1:String}</query>
             <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
-        </queries>
-    </predefined_query_handler>
-</root_handlers>
+        </handler>
+    </rule>
+</http_handlers>
 ```
 
 ``` bash
@@ -475,37 +425,193 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_alter_threads   2
 ```
 
-!!! note "یادداشت"
-    در یک `<predefined_query_handler>` یک `<queries>` تنها پشتیبانی از یک `<query>` از یک نوع درج.
+!!! note "احتیاط"
+    در یک `<predefined_query_handler>` تنها پشتیبانی از یک `<query>` از یک نوع درج.
 
 ## هشدار داده می شود {#dynamic_query_handler}
 
-`<dynamic_query_handler>` از `<predefined_query_handler>` افزایش `<query_param_name>` .
+داخل `<dynamic_query_handler>`, پرس و جو در قالب پرام از درخواست قام نوشته شده است. تفاوت این است که در `<predefined_query_handler>`, پرس و جو در فایل پیکربندی نوشت. شما می توانید پیکربندی کنید `<query_param_name>` داخل `<dynamic_query_handler>`.
 
-عصاره کلیک و اجرا ارزش مربوط به `<query_param_name>` مقدار در نشانی وب درخواست قام.
-تنظیم پیشفرض کلیک `<query_param_name>` هست `/query` . این پیکربندی اختیاری است. در صورتی که هیچ تعریف در فایل پیکربندی وجود دارد, پرم در تصویب نشده است.
+عصاره کلیک و اجرا ارزش مربوط به `<query_param_name>` مقدار در نشانی وب درخواست قام. مقدار پیش فرض `<query_param_name>` هست `/query` . این پیکربندی اختیاری است. در صورتی که هیچ تعریف در فایل پیکربندی وجود دارد, پرم در تصویب نشده است.
 
 برای آزمایش این قابلیت به عنوان مثال تعریف ارزش از max\_threads و max\_alter\_threads و پرس و جو که آیا تنظیمات راه اندازی شد با موفقیت.
-تفاوت این است که در `<predefined_query_handler>`, پرس و جو در فایل پیکربندی نوشت. اما در `<dynamic_query_handler>`, پرس و جو در قالب پرام از درخواست قام نوشته شده است.
 
 مثال:
 
 ``` xml
-<root_handlers>
-    <dynamic_query_handler>
-        <headers>
-            <XXX>TEST_HEADER_VALUE_DYNAMIC</XXX>
-            <PARAMS_XXX><![CDATA[(?P<param_name_1>[^/]+)(/(?P<param_name_2>[^/]+))?]]></PARAMS_XXX>
-        </headers>
+<http_handlers>
+    <rule>
+    <headers>
+        <XXX>TEST_HEADER_VALUE_DYNAMIC</XXX>    </headers>
+    <handler>
+        <type>dynamic_query_handler</type>
         <query_param_name>query_param</query_param_name>
-    </dynamic_query_handler>
-</root_handlers>
+    </handler>
+    </rule>
+</http_handlers>
 ```
 
 ``` bash
-$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/?query_param=SELECT%20value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D&max_threads=1&max_alter_threads=2&param_name_2=max_alter_threads'
-1
-2
+$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_alter_threads=2&param_name_1=max_threads&param_name_2=max_alter_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
+max_threads 1
+max_alter_threads   2
+```
+
+## ایستا {#static}
+
+`<static>` می توانید بازگشت [\_نوع تماس](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [وضعیت](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) و پاسخ دهنده. پاسخ \_حرکتکننده می تواند محتوای مشخص شده را بازگرداند
+
+مثال:
+
+بازگشت یک پیام.
+
+``` xml
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/hi</url>
+            <handler>
+                <type>static</type>
+                <status>402</status>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>Say Hi!</response_content>
+            </handler>
+        </rule>
+<http_handlers>
+```
+
+``` bash
+$ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /hi HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 402 Payment Required
+< Date: Wed, 29 Apr 2020 03:51:26 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+* Connection #0 to host localhost left intact
+Say Hi!%
+```
+
+پیدا کردن محتوا از پیکربندی ارسال به مشتری.
+
+``` xml
+<get_config_static_handler><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></get_config_static_handler>
+
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_config_static_handler</url>
+            <handler>
+                <type>static</type>
+                <response_content>config://get_config_static_handler</response_content>
+            </handler>
+        </rule>
+</http_handlers>
+```
+
+``` bash
+$ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_config_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:01:24 GMT
+< Connection: Keep-Alive
+< Content-Type: text/plain; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+* Connection #0 to host localhost left intact
+<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
+```
+
+پیدا کردن محتوا از فایل ارسال به مشتری.
+
+``` xml
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_absolute_path_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>file:///absolute_path_file.html</response_content>
+            </handler>
+        </rule>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_relative_path_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>file://./relative_path_file.html</response_content>
+            </handler>
+        </rule>
+</http_handlers>
+```
+
+``` bash
+$ user_files_path='/var/lib/clickhouse/user_files'
+$ sudo echo "<html><body>Relative Path File</body></html>" > $user_files_path/relative_path_file.html
+$ sudo echo "<html><body>Absolute Path File</body></html>" > $user_files_path/absolute_path_file.html
+$ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_absolute_path_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:18:16 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+<html><body>Absolute Path File</body></html>
+* Connection #0 to host localhost left intact
+$ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_relative_path_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:18:31 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+<html><body>Relative Path File</body></html>
+* Connection #0 to host localhost left intact
 ```
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/interfaces/http_interface/) <!--hide-->

@@ -1,0 +1,12 @@
+LIBRARY()
+
+PEERDIR(
+    clickhouse/src/Common
+    clickhouse/src/Formats
+)
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

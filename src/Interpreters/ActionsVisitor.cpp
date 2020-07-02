@@ -32,6 +32,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/ActionsVisitor.h>
@@ -381,11 +382,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             if (!data.only_consts)
             {
                 /// We are in the part of the tree that we are not going to compute. You just need to define types.
-                /// Do not subquery and create sets. We treat "IN" as "ignoreExceptNull" function.
+                /// Do not subquery and create sets. We replace "in*" function to "in*IgnoreSet".
+
+                auto argument_name = node.arguments->children.at(0)->getColumnName();
 
                 data.addAction(ExpressionAction::applyFunction(
-                        FunctionFactory::instance().get("ignoreExceptNull", data.context),
-                        { node.arguments->children.at(0)->getColumnName() },
+                        FunctionFactory::instance().get(node.name + "IgnoreSet", data.context),
+                        { argument_name, argument_name },
                         column_name.get(ast)));
             }
             return;
@@ -469,7 +472,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);
         }
-        else if (identifier && node.name == "joinGet" && arg == 0)
+        else if (identifier && (functionIsJoinGet(node.name) || functionIsDictGet(node.name)) && arg == 0)
         {
             auto table_id = IdentifierSemantic::extractDatabaseAndTable(*identifier);
             table_id = data.context.resolveStorageID(table_id, Context::ResolveOrdinary);
@@ -478,7 +481,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             ColumnWithTypeAndName column(
                 ColumnConst::create(std::move(column_string), 1),
                 std::make_shared<DataTypeString>(),
-                data.getUniqueName("__joinGet"));
+                data.getUniqueName("__" + node.name));
             data.addAction(ExpressionAction::addColumn(column));
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);
@@ -509,7 +512,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 if (data.only_consts)
                     arguments_present = false;
                 else
-                    throw Exception("Unknown identifier: " + child_column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+                    throw Exception("Unknown identifier: " + child_column_name + " there are columns: " + data.getSampleBlock().dumpNames(),
+                                    ErrorCodes::UNKNOWN_IDENTIFIER);
             }
         }
     }
@@ -667,7 +671,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         if (identifier)
         {
             auto table_id = data.context.resolveStorageID(right_in_operand);
-            StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id);
+            StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, data.context);
 
             if (table)
             {
@@ -703,7 +707,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         {
             auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
             subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
-                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().in; });
+                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().getInputStream(); });
 
             /** Why is LazyBlockInputStream used?
               *

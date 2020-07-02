@@ -38,7 +38,7 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 Выводит список таблиц.
 
 ``` sql
-SHOW [TEMPORARY] TABLES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 Если секция `FROM` не используется, то запрос возвращает список таблиц из текущей базы данных.
@@ -93,6 +93,80 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 │ regions      │
 │ region_names │
 └──────────────┘
+```
+
+
+
+## SHOW GRANTS {#show-grants-statement}
+
+Выводит привилегии пользователя.
+
+### Синтаксис {#show-grants-syntax}
+
+``` sql
+SHOW GRANTS [FOR user]
+```
+
+Если пользователь не задан, запрос возвращает привилегии текущего пользователя.
+
+
+
+## SHOW CREATE USER {#show-create-user-statement}
+
+Выводит параметры, использованные при [создании пользователя](create.md#create-user-statement).
+
+`SHOW CREATE USER` не возвращает пароль пользователя.
+
+### Синтаксис {#show-create-user-syntax}
+
+``` sql
+SHOW CREATE USER [name | CURRENT_USER]
+```
+
+
+
+## SHOW CREATE ROLE {#show-create-role-statement}
+
+Выводит параметры, использованные при [создании роли](create.md#create-role-statement).
+
+### Синтаксис {#show-create-role-syntax}
+
+``` sql
+SHOW CREATE ROLE name
+```
+
+
+
+## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
+
+Выводит параметры, использованные при [создании политики доступа к строкам](create.md#create-row-policy-statement).
+
+### Синтаксис {#show-create-row-policy-syntax}
+
+```sql
+SHOW CREATE [ROW] POLICY name ON [database.]table
+```
+
+
+## SHOW CREATE QUOTA {#show-create-quota-statement}
+
+Выводит параметры, использованные при [создании квоты](create.md#create-quota-statement).
+
+### Синтаксис {#show-create-row-policy-syntax}
+
+```sql
+SHOW CREATE QUOTA [name | CURRENT]
+```
+
+
+## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
+
+Выводит параметры, использованные при [создании профиля настроек](create.md#create-settings-profile-statement).
+
+### Синтаксис {#show-create-row-policy-syntax}
+
+```sql
+SHOW CREATE [SETTINGS] PROFILE name
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/show/) <!--hide-->

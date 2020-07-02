@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 17
 toc_title: AMPLab Big Data Benchmark
 ---
@@ -9,7 +9,7 @@ toc_title: AMPLab Big Data Benchmark
 
 Tu vois https://amplab.cs.berkeley.edu/benchmark/
 
-Inscrivez-vous pour un compte GRATUIT à https://aws.amazon.com. il nécessite une carte de crédit, e-mail et numéro de téléphone. Obtenir une nouvelle clé d’accès à https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
+Inscrivez-vous pour un compte GRATUIT à https://aws.amazon.com. il nécessite une carte de crédit, e-mail et numéro de téléphone. Obtenir une nouvelle clé d'accès à https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
 
 Exécutez ce qui suit dans la console:
 

@@ -11,7 +11,7 @@ By going through this tutorial, you’ll learn how to set up a simple ClickHouse
 
 ## Single Node Setup {#single-node-setup}
 
-To postpone the complexities of a distributed environment, we’ll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](install.md#install-from-deb-packages) or [rpm](install.md#from-rpm-packages) packages, but there are [alternatives](install.md#from-docker-image) for the operating systems that do no support them.
+To postpone the complexities of a distributed environment, we’ll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](../getting-started/install.md#install-from-deb-packages) or [rpm](../getting-started/install.md#from-rpm-packages) packages, but there are [alternatives](../getting-started/install.md#from-docker-image) for the operating systems that do no support them.
 
 For example, you have chosen `deb` packages and executed:
 
@@ -46,6 +46,7 @@ Once the `clickhouse-server` is up and running, we can use `clickhouse-client` t
 <details markdown="1">
 
 <summary>Quick tips for clickhouse-client</summary>
+
 Interactive mode:
 
 ``` bash
@@ -79,7 +80,7 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 
 ## Import Sample Dataset {#import-sample-dataset}
 
-Now it’s time to fill our ClickHouse server with some sample data. In this tutorial, we’ll use the anonymized data of Yandex.Metrica, the first service that runs ClickHouse in production way before it became open-source (more on that in [history section](../introduction/history.md)). There are [multiple ways to import Yandex.Metrica dataset](example-datasets/metrica.md), and for the sake of the tutorial, we’ll go with the most realistic one.
+Now it’s time to fill our ClickHouse server with some sample data. In this tutorial, we’ll use the anonymized data of Yandex.Metrica, the first service that runs ClickHouse in production way before it became open-source (more on that in [history section](../introduction/history.md)). There are [multiple ways to import Yandex.Metrica dataset](../getting-started/example-datasets/metrica.md), and for the sake of the tutorial, we’ll go with the most realistic one.
 
 ### Download and Extract Table Data {#download-and-extract-table-data}
 

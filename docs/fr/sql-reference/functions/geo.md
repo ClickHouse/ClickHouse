@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 62
 toc_title: "Travailler avec des coordonn\xE9es g\xE9ographiques"
 ---
 
-# Fonctions Pour Travailler Avec Des coordonnées géographiques {#functions-for-working-with-geographical-coordinates}
+# Fonctions pour travailler avec des coordonnées géographiques {#functions-for-working-with-geographical-coordinates}
 
 ## greatCircleDistance {#greatcircledistance}
 
@@ -15,7 +15,7 @@ Calculer la distance entre deux points sur la surface de la Terre en utilisant [
 greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
-**Les paramètres d’entrée**
+**Les paramètres d'entrée**
 
 -   `lon1Deg` — Longitude of the first point in degrees. Range: `[-180°, 180°]`.
 -   `lat1Deg` — Latitude of the first point in degrees. Range: `[-90°, 90°]`.
@@ -28,7 +28,7 @@ Les valeurs positives correspondent à la latitude nord et à la longitude Est, 
 
 La distance entre deux points sur la surface de la Terre, en mètres.
 
-Génère une exception lorsque les valeurs des paramètres d’entrée se situent en dehors de la plage.
+Génère une exception lorsque les valeurs des paramètres d'entrée se situent en dehors de la plage.
 
 **Exemple**
 
@@ -51,17 +51,17 @@ Coordonnées géométriques sont dans le système de coordonnées Cartésiennes.
 pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 ```
 
-**Les paramètres d’entrée**
+**Les paramètres d'entrée**
 
 -   `x, y` — Coordinates of a point on the plane.
 -   `xᵢ, yᵢ` — Coordinates of the center of the `i`-ème points de suspension.
 -   `aᵢ, bᵢ` — Axes of the `i`- e ellipse en unités de coordonnées x, Y.
 
-Les paramètres d’entrée doivent être `2+4⋅n`, où `n` est le nombre de points de suspension.
+Les paramètres d'entrée doivent être `2+4⋅n`, où `n` est le nombre de points de suspension.
 
 **Valeurs renvoyées**
 
-`1` si le point est à l’intérieur d’au moins l’un des ellipses; `0`si elle ne l’est pas.
+`1` si le point est à l'intérieur d'au moins l'un des ellipses; `0`si elle ne l'est pas.
 
 **Exemple**
 
@@ -77,13 +77,13 @@ SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 
 ## pointtinpolygon {#pointinpolygon}
 
-Vérifie si le point appartient au polygone sur l’avion.
+Vérifie si le point appartient au polygone sur l'avion.
 
 ``` sql
 pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 ```
 
-**Les valeurs d’entrée**
+**Les valeurs d'entrée**
 
 -   `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](../../sql-reference/data-types/tuple.md) — A tuple of two numbers.
 -   `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Tableau](../../sql-reference/data-types/array.md). Chaque sommet est représenté par une paire de coordonnées `(a, b)`. Les sommets doivent être spécifiés dans le sens horaire ou antihoraire. Le nombre minimum de sommets est 3. Le polygone doit être constante.
@@ -91,7 +91,7 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **Valeurs renvoyées**
 
-`1` si le point est à l’intérieur du polygone, `0` si elle ne l’est pas.
+`1` si le point est à l'intérieur du polygone, `0` si elle ne l'est pas.
 Si le point est sur la limite du polygone, la fonction peut renvoyer 0 ou 1.
 
 **Exemple**
@@ -114,7 +114,7 @@ Encode la latitude et la longitude en tant que chaîne geohash, voir (http://geo
 geohashEncode(longitude, latitude, [precision])
 ```
 
-**Les valeurs d’entrée**
+**Les valeurs d'entrée**
 
 -   longitude longitude partie de la coordonnée que vous souhaitez encoder. Flottant dans la gamme`[-180°, 180°]`
 -   latitude latitude partie de la coordonnée que vous souhaitez encoder. Flottant dans la gamme `[-90°, 90°]`
@@ -122,7 +122,7 @@ geohashEncode(longitude, latitude, [precision])
 
 **Valeurs renvoyées**
 
--   alphanumérique `String` de coordonnées codées (la version modifiée de l’alphabet de codage base32 est utilisée).
+-   alphanumérique `String` de coordonnées codées (la version modifiée de l'alphabet de codage base32 est utilisée).
 
 **Exemple**
 
@@ -140,7 +140,7 @@ SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res
 
 Décode toute chaîne codée geohash en longitude et latitude.
 
-**Les valeurs d’entrée**
+**Les valeurs d'entrée**
 
 -   chaîne codée-chaîne codée geohash.
 
@@ -162,11 +162,11 @@ SELECT geohashDecode('ezs42') AS res
 
 ## geoToH3 {#geotoh3}
 
-Retourner [H3](https://uber.github.io/h3/#/documentation/overview/introduction) point d’indice `(lon, lat)` avec une résolution spécifiée.
+Retourner [H3](https://uber.github.io/h3/#/documentation/overview/introduction) point d'indice `(lon, lat)` avec une résolution spécifiée.
 
-[H3](https://uber.github.io/h3/#/documentation/overview/introduction) est un système d’indexation géographique où la surface de la Terre divisée en carreaux hexagonaux même. Ce système est hiérarchique, c’est-à-dire que chaque hexagone au niveau supérieur peut être divisé en sept, même mais plus petits, etc.
+[H3](https://uber.github.io/h3/#/documentation/overview/introduction) est un système d'indexation géographique où la surface de la Terre divisée en carreaux hexagonaux même. Ce système est hiérarchique, c'est-à-dire que chaque hexagone au niveau supérieur peut être divisé en sept, même mais plus petits, etc.
 
-Cet indice est principalement utilisé pour les emplacements de bucketing et d’autres manipulations géospatiales.
+Cet indice est principalement utilisé pour les emplacements de bucketing et d'autres manipulations géospatiales.
 
 **Syntaxe**
 
@@ -182,8 +182,8 @@ geoToH3(lon, lat, resolution)
 
 **Valeurs renvoyées**
 
--   Numéro d’indice hexagonal.
--   0 en cas d’erreur.
+-   Numéro d'indice hexagonal.
+-   0 en cas d'erreur.
 
 Type: `UInt64`.
 
@@ -205,9 +205,9 @@ Résultat:
 
 ## geohashesInBox {#geohashesinbox}
 
-Renvoie un tableau de chaînes codées geohash de précision donnée qui tombent à l’intérieur et croisent les limites d’une boîte donnée, essentiellement une grille 2D aplatie en tableau.
+Renvoie un tableau de chaînes codées geohash de précision donnée qui tombent à l'intérieur et croisent les limites d'une boîte donnée, essentiellement une grille 2D aplatie en tableau.
 
-**Les valeurs d’entrée**
+**Les valeurs d'entrée**
 
 -   longitude\_min-longitude min, valeur flottante dans la plage `[-180°, 180°]`
 -   latitude\_min-latitude min, valeur flottante dans la plage `[-90°, 90°]`
@@ -219,10 +219,10 @@ Veuillez noter que tous les paramètres de coordonnées doit être du même type
 
 **Valeurs renvoyées**
 
--   gamme de précision de longues chaînes de geohash-boîtes couvrant la zone, vous ne devriez pas compter sur l’ordre des éléments.
+-   gamme de précision de longues chaînes de geohash-boîtes couvrant la zone, vous ne devriez pas compter sur l'ordre des éléments.
 -   \[\] - tableau vide si *min* les valeurs de *latitude* et *longitude* ne sont pas moins de correspondant *Max* valeur.
 
-Veuillez noter que la fonction lancera une exception si le tableau résultant a plus de 10’000’000 éléments.
+Veuillez noter que la fonction lancera une exception si le tableau résultant a plus de 10'000'000 éléments.
 
 **Exemple**
 
@@ -238,7 +238,7 @@ SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
 
 ## h3GetBaseCell {#h3getbasecell}
 
-Renvoie le numéro de cellule de base de l’index.
+Renvoie le numéro de cellule de base de l'index.
 
 **Syntaxe**
 
@@ -341,7 +341,7 @@ Résultat:
 
 ## h3enfants {#h3tochildren}
 
-Retourne un tableau avec les index enfants de l’index donné.
+Retourne un tableau avec les index enfants de l'index donné.
 
 **Syntaxe**
 
@@ -376,7 +376,7 @@ Résultat:
 
 ## h3ToParent {#h3toparent}
 
-Renvoie l’index parent (plus grossier) contenant l’index donné.
+Renvoie l'index parent (plus grossier) contenant l'index donné.
 
 **Syntaxe**
 
@@ -411,7 +411,7 @@ Résultat:
 
 ## h3ToString {#h3tostring}
 
-Convertit la représentation H3Index de l’index en représentation de chaîne.
+Convertit la représentation H3Index de l'index en représentation de chaîne.
 
 ``` sql
 h3ToString(index)
@@ -423,7 +423,7 @@ h3ToString(index)
 
 **Valeurs renvoyées**
 
--   Représentation en chaîne de l’index H3. Type: [Chaîne](../../sql-reference/data-types/string.md).
+-   Représentation en chaîne de l'index H3. Type: [Chaîne](../../sql-reference/data-types/string.md).
 
 **Exemple**
 
@@ -455,7 +455,7 @@ stringToH3(index_str)
 
 **Valeurs renvoyées**
 
--   Numéro d’indice hexagonal. Renvoie 0 en cas d’erreur. Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+-   Numéro d'indice hexagonal. Renvoie 0 en cas d'erreur. Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Exemple**
 
@@ -475,7 +475,7 @@ Résultat:
 
 ## h3grésolution {#h3getresolution}
 
-Retourne la résolution de l’index.
+Retourne la résolution de l'index.
 
 **Syntaxe**
 
@@ -489,7 +489,7 @@ h3GetResolution(index)
 
 **Valeurs renvoyées**
 
--   L’indice de la résolution. Gamme: `[0, 15]`. Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+-   L'indice de la résolution. Gamme: `[0, 15]`. Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Exemple**
 

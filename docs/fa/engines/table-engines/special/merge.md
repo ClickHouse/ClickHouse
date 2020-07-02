@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: "\u0627\u062F\u063A\u0627\u0645"
 ---
@@ -31,7 +31,7 @@ Regular expressions — [شماره 2](https://github.com/google/re2) (پشتی�
 
 مثال 2:
 
-بیایید می گویند شما باید یک جدول (watchlog\_old) و تصمیم به تغییر پارتیشن بندی بدون حرکت داده ها به یک جدول جدید (watchlog\_new) و شما نیاز به مراجعه به داده ها از هر دو جدول.
+بیایید می گویند شما باید یک جدول (WatchLog\_old) و تصمیم به تغییر پارتیشن بندی بدون حرکت داده ها به یک جدول جدید (WatchLog\_new) و شما نیاز به مراجعه به داده ها از هر دو جدول.
 
 ``` sql
 CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)
@@ -65,6 +65,6 @@ FROM WatchLog
 
 **همچنین نگاه کنید به**
 
--   [مجازی ستون](index.md#table_engines-virtual_columns)
+-   [ستونهای مجازی](index.md#table_engines-virtual_columns)
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/operations/table_engines/merge/) <!--hide-->

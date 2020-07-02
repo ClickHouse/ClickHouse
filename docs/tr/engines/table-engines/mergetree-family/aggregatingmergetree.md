@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: AggregatingMergeTree
 ---
@@ -11,7 +11,10 @@ Motor devralır [MergeTree](mergetree.md#table_engines-mergetree), veri parçala
 
 Kullanabilirsiniz `AggregatingMergeTree` artımlı veri toplama, toplanan materialized görünümleri de dahil olmak üzere tablolar.
 
-Motor tüm sütunları ile işler [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) tür.
+Motor, tüm sütunları aşağıdaki türlerle işler:
+
+-   [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md)
+-   [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md)
 
 Kullanmak uygundur `AggregatingMergeTree` siparişlere göre satır sayısını azaltırsa.
 
@@ -56,14 +59,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Tüm parametreler, aşağıdaki gibi aynı anlama sahiptir `MergeTree`.
 </details>
 
-## Seç Ve Ekle {#select-and-insert}
+## Seç ve Ekle {#select-and-insert}
 
 Veri eklemek için şunları kullanın [INSERT SELECT](../../../sql-reference/statements/insert-into.md) agrega-Devlet-fonksiyonları ile sorgu.
 Veri seçerken `AggregatingMergeTree` tablo kullanın `GROUP BY` yan tümce ve veri eklerken aynı toplama işlevleri, ancak kullanarak `-Merge` sonek.
 
 Sonuç inlarında `SELECT` sorgu, değerleri `AggregateFunction` türü, Tüm ClickHouse çıktı biçimleri için uygulamaya özgü ikili gösterime sahiptir. Örneğin, veri dökümü, `TabSeparated` ile format `SELECT` sorgu daha sonra bu dökümü kullanarak geri yüklenebilir `INSERT` sorgu.
 
-## Toplu Bir Somutlaştırılmış Görünüm örneği {#example-of-an-aggregated-materialized-view}
+## Toplu bir Somutlaştırılmış Görünüm örneği {#example-of-an-aggregated-materialized-view}
 
 `AggregatingMergeTree` saatler hayata görünüm `test.visits` Tablo:
 

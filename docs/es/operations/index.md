@@ -1,7 +1,7 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
-toc_folder_title: Operations
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: "Operaci\xF3n"
 toc_priority: 41
 toc_title: "Implantaci\xF3n"
 ---
@@ -25,4 +25,4 @@ El manual de operaciones de ClickHouse consta de las siguientes secciones princi
 -   [Configuración](settings/index.md)
 -   [Utilidad](utilities/index.md)
 
-[Artículo Original](https://clickhouse.tech/docs/en/operations/) <!--hide-->
+{## [Artículo Original](https://clickhouse.tech/docs/en/operations/) ##}

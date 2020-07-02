@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 29
 toc_title: Proxy
 ---
 
-# Servidores Proxy De Desarrolladores De Terceros {#proxy-servers-from-third-party-developers}
+# Servidores proxy de desarrolladores de terceros {#proxy-servers-from-third-party-developers}
 
 ## chproxy {#chproxy}
 
@@ -31,7 +31,7 @@ Función:
 
 Implementado en Go.
 
-## Bienvenidos Al Portal De LicitaciÃ³n ElectrÃ³nica De LicitaciÃ³n ElectrÃ³nica {#clickhouse-bulk}
+## Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica {#clickhouse-bulk}
 
 [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/nikepan/clickhouse-bulk) es un simple colector de insertos ClickHouse.
 

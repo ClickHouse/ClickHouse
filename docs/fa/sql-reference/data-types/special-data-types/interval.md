@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: "\u0641\u0627\u0635\u0644\u0647"
 ---
 
 # فاصله {#data-type-interval}
 
-خانواده از انواع داده ها به نمایندگی از فواصل زمان و تاریخ. انواع حاصل از [INTERVAL](../../../sql-reference/operators.md#operator-interval) اپراتور
+خانواده از انواع داده ها به نمایندگی از فواصل زمان و تاریخ. انواع حاصل از [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) اپراتور
 
 !!! warning "اخطار"
     `Interval` مقادیر نوع داده را نمی توان در جداول ذخیره کرد.
@@ -15,7 +15,7 @@ toc_title: "\u0641\u0627\u0635\u0644\u0647"
 ساختار:
 
 -   فاصله زمانی به عنوان یک مقدار عدد صحیح بدون علامت.
--   نوع یک بازه ی زمانی.
+-   نوع فاصله.
 
 انواع فاصله پشتیبانی شده:
 
@@ -54,7 +54,7 @@ SELECT now() as current_date_time, current_date_time + INTERVAL 4 DAY
 └─────────────────────┴───────────────────────────────┘
 ```
 
-فواصل با انواع مختلف نمی تواند ترکیب شود. شما می توانید فواصل مانند استفاده کنید `4 DAY 1 HOUR`. تعیین فواصل در واحد هایی که کوچکتر یا مساوی به کوچکترین واحد از فاصله مثلا فاصله `1 day and an hour` فاصله را می توان به عنوان بیان شده است `25 HOUR` یا `90000 SECOND`.
+فواصل با انواع مختلف نمی تواند ترکیب شود. شما می توانید فواصل مانند استفاده کنید `4 DAY 1 HOUR`. مشخص فواصل در واحد است که کوچکتر یا برابر با کوچکترین واحد فاصله, مثلا, فاصله `1 day and an hour` فاصله را می توان به عنوان بیان شده است `25 HOUR` یا `90000 SECOND`.
 
 شما می توانید عملیات ریاضی با انجام نمی `Interval`- ارزش نوع, اما شما می توانید فواصل از انواع مختلف در نتیجه به ارزش در اضافه `Date` یا `DateTime` انواع داده ها. به عنوان مثال:
 
@@ -68,7 +68,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 └─────────────────────┴────────────────────────────────────────────────────────┘
 ```
 
-پرس و جوی زیر باعث می شود یک استثنا:
+پرس و جو زیر باعث یک استثنا:
 
 ``` sql
 select now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVAL 3 HOUR)
@@ -81,5 +81,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## همچنین نگاه کنید به {#see-also}
 
--   [INTERVAL](../../../sql-reference/operators.md#operator-interval) اپراتور
+-   [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) اپراتور
 -   [توینتروال](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) توابع تبدیل نوع

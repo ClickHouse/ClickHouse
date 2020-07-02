@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 51
 toc_title: Array(T)
 ---
 
 # Array(t) {#data-type-array}
 
-Un tableau de `T`les éléments de type. `T` peut être n’importe quel type de données, y compris un tableau.
+Un tableau de `T`les éléments de type. `T` peut être n'importe quel type de données, y compris un tableau.
 
-## La création d’un Tableau {#creating-an-array}
+## La création d'un Tableau {#creating-an-array}
 
 Vous pouvez utiliser une fonction pour créer un tableau:
 
@@ -23,7 +23,7 @@ Vous pouvez également utiliser des crochets.
 []
 ```
 
-Exemple de création d’un tableau:
+Exemple de création d'un tableau:
 
 ``` sql
 SELECT array(1, 2) AS x, toTypeName(x)
@@ -45,11 +45,11 @@ SELECT [1, 2] AS x, toTypeName(x)
 └───────┴────────────────────┘
 ```
 
-## Utilisation De Types De Données {#working-with-data-types}
+## Utilisation de Types de données {#working-with-data-types}
 
-Lors de la création d’un tableau à la volée, ClickHouse définit automatiquement le type d’argument comme le type de données le plus étroit pouvant stocker tous les arguments listés. S’il y a des [Nullable](nullable.md#data_type-nullable) ou littéral [NULL](../../sql-reference/syntax.md#null-literal) les valeurs, le type d’un élément de tableau devient également [Nullable](nullable.md).
+Lors de la création d'un tableau à la volée, ClickHouse définit automatiquement le type d'argument comme le type de données le plus étroit pouvant stocker tous les arguments listés. S'il y a des [Nullable](nullable.md#data_type-nullable) ou littéral [NULL](../../sql-reference/syntax.md#null-literal) les valeurs, le type d'un élément de tableau devient également [Nullable](nullable.md).
 
-Si ClickHouse n’a pas pu déterminer le type de données, il génère une exception. Par exemple, cela se produit lorsque vous essayez de créer un tableau avec des chaînes et des nombres simultanément (`SELECT array(1, 'a')`).
+Si ClickHouse n'a pas pu déterminer le type de données, il génère une exception. Par exemple, cela se produit lorsque vous essayez de créer un tableau avec des chaînes et des nombres simultanément (`SELECT array(1, 'a')`).
 
 Exemples de détection automatique de type de données:
 

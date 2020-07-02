@@ -66,7 +66,7 @@ off_t ReadBufferFromS3::getPosition()
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    LOG_TRACE(log, "Read S3 object. Bucket: " + bucket + ", Key: " + key + ", Offset: " + std::to_string(offset));
+    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, std::to_string(offset));
 
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);

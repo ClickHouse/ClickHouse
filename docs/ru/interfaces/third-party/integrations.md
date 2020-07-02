@@ -7,6 +7,7 @@
 
 -   Реляционные системы управления базами данных
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
@@ -20,6 +21,7 @@
 -   Очереди сообщений
     -   [Kafka](https://kafka.apache.org)
         -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (использует [Go client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   Потоковая обработка
     -   [Flink](https://flink.apache.org)
         -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
@@ -91,5 +93,11 @@
 -   Elixir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
     -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
-
+-   Ruby
+    -   [Ruby on Rails](https://rubyonrails.org/)
+        -   [activecube](https://github.com/bitquery/activecube)
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord) 
+    -   [GraphQL](https://github.com/graphql)
+        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
+        
 [Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/integrations/) <!--hide-->

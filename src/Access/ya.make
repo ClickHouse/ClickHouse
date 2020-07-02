@@ -17,16 +17,17 @@ SRCS(
     EnabledRolesInfo.cpp
     EnabledRowPolicies.cpp
     EnabledSettings.cpp
-    ExtendedRoleSet.cpp
+    GrantedRoles.cpp
     IAccessEntity.cpp
     IAccessStorage.cpp
     MemoryAccessStorage.cpp
     MultipleAccessStorage.cpp
     Quota.cpp
     QuotaCache.cpp
-    QuotaUsageInfo.cpp
+    QuotaUsage.cpp
     Role.cpp
     RoleCache.cpp
+    RolesOrUsersSet.cpp
     RowPolicy.cpp
     RowPolicyCache.cpp
     SettingsConstraints.cpp

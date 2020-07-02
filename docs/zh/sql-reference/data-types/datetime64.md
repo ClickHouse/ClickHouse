@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 49
 toc_title: DateTime64
 ---
@@ -99,6 +99,6 @@ FROM dt
 -   [用于处理数组的函数](../../sql-reference/functions/array-functions.md)
 -   [该 `date_time_input_format` 设置](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [该 `timezone` 服务器配置参数](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [使用日期和时间的操作员](../../sql-reference/operators.md#operators-datetime)
+-   [使用日期和时间的操作员](../../sql-reference/operators/index.md#operators-datetime)
 -   [`Date` 数据类型](date.md)
 -   [`DateTime` 数据类型](datetime.md)
