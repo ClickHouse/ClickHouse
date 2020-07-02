@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_ALTER;
     extern const int DATABASE_NOT_EMPTY;
     extern const int NOT_IMPLEMENTED;
+    extern const int FILE_ALREADY_EXISTS;
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
@@ -31,13 +32,34 @@ public:
 };
 
 
-DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, Context & context_)
+DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, Context & context_)
     : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", "DatabaseAtomic (" + name_ + ")", context_)
     , path_to_table_symlinks(context_.getPath() + "data/" + escapeForFileName(name_) + "/")
+    , path_to_metadata_symlink(global_context.getPath() + "metadata/" + escapeForFileName(name_))
+    , db_uuid(uuid)
 {
-    /// Symlinks in data/db_name/ directory are not used by ClickHouse,
+    assert(db_uuid != UUIDHelpers::Nil);
+    /// Symlinks in data/db_name/ directory and metadata/db_name/ are not used by ClickHouse,
     /// it's needed only for convenient introspection.
     Poco::File(path_to_table_symlinks).createDirectories();
+    assert(path_to_metadata_symlink != metadata_path);
+    Poco::File metadata_symlink(path_to_metadata_symlink);
+    if (metadata_symlink.exists())
+    {
+        if (!metadata_symlink.isLink())
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Directory {} exists", path_to_metadata_symlink);
+    }
+    else
+    {
+        try
+        {
+            Poco::File{metadata_path}.linkTo(path_to_metadata_symlink, Poco::File::LINK_SYMBOLIC);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    }
 }
 
 String DatabaseAtomic::getTableDataPath(const String & table_name) const
@@ -59,7 +81,15 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(const Context &)
 {
-    Poco::File(path_to_table_symlinks).remove(true);
+    try
+    {
+        Poco::File(path_to_metadata_symlink).remove();
+        Poco::File(path_to_table_symlinks).remove(true);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
     Poco::File(getMetadataPath()).remove(true);
 }
 
@@ -72,7 +102,7 @@ void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, 
     assertDetachedTableNotInUse(table->getStorageID().uuid);
     DatabaseWithDictionaries::attachTableUnlocked(name, table, lock);
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
-    tryCreateSymlink(name, relative_table_path);
+    //tryCreateSymlink(name, relative_table_path);
 }
 
 StoragePtr DatabaseAtomic::detachTable(const String & name)
@@ -83,7 +113,7 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
     table_name_to_path.erase(name);
     detached_tables.emplace(table->getStorageID().uuid, table);
     not_in_use = cleenupDetachedTables();
-    tryRemoveSymlink(name);
+    //tryRemoveSymlink(name);
     return table;
 }
 

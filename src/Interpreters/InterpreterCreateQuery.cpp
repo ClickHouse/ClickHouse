@@ -1,6 +1,6 @@
 #include <memory>
 
-#include <Poco/File.h>
+#include <filesystem>
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
@@ -76,6 +76,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace fs = std::filesystem;
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Context & context_)
     : query_ptr(query_ptr_), context(context_)
@@ -119,20 +120,41 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
-    if (create.storage->engine->name == "Atomic" && !context.getSettingsRef().allow_experimental_database_atomic && !internal)
-        throw Exception("Atomic is an experimental database engine. Enable allow_experimental_database_atomic to use it.",
-                        ErrorCodes::UNKNOWN_DATABASE_ENGINE);
-
-    String database_name_escaped = escapeForFileName(database_name);
-    String path = context.getPath();
-    String metadata_path = path + "metadata/" + database_name_escaped + "/";
-    DatabasePtr database = DatabaseFactory::get(database_name, metadata_path, create.storage, context);
-
     /// Will write file with database metadata, if needed.
-    String metadata_file_tmp_path = path + "metadata/" + database_name_escaped + ".sql.tmp";
-    String metadata_file_path = path + "metadata/" + database_name_escaped + ".sql";
+    String database_name_escaped = escapeForFileName(database_name);
+    fs::path metadata_path = fs::canonical(context.getPath());
+    fs::path metadata_file_tmp_path = metadata_path / "metadata" / (database_name_escaped + ".sql.tmp");
+    fs::path metadata_file_path = metadata_path / "metadata" / (database_name_escaped + ".sql");
 
-    bool need_write_metadata = !create.attach;
+    if (create.storage->engine->name == "Atomic")
+    {
+        if (!context.getSettingsRef().allow_experimental_database_atomic && !internal)
+            throw Exception("Atomic is an experimental database engine. "
+                            "Enable allow_experimental_database_atomic to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+
+        if (create.attach && create.uuid == UUIDHelpers::Nil)
+            throw Exception("UUID must be specified for ATTACH", ErrorCodes::INCORRECT_QUERY);
+        else if (create.uuid == UUIDHelpers::Nil)
+            create.uuid = UUIDHelpers::generateV4();
+
+        metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
+
+        if (!create.attach && fs::exists(metadata_path))
+            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists", metadata_path);
+
+        create.database = TABLE_WITH_UUID_NAME_PLACEHOLDER;
+    }
+    else
+    {
+        if (create.uuid != UUIDHelpers::Nil)
+            throw Exception("Ordinary database engine does not support UUID", ErrorCodes::INCORRECT_QUERY);
+
+        metadata_path = metadata_path / "metadata" / database_name_escaped;
+    }
+
+    DatabasePtr database = DatabaseFactory::get(database_name, metadata_path, create.storage, create.uuid, context);
+
+    bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
 
     if (need_write_metadata)
     {
@@ -164,7 +186,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (need_write_metadata)
         {
-            Poco::File(metadata_file_tmp_path).renameTo(metadata_file_path);
+            fs::rename(metadata_file_tmp_path, metadata_file_path);
             renamed = true;
         }
 
@@ -173,7 +195,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     catch (...)
     {
         if (renamed)
-            Poco::File(metadata_file_tmp_path).remove();
+        {
+            [[maybe_unused]] bool removed = fs::remove(metadata_file_tmp_path);
+            assert(removed);
+        }
         if (added)
             DatabaseCatalog::instance().detachDatabase(database_name, false, false);
 
@@ -663,7 +688,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
 
         data_path = database->getTableDataPath(create);
-        if (!create.attach && !data_path.empty() && Poco::File(context.getPath() + data_path).exists())
+        if (!create.attach && !data_path.empty() && fs::exists(fs::path{context.getPath()} / data_path))
             throw Exception("Directory for table data " + data_path + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
     }
     else

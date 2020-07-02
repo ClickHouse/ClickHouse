@@ -35,14 +35,15 @@ namespace ErrorCodes
 }
 
 DatabasePtr DatabaseFactory::get(
-    const String & database_name, const String & metadata_path, const ASTStorage * engine_define, Context & context)
+    const String & database_name, const String & metadata_path, const ASTStorage * engine_define, UUID uuid, Context & context)
 {
     bool created = false;
 
     try
     {
+        Poco::File(Poco::Path(metadata_path).makeParent()).createDirectories();
         created = Poco::File(metadata_path).createDirectory();
-        return getImpl(database_name, metadata_path, engine_define, context);
+        return getImpl(database_name, metadata_path, engine_define, uuid, context);
     }
     catch (...)
     {
@@ -65,7 +66,7 @@ static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &eng
 }
 
 DatabasePtr DatabaseFactory::getImpl(
-    const String & database_name, const String & metadata_path, const ASTStorage * engine_define, Context & context)
+    const String & database_name, const String & metadata_path, const ASTStorage * engine_define, UUID uuid, Context & context)
 {
     String engine_name = engine_define->engine->name;
 
@@ -80,7 +81,7 @@ DatabasePtr DatabaseFactory::getImpl(
     if (engine_name == "Ordinary")
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
     else if (engine_name == "Atomic")
-        return std::make_shared<DatabaseAtomic>(database_name, metadata_path, context);
+        return std::make_shared<DatabaseAtomic>(database_name, metadata_path, uuid, context);
     else if (engine_name == "Memory")
         return std::make_shared<DatabaseMemory>(database_name, context);
     else if (engine_name == "Dictionary")

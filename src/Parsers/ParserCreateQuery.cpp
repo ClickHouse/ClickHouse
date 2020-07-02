@@ -13,6 +13,7 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ParserDictionary.h>
 #include <Parsers/ParserDictionaryAttributeDeclaration.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -595,6 +596,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     ASTPtr database;
     ASTPtr storage;
+    UUID uuid = UUIDHelpers::Nil;
 
     String cluster_str;
     bool attach = false;
@@ -617,6 +619,15 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (!name_p.parse(pos, database, expected))
         return false;
 
+    if (ParserKeyword("UUID").ignore(pos, expected))
+    {
+        ParserStringLiteral uuid_p;
+        ASTPtr ast_uuid;
+        if (!uuid_p.parse(pos, ast_uuid, expected))
+            return false;
+        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
+    }
+
     if (ParserKeyword{"ON"}.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
@@ -633,6 +644,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->if_not_exists = if_not_exists;
 
     tryGetIdentifierNameInto(database, query->database);
+    query->uuid = uuid;
     query->cluster = cluster_str;
 
     query->set(query->storage, storage);

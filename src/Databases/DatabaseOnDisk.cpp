@@ -332,8 +332,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
     ASTPtr ast;
 
     auto settings = global_context.getSettingsRef();
-    auto metadata_dir_path = getMetadataPath();
-    auto database_metadata_path = metadata_dir_path.substr(0, metadata_dir_path.size() - 1) + ".sql";
+    auto database_metadata_path = global_context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
     ast = getCreateQueryFromMetadata(database_metadata_path, true);
     if (!ast)
     {
@@ -463,7 +462,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * logger, const Conte
         return nullptr;
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (create.uuid != UUIDHelpers::Nil)
+    if (!create.table.empty() && create.uuid != UUIDHelpers::Nil)
     {
         String table_name = Poco::Path(metadata_file_path).makeFile().getBaseName();
         table_name = unescapeForFileName(table_name);

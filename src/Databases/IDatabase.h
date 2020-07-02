@@ -283,6 +283,9 @@ public:
 
     /// Get name of database.
     String getDatabaseName() const { return database_name; }
+    /// Get UUID of database.
+    virtual UUID getUUID() const { return UUIDHelpers::Nil; }
+
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
 

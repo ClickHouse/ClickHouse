@@ -21,9 +21,10 @@ class DatabaseAtomic : public DatabaseOrdinary
 {
 public:
 
-    DatabaseAtomic(String name_, String metadata_path_, Context & context_);
+    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, Context & context_);
 
     String getEngineName() const override { return "Atomic"; }
+    UUID getUUID() const override { return db_uuid; }
 
     void renameTable(
             const Context & context,
@@ -69,6 +70,8 @@ private:
 
     DetachedTables detached_tables;
     const String path_to_table_symlinks;
+    const String path_to_metadata_symlink;
+    const UUID db_uuid;
 };
 
 }
