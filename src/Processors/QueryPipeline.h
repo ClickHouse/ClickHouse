@@ -110,6 +110,8 @@ public:
     void addCreatingSetsTransform(ProcessorPtr transform);
     /// Resize pipeline to single output and add IOutputFormat. Pipeline will be completed after this transformation.
     void setOutputFormat(ProcessorPtr output);
+    /// Get current OutputFormat.
+    IOutputFormat * getOutputFormat() const { return output_format; }
     /// Sink is a processor with single input port and no output ports. Creates sink for each output port.
     /// Pipeline will be completed after this transformation.
     void setSinks(const ProcessorGetterWithStreamKind & getter);
