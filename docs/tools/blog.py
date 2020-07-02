@@ -80,7 +80,8 @@ def build_for_lang(lang, args):
                 includes_dir=os.path.join(os.path.dirname(__file__), '..', '_includes'),
                 is_amp=False,
                 is_blog=True,
-                post_meta=post_meta
+                post_meta=post_meta,
+                today=datetime.date.today().isoformat()
             )
         )
 
@@ -88,6 +89,13 @@ def build_for_lang(lang, args):
         mkdocs.commands.build.build(cfg)
 
         redirects.build_blog_redirects(args)
+
+        env = util.init_jinja2_env(args)
+        with open(os.path.join(args.website_dir, 'templates', 'blog', 'rss.xml'), 'rb') as f:
+            rss_template_string = f.read().decode('utf-8').strip()
+        rss_template = env.from_string(rss_template_string)
+        with open(os.path.join(args.blog_output_dir, lang, 'rss.xml'), 'w') as f:
+            f.write(rss_template.render({'config': raw_config}))
 
         # TODO: AMP for blog
         # if not args.skip_amp:
