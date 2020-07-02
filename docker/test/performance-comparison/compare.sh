@@ -794,9 +794,16 @@ done
 wait
 unset IFS
 
-# Remember that grep sets error code when nothing is found, hence the bayan
-# operator.
-grep -H -m2 -i '' ./*-err.log | sed 's/:/\t/' >> run-errors.tsv ||:
+# Prefer to grep for clickhouse_driver exception messages, but if there are none,
+# just show a couple of lines from the log.
+for log in *-err.log
+do
+    test=$(basename "$log" "-err.log")
+    {
+        grep -H -m2 -i '\(Exception\|Error\):[^:]' "$log" \
+            || head -2 "$log"
+    } | sed "s/^/$test\t/" >> run-errors.tsv ||:
+done
 }
 
 function report_metrics
