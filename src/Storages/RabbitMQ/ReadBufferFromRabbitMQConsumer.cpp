@@ -37,11 +37,11 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         HandlerPtr event_handler_,
         const String & exchange_name_,
         const Names & routing_keys_,
-        const size_t channel_id_,
+        size_t channel_id_,
         Poco::Logger * log_,
         char row_delimiter_,
-        const bool bind_by_id_,
-        const size_t num_queues_,
+        bool bind_by_id_,
+        size_t num_queues_,
         const String & exchange_type_,
         const String & local_exchange_,
         const std::atomic<bool> & stopped_)
@@ -327,7 +327,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
      */
     while (!default_bindings_created && !default_bindings_error || (exchange_type_set && !bindings_created && !bindings_error))
     {
-        startEventLoop();
+        iterateEventLoop();
     }
 }
 
@@ -378,7 +378,7 @@ void ReadBufferFromRabbitMQConsumer::checkSubscription()
     /// These variables are updated in a separate thread.
     while (count_subscribed != wait_subscribed && !consumer_error)
     {
-        startEventLoop();
+        iterateEventLoop();
     }
 
     LOG_TRACE(log, "Consumer {} is subscribed to {} queues", channel_id, count_subscribed);
@@ -395,9 +395,9 @@ void ReadBufferFromRabbitMQConsumer::checkSubscription()
 }
 
 
-void ReadBufferFromRabbitMQConsumer::startEventLoop()
+void ReadBufferFromRabbitMQConsumer::iterateEventLoop()
 {
-    event_handler->startLoop();
+    event_handler->iterateLoop();
 }
 
 

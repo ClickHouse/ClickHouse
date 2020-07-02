@@ -22,13 +22,13 @@ public:
     WriteBufferToRabbitMQProducer(
             std::pair<String, UInt16> & parsed_address,
             Context & global_context,
-            std::pair<String, String> & login_password_,
+            const std::pair<String, String> & login_password_,
             const String & routing_key_,
-            const String exchange_,
+            const String & exchange_,
             Poco::Logger * log_,
-            const size_t num_queues_,
-            const bool bind_by_id_,
-            const bool use_transactional_channel_,
+            size_t num_queues_,
+            bool bind_by_id_,
+            bool use_transactional_channel_,
             std::optional<char> delimiter,
             size_t rows_per_message,
             size_t chunk_size_
@@ -42,11 +42,11 @@ public:
 private:
     void nextImpl() override;
     void checkExchange();
-    void startEventLoop();
+    void iterateEventLoop();
     void writingFunc();
     void finilizeProducer();
 
-    std::pair<String, String> & login_password;
+    const std::pair<String, String> login_password;
     const String routing_key;
     const String exchange_name;
     const bool bind_by_id;

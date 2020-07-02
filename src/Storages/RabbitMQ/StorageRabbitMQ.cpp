@@ -40,7 +40,7 @@ namespace DB
 
 static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 1000;
-static const auto RESCHEDULE_MS = 500;
+static const auto HEARTBEAT_RESCHEDULE_MS = 3000;
 
 namespace ErrorCodes
 {
@@ -90,7 +90,7 @@ StorageRabbitMQ::StorageRabbitMQ(
     size_t cnt_retries = 0;
     while (!connection->ready() && ++cnt_retries != RETRIES_MAX)
     {
-        uv_run(loop.get(), UV_RUN_NOWAIT);
+        event_handler->iterateLoop();
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
     }
 
@@ -125,9 +125,9 @@ void StorageRabbitMQ::heartbeatFunc()
 {
     if (!stream_cancelled)
     {
-        LOG_DEBUG(log, "Sending RabbitMQ heartbeat");
+        LOG_TRACE(log, "Sending RabbitMQ heartbeat");
         connection->heartbeat();
-        heartbeat_task->scheduleAfter(RESCHEDULE_MS * 10);
+        heartbeat_task->scheduleAfter(HEARTBEAT_RESCHEDULE_MS);
     }
 }
 
@@ -135,7 +135,7 @@ void StorageRabbitMQ::heartbeatFunc()
 void StorageRabbitMQ::loopingFunc()
 {
     LOG_DEBUG(log, "Starting event looping iterations");
-    event_handler->startBackgroundLoop();
+    event_handler->startLoop();
 }
 
 

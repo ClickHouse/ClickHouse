@@ -26,13 +26,13 @@ static const auto LOOP_WAIT = 10;
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         std::pair<String, UInt16> & parsed_address,
         Context & global_context,
-        std::pair<String, String> & login_password_,
+        const std::pair<String, String> & login_password_,
         const String & routing_key_,
-        const String exchange_,
+        const String & exchange_,
         Poco::Logger * log_,
-        const size_t num_queues_,
-        const bool bind_by_id_,
-        const bool use_transactional_channel_,
+        size_t num_queues_,
+        bool bind_by_id_,
+        bool use_transactional_channel_,
         std::optional<char> delimiter,
         size_t rows_per_message,
         size_t chunk_size_)
@@ -63,7 +63,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
     size_t cnt_retries = 0;
     while (!connection->ready() && ++cnt_retries != RETRIES_MAX)
     {
-        uv_run(loop.get(), UV_RUN_NOWAIT);
+        event_handler->iterateLoop();
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
     }
 
@@ -144,7 +144,7 @@ void WriteBufferToRabbitMQProducer::writingFunc()
                 producer_channel->publish(exchange_name, routing_key, payload);
             }
         }
-        startEventLoop();
+        iterateEventLoop();
     }
 }
 
@@ -168,7 +168,7 @@ void WriteBufferToRabbitMQProducer::checkExchange()
     /// These variables are updated in a separate thread and starting the loop blocks current thread
     while (!exchange_declared && !exchange_error)
     {
-        startEventLoop();
+        iterateEventLoop();
     }
 }
 
@@ -207,7 +207,7 @@ void WriteBufferToRabbitMQProducer::finilizeProducer()
         size_t count_retries = 0;
         while ((!answer_received || wait_rollback) && ++count_retries != RETRIES_MAX)
         {
-            startEventLoop();
+            iterateEventLoop();
             std::this_thread::sleep_for(std::chrono::milliseconds(LOOP_WAIT));
         }
     }
@@ -222,9 +222,9 @@ void WriteBufferToRabbitMQProducer::nextImpl()
 }
 
 
-void WriteBufferToRabbitMQProducer::startEventLoop()
+void WriteBufferToRabbitMQProducer::iterateEventLoop()
 {
-    event_handler->startLoop();
+    event_handler->iterateLoop();
 }
 
 }

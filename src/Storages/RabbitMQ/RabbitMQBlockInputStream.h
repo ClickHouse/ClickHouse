@@ -26,7 +26,6 @@ public:
 
     void readPrefixImpl() override;
     Block readImpl() override;
-    ///void readSuffixImpl() override;
 
 private:
     StorageRabbitMQ & storage;
