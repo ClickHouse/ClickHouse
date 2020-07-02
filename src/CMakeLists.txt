@@ -285,6 +285,7 @@ dbms_target_link_libraries (
         clickhouse_parsers
         lz4
         Poco::JSON
+        Poco::MongoDB
         string_utils
     PUBLIC
         ${MYSQLXX_LIBRARY}

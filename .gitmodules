@@ -1,6 +1,6 @@
 [submodule "contrib/poco"]
 	path = contrib/poco
-	url = https://github.com/ClickHouse-Extras/poco
+	url = https://github.com/ClickHouse-Extras/poco.git
 	branch = clickhouse
 [submodule "contrib/zstd"]
 	path = contrib/zstd
@@ -171,3 +171,6 @@
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
 	url = https://github.com/fmtlib/fmt.git
+[submodule "contrib/sentry-native"]
+	path = contrib/sentry-native
+	url = https://github.com/getsentry/sentry-native.git

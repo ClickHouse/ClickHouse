@@ -1,4 +1,4 @@
-# Ограничения на сложность запроса {#ogranicheniia-na-slozhnost-zaprosa}
+# Ограничения на сложность запроса {#restrictions-on-query-complexity}
 
 Ограничения на сложность запроса - часть настроек.
 Используются, чтобы обеспечить более безопасное исполнение запросов из пользовательского интерфейса.
@@ -32,21 +32,13 @@
 
 Потребление памяти не полностью учитывается для состояний агрегатных функций `min`, `max`, `any`, `anyLast`, `argMin`, `argMax` от аргументов `String` и `Array`.
 
-Потребление памяти ограничивается также параметрами `max_memory_usage_for_user` и `max_memory_usage_for_all_queries`.
+Потребление памяти ограничивается также параметрами `max_memory_usage_for_user` и [max_server_memory_usage](../server-configuration-parameters/settings.md#max_server_memory_usage).
 
 ## max\_memory\_usage\_for\_user {#max-memory-usage-for-user}
 
 Максимальный возможный объём оперативной памяти для запросов пользователя на одном сервере.
 
 Значения по умолчанию определены в файле [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L288). По умолчанию размер не ограничен (`max_memory_usage_for_user = 0`).
-
-Смотрите также описание настройки [max\_memory\_usage](#settings_max_memory_usage).
-
-## max\_memory\_usage\_for\_all\_queries {#max-memory-usage-for-all-queries}
-
-Максимальный возможный объём оперативной памяти для всех запросов на одном сервере.
-
-Значения по умолчанию определены в файле [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L289). По умолчанию размер не ограничен (`max_memory_usage_for_all_queries = 0`).
 
 Смотрите также описание настройки [max\_memory\_usage](#settings_max_memory_usage).
 

@@ -1,6 +1,6 @@
 option (ENABLE_JEMALLOC "Enable jemalloc allocator" ${ENABLE_LIBRARIES})
 
-if (SANITIZE OR NOT (ARCH_AMD64 OR ARCH_ARM) OR NOT (OS_LINUX OR OS_FREEBSD))
+if (SANITIZE OR NOT (ARCH_AMD64 OR ARCH_ARM) OR NOT (OS_LINUX OR OS_FREEBSD OR OS_DARWIN))
     set (ENABLE_JEMALLOC OFF)
     message (STATUS "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64 or aarch64 on linux or freebsd.")
 endif ()
@@ -22,9 +22,14 @@ if (ENABLE_JEMALLOC)
             #
             # By enabling percpu_arena number of arenas limited to number of CPUs and hence
             # this problem should go away.
-            set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0")
+            #
+            # muzzy_decay_ms -- use MADV_FREE when available on newer Linuxes, to
+            # avoid spurious latencies and additional work associated with
+            # MADV_DONTNEED. See
+            # https://github.com/ClickHouse/ClickHouse/issues/11121 for motivation.
+            set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:10000")
         else()
-            set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0")
+            set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:10000")
         endif()
         # CACHE variable is empty, to allow changing defaults without necessity
         # to purge cache
@@ -148,6 +153,10 @@ if (ENABLE_JEMALLOC)
     endif ()
 
     set_property(TARGET jemalloc APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS USE_JEMALLOC=1)
+    if (MAKE_STATIC_LIBRARIES)
+        # To detect whether we need to register jemalloc for osx as default zone.
+        set_property(TARGET jemalloc APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS BUNDLED_STATIC_JEMALLOC=1)
+    endif()
 
     message (STATUS "Using jemalloc")
 else ()
