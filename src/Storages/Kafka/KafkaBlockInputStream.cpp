@@ -193,13 +193,13 @@ Block KafkaBlockInputStream::readImpl()
 
             total_rows = total_rows + new_rows;
         }
-        else if (buffer->isStalled())
-        {
-            ++failed_poll_attempts;
-        }
         else if (buffer->polledDataUnusable())
         {
             break;
+        }
+        else if (buffer->isStalled())
+        {
+            ++failed_poll_attempts;
         }
         else
         {
