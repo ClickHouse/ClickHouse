@@ -1205,6 +1205,23 @@ Default value: 0.
 
 Значение по умолчанию: 16.
 
+## always_fetch_merged_part {#always_fetch_merged_part}
+
+Запрещает слияние данных для таблиц семейства [Replicated*MergeTree](../../engines/table-engines/mergetree-family/replication.md).
+
+Если слияние запрещено, реплика никогда не выполняет слияние отдельных кусков данных, а всегда загружает объединённые данные из других реплик. Если объединённых данных пока нет, реплика ждет их появления. Нагрузка на процессор и диски на реплике уменьшается, но нагрузка на сеть в кластере возрастает. Настройка может быть полезна на репликах с относительно слабыми процессорами или медленными дисками, например, на репликах для хранения архивных данных.
+
+Возможные значения:
+
+-   0 — таблицы семейства `Replicated*MergeTree` выполняют слияние данных на реплике.
+-   1 — таблицы семейства `Replicated*MergeTree` не выполняют слияние данных на реплике, а загружают объединённые данные из других реплик.
+
+Значение по умолчанию: 0.
+
+**См. также:** 
+
+-   [Репликация данных](../../engines/table-engines/mergetree-family/replication.md)
+
 ## transform_null_in {#transform_null_in}
 
 Разрешает сравнивать значения [NULL](../../sql-reference/syntax.md#null-literal) в операторе [IN](../../sql-reference/operators/in.md).
@@ -1312,6 +1329,12 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 -   Положительное целое число.
 
 Значение по умолчанию: 16.
+
+## format\_avro\_schema\_registry\_url {#format_avro_schema_registry_url}
+
+Задает URL реестра схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html) для использования с форматом [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent).
+
+Значение по умолчанию: `Пустая строка`.
 
 ## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
 

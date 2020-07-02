@@ -26,7 +26,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int PARAMETER_OUT_OF_BOUND;
@@ -38,8 +37,18 @@ namespace ErrorCodes
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
     : data(std::move(nested_column)), offsets(std::move(offsets_column))
 {
-    if (!typeid_cast<const ColumnOffsets *>(offsets.get()))
-        throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::ILLEGAL_COLUMN);
+    const ColumnOffsets * offsets_concrete = typeid_cast<const ColumnOffsets *>(offsets.get());
+
+    if (!offsets_concrete)
+        throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
+
+    size_t size = offsets_concrete->size();
+    if (size != 0 && nested_column)
+    {
+        /// This will also prevent possible overflow in offset.
+        if (nested_column->size() != offsets_concrete->getData()[size - 1])
+            throw Exception("offsets_column has data inconsistent with nested_column", ErrorCodes::LOGICAL_ERROR);
+    }
 
     /** NOTE
       * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).
@@ -51,7 +60,7 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column)
     : data(std::move(nested_column))
 {
     if (!data->empty())
-        throw Exception("Not empty data passed to ColumnArray, but no offsets passed", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Not empty data passed to ColumnArray, but no offsets passed", ErrorCodes::LOGICAL_ERROR);
 
     offsets = ColumnOffsets::create();
 }

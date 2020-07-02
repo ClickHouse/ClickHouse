@@ -354,8 +354,7 @@ public:
     bool supportsSettings() const override { return true; }
     NamesAndTypesList getVirtuals() const override;
 
-    bool
-    mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &, const StorageMetadataPtr & metadata_snapshot) const override;
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &, const StorageMetadataPtr & metadata_snapshot) const override;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -805,8 +804,6 @@ protected:
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
-    void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
-
     /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
     void calculateColumnSizesImpl();
     /// Adds or subtracts the contribution of the part to compressed column sizes.
@@ -881,7 +878,7 @@ protected:
 
 private:
     /// RAII Wrapper for atomic work with currently moving parts
-    /// Acuire them in constructor and remove them in destructor
+    /// Acquire them in constructor and remove them in destructor
     /// Uses data.currently_moving_parts_mutex
     struct CurrentlyMovingPartsTagger
     {
@@ -906,6 +903,8 @@ private:
 
     std::mutex write_ahead_log_mutex;
     WriteAheadLogPtr write_ahead_log;
+
+    virtual void startBackgroundMovesIfNeeded() = 0;
 };
 
 }
