@@ -30,10 +30,11 @@ namespace ExchangeType
     static const String HEADERS = "headers";
 }
 
+static const auto QUEUE_SIZE = 50000; /// Equals capacity of a single rabbitmq queue
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
-        RabbitMQHandler & eventHandler_,
+        HandlerPtr event_handler_,
         const String & exchange_name_,
         const Names & routing_keys_,
         const size_t channel_id_,
@@ -46,7 +47,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
         , consumer_channel(std::move(consumer_channel_))
-        , event_handler(eventHandler_)
+        , event_handler(event_handler_)
         , exchange_name(exchange_name_)
         , routing_keys(routing_keys_)
         , channel_id(channel_id_)
@@ -59,10 +60,8 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , local_default_exchange(local_exchange + "_" + ExchangeType::DIRECT)
         , local_hash_exchange(local_exchange + "_" + ExchangeType::HASH)
         , stopped(stopped_)
+        , messages(QUEUE_SIZE * num_queues)
 {
-    messages.clear();
-    current = messages.begin();
-
     exchange_type_set = exchange_type != ExchangeType::DEFAULT;
 
     /* One queue per consumer can handle up to 50000 messages. More queues per consumer can be added.
@@ -81,7 +80,6 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
     consumer_channel->close();
 
     messages.clear();
-    current = messages.begin();
     BufferBase::set(nullptr, 0, 0);
 }
 
@@ -117,8 +115,6 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
         return;
     }
 
-    /// For special purposes to use the flexibility of routing provided by rabbitmq - choosing exchange types is supported.
-
     AMQP::ExchangeType type;
     if      (exchange_type == ExchangeType::FANOUT)         type = AMQP::ExchangeType::fanout;
     else if (exchange_type == ExchangeType::DIRECT)         type = AMQP::ExchangeType::direct;
@@ -129,7 +125,7 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
 
     /* Declare client's exchange of the specified type and bind it to hash-exchange (if it is not already hash-exchange), which
      * will evenly distribute messages between all consumers. (This enables better scaling as without hash-exchange - the only
-     * option to avoid getting the same messages more than once - is having only one consumer with one queue, which is not good.)
+     * option to avoid getting the same messages more than once - is having only one consumer with one queue)
      */
     consumer_channel->declareExchange(exchange_name, type).onError([&](const char * message)
     {
@@ -247,7 +243,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
         });
 
         /* Subscription can probably be moved back to readPrefix(), but not sure whether it is better in regard to speed, because
-         * if moved there, it must(!) be wrapped inside a channel->onReady callback or any other (and the looping), otherwise
+         * if moved there, it must(!) be wrapped inside a channel->onSuccess callback or any other, otherwise
          * consumer might fail to subscribe and no resubscription will help.
          */
         subscribe(queues.back());
@@ -280,7 +276,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
                 AMQP::Table binding_arguments;
                 std::vector<String> matching;
 
-                /// It is not parsed for the second time - if it was parsed above, then it would go to the first if statement, not here.
+                /// It is not parsed for the second time - if it was parsed above, then it would never end up here.
                 for (const auto & header : routing_keys)
                 {
                     boost::split(matching, header, [](char c){ return c == '='; });
@@ -331,7 +327,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
      */
     while (!default_bindings_created && !default_bindings_error || (exchange_type_set && !bindings_created && !bindings_error))
     {
-        startEventLoop(loop_started);
+        startEventLoop();
     }
 }
 
@@ -356,26 +352,12 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
         if (message_size && message.body() != nullptr)
         {
             String message_received = std::string(message.body(), message.body() + message_size);
-
             if (row_delimiter != '\0')
             {
                 message_received += row_delimiter;
             }
 
-            /// Needed to avoid data race because this vector can be used at the same time by another thread in nextImpl().
-            {
-                std::lock_guard lock(mutex);
-                received.push_back(message_received);
-            }
-
-            /* As event loop is blocking to the thread that started it and a single thread should not be blocked while
-             * executing all callbacks on the connection (not only its own), then there should be some point to unblock.
-             * loop_started == 1 if current consumer is started the loop and not another.
-             */
-            if (!event_handler.checkStopIsScheduled())
-            {
-                stopEventLoopWithTimeout();
-            }
+            messages.push(message_received);
         }
     })
     .onError([&](const char * message)
@@ -396,7 +378,7 @@ void ReadBufferFromRabbitMQConsumer::checkSubscription()
     /// These variables are updated in a separate thread.
     while (count_subscribed != wait_subscribed && !consumer_error)
     {
-        startEventLoop(loop_started);
+        startEventLoop();
     }
 
     LOG_TRACE(log, "Consumer {} is subscribed to {} queues", channel_id, count_subscribed);
@@ -413,21 +395,9 @@ void ReadBufferFromRabbitMQConsumer::checkSubscription()
 }
 
 
-void ReadBufferFromRabbitMQConsumer::stopEventLoop()
+void ReadBufferFromRabbitMQConsumer::startEventLoop()
 {
-    event_handler.stop();
-}
-
-
-void ReadBufferFromRabbitMQConsumer::stopEventLoopWithTimeout()
-{
-    event_handler.stopWithTimeout();
-}
-
-
-void ReadBufferFromRabbitMQConsumer::startEventLoop(std::atomic<bool> & loop_started)
-{
-    event_handler.startConsumerLoop(loop_started);
+    event_handler->startLoop();
 }
 
 
@@ -436,32 +406,16 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
     if (stopped || !allowed)
         return false;
 
-    if (current == messages.end())
+    if (messages.tryPop(current))
     {
-        if (received.empty())
-        {
-            /// Run the onReceived callbacks to save the messages that have been received by now, blocks current thread.
-            startEventLoop(loop_started);
-        }
+        auto * new_position = const_cast<char *>(current.data());
+        BufferBase::set(new_position, current.size(), 0);
+        allowed = false;
 
-        /// Needed to avoid data race because this vector can be used at the same time by another thread in onReceived callback.
-        std::lock_guard lock(mutex);
-
-        if (received.empty())
-            return false;
-
-        messages.clear();
-        messages.swap(received);
-        current = messages.begin();
+        return true;
     }
 
-    auto * new_position = const_cast<char *>(current->data());
-    BufferBase::set(new_position, current->size(), 0);
-
-    ++current;
-    allowed = false;
-
-    return true;
+    return false;
 }
 
 }
