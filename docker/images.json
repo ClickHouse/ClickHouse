@@ -15,10 +15,6 @@
             "docker/test/pvs"
         ]
     },
-    "docker/test/pvs": {
-        "name": "yandex/clickhouse-pvs-test",
-        "dependent": []
-    },
     "docker/test/coverage": {
         "name": "yandex/clickhouse-coverage",
         "dependent": []
