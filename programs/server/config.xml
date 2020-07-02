@@ -45,6 +45,18 @@
         -->
     </logger>
 
+    <send_crash_reports>
+        <!-- Changing <enabled> to true allows sending crash reports to -->
+        <!-- the ClickHouse core developers team via Sentry https://sentry.io -->
+        <!-- Doing so at least in pre-production environments is highly appreciated -->
+        <enabled>false</enabled>
+        <!-- Change <anonymize> to true if you don't feel comfortable attaching the server hostname to the crash report -->
+        <anonymize>false</anonymize>
+        <!-- Default endpoint should be changed to different Sentry DSN only if you have -->
+        <!-- some in-house engineers or hired consultants who're going to debug ClickHouse issues for you -->
+        <endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
+    </send_crash_reports>
+
     <!--display_name>production</display_name--> <!-- It is the name that will be shown in the client -->
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>

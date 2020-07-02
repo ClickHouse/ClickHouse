@@ -1,19 +1,87 @@
 {
-    "docker/packager/deb": "yandex/clickhouse-deb-builder",
-    "docker/packager/binary": "yandex/clickhouse-binary-builder",
-    "docker/test/coverage": "yandex/clickhouse-coverage",
-    "docker/test/compatibility/centos": "yandex/clickhouse-test-old-centos",
-    "docker/test/compatibility/ubuntu": "yandex/clickhouse-test-old-ubuntu",
-    "docker/test/integration/base": "yandex/clickhouse-integration-test",
-    "docker/test/performance-comparison": "yandex/clickhouse-performance-comparison",
-    "docker/test/stateful": "yandex/clickhouse-stateful-test",
-    "docker/test/stateful_with_coverage": "yandex/clickhouse-stateful-test-with-coverage",
-    "docker/test/stateless": "yandex/clickhouse-stateless-test",
-    "docker/test/stateless_pytest": "yandex/clickhouse-stateless-pytest",
-    "docker/test/stateless_with_coverage": "yandex/clickhouse-stateless-test-with-coverage",
-    "docker/test/unit": "yandex/clickhouse-unit-test",
-    "docker/test/stress": "yandex/clickhouse-stress-test",
-    "docker/test/split_build_smoke_test": "yandex/clickhouse-split-build-smoke-test",
-    "docker/test/codebrowser": "yandex/clickhouse-codebrowser",
-    "docker/test/integration/runner": "yandex/clickhouse-integration-tests-runner"
+    "docker/packager/deb": {
+        "name": "yandex/clickhouse-deb-builder",
+        "dependent": [
+            "docker/test/stateless",
+            "docker/test/stateless_with_coverage",
+            "docker/test/stateless_pytest",
+            "docker/test/coverage"
+        ]
+    },
+    "docker/packager/binary": {
+        "name": "yandex/clickhouse-binary-builder",
+        "dependent": [
+            "docker/test/split_build_smoke_test",
+            "docker/test/pvs"
+        ]
+    },
+    "docker/test/pvs": {
+        "name": "yandex/clickhouse-pvs-test",
+        "dependent": []
+    },
+    "docker/test/coverage": {
+        "name": "yandex/clickhouse-coverage",
+        "dependent": []
+    },
+    "docker/test/compatibility/centos": {
+        "name": "yandex/clickhouse-test-old-centos",
+        "dependent": []
+    },
+    "docker/test/compatibility/ubuntu": {
+        "name": "yandex/clickhouse-test-old-ubuntu",
+        "dependent": []
+    },
+    "docker/test/integration/base": {
+        "name": "yandex/clickhouse-integration-test",
+        "dependent": []
+    },
+    "docker/test/performance-comparison": {
+        "name": "yandex/clickhouse-performance-comparison",
+        "dependent": []
+    },
+    "docker/test/stateful": {
+        "name": "yandex/clickhouse-stateful-test",
+        "dependent": [
+            "docker/test/stress"
+        ]
+    },
+    "docker/test/stateful_with_coverage": {
+        "name": "yandex/clickhouse-stateful-test-with-coverage",
+        "dependent": []
+    },
+    "docker/test/stateless": {
+        "name": "yandex/clickhouse-stateless-test",
+        "dependent": [
+            "docker/test/stateful",
+            "docker/test/stateful_with_coverage"
+        ]
+    },
+    "docker/test/stateless_pytest": {
+        "name": "yandex/clickhouse-stateless-pytest",
+        "dependent": []
+    },
+    "docker/test/stateless_with_coverage": {
+        "name": "yandex/clickhouse-stateless-test-with-coverage",
+        "dependent": []
+    },
+    "docker/test/unit": {
+        "name": "yandex/clickhouse-unit-test",
+        "dependent": []
+    },
+    "docker/test/stress": {
+        "name": "yandex/clickhouse-stress-test",
+        "dependent": []
+    },
+    "docker/test/split_build_smoke_test": {
+        "name": "yandex/clickhouse-split-build-smoke-test",
+        "dependent": []
+    },
+    "docker/test/codebrowser": {
+        "name": "yandex/clickhouse-codebrowser",
+        "dependent": []
+    },
+    "docker/test/integration/runner": {
+        "name": "yandex/clickhouse-integration-tests-runner",
+        "dependent": []
+    }
 }

@@ -9,6 +9,7 @@ PEERDIR(
 SRCS(
     BaseDaemon.cpp
     GraphiteWriter.cpp
+    SentryWriter.cpp
 )
 
 END()

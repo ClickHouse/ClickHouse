@@ -71,26 +71,48 @@ struct AccessRightsElement
     {
     }
 
-    auto toTuple() const { return std::tie(access_flags, database, any_database, table, any_table, columns, any_column); }
+    auto toTuple() const { return std::tie(access_flags, any_database, database, any_table, table, any_column, columns); }
     friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
-    friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() != right.toTuple(); }
-    friend bool operator<(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() < right.toTuple(); }
-    friend bool operator>(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() > right.toTuple(); }
-    friend bool operator<=(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() <= right.toTuple(); }
-    friend bool operator>=(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() >= right.toTuple(); }
+    friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return !(left == right); }
 
-    /// Sets the database.
-    void setDatabase(const String & new_database);
+    bool sameDatabaseAndTable(const AccessRightsElement & other) const
+    {
+        return (database == other.database) && (any_database == other.any_database) && (table == other.table)
+            && (any_table == other.any_table);
+    }
+
+    bool isEmptyDatabase() const { return !any_database && database.empty(); }
 
     /// If the database is empty, replaces it with `new_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & new_database);
 
-    bool isEmptyDatabase() const;
-
     /// Returns a human-readable representation like "SELECT, UPDATE(x, y) ON db.table".
-    /// The returned string isn't prefixed with the "GRANT" keyword.
     String toString() const;
-    String toStringWithoutON() const;
+};
+
+
+struct AccessRightsElementWithOptions : public AccessRightsElement
+{
+    bool grant_option = false;
+
+    enum class Kind
+    {
+        GRANT,
+        REVOKE,
+    };
+    Kind kind = Kind::GRANT;
+
+    bool sameOptions(const AccessRightsElementWithOptions & other) const
+    {
+        return (grant_option == other.grant_option) && (kind == other.kind);
+    }
+
+    auto toTuple() const { return std::tie(access_flags, any_database, database, any_table, table, any_column, columns, grant_option, kind); }
+    friend bool operator==(const AccessRightsElementWithOptions & left, const AccessRightsElementWithOptions & right) { return left.toTuple() == right.toTuple(); }
+    friend bool operator!=(const AccessRightsElementWithOptions & left, const AccessRightsElementWithOptions & right) { return !(left == right); }
+
+    /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
+    String toString() const;
 };
 
 
@@ -101,13 +123,38 @@ public:
     /// Replaces the empty database with `new_database`.
     void replaceEmptyDatabase(const String & new_database);
 
-    /// Returns a human-readable representation like "SELECT, UPDATE(x, y) ON db.table".
-    /// The returned string isn't prefixed with the "GRANT" keyword.
-    String toString() const { return AccessRightsElements(*this).toString(); }
-    String toString();
-
-    /// Reorder and group elements to show them in more readable form.
-    void normalize();
+    /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
+    String toString() const;
 };
+
+
+class AccessRightsElementsWithOptions : public std::vector<AccessRightsElementWithOptions>
+{
+public:
+    /// Replaces the empty database with `new_database`.
+    void replaceEmptyDatabase(const String & new_database);
+
+    /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
+    String toString() const;
+};
+
+
+inline void AccessRightsElement::replaceEmptyDatabase(const String & new_database)
+{
+    if (isEmptyDatabase())
+        database = new_database;
+}
+
+inline void AccessRightsElements::replaceEmptyDatabase(const String & new_database)
+{
+    for (auto & element : *this)
+        element.replaceEmptyDatabase(new_database);
+}
+
+inline void AccessRightsElementsWithOptions::replaceEmptyDatabase(const String & new_database)
+{
+    for (auto & element : *this)
+        element.replaceEmptyDatabase(new_database);
+}
 
 }
