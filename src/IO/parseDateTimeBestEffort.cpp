@@ -88,7 +88,7 @@ struct DateTimeSubsecondPart
     UInt8 digits;
 };
 
-template <typename ReturnType, bool is_US_style>
+template <typename ReturnType, bool is_us_style>
 ReturnType parseDateTimeBestEffortImpl(
     time_t & res,
     ReadBuffer & in,
@@ -309,7 +309,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     if (month)
                         return on_error("Cannot read DateTime: month is duplicated", ErrorCodes::CANNOT_PARSE_DATETIME);
 
-                    if constexpr(is_US_style)
+                    if constexpr (is_us_style)
                     {
                         month = hour_or_day_of_month_or_month;
                         num_digits = readDigits(digits, sizeof(digits), in);
@@ -319,7 +319,6 @@ ReturnType parseDateTimeBestEffortImpl(
                             readDecimalNumber<1>(day_of_month, digits);
                         else
                             return on_error("Cannot read DateTime: unexpected number of decimal digits after month: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
-                            
                     }
                     else
                     {
@@ -544,7 +543,7 @@ ReturnType parseDateTimeBestEffortImpl(
 
     auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
 
-    auto checkDate = [](const auto & is_leap_year_, const auto & month_, const auto & day_)
+    auto check_date = [](const auto & is_leap_year_, const auto & month_, const auto & day_)
     {
         if ((month_ == 1 || month_ == 3 || month_ == 5 || month_ == 7 || month_ == 8 || month_ == 10 || month_ == 12) && day_ >=1 && day_ <= 31)
             return true;
@@ -555,7 +554,7 @@ ReturnType parseDateTimeBestEffortImpl(
         return false;
     };
 
-    if (!checkDate(is_leap_year, month, day_of_month))
+    if (!check_date(is_leap_year, month, day_of_month))
         return on_error("Cannot read DateTime: logical error, unexpected date: " + std::to_string(year) + "-" + std::to_string(month) + "-" + std::to_string(day_of_month), ErrorCodes::LOGICAL_ERROR);
 
     if (is_pm && hour < 12)
