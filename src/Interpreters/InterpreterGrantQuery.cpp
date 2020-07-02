@@ -16,7 +16,7 @@ namespace DB
 namespace
 {
     template <typename T>
-    void updateFromQueryImpl(T & grantee, const ASTGrantQuery & query, const std::vector<UUID> & roles_from_query, const String & current_database)
+    void updateFromQueryImpl(T & grantee, const ASTGrantQuery & query, const std::vector<UUID> & roles_from_query)
     {
         using Kind = ASTGrantQuery::Kind;
         if (!query.access_rights_elements.empty())
@@ -24,16 +24,16 @@ namespace
             if (query.kind == Kind::GRANT)
             {
                 if (query.grant_option)
-                    grantee.access.grantWithGrantOption(query.access_rights_elements, current_database);
+                    grantee.access.grantWithGrantOption(query.access_rights_elements);
                 else
-                    grantee.access.grant(query.access_rights_elements, current_database);
+                    grantee.access.grant(query.access_rights_elements);
             }
             else
             {
                 if (query.grant_option)
-                    grantee.access.revokeGrantOption(query.access_rights_elements, current_database);
+                    grantee.access.revokeGrantOption(query.access_rights_elements);
                 else
-                    grantee.access.revoke(query.access_rights_elements, current_database);
+                    grantee.access.revoke(query.access_rights_elements);
             }
         }
 
@@ -67,9 +67,9 @@ namespace
 BlockIO InterpreterGrantQuery::execute()
 {
     auto & query = query_ptr->as<ASTGrantQuery &>();
-    auto & access_control = context.getAccessControlManager();
+    query.replaceCurrentUserTagWithName(context.getUserName());
     auto access = context.getAccess();
-    access->checkGrantOption(query.access_rights_elements);
+    auto & access_control = context.getAccessControlManager();
 
     std::vector<UUID> roles_from_query;
     if (query.roles)
@@ -80,25 +80,24 @@ BlockIO InterpreterGrantQuery::execute()
     }
 
     if (!query.cluster.empty())
-    {
-        query.replaceCurrentUserTagWithName(context.getUserName());
-        return executeDDLQueryOnCluster(query_ptr, context);
-    }
+        return executeDDLQueryOnCluster(query_ptr, context, query.access_rights_elements, true);
+
+    query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
+    access->checkGrantOption(query.access_rights_elements);
 
     std::vector<UUID> to_roles = RolesOrUsersSet{*query.to_roles, access_control, context.getUserID()}.getMatchingIDs(access_control);
-    String current_database = context.getCurrentDatabase();
 
     auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
     {
         auto clone = entity->clone();
         if (auto user = typeid_cast<std::shared_ptr<User>>(clone))
         {
-            updateFromQueryImpl(*user, query, roles_from_query, current_database);
+            updateFromQueryImpl(*user, query, roles_from_query);
             return user;
         }
         else if (auto role = typeid_cast<std::shared_ptr<Role>>(clone))
         {
-            updateFromQueryImpl(*role, query, roles_from_query, current_database);
+            updateFromQueryImpl(*role, query, roles_from_query);
             return role;
         }
         else
@@ -116,7 +115,7 @@ void InterpreterGrantQuery::updateUserFromQuery(User & user, const ASTGrantQuery
     std::vector<UUID> roles_from_query;
     if (query.roles)
         roles_from_query = RolesOrUsersSet{*query.roles}.getMatchingIDs();
-    updateFromQueryImpl(user, query, roles_from_query, {});
+    updateFromQueryImpl(user, query, roles_from_query);
 }
 
 
@@ -125,7 +124,7 @@ void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery
     std::vector<UUID> roles_from_query;
     if (query.roles)
         roles_from_query = RolesOrUsersSet{*query.roles}.getMatchingIDs();
-    updateFromQueryImpl(role, query, roles_from_query, {});
+    updateFromQueryImpl(role, query, roles_from_query);
 }
 
 }
