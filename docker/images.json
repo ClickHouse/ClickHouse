@@ -11,8 +11,13 @@
     "docker/packager/binary": {
         "name": "yandex/clickhouse-binary-builder",
         "dependent": [
-            "docker/test/split_build_smoke_test"
+            "docker/test/split_build_smoke_test",
+            "docker/test/pvs"
         ]
+    },
+    "docker/test/pvs": {
+        "name": "yandex/clickhouse-pvs-test",
+        "dependent": []
     },
     "docker/test/coverage": {
         "name": "yandex/clickhouse-coverage",
