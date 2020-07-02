@@ -639,6 +639,13 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     }
     else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.input_order_info)
     {
+        size_t prefix_size = query_info.input_order_info->order_key_prefix_descr.size();
+        auto order_key_prefix_ast = data.getSortingKey().expression_list_ast->clone();
+        order_key_prefix_ast->children.resize(prefix_size);
+
+        auto syntax_result = SyntaxAnalyzer(context).analyze(order_key_prefix_ast, data.getColumns().getAllPhysical());
+        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActions(false);
+
         res = spreadMarkRangesAmongStreamsWithOrder(
             std::move(parts_with_ranges),
             num_streams,
@@ -646,9 +653,11 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             max_block_size,
             settings.use_uncompressed_cache,
             query_info,
+            sorting_key_prefix_expr,
             virt_column_names,
             settings,
-            reader_settings);
+            reader_settings,
+            result_projection);
     }
     else
     {
@@ -839,9 +848,11 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     UInt64 max_block_size,
     bool use_uncompressed_cache,
     const SelectQueryInfo & query_info,
+    const ExpressionActionsPtr & sorting_key_prefix_expr,
     const Names & virt_columns,
     const Settings & settings,
-    const MergeTreeReaderSettings & reader_settings) const
+    const MergeTreeReaderSettings & reader_settings,
+    ExpressionActionsPtr & out_projection) const
 {
     size_t sum_marks = 0;
     const InputOrderInfoPtr & input_order_info = query_info.input_order_info;
@@ -934,6 +945,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     {
         size_t need_marks = min_marks_per_stream;
 
+        Pipes pipes;
+
         /// Loop over parts.
         /// We will iteratively take part or some subrange of a part from the back
         ///  and assign a stream to read from it.
@@ -990,7 +1003,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
 
             if (input_order_info->direction == 1)
             {
-                res.emplace_back(std::make_shared<MergeTreeSelectProcessor>(
+                pipes.emplace_back(std::make_shared<MergeTreeSelectProcessor>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, query_info.prewhere_info, true, reader_settings,
@@ -998,15 +1011,35 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             }
             else
             {
-                res.emplace_back(std::make_shared<MergeTreeReverseSelectProcessor>(
+                pipes.emplace_back(std::make_shared<MergeTreeReverseSelectProcessor>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, query_info.prewhere_info, true, reader_settings,
                     virt_columns, part.part_index_in_query));
 
-                res.back().addSimpleTransform(std::make_shared<ReverseTransform>(res.back().getHeader()));
+                pipes.back().addSimpleTransform(std::make_shared<ReverseTransform>(pipes.back().getHeader()));
             }
         }
+
+        if (pipes.size() > 1)
+        {
+            SortDescription sort_description;
+            for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
+                sort_description.emplace_back(data.getSortingKey().column_names[j],
+                      input_order_info->direction, 1);
+
+            /// Drop temporary columns, added by 'sorting_key_prefix_expr'
+            out_projection = createProjection(pipes.back(), data);
+            for (auto & pipe : pipes)
+                pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), sorting_key_prefix_expr));
+
+            auto merging_sorted = std::make_shared<MergingSortedTransform>(
+                pipes.back().getHeader(), pipes.size(), sort_description, max_block_size);
+
+            res.emplace_back(std::move(pipes), std::move(merging_sorted));
+        }
+        else
+            res.emplace_back(std::move(pipes.front()));
     }
 
     return res;
