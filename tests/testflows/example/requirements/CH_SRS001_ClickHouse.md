@@ -67,7 +67,7 @@ cat CH_SRS001_ClickHouse.md | tfs requirements generate > requirements.py
 
 ## Terminology
 
-You can define terminolgy using the examples below and make you can make them
+You can define terminolgy using the examples below and you can make them
 linkable as [SRS] by defining the links in the [References](#References) section.
 
 ### SRS
