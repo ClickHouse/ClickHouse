@@ -1,5 +1,3 @@
-#include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
@@ -152,11 +150,7 @@ Block RabbitMQBlockInputStream::readImpl()
         result_block.insert(column);
     }
 
-    return ConvertingBlockInputStream(
-            std::make_shared<OneBlockInputStream>(result_block),
-            getHeader(),
-            ConvertingBlockInputStream::MatchColumnsMode::Name)
-            .read();
+    return result_block;
 }
 
 }

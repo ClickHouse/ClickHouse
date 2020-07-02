@@ -816,7 +816,7 @@ def test_rabbitmq_insert(rabbitmq_cluster):
             channel.stop_consuming()
 
     consumer.basic_qos(prefetch_count=50)
-    consumer.basic_consume(onReceived, queue_name)
+    consumer.basic_consume(queue_name, onReceived)
     consumer.start_consuming()
     consumer_connection.close()
 
