@@ -420,9 +420,6 @@ void ReadBufferFromKafkaConsumer::resetIfStopped()
 /// Do commit messages implicitly after we processed the previous batch.
 bool ReadBufferFromKafkaConsumer::nextImpl()
 {
-    /// NOTE: ReadBuffer was implemented with an immutable underlying contents in mind.
-    ///       If we failed to poll any message once - don't try again.
-    ///       Otherwise, the |poll_timeout| expectations get flawn.
     if (!allowed || !hasMorePolledMessages())
         return false;
 
