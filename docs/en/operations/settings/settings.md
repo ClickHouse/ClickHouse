@@ -1416,6 +1416,23 @@ Possible values:
 
 Default value: 16.
 
+## always_fetch_merged_part {#always_fetch_merged_part}
+
+Prohibits data parts merging in [Replicated*MergeTree](../../engines/table-engines/mergetree-family/replication.md)-engine tables.
+
+When merging is prohibited, the replica never merges parts and always downloads merged parts from other replicas. If there is no required data yet, the replica waits for it. CPU and disk load on the replica server decreases, but the network load on cluster increases. This setting can be useful on servers with relatively weak CPUs or slow disks, such as servers for backups storage.
+
+Possible values:
+
+-   0 — `Replicated*MergeTree`-engine tables merge data parts at the replica.
+-   1 — `Replicated*MergeTree`-engine tables don't merge data parts at the replica. The tables download merged data parts from other replicas.
+
+Default value: 0.
+
+**See Also** 
+
+-   [Data Replication](../../engines/table-engines/mergetree-family/replication.md)
+
 ## background\_distributed\_schedule\_pool\_size {#background_distributed_schedule_pool_size}
 
 Sets the number of threads performing background tasks for [distributed](../../engines/table-engines/special/distributed.md) sends. This setting is applied at ClickHouse server start and can’t be changed in a user session.
