@@ -27,6 +27,7 @@ RUN apt-get update \
     luajit \
     libssl-dev \
     gdb \
+    virtualenv \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
@@ -35,8 +36,9 @@ RUN apt-get update \
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+RUN mkdir /venv && virtualenv /venv
 
-RUN pip install urllib3==1.23 pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike pytest-timeout minio rpm-confluent-schemaregistry grpcio grpcio-tools cassandra-driver
+RUN /bin/bash -c "source /venv/bin/activate && pip install requests urllib3 pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2-binary==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike pytest-timeout minio rpm-confluent-schemaregistry grpcio grpcio-tools cassandra-driver"
 
 ENV DOCKER_CHANNEL stable
 ENV DOCKER_VERSION 17.09.1-ce
@@ -73,5 +75,4 @@ RUN set -x \
 VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
-CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
-
+CMD ["bash", "-c", "source /venv/bin/activate && pytest $PYTEST_OPTS"]
