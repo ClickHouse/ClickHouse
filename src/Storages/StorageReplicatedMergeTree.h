@@ -101,7 +101,13 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
-    bool optimize(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context) override;
+    bool optimize(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ASTPtr & partition,
+        bool final,
+        bool deduplicate,
+        const Context & query_context) override;
 
     void alter(const AlterCommands & params, const Context & query_context, TableLockHolder & table_lock_holder) override;
 
@@ -545,6 +551,8 @@ private:
 
     MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
+    void startBackgroundMovesIfNeeded() override;
+
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
@@ -560,7 +568,6 @@ protected:
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
-
 };
 
 

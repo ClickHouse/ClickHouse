@@ -123,3 +123,6 @@
 01303_aggregate_function_nothing_serde
 01319_query_formatting_in_server_log
 01326_build_id
+01053_ssd_dictionary
+01280_ssd_complex_key_dictionary
+01354_order_by_tuple_collate_const
