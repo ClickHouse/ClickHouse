@@ -23,7 +23,7 @@
 * Use HTTP client for S3 based on Poco. [#11230](https://github.com/ClickHouse/ClickHouse/pull/11230) ([Pavel Kovalenko](https://github.com/Jokser)).
 * Add query performance metrics based on Linux `perf_events`. [#9545](https://github.com/ClickHouse/ClickHouse/pull/9545) [Andrey Skobtsov](https://github.com/And42). [#11226](https://github.com/ClickHouse/ClickHouse/pull/11226) ([Alexander Kuzmenkov](https://github.com/akuzm)).
 * Default S3 credentials and custom auth headers. [#11134](https://github.com/ClickHouse/ClickHouse/pull/11134) ([Grigory Pervakov](https://github.com/GrigoryPervakov)).
-* - Add's a hasSubStr function that allows for look for sub sequences in arrays. [#11071](https://github.com/ClickHouse/ClickHouse/pull/11071) ([Ryad Zenine](https://github.com/r-zenine)).
+* Add's a hasSubStr function that allows for look for sub sequences in arrays. [#11071](https://github.com/ClickHouse/ClickHouse/pull/11071) ([Ryad Zenine](https://github.com/r-zenine)).
 * Now support NULL and NOT NULL modifiers for data types in create query. [#11057](https://github.com/ClickHouse/ClickHouse/pull/11057) ([Павел Потемкин](https://github.com/Potya)).
 * Added new functions to import/export DateTime64 as Int64 with various precision: `to-/fromUnixTimestamp64Milli/-Micro/-Nano`. [#10923](https://github.com/ClickHouse/ClickHouse/pull/10923) ([Vasily Nemkov](https://github.com/Enmk)).
 * Allow specifying `mongodb://` URI for MongoDB dictionaries. [#10915](https://github.com/ClickHouse/ClickHouse/pull/10915) ([Alexander Kuzmenkov](https://github.com/akuzm)).
@@ -48,9 +48,8 @@
 
 #### Bug Fix
 
-* Fix rare crash caused by using Nullable column in prewhere condition. Continuation of [#11869](https://github.com/ClickHouse/ClickHouse/issues/11869). [#11895](https://github.com/ClickHouse/ClickHouse/pull/11895) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Fix potential floating point exception when parsing DateTime64. This fixes [#11374](https://github.com/ClickHouse/ClickHouse/issues/11374). [#11875](https://github.com/ClickHouse/ClickHouse/pull/11875) ([alexey-milovidov](https://github.com/alexey-milovidov)).
-* Fix rare crash caused by using `Nullable` column in prewhere condition. Continuation of [#11608](https://github.com/ClickHouse/ClickHouse/issues/11608). [#11869](https://github.com/ClickHouse/ClickHouse/pull/11869) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fix rare crash caused by using `Nullable` column in prewhere condition. [#11895](https://github.com/ClickHouse/ClickHouse/pull/11895) [#11608](https://github.com/ClickHouse/ClickHouse/issues/11608) [#11869](https://github.com/ClickHouse/ClickHouse/pull/11869) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Don't allow arrayJoin inside higher order functions. It was leading to broken protocol synchronization. This closes [#3933](https://github.com/ClickHouse/ClickHouse/issues/3933). [#11846](https://github.com/ClickHouse/ClickHouse/pull/11846) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Fix wrong result of comparison of FixedString with constant String. This fixes [#11393](https://github.com/ClickHouse/ClickHouse/issues/11393). This bug appeared in version 20.4. [#11828](https://github.com/ClickHouse/ClickHouse/pull/11828) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Fix wrong result for `if()` with NULLs in condition. [#11807](https://github.com/ClickHouse/ClickHouse/pull/11807) ([Artem Zuikov](https://github.com/4ertus2)).
@@ -72,7 +71,6 @@
 * Add support for regular expressions with case-insensitive flags. This fixes [#11101](https://github.com/ClickHouse/ClickHouse/issues/11101) and fixes [#11506](https://github.com/ClickHouse/ClickHouse/issues/11506). [#11649](https://github.com/ClickHouse/ClickHouse/pull/11649) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Remove trivial count query optimization if row-level security is set. In previous versions the user get total count of records in a table instead filtered. This fixes [#11352](https://github.com/ClickHouse/ClickHouse/issues/11352). [#11644](https://github.com/ClickHouse/ClickHouse/pull/11644) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Fix bloom filters for String (data skipping indices). [#11638](https://github.com/ClickHouse/ClickHouse/pull/11638) ([Azat Khuzhin](https://github.com/azat)).
-* Fix rare crash caused by using `Nullable` column in prewhere condition. (Probably it is connected with [#11572](https://github.com/ClickHouse/ClickHouse/issues/11572) somehow). [#11608](https://github.com/ClickHouse/ClickHouse/pull/11608) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * without -q option the database does not get created at startup. [#11604](https://github.com/ClickHouse/ClickHouse/pull/11604) ([giordyb](https://github.com/giordyb)).
 * Fix error `Block structure mismatch` for queries with sampling reading from `Buffer` table. [#11602](https://github.com/ClickHouse/ClickHouse/pull/11602) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Fix wrong exit code of the clickhouse-client, when exception.code() % 256 = 0. [#11601](https://github.com/ClickHouse/ClickHouse/pull/11601) ([filimonov](https://github.com/filimonov)).
