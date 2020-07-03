@@ -97,6 +97,48 @@ def test_admin_option():
     assert instance.query("SELECT * FROM test_table", user='B') == "1\t5\n2\t10\n"
 
 
+def test_revoke_requires_admin_option():
+    instance.query("CREATE USER A, B")
+    instance.query("CREATE ROLE R1, R2")
+    
+    instance.query("GRANT R1 TO B")
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B\n"
+
+    expected_error = "necessary to have the role R1 granted"
+    assert expected_error in instance.query_and_get_error("REVOKE R1 FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B\n"
+
+    instance.query("GRANT R1 TO A")
+    expected_error = "granted, but without ADMIN option"
+    assert expected_error in instance.query_and_get_error("REVOKE R1 FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B\n"
+
+    instance.query("GRANT R1 TO A WITH ADMIN OPTION")
+    instance.query("REVOKE R1 FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == ""
+
+    instance.query("GRANT R1 TO B")
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B\n"
+    instance.query("REVOKE ALL FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == ""
+
+    instance.query("GRANT R1, R2 TO B")
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1, R2 TO B\n"
+    expected_error = "necessary to have the role R2 granted"
+    assert expected_error in instance.query_and_get_error("REVOKE ALL FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1, R2 TO B\n"
+    instance.query("REVOKE ALL EXCEPT R2 FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R2 TO B\n"
+    instance.query("GRANT R2 TO A WITH ADMIN OPTION")
+    instance.query("REVOKE ALL FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == ""
+
+    instance.query("GRANT R1, R2 TO B")
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1, R2 TO B\n"
+    instance.query("REVOKE ALL FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == ""
+
+
 def test_introspection():
     instance.query("CREATE USER A")
     instance.query("CREATE USER B")
