@@ -690,6 +690,10 @@ def collect_tests_to_skip(skip_list_path, build_flags):
         skip_dict = json.load(skip_list_file)
         for build_flag in build_flags:
             result |= set(skip_dict[build_flag])
+
+    if len(result) > 0:
+        print("Found file with skip-list {}, {} test will be skipped".format(skip_list_path, len(result)))
+
     return result
 
 if __name__ == '__main__':
