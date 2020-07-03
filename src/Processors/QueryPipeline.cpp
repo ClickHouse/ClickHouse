@@ -563,12 +563,12 @@ void QueryPipeline::setOutputFormat(ProcessorPtr output)
 }
 
 void QueryPipeline::unitePipelines(
-    std::vector<std::unique_ptr<QueryPipeline>> pipelines, const Block & common_header)
+    std::vector<std::unique_ptr<QueryPipeline>> pipelines, const Block & common_header, size_t max_threads_limit)
 {
     /// Should we limit the number of threads for united pipeline. True if all pipelines have max_threads != 0.
     /// If true, result max_threads will be sum(max_threads).
     /// Note: it may be > than settings.max_threads, so we should apply this limit again.
-    bool limit_max_threads = !initialized() || max_threads != 0;
+    bool will_limit_max_threads = !initialized() || max_threads != 0;
 
     if (initialized())
     {
@@ -631,11 +631,18 @@ void QueryPipeline::unitePipelines(
         storage_holders.insert(storage_holders.end(), pipeline.storage_holders.begin(), pipeline.storage_holders.end());
 
         max_threads += pipeline.max_threads;
-        limit_max_threads = limit_max_threads && pipeline.max_threads != 0;
+        will_limit_max_threads = will_limit_max_threads && pipeline.max_threads != 0;
+
+        /// If one of pipelines uses more threads then current limit, will keep it.
+        /// It may happen if max_distributed_connections > max_threads
+        if (pipeline.max_threads > max_threads_limit)
+            max_threads_limit = pipeline.max_threads;
     }
 
-    if (!limit_max_threads)
+    if (!will_limit_max_threads)
         max_threads = 0;
+    else
+        max_threads = max_threads_limit;
 
     if (!extremes.empty())
     {

@@ -27,8 +27,7 @@ QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines)
         return pipeline;
     }
 
-    pipeline->unitePipelines(std::move(pipelines), output_stream->header);
-    pipeline->limitMaxThreads(max_threads);
+    pipeline->unitePipelines(std::move(pipelines), output_stream->header ,max_threads);
 
     return pipeline;
 }
