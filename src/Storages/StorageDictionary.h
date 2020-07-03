@@ -31,13 +31,21 @@ public:
     const String & dictionaryName() const { return dictionary_name; }
 
 private:
-    String dictionary_name;
+    const String dictionary_name;
+    const bool internal = false;
 
 protected:
     StorageDictionary(
         const StorageID & table_id_,
         const String & dictionary_name_,
-        const DictionaryStructure & dictionary_structure);
+        const ColumnsDescription & columns_,
+        bool internal_ = false);
+
+    StorageDictionary(
+        const StorageID & table_id_,
+        const String & dictionary_name_,
+        const DictionaryStructure & dictionary_structure,
+        bool internal_ = false);
 };
 
 }

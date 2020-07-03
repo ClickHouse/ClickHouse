@@ -28,7 +28,7 @@ namespace
             if (!load_result.config)
                 return nullptr;
             DictionaryStructure dictionary_structure = ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
-            return StorageDictionary::create(StorageID(database_name, load_result.name), load_result.name, dictionary_structure);
+            return StorageDictionary::create(StorageID(database_name, load_result.name), load_result.name, dictionary_structure, /* internal */ true);
         }
         catch (Exception & e)
         {
