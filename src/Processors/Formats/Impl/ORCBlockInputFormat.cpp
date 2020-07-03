@@ -23,7 +23,9 @@ ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_) : IInp
 {
 }
 
-Chunk ORCBlockInputFormat::generate()
+/// Attribute is used to avoid an error with undefined behaviour sanitizer
+/// ../contrib/FastMemcpy/FastMemcpy.h:91:56: runtime error: applying zero offset to null pointer
+__attribute__((__no_sanitize__("undefined"))) Chunk ORCBlockInputFormat::generate()
 {
     Chunk res;
     const Block & header = getPort().getHeader();
