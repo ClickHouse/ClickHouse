@@ -464,7 +464,11 @@ def main(args):
     if not check_server_started(args.client, args.server_check_retries):
         raise Exception("clickhouse-server is not responding. Cannot execute 'SELECT 1' query.")
     build_flags = collect_build_flags(args.client)
-    tests_to_skip_from_list = collect_tests_to_skip(args.skip_list, build_flags)
+    if args.use_skip_list:
+        tests_to_skip_from_list = collect_tests_to_skip(args.skip_list_path, build_flags)
+    else:
+        tests_to_skip_from_list = {}
+
     if args.skip:
         args.skip = set(args.skip) | tests_to_skip_from_list
     else:
@@ -719,7 +723,8 @@ if __name__ == '__main__':
     parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
     parser.add_argument('-U', '--unified', default=3, type=int, help='output NUM lines of unified context')
     parser.add_argument('-r', '--server-check-retries', default=30, type=int, help='Num of tries to execute SELECT 1 before tests started')
-    parser.add_argument('--skip-list', help="Path to skip-list file")
+    parser.add_argument('--skip-list-path', help="Path to skip-list file")
+    parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
@@ -749,8 +754,8 @@ if __name__ == '__main__':
         print("Failed to detect path to the queries directory. Please specify it with '--queries' option.", file=sys.stderr)
         exit(1)
 
-    if args.skip_list is None:
-        args.skip_list = os.path.join(args.queries, 'skip_list.json')
+    if args.skip_list_path is None:
+        args.skip_list_path = os.path.join(args.queries, 'skip_list.json')
 
     if args.tmp is None:
         args.tmp = args.queries
