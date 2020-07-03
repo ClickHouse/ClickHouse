@@ -34,7 +34,7 @@ By default, the ClickHouse server provides the `default` user account which is n
 If you just started using ClickHouse, consider the following scenario:
 
 1.  [Enable](#enabling-access-control) SQL-driven access control and account management for the `default` user.
-2.  Log in to the `default` user account and create all the required users. Don’t forget to create an administrator account (`GRANT ALL ON *.* WITH GRANT OPTION TO admin_user_account`).
+2.  Log in to the `default` user account and create all the required users. Don’t forget to create an administrator account (`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`).
 3.  [Restrict permissions](../operations/settings/permissions-for-queries.md#permissions_for_queries) for the `default` user and disable SQL-driven access control and account management for it.
 
 ### Properties of Current Solution {#access-control-properties}
