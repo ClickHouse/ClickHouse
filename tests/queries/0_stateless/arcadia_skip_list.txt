@@ -123,7 +123,8 @@
 01294_system_distributed_on_cluster
 01297_alter_distributed
 01303_aggregate_function_nothing_serde
-01307_orc_output_format 
-01308_orc_output_format_arrays 
+01307_orc_output_format
+01308_orc_output_format_arrays
 01319_query_formatting_in_server_log
 01326_build_id
+01354_order_by_tuple_collate_const

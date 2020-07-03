@@ -9,7 +9,9 @@ static ITransformingStep::DataStreamTraits getTraits()
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = true
+            .preserves_distinct_columns = true,
+            .returns_single_stream = false,
+            .preserves_number_of_streams = true,
     };
 }
 
@@ -24,7 +26,6 @@ LimitStep::LimitStep(
     , always_read_till_end(always_read_till_end_)
     , with_ties(with_ties_), description(std::move(description_))
 {
-
 }
 
 void LimitStep::transformPipeline(QueryPipeline & pipeline)

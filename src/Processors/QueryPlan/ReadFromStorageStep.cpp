@@ -113,7 +113,7 @@ ReadFromStorageStep::ReadFromStorageStep(
         }
     }
 
-    if (pipes.size() == 1)
+    if (pipes.size() == 1 && !storage->isView())
         pipeline->setMaxThreads(1);
 
     for (auto & pipe : pipes)
@@ -124,7 +124,7 @@ ReadFromStorageStep::ReadFromStorageStep(
     pipeline->addInterpreterContext(std::move(context));
     pipeline->addStorageHolder(std::move(storage));
 
-    output_stream = DataStream{.header = pipeline->getHeader()};
+    output_stream = DataStream{.header = pipeline->getHeader(), .has_single_port = pipeline->getNumStreams() == 1};
 }
 
 ReadFromStorageStep::~ReadFromStorageStep() = default;
