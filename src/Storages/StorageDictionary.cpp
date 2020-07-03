@@ -96,19 +96,29 @@ String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesLi
 StorageDictionary::StorageDictionary(
     const StorageID & table_id_,
     const String & dictionary_name_,
-    const DictionaryStructure & dictionary_structure_)
+    const ColumnsDescription & columns_,
+    bool internal_)
     : IStorage(table_id_)
     , dictionary_name(dictionary_name_)
+    , internal(internal_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription{getNamesAndTypes(dictionary_structure_)});
+    storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
+}
+
+
+StorageDictionary::StorageDictionary(
+    const StorageID & table_id_, const String & dictionary_name_, const DictionaryStructure & dictionary_structure_, bool internal_)
+    : StorageDictionary(table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, internal_)
+{
 }
 
 
 void StorageDictionary::checkTableCanBeDropped() const
 {
-    throw Exception("Cannot detach dictionary " + backQuote(dictionary_name) + " as table, use DETACH DICTIONARY query.", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
+    if (internal)
+        throw Exception("Cannot detach dictionary " + backQuote(dictionary_name) + " as table, use DETACH DICTIONARY query.", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
 }
 
 Pipes StorageDictionary::read(
@@ -141,11 +151,14 @@ void registerStorageDictionary(StorageFactory & factory)
         args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], args.local_context);
         String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-        const auto & dictionary = args.context.getExternalDictionariesLoader().getDictionary(dictionary_name);
-        const DictionaryStructure & dictionary_structure = dictionary->getStructure();
-        checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
+        if (!args.attach)
+        {
+            const auto & dictionary = args.context.getExternalDictionariesLoader().getDictionary(dictionary_name);
+            const DictionaryStructure & dictionary_structure = dictionary->getStructure();
+            checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
+        }
 
-        return StorageDictionary::create(args.table_id, dictionary_name, dictionary_structure);
+        return StorageDictionary::create(args.table_id, dictionary_name, args.columns);
     });
 }
 
