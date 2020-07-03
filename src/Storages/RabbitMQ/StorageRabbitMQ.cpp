@@ -77,8 +77,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
         , login_password(std::make_pair(
-                    global_context.getConfigRef().getString("rabbitmq_username", "root"),
-                    global_context.getConfigRef().getString("rabbitmq_password", "clickhouse")))
+                    global_context.getConfigRef().getString("rabbitmq.username"),
+                    global_context.getConfigRef().getString("rabbitmq.password")))
         , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
 {
     loop = std::make_unique<uv_loop_t>();

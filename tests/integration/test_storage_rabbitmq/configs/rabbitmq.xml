@@ -1,5 +1,6 @@
 <yandex>
     <rabbitmq>
-        <auto_offset_reset>earliest</auto_offset_reset>
+        <username>root</username>
+        <password>clickhouse</password>
     </rabbitmq>
 </yandex>
