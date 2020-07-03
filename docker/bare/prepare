@@ -5,7 +5,8 @@ set -e
 SRC_DIR=../..
 BUILD_DIR=${SRC_DIR}/build
 
-# BTW, .so files are acceptable from any Linux distribution for the last 12 years at least.
+# BTW, .so files are acceptable from any Linux distribution for the last 12 years (at least).
+# See https://presentations.clickhouse.tech/cpp_russia_2020/ for the details.
 
 mkdir root
 pushd root
