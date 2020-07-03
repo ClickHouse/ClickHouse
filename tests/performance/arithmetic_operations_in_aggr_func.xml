@@ -9,5 +9,5 @@
 
     <query>SELECT max(-1 + (((-2 + (number + -3)) + -4) + -5)) FROM numbers(50000000)</query>
 
-    <query>SELECT max(((((number) * 10) * -2) * 3) * 2) + min(((((number) * 10) * -2) * 3) * 2) FROM numbers(5000000)</query>
+    <query>SELECT max(((((number) * 10) * -2) * 3) * 2) + min(((((number) * 10) * -2) * 3) * 2) FROM numbers(50000000)</query>
 </test>

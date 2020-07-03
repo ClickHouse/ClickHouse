@@ -38,7 +38,7 @@
 <query>SELECT UserID, SearchPhrase, count() FROM {table} GROUP BY UserID, SearchPhrase ORDER BY count() DESC LIMIT 10</query>
 <query>SELECT UserID, SearchPhrase, count() FROM {table} GROUP BY UserID, SearchPhrase LIMIT 10</query>
 <query>SELECT UserID, toMinute(EventTime) AS m, SearchPhrase, count() FROM {table} GROUP BY UserID, m, SearchPhrase ORDER BY count() DESC LIMIT 10</query>
-<query>SELECT count() FROM hits_100m_single WHERE UserID = 12345678901234567890</query>
+<query short="1">SELECT count() FROM hits_100m_single WHERE UserID = 12345678901234567890</query>
 <query>SELECT count() FROM hits_100m_single WHERE URL LIKE '%metrika%'</query>
 <query>SELECT SearchPhrase, any(URL), count() AS c FROM hits_100m_single WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10</query>
 <query>SELECT SearchPhrase, any(URL), any(Title), count() AS c, uniq(UserID) FROM {table} WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10</query>

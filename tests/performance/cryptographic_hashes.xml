@@ -47,8 +47,8 @@
         <substitution>
            <name>numbers_large</name>
            <values>
-               <value>numbers(1000000)</value>
-               <value>numbers_mt(10000000)</value>
+               <value>numbers(100000000)</value>
+               <value>numbers_mt(1000000000)</value>
            </values>
         </substitution>
     </substitutions>
