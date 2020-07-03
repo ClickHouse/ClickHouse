@@ -5,6 +5,8 @@ set -e
 SRC_DIR=../..
 BUILD_DIR=${SRC_DIR}/build
 
+# BTW, .so files are acceptable from any Linux distribution for the last 12 years at least.
+
 mkdir root
 pushd root
 mkdir lib lib64 etc tmp root
