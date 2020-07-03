@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/Context.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <IO/WriteHelpers.h>
@@ -62,7 +63,6 @@ namespace ErrorCodes
 
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
 
-class Context;
 class QueryLog;
 class QueryThreadLog;
 class PartLog;
@@ -161,6 +161,7 @@ protected:
 private:
     /* Saving thread data */
     Context & context;
+    Context insert_context;
     const StorageID table_id;
     const String storage_def;
     StoragePtr table;
@@ -207,11 +208,13 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     const String & storage_def_,
     size_t flush_interval_milliseconds_)
     : context(context_)
+    , insert_context(Context(context_))
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_)
     , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
+    insert_context.makeQueryContext(); // we need query context to do inserts to target table with MV containing subqueries or joins
     log = &Poco::Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
 }
 
@@ -425,7 +428,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         insert->table_id = table_id;
         ASTPtr query_ptr(insert.release());
 
-        InterpreterInsertQuery interpreter(query_ptr, context);
+        InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
         io.out->writePrefix();
