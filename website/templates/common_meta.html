@@ -26,7 +26,7 @@
 <meta name="description" content="{{ description }}" />
 {% if page and page.meta.tags %}
 <meta name="keywords"
-      content="{% for tag in page.meta.tags%}{{tag}}{{ ', ' if not loop.last }}{% endfor %}" />
+      content="{% for tag in page.meta.tags %}{{tag}}{{ ', ' if not loop.last }}{% endfor %}" />
 {% else %}
 <meta name="keywords"
       content="ClickHouse, DBMS, OLAP, SQL, {{ _('open-source') }}, {{ _('relational') }}, {{ _('analytics') }}, {{ _('analytical') }}, {{ _('Big Data') }}, {{ _('web-analytics') }}" />
@@ -45,3 +45,7 @@
 {% for prefetch_item in prefetch_items %}
 <link rel="prefetch" href="{{ prefetch_item.0 }}" as="{{ prefetch_item.1 }}" />
 {% endfor %}
+
+{% if is_blog %}
+<link rel="alternate" type="application/rss+xml" href="{{ config.site_url }}rss.xml" />
+{% endif %}

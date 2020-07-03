@@ -47,7 +47,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
+        return std::make_shared<DataTypeArray>(this->argument_types[0]);
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override

@@ -29,8 +29,9 @@ struct DDLTask;
 
 
 /// Pushes distributed DDL query to the queue
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_required_access);
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access, bool query_requires_grant_option = false);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_requires_access, bool query_requires_grant_option = false);
 
 
 class DDLWorker
