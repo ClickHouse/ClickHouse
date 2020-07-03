@@ -422,7 +422,7 @@ def collect_build_flags(client):
     (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.build_options WHERE name = 'UNBUNDLED'")
 
     if clickhouse_proc.returncode == 0:
-        if 'ON' in stdout:
+        if 'ON' in stdout or '1' in stdout:
             result.append(BuildFlags.UNBUNDLED)
     else:
         raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
