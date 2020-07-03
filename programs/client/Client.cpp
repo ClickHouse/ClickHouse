@@ -790,12 +790,32 @@ private:
         std::string text;
         while (!in.eof())
         {
-            readStringInto(text, in);
-            // Append the separator as well
-            if (!in.eof())
+            // Read until ';'
+            while (!in.eof())
             {
-                text.append(1, *in.position());
-                ++in.position();
+                char * next_semicolon = find_first_symbols<';'>(in.position(),
+                    in.buffer().end());
+
+                if (next_semicolon < in.buffer().end())
+                {
+                    // Found the semicolon, append it as well.
+                    next_semicolon++;
+                    text.append(in.position(), next_semicolon - in.position());
+                    in.position() = next_semicolon;
+                    break;
+                }
+
+                // Didn't find the semicolon and reached the end of buffer.
+                text.append(in.position(), next_semicolon - in.position());
+                in.position() = next_semicolon;
+
+                if (text.size() > 1024 * 1024)
+                {
+                    // We've read a lot of text and still haven't seen a semicolon.
+                    // Likely some pathological input, just fall through to prevent
+                    // too long loops.
+                    break;
+                }
             }
 
             fprintf(stderr, "will now parse '%s'\n", text.c_str());
@@ -824,14 +844,15 @@ private:
                 return;
             }
 
-            if (text.size() > 1024 * 1024)
+            if (text.size() > 4 * 1024)
             {
                 // Some pathological situation where the text is larger than 1MB
                 // and we still cannot parse a single query in it. Abort.
                 std::cerr << "Read too much text and still can't parse a query."
                      " Aborting." << std::endl;
                 last_exception_received_from_server.reset(new Exception(1, "~"));
-                return;
+                // return;
+                exit(1);
             }
         }
     }
@@ -992,6 +1013,9 @@ private:
             ASTPtr fuzz_base = orig_ast;
             for (int fuzz_step = 0; fuzz_step < query_fuzzer_runs; fuzz_step++)
             {
+                fprintf(stderr, "fuzzing step %d for query at pos %zd\n",
+                    fuzz_step, this_query_begin - text.data());
+
                 ASTPtr ast_to_process;
                 try
                 {
@@ -1001,7 +1025,13 @@ private:
                     auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 
                     // Debug AST cloning errors.
-                    assert(base_before_fuzz == base_after_fuzz);
+                    if (base_before_fuzz != base_after_fuzz)
+                    {
+                        fprintf(stderr, "base before fuzz: %s\n"
+                            "base after fuzz: %s\n", base_before_fuzz.c_str(),
+                            base_after_fuzz.c_str());
+                        assert(false);
+                    }
 
                     auto fuzzed_text = ast_to_process->formatForErrorMessage();
                     if (fuzz_step > 0 && fuzzed_text == base_before_fuzz)
@@ -1030,7 +1060,7 @@ private:
                 }
                 else if (ast_to_process->formatForErrorMessage().size() > 500)
                 {
-                    // ast too long, please no; start from original ast
+                    // ast too long, start from original ast
                     fprintf(stderr, "current ast too long, won't elaborate\n");
                     fuzz_base = orig_ast;
                 }
@@ -1043,7 +1073,7 @@ private:
             }
         }
 
-        return end;
+        return begin;
     }
 
     void processTextAsSingleQuery(const String & text_)
@@ -1712,8 +1742,11 @@ private:
         processed_rows += block.rows();
         initBlockOutputStream(block);
 
-        /// The header block containing zero rows was used to initialize block_out_stream, do not output it.
-        if (block.rows() != 0)
+        /// The header block containing zero rows was used to initialize
+        /// block_out_stream, do not output it.
+        /// Also do not output too much data if we're fuzzing.
+        if (block.rows() != 0
+            && (query_fuzzer_runs == 0 || processed_rows < 100))
         {
             block_out_stream->write(block);
             written_first_block = true;

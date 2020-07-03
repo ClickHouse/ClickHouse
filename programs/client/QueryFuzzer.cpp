@@ -66,6 +66,7 @@ Field QueryFuzzer::getRandomField(int type)
     }
     default:
         assert(false);
+        return Null{};
     }
 }
 
