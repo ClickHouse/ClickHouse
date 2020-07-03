@@ -8,5 +8,6 @@
 # But the ClickHouse source code is also mirrored into internal monorepository and our collegues are using Arc.
 # You can read more about Arc here: https://habr.com/en/company/yandex/blog/482926/
 
+
 # Repository is synchronized without 3rd-party submodules.
 contrib
