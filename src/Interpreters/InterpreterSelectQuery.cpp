@@ -1499,7 +1499,7 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         if constexpr (pipeline_with_processors)
         {
-            if (streams.size() == 1 || pipes.size() == 1)
+            if (!storage->isView() && (streams.size() == 1 || pipes.size() == 1))
                 pipeline.setMaxThreads(1);
 
             /// Unify streams. They must have same headers.
