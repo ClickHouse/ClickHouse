@@ -7,6 +7,7 @@ import clickhouse_driver
 import xml.etree.ElementTree as et
 import argparse
 import pprint
+import re
 import string
 import time
 import traceback
@@ -125,10 +126,11 @@ for s in servers:
 # connection loses the changes in settings.
 drop_query_templates = [q.text for q in root.findall('drop_query')]
 drop_queries = substitute_parameters(drop_query_templates)
-for c in connections:
+for conn_index, c in enumerate(connections):
     for q in drop_queries:
         try:
             c.execute(q)
+            print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
         except:
             pass
 
@@ -140,10 +142,12 @@ for c in connections:
 # configurable). So the end result is uncertain, but hopefully we'll be able to
 # run at least some queries.
 settings = root.findall('settings/*')
-for c in connections:
+for conn_index, c in enumerate(connections):
     for s in settings:
         try:
-            c.execute("set {} = '{}'".format(s.tag, s.text))
+            q = f"set {s.tag} = '{s.text}'"
+            c.execute(q)
+            print(f'set\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
         except:
             print(traceback.format_exc(), file=sys.stderr)
 
@@ -162,16 +166,28 @@ for t in tables:
 # Run create queries
 create_query_templates = [q.text for q in root.findall('create_query')]
 create_queries = substitute_parameters(create_query_templates)
-for c in connections:
+
+# Disallow temporary tables, because the clickhouse_driver reconnects on errors,
+# and temporary tables are destroyed. We want to be able to continue after some
+# errors.
+for q in create_queries:
+    if re.search('create temporary table', q, flags=re.IGNORECASE):
+        print(f"Temporary tables are not allowed in performance tests: '{q}'",
+            file = sys.stderr)
+        sys.exit(1)
+
+for conn_index, c in enumerate(connections):
     for q in create_queries:
         c.execute(q)
+        print(f'create\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
 
 # Run fill queries
 fill_query_templates = [q.text for q in root.findall('fill_query')]
 fill_queries = substitute_parameters(fill_query_templates)
-for c in connections:
+for conn_index, c in enumerate(connections):
     for q in fill_queries:
         c.execute(q)
+        print(f'fill\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
 
 # Run test queries.
 for query_index, q in enumerate(test_queries):
@@ -188,31 +204,47 @@ for query_index, q in enumerate(test_queries):
 
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
-    try:
-        for conn_index, c in enumerate(connections):
+    # A query might not run on the old server if it uses a function added in the
+    # new one. We want to run them on the new server only, so that the PR author
+    # can ensure that the test works properly. Remember the errors we had on
+    # each server.
+    query_error_on_connection = [None] * len(connections);
+    for conn_index, c in enumerate(connections):
+        try:
             prewarm_id = f'{query_prefix}.prewarm0'
             res = c.execute(q, query_id = prewarm_id)
             print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}')
-    except KeyboardInterrupt:
-        raise
-    except:
-        # If prewarm fails for some query -- skip it, and try to test the others.
-        # This might happen if the new test introduces some function that the
-        # old server doesn't support. Still, report it as an error.
-        # FIXME the driver reconnects on error and we lose settings, so this might
-        # lead to further errors or unexpected behavior.
-        print(traceback.format_exc(), file=sys.stderr)
+        except KeyboardInterrupt:
+            raise
+        except:
+            # FIXME the driver reconnects on error and we lose settings, so this
+            # might lead to further errors or unexpected behavior.
+            query_error_on_connection[conn_index] = traceback.format_exc();
+            continue
+
+    # If prewarm fails for the query on both servers -- report the error, skip
+    # the query and continue testing the next query.
+    if query_error_on_connection.count(None) == 0:
+        print(query_error_on_connection[0], file = sys.stderr)
         continue
 
+    # If prewarm fails on one of the servers, run the query on the rest of them.
+    # Useful for queries that use new functions added in the new server version.
+    if query_error_on_connection.count(None) < len(query_error_on_connection):
+        no_error = [i for i, e in enumerate(query_error_on_connection) if not e]
+        print(f'partial\t{query_index}\t{no_error}')
+
     # Now, perform measured runs.
-    # Track the time spent by the client to process this query, so that we can notice
-    # out the queries that take long to process on the client side, e.g. by sending
-    # excessive data.
+    # Track the time spent by the client to process this query, so that we can
+    # notice the queries that take long to process on the client side, e.g. by
+    # sending excessive data.
     start_seconds = time.perf_counter()
     server_seconds = 0
     for run in range(0, args.runs):
         run_id = f'{query_prefix}.run{run}'
         for conn_index, c in enumerate(connections):
+            if query_error_on_connection[conn_index]:
+                continue
             res = c.execute(q, query_id = run_id)
             print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
             server_seconds += c.last_query.elapsed
@@ -221,8 +253,8 @@ for query_index, q in enumerate(test_queries):
     print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')
 
 # Run drop queries
-drop_query_templates = [q.text for q in root.findall('drop_query')]
 drop_queries = substitute_parameters(drop_query_templates)
-for c in connections:
+for conn_index, c in enumerate(connections):
     for q in drop_queries:
         c.execute(q)
+        print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')

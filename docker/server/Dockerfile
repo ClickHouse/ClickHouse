@@ -7,6 +7,7 @@ ARG gosu_ver=1.10
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         apt-transport-https \
+        ca-certificates \
         dirmngr \
         gnupg \
     && mkdir -p /etc/apt/sources.list.d \
@@ -19,7 +20,6 @@ RUN apt-get update \
             clickhouse-client=$version \
             clickhouse-server=$version \
             locales \
-            ca-certificates \
             wget \
     && rm -rf \
         /var/lib/apt/lists/* \
