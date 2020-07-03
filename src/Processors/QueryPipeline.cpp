@@ -565,6 +565,11 @@ void QueryPipeline::setOutputFormat(ProcessorPtr output)
 void QueryPipeline::unitePipelines(
     std::vector<std::unique_ptr<QueryPipeline>> pipelines, const Block & common_header)
 {
+    /// Should we limit the number of threads for united pipeline. True if all pipelines have max_threads != 0.
+    /// If true, result max_threads will be sum(max_threads).
+    /// Note: it may be > than settings.max_threads, so we should apply this limit again.
+    bool limit_max_threads = !initialized() || max_threads != 0;
+
     if (initialized())
     {
         addSimpleTransform([&](const Block & header)
@@ -625,8 +630,12 @@ void QueryPipeline::unitePipelines(
         interpreter_context.insert(interpreter_context.end(), pipeline.interpreter_context.begin(), pipeline.interpreter_context.end());
         storage_holders.insert(storage_holders.end(), pipeline.storage_holders.begin(), pipeline.storage_holders.end());
 
-        max_threads = std::max(max_threads, pipeline.max_threads);
+        max_threads += pipeline.max_threads;
+        limit_max_threads = limit_max_threads && pipeline.max_threads != 0;
     }
+
+    if (!limit_max_threads)
+        max_threads = 0;
 
     if (!extremes.empty())
     {
