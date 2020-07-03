@@ -27,15 +27,8 @@ QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines)
         return pipeline;
     }
 
-    size_t num_pipelines = pipelines.size();
     pipeline->unitePipelines(std::move(pipelines), output_stream->header);
-
-    if (num_pipelines > 1)
-    {
-        // nested queries can force 1 thread (due to simplicity)
-        // but in case of union this cannot be done.
-        pipeline->setMaxThreads(std::min<UInt64>(num_pipelines, max_threads));
-    }
+    pipeline->limitMaxThreads(max_threads);
 
     return pipeline;
 }
