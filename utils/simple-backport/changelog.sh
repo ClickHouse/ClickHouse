@@ -26,7 +26,9 @@ find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
                   s/^.*back[- ]*port[ed of]*#\([[:digit:]]\+\).*$/\1/Ip;
                   s/^.*cherry[- ]*pick[ed of]*#\([[:digit:]]\+\).*$/\1/Ip")
 
-"${find_prs[@]}" "changelog-log.txt" | sort -rn | uniq > "changelog-prs.txt"
+# awk is to filter out small task numbers from different task tracker, which are
+# referenced by documentation commits like '* DOCSUP-824: query log (#115)'.
+"${find_prs[@]}" "changelog-log.txt" | sort -rn | uniq | awk '$0 > 1000 { print $0 }' > "changelog-prs.txt"
 
 echo "$(wc -l < "changelog-prs.txt") PRs added between $from and $to."
 
