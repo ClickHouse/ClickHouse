@@ -33,3 +33,5 @@ sudo chroot . /clickhouse server
 ## What does it miss?
 
 - creation of `clickhouse` user to run the server;
+- VOLUME for server;
+- most of the details, see other docker images for comparison.
