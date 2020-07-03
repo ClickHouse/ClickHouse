@@ -535,7 +535,7 @@ enum class ConvertFromStringParsingMode
 {
     Normal,
     BestEffort,  /// Only applicable for DateTime. Will use sophisticated method, that is slower.
-    BestEffortUS    
+    BestEffortUS
 };
 
 template <typename FromDataType, typename ToDataType, typename Name,
