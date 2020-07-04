@@ -180,7 +180,7 @@ if (ENABLE_CURL)
         set (CURL_VERSION_STRING 7.67.0 CACHE STRING "")
         add_library (CURL::libcurl ALIAS ${CURL_LIBRARY})
     else ()
-        find_package (CURL)
+        find_package (CURL REQUIRED)
     endif ()
 endif ()
 
