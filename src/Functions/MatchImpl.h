@@ -78,14 +78,13 @@ struct MatchImpl
     static constexpr bool use_default_implementation_for_constants = true;
 
     using ResultType = UInt8;
+    using Searcher = std::conditional_t<case_insensitive, VolnitskyCaseInsensitive, Volnitsky>;
 
     static void vectorConstant(
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & pattern, PaddedPODArray<UInt8> & res)
     {
         if (offsets.empty())
             return;
-
-        using Searcher = std::conditional_t<case_insensitive, VolnitskyCaseInsensitive, Volnitsky>;
 
         String strstr_pattern;
 
@@ -255,7 +254,7 @@ struct MatchImpl
             /// If pattern is larger than string size - it cannot be found.
             if (strstr_pattern.size() <= n)
             {
-                Volnitsky searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
+                Searcher searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
 
                 /// We will search for the next occurrence in all rows at once.
                 while (pos < end && end != (pos = searcher.search(pos, end - pos)))
@@ -335,7 +334,7 @@ struct MatchImpl
                 /// If required substring is larger than string size - it cannot be found.
                 if (strstr_pattern.size() <= n)
                 {
-                    Volnitsky searcher(required_substring.data(), required_substring.size(), end - pos);
+                    Searcher searcher(required_substring.data(), required_substring.size(), end - pos);
 
                     /// We will search for the next occurrence in all rows at once.
                     while (pos < end && end != (pos = searcher.search(pos, end - pos)))
