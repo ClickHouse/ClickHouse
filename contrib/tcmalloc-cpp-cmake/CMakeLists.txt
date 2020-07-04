@@ -4,9 +4,9 @@ if (${ENABLE_LIBRARIES} AND NOT ${ENABLE_JEMALLOC})
 endif()
 option (ENABLE_TCMALLOC_CPP "Enable tcmalloc allocator" ${ENABLE_LIBRARIES})
 
-if ((SANITIZE AND NOT SANITIZE STREQUAL "undefined") OR NOT OS_LINUX OR NOT ARCH_AMD64)
+if (SANITIZE OR NOT OS_LINUX OR NOT ARCH_AMD64)
     set (ENABLE_TCMALLOC_CPP OFF)
-    message (STATUS "tcmalloc-cpp is disabled implicitly: it doesn't work with ${SANITIZE} sanitizer on non-linux or non x86-64.")
+    message (STATUS "tcmalloc-cpp is disabled implicitly: it doesn't work with sanitizers on non-linux or non x86-64.")
 endif ()
 
 if (${ENABLE_TCMALLOC_CPP})
