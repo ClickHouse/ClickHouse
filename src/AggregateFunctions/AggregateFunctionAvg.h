@@ -19,6 +19,8 @@ namespace ErrorCodes
 template <typename T, typename Denominator>
 struct AggregateFunctionAvgData
 {
+    using NumeratorType = T;
+
     T numerator = 0;
     Denominator denominator = 0;
 
