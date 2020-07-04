@@ -449,7 +449,7 @@ public:
     }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
-    /// - memory (approximated)
+    /// - memory (approximated, resident)
     /// - disk (compressed)
     ///
     /// Used for:
@@ -457,6 +457,10 @@ public:
     //
     /// Does not takes underlying Storage (if any) into account
     /// (since for Buffer we still need to know how much bytes it uses).
+    ///
+    /// Memory part should be estimated as a resident memory size.
+    /// In particular, alloctedBytes() is preferable over bytes()
+    /// when considering in-memory blocks.
     virtual std::optional<UInt64> totalBytes() const
     {
         return {};

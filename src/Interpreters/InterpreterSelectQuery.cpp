@@ -32,6 +32,7 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/InflatingExpressionTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/QueryPlan/ReadFromStorageStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -45,7 +46,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/AddingDelayedStreamStep.h>
+#include <Processors/QueryPlan/AddingDelayedSourceStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -858,52 +859,38 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 query_plan.addStep(std::move(row_level_security_step));
             }
 
+            if (expressions.before_join)
+            {
+                QueryPlanStepPtr before_join_step = std::make_unique<ExpressionStep>(
+                    query_plan.getCurrentDataStream(),
+                    expressions.before_join);
+                before_join_step->setStepDescription("Before JOIN");
+                query_plan.addStep(std::move(before_join_step));
+            }
+
             if (expressions.hasJoin())
             {
                 Block join_result_sample;
-                JoinPtr join = expressions.before_join->getTableJoinAlgo();
+                JoinPtr join = expressions.join->getTableJoinAlgo();
 
-                join_result_sample = ExpressionTransform::transformHeader(query_plan.getCurrentDataStream().header, expressions.before_join);
+                join_result_sample = InflatingExpressionTransform::transformHeader(
+                    query_plan.getCurrentDataStream().header, expressions.join);
 
-                bool inflating_join = false;
-                if (join)
+                QueryPlanStepPtr join_step = std::make_unique<InflatingExpressionStep>(
+                    query_plan.getCurrentDataStream(),
+                    expressions.join);
+
+                join_step->setStepDescription("JOIN");
+                query_plan.addStep(std::move(join_step));
+
+                if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
                 {
-                    inflating_join = true;
-                    if (auto * hash_join = typeid_cast<HashJoin *>(join.get()))
-                        inflating_join = isCross(hash_join->getKind());
-                }
+                    auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
+                    auto add_non_joined_rows_step = std::make_unique<AddingDelayedSourceStep>(
+                            query_plan.getCurrentDataStream(), std::move(source));
 
-                QueryPlanStepPtr before_join_step;
-                if (inflating_join)
-                {
-                    before_join_step = std::make_unique<InflatingExpressionStep>(
-                            query_plan.getCurrentDataStream(),
-                            expressions.before_join,
-                            true);
-
-                }
-                else
-                {
-                    before_join_step = std::make_unique<ExpressionStep>(
-                            query_plan.getCurrentDataStream(),
-                            expressions.before_join,
-                            true);
-                }
-
-                before_join_step->setStepDescription("JOIN");
-                query_plan.addStep(std::move(before_join_step));
-
-                if (join)
-                {
-                    if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
-                    {
-                        auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
-                        auto add_non_joined_rows_step = std::make_unique<AddingDelayedStreamStep>(
-                                query_plan.getCurrentDataStream(), std::move(source));
-
-                        add_non_joined_rows_step->setStepDescription("Add non-joined rows after JOIN");
-                        query_plan.addStep(std::move(add_non_joined_rows_step));
-                    }
+                    add_non_joined_rows_step->setStepDescription("Add non-joined rows after JOIN");
+                    query_plan.addStep(std::move(add_non_joined_rows_step));
                 }
             }
 

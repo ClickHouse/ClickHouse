@@ -48,7 +48,7 @@ protected:
     };
 
     const String history_file_path;
-    static constexpr char word_break_characters[] = " \t\n\r\"\\'`@$><=;|&{(.";
+    static constexpr char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?_";
 
     String input;
 
