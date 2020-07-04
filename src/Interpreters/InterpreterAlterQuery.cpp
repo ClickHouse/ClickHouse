@@ -16,6 +16,7 @@
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <algorithm>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseFactory.h>
 
 
@@ -52,7 +53,8 @@ BlockIO InterpreterAlterQuery::execute()
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY && !table->supportsReplication()) {
         database->propose(query_ptr);
-        return {};
+        auto * database_replicated = typeid_cast<DatabaseReplicated *>(database.get());
+        return database_replicated->getFeedback();
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions,

@@ -6,6 +6,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Access/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
+#include <Databases/DatabaseReplicated.h>
 
 
 namespace DB
@@ -91,7 +92,14 @@ BlockIO InterpreterRenameQuery::execute()
                 elem.to_table_name,
                 rename.exchange);
         }
+
+        // TODO it can't work
+        if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
+            auto * database_replicated = typeid_cast<DatabaseReplicated *>(database.get());
+            return database_replicated->getFeedback();
+        }
     }
+
     return {};
 }
 

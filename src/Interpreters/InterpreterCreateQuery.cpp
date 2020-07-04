@@ -46,6 +46,7 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Databases/DatabaseFactory.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
@@ -571,12 +572,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
     String current_database = context.getCurrentDatabase();
+    auto database_name = create.database.empty() ? current_database : create.database;
+    auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
-        auto database_name = create.database.empty() ? current_database : create.database;
-        auto database = DatabaseCatalog::instance().getDatabase(database_name);
         bool if_not_exists = create.if_not_exists;
 
         // Table SQL definition is available even if the table is detached
@@ -611,6 +612,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Actually creates table
     bool created = doCreateTable(create, properties);
+
+    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
+        auto * database_replicated = typeid_cast<DatabaseReplicated *>(database.get());
+        return database_replicated->getFeedback();
+    }
+
     if (!created)   /// Table already exists
         return {};
 
