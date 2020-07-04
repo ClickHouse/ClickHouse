@@ -301,6 +301,10 @@ if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
 
+if (USE_AMQPCPP)
+    add_subdirectory (amqpcpp-cmake)
+endif()
+
 if (USE_CASSANDRA)
     add_subdirectory (libuv)
     add_subdirectory (cassandra)

@@ -147,6 +147,19 @@ thread_local PerfEventsCounters current_thread_counters;
         .settings_name = #LOCAL_NAME \
     }
 
+// One event for cache accesses and one for cache misses.
+// Type is ACCESS or MISS
+#define CACHE_EVENT(PERF_NAME, LOCAL_NAME, TYPE) \
+    PerfEventInfo \
+    { \
+        .event_type = perf_type_id::PERF_TYPE_HW_CACHE, \
+        .event_config = (PERF_NAME) \
+            | (PERF_COUNT_HW_CACHE_OP_READ << 8) \
+            | (PERF_COUNT_HW_CACHE_RESULT_ ## TYPE << 16), \
+        .profile_event = ProfileEvents::LOCAL_NAME, \
+        .settings_name = #LOCAL_NAME \
+    }
+
 // descriptions' source: http://man7.org/linux/man-pages/man2/perf_event_open.2.html
 static const PerfEventInfo raw_events_info[] = {
     HARDWARE_EVENT(PERF_COUNT_HW_CPU_CYCLES, PerfCpuCycles),
@@ -167,8 +180,19 @@ static const PerfEventInfo raw_events_info[] = {
     SOFTWARE_EVENT(PERF_COUNT_SW_CPU_MIGRATIONS, PerfCpuMigrations),
     SOFTWARE_EVENT(PERF_COUNT_SW_ALIGNMENT_FAULTS, PerfAlignmentFaults),
     SOFTWARE_EVENT(PERF_COUNT_SW_EMULATION_FAULTS, PerfEmulationFaults),
-    SOFTWARE_EVENT(PERF_COUNT_SW_PAGE_FAULTS_MIN, PerfPageFaultsMinor),
-    SOFTWARE_EVENT(PERF_COUNT_SW_PAGE_FAULTS_MAJ, PerfPageFaultsMajor)
+
+    // Don't add them -- they are the same as SoftPageFaults and HardPageFaults,
+    // match well numerically.
+    // SOFTWARE_EVENT(PERF_COUNT_SW_PAGE_FAULTS_MIN, PerfPageFaultsMinor),
+    // SOFTWARE_EVENT(PERF_COUNT_SW_PAGE_FAULTS_MAJ, PerfPageFaultsMajor),
+
+    CACHE_EVENT(PERF_COUNT_HW_CACHE_DTLB, PerfDataTLBReferences, ACCESS),
+    CACHE_EVENT(PERF_COUNT_HW_CACHE_DTLB, PerfDataTLBMisses, MISS),
+
+    // Apparently it doesn't make sense to treat these values as relative:
+    // https://stackoverflow.com/questions/49933319/how-to-interpret-perf-itlb-loads-itlb-load-misses
+    CACHE_EVENT(PERF_COUNT_HW_CACHE_ITLB, PerfInstructionTLBReferences, ACCESS),
+    CACHE_EVENT(PERF_COUNT_HW_CACHE_ITLB, PerfInstructionTLBMisses, MISS),
 };
 
 static_assert(sizeof(raw_events_info) / sizeof(raw_events_info[0]) == NUMBER_OF_RAW_EVENTS);
@@ -455,7 +479,12 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         }
     }
 
-    // actually process counters' values
+    // Actually process counters' values. Track the minimal time that a performance
+    // counter was enabled, and the corresponding running time, to give some idea
+    // about the amount of counter multiplexing.
+    UInt64 min_enabled_time = -1;
+    UInt64 running_time_for_min_enabled_time = 0;
+
     for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
     {
         int fd = thread_events_descriptors_holder.descriptors[i];
@@ -469,12 +498,28 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         // Account for counter multiplexing. time_running and time_enabled are
         // not reset by PERF_EVENT_IOC_RESET, so we don't use it and calculate
         // deltas from old values.
+        const auto enabled = current_value.time_enabled - previous_value.time_enabled;
+        const auto running = current_value.time_running - previous_value.time_running;
         const UInt64 delta = (current_value.value - previous_value.value)
-            * (current_value.time_enabled - previous_value.time_enabled)
-            / std::max(1.f,
-                float(current_value.time_running - previous_value.time_running));
+            * enabled / std::max(1.f, float(running));
+
+        if (min_enabled_time > enabled)
+        {
+            min_enabled_time = enabled;
+            running_time_for_min_enabled_time = running;
+        }
 
         profile_events.increment(info.profile_event, delta);
+    }
+
+    // If we had at least one enabled event, also show multiplexing-related
+    // statistics.
+    if (min_enabled_time != UInt64(-1))
+    {
+        profile_events.increment(ProfileEvents::PerfMinEnabledTime,
+            min_enabled_time);
+        profile_events.increment(ProfileEvents::PerfMinEnabledRunningTime,
+            running_time_for_min_enabled_time);
     }
 
     // Store current counter values for the next profiling period.
