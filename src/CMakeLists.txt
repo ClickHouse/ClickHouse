@@ -73,6 +73,10 @@ if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
+if (USE_AMQPCPP)
+    add_headers_and_sources(dbms Storages/RabbitMQ)
+endif()
+
 if (USE_AWS_S3)
     add_headers_and_sources(dbms Common/S3)
     add_headers_and_sources(dbms Disks/S3)
@@ -262,6 +266,9 @@ if (USE_RDKAFKA)
     endif()
 endif()
 
+if (USE_AMQPCPP)
+    dbms_target_link_libraries(PUBLIC amqp-cpp)
+endif()
 
 if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
