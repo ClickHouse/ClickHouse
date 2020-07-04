@@ -11,7 +11,7 @@ namespace DB
   * In the last case `host` specifies the hosts user is allowed to connect from.
   * The `host` can be an ip address, ip subnet, or a host name.
   * The % and _ wildcard characters are permitted in `host`.
-  * These have the same meaning as for pattern-matching operations performed with the [I]LIKE operator.
+  * These have the same meaning as for pattern-matching operations performed with the LIKE operator.
   */
 class ASTUserNameWithHost : public IAST
 {

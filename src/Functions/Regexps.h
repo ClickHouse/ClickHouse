@@ -64,7 +64,7 @@ namespace Regexps
         /// C++11 has thread-safe function-local statics on most modern compilers.
         static Pool known_regexps; /// Different variables for different pattern parameters.
 
-        return known_regexps.get(pattern, [flags,  &pattern]
+        return known_regexps.get(pattern, [flags, &pattern]
         {
             int flags_final = flags | OptimizedRegularExpression::RE_DOT_NL;
 
