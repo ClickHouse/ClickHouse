@@ -22,6 +22,7 @@ StorageSystemDisks::StorageSystemDisks(const std::string & name_)
         {"free_space", std::make_shared<DataTypeUInt64>()},
         {"total_space", std::make_shared<DataTypeUInt64>()},
         {"keep_free_space", std::make_shared<DataTypeUInt64>()},
+        {"type", std::make_shared<DataTypeString>()},
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -42,6 +43,7 @@ Pipes StorageSystemDisks::read(
     MutableColumnPtr col_free = ColumnUInt64::create();
     MutableColumnPtr col_total = ColumnUInt64::create();
     MutableColumnPtr col_keep = ColumnUInt64::create();
+    MutableColumnPtr col_type = ColumnString::create();
 
     for (const auto & [disk_name, disk_ptr] : context.getDisksMap())
     {
@@ -50,6 +52,7 @@ Pipes StorageSystemDisks::read(
         col_free->insert(disk_ptr->getAvailableSpace());
         col_total->insert(disk_ptr->getTotalSpace());
         col_keep->insert(disk_ptr->getKeepingFreeSpace());
+        col_type->insert(disk_ptr->getType());
     }
 
     Columns res_columns;
@@ -58,6 +61,7 @@ Pipes StorageSystemDisks::read(
     res_columns.emplace_back(std::move(col_free));
     res_columns.emplace_back(std::move(col_total));
     res_columns.emplace_back(std::move(col_keep));
+    res_columns.emplace_back(std::move(col_type));
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
