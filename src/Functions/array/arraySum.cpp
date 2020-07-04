@@ -51,6 +51,7 @@ struct ArraySumImpl
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
+        /// Constant case.
         if (!column)
         {
             const ColumnConst * column_const = checkAndGetColumnConst<ColVecType>(&*mapped);
@@ -75,7 +76,8 @@ struct ArraySumImpl
             size_t pos = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
             {
-                res[i] = x * (offsets[i] - pos);
+                /// Just multiply the value by array size.
+                res[i] = Result(x) * (offsets[i] - pos);
                 pos = offsets[i];
             }
 
