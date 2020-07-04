@@ -169,7 +169,7 @@ std::optional<UInt64> StorageMemory::totalBytes() const
     UInt64 bytes = 0;
     std::lock_guard lock(mutex);
     for (const auto & buffer : data)
-        bytes += buffer.bytes();
+        bytes += buffer.allocatedBytes();
     return bytes;
 }
 

@@ -1,0 +1,32 @@
+<test>
+    <settings>
+        <optimize_aggregation_in_order>1</optimize_aggregation_in_order>
+        <optimize_read_in_order>1</optimize_read_in_order>
+        <max_partitions_per_insert_block>200</max_partitions_per_insert_block>
+        <max_threads>8</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>table</name>
+            <values>
+                <value>mt_20_parts</value>
+                <value>mt_200_parts</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE mt_20_parts(id UInt32, val1 UInt32, val2 UInt32) ENGINE = MergeTree ORDER BY val1 PARTITION BY id % 20</create_query>
+    <create_query>CREATE TABLE mt_200_parts(id UInt32, val1 UInt32, val2 UInt32) ENGINE = MergeTree ORDER BY val1 PARTITION BY id % 200</create_query>
+
+    <fill_query>INSERT INTO mt_20_parts SELECT number, rand() % 10000, rand() FROM numbers_mt(100000000)</fill_query>
+    <fill_query>INSERT INTO mt_200_parts SELECT number, rand() % 10000, rand() FROM numbers_mt(100000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE mt_20_parts FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE mt_200_parts FINAL</fill_query>
+
+    <query>SELECT val2 FROM {table} ORDER BY val1 LIMIT 100 FORMAT Null</query>
+    <query>SELECT val2 FROM {table} ORDER BY val1 LIMIT 100000 FORMAT Null</query>
+    <query>SELECT sum(val2) FROM {table} GROUP BY val1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS {table}</drop_query>
+</test>

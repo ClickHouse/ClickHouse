@@ -7,6 +7,7 @@
 namespace DB
 {
 
+/// Merge streams of data into single sorted stream.
 class MergingSortedStep : public ITransformingStep
 {
 public:

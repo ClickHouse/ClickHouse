@@ -544,6 +544,14 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     if (minmax_idx_condition)
         LOG_DEBUG(log, "MinMax index condition: {}", minmax_idx_condition->toString());
 
+    MergeTreeReaderSettings reader_settings =
+    {
+        .min_bytes_to_use_direct_io = settings.min_bytes_to_use_direct_io,
+        .min_bytes_to_use_mmap_io = settings.min_bytes_to_use_mmap_io,
+        .max_read_buffer_size = settings.max_read_buffer_size,
+        .save_marks_in_cache = true
+    };
+
     /// PREWHERE
     String prewhere_column;
     if (select.prewhere())
@@ -583,7 +591,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
         for (const auto & index_and_condition : useful_indices)
             ranges.ranges = filterMarksUsingIndex(
-                    index_and_condition.first, index_and_condition.second, part, ranges.ranges, settings);
+                index_and_condition.first, index_and_condition.second, part, ranges.ranges, settings, reader_settings);
 
         if (!ranges.ranges.empty())
         {
@@ -604,13 +612,6 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     ProfileEvents::increment(ProfileEvents::SelectedMarks, sum_marks);
 
     Pipes res;
-
-    MergeTreeReaderSettings reader_settings =
-    {
-        .min_bytes_to_use_direct_io = settings.min_bytes_to_use_direct_io,
-        .max_read_buffer_size = settings.max_read_buffer_size,
-        .save_marks_in_cache = true
-    };
 
     /// Projection, that needed to drop columns, which have appeared by execution
     /// of some extra expressions, and to allow execute the same expressions later.
@@ -723,10 +724,15 @@ size_t roundRowsOrBytesToMarks(
     size_t rows_granularity,
     size_t bytes_granularity)
 {
+    /// Marks are placed whenever threshold on rows or bytes is met.
+    /// So we have to return the number of marks on whatever estimate is higher - by rows or by bytes.
+
+    size_t res = (rows_setting + rows_granularity - 1) / rows_granularity;
+
     if (bytes_granularity == 0)
-        return (rows_setting + rows_granularity - 1) / rows_granularity;
+        return res;
     else
-        return (bytes_setting + bytes_granularity - 1) / bytes_granularity;
+        return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
 }
 
 }
@@ -758,7 +764,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         sum_marks += sum_marks_in_parts[i];
 
         if (parts[i].data_part->index_granularity_info.is_adaptive)
-            adaptive_parts++;
+            ++adaptive_parts;
     }
 
     size_t index_granularity_bytes = 0;
@@ -889,7 +895,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         sum_marks += sum_marks_in_parts[i];
 
         if (parts[i].data_part->index_granularity_info.is_adaptive)
-            adaptive_parts++;
+            ++adaptive_parts;
     }
 
     size_t index_granularity_bytes = 0;
@@ -962,6 +968,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     };
 
     const size_t min_marks_per_stream = (sum_marks - 1) / num_streams + 1;
+    bool need_preliminary_merge = (parts.size() > settings.read_in_order_two_level_merge_threshold);
 
     for (size_t i = 0; i < num_streams && !parts.empty(); ++i)
     {
@@ -1063,7 +1070,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             }
         }
 
-        if (pipes.size() > 1)
+        if (pipes.size() > 1 && need_preliminary_merge)
         {
             SortDescription sort_description;
             for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
@@ -1081,7 +1088,10 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             res.emplace_back(std::move(pipes), std::move(merging_sorted));
         }
         else
-            res.emplace_back(std::move(pipes.front()));
+        {
+            for (auto && pipe : pipes)
+                res.emplace_back(std::move(pipe));
+        }
     }
 
     return res;
@@ -1404,7 +1414,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexConditionPtr condition,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
-    const Settings & settings) const
+    const Settings & settings,
+    const MergeTreeReaderSettings & reader_settings) const
 {
     if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index_helper->getFileName() + ".idx"))
     {
@@ -1427,9 +1438,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     size_t index_marks_count = (marks_count - final_mark + index_granularity - 1) / index_granularity;
 
     MergeTreeIndexReader reader(
-            index_helper, part,
-            index_marks_count,
-            ranges);
+        index_helper, part,
+        index_marks_count,
+        ranges,
+        reader_settings);
 
     MarkRanges res;
 

@@ -7,6 +7,7 @@ import csv
 import itertools
 import json
 import os
+import os.path
 import pprint
 import sys
 import traceback
@@ -23,6 +24,7 @@ faster_queries = 0
 slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
+unstable_partial_queries = 0
 
 # max seconds to run one query by itself, not counting preparation
 allowed_single_run_time = 2
@@ -191,8 +193,33 @@ if args.report == 'main':
     slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
     error_tests += len(slow_on_client_rows)
     printSimpleTable('Slow on client',
-                     ['Client time, s', 'Server time, s', 'Ratio', 'Test', 'Query'],
+                     ['Client time,&nbsp;s', 'Server time,&nbsp;s', 'Ratio', 'Test', 'Query'],
                      slow_on_client_rows)
+
+    def print_partial():
+        rows = tsvRows('report/partial-queries-report.tsv')
+        if not rows:
+            return
+        global unstable_partial_queries, slow_average_tests
+        print(tableStart('Partial queries'))
+        columns = ['Median time, s', 'Relative time variance', 'Test', '#', 'Query']
+        print(tableHeader(columns))
+        attrs = ['' for c in columns]
+        for row in rows:
+            if float(row[1]) > 0.10:
+                attrs[1] = f'style="background: {color_bad}"'
+                unstable_partial_queries += 1
+            else:
+                attrs[1] = ''
+            if float(row[0]) > allowed_single_run_time:
+                attrs[0] = f'style="background: {color_bad}"'
+                slow_average_tests += 1
+            else:
+                attrs[0] = ''
+            print(tableRow(row, attrs))
+        print(tableEnd())
+
+    print_partial()
 
     def print_changes():
         rows = tsvRows('report/changed-perf.tsv')
@@ -203,8 +230,8 @@ if args.report == 'main':
 
         print(tableStart('Changes in performance'))
         columns = [
-            'Old, s',                                          # 0
-            'New, s',                                          # 1
+            'Old,&nbsp;s',                                          # 0
+            'New,&nbsp;s',                                          # 1
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 2
             'p&nbsp;<&nbsp;0.001 threshold',                   # 3
             # Failed                                           # 4
@@ -245,8 +272,8 @@ if args.report == 'main':
         unstable_queries += len(unstable_rows)
 
         columns = [
-            'Old, s', #0
-            'New, s', #1
+            'Old,&nbsp;s', #0
+            'New,&nbsp;s', #1
             'Relative difference (new&nbsp;-&nbsp;old)/old', #2
             'p&nbsp;<&nbsp;0.001 threshold', #3
             # Failed #4
@@ -288,13 +315,13 @@ if args.report == 'main':
 
         columns = [
             'Test',                                          #0
-            'Wall clock time, s',                            #1
-            'Total client time, s',                          #2
+            'Wall clock time,&nbsp;s',                            #1
+            'Total client time,&nbsp;s',                          #2
             'Total queries',                                 #3
             'Ignored short queries',                         #4
-            'Longest query<br>(sum for all runs), s',        #5
-            'Avg wall clock time<br>(sum for all runs), s',  #6
-            'Shortest query<br>(sum for all runs), s',       #7
+            'Longest query<br>(sum for all runs),&nbsp;s',        #5
+            'Avg wall clock time<br>(sum for all runs),&nbsp;s',  #6
+            'Shortest query<br>(sum for all runs),&nbsp;s',       #7
             ]
 
         print(tableStart('Test times'))
@@ -324,6 +351,9 @@ if args.report == 'main':
     print_test_times()
 
     def print_benchmark_results():
+        if not os.path.isfile('benchmark/website-left.json'):
+            return
+
         json_reports = [json.load(open(f'benchmark/website-{x}.json')) for x in ['left', 'right']]
         stats = [next(iter(x.values()))["statistics"] for x in json_reports]
         qps = [x["QPS"] for x in stats]
@@ -384,6 +414,11 @@ if args.report == 'main':
                 *sys.exc_info()[:2])[-1])
         pass
 
+    printSimpleTable('Metric changes',
+        ['Metric', 'Old median value', 'New median value',
+            'Relative difference', 'Times difference'],
+        tsvRows('metrics/changes.tsv'))
+
     print_report_errors()
 
     print("""
@@ -411,6 +446,11 @@ if args.report == 'main':
         if slower_queries > 3:
             status = 'failure'
         message_array.append(str(slower_queries) + ' slower')
+
+    if unstable_partial_queries:
+        unstable_queries += unstable_partial_queries
+        error_tests += unstable_partial_queries
+        status = 'failure'
 
     if unstable_queries:
         message_array.append(str(unstable_queries) + ' unstable')
@@ -450,8 +490,8 @@ elif args.report == 'all-queries':
         columns = [
             # Changed #0
             # Unstable #1
-            'Old, s', #2
-            'New, s', #3
+            'Old,&nbsp;s', #2
+            'New,&nbsp;s', #3
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #4
             'Times speedup / slowdown',                 #5
             'p&nbsp;<&nbsp;0.001 threshold',          #6
