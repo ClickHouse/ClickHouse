@@ -186,7 +186,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
     │                                    2 │
     └──────────────────────────────────────┘
 
-## ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人) {#array_functions-arrayenumerate}
+## arrayEnumerate(arr) {#array_functions-arrayenumerate}
 
 返回 Array \[1, 2, 3, …, length (arr) \]
 
@@ -658,7 +658,7 @@ SELECT
 
 arrayReduce（‘agg\_func’，arr1，…） - 将聚合函数`agg_func`应用于数组`arr1 ...`。如果传递了多个数组，则相应位置上的元素将作为多个参数传递给聚合函数。例如：SELECT arrayReduce（‘max’，\[1,2,3\]）= 3
 
-## ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人) {#arrayreversearr}
+## arrayReverse(arr) {#arrayreversearr}
 
 返回与源数组大小相同的数组，包含反转源数组的所有元素的结果。
 
