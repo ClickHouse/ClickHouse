@@ -188,12 +188,12 @@ private:
             writeNumber2(target, ToISOWeekImpl::execute(source, timezone));
         }
 
-        static void ISO8601Year2(char * target, Time source, const DateLUTImpl & timezone)
+        static void ISO8601Year2(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber2(target, ToISOYearImpl::execute(source, timezone) % 100);
         }
 
-        static void ISO8601Year4(char * target, Time source, const DateLUTImpl & timezone)
+        static void ISO8601Year4(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber4(target, ToISOYearImpl::execute(source, timezone));
         }
