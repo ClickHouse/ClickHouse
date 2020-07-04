@@ -25,7 +25,7 @@ protobuf==3.12.2
 numpy==1.18.5
 Pygments==2.5.2
 pymdown-extensions==7.1
-python-slugify==1.2.6
+python-slugify==4.0.1
 PyYAML==5.3.1
 repackage==0.7.3
 requests==2.24.0
