@@ -35,6 +35,11 @@ inline ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
     return malloc(size);
 }
 
+inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
+{
+    free(ptr);
+}
+
 #else
 
 inline ALWAYS_INLINE void * newImpl(std::size_t size)
@@ -52,12 +57,12 @@ inline ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
     return TCMallocInternalNewNothrow(size, std::nothrow_t());
 }
 
-#endif
-
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 {
-    free(ptr);
+    TCMallocInternalDelete(ptr);
 }
+
+#endif
 
 #if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
 
