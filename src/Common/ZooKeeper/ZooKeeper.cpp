@@ -582,7 +582,7 @@ void ZooKeeper::removeChildren(const std::string & path)
 void ZooKeeper::tryRemoveChildren(const std::string & path)
 {
     Strings children;
-    if (tryGetChildren(path, children) != Coordination::ZOK)
+    if (tryGetChildren(path, children) != Coordination::Error::ZOK)
         return;
     while (!children.empty())
     {
