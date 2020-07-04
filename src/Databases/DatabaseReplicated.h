@@ -3,6 +3,8 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <DataStreams/BlockIO.h>
+#include <DataStreams/OneBlockInputStream.h>
 
 
 namespace DB
@@ -42,6 +44,8 @@ public:
 
     void propose(const ASTPtr & query) override;
 
+    BlockIO getFeedback();
+
     String zookeeper_path;
     String replica_name;
 
@@ -49,9 +53,7 @@ private:
     void createDatabaseZKNodes();
 
     void runBackgroundLogExecutor();
-    
-    void executeFromZK(String & path, bool yield);
-
+    void executeLogName(const String &);
     void writeLastExecutedToDiskAndZK();
 
     void loadMetadataFromSnapshot();
@@ -60,11 +62,11 @@ private:
 
     std::unique_ptr<Context> current_context; // to run executeQuery
 
-    //BlockIO execution_result;
     std::mutex log_name_mutex;
     String log_name_to_exec_with_result;
 
     int snapshot_period;
+    int feedback_timeout;
 
     String last_executed_log_entry = "";
 

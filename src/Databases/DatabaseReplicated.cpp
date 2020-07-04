@@ -7,11 +7,13 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/queryToString.h>
+#include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/Lock.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <common/sleep.h>
 
@@ -105,6 +107,7 @@ DatabaseReplicated::DatabaseReplicated(
     }
 
     snapshot_period = context_.getConfigRef().getInt("database_replicated_snapshot_period", 10);
+    feedback_timeout = context_.getConfigRef().getInt("database_replicated_feedback_timeout", 0);
     LOG_DEBUG(log, "Snapshot period is set to {} log entries per one snapshot", snapshot_period);
 
     background_log_executor = context_.getReplicatedSchedulePool().createTask(database_name + "(DatabaseReplicated::background_executor)", [this]{ runBackgroundLogExecutor();} );
@@ -177,14 +180,7 @@ void DatabaseReplicated::runBackgroundLogExecutor() {
     log_entry_names.erase(log_entry_names.begin(), newest_entry_it);
 
     for (const String & log_entry_name : log_entry_names) {
-        String log_entry_path = zookeeper_path + "/log/" + log_entry_name;
-        bool yield = false;
-        {
-            std::lock_guard lock(log_name_mutex);
-            if (log_name_to_exec_with_result == log_entry_name)
-                yield = true;
-        }
-        executeFromZK(log_entry_path, yield);
+        executeLogName(log_entry_name);
         last_executed_log_entry = log_entry_name;
         writeLastExecutedToDiskAndZK();
 
@@ -213,7 +209,8 @@ void DatabaseReplicated::writeLastExecutedToDiskAndZK() {
     out.close();
 }
 
-void DatabaseReplicated::executeFromZK(String & path, bool yield) {
+void DatabaseReplicated::executeLogName(const String & log_entry_name) {
+        String path = zookeeper_path + "/log/" + log_entry_name;
         current_zookeeper = getZooKeeper();
         String query_to_execute = current_zookeeper->get(path, {}, NULL);
 
@@ -225,15 +222,12 @@ void DatabaseReplicated::executeFromZK(String & path, bool yield) {
             current_context->setCurrentQueryId(""); // generate random query_id
             executeQuery(query_to_execute, *current_context);
         }
-        catch (...)
+        catch (const Exception & e)
         {
-            if (yield)
-                tryLogCurrentException(log, "Query from zookeeper " + query_to_execute + " wasn't finished successfully");
-    
+            tryLogCurrentException(log, "Query from zookeeper " + query_to_execute + " wasn't finished successfully");
+            current_zookeeper->create(zookeeper_path + "/replicas/" + replica_name + "/errors/" + log_entry_name, e.what(), zkutil::CreateMode::Persistent);
         }
 
-        std::lock_guard lock(log_name_mutex);
-        log_name_to_exec_with_result.clear();
         LOG_DEBUG(log, "Executed query: {}", query_to_execute);
 }
 
@@ -248,6 +242,48 @@ void DatabaseReplicated::propose(const ASTPtr & query) {
     }
 
     background_log_executor->schedule();
+}
+
+BlockIO DatabaseReplicated::getFeedback() {
+    BlockIO res;
+    if (feedback_timeout == 0)
+        return res;
+
+    Stopwatch watch;
+
+    NamesAndTypes block_structure = {
+        {"replica_name", std::make_shared<DataTypeString>()},
+        {"execution_feedback", std::make_shared<DataTypeString>()},
+    };
+    auto replica_name_column = block_structure[0].type->createColumn();
+    auto feedback_column = block_structure[1].type->createColumn();
+
+    current_zookeeper = getZooKeeper();
+    Strings replica_states = current_zookeeper->getChildren(zookeeper_path + "/replicas");
+    auto replica_iter = replica_states.begin();
+
+    while (!replica_states.empty() && watch.elapsedSeconds() < feedback_timeout) {
+        String last_executed = current_zookeeper->get(zookeeper_path + "/replicas/" + *replica_iter);
+        if (last_executed > log_name_to_exec_with_result) {
+            replica_name_column->insert(*replica_iter);
+            String err_path = zookeeper_path + "/replicas/" + *replica_iter + "/errors/" + log_name_to_exec_with_result;
+            if (!current_zookeeper->exists(err_path)) {
+                feedback_column->insert("OK");
+            } else {
+                String feedback = current_zookeeper->get(err_path, {}, NULL);
+                feedback_column->insert(feedback);
+            }
+        replica_states.erase(replica_iter);
+        replica_iter = replica_states.begin();
+        }
+    }
+
+    Block block = Block({
+        {std::move(replica_name_column), block_structure[0].type, block_structure[0].name},
+        {std::move(feedback_column), block_structure[1].type, block_structure[1].name}});
+
+    res.in = std::make_shared<OneBlockInputStream>(block);
+    return res;
 }
 
 void DatabaseReplicated::createSnapshot() {
@@ -288,16 +324,23 @@ void DatabaseReplicated::loadMetadataFromSnapshot() {
         return;
     }
 
-
     Strings metadatas;
     if (current_zookeeper->tryGetChildren(zookeeper_path + "/snapshots/" + *latest_snapshot, metadatas) != Coordination::Error::ZOK)
         return;
 
     LOG_DEBUG(log, "Executing {} snapshot", *latest_snapshot);
+
     for (auto t = metadatas.begin(); t != metadatas.end(); ++t) {
         String path = zookeeper_path + "/snapshots/" + *latest_snapshot + "/" + *t;
 
-        executeFromZK(path, false);
+        String query_to_execute = current_zookeeper->get(path, {}, NULL);
+
+        current_context = std::make_unique<Context>(global_context);
+        current_context->getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY;
+        current_context->setCurrentDatabase(database_name);
+        current_context->setCurrentQueryId(""); // generate random query_id
+
+        executeQuery(query_to_execute, *current_context);
     }
 
     last_executed_log_entry = *latest_snapshot;

@@ -12,6 +12,7 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseReplicated.h>
 
 
 namespace DB
@@ -135,6 +136,11 @@ BlockIO InterpreterDropQuery::executeToTable(
                 database->dropTable(context, table_id.table_name, query.no_delay);
             }
         }
+    }
+
+    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
+        auto * database_replicated = typeid_cast<DatabaseReplicated *>(database.get());
+        return database_replicated->getFeedback();
     }
 
     return {};
