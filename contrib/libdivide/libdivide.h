@@ -290,10 +290,17 @@ static inline int32_t libdivide_count_leading_zeros32(uint32_t val) {
     }
     return 0;
 #else
-    int32_t result = 0;
-    uint32_t hi = 1U << 31;
-    for (; ~val & hi; hi >>= 1) {
-        result++;
+    if (val == 0)
+        return 32;
+    int32_t result = 8;
+    uint32_t hi = 0xFFU << 24;
+    while ((val & hi) == 0) {
+        hi >>= 8;
+        result += 8;
+    }
+    while (val & hi) {
+        result -= 1;
+        hi <<= 1;
     }
     return result;
 #endif
