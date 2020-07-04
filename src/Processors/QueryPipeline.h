@@ -167,6 +167,13 @@ public:
     /// Set upper limit for the recommend number of threads
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
 
+    /// Update upper limit for the recommend number of threads
+    void limitMaxThreads(size_t max_threads_)
+    {
+        if (max_threads == 0 || max_threads_ < max_threads)
+            max_threads = max_threads_;
+    }
+
     /// Convert query pipeline to single or several pipes.
     Pipe getPipe() &&;
     Pipes getPipes() &&;

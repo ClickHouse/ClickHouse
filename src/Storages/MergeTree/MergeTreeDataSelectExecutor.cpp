@@ -968,6 +968,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     };
 
     const size_t min_marks_per_stream = (sum_marks - 1) / num_streams + 1;
+    bool need_preliminary_merge = (parts.size() > settings.read_in_order_two_level_merge_threshold);
 
     for (size_t i = 0; i < num_streams && !parts.empty(); ++i)
     {
@@ -1069,7 +1070,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             }
         }
 
-        if (pipes.size() > 1)
+        if (pipes.size() > 1 && need_preliminary_merge)
         {
             SortDescription sort_description;
             for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
@@ -1087,7 +1088,10 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             res.emplace_back(std::move(pipes), std::move(merging_sorted));
         }
         else
-            res.emplace_back(std::move(pipes.front()));
+        {
+            for (auto && pipe : pipes)
+                res.emplace_back(std::move(pipe));
+        }
     }
 
     return res;
