@@ -78,7 +78,10 @@ struct MatchImpl
     static constexpr bool use_default_implementation_for_constants = true;
 
     using ResultType = UInt8;
-    using Searcher = std::conditional_t<case_insensitive, VolnitskyCaseInsensitive, Volnitsky>;
+
+    using Searcher = std::conditional_t<case_insensitive,
+          VolnitskyCaseInsensitiveUTF8,
+          VolnitskyUTF8>;
 
     static void vectorConstant(
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & pattern, PaddedPODArray<UInt8> & res)

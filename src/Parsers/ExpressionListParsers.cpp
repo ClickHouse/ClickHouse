@@ -49,6 +49,7 @@ const char * ParserComparisonExpression::operators[] =
     "LIKE",          "like",
     "ILIKE",         "ilike",
     "NOT LIKE",      "notLike",
+    "NOT ILIKE",     "notILike",
     "IN",            "in",
     "NOT IN",        "notIn",
     "GLOBAL IN",     "globalIn",

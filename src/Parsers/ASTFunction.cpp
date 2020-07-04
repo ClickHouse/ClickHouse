@@ -170,6 +170,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 "like",            " LIKE ",
                 "ilike",           " ILIKE ",
                 "notLike",         " NOT LIKE ",
+                "notILike",        " NOT ILIKE ",
                 "in",              " IN ",
                 "notIn",           " NOT IN ",
                 "globalIn",        " GLOBAL IN ",
@@ -187,7 +188,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
 
                     bool special_hilite = settings.hilite
-                        && (name == "like" || name == "notLike" || name == "ilike")
+                        && (name == "like" || name == "notLike" || name == "ilike" || name == "notILike")
                         && highlightStringLiteralWithMetacharacters(arguments->children[1], settings, "%_");
 
                     /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
