@@ -32,7 +32,7 @@ namespace ErrorCodes
 
 StatusFile::FillFunction StatusFile::write_pid = [](WriteBuffer & out)
 {
-    out << getpid() << "\n";
+    out << getpid();
 };
 
 StatusFile::FillFunction StatusFile::write_full_info = [](WriteBuffer & out)
