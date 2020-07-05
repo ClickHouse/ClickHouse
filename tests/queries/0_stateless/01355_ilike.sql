@@ -45,10 +45,17 @@ SELECT 'ёЁё' ILIKE 'Ё%Ё';
 SELECT 'ощщЁё' ILIKE 'Щ%Ё';
 SELECT 'ощЩЁё' ILIKE '%Щ%Ё';
 
+SELECT 'Щущпандер' ILIKE '%щп%е%';
+SELECT 'Щущпандер' ILIKE '%щП%е%';
+SELECT 'ощщЁё' ILIKE '%щ%';
+SELECT 'ощЩЁё' ILIKE '%ё%';
+
 SHOW TABLES NOT ILIKE '%';
 DROP DATABASE IF EXISTS test_01355;
 CREATE DATABASE test_01355;
 USE test_01355;
+CREATE TABLE test1 (x UInt8) ENGINE = Memory;
+CREATE TABLE test2 (x UInt8) ENGINE = Memory;
 SHOW TABLES ILIKE 'tes%';
 SHOW TABLES NOT ILIKE 'tes%';
 DROP DATABASE test_01355;
