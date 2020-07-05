@@ -1,6 +1,6 @@
 ---
 toc_priority: 62
-toc_title: Working with geographical coordinates
+toc_title: Geographical Coordinates
 ---
 
 # Functions for Working with Geographical Coordinates {#functions-for-working-with-geographical-coordinates}

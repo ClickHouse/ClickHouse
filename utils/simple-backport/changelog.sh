@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
 from="$1"
 to="$2"
 log_command=(git log "$from..$to" --first-parent)
@@ -27,6 +29,7 @@ find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
 "${find_prs[@]}" "changelog-log.txt" | sort -rn | uniq > "changelog-prs.txt"
 
 echo "$(wc -l < "changelog-prs.txt") PRs added between $from and $to."
+if [ $(wc -l < "changelog-prs.txt") -eq 0 ] ; then exit 0 ; fi
 
 function github_download()
 {
@@ -82,5 +85,5 @@ done
 
 echo "### ClickHouse release $to FIXME as compared to $from
 " > changelog.md
-./format-changelog.py changelog-prs-filtered.txt >> changelog.md
+"$script_dir/format-changelog.py" changelog-prs-filtered.txt >> changelog.md
 cat changelog.md

@@ -106,7 +106,7 @@ public:
     /// Inserts results into a column.
     /// This method must be called once, from single thread.
     /// After this method was called for state, you can't do anything with state but destroy.
-    virtual void insertResultInto(AggregateDataPtr place, IColumn & to) const = 0;
+    virtual void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const = 0;
 
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
@@ -166,16 +166,11 @@ public:
      *  nested_function is a smart pointer to this aggregate function itself.
      *  arguments and params are for nested_function.
      */
-    virtual AggregateFunctionPtr getOwnNullAdapter(const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/, const Array & /*params*/) const
+    virtual AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/, const Array & /*params*/) const
     {
         return nullptr;
     }
-
-    /** When the function is wrapped with Null combinator,
-      * should we return Nullable type with NULL when no values were aggregated
-      * or we should return non-Nullable type with default value (example: count, countDistinct).
-      */
-    virtual bool returnDefaultWhenOnlyNull() const { return false; }
 
     const DataTypes & getArgumentTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
@@ -283,6 +278,17 @@ public:
     {
         return alignof(Data);
     }
+};
+
+
+/// Properties of aggregate function that are independent of argument types and parameters.
+struct AggregateFunctionProperties
+{
+    /** When the function is wrapped with Null combinator,
+      * should we return Nullable type with NULL when no values were aggregated
+      * or we should return non-Nullable type with default value (example: count, countDistinct).
+      */
+    bool returns_default_when_only_null = false;
 };
 
 

@@ -78,7 +78,7 @@ void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, const Conte
     auto add_rows = [&](const String & grantee_name,
                         IAccessEntity::Type grantee_type,
                         const GrantedRoles & granted_roles,
-                        const ExtendedRoleSet * default_roles)
+                        const RolesOrUsersSet * default_roles)
     {
         for (const auto & role_id : granted_roles.roles)
         {
@@ -99,7 +99,7 @@ void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, const Conte
             continue;
 
         const GrantedRoles * granted_roles = nullptr;
-        const ExtendedRoleSet * default_roles = nullptr;
+        const RolesOrUsersSet * default_roles = nullptr;
         if (auto role = typeid_cast<RolePtr>(entity))
             granted_roles = &role->granted_roles;
         else if (auto user = typeid_cast<UserPtr>(entity))
