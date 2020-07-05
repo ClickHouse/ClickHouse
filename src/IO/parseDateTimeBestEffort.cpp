@@ -545,7 +545,7 @@ ReturnType parseDateTimeBestEffortImpl(
 
     auto check_date = [](const auto & is_leap_year_, const auto & month_, const auto & day_)
     {
-        if ((month_ == 1 || month_ == 3 || month_ == 5 || month_ == 7 || month_ == 8 || month_ == 10 || month_ == 12) && day_ >=1 && day_ <= 31)
+        if ((month_ == 1 || month_ == 3 || month_ == 5 || month_ == 7 || month_ == 8 || month_ == 10 || month_ == 12) && day_ >= 1 && day_ <= 31)
             return true;
         else if (month_ == 2 && ((is_leap_year_ && day_ >= 1 && day_ <= 29) || (!is_leap_year_ && day_ >= 1 && day_ <= 28)))
             return true;
