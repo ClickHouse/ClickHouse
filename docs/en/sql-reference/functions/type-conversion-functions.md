@@ -521,6 +521,80 @@ Result:
 -   [toDate](#todate)
 -   [toDateTime](#todatetime)
 
+## parseDateTimeBestEffortUS {#parsedatetimebesteffortUS}
+
+This function is similar to ['parseDateTimeBestEffort'](#parsedatetimebesteffort), the only difference is that this function prefers US style (`MM/DD/YYYY` etc) in case of ambiguouty.
+
+**Syntax**
+
+``` sql
+parseDateTimeBestEffortUS(time_string [, time_zone]);
+```
+
+**Parameters**
+
+-   `time_string` — String containing a date and time to convert. [String](../../sql-reference/data-types/string.md).
+-   `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../../sql-reference/data-types/string.md).
+
+**Supported non-standard formats**
+
+-   A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
+-   A string with a date and a time component: `YYYYMMDDhhmmss`, `MM/DD/YYYY hh:mm:ss`, `MM-DD-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
+-   A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY` etc.
+-   A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case `YYYY-MM` are substituted as `2000-01`.
+-   A string that includes the date and time along with time zone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
+
+**Returned value**
+
+-   `time_string` converted to the `DateTime` data type.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT parseDateTimeBestEffortUS('09/12/2020 12:12:57')
+AS parseDateTimeBestEffortUS;
+```
+
+Result:
+
+``` text
+┌─parseDateTimeBestEffortUS─┐
+│     2020-09-12 12:12:57   │
+└─────────────────────────——┘
+```
+
+Query:
+
+``` sql
+SELECT parseDateTimeBestEffortUS('09-12-2020 12:12:57')
+AS parseDateTimeBestEffortUS;
+```
+
+Result:
+
+``` text
+┌─parseDateTimeBestEffortUS─┐
+│     2020-09-12 12:12:57   │
+└─────────────────────────——┘
+```
+
+Query:
+
+``` sql
+SELECT parseDateTimeBestEffortUS('09.12.2020 12:12:57')
+AS parseDateTimeBestEffortUS;
+```
+
+Result:
+
+``` text
+┌─parseDateTimeBestEffortUS─┐
+│     2020-09-12 12:12:57   │
+└─────────────────────────——┘
+```
+
 ## parseDateTimeBestEffortOrNull {#parsedatetimebesteffortornull}
 
 Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it returns null when it encounters a date format that cannot be processed.
