@@ -76,7 +76,7 @@
     do { \
         fprintf(stderr, "libdivide.h:%d: %s(): Error: %s\n", \
             __LINE__, LIBDIVIDE_FUNCTION, msg); \
-        exit(-1); \
+        abort(); \
     } while (0)
 
 #if defined(LIBDIVIDE_ASSERTIONS_ON)
@@ -85,7 +85,7 @@
             if (!(x)) { \
                 fprintf(stderr, "libdivide.h:%d: %s(): Assertion failed: %s\n", \
                     __LINE__, LIBDIVIDE_FUNCTION, #x); \
-                exit(-1); \
+                abort(); \
             } \
         } while (0)
 #else
