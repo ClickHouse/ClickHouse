@@ -10,6 +10,7 @@
 * Remove `experimental_use_processors` setting. It is enabled by default. [#10924](https://github.com/ClickHouse/ClickHouse/pull/10924) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Update `zstd` to 1.4.4. It has some minor improvements in performance and compression ratio. If you run replicas with different versions of ClickHouse you may see reasonable error messages `Data after merge is not byte-identical to data on another replicas.` with explanation. These messages are Ok and you should not worry. This change is backward compatible but we list it here in changelog in case you will wonder about these messages. [#10663](https://github.com/ClickHouse/ClickHouse/pull/10663) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Added a check for meaningless codecs and a setting `allow_suspicious_codecs` to control this check. This closes [#4966](https://github.com/ClickHouse/ClickHouse/issues/4966). [#10645](https://github.com/ClickHouse/ClickHouse/pull/10645) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Several Kafka setting changes their defaults. See [#11388](https://github.com/ClickHouse/ClickHouse/pull/11388).
 
 #### New Feature
 
@@ -265,6 +266,7 @@
 * Fix Kafka performance issue related to reschedules based on limits, which were always applied. [#11149](https://github.com/ClickHouse/ClickHouse/pull/11149) ([filimonov](https://github.com/filimonov)).
 * Enable percpu_arena:percpu for jemalloc (This will reduce memory fragmentation due to thread pool). [#11084](https://github.com/ClickHouse/ClickHouse/pull/11084) ([Azat Khuzhin](https://github.com/azat)).
 * Optimize memory usage when reading a response from an S3 HTTP client. [#11561](https://github.com/ClickHouse/ClickHouse/pull/11561) ([Pavel Kovalenko](https://github.com/Jokser)).
+* Adjust the default Kafka settings for better performance. [#11388](https://github.com/ClickHouse/ClickHouse/pull/11388) ([filimonov](https://github.com/filimonov)).
 
 #### Experimental Feature
 
