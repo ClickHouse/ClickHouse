@@ -388,7 +388,7 @@ public:
     /** This function is called if aggregate function without State modifier is selected in a query.
      *  Inserts all weights of the model into the column 'to', so user may use such information if needed
      */
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         this->data(place).returnWeights(to);
     }

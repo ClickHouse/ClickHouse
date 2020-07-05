@@ -46,7 +46,7 @@ You can insert data separately from the query by using the command-line client o
 
 ### Constraints {#constraints}
 
-If table has [constraints](create.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
+If table has [constraints](../../sql-reference/statements/create.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
 
 ### Inserting the Results of `SELECT` {#insert_query_insert-select}
 
@@ -61,7 +61,7 @@ None of the data formats except Values allow setting values to expressions such 
 Other queries for modifying data parts are not supported: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
 However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 
-`FORMAT` clause must be specified in the end of query if `SELECT` clause contains table function [input()](../table-functions/input.md).
+`FORMAT` clause must be specified in the end of query if `SELECT` clause contains table function [input()](../../sql-reference/table-functions/input.md).
 
 ### Performance Considerations {#performance-considerations}
 

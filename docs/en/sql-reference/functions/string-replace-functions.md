@@ -5,6 +5,9 @@ toc_title: For Replacing in Strings
 
 # Functions for Searching and Replacing in Strings {#functions-for-searching-and-replacing-in-strings}
 
+!!! note "Note"
+    Functions for [searching](string-search-functions.md) and [other manipulations with strings](string-functions.md) are described separately.
+
 ## replaceOne(haystack, pattern, replacement) {#replaceonehaystack-pattern-replacement}
 
 Replaces the first occurrence, if it exists, of the ‘pattern’ substring in ‘haystack’ with the ‘replacement’ substring.
