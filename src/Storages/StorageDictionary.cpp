@@ -97,10 +97,10 @@ StorageDictionary::StorageDictionary(
     const StorageID & table_id_,
     const String & dictionary_name_,
     const ColumnsDescription & columns_,
-    bool internal_)
+    Location location_)
     : IStorage(table_id_)
     , dictionary_name(dictionary_name_)
-    , internal(internal_)
+    , location(location_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -109,16 +109,18 @@ StorageDictionary::StorageDictionary(
 
 
 StorageDictionary::StorageDictionary(
-    const StorageID & table_id_, const String & dictionary_name_, const DictionaryStructure & dictionary_structure_, bool internal_)
-    : StorageDictionary(table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, internal_)
+    const StorageID & table_id_, const String & dictionary_name_, const DictionaryStructure & dictionary_structure_, Location location_)
+    : StorageDictionary(table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, location_)
 {
 }
 
 
 void StorageDictionary::checkTableCanBeDropped() const
 {
-    if (internal)
-        throw Exception("Cannot detach dictionary " + backQuote(dictionary_name) + " as table, use DETACH DICTIONARY query.", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
+    if (location == Location::SameDatabaseAndNameAsDictionary)
+        throw Exception("Cannot detach dictionary " + backQuote(dictionary_name) + " as table, use DETACH DICTIONARY query", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
+    if (location == Location::DictionaryDatabase)
+        throw Exception("Cannot detach table " + getStorageID().getFullTableName() + " from a database with DICTIONARY engine", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
 }
 
 Pipes StorageDictionary::read(
@@ -158,7 +160,7 @@ void registerStorageDictionary(StorageFactory & factory)
             checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
         }
 
-        return StorageDictionary::create(args.table_id, dictionary_name, args.columns);
+        return StorageDictionary::create(args.table_id, dictionary_name, args.columns, StorageDictionary::Location::Custom);
     });
 }
 
