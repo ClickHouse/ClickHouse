@@ -1,11 +1,12 @@
 FROM ubuntu:18.04
 
 ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
-ARG version=20.5.1.*
+ARG version=20.6.1.*
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         apt-transport-https \
+        ca-certificates \
         dirmngr \
         gnupg \
     && mkdir -p /etc/apt/sources.list.d \
@@ -17,7 +18,6 @@ RUN apt-get update \
             clickhouse-client=$version \
             clickhouse-common-static=$version \
             locales \
-            tzdata \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf \
     && apt-get clean
 

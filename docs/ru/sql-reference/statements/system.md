@@ -38,7 +38,7 @@
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
 Перегружает все словари, которые были успешно загружены до этого.
-По умолчанию включена ленивая загрузка [dictionaries\_lazy\_load](../../sql-reference/statements/system.md#dictionaries-lazy-load), поэтому словари не загружаются автоматически при старте, а только при первом обращении через dictGet или SELECT к ENGINE=Dictionary. После этого такие словари (LOADED) будут перегружаться командой `system reload dictionaries`.
+По умолчанию включена ленивая загрузка [dictionaries\_lazy\_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load), поэтому словари не загружаются автоматически при старте, а только при первом обращении через dictGet или SELECT к ENGINE=Dictionary. После этого такие словари (LOADED) будут перегружаться командой `system reload dictionaries`.
 Всегда возвращает `Ok.`, вне зависимости от результата обновления словарей.
 
 ## RELOAD DICTIONARY Dictionary\_name {#query_language-system-reload-dictionary}
@@ -74,6 +74,7 @@ SELECT name, status FROM system.dictionaries;
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
 Записывает буферы логов в системные таблицы (например system.query\_log). Позволяет не ждать 7.5 секунд при отладке.
+Если буфер логов пустой, то этот запрос просто создаст системные таблицы.
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 
