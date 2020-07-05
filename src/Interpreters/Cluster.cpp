@@ -72,8 +72,9 @@ bool Cluster::Address::isLocal(UInt16 clickhouse_port) const
 }
 
 
-Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, UInt32 shard_index_, UInt32 replica_index_) :
-    shard_index(shard_index_), replica_index(replica_index_)
+Cluster::Address::Address(
+    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, UInt32 shard_index_, UInt32 replica_index_)
+    : shard_index(shard_index_), replica_index(replica_index_)
 {
     host_name = config.getString(config_prefix + ".host");
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
