@@ -59,7 +59,7 @@ struct ArraySumImpl
             if (!column_const)
                 return false;
 
-            const Result x = column_const->template getValue<Element>();
+            const Result x = column_const->template getValue<Element>(); // NOLINT
 
             typename ColVecResult::MutablePtr res_column;
             if constexpr (IsDecimalNumber<Element>)
