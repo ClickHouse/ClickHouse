@@ -44,7 +44,7 @@ public:
 
         /// Table was created explicitly by a statement like
         /// CREATE TABLE ... ENGINE=Dictionary
-        /// User choosed the table's database and name and can drop that table.
+        /// User chose the table's database and name and can drop that table.
         Custom,
     };
 
