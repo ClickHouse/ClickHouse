@@ -33,7 +33,7 @@ public:
     /// Specifies where the table is located relative to the dictionary.
     enum class Location
     {
-        /// Table was created automatically as an element of a database with the DICTIONARY engine.
+        /// Table was created automatically as an element of a database with the Dictionary engine.
         DictionaryDatabase,
 
         /// Table was created automatically along with a dictionary
