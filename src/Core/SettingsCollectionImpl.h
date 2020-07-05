@@ -220,6 +220,19 @@ SettingsChanges SettingsCollection<Derived>::changes() const
 
 
 template <class Derived>
+std::string SettingsCollection<Derived>::dumpChangesToString() const
+{
+    std::stringstream ss;
+    for (const auto & c : changes())
+    {
+        ss << c.name << " = "
+            << applyVisitor(FieldVisitorToString(), c.value) << "\n";
+    }
+    return ss.str();
+}
+
+
+template <class Derived>
 void SettingsCollection<Derived>::applyChange(const SettingChange & change)
 {
     set(change.name, change.value);

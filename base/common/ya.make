@@ -2,7 +2,7 @@ LIBRARY()
 
 ADDINCL(
     GLOBAL clickhouse/base
-    contrib/libs/cctz/include
+    GLOBAL contrib/libs/cctz/include
 )
 
 CFLAGS (GLOBAL -DARCADIA_BUILD)

@@ -1,7 +1,9 @@
 [
     {
-        "system":       "AWS i3.8xlarge 32vCPU 244GiB 4x1900 NVMe SSD",
+        "system":       "AWS i3.8xlarge",
+        "system_full":      "AWS i3.8xlarge 32vCPU 244GiB 4x1900 NVMe SSD",
         "time":         "2020-01-15 00:00:00",
+        "kind":         "cloud",
         "result":
         [
             [0.009, 0.002, 0.002],

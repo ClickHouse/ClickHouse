@@ -3,18 +3,15 @@
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
-#include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/ConcatReadBuffer.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Access/AccessFlags.h>
@@ -24,7 +21,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/queryToString.h>
-#include <Storages/Kafka/StorageKafka.h>
 #include <Storages/StorageDistributed.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
@@ -32,7 +28,6 @@
 #include <Processors/NullSink.h>
 #include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/Sources/SinkToOutputStream.h>
-#include <Processors/ConcatProcessor.h>
 
 
 namespace DB
@@ -73,19 +68,22 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     return DatabaseCatalog::instance().getTable(query.table_id, context);
 }
 
-Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table) const
+Block InterpreterInsertQuery::getSampleBlock(
+    const ASTInsertQuery & query,
+    const StoragePtr & table,
+    const StorageMetadataPtr & metadata_snapshot) const
 {
-    Block table_sample_non_materialized = table->getSampleBlockNonMaterialized();
+    Block table_sample_non_materialized = metadata_snapshot->getSampleBlockNonMaterialized();
     /// If the query does not include information about columns
     if (!query.columns)
     {
         if (no_destination)
-            return table->getSampleBlockWithVirtuals();
+            return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtuals());
         else
             return table_sample_non_materialized;
     }
 
-    Block table_sample = table->getSampleBlock();
+    Block table_sample = metadata_snapshot->getSampleBlock();
     /// Form the block based on the column names from the query
     Block res;
     for (const auto & identifier : query.columns->children)
@@ -115,10 +113,10 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
 
     StoragePtr table = getTable(query);
-    auto table_lock = table->lockStructureForShare(
-            true, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto table_lock = table->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    auto query_sample_block = getSampleBlock(query, table);
+    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot);
     if (!query.table_function)
         context.checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
@@ -162,7 +160,7 @@ BlockIO InterpreterInsertQuery::execute()
             const auto & cluster = storage_src->getCluster();
             const auto & shards_info = cluster->getShardsInfo();
 
-            std::vector<QueryPipeline> pipelines;
+            std::vector<std::unique_ptr<QueryPipeline>> pipelines;
 
             String new_query_str = queryToString(new_query);
             for (size_t shard_index : ext::range(0, shards_info.size()))
@@ -171,7 +169,7 @@ BlockIO InterpreterInsertQuery::execute()
                 if (shard_info.isLocal())
                 {
                     InterpreterInsertQuery interpreter(new_query, context);
-                    pipelines.emplace_back(interpreter.execute().pipeline);
+                    pipelines.emplace_back(std::make_unique<QueryPipeline>(interpreter.execute().pipeline));
                 }
                 else
                 {
@@ -183,9 +181,9 @@ BlockIO InterpreterInsertQuery::execute()
 
                     ///  INSERT SELECT query returns empty block
                     auto in_stream = std::make_shared<RemoteBlockInputStream>(std::move(connections), new_query_str, Block{}, context);
-                    pipelines.emplace_back();
-                    pipelines.back().init(Pipe(std::make_shared<SourceFromInputStream>(std::move(in_stream))));
-                    pipelines.back().setSinks([](const Block & header, QueryPipeline::StreamType) -> ProcessorPtr
+                    pipelines.emplace_back(std::make_unique<QueryPipeline>());
+                    pipelines.back()->init(Pipe(std::make_shared<SourceFromInputStream>(std::move(in_stream))));
+                    pipelines.back()->setSinks([](const Block & header, QueryPipeline::StreamType) -> ProcessorPtr
                     {
                         return std::make_shared<EmptySink>(header);
                     });
@@ -226,21 +224,21 @@ BlockIO InterpreterInsertQuery::execute()
             /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
             ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
             if (table->noPushingToViews() && !no_destination)
-                out = table->write(query_ptr, context);
+                out = table->write(query_ptr, metadata_snapshot, context);
             else
-                out = std::make_shared<PushingToViewsBlockOutputStream>(table, context, query_ptr, no_destination);
+                out = std::make_shared<PushingToViewsBlockOutputStream>(table, metadata_snapshot, context, query_ptr, no_destination);
 
             /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
 
             /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
-            if (const auto & constraints = table->getConstraints(); !constraints.empty())
+            if (const auto & constraints = metadata_snapshot->getConstraints(); !constraints.empty())
                 out = std::make_shared<CheckConstraintsBlockOutputStream>(
-                    query.table_id, out, out->getHeader(), table->getConstraints(), context);
+                    query.table_id, out, out->getHeader(), metadata_snapshot->getConstraints(), context);
 
             /// Actually we don't know structure of input blocks from query/table,
             /// because some clients break insertion protocol (columns != header)
             out = std::make_shared<AddingDefaultBlockOutputStream>(
-                out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
+                out, query_sample_block, out->getHeader(), metadata_snapshot->getColumns().getDefaults(), context);
 
             /// It's important to squash blocks as early as possible (before other transforms),
             ///  because other transforms may work inefficient if block size is small.
@@ -291,7 +289,7 @@ BlockIO InterpreterInsertQuery::execute()
 
         if (!allow_materialized)
         {
-            for (const auto & column : table->getColumns())
+            for (const auto & column : metadata_snapshot->getColumns())
                 if (column.default_desc.kind == ColumnDefaultKind::Materialized && header.has(column.name))
                     throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }

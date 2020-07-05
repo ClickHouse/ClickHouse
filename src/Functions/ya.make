@@ -2,12 +2,13 @@
 LIBRARY()
 
 CFLAGS(
-    -DUSE_SSL -DUSE_XXHASH
+    -DUSE_H3 -DUSE_SSL -DUSE_XXHASH
 )
 
 ADDINCL(
     library/cpp/consistent_hashing
     contrib/libs/farmhash
+    contrib/libs/h3/h3lib/include
     contrib/libs/hyperscan/src
     contrib/libs/icu/common
     contrib/libs/libdivide
@@ -20,6 +21,7 @@ PEERDIR(
     clickhouse/src/Dictionaries
     contrib/libs/farmhash
     contrib/libs/fastops/fastops
+    contrib/libs/h3
     contrib/libs/hyperscan
     contrib/libs/icu
     contrib/libs/libdivide
@@ -91,6 +93,7 @@ SRCS(
     array/hasAll.cpp
     array/hasAny.cpp
     array/has.cpp
+    array/hasSubstr.cpp
     array/indexOf.cpp
     array/length.cpp
     array/range.cpp
@@ -120,6 +123,7 @@ SRCS(
     blockNumber.cpp
     blockSerializedSize.cpp
     blockSize.cpp
+    buildId.cpp
     caseWithExpression.cpp
     cbrt.cpp
     coalesce.cpp
@@ -194,13 +198,26 @@ SRCS(
     geohashDecode.cpp
     geohashEncode.cpp
     geohashesInBox.cpp
+    geoToH3.cpp
     getMacro.cpp
     getScalar.cpp
     getSizeOfEnumType.cpp
+    globalVariable.cpp
     greatCircleDistance.cpp
     greater.cpp
     greaterOrEquals.cpp
     greatest.cpp
+    h3EdgeAngle.cpp
+    h3EdgeLengthM.cpp
+    h3GetBaseCell.cpp
+    h3GetResolution.cpp
+    h3HexAreaM2.cpp
+    h3IndexesAreNeighbors.cpp
+    h3IsValid.cpp
+    h3kRing.cpp
+    h3ToChildren.cpp
+    h3ToParent.cpp
+    h3ToString.cpp
     hasColumnInTable.cpp
     hasTokenCaseInsensitive.cpp
     hasToken.cpp
@@ -211,6 +228,7 @@ SRCS(
     ifNull.cpp
     IFunction.cpp
     ignore.cpp
+    ilike.cpp
     in.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -271,6 +289,7 @@ SRCS(
     neighbor.cpp
     notEmpty.cpp
     notEquals.cpp
+    notILike.cpp
     notLike.cpp
     now64.cpp
     now.cpp
@@ -337,6 +356,7 @@ SRCS(
     sleepEachRow.cpp
     sqrt.cpp
     startsWith.cpp
+    stringToH3.cpp
     substring.cpp
     subtractDays.cpp
     subtractHours.cpp
@@ -348,6 +368,7 @@ SRCS(
     subtractYears.cpp
     tan.cpp
     tanh.cpp
+    TargetSpecific.cpp
     tgamma.cpp
     throwIf.cpp
     timeSlot.cpp
@@ -359,6 +380,7 @@ SRCS(
     toDayOfMonth.cpp
     toDayOfWeek.cpp
     toDayOfYear.cpp
+    toFixedString.cpp
     toHour.cpp
     toISOWeek.cpp
     toISOYear.cpp

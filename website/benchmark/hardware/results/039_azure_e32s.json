@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Azure E32s v3 32 256 GiB 512 GiB",
+        "system":       "Azure E32s v3",
+        "system_full":       "Azure E32s v3 32 256 GiB 512 GiB",
         "time":         "2020-03-23 00:00:00",
+        "kind":         "cloud",
         "result":
         [
             [0.003, 0.002, 0.003],

@@ -254,7 +254,8 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     packet.readPayload(payload);
     String database = connection_context.getCurrentDatabase();
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, connection_context);
-    for (const NameAndTypePair & column: table_ptr->getColumns().getAll())
+    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
+    for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(
             database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0
@@ -270,7 +271,6 @@ void MySQLHandler::comPing()
 }
 
 static bool isFederatedServerSetupSetCommand(const String & query);
-static bool isFederatedServerSetupSelectVarCommand(const String & query);
 
 void MySQLHandler::comQuery(ReadBuffer & payload)
 {
@@ -288,20 +288,16 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         bool should_replace = false;
         bool with_output = false;
 
-        // Translate query from MySQL to ClickHouse.
-        // Required parameters when setup:
-        // * max_allowed_packet, default 64MB, https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_max_allowed_packet
-        if (isFederatedServerSetupSelectVarCommand(query))
-        {
-            should_replace = true;
-            replacement_query = "SELECT 67108864 AS max_allowed_packet";
-        }
-
         // This is a workaround in order to support adding ClickHouse to MySQL using federated server.
         if (0 == strncasecmp("SHOW TABLE STATUS LIKE", query.c_str(), 22))
         {
             should_replace = true;
             replacement_query = boost::replace_all_copy(query, "SHOW TABLE STATUS LIKE ", show_table_status_replacement_query);
+        }
+
+        if (0 == strncasecmp("SHOW VARIABLES", query.c_str(), 13))
+        {
+            should_replace = true;
         }
 
         ReadBufferFromString replacement(replacement_query);
@@ -374,16 +370,6 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"
         , std::regex::icase};
     return 1 == std::regex_match(query, expr);
-}
-
-static bool isFederatedServerSetupSelectVarCommand(const String & query)
-{
-     static const std::regex expr{
-         "|(^(SELECT @@(.*)))"
-         "|(^((/\\*(.*)\\*/)([ \t]*)(SELECT([ \t]*)@@(.*))))"
-         "|(^((/\\*(.*)\\*/)([ \t]*)(SHOW VARIABLES(.*))))"
-         , std::regex::icase};
-     return 1 == std::regex_match(query, expr);
 }
 
 const String MySQLHandler::show_table_status_replacement_query("SELECT"

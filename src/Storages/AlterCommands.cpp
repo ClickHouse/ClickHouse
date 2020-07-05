@@ -83,6 +83,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.ttl)
             command.ttl = ast_col_decl.ttl;
 
+        command.first = command_ast->first;
         command.if_not_exists = command_ast->if_not_exists;
 
         return command;
@@ -133,6 +134,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.codec)
             command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
 
+        if (command_ast->column)
+            command.after_column = getIdentifierName(command_ast->column);
+
+        command.first = command_ast->first;
         command.if_exists = command_ast->if_exists;
 
         return command;
@@ -269,7 +274,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         column.codec = codec;
         column.ttl = ttl;
 
-        metadata.columns.add(column, after_column);
+        metadata.columns.add(column, after_column, first);
 
         /// Slow, because each time a list is copied
         metadata.columns.flattenNested();
@@ -282,7 +287,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
     }
     else if (type == MODIFY_COLUMN)
     {
-        metadata.columns.modify(column_name, [&](ColumnDescription & column)
+        metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
             if (codec)
             {
@@ -313,21 +318,27 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
                 column.default_desc.expression = default_expression;
             }
         });
+
     }
     else if (type == MODIFY_ORDER_BY)
     {
-        if (!metadata.primary_key_ast && metadata.order_by_ast)
+        auto & sorting_key = metadata.sorting_key;
+        auto & primary_key = metadata.primary_key;
+        if (primary_key.definition_ast == nullptr && sorting_key.definition_ast != nullptr)
         {
-            /// Primary and sorting key become independent after this ALTER so we have to
-            /// save the old ORDER BY expression as the new primary key.
-            metadata.primary_key_ast = metadata.order_by_ast->clone();
+            /// Primary and sorting key become independent after this ALTER so
+            /// we have to save the old ORDER BY expression as the new primary
+            /// key.
+            primary_key = KeyDescription::getKeyFromAST(sorting_key.definition_ast, metadata.columns, context);
         }
 
-        metadata.order_by_ast = order_by;
+        /// Recalculate key with new order_by expression.
+        sorting_key.recalculateWithNewAST(order_by, metadata.columns, context);
     }
     else if (type == COMMENT_COLUMN)
     {
-        metadata.columns.modify(column_name, [&](ColumnDescription & column) { column.comment = *comment; });
+        metadata.columns.modify(column_name,
+            [&](ColumnDescription & column) { column.comment = *comment; });
     }
     else if (type == ADD_INDEX)
     {
@@ -430,15 +441,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
     }
     else if (type == MODIFY_TTL)
     {
-        metadata.ttl_for_table_ast = ttl;
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl, metadata.columns, context, metadata.primary_key);
     }
     else if (type == MODIFY_QUERY)
     {
-        metadata.select = select;
+        metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, context);
     }
     else if (type == MODIFY_SETTING)
     {
-        auto & settings_from_storage = metadata.settings_ast->as<ASTSetQuery &>().changes;
+        auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & change : settings_changes)
         {
             auto finder = [&change](const SettingChange & c) { return c.name == change.name; };
@@ -465,8 +476,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
                     rename_visitor.visit(column_to_modify.ttl);
             });
         }
-        if (metadata.ttl_for_table_ast)
-            rename_visitor.visit(metadata.ttl_for_table_ast);
+        if (metadata.table_ttl.definition_ast)
+            rename_visitor.visit(metadata.table_ttl.definition_ast);
+
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            metadata.table_ttl.definition_ast, metadata.columns, context, metadata.primary_key);
 
         for (auto & constraint : metadata.constraints.constraints)
             rename_visitor.visit(constraint);
@@ -707,6 +721,38 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
         if (!command.ignore)
             command.apply(metadata_copy, context);
 
+    /// Changes in columns may lead to changes in keys expression.
+    metadata_copy.sorting_key.recalculateWithNewColumns(metadata_copy.columns, context);
+    if (metadata_copy.primary_key.definition_ast != nullptr)
+    {
+        metadata_copy.primary_key.recalculateWithNewColumns(metadata_copy.columns, context);
+    }
+    else
+    {
+        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.primary_key.definition_ast = nullptr;
+    }
+
+    /// And in partition key expression
+    if (metadata_copy.partition_key.definition_ast != nullptr)
+        metadata_copy.partition_key.recalculateWithNewColumns(metadata_copy.columns, context);
+
+    /// Changes in columns may lead to changes in secondary indices
+    for (auto & index : metadata_copy.secondary_indices)
+        index.recalculateWithNewColumns(metadata_copy.columns, context);
+
+    /// Changes in columns may lead to changes in TTL expressions.
+    auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
+    for (const auto & [name, ast] : column_ttl_asts)
+    {
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, metadata_copy.columns, context, metadata_copy.primary_key);
+        metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
+    }
+
+    if (metadata_copy.table_ttl.definition_ast != nullptr)
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            metadata_copy.table_ttl.definition_ast, metadata_copy.columns, context, metadata_copy.primary_key);
+
     metadata = std::move(metadata_copy);
 }
 
@@ -832,7 +878,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         }
         else if (command.type == AlterCommand::MODIFY_SETTING)
         {
-            if (metadata.settings_ast == nullptr)
+            if (metadata.settings_changes == nullptr)
                 throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)
