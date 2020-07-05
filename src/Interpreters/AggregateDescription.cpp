@@ -27,6 +27,7 @@ void AggregateDescription::explain(WriteBuffer & out, size_t ident) const
 
     if (function)
     {
+        /// Double whitespace is intentional.
         out << prefix << "  Function: " << function->getName();
 
         const auto & params = function->getParameters();
