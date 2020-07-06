@@ -72,8 +72,9 @@ protected:
     bool secure_connection = false;
 
 private:
-    static const String show_table_status_replacement_query;
-    String kill_connection_id_replacement_query(const String & query);
+    using ReplacementFn = std::function<String(const String & query)>;
+    using Replacements = std::unordered_map<std::string, ReplacementFn>;
+    Replacements replacements;
 };
 
 #if USE_SSL
