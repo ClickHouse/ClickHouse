@@ -49,7 +49,8 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
                 StorageDictionary::create(
                     StorageID(getDatabaseName(), dictionary_name),
                     full_name,
-                    ExternalDictionariesLoader::getDictionaryStructure(*attach_info.config)),
+                    ExternalDictionariesLoader::getDictionaryStructure(*attach_info.config),
+                    StorageDictionary::Location::SameDatabaseAndNameAsDictionary),
                 lock);
         }
         catch (...)
