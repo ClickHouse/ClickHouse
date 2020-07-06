@@ -6,7 +6,10 @@ toc_title: cluster
 # cluster, clusterAllReplicas {#cluster-clusterallreplicas}
 
 Allows to access all shards in an existing cluster which configured in `remote_servers` section without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. One replica of each shard is queried.
-`clusterAllReplicas` - same as `cluster` but each replica in cluster used as separated shard/connection. 
+`clusterAllReplicas` - same as `cluster` but all replicas are queried. Each replica in a cluster is used as separate shard/connection. 
+
+!!! note "Note"
+    All available clusters are listed in the `system.clusters` table.
 
 
 Signatures:
