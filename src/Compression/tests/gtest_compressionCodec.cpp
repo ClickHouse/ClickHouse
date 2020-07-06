@@ -11,7 +11,7 @@
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 
-#include <boost/format.hpp>
+#include <fmt/format.h>
 
 #include <bitset>
 #include <cmath>
@@ -390,7 +390,7 @@ CodecTestSequence makeSeq(Args && ... args)
     }
 
     return CodecTestSequence{
-            (boost::format("%1% values of %2%") % std::size(vals) % type_name<T>()).str(),
+            (fmt::format("{} values of {}", std::size(vals), type_name<T>())),
             std::move(data),
             makeDataType<T>()
     };
@@ -412,7 +412,7 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
     }
 
     return CodecTestSequence{
-            (boost::format("%1% values of %2% from %3%") % (End - Begin) % type_name<T>() % gen_name).str(),
+            (fmt::format("{} values of {} from {}", (End - Begin), type_name<T>(), gen_name)),
             std::move(data),
             makeDataType<T>()
     };
