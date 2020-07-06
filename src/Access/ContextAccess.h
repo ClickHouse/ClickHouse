@@ -135,6 +135,11 @@ public:
 
     /// Checks if a specified role is granted with admin option, and throws an exception if not.
     void checkAdminOption(const UUID & role_id) const;
+    void checkAdminOption(const UUID & role_id, const String & role_name) const;
+    void checkAdminOption(const UUID & role_id, const std::unordered_map<UUID, String> & names_of_roles) const;
+    void checkAdminOption(const std::vector<UUID> & role_ids) const;
+    void checkAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const;
+    void checkAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const;
 
     /// Makes an instance of ContextAccess which provides full access to everything
     /// without any limitations. This is used for the global context.
@@ -148,7 +153,7 @@ private:
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;
     void setSettingsAndConstraints() const;
-    void setFinalAccess() const;
+    void calculateAccessRights() const;
 
     template <bool grant_option>
     bool isGrantedImpl(const AccessFlags & flags) const;
@@ -180,6 +185,9 @@ private:
     template <bool grant_option, typename... Args>
     void checkAccessImpl2(const AccessFlags & flags, const Args &... args) const;
 
+    template <typename Container, typename GetNameFunction>
+    void checkAdminOptionImpl(const Container & role_ids, const GetNameFunction & get_name_function) const;
+
     const AccessControlManager * manager = nullptr;
     const Params params;
     mutable Poco::Logger * trace_log = nullptr;
@@ -193,9 +201,10 @@ private:
     mutable std::shared_ptr<const EnabledRowPolicies> enabled_row_policies;
     mutable std::shared_ptr<const EnabledQuota> enabled_quota;
     mutable std::shared_ptr<const EnabledSettings> enabled_settings;
-    mutable std::shared_ptr<const ContextAccess> access_without_readonly;
-    mutable std::shared_ptr<const ContextAccess> access_with_allow_ddl;
-    mutable std::shared_ptr<const ContextAccess> access_with_allow_introspection;
+    mutable std::shared_ptr<const AccessRights> access_without_readonly;
+    mutable std::shared_ptr<const AccessRights> access_with_allow_ddl;
+    mutable std::shared_ptr<const AccessRights> access_with_allow_introspection;
+    mutable std::shared_ptr<const AccessRights> access_from_user_and_roles;
     mutable std::mutex mutex;
 };
 
