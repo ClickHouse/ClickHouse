@@ -230,6 +230,7 @@ SRCS(
     ignore.cpp
     ilike.cpp
     in.cpp
+    initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
     intExp10.cpp
