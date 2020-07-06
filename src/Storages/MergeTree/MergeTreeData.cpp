@@ -109,7 +109,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int NOT_ENOUGH_SPACE;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
-    extern const int BAD_ARGUMENTS;
 }
 
 
