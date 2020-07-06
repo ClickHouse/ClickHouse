@@ -31,7 +31,7 @@ The `cluster` and `clusterAllReplicas` table functions can be useful in the foll
 -   Queries to various ClickHouse clusters and replicas for research purposes.
 -   Infrequent distributed requests that are made manually.
 
-Connection settings like `user`, `password`, `host`, `post`, `compression`, `secure` gets from `<remote_servers>` config section. See details in [Distributed engine](../../engines/table-engines/special/distributed.md)
+Connection settings like `host`, `port`, `user`, `password`, `compression`, `secure` are taken from `<remote_servers>` config section. See details in [Distributed engine](../../engines/table-engines/special/distributed.md).
 
 **See Also**
 
