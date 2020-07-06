@@ -161,7 +161,6 @@ protected:
 private:
     /* Saving thread data */
     Context & context;
-    Context insert_context;
     const StorageID table_id;
     const String storage_def;
     StoragePtr table;
@@ -208,13 +207,11 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     const String & storage_def_,
     size_t flush_interval_milliseconds_)
     : context(context_)
-    , insert_context(Context(context_))
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_)
     , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
-    insert_context.makeQueryContext(); // we need query context to do inserts to target table with MV containing subqueries or joins
     log = &Poco::Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
 }
 
@@ -427,6 +424,10 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
         insert->table_id = table_id;
         ASTPtr query_ptr(insert.release());
+
+        // we need query context to do inserts to target table with MV containing subqueries or joins
+        auto insert_context = Context(context);
+        insert_context.makeQueryContext();
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
