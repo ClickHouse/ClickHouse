@@ -46,6 +46,13 @@ Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHo
 
 See also the description of [max\_memory\_usage](#settings_max_memory_usage).
 
+## max\_memory\_usage\_for\_session {#max-memory-usage-for-session}
+
+The maximum amount of RAM to use for running all users' queries during a session on a single server.
+
+Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L288). By default, the amount is not restricted (`max_memory_usage_for_session = 0`).
+
+See also the description of [max\_memory\_usage](#settings_max_memory_usage).
 
 ## max\_rows\_to\_read {#max-rows-to-read}
 
