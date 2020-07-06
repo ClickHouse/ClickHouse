@@ -14,6 +14,8 @@ toc_title: "\u062F\u0648\u0631"
 ``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db, table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db.table[, 'user'[, 'password']])
 ```
 
 `addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port` یا فقط `host`. میزبان را می توان به عنوان نام سرور مشخص, و یا به عنوان ایپو4 یا ایپو6 نشانی. نشانی اینترنتی6 در براکت مربع مشخص شده است. پورت پورت تی سی پی بر روی سرور از راه دور است. اگر پورت حذف شده است, با استفاده از `tcp_port` از فایل پیکربندی سرور (به طور پیش فرض, 9000).
