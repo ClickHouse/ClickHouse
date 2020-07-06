@@ -229,6 +229,7 @@ SRCS(
     IFunction.cpp
     ignore.cpp
     in.cpp
+    initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
     intExp10.cpp
