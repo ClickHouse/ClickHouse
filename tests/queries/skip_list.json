@@ -81,7 +81,8 @@
         "_arrow",
         "01099_parallel_distributed_insert_select",
         "01300_client_save_history_when_terminated",
-        "orc_output"
+        "orc_output",
+        "01370_client_autocomplete_word_break_characters"
     ],
     "release-build": [
         "avx2"
