@@ -102,7 +102,6 @@ void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, 
     assertDetachedTableNotInUse(table->getStorageID().uuid);
     DatabaseWithDictionaries::attachTableUnlocked(name, table, lock);
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
-    //tryCreateSymlink(name, relative_table_path);
 }
 
 StoragePtr DatabaseAtomic::detachTable(const String & name)
@@ -113,7 +112,6 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
     table_name_to_path.erase(name);
     detached_tables.emplace(table->getStorageID().uuid, table);
     not_in_use = cleenupDetachedTables();
-    //tryRemoveSymlink(name);
     return table;
 }
 
@@ -360,7 +358,7 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        LOG_WARNING(log, getCurrentExceptionMessage(true));
     }
 }
 
@@ -373,7 +371,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        LOG_WARNING(log, getCurrentExceptionMessage(true));
     }
 }
 

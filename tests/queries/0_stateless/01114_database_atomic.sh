@@ -12,8 +12,8 @@ $CLICKHOUSE_CLIENT --allow_experimental_database_atomic=1 -q "CREATE DATABASE te
 $CLICKHOUSE_CLIENT --default_database_engine=Atomic --allow_experimental_database_atomic=1 -q "CREATE DATABASE test_01114_2"
 $CLICKHOUSE_CLIENT --default_database_engine=Ordinary -q "CREATE DATABASE test_01114_3"
 
-$CLICKHOUSE_CLIENT -q "SHOW CREATE DATABASE test_01114_1"
-$CLICKHOUSE_CLIENT -q "SHOW CREATE DATABASE test_01114_2"
+$CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=0 -q "SHOW CREATE DATABASE test_01114_1"
+$CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=0 -q "SHOW CREATE DATABASE test_01114_2"
 $CLICKHOUSE_CLIENT -q "SHOW CREATE DATABASE test_01114_3"
 $CLICKHOUSE_CLIENT -q "SELECT name, engine, splitByChar('/', data_path)[-2], splitByChar('/', metadata_path)[-3], splitByChar('/', metadata_path)[-2] FROM system.databases WHERE name LIKE 'test_01114_%'"
 

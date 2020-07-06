@@ -20,6 +20,7 @@
 
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -305,6 +306,14 @@ void DatabaseOnDisk::renameTable(
     to_database.createTable(context, to_table_name, table, attach_query);
 
     Poco::File(table_metadata_path).remove();
+
+    /// Special case: usually no actions with symlinks are required when detaching/attaching table,
+    /// but not when moving from Atomic database to Ordinary
+    if (from_atomic_to_ordinary)
+    {
+        auto & atomic_db = assert_cast<DatabaseAtomic &>(*this);
+        atomic_db.tryRemoveSymlink(table_name);
+    }
 }
 
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
@@ -444,7 +453,8 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * logger, const Conte
       */
     if (remove_empty && query.empty())
     {
-        LOG_ERROR(logger, "File {} is empty. Removing.", metadata_file_path);
+        if (logger)
+            LOG_ERROR(logger, "File {} is empty. Removing.", metadata_file_path);
         Poco::File(metadata_file_path).remove();
         return nullptr;
     }
@@ -467,7 +477,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * logger, const Conte
         String table_name = Poco::Path(metadata_file_path).makeFile().getBaseName();
         table_name = unescapeForFileName(table_name);
 
-        if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER)
+        if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER && logger)
             LOG_WARNING(logger, "File {} contains both UUID and table name. Will use name `{}` instead of `{}`", metadata_file_path, table_name, create.table);
         create.table = table_name;
     }

@@ -114,7 +114,7 @@ void DatabaseCatalog::loadDatabases()
     drop_delay_sec = global_context->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, *global_context);
-    attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
+    attachDatabase(TEMPORARY_DATABASE, UUIDHelpers::Nil, db_for_temporary_and_external_tables);
 
     loadMarkedAsDroppedTables();
     auto task_holder = global_context->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
@@ -147,6 +147,7 @@ void DatabaseCatalog::shutdownImpl()
     std::lock_guard lock(databases_mutex);
     assert(std::find_if_not(uuid_map.begin(), uuid_map.end(), [](const auto & elem) { return elem.map.empty(); }) == uuid_map.end());
     databases.clear();
+    db_uuid_map.clear();
     view_dependencies.clear();
 }
 
@@ -246,11 +247,13 @@ void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_
         throw Exception("Database " + backQuoteIfNeed(database_name) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
 }
 
-void DatabaseCatalog::attachDatabase(const String & database_name, const DatabasePtr & database)
+void DatabaseCatalog::attachDatabase(const String & database_name, const UUID & uuid, const DatabasePtr & database)
 {
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
-    databases[database_name] = database;
+    databases.emplace(database_name, database);
+    if (uuid != UUIDHelpers::Nil)
+        db_uuid_map.emplace(uuid, database);
 }
 
 
@@ -275,6 +278,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
                 database_atomic->assertCanBeDetached(false);
         }
 
+        db_uuid_map.erase(db->getUUID());
         databases.erase(database_name);
     }
 
@@ -308,6 +312,25 @@ DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name) const
     std::lock_guard lock{databases_mutex};
     auto it = databases.find(database_name);
     if (it == databases.end())
+        return {};
+    return it->second;
+}
+
+DatabasePtr DatabaseCatalog::getDatabase(const UUID & uuid) const
+{
+    std::lock_guard lock{databases_mutex};
+    auto it = db_uuid_map.find(uuid);
+    if (it == db_uuid_map.end())
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database UUID {} does not exist", toString(uuid));
+    return it->second;
+}
+
+DatabasePtr DatabaseCatalog::tryGetDatabase(const UUID & uuid) const
+{
+    assert(uuid != UUIDHelpers::Nil);
+    std::lock_guard lock{databases_mutex};
+    auto it = db_uuid_map.find(uuid);
+    if (it == db_uuid_map.end())
         return {};
     return it->second;
 }

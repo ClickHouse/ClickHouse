@@ -47,6 +47,7 @@
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseOnDisk.h>
 
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
@@ -87,6 +88,7 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     String database_name = create.database;
+    assert(database_name != TABLE_WITH_UUID_NAME_PLACEHOLDER);
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
@@ -99,7 +101,26 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             throw Exception("Database " + database_name + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
     }
 
-    if (!create.storage)
+
+    /// Will write file with database metadata, if needed.
+    String database_name_escaped = escapeForFileName(database_name);
+    fs::path metadata_path = fs::canonical(context.getPath());
+    fs::path metadata_file_tmp_path = metadata_path / "metadata" / (database_name_escaped + ".sql.tmp");
+    fs::path metadata_file_path = metadata_path / "metadata" / (database_name_escaped + ".sql");
+
+    if (!create.storage && create.attach)
+    {
+        if (!fs::exists(metadata_file_path))
+            throw Exception("Database engine must be specified for ATTACH DATABASE query", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+        /// Short syntax: try read database definition from file
+        auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, context, metadata_file_path);
+        create = ast->as<ASTCreateQuery &>();
+        if (!create.table.empty() || !create.storage)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Metadata file {} contains incorrect CREATE DATABASE query", metadata_file_path);
+        create.attach = true;
+        create.attach_short_syntax = true;
+    }
+    else if (!create.storage)
     {
         /// For new-style databases engine is explicitly specified in .sql
         /// When attaching old-style database during server startup, we must always use Ordinary engine
@@ -119,12 +140,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         formatAST(*create.storage, ostr, false, false);
         throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
-
-    /// Will write file with database metadata, if needed.
-    String database_name_escaped = escapeForFileName(database_name);
-    fs::path metadata_path = fs::canonical(context.getPath());
-    fs::path metadata_file_tmp_path = metadata_path / "metadata" / (database_name_escaped + ".sql.tmp");
-    fs::path metadata_file_path = metadata_path / "metadata" / (database_name_escaped + ".sql");
 
     if (create.storage->engine->name == "Atomic")
     {
@@ -152,7 +167,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
 
-    DatabasePtr database = DatabaseFactory::get(database_name, metadata_path, create.storage, create.uuid, context);
+    // FIXME
+    DatabasePtr database = DatabaseFactory::get(database_name, metadata_path / "", create.storage, create.uuid, context);
 
     bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
 
@@ -181,7 +197,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     try
     {
         /// TODO Attach db only after it was loaded. Now it's not possible because of view dependencies
-        DatabaseCatalog::instance().attachDatabase(database_name, database);
+        DatabaseCatalog::instance().attachDatabase(database_name, create.uuid, database);
         added = true;
 
         if (need_write_metadata)

@@ -121,12 +121,14 @@ public:
     DatabasePtr getDatabaseForTemporaryTables() const;
     DatabasePtr getSystemDatabase() const;
 
-    void attachDatabase(const String & database_name, const DatabasePtr & database);
+    void attachDatabase(const String & database_name, const UUID & uuid, const DatabasePtr & database);
     DatabasePtr detachDatabase(const String & database_name, bool drop = false, bool check_empty = true);
 
     /// database_name must be not empty
     DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr tryGetDatabase(const String & database_name) const;
+    DatabasePtr getDatabase(const UUID & uuid) const;
+    DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(const String & database_name) const;
     Databases getDatabases() const;
 
@@ -211,6 +213,8 @@ private:
     static constexpr size_t reschedule_time_ms = 100;
 
 private:
+    using UUIDToDatabaseMap = std::unordered_map<UUID, DatabasePtr>;
+
     /// For some reason Context is required to get Storage from Database object
     Context * global_context;
     mutable std::mutex databases_mutex;
@@ -218,6 +222,7 @@ private:
     ViewDependencies view_dependencies;
 
     Databases databases;
+    UUIDToDatabaseMap db_uuid_map;
     UUIDToStorageMap uuid_map;
 
     Poco::Logger * log;

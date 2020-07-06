@@ -42,7 +42,7 @@ private:
         registerFunctions();
         DatabasePtr database = std::make_shared<DatabaseMemory>("test", context);
         database->attachTable("table", StorageMemory::create(StorageID("test", "table"), ColumnsDescription{columns}, ConstraintsDescription{}));
-        DatabaseCatalog::instance().attachDatabase("test", database);
+        DatabaseCatalog::instance().attachDatabase("test", UUIDHelpers::Nil, database);
         context.setCurrentDatabase("test");
     }
 };
