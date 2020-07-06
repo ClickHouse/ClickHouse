@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IServer.h"
+#include <Server/IServer.h>
 
 #include <daemon/BaseDaemon.h>
 

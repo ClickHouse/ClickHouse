@@ -21,7 +21,7 @@ ColumnGathererStream::ColumnGathererStream(
         const String & column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
         size_t block_preferred_size_)
     : column_name(column_name_), sources(source_streams.size()), row_sources_buf(row_sources_buf_)
-    , block_preferred_size(block_preferred_size_), log(&Logger::get("ColumnGathererStream"))
+    , block_preferred_size(block_preferred_size_), log(&Poco::Logger::get("ColumnGathererStream"))
 {
     if (source_streams.empty())
         throw Exception("There are no streams to gather", ErrorCodes::EMPTY_DATA_PASSED);
@@ -105,7 +105,7 @@ void ColumnGathererStream::readSuffixImpl()
     else
         LOG_DEBUG(log, "Gathered column {} ({} bytes/elem.) in {} sec., {} rows/sec., {}/sec.",
             column_name, static_cast<double>(profile_info.bytes) / profile_info.rows, seconds,
-            profile_info.rows / seconds, formatReadableSizeWithBinarySuffix(profile_info.bytes / seconds));
+            profile_info.rows / seconds, ReadableSize(profile_info.bytes / seconds));
 }
 
 }

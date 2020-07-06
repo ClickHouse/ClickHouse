@@ -25,6 +25,13 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 
+
+/*
+ * Represents a set of equal ranges in previous column to perform sorting in current column.
+ * Used in sorting by tuples.
+ * */
+using EqualRanges = std::vector<std::pair<size_t, size_t> >;
+
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
 {
@@ -43,6 +50,9 @@ public:
 
     /// Name of a Column kind, without parameters (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
+
+    /// Type of data that column contains. It's an underlying type: UInt16 for Date, UInt32 for DateTime, so on.
+    virtual TypeIndex getDataType() const = 0;
 
     /** If column isn't constant, returns itself.
       * If column is constant, transforms constant to full column (if column type allows such transform) and return it.
@@ -237,6 +247,15 @@ public:
       */
     virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 
+    /// Compare the whole column with single value from rhs column.
+    /// If row_indexes is nullptr, it's ignored. Otherwise, it is a set of rows to compare.
+    /// compare_results[i] will be equal to compareAt(row_indexes[i], rhs_row_num, rhs, nan_direction_hint) * direction
+    /// row_indexes (if not ignored) will contain row numbers for which compare result is 0
+    /// see compareImpl for default implementation.
+    virtual void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                               PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                               int direction, int nan_direction_hint) const = 0;
+
     /** Returns a permutation that sorts elements of this column,
       *  i.e. perm[i]-th element of source column should be i-th element of sorted column.
       * reverse - reverse ordering (acsending).
@@ -255,6 +274,16 @@ public:
     {
         getPermutation(reverse, limit, nan_direction_hint, res);
     }
+
+    /*in updatePermutation we pass the current permutation and the intervals at which it should be sorted
+     * Then for each interval separately (except for the last one, if there is a limit)
+     * We sort it based on data about the current column, and find all the intervals within this
+     * interval that had the same values in this column. we can't tell about these values in what order they
+     * should have been, we form a new array with intervals that need to be sorted
+     * If there is a limit, then for the last interval we do partial sorting and all that is described above,
+     * but in addition we still find all the elements equal to the largest sorted, they will also need to be sorted.
+     */
+    virtual void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const = 0;
 
     /** Copies each element according offsets parameter.
       * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
@@ -382,7 +411,6 @@ public:
 
     virtual bool lowCardinality() const { return false; }
 
-
     virtual ~IColumn() = default;
     IColumn() = default;
     IColumn(const IColumn &) = default;
@@ -397,6 +425,18 @@ protected:
     /// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
     template <typename Derived>
     std::vector<MutablePtr> scatterImpl(ColumnIndex num_columns, const Selector & selector) const;
+
+    template <typename Derived, bool reversed, bool use_indexes>
+    void compareImpl(const Derived & rhs, size_t rhs_row_num,
+                     PaddedPODArray<UInt64> * row_indexes,
+                     PaddedPODArray<Int8> & compare_results,
+                     int nan_direction_hint) const;
+
+    template <typename Derived>
+    void doCompareColumn(const Derived & rhs, size_t rhs_row_num,
+                         PaddedPODArray<UInt64> * row_indexes,
+                         PaddedPODArray<Int8> & compare_results,
+                         int direction, int nan_direction_hint) const;
 };
 
 using ColumnPtr = IColumn::Ptr;

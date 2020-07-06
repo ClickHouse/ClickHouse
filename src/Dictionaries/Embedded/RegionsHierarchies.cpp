@@ -6,7 +6,7 @@
 
 RegionsHierarchies::RegionsHierarchies(IRegionsHierarchiesDataProviderPtr data_provider)
 {
-    Logger * log = &Logger::get("RegionsHierarchies");
+    Poco::Logger * log = &Poco::Logger::get("RegionsHierarchies");
 
     LOG_DEBUG(log, "Adding default regions hierarchy");
     data.emplace("", data_provider->getDefaultHierarchySource());

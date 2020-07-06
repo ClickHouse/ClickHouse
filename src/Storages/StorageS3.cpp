@@ -5,6 +5,7 @@
 #include <IO/S3Common.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
+#include <Storages/StorageS3Settings.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -23,8 +24,9 @@
 
 #include <DataTypes/DataTypeString.h>
 
+#include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsRequest.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
 
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
@@ -32,6 +34,8 @@
 
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
+
+#include <sstream>
 
 
 namespace DB
@@ -119,7 +123,6 @@ namespace
                 return Chunk(std::move(columns), num_rows);
             }
 
-            reader->readSuffix();
             reader.reset();
 
             return {};
@@ -201,18 +204,26 @@ StorageS3::StorageS3(
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
-    , client(S3::ClientFactory::instance().create(uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_))
 {
     context_global.getRemoteHostFilter().checkURL(uri_.uri);
-    setColumns(columns_);
-    setConstraints(constraints_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
+
+    auto settings = context_.getStorageS3Settings().getSettings(uri.endpoint);
+    Aws::Auth::AWSCredentials credentials(access_key_id_, secret_access_key_);
+    if (access_key_id_.empty())
+        credentials = Aws::Auth::AWSCredentials(std::move(settings.access_key_id), std::move(settings.secret_access_key));
+
+    client = S3::ClientFactory::instance().create(
+        uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_, std::move(settings.headers));
 }
 
 
 namespace
 {
-
-/* "Recursive" directory listing with matched paths as a result.
+    /* "Recursive" directory listing with matched paths as a result.
  * Have the same method in StorageFile.
  */
 Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri)
@@ -228,25 +239,31 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
         return {globbed_uri.key};
     }
 
-    Aws::S3::Model::ListObjectsRequest request;
+    Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(globbed_uri.bucket);
     request.SetPrefix(key_prefix);
 
     re2::RE2 matcher(makeRegexpPatternFromGlobs(globbed_uri.key));
     Strings result;
-    Aws::S3::Model::ListObjectsOutcome outcome;
+    Aws::S3::Model::ListObjectsV2Outcome outcome;
     int page = 0;
     do
     {
         ++page;
-        outcome = client.ListObjects(request);
+        outcome = client.ListObjectsV2(request);
         if (!outcome.IsSuccess())
         {
-            throw Exception("Could not list objects in bucket " + quoteString(request.GetBucket())
-                    + " with prefix " + quoteString(request.GetPrefix())
-                    + ", page " + std::to_string(page)
-                    + ", S3 exception " + outcome.GetError().GetExceptionName() + " " + outcome.GetError().GetMessage()
-                , ErrorCodes::S3_ERROR);
+            std::ostringstream message;
+            message << "Could not list objects in bucket " << quoteString(request.GetBucket())
+                << " with prefix " << quoteString(request.GetPrefix());
+
+            if (page > 1)
+                message << ", page " << std::to_string(page);
+
+            message << ", S3 exception: " + backQuote(outcome.GetError().GetExceptionName())
+                << ", message: " + quoteString(outcome.GetError().GetMessage());
+
+            throw Exception(message.str(), ErrorCodes::S3_ERROR);
         }
 
         for (const auto & row : outcome.GetResult().GetContents())
@@ -256,7 +273,7 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
                 result.emplace_back(std::move(key));
         }
 
-        request.SetMarker(outcome.GetResult().GetNextMarker());
+        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
     }
     while (outcome.GetResult().GetIsTruncated());
 
@@ -268,6 +285,7 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
 
 Pipes StorageS3::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -291,9 +309,9 @@ Pipes StorageS3::read(
             need_file_column,
             format_name,
             getName(),
-            getHeaderBlock(column_names),
+            metadata_snapshot->getSampleBlock(),
             context,
-            getColumns().getDefaults(),
+            metadata_snapshot->getColumns().getDefaults(),
             max_block_size,
             chooseCompressionMethod(uri.endpoint, compression_method),
             client,
@@ -303,11 +321,11 @@ Pipes StorageS3::read(
     return narrowPipes(std::move(pipes), num_streams);
 }
 
-BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     return std::make_shared<StorageS3BlockOutputStream>(
-        format_name, min_upload_part_size, getSampleBlock(), context_global,
-        chooseCompressionMethod(uri.endpoint, compression_method),
+        format_name, min_upload_part_size, metadata_snapshot->getSampleBlock(),
+        context_global, chooseCompressionMethod(uri.endpoint, compression_method),
         client, uri.bucket, uri.key);
 }
 

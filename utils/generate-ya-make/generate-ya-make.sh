@@ -8,5 +8,6 @@ ROOT_PATH=$(git rev-parse --show-toplevel)
 EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing'
 
 find "${ROOT_PATH}" -name 'ya.make.in' | while read path; do
-    (cd $(dirname "${path}") && perl -pne 's/<\?(.+?)\?>/`$1`/e' < "${path}" > "${path/.in/}")
+    echo "# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it." > "${path/.in/}"
+    (cd $(dirname "${path}") && perl -pne 's/<\?(.+?)\?>/`$1`/e' < "${path}" >> "${path/.in/}")
 done

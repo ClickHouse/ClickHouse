@@ -85,7 +85,7 @@ CacheDictionary::CacheDictionary(
     , update_queue_push_timeout_milliseconds(update_queue_push_timeout_milliseconds_)
     , query_wait_timeout_milliseconds(query_wait_timeout_milliseconds_)
     , max_threads_for_updates(max_threads_for_updates_)
-    , log(&Logger::get("ExternalDictionaries"))
+    , log(&Poco::Logger::get("ExternalDictionaries"))
     , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
     , cells{this->size}

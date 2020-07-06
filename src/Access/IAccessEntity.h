@@ -45,11 +45,13 @@ struct IAccessEntity
     struct TypeInfo
     {
         const char * const raw_name;
+        const char * const plural_raw_name;
         const String name;  /// Uppercased with spaces instead of underscores, e.g. "SETTINGS PROFILE".
         const String alias; /// Alias of the keyword or empty string, e.g. "PROFILE".
+        const String plural_name;  /// Uppercased with spaces plural name, e.g. "SETTINGS PROFILES".
+        const String plural_alias; /// Uppercased with spaces plural name alias, e.g. "PROFILES".
         const String name_for_output_with_entity_name; /// Lowercased with spaces instead of underscores, e.g. "settings profile".
         const char unique_char;     /// Unique character for this type. E.g. 'P' for SETTINGS_PROFILE.
-        const String list_filename; /// Name of the file containing list of objects of this type, including the file extension ".list".
         const int not_found_error_code;
 
         static const TypeInfo & get(Type type_);
@@ -69,6 +71,18 @@ struct IAccessEntity
     friend bool operator ==(const IAccessEntity & lhs, const IAccessEntity & rhs) { return lhs.equal(rhs); }
     friend bool operator !=(const IAccessEntity & lhs, const IAccessEntity & rhs) { return !(lhs == rhs); }
 
+    struct LessByName
+    {
+        bool operator()(const IAccessEntity & lhs, const IAccessEntity & rhs) const { return (lhs.getName() < rhs.getName()); }
+        bool operator()(const std::shared_ptr<const IAccessEntity> & lhs, const std::shared_ptr<const IAccessEntity> & rhs) const { return operator()(*lhs, *rhs); }
+    };
+
+    struct LessByTypeAndName
+    {
+        bool operator()(const IAccessEntity & lhs, const IAccessEntity & rhs) const { return (lhs.getType() < rhs.getType()) || ((lhs.getType() == rhs.getType()) && (lhs.getName() < rhs.getName())); }
+        bool operator()(const std::shared_ptr<const IAccessEntity> & lhs, const std::shared_ptr<const IAccessEntity> & rhs) const { return operator()(*lhs, *rhs); }
+    };
+
 protected:
     String name;
 
@@ -87,44 +101,49 @@ using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 
 inline const IAccessEntity::TypeInfo & IAccessEntity::TypeInfo::get(Type type_)
 {
-    static constexpr auto make_info = [](const char * raw_name_, char unique_char_, const char * list_filename_, int not_found_error_code_)
+    static constexpr auto make_info = [](const char * raw_name_, const char * plural_raw_name_, char unique_char_, int not_found_error_code_)
     {
-        String init_name = raw_name_;
-        boost::to_upper(init_name);
-        boost::replace_all(init_name, "_", " ");
-        String init_alias;
-        if (auto underscore_pos = init_name.find_first_of(" "); underscore_pos != String::npos)
-            init_alias = init_name.substr(underscore_pos + 1);
-        String init_name_for_output_with_entity_name = init_name;
+        String init_names[2] = {raw_name_, plural_raw_name_};
+        String init_aliases[2];
+        for (size_t i = 0; i != std::size(init_names); ++i)
+        {
+            String & init_name = init_names[i];
+            String & init_alias = init_aliases[i];
+            boost::to_upper(init_name);
+            boost::replace_all(init_name, "_", " ");
+            if (auto underscore_pos = init_name.find_first_of(" "); underscore_pos != String::npos)
+                init_alias = init_name.substr(underscore_pos + 1);
+        }
+        String init_name_for_output_with_entity_name = init_names[0];
         boost::to_lower(init_name_for_output_with_entity_name);
-        return TypeInfo{raw_name_, std::move(init_name), std::move(init_alias), std::move(init_name_for_output_with_entity_name), unique_char_, list_filename_, not_found_error_code_};
+        return TypeInfo{raw_name_, plural_raw_name_, std::move(init_names[0]), std::move(init_aliases[0]), std::move(init_names[1]), std::move(init_aliases[1]), std::move(init_name_for_output_with_entity_name), unique_char_, not_found_error_code_};
     };
 
     switch (type_)
     {
         case Type::USER:
         {
-            static const auto info = make_info("USER", 'U', "users.list", ErrorCodes::UNKNOWN_USER);
+            static const auto info = make_info("USER", "USERS", 'U', ErrorCodes::UNKNOWN_USER);
             return info;
         }
         case Type::ROLE:
         {
-            static const auto info = make_info("ROLE", 'R', "roles.list", ErrorCodes::UNKNOWN_ROLE);
+            static const auto info = make_info("ROLE", "ROLES", 'R', ErrorCodes::UNKNOWN_ROLE);
             return info;
         }
         case Type::SETTINGS_PROFILE:
         {
-            static const auto info = make_info("SETTINGS_PROFILE", 'S', "settings_profiles.list", ErrorCodes::THERE_IS_NO_PROFILE);
+            static const auto info = make_info("SETTINGS_PROFILE", "SETTINGS_PROFILES", 'S', ErrorCodes::THERE_IS_NO_PROFILE);
             return info;
         }
         case Type::ROW_POLICY:
         {
-            static const auto info = make_info("ROW_POLICY", 'P', "row_policies.list", ErrorCodes::UNKNOWN_ROW_POLICY);
+            static const auto info = make_info("ROW_POLICY", "ROW_POLICIES", 'P', ErrorCodes::UNKNOWN_ROW_POLICY);
             return info;
         }
         case Type::QUOTA:
         {
-            static const auto info = make_info("QUOTA", 'Q', "quotas.list", ErrorCodes::UNKNOWN_QUOTA);
+            static const auto info = make_info("QUOTA", "QUOTAS", 'Q', ErrorCodes::UNKNOWN_QUOTA);
             return info;
         }
         case Type::MAX: break;

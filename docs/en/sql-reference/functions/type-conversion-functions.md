@@ -22,7 +22,7 @@ Converts an input value to the [Int](../../sql-reference/data-types/int-uint.md)
 
 **Parameters**
 
--   `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+-   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
@@ -87,7 +87,7 @@ Converts an input value to the [UInt](../../sql-reference/data-types/int-uint.md
 
 **Parameters**
 
--   `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+-   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
@@ -151,7 +151,7 @@ These functions should be used instead of `toDecimal*()` functions, if you prefe
 
 **Parameters**
 
--   `expr` — [Expression](../syntax.md#syntax-expressions), returns a value in the [String](../../sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
+-   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions), returns a value in the [String](../../sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
 -   `S` — Scale, the number of decimal places in the resulting value.
 
 **Returned value**
@@ -195,7 +195,7 @@ These functions should be used instead of `toDecimal*()` functions, if you prefe
 
 **Parameters**
 
--   `expr` — [Expression](../syntax.md#syntax-expressions), returns a value in the [String](../../sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
+-   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions), returns a value in the [String](../../sql-reference/data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
 -   `S` — Scale, the number of decimal places in the resulting value.
 
 **Returned value**
@@ -516,10 +516,84 @@ Result:
 
 **See Also**
 
--   [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
+-   \[ISO 8601 announcement by @xkcd\](https://xkcd.com/1179/)
 -   [RFC 1123](https://tools.ietf.org/html/rfc1123)
 -   [toDate](#todate)
 -   [toDateTime](#todatetime)
+
+## parseDateTimeBestEffortUS {#parsedatetimebesteffortUS}
+
+This function is similar to ['parseDateTimeBestEffort'](#parsedatetimebesteffort), the only difference is that this function prefers US style (`MM/DD/YYYY` etc) in case of ambiguouty.
+
+**Syntax**
+
+``` sql
+parseDateTimeBestEffortUS(time_string [, time_zone]);
+```
+
+**Parameters**
+
+-   `time_string` — String containing a date and time to convert. [String](../../sql-reference/data-types/string.md).
+-   `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../../sql-reference/data-types/string.md).
+
+**Supported non-standard formats**
+
+-   A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
+-   A string with a date and a time component: `YYYYMMDDhhmmss`, `MM/DD/YYYY hh:mm:ss`, `MM-DD-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
+-   A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY` etc.
+-   A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case `YYYY-MM` are substituted as `2000-01`.
+-   A string that includes the date and time along with time zone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
+
+**Returned value**
+
+-   `time_string` converted to the `DateTime` data type.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT parseDateTimeBestEffortUS('09/12/2020 12:12:57')
+AS parseDateTimeBestEffortUS;
+```
+
+Result:
+
+``` text
+┌─parseDateTimeBestEffortUS─┐
+│     2020-09-12 12:12:57   │
+└─────────────────────────——┘
+```
+
+Query:
+
+``` sql
+SELECT parseDateTimeBestEffortUS('09-12-2020 12:12:57')
+AS parseDateTimeBestEffortUS;
+```
+
+Result:
+
+``` text
+┌─parseDateTimeBestEffortUS─┐
+│     2020-09-12 12:12:57   │
+└─────────────────────────——┘
+```
+
+Query:
+
+``` sql
+SELECT parseDateTimeBestEffortUS('09.12.2020 12:12:57')
+AS parseDateTimeBestEffortUS;
+```
+
+Result:
+
+``` text
+┌─parseDateTimeBestEffortUS─┐
+│     2020-09-12 12:12:57   │
+└─────────────────────────——┘
+```
 
 ## parseDateTimeBestEffortOrNull {#parsedatetimebesteffortornull}
 
@@ -531,24 +605,23 @@ Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it r
 
 ## toLowCardinality {#tolowcardinality}
 
-Converts input parameter to the [LowCardianlity](../data-types/lowcardinality.md) version of same data type.
+Converts input parameter to the [LowCardianlity](../../sql-reference/data-types/lowcardinality.md) version of same data type.
 
 To convert data from the `LowCardinality` data type use the [CAST](#type_conversion_function-cast) function. For example, `CAST(x as String)`.
 
 **Syntax**
 
-```sql
+``` sql
 toLowCardinality(expr)
 ```
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions) resulting in one of the [supported data types](../data-types/index.md#data_types).
-
+-   `expr` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in one of the [supported data types](../../sql-reference/data-types/index.md#data_types).
 
 **Returned values**
 
-- Result of `expr`.
+-   Result of `expr`.
 
 Type: `LowCardinality(expr_result_type)`
 
@@ -556,16 +629,104 @@ Type: `LowCardinality(expr_result_type)`
 
 Query:
 
-```sql
+``` sql
 SELECT toLowCardinality('1')
 ```
 
 Result:
 
-```text
+``` text
 ┌─toLowCardinality('1')─┐
 │ 1                     │
 └───────────────────────┘
+```
+
+## toUnixTimestamp64Milli {#tounixtimestamp64milli}
+
+## toUnixTimestamp64Micro {#tounixtimestamp64micro}
+
+## toUnixTimestamp64Nano {#tounixtimestamp64nano}
+
+Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Input value is scaled up or down appropriately depending on it precision. Please note that output value is a timestamp in UTC, not in timezone of `DateTime64`.
+
+**Syntax**
+
+``` sql
+toUnixTimestamp64Milli(value)
+```
+
+**Parameters**
+
+-   `value` — DateTime64 value with any precision.
+
+**Returned value**
+
+-   `value` converted to the `Int64` data type.
+
+**Examples**
+
+Query:
+
+``` sql
+WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
+SELECT toUnixTimestamp64Milli(dt64)
+```
+
+Result:
+
+``` text
+┌─toUnixTimestamp64Milli(dt64)─┐
+│                1568650812345 │
+└──────────────────────────────┘
+```
+
+``` sql
+WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
+SELECT toUnixTimestamp64Nano(dt64)
+```
+
+Result:
+
+``` text
+┌─toUnixTimestamp64Nano(dt64)─┐
+│         1568650812345678000 │
+└─────────────────────────────┘
+```
+
+## fromUnixTimestamp64Milli {#fromunixtimestamp64milli}
+
+## fromUnixTimestamp64Micro {#fromunixtimestamp64micro}
+
+## fromUnixTimestamp64Nano {#fromunixtimestamp64nano}
+
+Converts an `Int64` to a `DateTime64` value with fixed sub-second precision and optional timezone. Input value is scaled up or down appropriately depending on it’s precision. Please note that input value is treated as UTC timestamp, not timestamp at given (or implicit) timezone.
+
+**Syntax**
+
+``` sql
+fromUnixTimestamp64Milli(value [, ti])
+```
+
+**Parameters**
+
+-   `value` — `Int64` value with any precision.
+-   `timezone` — `String` (optional) timezone name of the result.
+
+**Returned value**
+
+-   `value` converted to the `DateTime64` data type.
+
+**Examples**
+
+``` sql
+WITH CAST(1234567891011, 'Int64') AS i64
+SELECT fromUnixTimestamp64Milli(i64, 'UTC')
+```
+
+``` text
+┌─fromUnixTimestamp64Milli(i64, 'UTC')─┐
+│              2009-02-13 23:31:31.011 │
+└──────────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

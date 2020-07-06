@@ -4,7 +4,7 @@ import os
 from helpers.cluster import ClickHouseCluster
 from dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed
-from external_sources import SourceMongo, SourceMongoURI, SourceHTTP, SourceHTTPS, SourceRedis
+from external_sources import SourceMongo, SourceMongoURI, SourceHTTP, SourceHTTPS, SourceRedis, SourceCassandra
 import math
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -117,6 +117,7 @@ LAYOUTS = [
 ]
 
 SOURCES = [
+    SourceCassandra("Cassandra", "localhost", "9043", "cassandra1", "9042", "", ""),
     SourceMongo("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
     SourceMongoURI("MongoDB_URI", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
     SourceMySQL("MySQL", "localhost", "3308", "mysql1", "3306", "root", "clickhouse"),
@@ -131,7 +132,7 @@ SOURCES = [
 
 DICTIONARIES = []
 
-# Key-value dictionaries with onle one possible field for key
+# Key-value dictionaries with only one possible field for key
 SOURCES_KV = [
     SourceRedis("RedisSimple", "localhost", "6380", "redis1", "6379", "", "", storage_type="simple"),
     SourceRedis("RedisHash", "localhost", "6380", "redis1", "6379", "", "", storage_type="hash_map"),
@@ -151,6 +152,7 @@ def get_dict(source, layout, fields, suffix_name=''):
     dictionary = Dictionary(dict_name, structure, source, dict_path, "table_" + dict_name, fields)
     dictionary.generate_config()
     return dictionary
+
 
 def setup_module(module):
     global DICTIONARIES
@@ -183,7 +185,7 @@ def setup_module(module):
     for fname in os.listdir(dict_configs_path):
         main_configs.append(os.path.join(dict_configs_path, fname))
     cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-    node = cluster.add_instance('node', main_configs=main_configs, with_mysql=True, with_mongo=True, with_redis=True)
+    node = cluster.add_instance('node', main_configs=main_configs, with_mysql=True, with_mongo=True, with_redis=True, with_cassandra=True)
     cluster.add_instance('clickhouse1')
 
 
@@ -209,8 +211,42 @@ def get_dictionaries(fold, total_folds, all_dicts):
     return all_dicts[fold * chunk_len : (fold + 1) * chunk_len]
 
 
+def remove_mysql_dicts():
+    """
+    We have false-positive race condition in our openSSL version.
+    MySQL dictionary use OpenSSL, so to prevent known failure we
+    disable tests for these dictionaries.
+
+    Read of size 8 at 0x7b3c00005dd0 by thread T61 (mutexes: write M1010349240585225536):
+    #0 EVP_CIPHER_mode <null> (clickhouse+0x13b2223b)
+    #1 do_ssl3_write <null> (clickhouse+0x13a137bc)
+    #2 ssl3_write_bytes <null> (clickhouse+0x13a12387)
+    #3 ssl3_write <null> (clickhouse+0x139db0e6)
+    #4 ssl_write_internal <null> (clickhouse+0x139eddce)
+    #5 SSL_write <null> (clickhouse+0x139edf20)
+    #6 ma_tls_write <null> (clickhouse+0x139c7557)
+    #7 ma_pvio_tls_write <null> (clickhouse+0x139a8f59)
+    #8 ma_pvio_write <null> (clickhouse+0x139a8488)
+    #9 ma_net_real_write <null> (clickhouse+0x139a4e2c)
+    #10 ma_net_write_command <null> (clickhouse+0x139a546d)
+    #11 mthd_my_send_cmd <null> (clickhouse+0x13992546)
+    #12 mysql_close_slow_part <null> (clickhouse+0x13999afd)
+    #13 mysql_close <null> (clickhouse+0x13999071)
+    #14 mysqlxx::Connection::~Connection() <null> (clickhouse+0x1370f814)
+    #15 mysqlxx::Pool::~Pool() <null> (clickhouse+0x13715a7b)
+
+    TODO remove this when open ssl will be fixed or thread sanitizer will be suppressed
+    """
+
+    global DICTIONARIES
+    DICTIONARIES = [d for d in DICTIONARIES if not d.name.startswith("MySQL")]
+
+
 @pytest.mark.parametrize("fold", list(range(10)))
 def test_simple_dictionaries(started_cluster, fold):
+    if node.is_built_with_thread_sanitizer():
+        remove_mysql_dicts()
+
     fields = FIELDS["simple"]
     values = VALUES["simple"]
     data = [Row(fields, vals) for vals in values]
@@ -258,6 +294,10 @@ def test_simple_dictionaries(started_cluster, fold):
 
 @pytest.mark.parametrize("fold", list(range(10)))
 def test_complex_dictionaries(started_cluster, fold):
+
+    if node.is_built_with_thread_sanitizer():
+        remove_mysql_dicts()
+
     fields = FIELDS["complex"]
     values = VALUES["complex"]
     data = [Row(fields, vals) for vals in values]
@@ -291,6 +331,9 @@ def test_complex_dictionaries(started_cluster, fold):
 
 @pytest.mark.parametrize("fold", list(range(10)))
 def test_ranged_dictionaries(started_cluster, fold):
+    if node.is_built_with_thread_sanitizer():
+        remove_mysql_dicts()
+
     fields = FIELDS["ranged"]
     values = VALUES["ranged"]
     data = [Row(fields, vals) for vals in values]
@@ -379,7 +422,7 @@ def test_key_value_complex_dictionaries(started_cluster, fold):
     values = VALUES["complex"]
     data = [Row(fields, vals) for vals in values]
 
-    all_complex_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "complex"]
+    all_complex_dicts = [d for d in DICTIONARIES_KV if d.structure.layout.layout_type == "complex"]
     complex_dicts = get_dictionaries(fold, 10, all_complex_dicts)
     for dct in complex_dicts:
         dct.load_data(data)

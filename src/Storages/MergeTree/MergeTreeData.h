@@ -8,7 +8,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/PartDestinationType.h>
+#include <Storages/DataDestinationType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -20,6 +20,8 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Interpreters/PartLog.h>
 #include <Disks/StoragePolicy.h>
+#include <Interpreters/Aggregator.h>
+#include <Storages/extractKeyExpressionList.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -322,7 +324,7 @@ public:
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const StorageID & table_id_,
                   const String & relative_data_path_,
-                  const StorageInMemoryMetadata & metadata,
+                  const StorageInMemoryMetadata & metadata_,
                   Context & context_,
                   const String & date_column_name,
                   const MergingParams & merging_params_,
@@ -331,11 +333,6 @@ public:
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
-
-    /// See comments about methods below in IStorage interface
-    StorageInMemoryMetadata getInMemoryMetadata() const override;
-
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override;
 
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -353,7 +350,7 @@ public:
     bool supportsSettings() const override { return true; }
     NamesAndTypesList getVirtuals() const override;
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &) const override;
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &, const StorageMetadataPtr & metadata_snapshot) const override;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -479,16 +476,19 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
-    /// Must be called with locked lockStructureForShare().
+    /// Must be called with locked lockForShare() because use relative_data_path.
     void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
 
-    /// Moves the entire data directory.
-    /// Flushes the uncompressed blocks cache and the marks cache.
-    /// Must be called with locked lockStructureForAlter().
+    /// Drop data directories if they are empty. It is safe to call this method if table creation was unsuccessful.
+    void dropIfEmpty();
+
+    /// Moves the entire data directory. Flushes the uncompressed blocks cache
+    /// and the marks cache. Must be called with locked lockExclusively()
+    /// because changes relative_data_path.
     void rename(const String & new_table_path, const StorageID & new_table_id) override;
 
     /// Check if the ALTER can be performed:
@@ -496,15 +496,15 @@ public:
     /// - all type conversions can be done.
     /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
 
     /// Change MergeTreeSettings
     void changeSettings(
            const ASTPtr & new_settings,
-           TableStructureWriteLockHolder & table_lock_holder);
+           TableLockHolder & table_lock_holder);
 
     /// Freezes all parts.
-    void freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
+    void freezeAll(const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
@@ -512,17 +512,12 @@ public:
         broken_part_callback(name);
     }
 
-    /** Get the key expression AST as an ASTExpressionList. It can be specified
-     *  in the tuple: (CounterID, Date), or as one column: CounterID.
-     */
-    static ASTPtr extractKeyExpressionList(const ASTPtr & node);
-
-    bool hasSkipIndices() const { return !skip_indices.empty(); }
-
-    bool hasAnyColumnTTL() const { return !column_ttl_entries_by_name.empty(); }
-    bool hasAnyMoveTTL() const { return !move_ttl_entries.empty(); }
-    bool hasRowsTTL() const override { return !rows_ttl_entry.isEmpty(); }
-    bool hasAnyTTL() const override { return hasRowsTTL() || hasAnyMoveTTL() || hasAnyColumnTTL(); }
+    /// TODO (alesap) Duplicate method required for compatibility.
+    /// Must be removed.
+    static ASTPtr extractKeyExpressionList(const ASTPtr & node)
+    {
+        return DB::extractKeyExpressionList(node);
+    }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const;
@@ -531,7 +526,7 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
 
 
 public:
@@ -560,8 +555,8 @@ public:
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
     /// Tables structure should be locked.
-    MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
-    MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table) const;
+    MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
+    MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info);
@@ -611,20 +606,31 @@ public:
     static ReservationPtr tryReserveSpace(UInt64 expected_size, SpacePtr space);
 
     /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
-    ReservationPtr reserveSpacePreferringTTLRules(UInt64 expected_size,
-                                                                const IMergeTreeDataPart::TTLInfos & ttl_infos,
-                                                                time_t time_of_move,
-                                                                size_t min_volume_index = 0) const;
-    ReservationPtr tryReserveSpacePreferringTTLRules(UInt64 expected_size,
-                                                                const IMergeTreeDataPart::TTLInfos & ttl_infos,
-                                                                time_t time_of_move,
-                                                                size_t min_volume_index = 0) const;
+    ReservationPtr reserveSpacePreferringTTLRules(
+        UInt64 expected_size,
+        const IMergeTreeDataPart::TTLInfos & ttl_infos,
+        time_t time_of_move,
+        size_t min_volume_index = 0) const;
+
+    ReservationPtr tryReserveSpacePreferringTTLRules(
+        UInt64 expected_size,
+        const IMergeTreeDataPart::TTLInfos & ttl_infos,
+        time_t time_of_move,
+        size_t min_volume_index = 0) const;
+
     /// Choose disk with max available free space
     /// Reserves 0 bytes
     ReservationPtr makeEmptyReservationOnLargestDisk() { return getStoragePolicy()->makeEmptyReservationOnLargestDisk(); }
 
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
+    /// Returns destination disk or volume for the TTL rule according to current
+    /// storage policy
+    SpacePtr getDestinationForTTL(const TTLDescription & ttl) const;
+
+    /// Checks if given part already belongs destination disk or volume for the
+    /// TTL rule.
+    bool isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -641,44 +647,10 @@ public:
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
-    /// Secondary (data skipping) indices for MergeTree
-    MergeTreeIndices skip_indices;
+    ExpressionActionsPtr getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
+    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const;
 
-    ExpressionActionsPtr primary_key_and_skip_indices_expr;
-    ExpressionActionsPtr sorting_key_and_skip_indices_expr;
-
-    struct TTLEntry
-    {
-        ExpressionActionsPtr expression;
-        String result_column;
-
-        /// Name and type of a destination are only valid in table-level context.
-        PartDestinationType destination_type;
-        String destination_name;
-
-        ASTPtr entry_ast;
-
-        /// Returns destination disk or volume for this rule.
-        SpacePtr getDestination(StoragePolicyPtr policy) const;
-
-        /// Checks if given part already belongs destination disk or volume for this rule.
-        bool isPartInDestination(StoragePolicyPtr policy, const IMergeTreeDataPart & part) const;
-
-        bool isEmpty() const { return expression == nullptr; }
-    };
-
-    std::optional<TTLEntry> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
-
-    using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
-    TTLEntriesByName column_ttl_entries_by_name;
-
-    TTLEntry rows_ttl_entry;
-
-    /// This mutex is required for background move operations which do not obtain global locks.
-    mutable std::mutex move_ttl_entries_mutex;
-
-    /// Vector rw operations have to be done under "move_ttl_entries_mutex".
-    std::vector<TTLEntry> move_ttl_entries;
+    std::optional<TTLDescription> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
@@ -706,9 +678,6 @@ protected:
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
 
-    ASTPtr ttl_table_ast;
-    ASTPtr settings_ast;
-
     bool require_part_metadata;
 
     String relative_data_path;
@@ -721,7 +690,7 @@ protected:
     BrokenPartCallback broken_part_callback;
 
     String log_name;
-    Logger * log;
+    Poco::Logger * log;
 
     /// Storage settings.
     /// Use get and set to receive readonly versions.
@@ -815,16 +784,15 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false, bool attach = false);
+    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false) const;
 
-    void initPartitionKey(ASTPtr partition_by_ast);
+    void setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false);
 
-    void setTTLExpressions(const ColumnsDescription & columns,
-        const ASTPtr & new_ttl_table_ast, bool only_check = false);
+    void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
+
+    void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const;
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
-
-    void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
 
     /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
     void calculateColumnSizesImpl();
@@ -844,7 +812,7 @@ protected:
         DataPartsLock & data_parts_lock) const;
 
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
-    bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
+    bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Common part for |freezePartition()| and |freezeAll()|.
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
@@ -881,7 +849,7 @@ protected:
 
 private:
     /// RAII Wrapper for atomic work with currently moving parts
-    /// Acuire them in constructor and remove them in destructor
+    /// Acquire them in constructor and remove them in destructor
     /// Uses data.currently_moving_parts_mutex
     struct CurrentlyMovingPartsTagger
     {
@@ -903,6 +871,8 @@ private:
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
     bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const;
+
+    virtual void startBackgroundMovesIfNeeded() = 0;
 };
 
 }

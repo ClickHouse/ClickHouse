@@ -31,7 +31,7 @@ def pull_image(image_name):
 def build_image(image_name, filepath):
     subprocess.check_call("docker build --network=host -t {} -f {} .".format(image_name, filepath), shell=True)
 
-def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache_dir):
+def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache_dir, docker_image_version):
     env_part = " -e ".join(env_variables)
     if env_part:
         env_part = " -e " + env_part
@@ -46,7 +46,7 @@ def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache
         ch_root=ch_root,
         ccache_dir=ccache_dir,
         env=env_part,
-        img_name=image_name,
+        img_name=image_name + ":" + docker_image_version,
         interactive=interactive
     )
 
@@ -120,6 +120,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
         result.append("CCACHE_BASEDIR=/build")
         result.append("CCACHE_NOHASHDIR=true")
         result.append("CCACHE_COMPILERCHECK=content")
+        result.append("CCACHE_MAXSIZE=15G")
         # result.append("CCACHE_UMASK=777")
 
     if distcc_hosts:
@@ -188,6 +189,7 @@ if __name__ == "__main__":
     parser.add_argument("--alien-pkgs", nargs='+', default=[])
     parser.add_argument("--with-coverage", action="store_true")
     parser.add_argument("--with-binaries", choices=("programs", "tests", ""), default="")
+    parser.add_argument("--docker-image-version", default="latest")
 
     args = parser.parse_args()
     if not os.path.isabs(args.output_dir):
@@ -211,12 +213,14 @@ if __name__ == "__main__":
         logging.info("Should place {} to output".format(args.with_binaries))
 
     dockerfile = os.path.join(ch_root, "docker/packager", image_type, "Dockerfile")
+    image_with_version = image_name + ":" + args.docker_image_version
     if image_type != "freebsd" and not check_image_exists_locally(image_name) or args.force_build_image:
-        if not pull_image(image_name) or args.force_build_image:
-            build_image(image_name, dockerfile)
+        if not pull_image(image_with_version) or args.force_build_image:
+            build_image(image_with_version, dockerfile)
     env_prepared = parse_env_variables(
         args.build_type, args.compiler, args.sanitizer, args.package_type, image_type,
         args.cache, args.distcc_hosts, args.unbundled, args.split_binary, args.clang_tidy,
         args.version, args.author, args.official, args.alien_pkgs, args.with_coverage, args.with_binaries)
-    run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root, args.ccache_dir)
+
+    run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root, args.ccache_dir, args.docker_image_version)
     logging.info("Output placed into {}".format(args.output_dir))
