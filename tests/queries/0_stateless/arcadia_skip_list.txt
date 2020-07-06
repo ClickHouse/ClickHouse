@@ -126,3 +126,4 @@
 01053_ssd_dictionary
 01280_ssd_complex_key_dictionary
 01354_order_by_tuple_collate_const
+01370_client_autocomplete_word_break_characters
