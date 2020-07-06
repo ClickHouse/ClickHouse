@@ -117,8 +117,10 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
 void registerAggregateFunctionTopK(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("topK", createAggregateFunctionTopK<false>);
-    factory.registerFunction("topKWeighted", createAggregateFunctionTopK<true>);
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
+
+    factory.registerFunction("topK", { createAggregateFunctionTopK<false>, properties });
+    factory.registerFunction("topKWeighted", { createAggregateFunctionTopK<true>, properties });
 }
 
 }
