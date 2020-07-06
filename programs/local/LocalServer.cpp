@@ -164,7 +164,7 @@ static void attachSystemTables(const Context & context)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
         system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE, context);
-        DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
+        DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, UUIDHelpers::Nil,  system_database);
     }
 
     attachSystemTablesLocal(*system_database);
@@ -241,7 +241,7 @@ try
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));
+    DatabaseCatalog::instance().attachDatabase(default_database, UUIDHelpers::Nil, std::make_shared<DatabaseMemory>(default_database, *context));
     context->setCurrentDatabase(default_database);
     applyCmdOptions();
 
