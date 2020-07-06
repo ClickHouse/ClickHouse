@@ -506,7 +506,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
-                InterpreterSelectQuery interpreter{select_query, context, storage, metadata_snapshot, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
+                InterpreterSelectQuery interpreter{
+                    select_query, context, storage, metadata_snapshot,
+                    SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
 
                 auto first_stage_header = interpreter.getSampleBlock();
                 auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
@@ -529,7 +531,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & prepared_stages, bool dry_run)
 {
     NamesAndTypesList all_columns = metadata_snapshot->getColumns().getAllPhysical();
-
 
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
