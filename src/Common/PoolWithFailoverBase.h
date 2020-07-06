@@ -64,6 +64,8 @@ public:
         , shared_pool_states(nested_pools.size())
         , log(log_)
     {
+        for (size_t i = 0;i < nested_pools.size(); ++i)
+            shared_pool_states[i].config_priority = nested_pools[i]->getPriority();
     }
 
     struct TryResult
@@ -304,6 +306,9 @@ template <typename TNestedPool>
 struct PoolWithFailoverBase<TNestedPool>::PoolState
 {
     UInt64 error_count = 0;
+    /// Priority from the <remote_server> configuration.
+    Int64 config_priority = 1;
+    /// Priority from the GetPriorityFunc.
     Int64 priority = 0;
     UInt32 random = 0;
 
@@ -314,8 +319,8 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
 
     static bool compare(const PoolState & lhs, const PoolState & rhs)
     {
-        return std::forward_as_tuple(lhs.error_count, lhs.priority, lhs.random)
-            < std::forward_as_tuple(rhs.error_count, rhs.priority, rhs.random);
+        return std::forward_as_tuple(lhs.error_count, lhs.config_priority, lhs.priority, lhs.random)
+             < std::forward_as_tuple(rhs.error_count, rhs.config_priority, rhs.priority, rhs.random);
     }
 
 private:
