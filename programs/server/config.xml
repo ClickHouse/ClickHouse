@@ -261,9 +261,13 @@
             <shard>
                 <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
                 <!-- <internal_replication>false</internal_replication> -->
+                <!-- Optional. Shard weight when writing data. Default: 1. -->
+                <!-- <weight>1</weight> -->
                 <replica>
                     <host>localhost</host>
                     <port>9000</port>
+                    <!-- Optional. Priority of the replica for load_balancing. Default: 1 (less value has more priority). -->
+                    <!-- <priority>1</priority> -->
                 </replica>
             </shard>
         </test_shard_localhost>
