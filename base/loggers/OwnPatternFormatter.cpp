@@ -80,6 +80,9 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     DB::writeString(msg.getSource(), wb);
     if (color)
         writeCString(resetColor(), wb);
+    writeCString("[", wb);
+    DB::writeIntText(msg.getSourceLine(), wb);
+    writeCString("] ", wb);
     writeCString(": ", wb);
     DB::writeString(msg.getText(), wb);
 }
