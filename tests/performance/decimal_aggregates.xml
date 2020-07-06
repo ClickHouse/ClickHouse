@@ -1,6 +1,6 @@
 <test>
     <create_query>CREATE TABLE t (x UInt64, d32 Decimal32(3), d64 Decimal64(4), d128 Decimal128(5)) ENGINE = Memory</create_query>
-    <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(1000000000)</fill_query>
+    <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(100000000)</fill_query>
     <drop_query>DROP TABLE IF EXISTS t</drop_query>
 
     <query>SELECT min(d32), max(d32), argMin(x, d32), argMax(x, d32) FROM t</query>
