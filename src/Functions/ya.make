@@ -219,6 +219,7 @@ SRCS(
     h3ToParent.cpp
     h3ToString.cpp
     hasColumnInTable.cpp
+    hasThreadFuzzer.cpp
     hasTokenCaseInsensitive.cpp
     hasToken.cpp
     hostName.cpp
