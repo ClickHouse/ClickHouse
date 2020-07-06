@@ -18,6 +18,11 @@ public:
     {
         ADD_COLUMN,
         ADD_INDEX,
+        DROP_CONSTRAINT,
+        DROP_COLUMN,
+        DROP_INDEX,
+        DROP_PRIMARY_KEY,
+        DROP_FOREIGN_KEY,
     };
 
     /// For ADD INDEX
@@ -28,38 +33,31 @@ public:
 
 };
 
-class ASTAlterCommandList : public IAST
-{
-public:
-    std::vector<ASTAlterCommand *> commands;
-
-    void add(const ASTPtr & command)
-    {
-        commands.push_back(command->as<ASTAlterCommand>());
-        children.push_back(command);
-    }
-
-    String getID(char) const override { return "AlterCommandList"; }
-
-    ASTPtr clone() const override;
-
-protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-};
-
 class ASTAlterQuery : public IAST
 {
 public:
     String database;
     String table;
-
-    ASTAlterCommandList * command_list = nullptr;
+    ASTPtr command_list;
 
     ASTPtr clone() const override;
 
     String getID(char delim) const override { return "AlterQuery" + (delim + database) + delim + table; }
+
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+};
+
+class ParserAlterCommand : public IParserBase
+{
+protected:
+    const char * getName() const override { return "alter command"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+    bool parseAddCommand(Pos & pos, ASTPtr & node, Expected & expected);
+
+    bool parseDropCommand(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 class ParserAlterQuery : public IParserBase
