@@ -231,6 +231,7 @@ SRCS(
     ignore.cpp
     ilike.cpp
     in.cpp
+    initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
     intExp10.cpp
@@ -242,6 +243,7 @@ SRCS(
     isNotNull.cpp
     isNull.cpp
     isValidUTF8.cpp
+    isZeroOrNull.cpp
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
