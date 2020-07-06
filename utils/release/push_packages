@@ -152,7 +152,7 @@ def transfer_packages_dupload(ssh_key, path, repo_user, repo_url, incoming_direc
     }
     with DebRelease(config, repo_user, ssh_key):
         logging.info("Duploading")
-        subprocess.check_call("dupload --nomail --to {repo} {path}".format(repo=repo_short_name, path=path), shell=True)
+        subprocess.check_call("dupload -f --nomail --to {repo} {path}".format(repo=repo_short_name, path=path), shell=True)
         logging.info("Dupload finished")
 
 
