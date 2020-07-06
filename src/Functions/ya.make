@@ -92,8 +92,8 @@ SRCS(
     array/emptyArrayToSingle.cpp
     array/hasAll.cpp
     array/hasAny.cpp
-    array/hasSubstr.cpp
     array/has.cpp
+    array/hasSubstr.cpp
     array/indexOf.cpp
     array/length.cpp
     array/range.cpp
@@ -228,6 +228,7 @@ SRCS(
     ifNull.cpp
     IFunction.cpp
     ignore.cpp
+    ilike.cpp
     in.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -288,6 +289,7 @@ SRCS(
     neighbor.cpp
     notEmpty.cpp
     notEquals.cpp
+    notILike.cpp
     notLike.cpp
     now64.cpp
     now.cpp

@@ -426,12 +426,17 @@ public:
 
     friend bool operator!=(const Node & left, const Node & right) { return !(left == right); }
 
-    void merge(const Node & other, const Helper & helper)
+    void makeUnion(const Node & other, const Helper & helper)
     {
-        mergeAccessRec(other);
+        makeUnionRec(other);
         calculateFinalAccessRec(helper);
     }
 
+    void makeIntersection(const Node & other, const Helper & helper)
+    {
+        makeIntersectionRec(other);
+        calculateFinalAccessRec(helper);
+    }
 
     ProtoElements getElements() const
     {
@@ -723,12 +728,12 @@ private:
         max_access = final_access | max_access_among_children;
     }
 
-    void mergeAccessRec(const Node & rhs)
+    void makeUnionRec(const Node & rhs)
     {
         if (rhs.children)
         {
             for (const auto & [rhs_childname, rhs_child] : *rhs.children)
-                getChild(rhs_childname).mergeAccessRec(rhs_child);
+                getChild(rhs_childname).makeUnionRec(rhs_child);
         }
         access |= rhs.access;
         if (children)
@@ -737,6 +742,24 @@ private:
             {
                 if (!rhs.tryGetChild(lhs_childname))
                     lhs_child.access |= rhs.access;
+            }
+        }
+    }
+
+    void makeIntersectionRec(const Node & rhs)
+    {
+        if (rhs.children)
+        {
+            for (const auto & [rhs_childname, rhs_child] : *rhs.children)
+                getChild(rhs_childname).makeIntersectionRec(rhs_child);
+        }
+        access &= rhs.access;
+        if (children)
+        {
+            for (auto & [lhs_childname, lhs_child] : *children)
+            {
+                if (!rhs.tryGetChild(lhs_childname))
+                    lhs_child.access &= rhs.access;
             }
         }
     }
@@ -989,7 +1012,7 @@ bool operator ==(const AccessRights & left, const AccessRights & right)
 }
 
 
-void AccessRights::merge(const AccessRights & other)
+void AccessRights::makeUnion(const AccessRights & other)
 {
     auto helper = [](std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node)
     {
@@ -1001,7 +1024,29 @@ void AccessRights::merge(const AccessRights & other)
         }
         if (other_root_node)
         {
-            root_node->merge(*other_root_node, Helper::instance());
+            root_node->makeUnion(*other_root_node, Helper::instance());
+            if (!root_node->access && !root_node->children)
+                root_node = nullptr;
+        }
+    };
+    helper(root, other.root);
+    helper(root_with_grant_option, other.root_with_grant_option);
+}
+
+
+void AccessRights::makeIntersection(const AccessRights & other)
+{
+    auto helper = [](std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node)
+    {
+        if (!root_node)
+        {
+            if (other_root_node)
+                root_node = std::make_unique<Node>(*other_root_node);
+            return;
+        }
+        if (other_root_node)
+        {
+            root_node->makeIntersection(*other_root_node, Helper::instance());
             if (!root_node->access && !root_node->children)
                 root_node = nullptr;
         }
