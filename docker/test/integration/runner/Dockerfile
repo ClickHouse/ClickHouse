@@ -26,6 +26,7 @@ RUN apt-get update \
     liblua5.1-dev \
     luajit \
     libssl-dev \
+    libcurl4-openssl-dev \
     gdb \
     && rm -rf \
         /var/lib/apt/lists/* \

@@ -274,9 +274,10 @@ void StorageKafka::shutdown()
     LOG_TRACE(log, "Waiting for cleanup");
     task->deactivate();
 
-    // Close all consumers
+    LOG_TRACE(log, "Closing consumers");
     for (size_t i = 0; i < num_created_consumers; ++i)
         auto buffer = popReadBuffer();
+    LOG_TRACE(log, "Consumers closed");
 
     rd_kafka_wait_destroyed(CLEANUP_TIMEOUT_MS);
 }
