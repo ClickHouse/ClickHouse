@@ -4,6 +4,10 @@ DROP TABLE IF EXISTS expected_times;
 CREATE TABLE expected_times (QUERY_GROUP_ID String, max_query_duration_ms UInt64) Engine=Memory;
 INSERT INTO expected_times VALUES('main_dashboard_top_query', 100), ('main_dashboard_bottom_query', 100);
 
+SET log_queries=1;
+SELECT 1;
+SYSTEM FLUSH LOGS;
+
 CREATE MATERIALIZED VIEW slow_log Engine=Memory AS
 (
         SELECT * FROM
@@ -17,8 +21,6 @@ CREATE MATERIALIZED VIEW slow_log Engine=Memory AS
         INNER JOIN expected_times USING (QUERY_GROUP_ID)
         WHERE query_duration_ms > max_query_duration_ms
 );
-
-SET log_queries=1;
 
 SELECT 1 /* QUERY_GROUP_ID:main_dashboard_top_query */;
 SELECT 1 /* QUERY_GROUP_ID:main_dashboard_bottom_query */;
