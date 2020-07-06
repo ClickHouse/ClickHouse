@@ -137,6 +137,7 @@ private:
     bool allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
 
+    Block modifyRightBlock(const Block & src_block) const;
     bool saveRightBlock(Block && block);
 
     void mergeInMemoryRightBlocks();

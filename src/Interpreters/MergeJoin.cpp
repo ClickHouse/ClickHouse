@@ -581,10 +581,16 @@ bool MergeJoin::saveRightBlock(Block && block)
     return true;
 }
 
-bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
+Block MergeJoin::modifyRightBlock(const Block & src_block) const
 {
     Block block = materializeBlock(src_block);
     JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesRight());
+    return block;
+}
+
+bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
+{
+    Block block = modifyRightBlock(src_block);
 
     sortBlock(block, right_sort_description);
     return saveRightBlock(std::move(block));
@@ -941,7 +947,7 @@ class NonMergeJoinedBlockInputStream : private NotJoined, public IBlockInputStre
 public:
     NonMergeJoinedBlockInputStream(const MergeJoin & parent_, const Block & result_sample_block_, UInt64 max_block_size_)
         : NotJoined(*parent_.table_join,
-                    parent_.right_sample_block,
+                    parent_.modifyRightBlock(parent_.right_sample_block),
                     parent_.right_sample_block,
                     result_sample_block_)
         , parent(parent_)

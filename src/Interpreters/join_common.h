@@ -48,7 +48,7 @@ public:
     void copySameKeys(Block & block) const;
 
 protected:
-    const Block & saved_block_sample;
+    Block saved_block_sample;
     Block result_sample_block;
 
     ~NotJoined() = default;
