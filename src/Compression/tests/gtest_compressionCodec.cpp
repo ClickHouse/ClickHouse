@@ -63,6 +63,10 @@ std::vector<T> operator+(std::vector<T> && left, std::vector<T> && right)
 namespace
 {
 
+template <class T> using is_pod = std::is_trivial<std::is_standard_layout<T>>;
+template <class T> inline constexpr bool is_pod_v = is_pod<T>::value;
+
+
 template <typename T>
 struct AsHexStringHelper
 {
@@ -84,7 +88,7 @@ std::ostream & operator << (std::ostream & ostr, const AsHexStringHelper<T> & he
 template <typename T>
 AsHexStringHelper<T> AsHexString(const T & container)
 {
-    static_assert (sizeof(container[0]) == 1 && std::is_pod<std::decay_t<decltype(container[0])>>::value, "Only works on containers of byte-size PODs.");
+    static_assert (sizeof(container[0]) == 1 && is_pod_v<std::decay_t<decltype(container[0])>>, "Only works on containers of byte-size PODs.");
 
     return AsHexStringHelper<T>{container};
 }
@@ -162,7 +166,7 @@ public:
           data_end(container.data() + container.size()),
           current_value(T{})
     {
-        static_assert(sizeof(container[0]) == 1 && std::is_pod<std::decay_t<decltype(container[0])>>::value, "Only works on containers of byte-size PODs.");
+        static_assert(sizeof(container[0]) == 1 && is_pod_v<std::decay_t<decltype(container[0])>>, "Only works on containers of byte-size PODs.");
         read();
     }
 
