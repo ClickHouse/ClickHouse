@@ -30,14 +30,40 @@ public:
 
     const String & dictionaryName() const { return dictionary_name; }
 
+    /// Specifies where the table is located relative to the dictionary.
+    enum class Location
+    {
+        /// Table was created automatically as an element of a database with the Dictionary engine.
+        DictionaryDatabase,
+
+        /// Table was created automatically along with a dictionary
+        /// and has the same database and name as the dictionary.
+        /// It provides table-like access to the dictionary.
+        /// User cannot drop that table.
+        SameDatabaseAndNameAsDictionary,
+
+        /// Table was created explicitly by a statement like
+        /// CREATE TABLE ... ENGINE=Dictionary
+        /// User chose the table's database and name and can drop that table.
+        Custom,
+    };
+
 private:
-    String dictionary_name;
+    const String dictionary_name;
+    const Location location;
 
 protected:
     StorageDictionary(
         const StorageID & table_id_,
         const String & dictionary_name_,
-        const DictionaryStructure & dictionary_structure);
+        const ColumnsDescription & columns_,
+        Location location_);
+
+    StorageDictionary(
+        const StorageID & table_id_,
+        const String & dictionary_name_,
+        const DictionaryStructure & dictionary_structure,
+        Location location_);
 };
 
 }
