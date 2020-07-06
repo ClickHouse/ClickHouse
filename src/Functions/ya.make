@@ -237,6 +237,7 @@ SRCS(
     isNotNull.cpp
     isNull.cpp
     isValidUTF8.cpp
+    isZeroOrNull.cpp
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
