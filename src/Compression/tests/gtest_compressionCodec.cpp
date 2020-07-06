@@ -656,6 +656,7 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
 
     std::cerr << std::endl;
 }
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(CodecTestPerformance);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Here we use generators to produce test payload for codecs.
