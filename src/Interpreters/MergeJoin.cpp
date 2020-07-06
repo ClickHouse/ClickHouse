@@ -1001,8 +1001,8 @@ private:
             {
                 IColumn::Filter not_used = bitmaps.getNotUsed(block_number);
 
-                for (size_t row = 0; row < not_used.size(); ++row)
-                    if (not_used[row])
+                for (const auto & row : not_used)
+                    if (row)
                         ++rows_added;
 
                 for (size_t col = 0; col < columns_right.size(); ++col)
