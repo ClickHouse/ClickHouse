@@ -256,8 +256,8 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
             if (++mismatching_items <= MAX_MISMATCHING_ITEMS)
             {
                 result << "\nmismatching " << sizeof(T) << "-byte item #" << i
-                   << "\nexpected: " << bin(left_value) << " (0x" << std::hex << left_value << ")"
-                   << "\ngot     : " << bin(right_value) << " (0x" << std::hex << right_value << ")";
+                   << "\nexpected: " << bin(left_value) << " (0x" << std::hex << size_t(left_value) << ")"
+                   << "\ngot     : " << bin(right_value) << " (0x" << std::hex << size_t(right_value) << ")";
                 if (mismatching_items == MAX_MISMATCHING_ITEMS)
                 {
                     result << "\n..." << std::endl;
