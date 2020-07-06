@@ -186,7 +186,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             secure);
     }
 
-    if (remote_table.empty())
+    if (!remote_table_function_ptr && remote_table.empty())
         throw Exception("The name of remote table cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
     auto remote_table_id = StorageID::createEmpty();
