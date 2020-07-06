@@ -12,12 +12,18 @@ SELECT '---';
 SELECT * FROM test WHERE isZeroOrNull(x = 'xyz');
 SELECT '---';
 
-SELECT * FROM test WHERE x != 'xyz'
-UNION ALL
-SELECT * FROM test WHERE NOT x != 'xyz';
+SELECT count() FROM
+(
+    SELECT * FROM test WHERE x != 'xyz'
+    UNION ALL
+    SELECT * FROM test WHERE NOT x != 'xyz'
+);
 
 SELECT '---';
 
-SELECT * FROM test WHERE x != 'xyz'
-UNION ALL
-SELECT * FROM test WHERE isZeroOrNull(x != 'xyz');
+SELECT count() FROM
+(
+    SELECT * FROM test WHERE x != 'xyz'
+    UNION ALL
+    SELECT * FROM test WHERE isZeroOrNull(x != 'xyz')
+);
