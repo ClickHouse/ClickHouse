@@ -8,8 +8,8 @@
 
 
 /** Tracks memory consumption.
-  * It throws an exception if amount of consumed memory become greater than certain limit.
-  * The same memory tracker could be simultaneously used in different threads.
+  * It throws an exception if amount of consumed memory becomes greater than a certain limit.
+  * The same memory tracker can be simultaneously used in different threads.
   */
 class MemoryTracker
 {
