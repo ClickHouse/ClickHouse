@@ -31,7 +31,6 @@ static std::optional<Names> tryGetSortingKeyColumns(const StoragePtr & storage)
     {
         return {};
     }
-    return sorting_key_columns;
 }
 
 ReadInOrderOptimizer::ReadInOrderOptimizer(
@@ -51,7 +50,7 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
         forbidden_columns.insert(elem.first);
 }
 
-InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage) const
+InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot) const
 {
     auto sorting_key_object = tryGetSortingKeyColumns(storage);
     if (!sorting_key_object.has_value())

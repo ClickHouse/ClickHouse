@@ -77,8 +77,10 @@ StorageBuffer::StorageBuffer(
     , log(&Poco::Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
     , bg_pool(global_context.getBufferFlushSchedulePool())
 {
-    setColumns(columns_);
-    setConstraints(constraints_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 }
 
 
@@ -86,9 +88,11 @@ StorageBuffer::StorageBuffer(
 class BufferSource : public SourceWithProgress
 {
 public:
-    BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage)
-        : SourceWithProgress(storage.getSampleBlockForColumns(column_names_))
-        , column_names(column_names_.begin(), column_names_.end()), buffer(buffer_) {}
+    BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage, const StorageMetadataPtr & metadata_snapshot)
+        : SourceWithProgress(
+            metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
+        , column_names(column_names_.begin(), column_names_.end())
+        , buffer(buffer_) {}
 
     String getName() const override { return "Buffer"; }
 
@@ -143,6 +147,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
 
 Pipes StorageBuffer::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -158,13 +163,14 @@ Pipes StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        auto destination_lock = destination->lockStructureForShare(
-                false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+        auto destination_lock = destination->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-        const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
+        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
+
+        const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [metadata_snapshot, destination_metadata_snapshot](const String& column_name)
         {
-            const auto & dest_columns = destination->getColumns();
-            const auto & our_columns = getColumns();
+            const auto & dest_columns = destination_metadata_snapshot->getColumns();
+            const auto & our_columns = metadata_snapshot->getColumns();
             return dest_columns.hasPhysical(column_name) &&
                    dest_columns.get(column_name).type->equals(*our_columns.get(column_name).type);
         });
@@ -172,19 +178,21 @@ Pipes StorageBuffer::read(
         if (dst_has_same_structure)
         {
             if (query_info.order_optimizer)
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination);
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination, destination_metadata_snapshot);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
-            pipes_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+            pipes_from_dst = destination->read(
+                column_names, destination_metadata_snapshot, query_info,
+                context, processed_stage, max_block_size, num_streams);
         }
         else
         {
             /// There is a struct mismatch and we need to convert read blocks from the destination table.
-            const Block header = getSampleBlock();
+            const Block header = metadata_snapshot->getSampleBlock();
             Names columns_intersection = column_names;
             Block header_after_adding_defaults = header;
-            const auto & dest_columns = destination->getColumns();
-            const auto & our_columns = getColumns();
+            const auto & dest_columns = destination_metadata_snapshot->getColumns();
+            const auto & our_columns = metadata_snapshot->getColumns();
             for (const String & column_name : column_names)
             {
                 if (!dest_columns.hasPhysical(column_name))
@@ -208,11 +216,14 @@ Pipes StorageBuffer::read(
             }
             else
             {
-                pipes_from_dst = destination->read(columns_intersection, query_info, context, processed_stage, max_block_size, num_streams);
+                pipes_from_dst = destination->read(
+                    columns_intersection, destination_metadata_snapshot, query_info,
+                    context, processed_stage, max_block_size, num_streams);
+
                 for (auto & pipe : pipes_from_dst)
                 {
                     pipe.addSimpleTransform(std::make_shared<AddingMissedTransform>(
-                            pipe.getHeader(), header_after_adding_defaults, getColumns().getDefaults(), context));
+                            pipe.getHeader(), header_after_adding_defaults, metadata_snapshot->getColumns().getDefaults(), context));
 
                     pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
                             pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name));
@@ -227,7 +238,18 @@ Pipes StorageBuffer::read(
     Pipes pipes_from_buffers;
     pipes_from_buffers.reserve(num_shards);
     for (auto & buf : buffers)
-        pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, *this));
+        pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, *this, metadata_snapshot));
+
+    /// Convert pipes from table to structure from buffer.
+    if (!pipes_from_buffers.empty() && !pipes_from_dst.empty()
+        && !blocksHaveEqualStructure(pipes_from_buffers.front().getHeader(), pipes_from_dst.front().getHeader()))
+    {
+        for (auto & pipe : pipes_from_dst)
+            pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
+                    pipe.getHeader(),
+                    pipes_from_buffers.front().getHeader(),
+                    ConvertingTransform::MatchColumnsMode::Name));
+    }
 
     /** If the sources from the table were processed before some non-initial stage of query execution,
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
@@ -315,9 +337,14 @@ static void appendBlock(const Block & from, Block & to)
 class BufferBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit BufferBlockOutputStream(StorageBuffer & storage_) : storage(storage_) {}
+    explicit BufferBlockOutputStream(
+        StorageBuffer & storage_,
+        const StorageMetadataPtr & metadata_snapshot_)
+        : storage(storage_)
+        , metadata_snapshot(metadata_snapshot_)
+    {}
 
-    Block getHeader() const override { return storage.getSampleBlock(); }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -325,7 +352,7 @@ public:
             return;
 
         // Check table structure.
-        storage.check(block, true);
+        metadata_snapshot->check(block, true);
 
         size_t rows = block.rows();
         if (!rows)
@@ -393,6 +420,7 @@ public:
     }
 private:
     StorageBuffer & storage;
+    StorageMetadataPtr metadata_snapshot;
 
     void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer)
     {
@@ -423,13 +451,14 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
-    return std::make_shared<BufferBlockOutputStream>(*this);
+    return std::make_shared<BufferBlockOutputStream>(*this, metadata_snapshot);
 }
 
 
-bool StorageBuffer::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const
+bool StorageBuffer::mayBenefitFromIndexForIn(
+    const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
     if (!destination_id)
         return false;
@@ -439,7 +468,7 @@ bool StorageBuffer::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
     if (destination.get() == this)
         throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-    return destination->mayBenefitFromIndexForIn(left_in_operand, query_context);
+    return destination->mayBenefitFromIndexForIn(left_in_operand, query_context, destination->getInMemoryMetadataPtr());
 }
 
 
@@ -464,7 +493,7 @@ void StorageBuffer::shutdown()
 
     try
     {
-        optimize(nullptr /*query*/, {} /*partition*/, false /*final*/, false /*deduplicate*/, global_context);
+        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, global_context);
     }
     catch (...)
     {
@@ -483,7 +512,13 @@ void StorageBuffer::shutdown()
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool StorageBuffer::optimize(const ASTPtr & /*query*/, const ASTPtr & partition, bool final, bool deduplicate, const Context & /*context*/)
+bool StorageBuffer::optimize(
+    const ASTPtr & /*query*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const ASTPtr & partition,
+    bool final,
+    bool deduplicate,
+    const Context & /*context*/)
 {
     if (partition)
         throw Exception("Partition cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
@@ -633,6 +668,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
         LOG_ERROR(log, "Destination table {} doesn't exist. Block of data is discarded.", destination_id.getNameForLogs());
         return;
     }
+    auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
 
     auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
@@ -642,7 +678,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     /** We will insert columns that are the intersection set of columns of the buffer table and the subordinate table.
       * This will support some of the cases (but not all) when the table structure does not match.
       */
-    Block structure_of_destination_table = allow_materialized ? table->getSampleBlock() : table->getSampleBlockNonMaterialized();
+    Block structure_of_destination_table = allow_materialized ? destination_metadata_snapshot->getSampleBlock()
+                                                              : destination_metadata_snapshot->getSampleBlockNonMaterialized();
     Block block_to_write;
     for (size_t i : ext::range(0, structure_of_destination_table.columns()))
     {
@@ -723,7 +760,7 @@ void StorageBuffer::reschedule()
     flush_handle->scheduleAfter(std::min(min, max) * 1000);
 }
 
-void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
 {
     for (const auto & command : commands)
     {
@@ -760,25 +797,24 @@ std::optional<UInt64> StorageBuffer::totalBytes() const
     for (const auto & buffer : buffers)
     {
         std::lock_guard lock(buffer.mutex);
-        bytes += buffer.data.bytes();
+        bytes += buffer.data.allocatedBytes();
     }
     return bytes;
 }
 
-void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableLockHolder &)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-
     auto table_id = getStorageID();
     checkAlterIsPossible(params, context.getSettingsRef());
+    auto metadata_snapshot = getInMemoryMetadataPtr();
 
     /// So that no blocks of the old structure remain.
-    optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
+    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata, context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
-    setColumns(std::move(metadata.columns));
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
+    params.apply(new_metadata, context);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
+    setInMemoryMetadata(new_metadata);
 }
 
 

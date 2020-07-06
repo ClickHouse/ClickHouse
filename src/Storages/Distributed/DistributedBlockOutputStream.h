@@ -2,6 +2,7 @@
 
 #include <Parsers/formatAST.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Core/Block.h>
 #include <Common/PODArray.h>
 #include <Common/Throttler.h>
@@ -36,8 +37,14 @@ class StorageDistributed;
 class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
-    DistributedBlockOutputStream(const Context & context_, StorageDistributed & storage_, const ASTPtr & query_ast_,
-                                 const ClusterPtr & cluster_, bool insert_sync_, UInt64 insert_timeout_);
+    DistributedBlockOutputStream(
+        const Context & context_,
+        StorageDistributed & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        const ASTPtr & query_ast_,
+        const ClusterPtr & cluster_,
+        bool insert_sync_,
+        UInt64 insert_timeout_);
 
     Block getHeader() const override;
     void write(const Block & block) override;
@@ -79,6 +86,7 @@ private:
 private:
     const Context & context;
     StorageDistributed & storage;
+    StorageMetadataPtr metadata_snapshot;
     ASTPtr query_ast;
     String query_string;
     ClusterPtr cluster;

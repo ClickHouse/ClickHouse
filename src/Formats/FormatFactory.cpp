@@ -14,6 +14,7 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
+#include <Processors/Formats/Impl/PostgreSQLOutputFormat.h>
 #include <Poco/URI.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -84,6 +85,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
             context.getRemoteHostFilter().checkURL(avro_schema_registry_url);
     }
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
+    format_settings.avro.allow_missing_fields = settings.input_format_avro_allow_missing_fields;
 
     return format_settings;
 }
@@ -360,6 +362,7 @@ FormatFactory::FormatFactory()
 #if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorCapnProto(*this);
     registerInputFormatProcessorORC(*this);
+    registerOutputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
     registerInputFormatProcessorArrow(*this);
@@ -392,8 +395,9 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
-    registerOutputFormatProcessorMySQLWrite(*this);
+    registerOutputFormatProcessorMySQLWire(*this);
     registerOutputFormatProcessorMarkdown(*this);
+    registerOutputFormatProcessorPostgreSQLWire(*this);
 }
 
 FormatFactory & FormatFactory::instance()

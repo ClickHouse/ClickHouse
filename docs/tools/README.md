@@ -20,7 +20,18 @@ Usually those also have some way to preview how Markdown will look like, which a
 
 It’ll take some effort to go through, but the result will be very close to production documentation.
 
-For the first time you’ll need to install [wkhtmltopdf](https://wkhtmltopdf.org/) and set up virtualenv:
+For the first time you’ll need to:
+
+#### 1. Install [wkhtmltopdf](https://wkhtmltopdf.org/)
+
+Follow the instructions on it's official website: <https://wkhtmltopdf.org/downloads.html>
+
+#### 2. Install CLI tools from npm
+
+1. `apt-get install npm` for Debian/Ubuntu or `brew install npm` on Mac OS X.
+2. `npm install -g purifycss amphtml-validator`.
+
+#### 3. Set up virtualenv
 
 ``` bash
 $ cd ClickHouse/docs/tools
@@ -30,7 +41,9 @@ $ source venv/bin/activate
 $ pip3 install -r requirements.txt
 ```
 
-Then running `build.py` without args (there are some, check `build.py --help`) will generate `ClickHouse/docs/build` folder with complete static html website.
+#### 4. Run build.py
+
+When all prerequisites are installed, running `build.py` without args (there are some, check `build.py --help`) will generate `ClickHouse/docs/build` folder with complete static html website.
 
 The easiest way to see the result is to use `--livereload=8888` argument of build.py. Alternatively, you can manually launch a HTTP server to serve the docs, for example by running `cd ClickHouse/docs/build && python3 -m http.server 8888`. Then go to http://localhost:8888 in browser. Feel free to use any other port instead of 8888.
 

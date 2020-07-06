@@ -7,14 +7,13 @@
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Storages/IStorage_fwd.h>
+#include <Storages/TableLockHolder.h>
 
 namespace DB
 {
 
-class TableStructureReadLock;
-using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
-using TableStructureReadLocks = std::vector<TableStructureReadLockHolder>;
 
+using TableLockHolders = std::vector<TableLockHolder>;
 class Context;
 
 class IOutputFormat;
@@ -111,6 +110,8 @@ public:
     void addCreatingSetsTransform(ProcessorPtr transform);
     /// Resize pipeline to single output and add IOutputFormat. Pipeline will be completed after this transformation.
     void setOutputFormat(ProcessorPtr output);
+    /// Get current OutputFormat.
+    IOutputFormat * getOutputFormat() const { return output_format; }
     /// Sink is a processor with single input port and no output ports. Creates sink for each output port.
     /// Pipeline will be completed after this transformation.
     void setSinks(const ProcessorGetterWithStreamKind & getter);
@@ -135,7 +136,7 @@ public:
 
     void enableQuotaForCurrentStreams();
 
-    void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header);
+    void unitePipelines(std::vector<std::unique_ptr<QueryPipeline>> pipelines, const Block & common_header);
 
     PipelineExecutorPtr execute();
 
@@ -146,7 +147,7 @@ public:
 
     const Block & getHeader() const { return current_header; }
 
-    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
     void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { storage_holders.emplace_back(std::move(storage)); }
 
@@ -168,6 +169,13 @@ public:
     /// Set upper limit for the recommend number of threads
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
 
+    /// Update upper limit for the recommend number of threads
+    void limitMaxThreads(size_t max_threads_)
+    {
+        if (max_threads == 0 || max_threads_ < max_threads)
+            max_threads = max_threads_;
+    }
+
     /// Convert query pipeline to single or several pipes.
     Pipe getPipe() &&;
     Pipes getPipes() &&;
@@ -180,7 +188,7 @@ private:
     /// because QueryPipeline is alive until query is finished.
     std::vector<std::shared_ptr<Context>> interpreter_context;
     std::vector<StoragePtr> storage_holders;
-    TableStructureReadLocks table_locks;
+    TableLockHolders table_locks;
 
     /// Common header for each stream.
     Block current_header;

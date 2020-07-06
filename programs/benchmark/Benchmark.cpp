@@ -18,6 +18,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
+#include <Common/clearPasswordFromCommandLine.h>
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -59,11 +60,15 @@ public:
             bool cumulative_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
-            const String & json_path_, size_t confidence_, const String & query_id_, const Settings & settings_)
+            const String & json_path_, size_t confidence_,
+            const String & query_id_, bool continue_on_errors_,
+            bool print_stacktrace_, const Settings & settings_)
         :
         concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
         cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
-        json_path(json_path_), confidence(confidence_), query_id(query_id_), settings(settings_),
+        json_path(json_path_), confidence(confidence_), query_id(query_id_),
+        continue_on_errors(continue_on_errors_),
+        print_stacktrace(print_stacktrace_), settings(settings_),
         shared_context(Context::createShared()), global_context(Context::createGlobal(shared_context.get())),
         pool(concurrency)
     {
@@ -149,6 +154,8 @@ private:
     String json_path;
     size_t confidence;
     std::string query_id;
+    bool continue_on_errors;
+    bool print_stacktrace;
     Settings settings;
     SharedContextHolder shared_context;
     Context global_context;
@@ -162,6 +169,7 @@ private:
     struct Stats
     {
         std::atomic<size_t> queries{0};
+        size_t errors = 0;
         size_t read_rows = 0;
         size_t read_bytes = 0;
         size_t result_rows = 0;
@@ -258,7 +266,7 @@ private:
 
             if (interrupt_listener.check())
             {
-                std::cout << "Stopping launch of queries. SIGINT received.\n";
+                std::cout << "Stopping launch of queries. SIGINT received." << std::endl;
                 return false;
             }
 
@@ -332,35 +340,56 @@ private:
         pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, connection_entries.size() - 1);
 
-        try
+        /// In these threads we do not accept INT signal.
+        sigset_t sig_set;
+        if (sigemptyset(&sig_set)
+            || sigaddset(&sig_set, SIGINT)
+            || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         {
-            /// In these threads we do not accept INT signal.
-            sigset_t sig_set;
-            if (sigemptyset(&sig_set)
-                || sigaddset(&sig_set, SIGINT)
-                || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
-                throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
-
-            while (true)
-            {
-                bool extracted = false;
-
-                while (!extracted)
-                {
-                    extracted = queue.tryPop(query, 100);
-
-                    if (shutdown || (max_iterations && queries_executed == max_iterations))
-                        return;
-                }
-                execute(connection_entries, query, distribution(generator));
-                ++queries_executed;
-            }
+            throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
         }
-        catch (...)
+
+        while (true)
         {
-            shutdown = true;
-            std::cerr << "An error occurred while processing query:\n" << query << "\n";
-            throw;
+            bool extracted = false;
+
+            while (!extracted)
+            {
+                extracted = queue.tryPop(query, 100);
+
+                if (shutdown
+                    || (max_iterations && queries_executed == max_iterations))
+                {
+                    return;
+                }
+            }
+
+            const auto connection_index = distribution(generator);
+            try
+            {
+                execute(connection_entries, query, connection_index);
+            }
+            catch (...)
+            {
+                std::cerr << "An error occurred while processing the query '"
+                          << query << "'.\n";
+                if (!continue_on_errors)
+                {
+                    shutdown = true;
+                    throw;
+                }
+                else
+                {
+                    std::cerr << getCurrentExceptionMessage(print_stacktrace,
+                        true /*check embedded stack trace*/) << std::endl;
+
+                    comparison_info_per_interval[connection_index]->errors++;
+                    comparison_info_total[connection_index]->errors++;
+                }
+            }
+            // Count failed queries toward executed, so that we'd reach
+            // max_iterations even if every run fails.
+            ++queries_executed;
         }
     }
 
@@ -409,7 +438,12 @@ private:
 
             std::cerr
                     << connections[i]->getDescription() << ", "
-                    << "queries " << info->queries << ", "
+                    << "queries " << info->queries << ", ";
+            if (info->errors)
+            {
+                std::cerr << "errors " << info->errors << ", ";
+            }
+            std::cerr
                     << "QPS: " << (info->queries / seconds) << ", "
                     << "RPS: " << (info->read_rows / seconds) << ", "
                     << "MiB/s: " << (info->read_bytes / seconds / 1048576) << ", "
@@ -469,25 +503,29 @@ private:
             const auto & info = infos[i];
 
             json_out << double_quote << connections[i]->getDescription() << ": {\n";
-            json_out << double_quote << "statistics: {\n";
+            json_out << double_quote << "statistics" << ": {\n";
 
             print_key_value("QPS", info->queries / info->work_time);
             print_key_value("RPS", info->read_rows / info->work_time);
             print_key_value("MiBPS", info->read_bytes / info->work_time);
             print_key_value("RPS_result", info->result_rows / info->work_time);
             print_key_value("MiBPS_result", info->result_bytes / info->work_time);
-            print_key_value("num_queries", info->queries.load(), false);
+            print_key_value("num_queries", info->queries.load());
+            print_key_value("num_errors", info->errors, false);
 
             json_out << "},\n";
-            json_out << double_quote << "query_time_percentiles: {\n";
+            json_out << double_quote << "query_time_percentiles" << ": {\n";
 
-            for (int percent = 0; percent <= 90; percent += 10)
-                print_percentile(*info, percent);
+            if (info->queries != 0)
+            {
+                for (int percent = 0; percent <= 90; percent += 10)
+                    print_percentile(*info, percent);
 
-            print_percentile(*info, 95);
-            print_percentile(*info, 99);
-            print_percentile(*info, 99.9);
-            print_percentile(*info, 99.99, false);
+                print_percentile(*info, 95);
+                print_percentile(*info, 99);
+                print_percentile(*info, 99.9);
+                print_percentile(*info, 99.99, false);
+            }
 
             json_out << "}\n";
             json_out << (i == infos.size() - 1 ? "}\n" : "},\n");
@@ -539,8 +577,9 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("password",      value<std::string>()->default_value(""),          "")
             ("database",      value<std::string>()->default_value("default"),   "")
             ("stacktrace",                                                      "print stack traces of exceptions")
-            ("confidence",    value<size_t>()->default_value(5),                "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
+            ("confidence",    value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id",      value<std::string>()->default_value(""),         "")
+            ("continue_on_errors", "continue testing even if a query fails")
         ;
 
         Settings settings;
@@ -549,6 +588,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         boost::program_options::notify(options);
+
+        clearPasswordFromCommandLine(argc, argv);
 
         if (options.count("help"))
         {
@@ -580,6 +621,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["json"].as<std::string>(),
             options["confidence"].as<size_t>(),
             options["query_id"].as<std::string>(),
+            options.count("continue_on_errors") > 0,
+            print_stacktrace,
             settings);
         return benchmark.run();
     }

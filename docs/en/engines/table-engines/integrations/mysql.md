@@ -1,9 +1,9 @@
 ---
-toc_priority: 33
+toc_priority: 3
 toc_title: MySQL
 ---
 
-# Mysql {#mysql}
+# MySQL {#mysql}
 
 The MySQL engine allows you to perform `SELECT` queries on data that is stored on a remote MySQL server.
 

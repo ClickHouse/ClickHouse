@@ -5,7 +5,7 @@ toc_title: URL
 
 # URL Table Engine {#table_engines-url}
 
-Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](file.md) engine.
+Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
 
 Syntax: `URL(URL, Format)`
 
@@ -25,7 +25,7 @@ respectively. For processing `POST` requests, the remote server must support
 
 You can limit the maximum number of HTTP GET redirect hops using the [max\_http\_get\_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects) setting.
 
-## Example
+## Example {#example}
 
 **1.** Create a `url_engine_table` table on the server :
 

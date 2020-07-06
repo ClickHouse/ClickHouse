@@ -73,6 +73,10 @@ if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
+if (USE_AMQPCPP)
+    add_headers_and_sources(dbms Storages/RabbitMQ)
+endif()
+
 if (USE_AWS_S3)
     add_headers_and_sources(dbms Common/S3)
     add_headers_and_sources(dbms Disks/S3)
@@ -88,6 +92,7 @@ list (APPEND dbms_sources
     AggregateFunctions/AggregateFunctionFactory.cpp
     AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
     AggregateFunctions/AggregateFunctionState.cpp
+    AggregateFunctions/AggregateFunctionCount.cpp
     AggregateFunctions/parseAggregateFunctionParameters.cpp)
 
 list (APPEND dbms_headers
@@ -96,6 +101,7 @@ list (APPEND dbms_headers
     AggregateFunctions/AggregateFunctionFactory.h
     AggregateFunctions/AggregateFunctionCombinatorFactory.h
     AggregateFunctions/AggregateFunctionState.h
+    AggregateFunctions/AggregateFunctionCount.cpp
     AggregateFunctions/FactoryHelpers.h
     AggregateFunctions/parseAggregateFunctionParameters.h)
 
@@ -157,6 +163,7 @@ add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
+add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
@@ -259,6 +266,9 @@ if (USE_RDKAFKA)
     endif()
 endif()
 
+if (USE_AMQPCPP)
+    dbms_target_link_libraries(PUBLIC amqp-cpp)
+endif()
 
 if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
@@ -275,6 +285,7 @@ dbms_target_link_libraries (
         clickhouse_parsers
         lz4
         Poco::JSON
+        Poco::MongoDB
         string_utils
     PUBLIC
         ${MYSQLXX_LIBRARY}
@@ -361,6 +372,14 @@ target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_C
 
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
 
+if (USE_ORC)
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR})
+    configure_file (
+            "${ORC_INCLUDE_DIR}/orc/orc-config.hh.in"
+            "${ORC_INCLUDE_DIR}/orc/orc-config.hh"
+    )
+endif ()
+
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
@@ -381,6 +400,6 @@ if (ENABLE_TESTS AND USE_GTEST)
         -Wno-gnu-zero-variadic-macro-arguments
     )
 
-    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils)
+    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_aggregate_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils)
     add_check(unit_tests_dbms)
 endif ()

@@ -12,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 // Implements function, giving value for column within range of given
@@ -111,6 +112,10 @@ public:
 
             Int64 offset = offset_column->getInt(0);
 
+            /// Protection from possible overflow.
+            if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large offset: {} in function {}", offset, getName());
+
             auto result_column = result_type->createColumn();
 
             auto insert_range_from = [&](bool is_const, const ColumnPtr & src, Int64 begin, Int64 size)
@@ -145,7 +150,9 @@ public:
             if (offset == 0)
             {
                 /// Degenerate case, just copy source column as is.
-                block.getByPosition(result).column = source_is_constant ? ColumnConst::create(source_column_casted, input_rows_count) : source_column_casted;
+                block.getByPosition(result).column = source_is_constant
+                    ? ColumnConst::create(source_column_casted, input_rows_count)
+                    : source_column_casted;
             }
             else if (offset > 0)
             {
@@ -166,7 +173,13 @@ public:
 
             for (size_t row = 0; row < input_rows_count; ++row)
             {
-                Int64 src_idx = row + offset_column->getInt(offset_is_constant ? 0 : row);
+                Int64 offset = offset_column->getInt(offset_is_constant ? 0 : row);
+
+                /// Protection from possible overflow.
+                if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large offset: {} in function {}", offset, getName());
+
+                Int64 src_idx = row + offset;
 
                 if (src_idx >= 0 && src_idx < Int64(input_rows_count))
                     result_column->insertFrom(*source_column_casted, source_is_constant ? 0 : src_idx);

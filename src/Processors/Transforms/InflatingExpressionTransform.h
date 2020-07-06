@@ -16,6 +16,8 @@ public:
 
     String getName() const override { return "InflatingExpressionTransform"; }
 
+    static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
+
 protected:
     void transform(Chunk & chunk) override;
     bool needInputData() const override { return !not_processed; }
@@ -23,11 +25,13 @@ protected:
 private:
     ExpressionActionsPtr expression;
     bool on_totals;
+    /// This flag means that we have manually added totals to our pipeline.
+    /// It may happen in case if joined subquery has totals, but out string doesn't.
+    /// We need to join default values with subquery totals if we have them, or return empty chunk is haven't.
     bool default_totals;
     bool initialized = false;
 
     ExtraBlockPtr not_processed;
-    size_t action_number = 0;
 
     Block readExecute(Chunk & chunk);
 };
