@@ -1,4 +1,4 @@
-#include <Interpreters/MySQL/MySQLInterpreterFactory.h>
+#include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -30,14 +30,6 @@ namespace ErrorCodes
 
 namespace MySQLInterpreter
 {
-
-std::unique_ptr<IInterpreter> MySQLInterpreterFactory::get(ASTPtr & query, Context & context, QueryProcessingStage::Enum)
-{
-    if (query->as<MySQLParser::ASTCreateQuery>())
-        return std::make_unique<InterpreterMySQLCreateQuery>(query, context);
-
-    return std::unique_ptr<IInterpreter>();
-}
 
 static inline NamesAndTypesList getColumnsList(ASTExpressionList * columns_define)
 {
@@ -233,15 +225,8 @@ static ASTPtr getOrderByPolicy(
     return order_by_expression;
 }
 
-void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery &, const Context &)
+void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery & create_query, const Context &)
 {
-
-}
-
-ASTPtr InterpreterCreateImpl::getRewrittenQuery(const InterpreterCreateImpl::TQuery & create_query, const Context & context)
-{
-    auto rewritten_query = std::make_shared<ASTCreateQuery>();
-
     /// This is dangerous, because the like table may not exists in ClickHouse
     if (create_query.like_table)
         throw Exception("Cannot convert create like statement to ClickHouse SQL", ErrorCodes::NOT_IMPLEMENTED);
@@ -250,11 +235,21 @@ ASTPtr InterpreterCreateImpl::getRewrittenQuery(const InterpreterCreateImpl::TQu
 
     if (!create_defines || !create_defines->columns || create_defines->columns->children.empty())
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+}
+
+ASTPtr InterpreterCreateImpl::getRewrittenQuery(
+    const TQuery & create_query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db)
+{
+    auto rewritten_query = std::make_shared<ASTCreateQuery>();
+    const auto & database_name = context.resolveDatabase(create_query.database);
+
+    if (database_name != filter_mysql_db)
+        return {};
+
+    const auto & create_defines = create_query.columns_list->as<MySQLParser::ASTCreateDefines>();
 
     NamesAndTypesList columns_name_and_type = getColumnsList(create_defines->columns);
     const auto & [primary_keys, unique_keys, keys, increment_columns] = getKeys(create_defines->columns, create_defines->indices, context, columns_name_and_type);
-
-    const auto & database_name = context.resolveDatabase(create_query.database);
 
     if (primary_keys.empty())
         throw Exception("The " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(create_query.table)
@@ -281,11 +276,65 @@ ASTPtr InterpreterCreateImpl::getRewrittenQuery(const InterpreterCreateImpl::TQu
 
     storage->set(storage->engine, makeASTFunction("ReplacingMergeTree", std::make_shared<ASTIdentifier>(version_column_name)));
 
+    rewritten_query->database = clickhouse_db;
     rewritten_query->table = create_query.table;
     rewritten_query->if_not_exists = create_query.if_not_exists;
     rewritten_query->set(rewritten_query->storage, storage);
     rewritten_query->set(rewritten_query->columns_list, columns);
 
+    return rewritten_query;
+}
+
+void InterpreterDropImpl::validate(const InterpreterDropImpl::TQuery & /*query*/, const Context & /*context*/)
+{
+}
+
+ASTPtr InterpreterDropImpl::getRewrittenQuery(
+    const InterpreterDropImpl::TQuery & drop_query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db)
+{
+    const auto & database_name = context.resolveDatabase(drop_query.database);
+
+    if (database_name != filter_mysql_db)
+        return {};
+
+    ASTPtr rewritten_query = drop_query.clone();
+    rewritten_query->as<ASTDropQuery>()->database = clickhouse_db;
+    return rewritten_query;
+}
+
+void InterpreterRenameImpl::validate(const InterpreterRenameImpl::TQuery & rename_query, const Context & /*context*/)
+{
+    if (rename_query.exchange)
+        throw Exception("Cannot execute exchange for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+ASTPtr InterpreterRenameImpl::getRewrittenQuery(
+    const InterpreterRenameImpl::TQuery & rename_query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db)
+{
+    ASTRenameQuery::Elements elements;
+    for (const auto & rename_element : rename_query.elements)
+    {
+        const auto & to_database = context.resolveDatabase(rename_element.to.database);
+        const auto & from_database = context.resolveDatabase(rename_element.from.database);
+
+        if (to_database != from_database)
+            throw Exception("Cannot rename with other database for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
+
+        if (from_database == filter_mysql_db)
+        {
+            elements.push_back(ASTRenameQuery::Element());
+            elements.back().from.database = clickhouse_db;
+            elements.back().from.table = rename_element.from.table;
+            elements.back().to.database = clickhouse_db;
+            elements.back().to.table = rename_element.to.table;
+        }
+    }
+
+    if (elements.empty())
+        return ASTPtr{};
+
+    auto rewritten_query = std::make_shared<ASTRenameQuery>();
+    rewritten_query->elements = elements;
     return rewritten_query;
 }
 
