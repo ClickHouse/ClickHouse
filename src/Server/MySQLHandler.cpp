@@ -103,7 +103,8 @@ void MySQLHandler::run()
         {
             if (!handshake_response.database.empty())
                 connection_context.setCurrentDatabase(handshake_response.database);
-            connection_context.setCurrentQueryId("");
+            connection_context.setCurrentQueryId(Poco::format("mysql:%lu", connection_id));
+
         }
         catch (const Exception & exc)
         {
@@ -295,6 +296,12 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
             replacement_query = boost::replace_all_copy(query, "SHOW TABLE STATUS LIKE ", show_table_status_replacement_query);
         }
 
+        if (0 == strncasecmp("KILL QUERY", query.c_str(), 10))
+        {
+            should_replace = true;
+            replacement_query = kill_connection_id_replacement_query(query);
+        }
+
         if (0 == strncasecmp("SHOW VARIABLES", query.c_str(), 13))
         {
             should_replace = true;
@@ -379,7 +386,7 @@ const String MySQLHandler::show_table_status_replacement_query("SELECT"
                                                                " 'Dynamic' AS Row_format,"
                                                                " 0 AS Rows,"
                                                                " 0 AS Avg_row_length,"
-                                                               " 0 AS Data_length,"
+                                                              " 0 AS Data_length,"
                                                                " 0 AS Max_data_length,"
                                                                " 0 AS Index_length,"
                                                                " 0 AS Data_free,"
@@ -394,4 +401,23 @@ const String MySQLHandler::show_table_status_replacement_query("SELECT"
                                                                " FROM system.tables"
                                                                " WHERE name LIKE ");
 
+String MySQLHandler::kill_connection_id_replacement_query(const String & query)
+{
+    const String s = "KILL QUERY ";
+
+    if (query.size() > s.size())
+    {
+        String process_id = query.data() + s.length();
+
+        static const std::regex expr{"^[0-9]"};
+        if (std::regex_match(process_id, expr))
+        {
+            String replacement = Poco::format("KILL QUERY WHERE query_id = 'mysql:%s'", process_id);
+            return replacement;
+        }
+    }
+    return query;
 }
+
+}
+
