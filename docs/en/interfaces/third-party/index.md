@@ -10,7 +10,7 @@ This is a collection of links to third-party tools that provide some sort of int
 -   [Client libraries](client-libraries.md)
 -   [Integrations](integrations.md)
 -   [GUI](gui.md)
--   [Proxies](proxies.md)
+-   [Proxies](proxy.md)
 
 
 !!! note "Note"
