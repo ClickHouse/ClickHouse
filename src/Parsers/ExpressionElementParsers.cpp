@@ -1115,6 +1115,7 @@ const char * ParserAlias::restricted_keywords[] =
     "NOT",
     "BETWEEN",
     "LIKE",
+    "ILIKE",
     nullptr
 };
 

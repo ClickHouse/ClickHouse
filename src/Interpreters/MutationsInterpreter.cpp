@@ -36,8 +36,9 @@ namespace ErrorCodes
 
 namespace
 {
+
 /// Helps to detect situations, where non-deterministic functions may be used in mutations of Replicated*MergeTree.
-class FirstNonDeterministicFuncMatcher
+class FirstNonDeterministicFunctionMatcher
 {
 public:
     struct Data
@@ -70,18 +71,18 @@ public:
     }
 };
 
-using FirstNonDeterministicFuncFinder = InDepthNodeVisitor<FirstNonDeterministicFuncMatcher, true>;
+using FirstNonDeterministicFunctionFinder = InDepthNodeVisitor<FirstNonDeterministicFunctionMatcher, true>;
 
-std::optional<String> findFirstNonDeterministicFuncName(const MutationCommand & command, const Context & context)
+std::optional<String> findFirstNonDeterministicFunctionName(const MutationCommand & command, const Context & context)
 {
-    FirstNonDeterministicFuncMatcher::Data finder_data{context, std::nullopt};
+    FirstNonDeterministicFunctionMatcher::Data finder_data{context, std::nullopt};
 
     switch (command.type)
     {
         case MutationCommand::UPDATE:
         {
             auto update_assignments_ast = command.ast->as<const ASTAlterCommand &>().update_assignments->clone();
-            FirstNonDeterministicFuncFinder(finder_data).visit(update_assignments_ast);
+            FirstNonDeterministicFunctionFinder(finder_data).visit(update_assignments_ast);
 
             if (finder_data.nondeterministic_function_name)
                 return finder_data.nondeterministic_function_name;
@@ -92,7 +93,7 @@ std::optional<String> findFirstNonDeterministicFuncName(const MutationCommand & 
         case MutationCommand::DELETE:
         {
             auto predicate_ast = command.predicate->clone();
-            FirstNonDeterministicFuncFinder(finder_data).visit(predicate_ast);
+            FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
 
             return finder_data.nondeterministic_function_name;
         }
@@ -506,7 +507,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
-                InterpreterSelectQuery interpreter{select_query, context, storage, metadata_snapshot, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
+                InterpreterSelectQuery interpreter{
+                    select_query, context, storage, metadata_snapshot,
+                    SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
 
                 auto first_stage_header = interpreter.getSampleBlock();
                 auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
@@ -529,7 +532,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & prepared_stages, bool dry_run)
 {
     NamesAndTypesList all_columns = metadata_snapshot->getColumns().getAllPhysical();
-
 
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
@@ -681,7 +683,7 @@ void MutationsInterpreter::validate()
     {
         for (const auto & command : commands)
         {
-            const auto nondeterministic_func_name = findFirstNonDeterministicFuncName(command, context);
+            const auto nondeterministic_func_name = findFirstNonDeterministicFunctionName(command, context);
             if (nondeterministic_func_name)
                 throw Exception(
                     "ALTER UPDATE/ALTER DELETE statements must use only deterministic functions! "

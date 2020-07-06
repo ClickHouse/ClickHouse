@@ -102,8 +102,6 @@ void geodistInit()
 inline float geodistDegDiff(float f)
 {
     f = fabsf(f);
-    while (f > 360)
-        f -= 360;
     if (f > 180)
         f = 360 - f;
     return f;

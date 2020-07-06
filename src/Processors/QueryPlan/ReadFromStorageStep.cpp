@@ -113,7 +113,7 @@ ReadFromStorageStep::ReadFromStorageStep(
         }
     }
 
-    if (pipes.size() == 1)
+    if (pipes.size() == 1 && !storage->isView())
         pipeline->setMaxThreads(1);
 
     for (auto & pipe : pipes)
