@@ -65,13 +65,15 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
-#include <Interpreters/MySQL/MySQLInterpreterFactory.h>
+#include <Interpreters/InterpreterExternalDDLQuery.h>
 
 #include <Parsers/ASTSystemQuery.h>
 
-#include <Common/typeid_cast.h>
-#include <Common/ProfileEvents.h>
 #include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#include <Parsers/ASTExternalDDLQuery.h>
+#include <Common/ProfileEvents.h>
+#include <Common/typeid_cast.h>
+
 
 
 namespace ProfileEvents
@@ -243,6 +245,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTShowPrivilegesQuery>())
     {
         return std::make_unique<InterpreterShowPrivilegesQuery>(query, context);
+    }
+    else if (query->as<ASTExternalDDLQuery>())
+    {
+        return std::make_unique<InterpreterExternalDDLQuery>(query, context);
     }
     else
     {

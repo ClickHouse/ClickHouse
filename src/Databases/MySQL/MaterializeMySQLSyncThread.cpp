@@ -33,21 +33,17 @@ namespace ErrorCodes
 
 static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
 
-template <bool execute_ddl = true>
 static BlockIO tryToExecuteQuery(const String & query_to_execute, const Context & context_, const String & database, const String & comment)
 {
     try
     {
         Context context(context_);
         CurrentThread::QueryScope query_scope(context);
-        context.setCurrentDatabase(database);
+        context.unsafeSetCurrentDatabase(database);
         context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         context.setCurrentQueryId(""); // generate random query_id
 
-        if constexpr (execute_ddl)
-            return executeMySQLDDLQuery("/*" + comment + "*/ " + query_to_execute, context, true);
-        else
-            return executeQuery("/*" + comment + "*/ " + query_to_execute, context, true);
+        return executeQuery("/*" + comment + "*/ " + query_to_execute, context, true);
     }
     catch (...)
     {
@@ -161,16 +157,16 @@ static inline void cleanOutdatedTables(const String & database_name, const Conte
 
     for (auto iterator = clean_database->getTablesIterator(context); iterator->isValid(); iterator->next())
     {
-        String table_name = backQuoteIfNeed(iterator->name());
         String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
-        tryToExecuteQuery("DROP TABLE " + table_name, context, database_name, comment);
+        String table_name = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(iterator->name());
+        tryToExecuteQuery(" DROP TABLE " + table_name, context, database_name, comment);
     }
 }
 
 static inline BlockOutputStreamPtr getTableOutput(const String & database_name, const String & table_name, const Context & context)
 {
     String comment = "Materialize MySQL step 1: execute dump data";
-    BlockIO res = tryToExecuteQuery<false>("INSERT INTO " + backQuoteIfNeed(table_name) + " VALUES", context, database_name, comment);
+    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuoteIfNeed(table_name) + " VALUES", context, database_name, comment);
 
     if (!res.out)
         throw Exception("LOGICAL ERROR:", ErrorCodes::LOGICAL_ERROR);
@@ -180,7 +176,7 @@ static inline BlockOutputStreamPtr getTableOutput(const String & database_name, 
 
 static inline void dumpDataForTables(
     mysqlxx::Pool::Entry & connection, MaterializeMetadata & master_info,
-    const String & database_name, const String & mysql_database_name,
+    const String & query_prefix, const String & database_name, const String & mysql_database_name,
     const Context & context, const std::function<bool()> & is_cancelled)
 {
     auto iterator = master_info.need_dumping_tables.begin();
@@ -188,7 +184,7 @@ static inline void dumpDataForTables(
     {
         const auto & table_name = iterator->first;
         String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
-        tryToExecuteQuery(iterator->second, context, database_name, comment);  /// create table.
+        tryToExecuteQuery(query_prefix + " " + iterator->second, context, mysql_database_name, comment); /// create table.
 
         BlockOutputStreamPtr out = std::make_shared<AddingVersionsBlockOutputStream>(master_info.version, getTableOutput(database_name, table_name, context));
         MySQLBlockInputStream input(
@@ -224,7 +220,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
                 metadata.transaction(Position(metadata.binlog_position, metadata.binlog_file), [&]()
                 {
                     cleanOutdatedTables(database_name, global_context);
-                    dumpDataForTables(connection, metadata, database_name, mysql_database_name, global_context, [this] { return isCancelled(); });
+                    dumpDataForTables(connection, metadata, query_prefix, database_name, mysql_database_name, global_context, [this] { return isCancelled(); });
                 });
             }
 

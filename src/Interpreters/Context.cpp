@@ -1070,6 +1070,11 @@ void Context::setCurrentDatabase(const String & name)
     calculateAccessRights();
 }
 
+void Context::unsafeSetCurrentDatabase(const String & name)
+{
+    auto lock = getLock();
+    current_database = name;
+}
 
 void Context::setCurrentQueryId(const String & query_id)
 {
