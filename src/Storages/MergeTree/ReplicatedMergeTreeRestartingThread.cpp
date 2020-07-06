@@ -10,7 +10,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event ReplicaYieldLeadership;
     extern const Event ReplicaPartialShutdown;
 }
 
@@ -42,15 +41,11 @@ static String generateActiveNodeIdentifier()
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeRestartingThread)")
-    , log(&Logger::get(log_name))
+    , log(&Poco::Logger::get(log_name))
     , active_node_identifier(generateActiveNodeIdentifier())
 {
     const auto storage_settings = storage.getSettings();
     check_period_ms = storage_settings->zookeeper_session_expiration_check_period.totalSeconds() * 1000;
-
-    /// Periodicity of checking lag of replica.
-    if (check_period_ms > static_cast<Int64>(storage_settings->check_delay_period) * 1000)
-        check_period_ms = storage_settings->check_delay_period * 1000;
 
     task = storage.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
 }
@@ -120,37 +115,6 @@ void ReplicatedMergeTreeRestartingThread::run()
                 CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
 
             first_time = false;
-        }
-
-        time_t current_time = time(nullptr);
-        const auto storage_settings = storage.getSettings();
-        if (current_time >= prev_time_of_check_delay + static_cast<time_t>(storage_settings->check_delay_period))
-        {
-            /// Find out lag of replicas.
-            time_t absolute_delay = 0;
-            time_t relative_delay = 0;
-
-            storage.getReplicaDelays(absolute_delay, relative_delay);
-
-            if (absolute_delay)
-                LOG_TRACE(log, "Absolute delay: {}. Relative delay: {}.", absolute_delay, relative_delay);
-
-            prev_time_of_check_delay = current_time;
-
-            /// We give up leadership if the relative lag is greater than threshold.
-            if (storage.is_leader
-                && relative_delay > static_cast<time_t>(storage_settings->min_relative_delay_to_yield_leadership))
-            {
-                LOG_INFO(log, "Relative replica delay ({} seconds) is bigger than threshold ({}). Will yield leadership.", relative_delay, storage_settings->min_relative_delay_to_yield_leadership);
-
-                ProfileEvents::increment(ProfileEvents::ReplicaYieldLeadership);
-
-                storage.exitLeaderElection();
-                /// NOTE: enterLeaderElection() can throw if node creation in ZK fails.
-                /// This is bad because we can end up without a leader on any replica.
-                /// In this case we rely on the fact that the session will expire and we will reconnect.
-                storage.enterLeaderElection();
-            }
         }
     }
     catch (...)
@@ -234,7 +198,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
     auto zookeeper = storage.getZooKeeper();
 
     Strings failed_parts;
-    if (zookeeper->tryGetChildren(storage.zookeeper_path + "/quorum/failed_parts", failed_parts) != Coordination::ZOK)
+    if (zookeeper->tryGetChildren(storage.zookeeper_path + "/quorum/failed_parts", failed_parts) != Coordination::Error::ZOK)
         return;
 
     /// Firstly, remove parts from ZooKeeper
@@ -294,12 +258,12 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     {
         auto code = zookeeper->tryRemove(is_active_path, stat.version);
 
-        if (code == Coordination::ZBADVERSION)
+        if (code == Coordination::Error::ZBADVERSION)
             throw Exception("Another instance of replica " + storage.replica_path + " was created just now."
                 " You shouldn't run multiple instances of same replica. You need to check configuration files.",
                 ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
 
-        if (code && code != Coordination::ZNONODE)
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw Coordination::Exception(code, is_active_path);
     }
 
@@ -314,9 +278,19 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     }
     catch (const Coordination::Exception & e)
     {
-        if (e.code == Coordination::ZNODEEXISTS)
-            throw Exception("Replica " + storage.replica_path + " appears to be already active. If you're sure it's not, "
-                "try again in a minute or remove znode " + storage.replica_path + "/is_active manually", ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
+        String existing_replica_host;
+        zookeeper->tryGet(storage.replica_path + "/host", existing_replica_host);
+
+        if (existing_replica_host.empty())
+            existing_replica_host = "without host node";
+        else
+            boost::replace_all(existing_replica_host, "\n", ", ");
+
+        if (e.code == Coordination::Error::ZNODEEXISTS)
+            throw Exception(ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
+                "Replica {} appears to be already active ({}). If you're sure it's not, "
+                "try again in a minute or remove znode {}/is_active manually",
+                storage.replica_path, existing_replica_host, storage.replica_path);
 
         throw;
     }

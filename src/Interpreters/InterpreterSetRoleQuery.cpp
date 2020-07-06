@@ -1,8 +1,8 @@
 #include <Interpreters/InterpreterSetRoleQuery.h>
 #include <Parsers/ASTSetRoleQuery.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Interpreters/Context.h>
-#include <Access/ExtendedRoleSet.h>
+#include <Access/RolesOrUsersSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
 
@@ -38,7 +38,7 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
     }
     else
     {
-        ExtendedRoleSet roles_from_query{*query.roles, access_control};
+        RolesOrUsersSet roles_from_query{*query.roles, access_control};
         boost::container::flat_set<UUID> new_current_roles;
         if (roles_from_query.all)
         {
@@ -62,11 +62,11 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
 
 void InterpreterSetRoleQuery::setDefaultRole(const ASTSetRoleQuery & query)
 {
-    context.checkAccess(AccessType::CREATE_USER | AccessType::DROP_USER);
+    context.checkAccess(AccessType::ALTER_USER);
 
     auto & access_control = context.getAccessControlManager();
-    std::vector<UUID> to_users = ExtendedRoleSet{*query.to_users, access_control, context.getUserID()}.getMatchingIDs(access_control);
-    ExtendedRoleSet roles_from_query{*query.roles, access_control};
+    std::vector<UUID> to_users = RolesOrUsersSet{*query.to_users, access_control, context.getUserID()}.getMatchingIDs(access_control);
+    RolesOrUsersSet roles_from_query{*query.roles, access_control};
 
     auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
     {
@@ -79,7 +79,7 @@ void InterpreterSetRoleQuery::setDefaultRole(const ASTSetRoleQuery & query)
 }
 
 
-void InterpreterSetRoleQuery::updateUserSetDefaultRoles(User & user, const ExtendedRoleSet & roles_from_query)
+void InterpreterSetRoleQuery::updateUserSetDefaultRoles(User & user, const RolesOrUsersSet & roles_from_query)
 {
     if (!roles_from_query.all)
     {

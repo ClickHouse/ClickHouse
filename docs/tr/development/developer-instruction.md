@@ -141,7 +141,7 @@ Resmi Yandex şu anda GCC'Yİ kullanıyor çünkü biraz daha iyi performansa sa
 
 Ubuntu run GCC yüklemek için: `sudo apt install gcc g++`
 
-Gcc sürümünü kontrol edin: `gcc --version`. 9'un altındaysa, buradaki talimatları izleyin: https://clickhouse.tech / docs/TR/development / build / \#ınstall-gcc-9.
+Gcc sürümünü kontrol edin: `gcc --version`. 9'un altındaysa, buradaki talimatları izleyin: https://clickhouse.tech/docs/tr/development/build/#install-gcc-9.
 
 Mac OS X build sadece Clang için desteklenir. Sadece koş `brew install llvm`
 
@@ -249,7 +249,7 @@ Kod stili Kılavuzu: https://clickhouse.tech / doscs / TR / development / style/
 
 Yazma testleri: https://clickhouse.teknoloji / doscs / TR / geliştirme / testler/
 
-Görevlerin listesi: https://github.com/ClickHouse/ClickHouse/blob/master/testsructions/easy\_tasks\_sorted\_en.md
+Görevlerin listesi: https://github.com/ClickHouse/ClickHouse/contribute
 
 # Test Verileri {#test-data}
 

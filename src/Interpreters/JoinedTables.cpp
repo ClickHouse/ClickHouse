@@ -61,19 +61,6 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
     }
 }
 
-template <typename T>
-void checkTablesWithColumns(const std::vector<T> & tables_with_columns, const Context & context)
-{
-    const auto & settings = context.getSettingsRef();
-    if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
-    {
-        for (auto & t : tables_with_columns)
-            if (t.table.table.empty() && t.table.alias.empty())
-                throw Exception("No alias for subquery or table function in JOIN (set joined_subquery_requires_alias=0 to disable restriction).",
-                                ErrorCodes::ALIAS_REQUIRED);
-    }
-}
-
 class RenameQualifiedIdentifiersMatcher
 {
 public:
@@ -194,22 +181,37 @@ StoragePtr JoinedTables::getLeftTableStorage()
     }
 
     /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
-    return DatabaseCatalog::instance().getTable(table_id);
+    return DatabaseCatalog::instance().getTable(table_id, context);
 }
 
 bool JoinedTables::resolveTables()
 {
     tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
-    checkTablesWithColumns(tables_with_columns, context);
+    assert(tables_with_columns.size() == table_expressions.size());
+
+    const auto & settings = context.getSettingsRef();
+    if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
+    {
+        for (size_t i = 0; i < tables_with_columns.size(); ++i)
+        {
+            const auto & t = tables_with_columns[i];
+            if (t.table.table.empty() && t.table.alias.empty())
+            {
+                throw Exception("No alias for subquery or table function in JOIN (set joined_subquery_requires_alias=0 to disable restriction). While processing '"
+                    + table_expressions[i]->formatForErrorMessage() + "'",
+                    ErrorCodes::ALIAS_REQUIRED);
+            }
+        }
+    }
 
     return !tables_with_columns.empty();
 }
 
-void JoinedTables::makeFakeTable(StoragePtr storage, const Block & source_header)
+void JoinedTables::makeFakeTable(StoragePtr storage, const StorageMetadataPtr & metadata_snapshot, const Block & source_header)
 {
     if (storage)
     {
-        const ColumnsDescription & storage_columns = storage->getColumns();
+        const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, storage_columns.getOrdinary());
 
         auto & table = tables_with_columns.back();
@@ -259,7 +261,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (table_to_join.database_and_table_name)
     {
         auto joined_table_id = context.resolveStorageID(table_to_join.database_and_table_name);
-        StoragePtr table = DatabaseCatalog::instance().tryGetTable(joined_table_id);
+        StoragePtr table = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
         if (table)
         {
             if (dynamic_cast<StorageJoin *>(table.get()) ||

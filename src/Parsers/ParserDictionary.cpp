@@ -126,25 +126,21 @@ bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     res->has_brackets = func.has_brackets;
     const ASTExpressionList & type_expr_list = func.elements->as<const ASTExpressionList &>();
 
-    /// there are no layout with more than 1 parameter
-    if (type_expr_list.children.size() > 1)
-        return false;
-
     /// if layout has params than brackets must be specified
     if (!type_expr_list.children.empty() && !res->has_brackets)
         return false;
 
-    if (type_expr_list.children.size() == 1)
+    for (const auto & child : type_expr_list.children)
     {
-        const ASTPair * pair = dynamic_cast<const ASTPair *>(type_expr_list.children.at(0).get());
+        const ASTPair * pair = dynamic_cast<const ASTPair *>(child.get());
         if (pair == nullptr)
             return false;
 
         const ASTLiteral * literal = dynamic_cast<const ASTLiteral *>(pair->second.get());
-        if (literal == nullptr || literal->value.getType() != Field::Types::UInt64)
+        if (literal == nullptr || (literal->value.getType() != Field::Types::UInt64 && literal->value.getType() != Field::Types::String))
             return false;
-        res->parameter.emplace(pair->first, nullptr);
-        res->set(res->parameter->second, literal->clone());
+        res->parameters.emplace_back(pair->first, nullptr);
+        res->set(res->parameters.back().second, literal->clone());
     }
 
     node = res;

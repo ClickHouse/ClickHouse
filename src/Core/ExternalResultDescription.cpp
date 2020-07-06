@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
@@ -60,6 +61,10 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.emplace_back(ValueType::vtDateTime, is_nullable);
         else if (typeid_cast<const DataTypeUUID *>(type))
             types.emplace_back(ValueType::vtUUID, is_nullable);
+        else if (typeid_cast<const DataTypeEnum8 *>(type))
+            types.emplace_back(ValueType::vtString, is_nullable);
+        else if (typeid_cast<const DataTypeEnum16 *>(type))
+            types.emplace_back(ValueType::vtString, is_nullable);
         else
             throw Exception{"Unsupported type " + type->getName(), ErrorCodes::UNKNOWN_TYPE};
     }

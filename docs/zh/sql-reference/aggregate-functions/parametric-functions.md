@@ -1,15 +1,13 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
-toc_title: "\u53C2\u6570"
+toc_title: 参数聚合函数
 ---
 
 # 参数聚合函数 {#aggregate_functions_parametric}
 
-Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
+一些聚合函数不仅可以接受参数列（用于压缩），也可以接收常量的初始化参数。这种语法是接受两个括号的参数，第一个数初始化参数，第二个是入参。
 
-## 直方图 {#histogram}
+## histogram {#histogram}
 
 计算自适应直方图。 它不能保证精确的结果。
 
@@ -21,20 +19,21 @@ histogram(number_of_bins)(values)
 
 **参数**
 
-`number_of_bins` — Upper limit for the number of bins in the histogram. The function automatically calculates the number of bins. It tries to reach the specified number of bins, but if it fails, it uses fewer bins.
-`values` — [表达式](../syntax.md#syntax-expressions) 导致输入值。
+`number_of_bins` — 直方图bin个数，这个函数会自动计算bin的数量，而且会尽量使用指定值，如果无法做到，那就使用更小的bin个数。 
+
+`values` — [表达式](../syntax.md#syntax-expressions) 输入值。
 
 **返回值**
 
--   [阵列](../../sql-reference/data-types/array.md) 的 [元组](../../sql-reference/data-types/tuple.md) 下面的格式:
+-   [Array](../../sql-reference/data-types/array.md) 的 [Tuples](../../sql-reference/data-types/tuple.md) 如下：
 
         ```
         [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
         ```
 
-        - `lower` — Lower bound of the bin.
-        - `upper` — Upper bound of the bin.
-        - `height` — Calculated height of the bin.
+        - `lower` — bin的下边界。
+        - `upper` — bin的上边界。
+        - `height` — bin的计算权重。
 
 **示例**
 
@@ -53,7 +52,7 @@ FROM (
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-您可以使用 [酒吧](../../sql-reference/functions/other-functions.md#function-bar) 功能，例如:
+您可以使用 [bar](../../sql-reference/functions/other-functions.md#function-bar) 功能，例如:
 
 ``` sql
 WITH histogram(5)(rand() % 100) AS hist
@@ -93,11 +92,11 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 **参数**
 
--   `pattern` — Pattern string. See [模式语法](#sequence-function-pattern-syntax).
+-   `pattern` — 模式字符串。 参考 [模式语法](#sequence-function-pattern-syntax).
 
--   `timestamp` — Column considered to contain time data. Typical data types are `Date` 和 `DateTime`. 您还可以使用任何支持的 [UInt](../../sql-reference/data-types/int-uint.md) 数据类型。
+-   `timestamp` — 包含时间的列。典型的时间类型是： `Date` 和 `DateTime`。您还可以使用任何支持的 [UInt](../../sql-reference/data-types/int-uint.md) 数据类型。
 
--   `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. 最多可以传递32个条件参数。 该函数只考虑这些条件中描述的事件。 如果序列包含未在条件中描述的数据，则函数将跳过这些数据。
+-   `cond1`, `cond2` — 事件链的约束条件。 数据类型是： `UInt8`。 最多可以传递32个条件参数。 该函数只考虑这些条件中描述的事件。 如果序列包含未在条件中描述的数据，则函数将跳过这些数据。
 
 **返回值**
 
@@ -109,11 +108,11 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 <a name="sequence-function-pattern-syntax"></a>
 **模式语法**
 
--   `(?N)` — Matches the condition argument at position `N`. 条件在编号 `[1, 32]` 范围。 例如, `(?1)` 匹配传递给 `cond1` 参数。
+-   `(?N)` — 在位置`N`匹配条件参数。 条件在编号 `[1, 32]` 范围。 例如, `(?1)` 匹配传递给 `cond1` 参数。
 
--   `.*` — Matches any number of events. You don't need conditional arguments to match this element of the pattern.
+-   `.*` — 匹配任何事件的数字。 不需要条件参数来匹配这个模式。
 
--   `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` 匹配彼此发生超过1800秒的事件。 这些事件之间可以存在任意数量的任何事件。 您可以使用 `>=`, `>`, `<`, `<=` 运营商。
+-   `(?t operator value)` — 分开两个事件的时间。 例如： `(?1)(?t>1800)(?2)` 匹配彼此发生超过1800秒的事件。 这些事件之间可以存在任意数量的任何事件。 您可以使用 `>=`, `>`, `<`, `<=` 运算符。
 
 **例**
 
@@ -169,7 +168,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 ## sequenceCount(pattern)(time, cond1, cond2, …) {#function-sequencecount}
 
-计数与模式匹配的事件链的数量。 该函数搜索不重叠的事件链。 当前链匹配后，它开始搜索下一个链。
+计算与模式匹配的事件链的数量。该函数搜索不重叠的事件链。当前链匹配后，它开始搜索下一个链。
 
 !!! warning "警告"
     在同一秒钟发生的事件可能以未定义的顺序排列在序列中，影响结果。
@@ -180,11 +179,11 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 **参数**
 
--   `pattern` — Pattern string. See [模式语法](#sequence-function-pattern-syntax).
+-   `pattern` — 模式字符串。 参考：[模式语法](#sequence-function-pattern-syntax).
 
--   `timestamp` — Column considered to contain time data. Typical data types are `Date` 和 `DateTime`. 您还可以使用任何支持的 [UInt](../../sql-reference/data-types/int-uint.md) 数据类型。
+-   `timestamp` — 包含时间的列。典型的时间类型是： `Date` 和 `DateTime`。您还可以使用任何支持的 [UInt](../../sql-reference/data-types/int-uint.md) 数据类型。
 
--   `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. 最多可以传递32个条件参数。 该函数只考虑这些条件中描述的事件。 如果序列包含未在条件中描述的数据，则函数将跳过这些数据。
+-   `cond1`, `cond2` — 事件链的约束条件。 数据类型是： `UInt8`。 最多可以传递32个条件参数。该函数只考虑这些条件中描述的事件。 如果序列包含未在条件中描述的数据，则函数将跳过这些数据。
 
 **返回值**
 
@@ -227,9 +226,9 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 
 搜索滑动时间窗中的事件链，并计算从链中发生的最大事件数。
 
-该函数根据算法工作:
+该函数采用如下算法：
 
--   该函数搜索触发链中的第一个条件并将事件计数器设置为1的数据。 这是滑动窗口启动的时刻。
+-   该函数搜索触发链中的第一个条件并将事件计数器设置为1。 这是滑动窗口启动的时刻。
 
 -   如果来自链的事件在窗口内顺序发生，则计数器将递增。 如果事件序列中断，则计数器不会增加。
 
@@ -243,11 +242,11 @@ windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 
 **参数**
 
--   `window` — Length of the sliding window in seconds.
--   `mode` -这是一个可选的参数。
-    -   `'strict'` -当 `'strict'` 设置时，windowFunnel()仅对唯一值应用条件。
--   `timestamp` — Name of the column containing the timestamp. Data types supported: [日期](../../sql-reference/data-types/date.md), [日期时间](../../sql-reference/data-types/datetime.md#data_type-datetime) 和其他无符号整数类型（请注意，即使时间戳支持 `UInt64` 类型，它的值不能超过Int64最大值，即2^63-1）。
--   `cond` — Conditions or data describing the chain of events. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `window` — 滑动窗户的大小，单位是秒。
+-   `mode` - 这是一个可选的参数。
+    -   `'strict'` - 当 `'strict'` 设置时，windowFunnel()仅对唯一值应用匹配条件。
+-   `timestamp` — 包含时间的列。 数据类型支持： [日期](../../sql-reference/data-types/date.md), [日期时间](../../sql-reference/data-types/datetime.md#data_type-datetime) 和其他无符号整数类型（请注意，即使时间戳支持 `UInt64` 类型，它的值不能超过Int64最大值，即2^63-1）。
+-   `cond` — 事件链的约束条件。 [UInt8](../../sql-reference/data-types/int-uint.md) 类型。
 
 **返回值**
 
@@ -284,7 +283,7 @@ windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 └────────────┴─────────┴─────────────────────┴─────────┴─────────┘
 ```
 
-了解用户有多远 `user_id` 可以在2019的1-2月期间通过链条。
+了解用户`user_id` 可以在2019的1-2月期间通过链条多远。
 
 查询:
 
@@ -313,12 +312,12 @@ ORDER BY level ASC
 └───────┴───┘
 ```
 
-## 保留 {#retention}
+## Retention {#retention}
 
-该函数将一组条件作为参数，类型为1到32个参数 `UInt8` 表示事件是否满足特定条件。
+该函数将一组条件作为参数，类型为1到32个 `UInt8` 类型的参数，用来表示事件是否满足特定条件。
 任何条件都可以指定为参数（如 [WHERE](../../sql-reference/statements/select/where.md#select-where)).
 
-除了第一个以外，条件成对适用：如果第一个和第二个是真的，第二个结果将是真的，如果第一个和fird是真的，第三个结果将是真的，等等。
+除了第一个以外，条件成对适用：如果第一个和第二个是真的，第二个结果将是真的，如果第一个和第三个是真的，第三个结果将是真的，等等。
 
 **语法**
 
@@ -328,22 +327,22 @@ retention(cond1, cond2, ..., cond32);
 
 **参数**
 
--   `cond` — an expression that returns a `UInt8` 结果（1或0）。
+-   `cond` — 返回 `UInt8` 结果（1或0）的表达式。
 
 **返回值**
 
 数组为1或0。
 
--   1 — condition was met for the event.
--   0 — condition wasn't met for the event.
+-   1 — 条件满足。
+-   0 — 条件不满足。
 
 类型: `UInt8`.
 
 **示例**
 
-让我们考虑计算的一个例子 `retention` 功能，以确定网站流量。
+让我们考虑使用 `retention` 功能的一个例子 ，以确定网站流量。
 
-**1.** Сreate a table to illustrate an example.
+**1.** 举例说明，先创建一张表。
 
 ``` sql
 CREATE TABLE retention_test(date Date, uid Int32) ENGINE = Memory;
@@ -402,7 +401,7 @@ SELECT * FROM retention_test
 └────────────┴─────┘
 ```
 
-**2.** 按唯一ID对用户进行分组 `uid` 使用 `retention` 功能。
+**2.** 按唯一ID `uid` 对用户进行分组，使用 `retention` 功能。
 
 查询:
 
@@ -466,7 +465,7 @@ FROM
 └────┴────┴────┘
 ```
 
-哪里:
+条件:
 
 -   `r1`-2020-01-01期间访问该网站的独立访问者数量（ `cond1` 条件）。
 -   `r2`-在2020-01-01和2020-01-02之间的特定时间段内访问该网站的唯一访问者的数量 (`cond1` 和 `cond2` 条件）。
@@ -474,9 +473,9 @@ FROM
 
 ## uniqUpTo(N)(x) {#uniquptonx}
 
-Calculates the number of different argument values ​​if it is less than or equal to N. If the number of different argument values is greater than N, it returns N + 1.
+计算小于或者等于N的不同参数的个数。如果结果大于N，那返回N+1。
 
-建议使用小Ns，高达10。 N的最大值为100。
+建议使用较小的Ns，比如：10。N的最大值为100。
 
 对于聚合函数的状态，它使用的内存量等于1+N\*一个字节值的大小。
 对于字符串，它存储8个字节的非加密哈希。 也就是说，计算是近似的字符串。
@@ -488,12 +487,12 @@ Calculates the number of different argument values ​​if it is less than or e
 用法示例:
 
 ``` text
-Problem: Generate a report that shows only keywords that produced at least 5 unique users.
-Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
+问题：产出一个不少于五个唯一用户的关键字报告
+解决方案： 写group by查询语句 HAVING uniqUpTo(4)(UserID) >= 5
 ```
 
+## sumMapFiltered(keys\_to\_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
+
+和 [sumMap](reference.md#agg_functions-summap) 基本一致， 除了一个键数组作为参数传递。这在使用高基数key时尤其有用。
+
 [原始文章](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
-
-## sumMapFiltered(keys\_to\_keep)(键值) {#summapfilteredkeys-to-keepkeys-values}
-
-同样的行为 [sumMap](reference.md#agg_functions-summap) 除了一个键数组作为参数传递。 这在使用高基数密钥时尤其有用。

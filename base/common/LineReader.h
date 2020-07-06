@@ -21,7 +21,9 @@ public:
         WordsRange getCompletions(const String & prefix, size_t prefix_length) const;
     };
 
-    LineReader(const String & history_file_path, char extender, char delimiter = 0);  /// if delimiter != 0, then it's multiline mode
+    using Patterns = std::vector<const char *>;
+
+    LineReader(const String & history_file_path, bool multiline, Patterns extenders, Patterns delimiters);
     virtual ~LineReader() {}
 
     /// Reads the whole line until delimiter (in multiline mode) or until the last line without extender.
@@ -46,13 +48,15 @@ protected:
     };
 
     const String history_file_path;
-    static constexpr char word_break_characters[] = " \t\n\r\"\\'`@$><=;|&{(.";
+    static constexpr char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?";
 
     String input;
 
 private:
-    const char extender;
-    const char delimiter;
+    bool multiline;
+
+    Patterns extenders;
+    Patterns delimiters;
 
     String prev_line;
 

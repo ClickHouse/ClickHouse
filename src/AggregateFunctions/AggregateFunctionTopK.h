@@ -23,13 +23,8 @@ namespace DB
 template <typename T>
 struct AggregateFunctionTopKData
 {
-    using Set = SpaceSaving
-    <
-        T,
-        HashCRC32<T>,
-        HashTableGrower<4>,
-        HashTableAllocatorWithStackMemory<sizeof(T) * (1 << 4)>
-    >;
+    using Set = SpaceSaving<T, HashCRC32<T>>;
+
     Set value;
 };
 
@@ -52,7 +47,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
+        return std::make_shared<DataTypeArray>(this->argument_types[0]);
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -84,7 +79,7 @@ public:
         set.read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
@@ -109,13 +104,7 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionTopKGenericData
 {
-    using Set = SpaceSaving
-    <
-        StringRef,
-        StringRefHash,
-        HashTableGrower<4>,
-        HashTableAllocatorWithStackMemory<sizeof(StringRef) * (1 << 4)>
-    >;
+    using Set = SpaceSaving<StringRef, StringRefHash>;
 
     Set value;
 };
@@ -211,7 +200,7 @@ public:
         this->data(place).value.merge(this->data(rhs).value);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();

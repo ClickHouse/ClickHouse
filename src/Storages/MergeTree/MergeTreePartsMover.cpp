@@ -128,14 +128,14 @@ bool MergeTreePartsMover::selectPartsForMove(
         if (!can_move(part, &reason))
             continue;
 
-        auto ttl_entry = part->storage.selectTTLEntryForTTLInfos(part->ttl_infos, time_of_move);
+        auto ttl_entry = data->selectTTLEntryForTTLInfos(part->ttl_infos, time_of_move);
         auto to_insert = need_to_move.find(part->volume->getDisk());
         ReservationPtr reservation;
         if (ttl_entry)
         {
-            auto destination = ttl_entry->getDestination(policy);
-            if (destination && !ttl_entry->isPartInDestination(policy, *part))
-                reservation = part->storage.tryReserveSpace(part->getBytesOnDisk(), ttl_entry->getDestination(policy));
+            auto destination = data->getDestinationForTTL(*ttl_entry);
+            if (destination && !data->isPartInTTLDestination(*ttl_entry, *part))
+                reservation = data->tryReserveSpace(part->getBytesOnDisk(), data->getDestinationForTTL(*ttl_entry));
         }
 
         if (reservation) /// Found reservation by TTL rule.
@@ -179,7 +179,7 @@ bool MergeTreePartsMover::selectPartsForMove(
 
     if (!parts_to_move.empty())
     {
-        LOG_TRACE(log, "Selected {} parts to move according to storage policy rules and {} parts according to TTL rules, {} total", parts_to_move_by_policy_rules, parts_to_move_by_ttl_rules, formatReadableSizeWithBinarySuffix(parts_to_move_total_size_bytes));
+        LOG_TRACE(log, "Selected {} parts to move according to storage policy rules and {} parts according to TTL rules, {} total", parts_to_move_by_policy_rules, parts_to_move_by_ttl_rules, ReadableSize(parts_to_move_total_size_bytes));
         return true;
     }
     else

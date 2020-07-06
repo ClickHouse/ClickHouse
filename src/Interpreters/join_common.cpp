@@ -16,8 +16,14 @@ namespace ErrorCodes
 namespace JoinCommon
 {
 
-void convertColumnToNullable(ColumnWithTypeAndName & column)
+void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability)
 {
+    if (low_card_nullability && column.type->lowCardinality())
+    {
+        column.column = recursiveRemoveLowCardinality(column.column);
+        column.type = recursiveRemoveLowCardinality(column.type);
+    }
+
     if (column.type->isNullable() || !column.type->canBeInsideNullable())
         return;
 
@@ -93,6 +99,16 @@ void removeLowCardinalityInplace(Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & col = block.getByPosition(i);
+        col.column = recursiveRemoveLowCardinality(col.column);
+        col.type = recursiveRemoveLowCardinality(col.type);
+    }
+}
+
+void removeLowCardinalityInplace(Block & block, const Names & names)
+{
+    for (const String & column_name : names)
+    {
+        auto & col = block.getByName(column_name);
         col.column = recursiveRemoveLowCardinality(col.column);
         col.type = recursiveRemoveLowCardinality(col.type);
     }

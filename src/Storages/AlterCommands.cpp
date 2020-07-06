@@ -83,6 +83,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.ttl)
             command.ttl = ast_col_decl.ttl;
 
+        command.first = command_ast->first;
         command.if_not_exists = command_ast->if_not_exists;
 
         return command;
@@ -133,6 +134,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.codec)
             command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
 
+        if (command_ast->column)
+            command.after_column = getIdentifierName(command_ast->column);
+
+        command.first = command_ast->first;
         command.if_exists = command_ast->if_exists;
 
         return command;
@@ -253,7 +258,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
-void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
+void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & context) const
 {
     if (type == ADD_COLUMN)
     {
@@ -269,7 +274,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
         column.codec = codec;
         column.ttl = ttl;
 
-        metadata.columns.add(column, after_column);
+        metadata.columns.add(column, after_column, first);
 
         /// Slow, because each time a list is copied
         metadata.columns.flattenNested();
@@ -282,7 +287,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
     }
     else if (type == MODIFY_COLUMN)
     {
-        metadata.columns.modify(column_name, [&](ColumnDescription & column)
+        metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
             if (codec)
             {
@@ -313,30 +318,36 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
                 column.default_desc.expression = default_expression;
             }
         });
+
     }
     else if (type == MODIFY_ORDER_BY)
     {
-        if (!metadata.primary_key_ast && metadata.order_by_ast)
+        auto & sorting_key = metadata.sorting_key;
+        auto & primary_key = metadata.primary_key;
+        if (primary_key.definition_ast == nullptr && sorting_key.definition_ast != nullptr)
         {
-            /// Primary and sorting key become independent after this ALTER so we have to
-            /// save the old ORDER BY expression as the new primary key.
-            metadata.primary_key_ast = metadata.order_by_ast->clone();
+            /// Primary and sorting key become independent after this ALTER so
+            /// we have to save the old ORDER BY expression as the new primary
+            /// key.
+            primary_key = KeyDescription::getKeyFromAST(sorting_key.definition_ast, metadata.columns, context);
         }
 
-        metadata.order_by_ast = order_by;
+        /// Recalculate key with new order_by expression.
+        sorting_key.recalculateWithNewAST(order_by, metadata.columns, context);
     }
     else if (type == COMMENT_COLUMN)
     {
-        metadata.columns.modify(column_name, [&](ColumnDescription & column) { column.comment = *comment; });
+        metadata.columns.modify(column_name,
+            [&](ColumnDescription & column) { column.comment = *comment; });
     }
     else if (type == ADD_INDEX)
     {
         if (std::any_of(
-                metadata.indices.indices.cbegin(),
-                metadata.indices.indices.cend(),
-                [this](const ASTPtr & index_ast)
+                metadata.secondary_indices.cbegin(),
+                metadata.secondary_indices.cend(),
+                [this](const auto & index)
                 {
-                    return index_ast->as<ASTIndexDeclaration &>().name == index_name;
+                    return index.name == index_name;
                 }))
         {
             if (if_not_exists)
@@ -346,47 +357,47 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
                                 ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        auto insert_it = metadata.indices.indices.end();
+        auto insert_it = metadata.secondary_indices.end();
 
         if (!after_index_name.empty())
         {
             insert_it = std::find_if(
-                    metadata.indices.indices.begin(),
-                    metadata.indices.indices.end(),
-                    [this](const ASTPtr & index_ast)
+                    metadata.secondary_indices.begin(),
+                    metadata.secondary_indices.end(),
+                    [this](const auto & index)
                     {
-                        return index_ast->as<ASTIndexDeclaration &>().name == after_index_name;
+                        return index.name == after_index_name;
                     });
 
-            if (insert_it == metadata.indices.indices.end())
+            if (insert_it == metadata.secondary_indices.end())
                 throw Exception("Wrong index name. Cannot find index " + backQuote(after_index_name) + " to insert after.",
                         ErrorCodes::BAD_ARGUMENTS);
 
             ++insert_it;
         }
 
-        metadata.indices.indices.emplace(insert_it, std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl));
+        metadata.secondary_indices.emplace(insert_it, IndexDescription::getIndexFromAST(index_decl, metadata.columns, context));
     }
     else if (type == DROP_INDEX)
     {
         if (!partition && !clear)
         {
             auto erase_it = std::find_if(
-                    metadata.indices.indices.begin(),
-                    metadata.indices.indices.end(),
-                    [this](const ASTPtr & index_ast)
+                    metadata.secondary_indices.begin(),
+                    metadata.secondary_indices.end(),
+                    [this](const auto & index)
                     {
-                        return index_ast->as<ASTIndexDeclaration &>().name == index_name;
+                        return index.name == index_name;
                     });
 
-            if (erase_it == metadata.indices.indices.end())
+            if (erase_it == metadata.secondary_indices.end())
             {
                 if (if_exists)
                     return;
                 throw Exception("Wrong index name. Cannot find index " + backQuote(index_name) + " to drop.", ErrorCodes::BAD_ARGUMENTS);
             }
 
-            metadata.indices.indices.erase(erase_it);
+            metadata.secondary_indices.erase(erase_it);
         }
     }
     else if (type == ADD_CONSTRAINT)
@@ -430,15 +441,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
     }
     else if (type == MODIFY_TTL)
     {
-        metadata.ttl_for_table_ast = ttl;
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl, metadata.columns, context, metadata.primary_key);
     }
     else if (type == MODIFY_QUERY)
     {
-        metadata.select = select;
+        metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, context);
     }
     else if (type == MODIFY_SETTING)
     {
-        auto & settings_from_storage = metadata.settings_ast->as<ASTSetQuery &>().changes;
+        auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & change : settings_changes)
         {
             auto finder = [&change](const SettingChange & c) { return c.name == change.name; };
@@ -465,8 +476,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
                     rename_visitor.visit(column_to_modify.ttl);
             });
         }
-        if (metadata.ttl_for_table_ast)
-            rename_visitor.visit(metadata.ttl_for_table_ast);
+        if (metadata.table_ttl.definition_ast)
+            rename_visitor.visit(metadata.table_ttl.definition_ast);
+
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            metadata.table_ttl.definition_ast, metadata.columns, context, metadata.primary_key);
 
         for (auto & constraint : metadata.constraints.constraints)
             rename_visitor.visit(constraint);
@@ -615,7 +629,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
     return ttl_changed;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata) const
+std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, const Context & context) const
 {
     if (!isRequireMutationStage(metadata))
         return {};
@@ -658,7 +672,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     }
 
     result.ast = ast->clone();
-    apply(metadata);
+    apply(metadata, context);
     return result;
 }
 
@@ -697,7 +711,7 @@ String alterTypeToString(const AlterCommand::Type type)
     __builtin_unreachable();
 }
 
-void AlterCommands::apply(StorageInMemoryMetadata & metadata) const
+void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & context) const
 {
     if (!prepared)
         throw DB::Exception("Alter commands is not prepared. Cannot apply. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -705,7 +719,39 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata) const
     auto metadata_copy = metadata;
     for (const AlterCommand & command : *this)
         if (!command.ignore)
-            command.apply(metadata_copy);
+            command.apply(metadata_copy, context);
+
+    /// Changes in columns may lead to changes in keys expression.
+    metadata_copy.sorting_key.recalculateWithNewColumns(metadata_copy.columns, context);
+    if (metadata_copy.primary_key.definition_ast != nullptr)
+    {
+        metadata_copy.primary_key.recalculateWithNewColumns(metadata_copy.columns, context);
+    }
+    else
+    {
+        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.primary_key.definition_ast = nullptr;
+    }
+
+    /// And in partition key expression
+    if (metadata_copy.partition_key.definition_ast != nullptr)
+        metadata_copy.partition_key.recalculateWithNewColumns(metadata_copy.columns, context);
+
+    /// Changes in columns may lead to changes in secondary indices
+    for (auto & index : metadata_copy.secondary_indices)
+        index.recalculateWithNewColumns(metadata_copy.columns, context);
+
+    /// Changes in columns may lead to changes in TTL expressions.
+    auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
+    for (const auto & [name, ast] : column_ttl_asts)
+    {
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, metadata_copy.columns, context, metadata_copy.primary_key);
+        metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
+    }
+
+    if (metadata_copy.table_ttl.definition_ast != nullptr)
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            metadata_copy.table_ttl.definition_ast, metadata_copy.columns, context, metadata_copy.primary_key);
 
     metadata = std::move(metadata_copy);
 }
@@ -832,7 +878,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         }
         else if (command.type == AlterCommand::MODIFY_SETTING)
         {
-            if (metadata.settings_ast == nullptr)
+            if (metadata.settings_changes == nullptr)
                 throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)
@@ -975,11 +1021,11 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, const Context & context) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)
-        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata); mutation_cmd)
+        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context); mutation_cmd)
             result.push_back(*mutation_cmd);
 
     if (materialize_ttl)

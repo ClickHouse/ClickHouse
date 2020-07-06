@@ -33,7 +33,7 @@ public:
 private:
     StorageReplicatedMergeTree & storage;
     String log_name;
-    Logger * log;
+    Poco::Logger * log;
     std::atomic<bool> need_stop {false};
 
     /// The random data we wrote into `/replicas/me/is_active`.
@@ -42,7 +42,6 @@ private:
     BackgroundSchedulePool::TaskHolder task;
     Int64 check_period_ms;                  /// The frequency of checking expiration of session in ZK.
     bool first_time = true;                 /// Activate replica for the first time.
-    time_t prev_time_of_check_delay = 0;
     bool startup_completed = false;
 
     void run();

@@ -22,13 +22,23 @@ namespace ErrorCodes
 }
 
 
-IMergeTreeReader::IMergeTreeReader(const MergeTreeData::DataPartPtr & data_part_,
-    const NamesAndTypesList & columns_, UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
-    const MarkRanges & all_mark_ranges_, const MergeTreeReaderSettings & settings_,
+IMergeTreeReader::IMergeTreeReader(
+    const MergeTreeData::DataPartPtr & data_part_,
+    const NamesAndTypesList & columns_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    UncompressedCache * uncompressed_cache_,
+    MarkCache * mark_cache_,
+    const MarkRanges & all_mark_ranges_,
+    const MergeTreeReaderSettings & settings_,
     const ValueSizeMap & avg_value_size_hints_)
-    : data_part(data_part_), avg_value_size_hints(avg_value_size_hints_)
-    , columns(columns_), uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_)
-    , settings(settings_), storage(data_part_->storage)
+    : data_part(data_part_)
+    , avg_value_size_hints(avg_value_size_hints_)
+    , columns(columns_)
+    , uncompressed_cache(uncompressed_cache_)
+    , mark_cache(mark_cache_)
+    , settings(settings_)
+    , storage(data_part_->storage)
+    , metadata_snapshot(metadata_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(storage.getAlterConversionsForPart(data_part))
 {
@@ -112,7 +122,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
 
             if (res_columns[i] == nullptr)
             {
-                if (storage.getColumns().hasDefault(name))
+                if (metadata_snapshot->getColumns().hasDefault(name))
                 {
                     should_evaluate_missing_defaults = true;
                     continue;
@@ -170,7 +180,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             additional_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
         }
 
-        DB::evaluateMissingDefaults(additional_columns, columns, storage.getColumns().getDefaults(), storage.global_context);
+        DB::evaluateMissingDefaults(additional_columns, columns, metadata_snapshot->getColumns().getDefaults(), storage.global_context);
 
         /// Move columns from block.
         name_and_type = columns.begin();

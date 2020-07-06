@@ -7,14 +7,13 @@
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Storages/IStorage_fwd.h>
+#include <Storages/TableLockHolder.h>
 
 namespace DB
 {
 
-class TableStructureReadLock;
-using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
-using TableStructureReadLocks = std::vector<TableStructureReadLockHolder>;
 
+using TableLockHolders = std::vector<TableLockHolder>;
 class Context;
 
 class IOutputFormat;
@@ -28,6 +27,7 @@ private:
     {
     public:
         auto size() const { return data.size(); }
+        bool empty() const { return size() == 0; }
         auto begin() { return data.begin(); }
         auto end() { return data.end(); }
         auto & front() { return data.front(); }
@@ -81,6 +81,7 @@ public:
     void init(Pipes pipes);
     void init(Pipe pipe); /// Simple init for single pipe
     bool initialized() { return !processors.empty(); }
+    bool isCompleted() { return initialized() && streams.empty(); }
 
     /// Type of logical data stream for simple transform.
     /// Sometimes it's important to know which part of pipeline we are working for.
@@ -95,13 +96,25 @@ public:
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
     using ProcessorGetterWithStreamKind = std::function<ProcessorPtr(const Block & header, StreamType stream_type)>;
 
+    /// Add transform with simple input and simple output for each port.
     void addSimpleTransform(const ProcessorGetter & getter);
     void addSimpleTransform(const ProcessorGetterWithStreamKind & getter);
+    /// Add several processors. They must have same header for inputs and same for outputs.
+    /// Total number of inputs must be the same as the number of streams. Output ports will become new streams.
     void addPipe(Processors pipe);
+    /// Add TotalsHavingTransform. Resize pipeline to single input. Adds totals port.
     void addTotalsHavingTransform(ProcessorPtr transform);
+    /// Add transform which calculates extremes. This transform adds extremes port and doesn't change inputs number.
     void addExtremesTransform();
+    /// Adds transform which creates sets. It will be executed before reading any data from input ports.
     void addCreatingSetsTransform(ProcessorPtr transform);
-    void setOutput(ProcessorPtr output);
+    /// Resize pipeline to single output and add IOutputFormat. Pipeline will be completed after this transformation.
+    void setOutputFormat(ProcessorPtr output);
+    /// Get current OutputFormat.
+    IOutputFormat * getOutputFormat() const { return output_format; }
+    /// Sink is a processor with single input port and no output ports. Creates sink for each output port.
+    /// Pipeline will be completed after this transformation.
+    void setSinks(const ProcessorGetterWithStreamKind & getter);
 
     /// Add totals which returns one chunk with single row with defaults.
     void addDefaultTotals();
@@ -118,11 +131,12 @@ public:
     /// Check if resize transform was used. (In that case another distinct transform will be added).
     bool hasMixedStreams() const { return has_resize || hasMoreThanOneStream(); }
 
+    /// Changes the number of input ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool force = false, bool strict = false);
 
     void enableQuotaForCurrentStreams();
 
-    void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header);
+    void unitePipelines(std::vector<std::unique_ptr<QueryPipeline>> pipelines, const Block & common_header);
 
     PipelineExecutorPtr execute();
 
@@ -133,7 +147,7 @@ public:
 
     const Block & getHeader() const { return current_header; }
 
-    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
     void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { storage_holders.emplace_back(std::move(storage)); }
 
@@ -155,8 +169,16 @@ public:
     /// Set upper limit for the recommend number of threads
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
 
-    /// Convert query pipeline to single pipe.
+    /// Update upper limit for the recommend number of threads
+    void limitMaxThreads(size_t max_threads_)
+    {
+        if (max_threads == 0 || max_threads_ < max_threads)
+            max_threads = max_threads_;
+    }
+
+    /// Convert query pipeline to single or several pipes.
     Pipe getPipe() &&;
+    Pipes getPipes() &&;
 
 private:
     /// Destruction order: processors, header, locks, temporary storages, local contexts
@@ -166,7 +188,7 @@ private:
     /// because QueryPipeline is alive until query is finished.
     std::vector<std::shared_ptr<Context>> interpreter_context;
     std::vector<StoragePtr> storage_holders;
-    TableStructureReadLocks table_locks;
+    TableLockHolders table_locks;
 
     /// Common header for each stream.
     Block current_header;
@@ -193,6 +215,7 @@ private:
     QueryStatus * process_list_element = nullptr;
 
     void checkInitialized();
+    void checkInitializedAndNotCompleted();
     static void checkSource(const ProcessorPtr & source, bool can_have_totals);
 
     template <typename TProcessorGetter>

@@ -84,19 +84,20 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
     const ColumnString & user_col = typeid_cast<const ColumnString &>(*processes_block.getByName("user").column);
     const ClientInfo & my_client = context.getProcessListElement()->getClientInfo();
 
-    std::optional<bool> can_kill_query_started_by_another_user_cached;
-    auto can_kill_query_started_by_another_user = [&]() -> bool
+    bool access_denied = false;
+    std::optional<bool> is_kill_query_granted_value;
+    auto is_kill_query_granted = [&]() -> bool
     {
-        if (!can_kill_query_started_by_another_user_cached)
+        if (!is_kill_query_granted_value)
         {
-            can_kill_query_started_by_another_user_cached
-                = context.getAccess()->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), AccessType::KILL_QUERY);
+            is_kill_query_granted_value = context.getAccess()->isGranted(AccessType::KILL_QUERY);
+            if (!*is_kill_query_granted_value)
+                access_denied = true;
         }
-        return *can_kill_query_started_by_another_user_cached;
+        return *is_kill_query_granted_value;
     };
 
     String query_user;
-    bool access_denied = false;
 
     for (size_t i = 0; i < num_processes; ++i)
     {
@@ -107,11 +108,8 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
         auto query_id = query_id_col.getDataAt(i).toString();
         query_user = user_col.getDataAt(i).toString();
 
-        if ((my_client.current_user != query_user) && !can_kill_query_started_by_another_user())
-        {
-            access_denied = true;
+        if ((my_client.current_user != query_user) && !is_kill_query_granted())
             continue;
-        }
 
         res.emplace_back(std::move(query_id), query_user, i, false);
     }
@@ -261,7 +259,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             CancellationCode code = CancellationCode::Unknown;
             if (!query.test)
             {
-                auto storage = DatabaseCatalog::instance().tryGetTable(table_id);
+                auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 if (!storage)
                     code = CancellationCode::NotFound;
                 else
@@ -269,7 +267,7 @@ BlockIO InterpreterKillQueryQuery::execute()
                     ParserAlterCommand parser;
                     auto command_ast = parseQuery(parser, command_col.getDataAt(i).toString(), 0, context.getSettingsRef().max_parser_depth);
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name);
-                    if (!access->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), required_access_rights))
+                    if (!access->isGranted(required_access_rights))
                     {
                         access_denied = true;
                         continue;

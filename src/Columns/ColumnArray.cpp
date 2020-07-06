@@ -26,7 +26,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int PARAMETER_OUT_OF_BOUND;
@@ -38,8 +37,18 @@ namespace ErrorCodes
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
     : data(std::move(nested_column)), offsets(std::move(offsets_column))
 {
-    if (!typeid_cast<const ColumnOffsets *>(offsets.get()))
-        throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::ILLEGAL_COLUMN);
+    const ColumnOffsets * offsets_concrete = typeid_cast<const ColumnOffsets *>(offsets.get());
+
+    if (!offsets_concrete)
+        throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
+
+    size_t size = offsets_concrete->size();
+    if (size != 0 && nested_column)
+    {
+        /// This will also prevent possible overflow in offset.
+        if (nested_column->size() != offsets_concrete->getData()[size - 1])
+            throw Exception("offsets_column has data inconsistent with nested_column", ErrorCodes::LOGICAL_ERROR);
+    }
 
     /** NOTE
       * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).
@@ -51,7 +60,7 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column)
     : data(std::move(nested_column))
 {
     if (!data->empty())
-        throw Exception("Not empty data passed to ColumnArray, but no offsets passed", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Not empty data passed to ColumnArray, but no offsets passed", ErrorCodes::LOGICAL_ERROR);
 
     offsets = ColumnOffsets::create();
 }
@@ -309,6 +318,13 @@ int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_dir
             : 1);
 }
 
+void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                                int direction, int nan_direction_hint) const
+{
+    return doCompareColumn<ColumnArray>(assert_cast<const ColumnArray &>(rhs), rhs_row_num, row_indexes,
+                                        compare_results, direction, nan_direction_hint);
+}
 
 namespace
 {
@@ -737,6 +753,76 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_h
     }
 }
 
+void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
+{
+    if (limit >= size() || limit >= equal_range.back().second)
+        limit = 0;
+
+    size_t n = equal_range.size();
+
+    if (limit)
+        --n;
+
+    EqualRanges new_ranges;
+    for (size_t i = 0; i < n; ++i)
+    {
+        const auto& [first, last] = equal_range[i];
+
+        if (reverse)
+            std::sort(res.begin() + first, res.begin() + last, Less<false>(*this, nan_direction_hint));
+        else
+            std::sort(res.begin() + first, res.begin() + last, Less<true>(*this, nan_direction_hint));
+        auto new_first = first;
+
+        for (auto j = first + 1; j < last; ++j)
+        {
+            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+
+    if (limit)
+    {
+        const auto& [first, last] = equal_range.back();
+        if (reverse)
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, Less<false>(*this, nan_direction_hint));
+        else
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, Less<true>(*this, nan_direction_hint));
+        auto new_first = first;
+        for (auto j = first + 1; j < limit; ++j)
+        {
+            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        auto new_last = limit;
+        for (auto j = limit; j < last; ++j)
+        {
+            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) == 0)
+            {
+                std::swap(res[new_last], res[j]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+        {
+            new_ranges.emplace_back(new_first, new_last);
+        }
+    }
+    equal_range = std::move(new_ranges);
+}
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {

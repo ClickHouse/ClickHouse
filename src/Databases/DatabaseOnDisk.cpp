@@ -122,11 +122,15 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     return statement_stream.str();
 }
 
-DatabaseOnDisk::DatabaseOnDisk(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context)
-    : DatabaseWithOwnTablesBase(name, logger)
+DatabaseOnDisk::DatabaseOnDisk(
+    const String & name,
+    const String & metadata_path_,
+    const String & data_path_,
+    const String & logger,
+    const Context & context)
+    : DatabaseWithOwnTablesBase(name, logger, context)
     , metadata_path(metadata_path_)
     , data_path(data_path_)
-    , global_context(context.getGlobalContext())
 {
     Poco::File(context.getPath() + data_path).createDirectories();
     Poco::File(metadata_path).createDirectories();
@@ -155,12 +159,11 @@ void DatabaseOnDisk::createTable(
     /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
-
     if (isDictionaryExist(table_name))
         throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.",
             ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
-    if (isTableExist(table_name))
+    if (isTableExist(table_name, global_context))
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     if (create.attach_short_syntax)
@@ -263,11 +266,11 @@ void DatabaseOnDisk::renameTable(
     }
 
     auto table_data_relative_path = getTableDataPath(table_name);
-    TableStructureWriteLockHolder table_lock;
+    TableExclusiveLockHolder table_lock;
     String table_metadata_path;
     ASTPtr attach_query;
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
-    StoragePtr table = tryGetTable(table_name);
+    StoragePtr table = tryGetTable(table_name, global_context);
     detachTable(table_name);
     try
     {
@@ -295,7 +298,7 @@ void DatabaseOnDisk::renameTable(
     {
         attachTable(table_name, table, table_data_relative_path);
         /// Better diagnostics.
-        throw Exception{Exception::CreateFromPoco, e};
+        throw Exception{Exception::CreateFromPocoTag{}, e};
     }
 
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
@@ -304,10 +307,10 @@ void DatabaseOnDisk::renameTable(
     Poco::File(table_metadata_path).remove();
 }
 
-ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, bool throw_on_error) const
+ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
 {
     ASTPtr ast;
-    bool has_table = tryGetTable(table_name) != nullptr;
+    bool has_table = tryGetTable(table_name, global_context) != nullptr;
     auto table_metadata_path = getObjectMetadataPath(table_name);
     try
     {
@@ -386,6 +389,9 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         }
     };
 
+    /// Metadata files to load: name and flag for .tmp_drop files
+    std::set<std::pair<String, bool>> metadata_files;
+
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
     {
@@ -401,7 +407,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         if (endsWith(dir_it.name(), tmp_drop_ext))
         {
             /// There are files that we tried to delete previously
-            process_tmp_drop_metadata_file(dir_it.name());
+            metadata_files.emplace(dir_it.name(), false);
         }
         else if (endsWith(dir_it.name(), ".sql.tmp"))
         {
@@ -412,15 +418,29 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         else if (endsWith(dir_it.name(), ".sql"))
         {
             /// The required files have names like `table_name.sql`
-            process_metadata_file(dir_it.name());
+            metadata_files.emplace(dir_it.name(), true);
         }
         else
             throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + getMetadataPath(),
                 ErrorCodes::INCORRECT_FILE_NAME);
     }
+
+    /// Read and parse metadata in parallel
+    ThreadPool pool(SettingMaxThreads().getAutoValue());
+    for (const auto & file : metadata_files)
+    {
+        pool.scheduleOrThrowOnError([&]()
+        {
+            if (file.second)
+                process_metadata_file(file.first);
+            else
+                process_tmp_drop_metadata_file(file.first);
+        });
+    }
+    pool.wait();
 }
 
-ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * loger, const Context & context, const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/)
+ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * logger, const Context & context, const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/)
 {
     String query;
 
@@ -442,7 +462,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * loger, const Contex
       */
     if (remove_empty && query.empty())
     {
-        LOG_ERROR(loger, "File {} is empty. Removing.", metadata_file_path);
+        LOG_ERROR(logger, "File {} is empty. Removing.", metadata_file_path);
         Poco::File(metadata_file_path).remove();
         return nullptr;
     }
@@ -466,7 +486,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * loger, const Contex
         table_name = unescapeForFileName(table_name);
 
         if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER)
-            LOG_WARNING(loger, "File {} contains both UUID and table name. Will use name `{}` instead of `{}`", metadata_file_path, table_name, create.table);
+            LOG_WARNING(logger, "File {} contains both UUID and table name. Will use name `{}` instead of `{}`", metadata_file_path, table_name, create.table);
         create.table = table_name;
     }
 

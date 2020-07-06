@@ -219,11 +219,74 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
     }
 }
 
-
 template <typename T>
-const char * ColumnVector<T>::getFamilyName() const
+void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
-    return TypeName<T>::get();
+    if (limit >= data.size() || limit >= equal_range.back().second)
+        limit = 0;
+
+    EqualRanges new_ranges;
+
+    for (size_t i = 0; i < equal_range.size() - bool(limit); ++i)
+    {
+        const auto & [first, last] = equal_range[i];
+        if (reverse)
+            pdqsort(res.begin() + first, res.begin() + last, greater(*this, nan_direction_hint));
+        else
+            pdqsort(res.begin() + first, res.begin() + last, less(*this, nan_direction_hint));
+        size_t new_first = first;
+        for (size_t j = first + 1; j < last; ++j)
+        {
+            if (less(*this, nan_direction_hint)(res[j], res[new_first]) || greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
+                if (j - new_first > 1)
+                {
+                    new_ranges.emplace_back(new_first, j);
+                }
+                new_first = j;
+            }
+        }
+        if (last - new_first > 1)
+        {
+            new_ranges.emplace_back(new_first, last);
+        }
+    }
+    if (limit)
+    {
+        const auto & [first, last] = equal_range.back();
+        if (reverse)
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
+        else
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
+
+        size_t new_first = first;
+        for (size_t j = first + 1; j < limit; ++j)
+        {
+            if (less(*this, nan_direction_hint)(res[j], res[new_first]) || greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
+                if (j - new_first > 1)
+                {
+                    new_ranges.emplace_back(new_first, j);
+                }
+                new_first = j;
+            }
+        }
+
+        size_t new_last = limit;
+        for (size_t j = limit; j < last; ++j)
+        {
+            if (!less(*this, nan_direction_hint)(res[j], res[new_first]) && !greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
+                std::swap(res[j], res[new_last]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+        {
+            new_ranges.emplace_back(new_first, new_last);
+        }
+    }
+    equal_range = std::move(new_ranges);
 }
 
 template <typename T>
@@ -343,6 +406,31 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     }
 
     return res;
+}
+
+template <typename T>
+void ColumnVector<T>::applyZeroMap(const IColumn::Filter & filt, bool inverted)
+{
+    size_t size = data.size();
+    if (size != filt.size())
+        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    const UInt8 * filt_pos = filt.data();
+    const UInt8 * filt_end = filt_pos + size;
+    T * data_pos = data.data();
+
+    if (inverted)
+    {
+        for (; filt_pos < filt_end; ++filt_pos, ++data_pos)
+            if (!*filt_pos)
+                *data_pos = 0;
+    }
+    else
+    {
+        for (; filt_pos < filt_end; ++filt_pos, ++data_pos)
+            if (*filt_pos)
+                *data_pos = 0;
+    }
 }
 
 template <typename T>

@@ -352,7 +352,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected)
         && ParserExpression().parse(pos, expr_node, expected)
         && ParserKeyword("AS").ignore(pos, expected)
-        && ParserIdentifierWithOptionalParameters().parse(pos, type_node, expected)
+        && ParserDataType().parse(pos, type_node, expected)
         && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
     {
         /// Convert to canonical representation in functional form: CAST(expr, 'type')
@@ -1097,7 +1097,7 @@ const char * ParserAlias::restricted_keywords[] =
     "ASOF",
     "SEMI",
     "ANTI",
-    "ONLY", /// YQL synonym for ANTI
+    "ONLY", /// YQL synonim for ANTI. Note: YQL is the name of one of Yandex proprietary languages, completely unrelated to ClickHouse.
     "ON",
     "USING",
     "PREWHERE",
@@ -1115,6 +1115,7 @@ const char * ParserAlias::restricted_keywords[] =
     "NOT",
     "BETWEEN",
     "LIKE",
+    "ILIKE",
     nullptr
 };
 
@@ -1233,7 +1234,7 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ++pos;
 
     auto old_pos = pos;
-    ParserIdentifierWithOptionalParameters type_parser;
+    ParserDataType type_parser;
     if (!type_parser.ignore(pos, expected))
     {
         expected.add(pos, "substitution type");
@@ -1250,6 +1251,52 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ++pos;
     node = std::make_shared<ASTQueryParameter>(name, type);
+    return true;
+}
+
+
+bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (pos->type != TokenType::DoubleAt)
+        return false;
+
+    ++pos;
+
+    if (pos->type != TokenType::BareWord)
+    {
+        expected.add(pos, "variable name");
+        return false;
+    }
+
+    String name(pos->begin, pos->end);
+    ++pos;
+
+    /// SELECT @@session|global.variable style
+    if (pos->type == TokenType::Dot)
+    {
+        ++pos;
+
+        if (pos->type != TokenType::BareWord)
+        {
+            expected.add(pos, "variable name");
+            return false;
+        }
+        name = String(pos->begin, pos->end);
+        ++pos;
+    }
+
+    auto name_literal = std::make_shared<ASTLiteral>(name);
+
+    auto expr_list_args = std::make_shared<ASTExpressionList>();
+    expr_list_args->children.push_back(std::move(name_literal));
+
+    auto function_node = std::make_shared<ASTFunction>();
+    function_node->name = "globalVariable";
+    function_node->arguments = expr_list_args;
+    function_node->children.push_back(expr_list_args);
+
+    node = function_node;
+    node->setAlias("@@" + name);
     return true;
 }
 
@@ -1276,7 +1323,8 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
         || ParserCompoundIdentifier().parse(pos, node, expected)
-        || ParserSubstitution().parse(pos, node, expected);
+        || ParserSubstitution().parse(pos, node, expected)
+        || ParserMySQLGlobalVariable().parse(pos, node, expected);
 }
 
 
@@ -1455,23 +1503,50 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_to_disk("TO DISK");
     ParserKeyword s_to_volume("TO VOLUME");
     ParserKeyword s_delete("DELETE");
+    ParserKeyword s_where("WHERE");
+    ParserKeyword s_group_by("GROUP BY");
+    ParserKeyword s_set("SET");
+    ParserToken s_comma(TokenType::Comma);
+    ParserToken s_eq(TokenType::Equals);
+
+    ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
     ParserExpression parser_exp;
+    ParserExpressionList parser_expression_list(false);
 
-    ASTPtr expr_elem;
-    if (!parser_exp.parse(pos, expr_elem, expected))
+    ASTPtr ttl_expr;
+    if (!parser_exp.parse(pos, ttl_expr, expected))
         return false;
 
-    PartDestinationType destination_type = PartDestinationType::DELETE;
+    TTLMode mode;
+    DataDestinationType destination_type = DataDestinationType::DELETE;
     String destination_name;
-    if (s_to_disk.ignore(pos))
-        destination_type = PartDestinationType::DISK;
-    else if (s_to_volume.ignore(pos))
-        destination_type = PartDestinationType::VOLUME;
-    else
-        s_delete.ignore(pos);
 
-    if (destination_type == PartDestinationType::DISK || destination_type == PartDestinationType::VOLUME)
+    if (s_to_disk.ignore(pos))
+    {
+        mode = TTLMode::MOVE;
+        destination_type = DataDestinationType::DISK;
+    }
+    else if (s_to_volume.ignore(pos))
+    {
+        mode = TTLMode::MOVE;
+        destination_type = DataDestinationType::VOLUME;
+    }
+    else if (s_group_by.ignore(pos))
+    {
+        mode = TTLMode::GROUP_BY;
+    }
+    else
+    {
+        s_delete.ignore(pos);
+        mode = TTLMode::DELETE;
+    }
+
+    ASTPtr where_expr;
+    ASTPtr ast_group_by_key;
+    std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
+
+    if (mode == TTLMode::MOVE)
     {
         ASTPtr ast_space_name;
         if (!parser_string_literal.parse(pos, ast_space_name, expected))
@@ -1479,10 +1554,52 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         destination_name = ast_space_name->as<ASTLiteral &>().value.get<const String &>();
     }
+    else if (mode == TTLMode::GROUP_BY)
+    {
+        if (!parser_expression_list.parse(pos, ast_group_by_key, expected))
+            return false;
 
-    node = std::make_shared<ASTTTLElement>(destination_type, destination_name);
-    node->children.push_back(expr_elem);
+        if (s_set.ignore(pos))
+        {
+            while (true)
+            {
+                if (!group_by_aggregations.empty() && !s_comma.ignore(pos))
+                    break;
 
+                ASTPtr name;
+                ASTPtr value;
+                if (!parser_identifier.parse(pos, name, expected))
+                    return false;
+                if (!s_eq.ignore(pos))
+                    return false;
+                if (!parser_exp.parse(pos, value, expected))
+                    return false;
+
+                String name_str;
+                if (!tryGetIdentifierNameInto(name, name_str))
+                    return false;
+                group_by_aggregations.emplace_back(name_str, std::move(value));
+            }
+        }
+    }
+    else if (mode == TTLMode::DELETE && s_where.ignore(pos))
+    {
+        if (!parser_exp.parse(pos, where_expr, expected))
+            return false;
+    }
+
+    auto ttl_element = std::make_shared<ASTTTLElement>(mode, destination_type, destination_name);
+    ttl_element->setTTL(std::move(ttl_expr));
+    if (where_expr)
+        ttl_element->setWhere(std::move(where_expr));
+
+    if (mode == TTLMode::GROUP_BY)
+    {
+        ttl_element->group_by_key = std::move(ast_group_by_key->children);
+        ttl_element->group_by_aggregations = std::move(group_by_aggregations);
+    }
+
+    node = ttl_element;
     return true;
 }
 

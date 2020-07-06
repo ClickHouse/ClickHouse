@@ -76,6 +76,7 @@ protected:
 
     ASTPtr getCreateTableQueryImpl(
         const String & table_name,
+        const Context & context,
         bool throw_on_error) const override;
 
     ASTPtr getCreateQueryFromMetadata(const String & metadata_path, bool throw_on_error) const;
@@ -85,7 +86,6 @@ protected:
 
     const String metadata_path;
     const String data_path;
-    const Context & global_context;
 };
 
 }

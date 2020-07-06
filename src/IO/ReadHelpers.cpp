@@ -33,11 +33,8 @@ void parseHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes)
 {
     size_t src_pos = 0;
     size_t dst_pos = 0;
-    for (; dst_pos < num_bytes; ++dst_pos)
-    {
-        dst[dst_pos] = UInt8(unhex(src[src_pos])) * 16 + UInt8(unhex(src[src_pos + 1]));
-        src_pos += 2;
-    }
+    for (; dst_pos < num_bytes; ++dst_pos, src_pos += 2)
+        dst[dst_pos] = unhex2(reinterpret_cast<const char *>(&src[src_pos]));
 }
 
 void parseUUID(const UInt8 * src36, UInt8 * dst16)
@@ -49,6 +46,13 @@ void parseUUID(const UInt8 * src36, UInt8 * dst16)
     parseHex(&src36[14], &dst16[6], 2);
     parseHex(&src36[19], &dst16[8], 2);
     parseHex(&src36[24], &dst16[10], 6);
+}
+
+void parseUUIDWithoutSeparator(const UInt8 * src36, UInt8 * dst16)
+{
+    /// If string is not like UUID - implementation specific behaviour.
+
+    parseHex(&src36[0], &dst16[0], 16);
 }
 
 /** Function used when byte ordering is important when parsing uuid
@@ -64,6 +68,17 @@ void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
     parseHex(&src36[14], dst16 + 14, 2);
     parseHex(&src36[19], dst16, 2);
     parseHex(&src36[24], dst16 + 2, 6);
+}
+
+/** Function used when byte ordering is important when parsing uuid
+ *  ex: When we create an UUID type
+ */
+void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
+{
+    /// If string is not like UUID - implementation specific behaviour.
+
+    parseHex(&src36[0], dst16 + 8, 8);
+    parseHex(&src36[16], dst16, 8);
 }
 
 UInt128 stringToUUID(const String & str)
@@ -283,7 +298,9 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
     if (buf.eof())
         throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
 
-    if (*buf.position() == 'x')
+    char char_after_backslash = *buf.position();
+
+    if (char_after_backslash == 'x')
     {
         ++buf.position();
         /// escape sequence of the form \xAA
@@ -291,7 +308,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
         readPODBinary(hex_code, buf);
         s.push_back(unhex2(hex_code));
     }
-    else if (*buf.position() == 'N')
+    else if (char_after_backslash == 'N')
     {
         /// Support for NULLs: \N sequence must be parsed as empty string.
         ++buf.position();
@@ -299,7 +316,22 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
     else
     {
         /// The usual escape sequence of a single character.
-        s.push_back(parseEscapeSequence(*buf.position()));
+        char decoded_char = parseEscapeSequence(char_after_backslash);
+
+        /// For convenience using LIKE and regular expressions,
+        /// we leave backslash when user write something like 'Hello 100\%':
+        /// it is parsed like Hello 100\% instead of Hello 100%
+        if (decoded_char != '\\'
+            && decoded_char != '\''
+            && decoded_char != '"'
+            && decoded_char != '`'  /// MySQL style identifiers
+            && decoded_char != '/'  /// JavaScript in HTML
+            && !isControlASCII(decoded_char))
+        {
+            s.push_back('\\');
+        }
+
+        s.push_back(decoded_char);
         ++buf.position();
     }
 }
@@ -632,7 +664,6 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                     && *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')
                     ++next_pos;
             }();
-
 
             appendToStringOrVector(s, buf, next_pos);
             buf.position() = next_pos;
