@@ -58,6 +58,7 @@ void registerFunctionGetMacro(FunctionFactory &);
 void registerFunctionGetScalar(FunctionFactory &);
 void registerFunctionIsConstant(FunctionFactory &);
 void registerFunctionGlobalVariable(FunctionFactory &);
+void registerFunctionHasThreadFuzzer(FunctionFactory &);
 void registerFunctionInitializeAggregation(FunctionFactory &);
 
 #if USE_ICU
@@ -117,6 +118,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionGetScalar(factory);
     registerFunctionIsConstant(factory);
     registerFunctionGlobalVariable(factory);
+    registerFunctionHasThreadFuzzer(factory);
     registerFunctionInitializeAggregation(factory);
 
 #if USE_ICU
