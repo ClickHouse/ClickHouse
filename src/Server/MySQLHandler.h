@@ -73,6 +73,7 @@ protected:
 
 private:
     static const String show_table_status_replacement_query;
+    String kill_connection_id_replacement_query(const String & query);
 };
 
 #if USE_SSL
