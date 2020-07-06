@@ -289,6 +289,11 @@ struct AggregateFunctionProperties
       * or we should return non-Nullable type with default value (example: count, countDistinct).
       */
     bool returns_default_when_only_null = false;
+
+    /** Result varies depending on the data order (example: groupArray).
+      * Some may also name this property as "non-commutative".
+      */
+    bool is_order_dependent = false;
 };
 
 

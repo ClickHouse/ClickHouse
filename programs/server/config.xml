@@ -66,7 +66,6 @@
     <https_port>8443</https_port>
     <tcp_port_secure>9440</tcp_port_secure>
     -->
-
     <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
@@ -262,9 +261,13 @@
             <shard>
                 <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
                 <!-- <internal_replication>false</internal_replication> -->
+                <!-- Optional. Shard weight when writing data. Default: 1. -->
+                <!-- <weight>1</weight> -->
                 <replica>
                     <host>localhost</host>
                     <port>9000</port>
+                    <!-- Optional. Priority of the replica for load_balancing. Default: 1 (less value has more priority). -->
+                    <!-- <priority>1</priority> -->
                 </replica>
             </shard>
         </test_shard_localhost>
