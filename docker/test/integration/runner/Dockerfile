@@ -63,6 +63,7 @@ RUN set -eux; \
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
+COPY compose/ /compose/
 
 RUN set -x \
   && addgroup --system dockremap \
