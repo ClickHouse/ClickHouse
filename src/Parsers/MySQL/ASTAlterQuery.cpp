@@ -1,7 +1,10 @@
 #include <Parsers/MySQL/ASTAlterQuery.h>
 
+#include <Interpreters/StorageID.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Common/quoteString.h>
 
 namespace DB
@@ -16,7 +19,10 @@ ASTPtr ASTAlterQuery::clone() const
     res->children.clear();
 
     if (command_list)
-        res->set(res->command_list, command_list->clone());
+    {
+        res->command_list = command_list->clone();
+        res->children.emplace_back(res->command_list);
+    }
 
     return res;
 }
@@ -43,34 +49,65 @@ void ASTAlterQuery::formatImpl(const IAST::FormatSettings & settings, IAST::Form
     FormatStateStacked frame_nested = frame;
     frame_nested.need_parens = false;
     ++frame_nested.indent;
-    static_cast<IAST *>(command_list)->formatImpl(settings, state, frame_nested);
+//    static_cast<IAST *>(command_list)->formatImpl(settings, state, frame_nested);
 }
 
-bool ParserAlterQuery::parseImpl(IParser::Pos & pos, ASTPtr & /*node*/, Expected & expected)
+bool ParserAlterCommand::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword k_add("ADD");
-    ParserKeyword k_alter_table("ALTER TABLE");
+    ParserKeyword k_drop("DROP");
 
+    if (k_add.ignore(pos, expected))
+        return parseAddCommand(pos, node, expected);
+    else if (k_drop.ignore(pos, expected))
+        return parseDropCommand(pos, node, expected);
+    return false;
+}
+bool ParserAlterCommand::parseAddCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTPtr declare_index;
+    ParserDeclareIndex p_index;
+
+    /// TODO: add column
+    if (!p_index.parse(pos, declare_index, expected))
+        return false;
+
+    return true;
+}
+bool ParserAlterCommand::parseDropCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+
+    return false;
+}
+
+bool ParserAlterQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
     ASTPtr table;
+    ASTPtr command_list;
 
-    if (!k_alter_table.ignore(pos, expected))
+    if (!ParserKeyword("ALTER TABLE").ignore(pos, expected))
         return false;
 
     if (!ParserCompoundIdentifier(false).parse(pos, table, expected))
         return false;
 
-    if (k_add.ignore(pos, expected))
-    {
-        ASTPtr declare_index;
-        ParserDeclareIndex p_index;
+    if (!ParserList(std::make_unique<ParserAlterCommand>(), std::make_unique<ParserToken>(TokenType::Comma)).parse(pos, command_list, expected))
+        return false;
 
-        /// TODO: add column
-        if (!p_index.parse(pos, declare_index, expected))
-            return false;
-    }
-    return false;
+    auto alter_query = std::make_shared<ASTAlterQuery>();
 
+    node = alter_query;
+    alter_query->command_list = command_list;
+    StorageID table_id = getTableIdentifier(table);
+    alter_query->table = table_id.table_name;
+    alter_query->database = table_id.database_name;
+
+    if (alter_query->command_list)
+        alter_query->children.emplace_back(alter_query->command_list);
+
+    return true;
 }
+
 }
 
 }
