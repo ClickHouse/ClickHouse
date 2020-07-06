@@ -44,8 +44,13 @@ endif ()
 
 if (USE_INTERNAL_RE2_LIBRARY)
     set(RE2_BUILD_TESTING 0 CACHE INTERNAL "")
-    add_subdirectory (re2)
-    add_subdirectory (re2_st)
+    function(re2_support)
+        # make option() honor normal variables for BUILD_SHARED_LIBS
+        set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+        add_subdirectory (re2)
+        add_subdirectory (re2_st)
+    endfunction()
+    re2_support()
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
