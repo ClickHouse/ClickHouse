@@ -22,7 +22,7 @@ toc_priority: 29
 
 -   写入时将数据追加在文件末尾。
 
--   不支持[突变](../../../engines/table-engines/log-family/log-family.md#alter-mutations)操作。
+-   不支持[突变](../../../engines/table-engines/log-family/index.md#alter-mutations)操作。
 
 -   不支持索引。
 
