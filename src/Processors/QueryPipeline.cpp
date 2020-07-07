@@ -642,7 +642,7 @@ void QueryPipeline::unitePipelines(
     if (!will_limit_max_threads)
         max_threads = 0;
     else
-        max_threads = max_threads_limit;
+        limitMaxThreads(max_threads_limit);
 
     if (!extremes.empty())
     {
