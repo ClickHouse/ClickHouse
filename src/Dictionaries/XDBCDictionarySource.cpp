@@ -27,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -60,6 +61,39 @@ namespace
         std::unique_ptr<ReadWriteBufferFromHTTP> read_buf;
         BlockInputStreamPtr reader;
     };
+
+
+    ExternalQueryBuilder makeExternalQueryBuilder(const DictionaryStructure & dict_struct_,
+                                                  const std::string & db_,
+                                                  const std::string & schema_,
+                                                  const std::string & table_,
+                                                  const std::string & where_,
+                                                  IXDBCBridgeHelper & bridge_)
+    {
+        std::string schema = schema_;
+        std::string table = table_;
+
+        if (bridge_.isSchemaAllowed())
+        {
+            if (schema.empty())
+            {
+                if (auto pos = table.find('.'); pos != std::string::npos)
+                {
+                    schema = table.substr(0, pos);
+                    table = table.substr(pos + 1);
+                }
+            }
+        }
+        else
+        {
+            if (!schema.empty())
+                throw Exception{"Dictionary source of type " + bridge_.getName() + " specifies a schema but schema is not supported by "
+                                    + bridge_.getName() + "-driver",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        }
+
+        return {dict_struct_, db_, schema, table, where_, bridge_.getIdentifierQuotingStyle()};
+    }
 }
 
 static const UInt64 max_block_size = 8192;
@@ -76,11 +110,12 @@ XDBCDictionarySource::XDBCDictionarySource(
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , db{config_.getString(config_prefix_ + ".db", "")}
+    , schema{config_.getString(config_prefix_ + ".schema", "")}
     , table{config_.getString(config_prefix_ + ".table")}
     , where{config_.getString(config_prefix_ + ".where", "")}
     , update_field{config_.getString(config_prefix_ + ".update_field", "")}
     , sample_block{sample_block_}
-    , query_builder{dict_struct, db, table, where, bridge_->getIdentifierQuotingStyle()}
+    , query_builder{makeExternalQueryBuilder(dict_struct, db, schema, table, where, *bridge_)}
     , load_all_query{query_builder.composeLoadAllQuery()}
     , invalidate_query{config_.getString(config_prefix_ + ".invalidate_query", "")}
     , bridge_helper{bridge_}
@@ -104,7 +139,7 @@ XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
     , where{other.where}
     , update_field{other.update_field}
     , sample_block{other.sample_block}
-    , query_builder{dict_struct, db, table, where, other.bridge_helper->getIdentifierQuotingStyle()}
+    , query_builder{other.query_builder}
     , load_all_query{other.load_all_query}
     , invalidate_query{other.invalidate_query}
     , invalidate_query_response{other.invalidate_query_response}

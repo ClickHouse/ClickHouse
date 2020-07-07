@@ -64,6 +64,56 @@ def test_grant_option():
     instance.query('REVOKE SELECT ON test.table FROM A, B')
 
 
+def test_revoke_requires_grant_option():
+    instance.query("CREATE USER A")
+    instance.query("CREATE USER B")
+    
+    instance.query("GRANT SELECT ON test.table TO B")
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
+
+    expected_error = "Not enough privileges"
+    assert expected_error in instance.query_and_get_error("REVOKE SELECT ON test.table FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
+
+    instance.query("GRANT SELECT ON test.table TO A")
+    expected_error = "privileges have been granted, but without grant option"
+    assert expected_error in instance.query_and_get_error("REVOKE SELECT ON test.table FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
+
+    instance.query("GRANT SELECT ON test.table TO A WITH GRANT OPTION")
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
+    instance.query("REVOKE SELECT ON test.table FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == ""
+
+    instance.query("GRANT SELECT ON test.table TO B")
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
+    instance.query("REVOKE SELECT ON test.* FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == ""
+
+    instance.query("GRANT SELECT ON test.table TO B")
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
+    instance.query("REVOKE ALL ON test.* FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == ""
+
+    instance.query("GRANT SELECT ON test.table TO B")
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
+    instance.query("REVOKE ALL ON *.* FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == ""
+
+    instance.query("REVOKE GRANT OPTION FOR ALL ON *.* FROM A")
+    instance.query("GRANT SELECT ON test.table TO B")
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
+    expected_error = "privileges have been granted, but without grant option"
+    assert expected_error in instance.query_and_get_error("REVOKE SELECT ON test.table FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
+
+    instance.query("GRANT SELECT ON test.* TO A WITH GRANT OPTION")
+    instance.query("GRANT SELECT ON test.table TO B")
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
+    instance.query("REVOKE SELECT ON test.table FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == ""
+
+
 def test_introspection():
     instance.query("CREATE USER A")
     instance.query("CREATE USER B")
@@ -100,7 +150,6 @@ def test_introspection():
     
     assert instance.query("SELECT * from system.grants WHERE user_name IN ('A', 'B') ORDER BY user_name, access_type, grant_option") ==\
            TSV([[ "A",  "\N", "SELECT", "test", "table", "\N", 0, 0 ],
-                [ "B",  "\N", "CREATE", "\N",   "\N",    "\N", 0, 0 ],
                 [ "B",  "\N", "CREATE", "\N",   "\N",    "\N", 0, 1 ]])
 
 

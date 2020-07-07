@@ -152,8 +152,16 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
                 if (!table)
                     continue;
 
-                if (!access->isGranted(log, getRequiredAccessType(action_type), elem.first, iterator->name()))
+                if (!access->isGranted(getRequiredAccessType(action_type), elem.first, iterator->name()))
+                {
+                    LOG_INFO(
+                        log,
+                        "Access {} denied, skipping {}.{}",
+                        toString(getRequiredAccessType(action_type)),
+                        elem.first,
+                        iterator->name());
                     continue;
+                }
 
                 if (start)
                     manager->remove(table, action_type);
