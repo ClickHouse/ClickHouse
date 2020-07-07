@@ -253,6 +253,20 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE WHERE " << (settings.hilite ? hilite_none : "");
         predicate->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::STD_DELETE)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str;
+        if (settings.is_translate)
+        {
+            settings.ostr << indent_str << "DELETE WHERE " << (settings.hilite ? hilite_none : "");
+            predicate->formatImpl(settings, state, frame);
+        }
+        else if (!is_default_where_null)
+        {
+            settings.ostr << "WHERE " << (settings.hilite ? hilite_none : "") ;
+            predicate->formatImpl(settings, state, frame);
+        }
+    }
     else if (type == ASTAlterCommand::UPDATE)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "UPDATE " << (settings.hilite ? hilite_none : "");
@@ -260,6 +274,28 @@ void ASTAlterCommand::formatImpl(
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
         predicate->formatImpl(settings, state, frame);
+    }
+	else if (type == ASTAlterCommand::STD_UPDATE)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str;
+        if (settings.is_translate)
+        {
+            settings.ostr << "UPDATE " << (settings.hilite ? hilite_none : "");
+            update_assignments->formatImpl(settings, state, frame);
+
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+            predicate->formatImpl(settings, state, frame);
+        }
+        else
+        {
+            settings.ostr << "SET " << (settings.hilite ? hilite_none : "");
+            update_assignments->formatImpl(settings, state, frame);
+            if (!is_default_where_null)
+            {
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+                predicate->formatImpl(settings, state, frame);
+            }
+        }
     }
     else if (type == ASTAlterCommand::MODIFY_TTL)
     {
@@ -351,8 +387,12 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
-    if (is_live_view)
+    if (command_type==ASTAlterCommand::Type::LIVE_VIEW_REFRESH)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER LIVE VIEW " << (settings.hilite ? hilite_none : "");
+    else if (command_type==ASTAlterCommand::Type::STD_DELETE)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE FROM " << (settings.hilite ? hilite_none : "");
+    else if (command_type==ASTAlterCommand::Type::STD_UPDATE)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "UPDATE " << (settings.hilite ? hilite_none : "");
     else
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
 

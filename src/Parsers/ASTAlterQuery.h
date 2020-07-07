@@ -54,6 +54,8 @@ public:
 
         DELETE,
         UPDATE,
+        STD_DELETE,
+        STD_UPDATE,
 
         NO_TYPE,
 
@@ -105,6 +107,7 @@ public:
     /// For DELETE/UPDATE WHERE: the predicate that filters the rows to delete/update.
     ASTPtr predicate;
 
+    bool is_default_where_null = false;
     /// A list of expressions of the form `column = expr` for the UPDATE command.
     ASTPtr update_assignments;
 
@@ -190,7 +193,7 @@ protected:
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    bool is_live_view{false}; /// true for ALTER LIVE VIEW
+    ASTAlterCommand::Type  command_type;
 
     ASTAlterCommandList * command_list = nullptr;
 

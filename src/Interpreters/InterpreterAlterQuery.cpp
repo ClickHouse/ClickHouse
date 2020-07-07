@@ -151,11 +151,13 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
     switch (command.type)
     {
         case ASTAlterCommand::UPDATE:
+        case ASTAlterCommand::STD_UPDATE:
         {
             required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, column_names_from_update_assignments());
             break;
         }
         case ASTAlterCommand::DELETE:
+        case ASTAlterCommand::STD_DELETE:
         {
             required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
             break;

@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
 {
-    if (command->type == ASTAlterCommand::DELETE)
+    if (command->type == ASTAlterCommand::DELETE || command->type == ASTAlterCommand::STD_DELETE)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -34,7 +34,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.predicate = command->predicate;
         return res;
     }
-    else if (command->type == ASTAlterCommand::UPDATE)
+    else if (command->type == ASTAlterCommand::UPDATE || command->type == ASTAlterCommand::STD_UPDATE)
     {
         MutationCommand res;
         res.ast = command->ptr();
@@ -127,7 +127,7 @@ std::shared_ptr<ASTAlterCommandList> MutationCommands::ast() const
 void MutationCommands::writeText(WriteBuffer & out) const
 {
     std::stringstream commands_ss;
-    formatAST(*ast(), commands_ss, /* hilite = */ false, /* one_line = */ true);
+    formatAST(*ast(), commands_ss, /* hilite = */ false, /* one_line = */ true, /* is_translate = */ true);
     out << escape << commands_ss.str();
 }
 

@@ -9,7 +9,6 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/parseDatabaseAndTableName.h>
@@ -79,6 +78,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_update("UPDATE");
     ParserKeyword s_where("WHERE");
     ParserKeyword s_to("TO");
+	ParserKeyword s_set("SET");
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
@@ -96,14 +96,46 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserSelectWithUnionQuery select_p;
     ParserTTLExpressionList parser_ttl_list;
 
-    if (is_live_view)
+    if (command_type == ASTAlterCommand::LIVE_VIEW_REFRESH)
     {
         if (s_refresh.ignore(pos, expected))
-        {
             command->type = ASTAlterCommand::LIVE_VIEW_REFRESH;
-        }
         else
             return false;
+    }
+    else if(command_type == ASTAlterCommand::STD_DELETE)
+    {
+        if (s_where.ignore(pos, expected))
+        {
+            if (!parser_exp_elem.parse(pos, command->predicate, expected))
+                return false;
+        }
+        if (command->predicate == nullptr) {
+            Field res;
+            res = static_cast<UInt64>(1);
+            auto literal = std::make_shared<ASTLiteral>(res);
+            command->predicate = literal;
+            command->is_default_where_null = true;
+        }
+        command->type = ASTAlterCommand::STD_DELETE;
+        }
+    else if(command_type == ASTAlterCommand::STD_UPDATE && s_set.ignore(pos, expected))
+    {
+        if (!parser_assignment_list.parse(pos, command->update_assignments, expected))
+            return false;
+        if (s_where.ignore(pos, expected))
+        {
+            if (!parser_exp_elem.parse(pos, command->predicate, expected))
+            return false;
+        }
+        if (command->predicate == nullptr) {
+            Field res;
+            res = static_cast<UInt64>(1);
+            auto literal = std::make_shared<ASTLiteral>(res);
+            command->predicate = literal;
+            command->is_default_where_null = true;
+        }
+        command->type = ASTAlterCommand::STD_UPDATE;
     }
     else
     {
@@ -535,7 +567,7 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
-    ParserAlterCommand p_command(is_live_view);
+    ParserAlterCommand p_command(command_type);
 
     do
     {
@@ -585,19 +617,27 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserKeyword s_alter_table("ALTER TABLE");
     ParserKeyword s_alter_live_view("ALTER LIVE VIEW");
+    ParserKeyword s_delete_from("DELETE FROM");
+    ParserKeyword s_update_table("UPDATE");
 
-    bool is_live_view = false;
-
-    if (!s_alter_table.ignore(pos, expected))
+    if(s_delete_from.ignore(pos, expected))
     {
-        if (!s_alter_live_view.ignore(pos, expected))
-            return false;
-        else
-            is_live_view = true;
+        query->command_type = ASTAlterCommand::STD_DELETE;
     }
-
-    if (is_live_view)
-        query->is_live_view = true;
+    else if(s_update_table.ignore(pos, expected))
+    {
+        query->command_type = ASTAlterCommand::STD_UPDATE;
+    }
+    else if (s_alter_table.ignore(pos, expected))
+    {
+        query->command_type = ASTAlterCommand::NO_TYPE;
+    }
+    else if (s_alter_live_view.ignore(pos, expected))
+    {
+        query->command_type = ASTAlterCommand::LIVE_VIEW_REFRESH;
+    }
+    else
+        return false;
 
     if (!parseDatabaseAndTableName(pos, expected, query->database, query->table))
         return false;
@@ -610,7 +650,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     query->cluster = cluster_str;
 
-    ParserAlterCommandList p_command_list(is_live_view);
+    ParserAlterCommandList p_command_list(query->command_type);
     ASTPtr command_list;
     if (!p_command_list.parse(pos, command_list, expected))
         return false;

@@ -2,6 +2,7 @@
 
 #include <Parsers/IParserBase.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTAlterQuery.h>
 
 namespace DB
 {
@@ -23,6 +24,9 @@ namespace DB
   *     [UPDATE col_name = expr, ... WHERE ...]
   * ALTER LIVE VIEW [db.name]
   *     [REFRESH]
+  *
+  * DELETE FROM db.name [ON CLUSTER cluster] WHERE ...
+  * UPDATE db.name [ON CLUSTER cluster] SET col_name = expr, ... WHERE ...
   */
 
 class ParserAlterQuery : public IParserBase
@@ -40,9 +44,10 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
-    bool is_live_view;
+    ASTAlterCommand::Type  command_type;
 
-    ParserAlterCommandList(bool is_live_view_ = false) : is_live_view(is_live_view_) {}
+    ParserAlterCommandList(ASTAlterCommand::Type command_type_= ASTAlterCommand::NO_TYPE)
+        : command_type(command_type_)  {}
 };
 
 
@@ -53,9 +58,10 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
-    bool is_live_view;
+    ASTAlterCommand::Type  command_type;
 
-    ParserAlterCommand(bool is_live_view_ = false) : is_live_view(is_live_view_) {}
+    ParserAlterCommand(ASTAlterCommand::Type command_type_= ASTAlterCommand::NO_TYPE)
+        : command_type(command_type_) {}
 };
 
 
