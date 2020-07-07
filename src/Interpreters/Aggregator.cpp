@@ -151,13 +151,13 @@ Block Aggregator::Params::getHeader(
     return materializeBlock(res);
 }
 
-void Aggregator::Params::explain(WriteBuffer & out, size_t ident) const
+void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
 {
     Strings res;
     const auto & header = src_header ? src_header
                                      : intermediate_header;
 
-    String prefix(ident, ' ');
+    String prefix(indent, ' ');
 
     {
         /// Dump keys.
@@ -184,7 +184,7 @@ void Aggregator::Params::explain(WriteBuffer & out, size_t ident) const
         out << prefix << "Aggregates:\n";
 
         for (const auto & aggregate : aggregates)
-            aggregate.explain(out, ident + 4);
+            aggregate.explain(out, indent + 4);
     }
 }
 

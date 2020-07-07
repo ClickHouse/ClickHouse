@@ -5,9 +5,9 @@
 namespace DB
 {
 
-void AggregateDescription::explain(WriteBuffer & out, size_t ident) const
+void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
 {
-    String prefix(ident, ' ');
+    String prefix(indent, ' ');
 
     out << prefix << column_name << '\n';
 

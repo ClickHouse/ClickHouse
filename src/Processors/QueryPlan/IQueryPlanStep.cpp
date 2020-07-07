@@ -20,7 +20,7 @@ const DataStream & IQueryPlanStep::getOutputStream() const
 
 static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep::FormatSettings & settings)
 {
-    String prefix(settings.offset, settings.ident_char);
+    String prefix(settings.offset, settings.indent_char);
     prefix += "Header";
 
     if (count > 1)
@@ -36,7 +36,7 @@ static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep:
         return;
     }
 
-    prefix.assign(prefix.size(), settings.ident_char);
+    prefix.assign(prefix.size(), settings.indent_char);
     bool first = true;
 
     for (const auto & elem : header)
@@ -52,7 +52,7 @@ static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep:
 
 static void doDescribeProcessor(const IProcessor & processor, size_t count, IQueryPlanStep::FormatSettings & settings)
 {
-    settings.out << String(settings.offset, settings.ident_char) << processor.getName();
+    settings.out << String(settings.offset, settings.indent_char) << processor.getName();
     if (count > 1)
         settings.out << " × " << std::to_string(count);
 
@@ -84,7 +84,7 @@ static void doDescribeProcessor(const IProcessor & processor, size_t count, IQue
             doDescribeHeader(*last_header, num_equal_headers, settings);
     }
 
-    settings.offset += settings.ident;
+    settings.offset += settings.indent;
 }
 
 void IQueryPlanStep::describePipeline(const Processors & processors, FormatSettings & settings)

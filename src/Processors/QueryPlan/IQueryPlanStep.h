@@ -65,8 +65,8 @@ public:
     {
         WriteBuffer & out;
         size_t offset = 0;
-        const size_t ident = 2;
-        const char ident_char = ' ';
+        const size_t indent = 2;
+        const char indent_char = ' ';
         const bool write_header = false;
     };
 
