@@ -175,7 +175,8 @@ Type: [DateTime64](../data-types/datetime64.md).
 Query without timezone:
 
 ``` sql
-WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(dt64);
+WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64
+SELECT toStartOfSecond(dt64);
 ```
 
 Result:
