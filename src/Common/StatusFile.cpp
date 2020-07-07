@@ -30,8 +30,21 @@ namespace ErrorCodes
 }
 
 
-StatusFile::StatusFile(const std::string & path_)
-    : path(path_)
+StatusFile::FillFunction StatusFile::write_pid = [](WriteBuffer & out)
+{
+    out << getpid();
+};
+
+StatusFile::FillFunction StatusFile::write_full_info = [](WriteBuffer & out)
+{
+    out << "PID: " << getpid() << "\n"
+        << "Started at: " << LocalDateTime(time(nullptr)) << "\n"
+        << "Revision: " << ClickHouseRevision::get() << "\n";
+};
+
+
+StatusFile::StatusFile(std::string path_, FillFunction fill_)
+    : path(std::move(path_)), fill(std::move(fill_))
 {
     /// If file already exists. NOTE Minor race condition.
     if (Poco::File(path).exists())
@@ -72,13 +85,8 @@ StatusFile::StatusFile(const std::string & path_)
             throwFromErrnoWithPath("Cannot lseek " + path, path, ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
         /// Write information about current server instance to the file.
-        {
-            WriteBufferFromFileDescriptor out(fd, 1024);
-            out
-                << "PID: " << getpid() << "\n"
-                << "Started at: " << LocalDateTime(time(nullptr)) << "\n"
-                << "Revision: " << ClickHouseRevision::get() << "\n";
-        }
+        WriteBufferFromFileDescriptor out(fd, 1024);
+        fill(out);
     }
     catch (...)
     {
