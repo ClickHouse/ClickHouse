@@ -116,7 +116,7 @@ ClickHouse - полноценная колоночная СУБД. Данные 
 
 Обычный функции не изменяют число строк и  работают так, как если бы обрабатывали каждую строку независимо. В действительности же, функции вызываются не к отдельным строкам, а блокам данных для реализации векторизованного выполнения запросов.
 
-Некоторые функции, такие как [blockSize](../sql-reference/functions/other-functions.md#function-blocksize), [rowNumberInBlock](../sql-reference/functions/other-functions.md#function-rownumberinblock), и [runningAccumulate](../sql-reference/functions/other-functions.md#function-runningaccumulate), эксплуатируют блочную обработку и нарушают независимость строк.
+Некоторые функции, такие как [blockSize](../sql-reference/functions/other-functions.md#function-blocksize), [rowNumberInBlock](../sql-reference/functions/other-functions.md#function-rownumberinblock), и [runningAccumulate](../sql-reference/functions/other-functions.md#runningaccumulate), эксплуатируют блочную обработку и нарушают независимость строк.
 
 ClickHouse имеет сильную типизацию, поэтому нет никакого неявного преобразования типов. Если функция не поддерживает определенную комбинацию типов, она создает исключение. Но функции могут работать (перегружаться) для многих различных комбинаций типов. Например, функция `plus` (для реализации `+` оператор) работает для любой комбинации числовых типов: `UInt8` + `Float32`, `UInt16` + `Int8` и так далее. Кроме того, некоторые вариадические функции, такие как `concat`, могут принимать любое количество аргументов.
 

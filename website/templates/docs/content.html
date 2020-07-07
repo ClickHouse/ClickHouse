@@ -7,21 +7,19 @@
             {% endif %}
             {% if ancestors %}
                 {% set ancestor_ns = namespace(level=ancestors|length) %}
-                <div class="row">
-                    <nav class="col text-muted" aria-label="breadcrumb">
-                        <ol class="breadcrumb bg-transparent p-0">
-                            {% for ancestor in ancestors %}
-                            {% set ancestor_title = ancestor.title.strip() %}
-                            {% if ancestor_title.endswith('|hidden-folder') %}
-                                {% set ancestor_title = ancestor_title[:-14] %}
-                            {% endif %}
-                            <li class="breadcrumb-item"><a href="{{ '../' * ancestor_ns.level }}" class="text-reset">{{ ancestor_title }}</a>
-                                {% set ancestor_ns.level = ancestor_ns.level - 1 %}
-                            </li>
-                           {% endfor %}
-                        </ol>
-                    </nav>
-                </div>
+                <nav class="text-muted" aria-label="breadcrumb">
+                    <ol class="breadcrumb bg-transparent p-0">
+                        {% for ancestor in ancestors %}
+                        {% set ancestor_title = ancestor.title.strip() %}
+                        {% if ancestor_title.endswith('|hidden-folder') %}
+                            {% set ancestor_title = ancestor_title[:-14] %}
+                        {% endif %}
+                        <li class="breadcrumb-item"><a href="{{ '../' * ancestor_ns.level }}" class="text-reset">{{ ancestor_title }}</a>
+                            {% set ancestor_ns.level = ancestor_ns.level - 1 %}
+                        </li>
+                       {% endfor %}
+                    </ol>
+                </nav>
             {% endif %}
 
             {% include "templates/docs/machine-translated.html" %}
