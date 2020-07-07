@@ -28,8 +28,7 @@ AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, cons
 
 void registerAggregateFunctionCount(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
-    factory.registerFunction("count", {createAggregateFunctionCount, properties}, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("count", {createAggregateFunctionCount, {true}}, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }

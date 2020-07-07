@@ -100,8 +100,7 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
         threshold = k;
     }
 
-    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionTopK, is_weighted>(
-        *argument_types[0], threshold, load_factor, argument_types, params));
+    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionTopK, is_weighted>(*argument_types[0], threshold, load_factor, argument_types, params));
 
     if (!res)
         res = AggregateFunctionPtr(createWithExtraTypes<is_weighted>(argument_types[0], threshold, load_factor, params));
@@ -117,10 +116,8 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
 void registerAggregateFunctionTopK(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
-
-    factory.registerFunction("topK", { createAggregateFunctionTopK<false>, properties });
-    factory.registerFunction("topKWeighted", { createAggregateFunctionTopK<true>, properties });
+    factory.registerFunction("topK", createAggregateFunctionTopK<false>);
+    factory.registerFunction("topKWeighted", createAggregateFunctionTopK<true>);
 }
 
 }

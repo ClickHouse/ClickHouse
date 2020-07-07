@@ -93,7 +93,6 @@ SRCS(
     array/hasAll.cpp
     array/hasAny.cpp
     array/has.cpp
-    array/hasSubstr.cpp
     array/indexOf.cpp
     array/length.cpp
     array/range.cpp
@@ -219,7 +218,6 @@ SRCS(
     h3ToParent.cpp
     h3ToString.cpp
     hasColumnInTable.cpp
-    hasThreadFuzzer.cpp
     hasTokenCaseInsensitive.cpp
     hasToken.cpp
     hostName.cpp
@@ -229,9 +227,7 @@ SRCS(
     ifNull.cpp
     IFunction.cpp
     ignore.cpp
-    ilike.cpp
     in.cpp
-    initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
     intExp10.cpp
@@ -243,7 +239,6 @@ SRCS(
     isNotNull.cpp
     isNull.cpp
     isValidUTF8.cpp
-    isZeroOrNull.cpp
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
@@ -292,7 +287,6 @@ SRCS(
     neighbor.cpp
     notEmpty.cpp
     notEquals.cpp
-    notILike.cpp
     notLike.cpp
     now64.cpp
     now.cpp

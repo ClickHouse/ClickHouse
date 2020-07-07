@@ -11,9 +11,7 @@ static ITransformingStep::DataStreamTraits getTraits()
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = false,
-            .returns_single_stream = true,
-            .preserves_number_of_streams = false,
+            .preserves_distinct_columns = false
     };
 }
 
@@ -38,7 +36,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline)
 {
     if (!memory_efficient_aggregation)
     {
-        /// We union several sources into one, paralleling the work.
+        /// We union several sources into one, parallelizing the work.
         pipeline.resize(1);
 
         /// Now merge the aggregated blocks

@@ -9,7 +9,6 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 enum class TotalsMode;
 
-/// Execute HAVING and calculate totals. See TotalsHavingTransform.
 class TotalsHavingStep : public ITransformingStep
 {
 public:

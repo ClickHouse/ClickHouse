@@ -23,23 +23,19 @@ protected:
 public:
     IStorageSystemOneBlock(const String & name_) : IStorage({"system", name_})
     {
-        StorageInMemoryMetadata metadata_;
-        metadata_.setColumns(ColumnsDescription(Self::getNamesAndTypes()));
-        setInMemoryMetadata(metadata_);
+        setColumns(ColumnsDescription(Self::getNamesAndTypes()));
     }
 
-    Pipes read(
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+    Pipes read(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
         unsigned /*num_streams*/) override
     {
-        metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+        check(column_names);
 
-        Block sample_block = metadata_snapshot->getSampleBlock();
+        Block sample_block = getSampleBlock();
         MutableColumns res_columns = sample_block.cloneEmptyColumns();
         fillData(res_columns, context, query_info);
 

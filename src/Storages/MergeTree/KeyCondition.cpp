@@ -617,40 +617,17 @@ bool KeyCondition::tryPrepareSetIndex(
 
     const ASTPtr & right_arg = args[1];
 
-    SetPtr prepared_set;
+    PreparedSetKey set_key;
     if (right_arg->as<ASTSubquery>() || right_arg->as<ASTIdentifier>())
-    {
-        auto set_it = prepared_sets.find(PreparedSetKey::forSubquery(*right_arg));
-        if (set_it == prepared_sets.end())
-            return false;
-
-        prepared_set = set_it->second;
-    }
+        set_key = PreparedSetKey::forSubquery(*right_arg);
     else
-    {
-        /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
-        /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
-        /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
-        /// that the types it was prepared with are compatible with the types of the primary key.
-        auto set_ast_hash = right_arg->getTreeHash();
-        auto set_it = std::find_if(
-            prepared_sets.begin(), prepared_sets.end(),
-            [&](const auto & candidate_entry)
-            {
-                if (candidate_entry.first.ast_hash != set_ast_hash)
-                    return false;
+        set_key = PreparedSetKey::forLiteral(*right_arg, data_types);
 
-                for (size_t i = 0; i < indexes_mapping.size(); ++i)
-                    if (!candidate_entry.second->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
-                        return false;
+    auto set_it = prepared_sets.find(set_key);
+    if (set_it == prepared_sets.end())
+        return false;
 
-                return true;
-        });
-        if (set_it == prepared_sets.end())
-            return false;
-
-        prepared_set = set_it->second;
-    }
+    const SetPtr & prepared_set = set_it->second;
 
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())
@@ -658,7 +635,7 @@ bool KeyCondition::tryPrepareSetIndex(
 
     prepared_set->checkColumnsNumber(left_args_count);
     for (size_t i = 0; i < indexes_mapping.size(); ++i)
-        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
+        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, removeLowCardinality(data_types[i]));
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
 
@@ -841,7 +818,6 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                     func_name = "greaterOrEquals";
                 else if (func_name == "in" || func_name == "notIn" ||
                          func_name == "like" || func_name == "notLike" ||
-                         func_name == "ilike" || func_name == "notIlike" ||
                          func_name == "startsWith")
                 {
                     /// "const IN data_column" doesn't make sense (unlike "data_column IN const")

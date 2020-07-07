@@ -71,6 +71,7 @@ struct MovingAvgData
     void add(T val, Arena * arena)
     {
         sum += val;
+
         value.push_back(sum, arena);
     }
 
@@ -95,8 +96,7 @@ class MovingImpl final
 
 public:
     using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
-    // probably for overflow function in the future
-    using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>; // probably for overflow function in the future
 
     explicit MovingImpl(const DataTypePtr & data_type_, UInt64 win_size_ = std::numeric_limits<UInt64>::max())
         : IAggregateFunctionDataHelper<Data, MovingImpl<T, Tlimit_num_elems, Data>>({data_type_}, {})
@@ -158,7 +158,7 @@ public:
         this->data(place).sum = value.back();
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         const auto & data = this->data(place);
         size_t size = data.value.size();

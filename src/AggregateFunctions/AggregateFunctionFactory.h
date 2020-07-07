@@ -9,7 +9,6 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <optional>
 
 
 namespace DB
@@ -73,9 +72,6 @@ public:
         const Array & parameters,
         AggregateFunctionProperties & out_properties) const;
 
-    /// Get properties if the aggregate function exists.
-    std::optional<AggregateFunctionProperties> tryGetProperties(const String & name) const;
-
     bool isAggregateFunctionName(const String & name, int recursion_level = 0) const;
 
 private:
@@ -86,8 +82,6 @@ private:
         AggregateFunctionProperties & out_properties,
         bool has_null_arguments,
         int recursion_level) const;
-
-    std::optional<AggregateFunctionProperties> tryGetPropertiesImpl(const String & name, int recursion_level) const;
 
 private:
     using AggregateFunctions = std::unordered_map<String, Value>;

@@ -39,7 +39,6 @@ public:
 
     Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
@@ -48,7 +47,6 @@ public:
 
     BlockOutputStreamPtr write(
         const ASTPtr & query,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
         const Context & context) override;
 
     void pushReadBuffer(ConsumerBufferPtr buf);
@@ -70,6 +68,7 @@ protected:
 private:
     // Configuration and state
     Context & global_context;
+    std::shared_ptr<Context> kafka_context;
     std::unique_ptr<KafkaSettings> kafka_settings;
     const Names topics;
     const String brokers;

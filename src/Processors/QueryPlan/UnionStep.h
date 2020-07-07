@@ -4,7 +4,6 @@
 namespace DB
 {
 
-/// Unite several logical streams of data into single logical stream with specified structure.
 class UnionStep : public IQueryPlanStep
 {
 public:

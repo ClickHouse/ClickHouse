@@ -11,6 +11,7 @@ set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     SchemaAllowedHandler.cpp
     validateODBCConnectionString.cpp
 )
+
 set (CLICKHOUSE_ODBC_BRIDGE_LINK
     PRIVATE
         clickhouse_parsers
