@@ -2323,48 +2323,6 @@ public:
 
 }
 
-using signal_function = void(int, siginfo_t*, void*);
-
-/// Setup signal handlers.
-static void add_signal_handler(const std::vector<int> & signals, signal_function handler)
-{
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_sigaction = handler;
-    sa.sa_flags = SA_SIGINFO;
-
-    {
-#if defined(OS_DARWIN)
-        sigemptyset(&sa.sa_mask);
-        for (auto signal : signals)
-            sigaddset(&sa.sa_mask, signal);
-#else
-        if (sigemptyset(&sa.sa_mask))
-            throw Poco::Exception("Cannot set signal handler.");
-
-        for (auto signal : signals)
-            if (sigaddset(&sa.sa_mask, signal))
-                throw Poco::Exception("Cannot set signal handler.");
-#endif
-
-        for (auto signal : signals)
-            if (sigaction(signal, &sa, nullptr))
-                throw Poco::Exception("Cannot set signal handler.");
-    }
-};
-
-/** Handler for "fault" or diagnostic signals. */
-static void signalHandler(int sig, siginfo_t * /*info*/, void * context)
-{
-    const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
-    const StackTrace stack_trace(signal_context);
-    std::cerr << fmt::format("Received signal {} at: {}", sig,
-        stack_trace.toString()) << std::endl;
-
-    signal(sig, SIG_DFL);
-    raise(sig);
-}
-
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 
@@ -2372,9 +2330,6 @@ int mainEntryClickHouseClient(int argc, char ** argv)
 {
     try
     {
-        add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE,
-            SIGPIPE}, signalHandler);
-
         DB::Client client;
         client.init(argc, argv);
         return client.run();
