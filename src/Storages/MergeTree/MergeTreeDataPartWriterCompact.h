@@ -34,7 +34,7 @@ private:
 
     void writeBlock(const Block & block);
 
-    StreamPtr stream;
+    void addToChecksums(MergeTreeDataPartChecksums & checksumns);
 
     Block header;
 
@@ -53,6 +53,25 @@ private:
     };
 
     ColumnsBuffer columns_buffer;
+
+    /// compressed -> compressed_buf -> plain_hashing -> plain_file
+    std::unique_ptr<WriteBufferFromFileBase> plain_file;
+    HashingWriteBuffer plain_hashing;
+
+    struct CompressedStream
+    {
+        CompressedWriteBuffer compressed_buf;
+        HashingWriteBuffer hashing_buf;
+
+        CompressedStream(WriteBuffer & buf, const CompressionCodecPtr & codec)
+            : compressed_buf(buf, codec), hashing_buf(compressed_buf) {}
+    };
+
+    std::unordered_map<String, std::unique_ptr<CompressedStream>> compressed_streams;
+
+    /// marks -> marks_file
+    std::unique_ptr<WriteBufferFromFileBase> marks_file;
+    HashingWriteBuffer marks;
 };
 
 }
