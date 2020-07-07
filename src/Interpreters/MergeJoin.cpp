@@ -131,7 +131,7 @@ public:
 
     using Container = Bitmap::Container;
 
-    RowBitmaps(size_t size)
+    explicit RowBitmaps(size_t size)
     {
         maps.reserve(size);
         for (size_t i = 0; i < size; ++i)
