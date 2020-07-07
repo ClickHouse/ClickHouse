@@ -21,7 +21,7 @@ PageCharset тоже почти всегда непуст, но его сред�
 <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(sipHash64(SearchPhrase)) SETTINGS max_threads = 1</query>
 <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(sipHash64(SearchPhrase))</query>
 <!-- 18. Криптографическая хэш-функция для строк. -->
-<query>SELECT count() FROM hits_10m_single WHERE NOT ignore(MD5(SearchPhrase)) SETTINGS max_threads = 1</query>
+<!-- single-threaded calculation over hits_10m_single is too slow, removed -->
 <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(MD5(SearchPhrase))</query>
 <!-- 19. Криптографическая хэш-функция для строк.  -->
 <!-- MD5 was too slow, removed. -->

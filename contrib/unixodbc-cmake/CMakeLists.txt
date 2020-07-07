@@ -307,7 +307,7 @@ if (ENABLE_ODBC)
         set_target_properties (unixodbc PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_ODBC})
     endif ()
 
-    target_compile_definitions (unixodbc PUBLIC USE_ODBC=1)
+    target_compile_definitions (unixodbc INTERFACE USE_ODBC=1)
 
     message (STATUS "Using unixodbc")
 else ()

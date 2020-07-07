@@ -45,6 +45,10 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+static String selectEmptyReplacementQuery(const String & query);
+static String showTableStatusReplacementQuery(const String & query);
+static String killConnectionIdReplacementQuery(const String & query);
+
 MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled, size_t connection_id_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -57,6 +61,10 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
     server_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
     if (ssl_enabled)
         server_capability_flags |= CLIENT_SSL;
+
+    replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
+    replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
+    replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
 }
 
 void MySQLHandler::run()
@@ -103,7 +111,8 @@ void MySQLHandler::run()
         {
             if (!handshake_response.database.empty())
                 connection_context.setCurrentDatabase(handshake_response.database);
-            connection_context.setCurrentQueryId("");
+            connection_context.setCurrentQueryId(Poco::format("mysql:%lu", connection_id));
+
         }
         catch (const Exception & exc)
         {
@@ -284,20 +293,18 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
     }
     else
     {
-        String replacement_query = "SELECT ''";
+        String replacement_query;
         bool should_replace = false;
         bool with_output = false;
 
-        // This is a workaround in order to support adding ClickHouse to MySQL using federated server.
-        if (0 == strncasecmp("SHOW TABLE STATUS LIKE", query.c_str(), 22))
+        for (auto const & x : replacements)
         {
-            should_replace = true;
-            replacement_query = boost::replace_all_copy(query, "SHOW TABLE STATUS LIKE ", show_table_status_replacement_query);
-        }
-
-        if (0 == strncasecmp("SHOW VARIABLES", query.c_str(), 13))
-        {
-            should_replace = true;
+            if (0 == strncasecmp(x.first.c_str(), query.c_str(), x.first.size()))
+            {
+                should_replace = true;
+                replacement_query = x.second(query);
+                break;
+            }
         }
 
         ReadBufferFromString replacement(replacement_query);
@@ -372,26 +379,63 @@ static bool isFederatedServerSetupSetCommand(const String & query)
     return 1 == std::regex_match(query, expr);
 }
 
-const String MySQLHandler::show_table_status_replacement_query("SELECT"
-                                                               " name AS Name,"
-                                                               " engine AS Engine,"
-                                                               " '10' AS Version,"
-                                                               " 'Dynamic' AS Row_format,"
-                                                               " 0 AS Rows,"
-                                                               " 0 AS Avg_row_length,"
-                                                               " 0 AS Data_length,"
-                                                               " 0 AS Max_data_length,"
-                                                               " 0 AS Index_length,"
-                                                               " 0 AS Data_free,"
-                                                               " 'NULL' AS Auto_increment,"
-                                                               " metadata_modification_time AS Create_time,"
-                                                               " metadata_modification_time AS Update_time,"
-                                                               " metadata_modification_time AS Check_time,"
-                                                               " 'utf8_bin' AS Collation,"
-                                                               " 'NULL' AS Checksum,"
-                                                               " '' AS Create_options,"
-                                                               " '' AS Comment"
-                                                               " FROM system.tables"
-                                                               " WHERE name LIKE ");
+/// Replace "[query(such as SHOW VARIABLES...)]" into "".
+static String selectEmptyReplacementQuery(const String & query)
+{
+    std::ignore = query;
+    return "select ''";
+}
+
+/// Replace "SHOW TABLE STATUS LIKE 'xx'" into "SELECT ... FROM system.tables WHERE name LIKE 'xx'".
+static String showTableStatusReplacementQuery(const String & query)
+{
+    const String prefix = "SHOW TABLE STATUS LIKE ";
+    if (query.size() > prefix.size())
+    {
+        String suffix = query.data() + prefix.length();
+        return (
+            "SELECT"
+            " name AS Name,"
+            " engine AS Engine,"
+            " '10' AS Version,"
+            " 'Dynamic' AS Row_format,"
+            " 0 AS Rows,"
+            " 0 AS Avg_row_length,"
+            " 0 AS Data_length,"
+            " 0 AS Max_data_length,"
+            " 0 AS Index_length,"
+            " 0 AS Data_free,"
+            " 'NULL' AS Auto_increment,"
+            " metadata_modification_time AS Create_time,"
+            " metadata_modification_time AS Update_time,"
+            " metadata_modification_time AS Check_time,"
+            " 'utf8_bin' AS Collation,"
+            " 'NULL' AS Checksum,"
+            " '' AS Create_options,"
+            " '' AS Comment"
+            " FROM system.tables"
+            " WHERE name LIKE "
+            + suffix);
+    }
+    return query;
+}
+
+/// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id = 'mysql:[connection_id]'".
+static String killConnectionIdReplacementQuery(const String & query)
+{
+    const String prefix = "KILL QUERY ";
+    if (query.size() > prefix.size())
+    {
+        String suffix = query.data() + prefix.length();
+        static const std::regex expr{"^[0-9]"};
+        if (std::regex_match(suffix, expr))
+        {
+            String replacement = Poco::format("KILL QUERY WHERE query_id = 'mysql:%s'", suffix);
+            return replacement;
+        }
+    }
+    return query;
+}
 
 }
+
