@@ -106,6 +106,12 @@ if (ENABLE_LDAP AND USE_INTERNAL_LDAP_LIBRARY)
     add_subdirectory (openldap-cmake)
 endif ()
 
+# Should go before:
+# - mariadb-connector-c
+# - aws-s3-cmake
+# - sentry-native
+add_subdirectory (curl-cmake)
+
 function(mysql_support)
     set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
     set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC)
@@ -263,23 +269,6 @@ if (USE_INTERNAL_GRPC_LIBRARY)
     add_subdirectory(grpc-cmake)
 endif ()
 
-if (USE_INTERNAL_AWS_S3_LIBRARY OR USE_SENTRY)
-    set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
-    set (save_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
-    set (save_CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES})
-    set (save_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
-    set (save_CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH})
-    add_subdirectory(curl-cmake)
-    set (CMAKE_C_FLAGS ${save_CMAKE_C_FLAGS})
-    set (CMAKE_REQUIRED_LIBRARIES ${save_CMAKE_REQUIRED_LIBRARIES})
-    set (CMAKE_CMAKE_REQUIRED_INCLUDES ${save_CMAKE_REQUIRED_INCLUDES})
-    set (CMAKE_REQUIRED_FLAGS ${save_CMAKE_REQUIRED_FLAGS})
-    set (CMAKE_CMAKE_MODULE_PATH ${save_CMAKE_MODULE_PATH})
-
-    # The library is large - avoid bloat.
-    target_compile_options (curl PRIVATE -g0)
-endif ()
-
 if (USE_INTERNAL_AWS_S3_LIBRARY)
     add_subdirectory(aws-s3-cmake)
 
@@ -299,6 +288,10 @@ endif()
 
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
+endif()
+
+if (USE_AMQPCPP)
+    add_subdirectory (amqpcpp-cmake)
 endif()
 
 if (USE_CASSANDRA)

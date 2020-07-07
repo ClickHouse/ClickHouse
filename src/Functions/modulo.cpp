@@ -27,12 +27,10 @@ struct ModuloByConstantImpl
 
     static NO_INLINE void vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
-        if (unlikely(b == 0))
-            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
-
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
+        /// Modulo with too small divisor.
         if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
         {
             for (size_t i = 0; i < size; ++i)
@@ -40,7 +38,19 @@ struct ModuloByConstantImpl
             return;
         }
 
+        /// Modulo with too large divisor.
+        if (unlikely(b > std::numeric_limits<A>::max()
+            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
+        {
+            for (size_t i = 0; i < size; ++i)
+                dst[i] = src[i];
+            return;
+        }
+
 #pragma GCC diagnostic pop
+
+        if (unlikely(static_cast<A>(b) == 0))
+            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
         libdivide::divider<A> divider(b);
 
