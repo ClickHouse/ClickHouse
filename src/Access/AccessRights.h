@@ -93,7 +93,9 @@ public:
 
     /// Merges two sets of access rights together.
     /// It's used to combine access rights from multiple roles.
-    void merge(const AccessRights & other);
+    void makeUnion(const AccessRights & other);
+
+    void makeIntersection(const AccessRights & other);
 
     friend bool operator ==(const AccessRights & left, const AccessRights & right);
     friend bool operator !=(const AccessRights & left, const AccessRights & right) { return !(left == right); }

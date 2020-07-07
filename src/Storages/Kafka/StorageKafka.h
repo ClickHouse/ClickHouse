@@ -70,7 +70,6 @@ protected:
 private:
     // Configuration and state
     Context & global_context;
-    std::shared_ptr<Context> kafka_context;
     std::unique_ptr<KafkaSettings> kafka_settings;
     const Names topics;
     const String brokers;
