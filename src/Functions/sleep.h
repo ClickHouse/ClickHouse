@@ -85,7 +85,7 @@ public:
         /// We do not sleep if the block is empty.
         if (size > 0)
         {
-            /// When sleeping, the query cannot be cancelled. For abitily to cancel query, we limit sleep time.
+            /// When sleeping, the query cannot be cancelled. For ability to cancel query, we limit sleep time.
             if (seconds > 3.0)   /// The choice is arbitrary
                 throw Exception("The maximum sleep time is 3 seconds. Requested: " + toString(seconds), ErrorCodes::TOO_SLOW);
 

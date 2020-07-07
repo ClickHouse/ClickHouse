@@ -50,10 +50,18 @@ function find_reference_sha
 
         # FIXME sometimes we have testing tags on commits without published builds --
         # normally these are documentation commits. Loop to skip them.
-        if curl --fail --head "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/performance/performance.tgz"
-        then
-            break
-        fi
+        # Historically there were various path for the performance test package.
+        # Test all of them.
+        unset found
+        for path in "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/"{,clickhouse_build_check/}"performance/performance.tgz"
+        do
+            if curl --fail --head "$path"
+            then
+                found="$path"
+                break
+            fi
+        done
+        if [ -n "$found" ] ; then break; fi
 
         start_ref="$REF_SHA~"
     done
@@ -133,6 +141,6 @@ dmesg -T > dmesg.log
 
 7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} \
     {right,left}/{performance,scripts} {{right,left}/db,db0}/preprocessed_configs \
-    report analyze benchmark
+    report analyze benchmark metrics
 
 cp compare.log /output

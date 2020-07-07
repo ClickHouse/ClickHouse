@@ -1,0 +1,1 @@
+SELECT \n    k,\n    groupArrayMovingSum(v)\nFROM \n(\n    SELECT \n        k,\n        dt,\n        v\n    FROM moving_sum_num\n    ORDER BY \n        k ASC,\n        dt ASC\n)\nGROUP BY k\nORDER BY k ASC

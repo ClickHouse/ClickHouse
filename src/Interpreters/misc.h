@@ -17,7 +17,7 @@ inline bool functionIsInOrGlobalInOperator(const std::string & name)
 
 inline bool functionIsLikeOperator(const std::string & name)
 {
-    return name == "like" || name == "notLike";
+    return name == "like" || name == "ilike" || name == "notLike" || name == "notILike";
 }
 
 inline bool functionIsJoinGet(const std::string & name)

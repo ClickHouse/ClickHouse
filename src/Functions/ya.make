@@ -93,6 +93,7 @@ SRCS(
     array/hasAll.cpp
     array/hasAny.cpp
     array/has.cpp
+    array/hasSubstr.cpp
     array/indexOf.cpp
     array/length.cpp
     array/range.cpp
@@ -122,6 +123,7 @@ SRCS(
     blockNumber.cpp
     blockSerializedSize.cpp
     blockSize.cpp
+    buildId.cpp
     caseWithExpression.cpp
     cbrt.cpp
     coalesce.cpp
@@ -200,6 +202,7 @@ SRCS(
     getMacro.cpp
     getScalar.cpp
     getSizeOfEnumType.cpp
+    globalVariable.cpp
     greatCircleDistance.cpp
     greater.cpp
     greaterOrEquals.cpp
@@ -216,6 +219,7 @@ SRCS(
     h3ToParent.cpp
     h3ToString.cpp
     hasColumnInTable.cpp
+    hasThreadFuzzer.cpp
     hasTokenCaseInsensitive.cpp
     hasToken.cpp
     hostName.cpp
@@ -225,7 +229,9 @@ SRCS(
     ifNull.cpp
     IFunction.cpp
     ignore.cpp
+    ilike.cpp
     in.cpp
+    initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
     intExp10.cpp
@@ -237,6 +243,7 @@ SRCS(
     isNotNull.cpp
     isNull.cpp
     isValidUTF8.cpp
+    isZeroOrNull.cpp
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
@@ -285,6 +292,7 @@ SRCS(
     neighbor.cpp
     notEmpty.cpp
     notEquals.cpp
+    notILike.cpp
     notLike.cpp
     now64.cpp
     now.cpp
@@ -363,6 +371,7 @@ SRCS(
     subtractYears.cpp
     tan.cpp
     tanh.cpp
+    TargetSpecific.cpp
     tgamma.cpp
     throwIf.cpp
     timeSlot.cpp
@@ -374,6 +383,7 @@ SRCS(
     toDayOfMonth.cpp
     toDayOfWeek.cpp
     toDayOfYear.cpp
+    toFixedString.cpp
     toHour.cpp
     toISOWeek.cpp
     toISOYear.cpp

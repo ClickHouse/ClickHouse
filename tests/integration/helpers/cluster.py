@@ -31,7 +31,7 @@ from .hdfs_api import HDFSApi
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
-DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "docker/test/integration/compose/")
+LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "docker/test/integration/runner/compose/")
 DEFAULT_ENV_NAME = 'env_file'
 
 SANITIZER_SIGN = "=================="
@@ -52,7 +52,7 @@ def subprocess_check_call(args):
 
 
 def subprocess_call(args):
-    # Uncomment for debugging
+    # Uncomment for debugging..;
     # print('run:', ' ' . join(args))
     subprocess.call(args)
 
@@ -66,6 +66,17 @@ def get_odbc_bridge_path():
         else:
             return '/usr/bin/clickhouse-odbc-bridge'
     return path
+
+def get_docker_compose_path():
+    compose_path = os.environ.get('DOCKER_COMPOSE_DIR')
+    if compose_path is not None:
+        return os.path.dirname(compose_path)
+    else:
+        if os.path.exists(os.path.dirname('/compose/')):
+            return os.path.dirname('/compose/') #default in docker runner container
+        else:
+            print("Fallback docker_compose_path to LOCAL_DOCKER_COMPOSE_DIR: {}".format(LOCAL_DOCKER_COMPOSE_DIR))
+            return LOCAL_DOCKER_COMPOSE_DIR
 
 
 class ClickHouseCluster:
@@ -109,6 +120,7 @@ class ClickHouseCluster:
         self.base_zookeeper_cmd = None
         self.base_mysql_cmd = []
         self.base_kafka_cmd = []
+        self.base_rabbitmq_cmd = []
         self.base_cassandra_cmd = []
         self.pre_zookeeper_commands = []
         self.instances = {}
@@ -116,6 +128,7 @@ class ClickHouseCluster:
         self.with_mysql = False
         self.with_postgres = False
         self.with_kafka = False
+        self.with_rabbitmq = False
         self.with_odbc_drivers = False
         self.with_hdfs = False
         self.with_mongo = False
@@ -148,7 +161,7 @@ class ClickHouseCluster:
         return cmd
 
     def add_instance(self, name, config_dir=None, main_configs=None, user_configs=None, macros=None,
-                     with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None,
+                     with_zookeeper=False, with_mysql=False, with_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test",
@@ -172,24 +185,26 @@ class ClickHouseCluster:
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs or [], user_configs or [], macros or {},
             with_zookeeper,
-            self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio, with_cassandra,
+            self.zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio, with_cassandra,
             self.base_configs_dir, self.server_bin_path,
             self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
             env_variables=env_variables or {}, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address,
             ipv6_address=ipv6_address,
             with_installed_binary=with_installed_binary, tmpfs=tmpfs or [])
 
+        docker_compose_yml_dir = get_docker_compose_path()
+
         self.instances[name] = instance
         if ipv4_address is not None or ipv6_address is not None:
             self.with_net_trics = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_net.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_net.yml')])
 
         self.base_cmd.extend(['--file', instance.docker_compose_path])
 
         cmds = []
         if with_zookeeper and not self.with_zookeeper:
             if not zookeeper_docker_compose_path:
-                zookeeper_docker_compose_path = p.join(DOCKER_COMPOSE_DIR, 'docker_compose_zookeeper.yml')
+                zookeeper_docker_compose_path = p.join(docker_compose_yml_dir, 'docker_compose_zookeeper.yml')
 
             self.with_zookeeper = True
             self.zookeeper_use_tmpfs = zookeeper_use_tmpfs
@@ -200,79 +215,86 @@ class ClickHouseCluster:
 
         if with_mysql and not self.with_mysql:
             self.with_mysql = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
             self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')]
+                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
 
             cmds.append(self.base_mysql_cmd)
 
         if with_postgres and not self.with_postgres:
             self.with_postgres = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
             self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                      self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')]
+                                      self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
             cmds.append(self.base_postgres_cmd)
 
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
             if not self.with_mysql:
                 self.with_mysql = True
-                self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')])
+                self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
                 self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')]
+                                       self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
                 cmds.append(self.base_mysql_cmd)
 
             if not self.with_postgres:
                 self.with_postgres = True
-                self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')])
+                self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
                 self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                           self.project_name, '--file',
-                                          p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')]
+                                          p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
                 cmds.append(self.base_postgres_cmd)
 
         if with_kafka and not self.with_kafka:
             self.with_kafka = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_kafka.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')])
             self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_kafka.yml')]
+                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')]
             cmds.append(self.base_kafka_cmd)
+
+        if with_rabbitmq and not self.with_rabbitmq:
+            self.with_rabbitmq = True
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')])
+            self.base_rabbitmq_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                      self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')]
+            cmds.append(self.base_rabbitmq_cmd)
 
         if with_hdfs and not self.with_hdfs:
             self.with_hdfs = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_hdfs.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')])
             self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                  self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_hdfs.yml')]
+                                  self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')]
             cmds.append(self.base_hdfs_cmd)
 
         if with_mongo and not self.with_mongo:
             self.with_mongo = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mongo.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')])
             self.base_mongo_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mongo.yml')]
+                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
             cmds.append(self.base_mongo_cmd)
 
         if self.with_net_trics:
             for cmd in cmds:
-                cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_net.yml')])
+                cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_net.yml')])
 
         if with_redis and not self.with_redis:
             self.with_redis = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_redis.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')])
             self.base_redis_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_redis.yml')]
+                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')]
 
         if with_minio and not self.with_minio:
             self.with_minio = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_minio.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')])
             self.base_minio_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_minio.yml')]
+                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
             cmds.append(self.base_minio_cmd)
 
         if with_cassandra and not self.with_cassandra:
             self.with_cassandra = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_cassandra.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')])
             self.base_cassandra_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_cassandra.yml')]
+                                       self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
 
         return instance
 
@@ -529,6 +551,10 @@ class ClickHouseCluster:
                 self.kafka_docker_id = self.get_instance_docker_id('kafka1')
                 self.wait_schema_registry_to_start(120)
 
+            if self.with_rabbitmq and self.base_rabbitmq_cmd:
+                subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
+                self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
+
             if self.with_hdfs and self.base_hdfs_cmd:
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
                 self.wait_hdfs_to_start(120)
@@ -681,7 +707,7 @@ class ClickHouseInstance:
 
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
-            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio, with_cassandra,
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio, with_cassandra,
             base_configs_dir, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test",
@@ -708,6 +734,7 @@ class ClickHouseInstance:
 
         self.with_mysql = with_mysql
         self.with_kafka = with_kafka
+        self.with_rabbitmq = with_rabbitmq
         self.with_mongo = with_mongo
         self.with_redis = with_redis
         self.with_minio = with_minio
@@ -732,16 +759,20 @@ class ClickHouseInstance:
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
 
-    # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False):
-        return self.client.query(sql, stdin, timeout, settings, user, password, ignore_error)
+    def is_built_with_thread_sanitizer(self):
+        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+        return "-fsanitize=thread" in build_opts
 
-    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False,
+    # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
+    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None, ignore_error=False):
+        return self.client.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database, ignore_error=ignore_error)
+
+    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None, ignore_error=False,
                          retry_count=20, sleep_time=0.5, check_callback=lambda x: True):
         result = None
         for i in range(retry_count):
             try:
-                result = self.query(sql, stdin, timeout, settings, user, password, ignore_error)
+                result = self.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database, ignore_error=ignore_error)
                 if check_callback(result):
                     return result
                 time.sleep(sleep_time)
@@ -758,12 +789,12 @@ class ClickHouseInstance:
         return self.client.get_query_request(*args, **kwargs)
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument), expects an error and return its code
-    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None):
-        return self.client.query_and_get_error(sql, stdin, timeout, settings, user, password)
+    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None):
+        return self.client.query_and_get_error(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database)
 
     # The same as query_and_get_error but ignores successful query.
-    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None):
-        return self.client.query_and_get_answer_with_error(sql, stdin, timeout, settings, user, password)
+    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None):
+        return self.client.query_and_get_answer_with_error(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_query(self, sql, data=None, params=None, user=None, password=None, expect_fail_and_get_error=False):
@@ -1054,6 +1085,9 @@ class ClickHouseInstance:
             depends_on.append("kafka1")
             depends_on.append("schema-registry")
 
+        if self.with_rabbitmq:
+            depends_on.append("rabbitmq1")
+
         if self.with_zookeeper:
             depends_on.append("zoo1")
             depends_on.append("zoo2")
@@ -1133,3 +1167,4 @@ class ClickHouseKiller(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.clickhouse_node.restore_clickhouse()
+

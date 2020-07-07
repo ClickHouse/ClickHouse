@@ -12,6 +12,7 @@
 #include <Columns/ColumnArray.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
@@ -56,6 +57,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -262,7 +264,7 @@ struct StringComparisonImpl
         {
             size_t size = a_data.size();
             for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-                c[j] = Op::apply(0, memcmpSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i, a_n, b_data.data(), b_size));
+                c[j] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i, a_n, b_data.data(), b_size), 0);
         }
     }
 
@@ -879,6 +881,9 @@ private:
         if (0 == tuple_size)
             throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 
+        if (tuple_size != typeid_cast<const DataTypeTuple &>(*c1.type).getElements().size())
+            throw Exception("Cannot compare tuples of different sizes.", ErrorCodes::BAD_ARGUMENTS);
+
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
 
@@ -927,6 +932,8 @@ private:
         if (0 == tuple_size)
             throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 
+        ColumnsWithTypeAndName convolution_types(tuple_size);
+
         Block tmp_block;
         for (size_t i = 0; i < tuple_size; ++i)
         {
@@ -934,9 +941,10 @@ private:
             tmp_block.insert(y[i]);
 
             auto impl = func_compare->build({x[i], y[i]});
+            convolution_types[i].type = impl->getReturnType();
 
             /// Comparison of the elements.
-            tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
+            tmp_block.insert({ nullptr, impl->getReturnType(), "" });
             impl->execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2, input_rows_count);
         }
 
@@ -948,14 +956,13 @@ private:
         }
 
         /// Logical convolution.
-        tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 
         ColumnNumbers convolution_args(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
             convolution_args[i] = i * 3 + 2;
 
-        ColumnsWithTypeAndName convolution_types(convolution_args.size(), { nullptr, std::make_shared<DataTypeUInt8>(), "" });
         auto impl = func_convolution->build(convolution_types);
+        tmp_block.insert({ nullptr, impl->getReturnType(), "" });
 
         impl->execute(tmp_block, convolution_args, tuple_size * 3, input_rows_count);
         block.getByPosition(result).column = tmp_block.getByPosition(tuple_size * 3).column;
@@ -974,49 +981,71 @@ private:
         size_t tuple_size,
         size_t input_rows_count)
     {
-        ColumnsWithTypeAndName bin_args = {{ nullptr, std::make_shared<DataTypeUInt8>(), "" },
-                                           { nullptr, std::make_shared<DataTypeUInt8>(), "" }};
-
-        auto func_and_adaptor = func_and->build(bin_args);
-        auto func_or_adaptor = func_or->build(bin_args);
-
         Block tmp_block;
 
         /// Pairwise comparison of the inequality of all elements; on the equality of all elements except the last.
+        /// (x[i], y[i], x[i] < y[i], x[i] == y[i])
         for (size_t i = 0; i < tuple_size; ++i)
         {
             tmp_block.insert(x[i]);
             tmp_block.insert(y[i]);
 
-            tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
+            tmp_block.insert(ColumnWithTypeAndName()); // pos == i * 4 + 2
 
             if (i + 1 != tuple_size)
             {
                 auto impl_head = func_compare_head->build({x[i], y[i]});
+                tmp_block.getByPosition(i * 4 + 2).type = impl_head->getReturnType();
                 impl_head->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
 
-                tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
+                tmp_block.insert(ColumnWithTypeAndName()); // i * 4 + 3
 
                 auto impl_equals = func_equals->build({x[i], y[i]});
+                tmp_block.getByPosition(i * 4 + 3).type = impl_equals->getReturnType();
                 impl_equals->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3, input_rows_count);
 
             }
             else
             {
                 auto impl_tail = func_compare_tail->build({x[i], y[i]});
+                tmp_block.getByPosition(i * 4 + 2).type = impl_tail->getReturnType();
                 impl_tail->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
             }
         }
 
         /// Combination. Complex code - make a drawing. It can be replaced by a recursive comparison of tuples.
+        /// Last column contains intermediate result.
+        /// Code is generally equivalent to:
+        ///   res = `x < y`[tuple_size - 1];
+        ///   for (int i = tuple_size - 2; i >= 0; --i)
+        ///       res = (res && `x == y`[i]) || `x < y`[i];
         size_t i = tuple_size - 1;
         while (i > 0)
         {
-            tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_and_adaptor->execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 3}, tmp_block.columns() - 1, input_rows_count);
-            tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_or_adaptor->execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 2}, tmp_block.columns() - 1, input_rows_count);
             --i;
+
+            size_t and_lhs_pos = tmp_block.columns() - 1; // res
+            size_t and_rhs_pos = i * 4 + 3; // `x == y`[i]
+            tmp_block.insert(ColumnWithTypeAndName());
+
+            ColumnsWithTypeAndName and_args = {{ nullptr, tmp_block.getByPosition(and_lhs_pos).type, "" },
+                                               { nullptr, tmp_block.getByPosition(and_rhs_pos).type, "" }};
+
+            auto func_and_adaptor = func_and->build(and_args);
+            tmp_block.getByPosition(tmp_block.columns() - 1).type = func_and_adaptor->getReturnType();
+            func_and_adaptor->execute(tmp_block, {and_lhs_pos, and_rhs_pos}, tmp_block.columns() - 1, input_rows_count);
+
+            size_t or_lhs_pos = tmp_block.columns() - 1; // (res && `x == y`[i])
+            size_t or_rhs_pos = i * 4 + 2; // `x < y`[i]
+            tmp_block.insert(ColumnWithTypeAndName());
+
+            ColumnsWithTypeAndName or_args = {{ nullptr, tmp_block.getByPosition(or_lhs_pos).type, "" },
+                                              { nullptr, tmp_block.getByPosition(or_rhs_pos).type, "" }};
+
+            auto func_or_adaptor = func_or->build(or_args);
+            tmp_block.getByPosition(tmp_block.columns() - 1).type = func_or_adaptor->getReturnType();
+            func_or_adaptor->execute(tmp_block, {or_lhs_pos, or_rhs_pos}, tmp_block.columns() - 1, input_rows_count);
+
         }
 
         block.getByPosition(result).column = tmp_block.getByPosition(tmp_block.columns() - 1).column;
@@ -1080,7 +1109,7 @@ public:
         bool both_represented_by_number = arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber();
         bool has_date = left.isDate() || right.isDate();
 
-        if (!((both_represented_by_number && !has_date)   /// Do not allow compare date and number.
+        if (!((both_represented_by_number && !has_date)   /// Do not allow to compare date and number.
             || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
             || (left.isDateOrDateTime() && right.isDateOrDateTime() && left.idx == right.idx) /// only date vs date, or datetime vs datetime
@@ -1105,13 +1134,20 @@ public:
             auto adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(
                 FunctionComparison<Op, Name>::create(context)));
 
+            bool has_nullable = false;
+
             size_t size = left_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)
             {
                 ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
                                                {nullptr, right_tuple->getElements()[i], ""}};
-                adaptor.build(args);
+                has_nullable = has_nullable || adaptor.build(args)->getReturnType()->isNullable();
             }
+
+            /// If any element comparison is nullable, return type will also be nullable.
+            /// We useDefaultImplementationForNulls, but it doesn't work for tuples.
+            if (has_nullable)
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
         }
 
         return std::make_shared<DataTypeUInt8>();
@@ -1131,7 +1167,7 @@ public:
         /// NOTE: Nullable types are special case.
         /// (BTW, this function use default implementation for Nullable, so Nullable types cannot be here. Check just in case.)
         /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are sometimes equal sometimes not).
-        if (left_type->equals(*right_type) && !left_type->isNullable() && col_left_untyped == col_right_untyped)
+        if (left_type->equals(*right_type) && !left_type->isNullable() && !isTuple(left_type) && col_left_untyped == col_right_untyped)
         {
             /// Always true: =, <=, >=
             if constexpr (std::is_same_v<Op<int, int>, EqualsOp<int, int>>
@@ -1178,7 +1214,8 @@ public:
                     + " of first argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (checkAndGetDataType<DataTypeTuple>(left_type.get()))
+        else if (checkAndGetDataType<DataTypeTuple>(left_type.get())
+            && checkAndGetDataType<DataTypeTuple>(right_type.get()))
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }

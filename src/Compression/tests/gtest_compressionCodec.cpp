@@ -546,7 +546,7 @@ TEST_P(CodecTest, TranscodingWithoutDataType)
 class CodecTestCompatibility : public ::testing::TestWithParam<std::tuple<Codec, std::tuple<CodecTestSequence, std::string>>>
 {};
 
-// Check that iput sequence when encoded matches the encoded string binary.
+// Check that input sequence when encoded matches the encoded string binary.
 TEST_P(CodecTestCompatibility, Encoding)
 {
     const auto & codec_spec = std::get<0>(GetParam());
@@ -1275,7 +1275,7 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
 );
 
 // These 'tests' try to measure performance of encoding and decoding and hence only make sence to be run locally,
-// also they require pretty big data to run agains and generating this data slows down startup of unit test process.
+// also they require pretty big data to run against and generating this data slows down startup of unit test process.
 // So un-comment only at your discretion.
 
 // Just as if all sequences from generatePyramidOfSequences were appended to one-by-one to the first one.
