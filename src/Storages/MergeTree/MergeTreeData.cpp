@@ -139,7 +139,6 @@ MergeTreeData::MergeTreeData(
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
-    , in_memory_merges_throttler(storage_settings.get()->min_bytes_for_compact_part, storage_settings.get()->min_rows_for_compact_part)
 {
     if (relative_data_path.empty())
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
@@ -3604,26 +3603,6 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
         NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
     };
-}
-
-bool MergeTreeData::MergesThrottler::needDelayMerge() const
-{
-    std::lock_guard lock(mutex);
-    return (!max_bytes || have_bytes < max_bytes) && (!max_rows || have_rows < max_rows);
-}
-
-void MergeTreeData::MergesThrottler::add(size_t bytes, size_t rows)
-{
-    std::lock_guard lock(mutex);
-    have_bytes += bytes;
-    have_rows += rows;
-}
-
-void MergeTreeData::MergesThrottler::reset()
-{
-    std::lock_guard lock(mutex);
-    have_bytes = 0;
-    have_rows = 0;
 }
 
 }

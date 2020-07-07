@@ -888,11 +888,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
 
         ///TODO: read deduplicate option from table config
         if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
-        {
-            return in_memory_merges_throttler.needDelayMerge()
-                ? BackgroundProcessingPoolTaskResult::NOTHING_TO_DO
-                : BackgroundProcessingPoolTaskResult::SUCCESS;
-        }
+            return BackgroundProcessingPoolTaskResult::SUCCESS;
 
         if (tryMutatePart())
             return BackgroundProcessingPoolTaskResult::SUCCESS;
