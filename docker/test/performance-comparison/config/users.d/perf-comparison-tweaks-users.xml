@@ -6,6 +6,8 @@
             <allow_introspection_functions>1</allow_introspection_functions>
             <log_queries>1</log_queries>
             <metrics_perf_events_enabled>1</metrics_perf_events_enabled>
+            <memory_profiler_sample_probability>1</memory_profiler_sample_probability>
+            <max_untracked_memory>1048576</max_untracked_memory> <!-- 1MB -->
         </default>
     </profiles>
 </yandex>

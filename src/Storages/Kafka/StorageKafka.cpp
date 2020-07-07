@@ -125,7 +125,6 @@ StorageKafka::StorageKafka(
     std::unique_ptr<KafkaSettings> kafka_settings_)
     : IStorage(table_id_)
     , global_context(context_.getGlobalContext())
-    , kafka_context(std::make_shared<Context>(global_context))
     , kafka_settings(std::move(kafka_settings_))
     , topics(parseTopics(global_context.getMacros()->expand(kafka_settings->kafka_topic_list.value)))
     , brokers(global_context.getMacros()->expand(kafka_settings->kafka_broker_list.value))
@@ -145,9 +144,6 @@ StorageKafka::StorageKafka(
     setInMemoryMetadata(storage_metadata);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
-
-    kafka_context->makeQueryContext();
-    kafka_context->applySettingsChanges(settings_adjustments);
 }
 
 SettingsChanges StorageKafka::createSettingsAdjustments()
@@ -274,9 +270,10 @@ void StorageKafka::shutdown()
     LOG_TRACE(log, "Waiting for cleanup");
     task->deactivate();
 
-    // Close all consumers
+    LOG_TRACE(log, "Closing consumers");
     for (size_t i = 0; i < num_created_consumers; ++i)
         auto buffer = popReadBuffer();
+    LOG_TRACE(log, "Consumers closed");
 
     rd_kafka_wait_destroyed(CLEANUP_TIMEOUT_MS);
 }
@@ -529,6 +526,10 @@ bool StorageKafka::streamToViews()
     insert->table_id = table_id;
 
     size_t block_size = getMaxBlockSize();
+
+    auto kafka_context = std::make_shared<Context>(global_context);
+    kafka_context->makeQueryContext();
+    kafka_context->applySettingsChanges(settings_adjustments);
 
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns

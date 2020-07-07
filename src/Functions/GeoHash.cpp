@@ -115,6 +115,7 @@ inline Encoded merge(const Encoded & encodedLon, const Encoded & encodedLat, uin
     result.fill(0);
 
     const auto bits = (precision * BITS_PER_SYMBOL) / 2;
+    assert(bits < 255);
     uint8_t i = 0;
     for (; i < bits; ++i)
     {
