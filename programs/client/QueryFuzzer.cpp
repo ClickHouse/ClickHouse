@@ -240,10 +240,6 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(ASTPtr ast)
             fprintf(stderr, "no random col!\n");
         }
     }
-
-    /*
-        fuzz(impl->children);
-        */
 }
 
 void QueryFuzzer::fuzz(ASTs & asts)
@@ -258,8 +254,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 {
     if (!ast)
         return;
-
-    //fprintf(stderr, "name: %s\n", demangle(typeid(*ast).name()).c_str());
 
     if (auto * with_union = typeid_cast<ASTSelectWithUnionQuery *>(ast.get()))
     {
@@ -321,55 +315,37 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         fuzz(ast->children);
     }
-
-    /*
-        if (auto * with_alias = dynamic_cast<ASTWithAlias *>(ast.get()))
-        {
-            int dice = fuzz_rand() % 20;
-            if (dice == 0)
-            {
-                with_alias->alias = aliases[fuzz_rand() % aliases.size()];
-            }
-            else if (dice < 5)
-            {
-                with_alias->alias = "";
-            }
-        }
-        */
 }
 
+/*
+ * This functions collects various parts of query that we can then substitute
+ * to a query being fuzzed.
+ *
+ * TODO: we just stop remembering new parts after our corpus reaches certain size.
+ * This is boring, should implement a random replacement of existing parst with
+ * small probability. Do this after we add this fuzzer to CI and fix all the
+ * problems it can routinely find even in this boring version.
+ */
 void QueryFuzzer::collectFuzzInfoMain(const ASTPtr ast)
 {
     collectFuzzInfoRecurse(ast);
-
-    /*
-        with_alias.clear();
-        for (const auto & [name, value] : with_alias_map)
-        {
-            with_alias.push_back(value);
-            //fprintf(stderr, "alias %s\n", value->formatForErrorMessage().c_str());
-        }
-        */
 
     aliases.clear();
     for (const auto & alias : aliases_set)
     {
         aliases.push_back(alias);
-        //fprintf(stderr, "alias %s\n", alias.c_str());
     }
 
     column_like.clear();
     for (const auto & [name, value] : column_like_map)
     {
         column_like.push_back(value);
-        //fprintf(stderr, "column %s\n", name.c_str());
     }
 
     table_like.clear();
     for (const auto & [name, value] : table_like_map)
     {
         table_like.push_back(value);
-        //fprintf(stderr, "table %s\n", name.c_str());
     }
 }
 
@@ -440,18 +416,8 @@ void QueryFuzzer::collectFuzzInfoRecurse(const ASTPtr ast)
 
 void QueryFuzzer::fuzzMain(ASTPtr & ast)
 {
-    /*
-        std::cerr << "before: " << std::endl;
-        ast->dumpTree(std::cerr);
-        */
-
     collectFuzzInfoMain(ast);
     fuzz(ast);
-
-    /*
-        std::cerr << "after: " << std::endl;
-        ast->dumpTree(std::cerr);
-        */
 
     std::cout << std::endl;
     formatAST(*ast, std::cout);
