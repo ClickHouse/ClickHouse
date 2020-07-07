@@ -152,7 +152,7 @@ UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 template <typename ValueType>
 UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
-    // Since only unsinged int has granted 2-complement overflow handling,
+    // Since only unsigned int has granted 2-complement overflow handling,
     // we are doing math here only on unsigned types.
     // To simplify and booletproof code, we enforce ValueType to be unsigned too.
     static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
@@ -218,7 +218,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
             const SignedDeltaType signed_dd = static_cast<SignedDeltaType>(double_delta);
             const auto sign = signed_dd < 0;
 
-            // -1 shirnks dd down to fit into number of bits, and there can't be 0, so it is OK.
+            // -1 shrinks dd down to fit into number of bits, and there can't be 0, so it is OK.
             const auto abs_value = static_cast<UnsignedDeltaType>(std::abs(signed_dd) - 1);
             const auto write_spec = getDeltaWriteSpec(signed_dd);
 

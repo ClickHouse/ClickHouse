@@ -22,8 +22,13 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
     else if (clusters)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CLUSTERS" << (settings.hilite ? hilite_none : "");
+
         if (!like.empty())
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << (not_like ? " NOT" : "") << " LIKE " << (settings.hilite ? hilite_none : "")
+            settings.ostr
+                << (settings.hilite ? hilite_keyword : "")
+                << (not_like ? " NOT" : "")
+                << (case_insensitive_like ? " ILIKE " : " LIKE ")
+                << (settings.hilite ? hilite_none : "")
                 << std::quoted(like, '\'');
 
         if (limit_length)
@@ -47,8 +52,13 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
                 << backQuoteIfNeed(from);
 
         if (!like.empty())
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << (not_like ? " NOT" : "") << " LIKE " << (settings.hilite ? hilite_none : "")
+            settings.ostr
+                << (settings.hilite ? hilite_keyword : "")
+                << (not_like ? " NOT" : "")
+                << (case_insensitive_like ? " ILIKE " : " LIKE ")
+                << (settings.hilite ? hilite_none : "")
                 << std::quoted(like, '\'');
+
         else if (where_expression)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");

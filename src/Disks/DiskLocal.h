@@ -99,6 +99,8 @@ public:
 
     void createHardLink(const String & src_path, const String & dst_path) override;
 
+    const String getType() const override { return "local"; }
+
 private:
     bool tryReserve(UInt64 bytes);
 

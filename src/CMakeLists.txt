@@ -73,6 +73,10 @@ if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
+if (USE_AMQPCPP)
+    add_headers_and_sources(dbms Storages/RabbitMQ)
+endif()
+
 if (USE_AWS_S3)
     add_headers_and_sources(dbms Common/S3)
     add_headers_and_sources(dbms Disks/S3)
@@ -159,6 +163,7 @@ add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
+add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
@@ -261,6 +266,9 @@ if (USE_RDKAFKA)
     endif()
 endif()
 
+if (USE_AMQPCPP)
+    dbms_target_link_libraries(PUBLIC amqp-cpp)
+endif()
 
 if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
@@ -277,6 +285,7 @@ dbms_target_link_libraries (
         clickhouse_parsers
         lz4
         Poco::JSON
+        Poco::MongoDB
         string_utils
     PUBLIC
         ${MYSQLXX_LIBRARY}
@@ -362,6 +371,14 @@ endif()
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
+
+if (USE_ORC)
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR})
+    configure_file (
+            "${ORC_INCLUDE_DIR}/orc/orc-config.hh.in"
+            "${ORC_INCLUDE_DIR}/orc/orc-config.hh"
+    )
+endif ()
 
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)

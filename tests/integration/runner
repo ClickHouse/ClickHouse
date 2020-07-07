@@ -76,6 +76,12 @@ if __name__ == "__main__":
         default=False,
         help="Don't use net host in parent docker container")
 
+    parser.add_argument(
+        "--docker-image-version",
+        default="latest",
+        help="Version of docker image which runner will use to run tests")
+
+
     parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
 
     args = parser.parse_args()
@@ -106,7 +112,7 @@ if __name__ == "__main__":
         cfg=args.configs_dir,
         pth=args.clickhouse_root,
         opts=' '.join(args.pytest_args),
-        img=DIND_INTEGRATION_TESTS_IMAGE_NAME,
+        img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
         name=CONTAINER_NAME,
         command=args.command
     )

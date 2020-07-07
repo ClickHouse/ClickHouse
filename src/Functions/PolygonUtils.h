@@ -315,7 +315,7 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
     if (has_empty_bound)
         return;
 
-    cells.assign(grid_size * grid_size, {});
+    cells.assign(size_t(grid_size) * grid_size, {});
 
     const Point & min_corner = box.min_corner();
 

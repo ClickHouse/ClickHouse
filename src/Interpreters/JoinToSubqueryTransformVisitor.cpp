@@ -151,7 +151,7 @@ struct ColumnAliasesMatcher
 
         void replaceIdentifiersWithAliases()
         {
-            String hide_prefix = "--"; /// @note restriction: user should not use alises like `--table.column`
+            String hide_prefix = "--"; /// @note restriction: user should not use aliases like `--table.column`
 
             for (auto & [identifier, is_public] : compound_identifiers)
             {
@@ -257,7 +257,7 @@ struct ColumnAliasesMatcher
             if (!last_table)
             {
                 IdentifierSemantic::coverName(node, alias);
-                node.setAlias("");
+                node.setAlias({});
             }
         }
         else if (node.compound())
