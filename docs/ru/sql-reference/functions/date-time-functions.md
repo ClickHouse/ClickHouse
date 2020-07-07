@@ -123,7 +123,7 @@ Result:
 
 ## toStartOfSecond {#tostartofsecond}
 
-Округляет дату и время вниз до начала секунды, отсекая доли секунды.
+Отсекает доли секунды.
 
 **Синтаксис**
 
@@ -133,12 +133,12 @@ toStartOfSecond(value[, timezone])
 
 **Параметры**
 
--   `value` — Дата и время с долями секунды. [DateTime64](../data-types/datetime64.md).
+-   `value` — Дата и время. [DateTime64](../data-types/datetime64.md).
 -   `timezone` — [Часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). Если параметр не задан, используется часовой пояс параметра `value`. [String](../data-types/string.md). 
 
 **Возвращаемое значение**
 
--   Дата и время без долей секунды.
+- Входное значение с отсеченными долями секунды.
 
 Тип: [DateTime64](../data-types/datetime64.md).
 
@@ -147,7 +147,7 @@ toStartOfSecond(value[, timezone])
 Пример без часового пояса:
 
 ``` sql
-WITH toDateTime64('2020-01-01 10:20:30.123', 3) AS dt64 SELECT toStartOfSecond(dt64);
+WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(dt64);
 ```
 
 Результат:
@@ -161,7 +161,7 @@ WITH toDateTime64('2020-01-01 10:20:30.123', 3) AS dt64 SELECT toStartOfSecond(d
 Пример с часовым поясом:
 
 ``` sql
-WITH toDateTime64('2020-01-01 10:20:30.123', 3) AS dt64 SELECT toStartOfSecond(dt64, 'Europe/Moscow');
+WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(dt64, 'Europe/Moscow');
 ```
 
 Результат:
@@ -174,7 +174,7 @@ WITH toDateTime64('2020-01-01 10:20:30.123', 3) AS dt64 SELECT toStartOfSecond(d
 
 **См. также**
 
--   Часовая зона сервера, конфигурационный параметр [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+- Часовая зона сервера, конфигурационный параметр [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
 
 
 ## toStartOfFiveMinute {#tostartoffiveminute}
