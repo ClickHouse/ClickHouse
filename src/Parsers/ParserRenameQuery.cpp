@@ -40,8 +40,9 @@ static bool parseDatabaseAndTable(
 bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_rename_table("RENAME TABLE");
-    ParserKeyword s_to("TO");
     ParserKeyword s_exchange_tables("EXCHANGE TABLES");
+    ParserKeyword s_rename_database("RENAME DATABASE");
+    ParserKeyword s_to("TO");
     ParserKeyword s_and("AND");
     ParserToken s_comma(TokenType::Comma);
 
@@ -51,6 +52,34 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (s_exchange_tables.ignore(pos, expected))
             exchange = true;
+        else if (s_rename_database.ignore(pos, expected))
+        {
+            ASTPtr from_db;
+            ASTPtr to_db;
+            ParserIdentifier db_name_p;
+            if (!db_name_p.parse(pos, from_db, expected))
+                return false;
+            if (!s_to.ignore(pos, expected))
+                return false;
+            if (!db_name_p.parse(pos, to_db, expected))
+                return false;
+
+            String cluster_str;
+            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            {
+                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                    return false;
+            }
+
+            auto query = std::make_shared<ASTRenameQuery>();
+            query->database = true;
+            query->elements.emplace({});
+            tryGetIdentifierNameInto(from_db, query->elements.front().from.database);
+            tryGetIdentifierNameInto(to_db, query->elements.front().to.database);
+            query->cluster = cluster_str;
+            node = query;
+            return true;
+        }
         else
             return false;
     }

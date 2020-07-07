@@ -12,6 +12,7 @@
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
+#include <Common/renameat2.h>
 
 #include <filesystem>
 
@@ -297,6 +298,38 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
     }
 
     return db;
+}
+
+void DatabaseCatalog::renameDatabase(const String & old_name, const String & new_name)
+{
+    std::lock_guard lock{databases_mutex};
+    assertDatabaseExistsUnlocked(old_name);
+    assertDatabaseDoesntExistUnlocked(new_name);
+    auto it = databases.find(old_name);
+    auto db = it->second;
+    db->renameDatabase(new_name);
+
+    databases.erase(it);
+    databases.emplace(new_name, db);
+
+    auto depend_it = view_dependencies.begin();
+    while (depend_it != view_dependencies.end())
+    {
+        if (depend_it->first.database_name == old_name)
+        {
+            auto table_id = depend_it->first;
+            auto dependencies = std::move(depend_it->second);
+            depend_it = view_dependencies.erase(depend_it);
+            table_id.database_name = new_name;
+            view_dependencies.emplace(std::move(table_id), std::move(dependencies));
+        }
+        else
+            ++depend_it;
+    }
+
+    auto old_database_metadata_path = global_context->getPath() + "metadata/" + escapeForFileName(old_name) + ".sql";
+    auto new_database_metadata_path = global_context->getPath() + "metadata/" + escapeForFileName(new_name) + ".sql";
+    renameNoReplace(old_database_metadata_path, new_database_metadata_path);
 }
 
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const

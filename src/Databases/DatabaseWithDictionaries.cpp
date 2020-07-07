@@ -47,7 +47,7 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
             attachTableUnlocked(
                 dictionary_name,
                 StorageDictionary::create(
-                    StorageID(getDatabaseName(), dictionary_name),
+                    StorageID(database_name, dictionary_name),
                     full_name,
                     ExternalDictionariesLoader::getDictionaryStructure(*attach_info.config)),
                 lock);
@@ -74,7 +74,7 @@ void DatabaseWithDictionaries::detachDictionary(const String & dictionary_name)
 
 void DatabaseWithDictionaries::detachDictionaryImpl(const String & dictionary_name, DictionaryAttachInfo & attach_info)
 {
-    String full_name = getDatabaseName() + "." + dictionary_name;
+    String full_name = getDatabaseName() + "." + dictionary_name;   //FIXME
 
     {
         std::unique_lock lock(mutex);
@@ -192,7 +192,7 @@ void DatabaseWithDictionaries::removeDictionary(const Context &, const String & 
     {
         String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
         Poco::File(dictionary_metadata_path).remove();
-        CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, getDatabaseName() + "." + dictionary_name);
+        CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, getDatabaseName() + "." + dictionary_name);   //FIXME
     }
     catch (...)
     {
@@ -234,7 +234,7 @@ ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
             ASTPtr ast = it->second.create_query->clone();
             auto & create_query = ast->as<ASTCreateQuery &>();
             create_query.attach = false;
-            create_query.database = getDatabaseName();
+            create_query.database = database_name;
             return ast;
         }
     }

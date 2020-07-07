@@ -100,7 +100,7 @@ DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(const Context &, cons
         if (!remove_or_detach_tables.count(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
             tables[table_name] = modify_time_and_storage.second;
 
-    return std::make_unique<DatabaseTablesSnapshotIterator>(tables);
+    return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
 
 bool DatabaseMySQL::isTableExist(const String & name, const Context &) const
@@ -188,7 +188,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
 ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->database = database_name;
+    create_query->database = getDatabaseName();
     create_query->set(create_query->storage, database_engine_define);
     return create_query;
 }
@@ -379,11 +379,11 @@ void DatabaseMySQL::attachTable(const String & table_name, const StoragePtr & st
     std::lock_guard<std::mutex> lock{mutex};
 
     if (!local_tables_cache.count(table_name))
-        throw Exception("Cannot attach table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) +
+        throw Exception("Cannot attach table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) +
             " because it does not exist.", ErrorCodes::UNKNOWN_TABLE);
 
     if (!remove_or_detach_tables.count(table_name))
-        throw Exception("Cannot attach table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) +
+        throw Exception("Cannot attach table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) +
             " because it already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     /// We use the new storage to replace the original storage, because the original storage may have been dropped
@@ -402,11 +402,11 @@ StoragePtr DatabaseMySQL::detachTable(const String & table_name)
     std::lock_guard<std::mutex> lock{mutex};
 
     if (remove_or_detach_tables.count(table_name))
-        throw Exception("Table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) + " is dropped",
+        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " is dropped",
             ErrorCodes::TABLE_IS_DROPPED);
 
     if (!local_tables_cache.count(table_name))
-        throw Exception("Table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
+        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
             ErrorCodes::UNKNOWN_TABLE);
 
     remove_or_detach_tables.emplace(table_name);
@@ -442,16 +442,16 @@ void DatabaseMySQL::dropTable(const Context &, const String & table_name, bool /
     Poco::File remove_flag(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
 
     if (remove_or_detach_tables.count(table_name))
-        throw Exception("Table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) + " is dropped",
+        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " is dropped",
             ErrorCodes::TABLE_IS_DROPPED);
 
     if (remove_flag.exists())
-        throw Exception("The remove flag file already exists but the " + backQuoteIfNeed(getDatabaseName()) +
+        throw Exception("The remove flag file already exists but the " + backQuoteIfNeed(database_name) +
             "." + backQuoteIfNeed(table_name) + " does not exists remove tables, it is bug.", ErrorCodes::LOGICAL_ERROR);
 
     auto table_iter = local_tables_cache.find(table_name);
     if (table_iter == local_tables_cache.end())
-        throw Exception("Table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
+        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
             ErrorCodes::UNKNOWN_TABLE);
 
     remove_or_detach_tables.emplace(table_name);

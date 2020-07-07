@@ -384,7 +384,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
             if (auto table = iterator->table())
             {
                 if (dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
-                    replica_names.emplace_back(StorageID{database->getDatabaseName(), iterator->name()});
+                    replica_names.emplace_back(StorageID{iterator->databaseName(), iterator->name()});
             }
         }
     }

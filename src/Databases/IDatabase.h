@@ -48,6 +48,11 @@ public:
     virtual ~IDatabaseTablesIterator() = default;
 
     virtual UUID uuid() const { return UUIDHelpers::Nil; }
+
+    const String & databaseName() const { assert(!database_name.empty()); return database_name; }
+
+protected:
+    String database_name;
 };
 
 /// Copies list of tables and iterates through such snapshot.
@@ -65,12 +70,21 @@ protected:
         other.it = other.tables.end();
         it = tables.begin();
         std::advance(it, idx);
+        database_name = std::move(other.database_name);
     }
 
 public:
-    DatabaseTablesSnapshotIterator(Tables & tables_) : tables(tables_), it(tables.begin()) {}
+    DatabaseTablesSnapshotIterator(const Tables & tables_, const String & database_name_)
+    : tables(tables_), it(tables.begin())
+    {
+        database_name = database_name_;
+    }
 
-    DatabaseTablesSnapshotIterator(Tables && tables_) : tables(tables_), it(tables.begin()) {}
+    DatabaseTablesSnapshotIterator(Tables && tables_, String && database_name_)
+    : tables(std::move(tables_)), it(tables.begin())
+    {
+        database_name = std::move(database_name_);
+    }
 
     void next() override { ++it; }
 
@@ -282,9 +296,18 @@ public:
     virtual ASTPtr getCreateDatabaseQuery() const = 0;
 
     /// Get name of database.
-    String getDatabaseName() const { return database_name; }
+    String getDatabaseName() const
+    {
+        std::lock_guard lock{mutex};
+        return database_name;
+    }
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
+
+    virtual void renameDatabase(const String & /*new_name*/)
+    {
+        throw Exception(getEngineName() + ": RENAME DATABASE is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
@@ -324,6 +347,7 @@ protected:
         return nullptr;
     }
 
+    mutable std::mutex mutex;
     String database_name;
 };
 

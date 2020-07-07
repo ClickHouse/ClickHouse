@@ -43,14 +43,14 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const Con
 {
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
-        return std::make_unique<DatabaseTablesSnapshotIterator>(tables);
+        return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 
     Tables filtered_tables;
     for (const auto & [table_name, storage] : tables)
         if (filter_by_table_name(table_name))
             filtered_tables.emplace(table_name, storage);
 
-    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables));
+    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables), database_name);
 }
 
 bool DatabaseWithOwnTablesBase::empty() const
@@ -78,7 +78,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     auto table_id = res->getStorageID();
     if (table_id.hasUUID())
     {
-        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
+        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
         DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
     }
 
@@ -98,7 +98,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     auto table_id = table->getStorageID();
     if (table_id.hasUUID())
     {
-        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
+        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
     }
 }
