@@ -71,7 +71,7 @@ bool tryConvertColumnToBool(const IColumn * column, UInt8Container & res)
 
     std::transform(
             col->getData().cbegin(), col->getData().cend(), res.begin(),
-            [](const auto x) { return x != 0; });
+            [](const auto x) { return !!x; });
 
     return true;
 }
@@ -145,6 +145,7 @@ inline bool extractConstColumnsAsTernary(ColumnRawPtrs & in, UInt8 & res_3v)
 }
 
 
+/// N.B. This class calculates result only for non-nullable types
 template <typename Op, size_t N>
 class AssociativeApplierImpl
 {
@@ -158,7 +159,7 @@ public:
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
     inline ResultValueType apply(const size_t i) const
     {
-        const auto & a = vec[i];
+        const auto a = !!vec[i];
         if constexpr (Op::isSaturable())
             return Op::isSaturatedValue(a) ? a : Op::apply(a, next.apply(i));
         else
@@ -179,7 +180,7 @@ public:
     explicit AssociativeApplierImpl(const UInt8ColumnPtrs & in)
         : vec(in[in.size() - 1]->getData()) {}
 
-    inline ResultValueType apply(const size_t i) const { return vec[i]; }
+    inline ResultValueType apply(const size_t i) const { return !!vec[i]; }
 
 private:
     const UInt8Container & vec;
@@ -247,7 +248,7 @@ public:
     {
         const auto a = val_getter(i);
         if constexpr (Op::isSaturable())
-            return Op::isSaturatedValue(a) ? a : Op::apply(a, next.apply(i));
+            return Op::isSaturatedValueTernary(a) ? a : Op::apply(a, next.apply(i));
         else
             return Op::apply(a, next.apply(i));
     }
@@ -332,7 +333,7 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
 {
     /// Combine all constant columns into a single constant value.
     UInt8 const_3v_value = 0;
-    const bool has_consts = extractConstColumnsTernary<Op>(arguments, const_3v_value);
+    const bool has_consts = extractConstColumnsAsTernary<Op>(arguments, const_3v_value);
 
     /// If the constant value uniquely determines the result, return it.
     if (has_consts && (arguments.empty() || Op::isSaturatedValue(const_3v_value)))
@@ -402,12 +403,13 @@ struct TypedExecutorInvoker<Op>
 };
 
 
+/// Types of all of the arguments are guaranteed to be non-nullable here
 template <class Op>
 static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & result_info, size_t input_rows_count)
 {
     /// Combine all constant columns into a single constant value.
     UInt8 const_val = 0;
-    bool has_consts = extractConstColumns<Op>(arguments, const_val);
+    bool has_consts = extractConstColumnsAsBool<Op>(arguments, const_val);
 
     /// If the constant value uniquely determines the result, return it.
     if (has_consts && (arguments.empty() || Op::apply(const_val, 0) == Op::apply(const_val, 1)))
