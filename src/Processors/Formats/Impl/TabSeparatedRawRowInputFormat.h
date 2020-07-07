@@ -33,12 +33,24 @@ public:
 
     bool readField(IColumn & column, const DataTypePtr & type, bool) override
     {
-        char * pos = find_first_symbols<'\n', '\t'>(in.position(), in.buffer().end());
-        ReadBufferFromMemory cell(in.position(), pos - in.position());
+        String tmp;
+
+        while (!in.eof())
+        {
+            char * pos = find_first_symbols<'\n', '\t'>(in.position(), in.buffer().end());
+
+            tmp.append(in.position(), pos - in.position());
+            in.position() = pos;
+
+            if (pos == in.buffer().end())
+                in.next();
+            else
+                break;
+        }
+
+        ReadBufferFromString cell(tmp);
 
         type->deserializeAsWholeText(column, cell, format_settings);
-
-        in.position() = pos;
 
         return true;
     }
