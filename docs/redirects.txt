@@ -51,6 +51,7 @@ dicts/internal_dicts.md query-language/dicts/internal-dicts.md
 engines/database_engines/index.md engines/database-engines/index.md
 engines/database_engines/lazy.md engines/database-engines/lazy.md
 engines/database_engines/mysql.md engines/database-engines/mysql.md
+engines/table-engines/log-family/log-family.md engines/table-engines/log-family/index.md
 engines/table_engines/index.md engines/table-engines/index.md
 engines/table_engines/integrations/hdfs.md engines/table-engines/integrations/hdfs.md
 engines/table_engines/integrations/index.md engines/table-engines/integrations/index.md
