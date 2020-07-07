@@ -1,13 +1,24 @@
-set(CLICKHOUSE_ODBC_BRIDGE_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/ColumnInfoHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/getIdentifierQuote.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/HandlerFactory.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/IdentifierQuoteHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/MainHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ODBCBlockInputStream.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ODBCBridge.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/PingHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/validateODBCConnectionString.cpp
+set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
+    ColumnInfoHandler.cpp
+    getIdentifierQuote.cpp
+    HandlerFactory.cpp
+    IdentifierQuoteHandler.cpp
+    MainHandler.cpp
+    ODBCBlockInputStream.cpp
+    ODBCBridge.cpp
+    PingHandler.cpp
+    SchemaAllowedHandler.cpp
+    validateODBCConnectionString.cpp
+)
+set (CLICKHOUSE_ODBC_BRIDGE_LINK
+    PRIVATE
+        clickhouse_parsers
+        clickhouse_aggregate_functions
+        daemon
+        dbms
+        Poco::Data
+    PUBLIC
+        Poco::Data::ODBC
 )
 
 set(CLICKHOUSE_ODBC_BRIDGE_LINK PRIVATE dbms clickhouse_parsers PUBLIC daemon)

@@ -19,22 +19,12 @@ namespace ErrorCodes
 ExternalQueryBuilder::ExternalQueryBuilder(
     const DictionaryStructure & dict_struct_,
     const std::string & db_,
+    const std::string & schema_,
     const std::string & table_,
     const std::string & where_,
     IdentifierQuotingStyle quoting_style_)
-    : dict_struct(dict_struct_), db(db_), where(where_), quoting_style(quoting_style_)
-{
-    if (auto pos = table_.find('.'); pos != std::string::npos)
-    {
-        schema = table_.substr(0, pos);
-        table = table_.substr(pos + 1);
-    }
-    else
-    {
-        schema = "";
-        table = table_;
-    }
-}
+    : dict_struct(dict_struct_), db(db_), schema(schema_), table(table_), where(where_), quoting_style(quoting_style_)
+{}
 
 
 void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out) const
