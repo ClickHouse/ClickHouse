@@ -26,16 +26,18 @@ then
     echo Some commits will be missed, review these manually.
 fi
 
-# NOTE keep in sync with ./changelog.sh.
+# NOTE keep in sync with ./backport.sh.
 # Search for PR numbers in commit messages. First variant is normal merge, and second
 # variant is squashed. Next are some backport message variants.
-find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
+find_prs=(sed -n "s/^.*merge[d]*.*#\([[:digit:]]\+\).*$/\1/Ip;
                   s/^.*(#\([[:digit:]]\+\))$/\1/p;
-                  s/^.*back[- ]*port[ed of]*#\([[:digit:]]\+\).*$/\1/Ip;
-                  s/^.*cherry[- ]*pick[ed of]*#\([[:digit:]]\+\).*$/\1/Ip")
+                  s/^.*back[- ]*port[ed of]*.*#\([[:digit:]]\+\).*$/\1/Ip;
+                  s/^.*cherry[- ]*pick[ed of]*.*#\([[:digit:]]\+\).*$/\1/Ip")
 
-"${find_prs[@]}" master-log.txt | sort -rn > master-prs.txt
-"${find_prs[@]}" "$branch-log.txt" | sort -rn > "$branch-prs.txt"
+# awk is to filter out small task numbers from different task tracker, which are
+# referenced by documentation commits like '* DOCSUP-824: query log (#115)'.
+"${find_prs[@]}" master-log.txt | sort -rn | uniq | awk '$0 > 1000 { print $0 }' > master-prs.txt
+"${find_prs[@]}" "$branch-log.txt" | sort -rn | uniq | awk '$0 > 1000 { print $0 }' > "$branch-prs.txt"
 
 # Find all master PRs that are not in branch by calculating differences of two PR lists.
 grep -f "$branch-prs.txt" -F -x -v master-prs.txt > "$branch-diff-prs.txt"

@@ -21,10 +21,10 @@ fi
 # NOTE keep in sync with ./backport.sh.
 # Search for PR numbers in commit messages. First variant is normal merge, and second
 # variant is squashed. Next are some backport message variants.
-find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
+find_prs=(sed -n "s/^.*merge[d]*.*#\([[:digit:]]\+\).*$/\1/Ip;
                   s/^.*(#\([[:digit:]]\+\))$/\1/p;
-                  s/^.*back[- ]*port[ed of]*#\([[:digit:]]\+\).*$/\1/Ip;
-                  s/^.*cherry[- ]*pick[ed of]*#\([[:digit:]]\+\).*$/\1/Ip")
+                  s/^.*back[- ]*port[ed of]*.*#\([[:digit:]]\+\).*$/\1/Ip;
+                  s/^.*cherry[- ]*pick[ed of]*.*#\([[:digit:]]\+\).*$/\1/Ip")
 
 # awk is to filter out small task numbers from different task tracker, which are
 # referenced by documentation commits like '* DOCSUP-824: query log (#115)'.
