@@ -493,12 +493,13 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN = 524;
     extern const int INCORRECT_DISK_INDEX = 525;
     extern const int UNKNOWN_VOLUME_TYPE = 526;
-    extern const int CASSANDRA_INTERNAL_ERROR = 527;
-    extern const int NOT_A_LEADER = 528;
-    extern const int UNKNOWN_RAID_TYPE = 529;
-    extern const int INVALID_VOLUME_TYPE = 530;
-    extern const int INCONSISTENT_RESERVATIONS = 531;
-    extern const int NO_RESERVATIONS_PROVIDED = 532;
+    extern const int NO_SUITABLE_FUNCTION_IMPLEMENTATION = 527;
+    extern const int CASSANDRA_INTERNAL_ERROR = 528;
+    extern const int NOT_A_LEADER = 529;
+    extern const int UNKNOWN_RAID_TYPE = 530;
+    extern const int INVALID_VOLUME_TYPE = 531;
+    extern const int INCONSISTENT_RESERVATIONS = 532;
+    extern const int NO_RESERVATIONS_PROVIDED = 533;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
@@ -507,6 +508,7 @@ namespace ErrorCodes
 
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
     extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;
+    extern const int UNRECOGNIZED_ARGUMENTS = 2003;
 }
 
 }

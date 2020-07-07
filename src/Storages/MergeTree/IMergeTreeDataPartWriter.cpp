@@ -61,6 +61,7 @@ void IMergeTreeDataPartWriter::Stream::addToChecksums(MergeTreeData::DataPart::C
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
@@ -69,6 +70,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     : data_part(data_part_)
     , part_path(data_part_->getFullRelativePath())
     , storage(data_part_->storage)
+    , metadata_snapshot(metadata_snapshot_)
     , columns_list(columns_list_)
     , marks_file_extension(marks_file_extension_)
     , index_granularity(index_granularity_)

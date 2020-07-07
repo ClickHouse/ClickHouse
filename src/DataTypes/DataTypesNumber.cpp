@@ -48,7 +48,7 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerDataType("Float32", createNumericDataType<Float32>);
     factory.registerDataType("Float64", createNumericDataType<Float64>);
 
-    /// These synonyms are added for compatibility.
+    /// These synonims are added for compatibility.
 
     factory.registerAlias("TINYINT", "Int8", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BOOL", "Int8", DataTypeFactory::CaseInsensitive);
@@ -65,6 +65,21 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("DOUBLE", "Float64", DataTypeFactory::CaseInsensitive);
 
     factory.registerAlias("DOUBLE PRECISION", "Float64", DataTypeFactory::CaseInsensitive);
+
+    /// MySQL
+    factory.registerAlias("TINYINT SIGNED", "Int8", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INT1 SIGNED", "Int8", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("SMALLINT SIGNED", "Int16", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INT SIGNED", "Int32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INTEGER SIGNED", "Int32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BIGINT SIGNED", "Int64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TINYINT UNSIGNED", "UInt8", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INT1 UNSIGNED", "UInt8", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("SMALLINT UNSIGNED", "UInt16", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INT UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INTEGER UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BIGINT UNSIGNED", "UInt64", DataTypeFactory::CaseInsensitive);
+
 }
 
 }

@@ -1,11 +1,9 @@
 import pytest
 import os
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
 from helpers.client import QueryRuntimeException
 import pymysql
 import warnings
-import time
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
