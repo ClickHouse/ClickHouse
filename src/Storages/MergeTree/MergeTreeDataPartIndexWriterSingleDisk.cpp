@@ -25,7 +25,7 @@ MergeTreeDataPartIndexWriterSingleDisk::MergeTreeDataPartIndexWriterSingleDisk(I
 
 void MergeTreeDataPartIndexWriterSingleDisk::initPrimaryIndex()
 {
-    if (part_writer.storage.hasPrimaryKey())
+    if (part_writer.metadata_snapshot->hasPrimaryKey())
     {
         index_file_stream = part_writer.data_part->volume->getDisk()->writeFile(
             part_writer.part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite
@@ -66,7 +66,7 @@ void MergeTreeDataPartIndexWriterSingleDisk::calculateAndSerializePrimaryIndex(c
 
     while (index_mark < total_marks && current_row < rows)
     {
-        if (part_writer.storage.hasPrimaryKey())
+        if (part_writer.metadata_snapshot->hasPrimaryKey())
         {
             for (size_t j = 0; j < primary_columns_num; ++j)
             {
