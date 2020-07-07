@@ -71,12 +71,37 @@ public:
     }
 };
 
+class DropAliasesMatcher
+{
+public:
+    struct Data {};
+    Data data;
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &)
+    {
+        return true;
+    }
+
+    static void visit(ASTPtr & node, Data)
+    {
+        if (!node->tryGetAlias().empty())
+            node->setAlias({});
+    }
+};
+
 void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & all_columns)
 {
     auto syntax_result = SyntaxAnalyzer(context).analyze(node, all_columns);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
     InDepthNodeVisitor<ReplacingConstantExpressionsMatcherNumOrStr, true> visitor(block_with_constants);
+    visitor.visit(node);
+}
+
+void dropAliases(ASTPtr & node)
+{
+    DropAliasesMatcher::Data data;
+    InDepthNodeVisitor<DropAliasesMatcher, true> visitor(data);
     visitor.visit(node);
 }
 
@@ -191,6 +216,9 @@ String transformQueryForExternalDatabase(
             }
         }
     }
+
+    ASTPtr select_ptr = select;
+    dropAliases(select_ptr);
 
     std::stringstream out;
     IAST::FormatSettings settings(out, true);
