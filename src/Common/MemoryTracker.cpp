@@ -84,8 +84,12 @@ void MemoryTracker::alloc(Int64 size)
     /// capped to it, to avoid possible drift.
     if (unlikely(current_hard_limit && will_be > current_hard_limit))
     {
-        set(total_memory_tracker.amount);
-        will_be = size + amount.fetch_add(size, std::memory_order_relaxed);
+        Int64 total_amount = total_memory_tracker.get();
+        if (amount > total_amount)
+        {
+            set(total_amount);
+            will_be = size + total_amount;
+        }
     }
 
     std::bernoulli_distribution fault(fault_probability);
