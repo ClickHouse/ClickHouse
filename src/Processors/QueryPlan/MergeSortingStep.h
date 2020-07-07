@@ -7,6 +7,7 @@
 namespace DB
 {
 
+/// Sorts stream of data. See MergeSortingTransform.
 class MergeSortingStep : public ITransformingStep
 {
 public:
@@ -23,6 +24,8 @@ public:
     String getName() const override { return "MergeSorting"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
+
+    void describeActions(FormatSettings & settings) const override;
 
 private:
     SortDescription description;

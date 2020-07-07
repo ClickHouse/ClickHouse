@@ -7,6 +7,7 @@ import csv
 import itertools
 import json
 import os
+import os.path
 import pprint
 import sys
 import traceback
@@ -23,6 +24,7 @@ faster_queries = 0
 slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
+unstable_partial_queries = 0
 
 # max seconds to run one query by itself, not counting preparation
 allowed_single_run_time = 2
@@ -194,6 +196,31 @@ if args.report == 'main':
                      ['Client time,&nbsp;s', 'Server time,&nbsp;s', 'Ratio', 'Test', 'Query'],
                      slow_on_client_rows)
 
+    def print_partial():
+        rows = tsvRows('report/partial-queries-report.tsv')
+        if not rows:
+            return
+        global unstable_partial_queries, slow_average_tests
+        print(tableStart('Partial queries'))
+        columns = ['Median time, s', 'Relative time variance', 'Test', '#', 'Query']
+        print(tableHeader(columns))
+        attrs = ['' for c in columns]
+        for row in rows:
+            if float(row[1]) > 0.10:
+                attrs[1] = f'style="background: {color_bad}"'
+                unstable_partial_queries += 1
+            else:
+                attrs[1] = ''
+            if float(row[0]) > allowed_single_run_time:
+                attrs[0] = f'style="background: {color_bad}"'
+                slow_average_tests += 1
+            else:
+                attrs[0] = ''
+            print(tableRow(row, attrs))
+        print(tableEnd())
+
+    print_partial()
+
     def print_changes():
         rows = tsvRows('report/changed-perf.tsv')
         if not rows:
@@ -324,6 +351,9 @@ if args.report == 'main':
     print_test_times()
 
     def print_benchmark_results():
+        if not os.path.isfile('benchmark/website-left.json'):
+            return
+
         json_reports = [json.load(open(f'benchmark/website-{x}.json')) for x in ['left', 'right']]
         stats = [next(iter(x.values()))["statistics"] for x in json_reports]
         qps = [x["QPS"] for x in stats]
@@ -416,6 +446,11 @@ if args.report == 'main':
         if slower_queries > 3:
             status = 'failure'
         message_array.append(str(slower_queries) + ' slower')
+
+    if unstable_partial_queries:
+        unstable_queries += unstable_partial_queries
+        error_tests += unstable_partial_queries
+        status = 'failure'
 
     if unstable_queries:
         message_array.append(str(unstable_queries) + ' unstable')

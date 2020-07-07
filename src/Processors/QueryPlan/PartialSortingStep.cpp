@@ -2,6 +2,7 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -10,7 +11,9 @@ static ITransformingStep::DataStreamTraits getTraits()
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = true
+            .preserves_distinct_columns = true,
+            .returns_single_stream = false,
+            .preserves_number_of_streams = true,
     };
 }
 
@@ -48,6 +51,14 @@ void PartialSortingStep::transformPipeline(QueryPipeline & pipeline)
         auto transform = std::make_shared<LimitsCheckingTransform>(header, limits);
         return transform;
     });
+}
+
+void PartialSortingStep::describeActions(FormatSettings & settings) const
+{
+    String prefix(settings.offset, ' ');
+    settings.out << prefix << "Sort description: ";
+    dumpSortDescription(sort_description, input_streams.front().header, settings.out);
+    settings.out << '\n';
 }
 
 }

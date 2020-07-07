@@ -78,6 +78,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal128OrNull>();
 
     factory.registerFunction<FunctionParseDateTimeBestEffort>();
+    factory.registerFunction<FunctionParseDateTimeBestEffortUS>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrNull>();
     factory.registerFunction<FunctionParseDateTime64BestEffort>();

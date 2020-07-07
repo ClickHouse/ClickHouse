@@ -38,7 +38,7 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 Выводит список таблиц.
 
 ``` sql
-SHOW [TEMPORARY] TABLES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 Если секция `FROM` не используется, то запрос возвращает список таблиц из текущей базы данных.

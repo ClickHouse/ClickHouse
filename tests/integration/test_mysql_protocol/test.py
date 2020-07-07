@@ -138,6 +138,34 @@ def test_mysql_client(mysql_client, server_address):
     assert stdout == '\n'.join(['column', '0', '0', '1', '1', '5', '5', 'tmp_column', '0', '1', ''])
 
 
+    # Show table status.
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "show table status like 'xx';"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+    # show variables.
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "show variables;"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+    # Kill query.
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "kill query 0;"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "kill query where query_id='mysql:0';"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+
 def test_mysql_federated(mysql_server, server_address):
     # For some reason it occasionally fails without retries.
     retries = 100

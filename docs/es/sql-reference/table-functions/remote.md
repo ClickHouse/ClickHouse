@@ -14,6 +14,8 @@ Firma:
 ``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db, table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db.table[, 'user'[, 'password']])
 ```
 
 `addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port` o simplemente `host`. El host se puede especificar como nombre de servidor o como dirección IPv4 o IPv6. Una dirección IPv6 se especifica entre corchetes. El puerto es el puerto TCP del servidor remoto. Si se omite el puerto, utiliza `tcp_port` del archivo de configuración del servidor (por defecto, 9000).

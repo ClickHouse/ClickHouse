@@ -325,6 +325,7 @@ void AsynchronousMetrics::update()
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
 #endif
 
+#if defined(OS_LINUX)
     // Try to add processor frequencies, ignoring errors.
     try
     {
@@ -366,6 +367,7 @@ void AsynchronousMetrics::update()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+#endif
 
     /// Add more metrics as you wish.
 

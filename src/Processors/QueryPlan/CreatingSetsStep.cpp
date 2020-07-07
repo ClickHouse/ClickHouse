@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -9,7 +10,9 @@ static ITransformingStep::DataStreamTraits getTraits()
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = true
+            .preserves_distinct_columns = true,
+            .returns_single_stream = false,
+            .preserves_number_of_streams = true,
     };
 }
 
@@ -33,6 +36,22 @@ void CreatingSetsStep::transformPipeline(QueryPipeline & pipeline)
             context);
 
     pipeline.addCreatingSetsTransform(std::move(creating_sets));
+}
+
+void CreatingSetsStep::describeActions(FormatSettings & settings) const
+{
+    String prefix(settings.offset, ' ');
+
+    for (const auto & set : subqueries_for_sets)
+    {
+        settings.out << prefix;
+        if (set.second.set)
+            settings.out << "Set: ";
+        else if (set.second.join)
+            settings.out << "Join: ";
+
+        settings.out << set.first << '\n';
+    }
 }
 
 }

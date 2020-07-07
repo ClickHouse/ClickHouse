@@ -2,6 +2,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPipeline.h>
 #include <Interpreters/ExpressionActions.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -10,23 +11,11 @@ static ITransformingStep::DataStreamTraits getTraits(const ExpressionActionsPtr 
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = !expression->hasJoinOrArrayJoin() /// I suppose it actually never happens
+            .preserves_distinct_columns = !expression->hasJoinOrArrayJoin(), /// I suppose it actually never happens
+            .returns_single_stream = false,
+            .preserves_number_of_streams = true,
     };
 }
-
-static void filterDistinctColumns(const Block & res_header, NameSet & distinct_columns)
-{
-    if (distinct_columns.empty())
-        return;
-
-    NameSet new_distinct_columns;
-    for (const auto & column : res_header)
-        if (distinct_columns.count(column.name))
-            new_distinct_columns.insert(column.name);
-
-    distinct_columns.swap(new_distinct_columns);
-}
-
 
 FilterStep::FilterStep(
     const DataStream & input_stream_,
@@ -42,8 +31,7 @@ FilterStep::FilterStep(
     , remove_filter_column(remove_filter_column_)
 {
     /// TODO: it would be easier to remove all expressions from filter step. It should only filter by column name.
-    filterDistinctColumns(output_stream->header, output_stream->distinct_columns);
-    filterDistinctColumns(output_stream->header, output_stream->local_distinct_columns);
+    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
 void FilterStep::transformPipeline(QueryPipeline & pipeline)
@@ -53,6 +41,21 @@ void FilterStep::transformPipeline(QueryPipeline & pipeline)
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
         return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals);
     });
+}
+
+void FilterStep::describeActions(FormatSettings & settings) const
+{
+    String prefix(settings.offset, ' ');
+    settings.out << prefix << "Filter column: " << filter_column_name << '\n';
+
+    bool first = true;
+    for (const auto & action : expression->getActions())
+    {
+        settings.out << prefix << (first ? "Actions: "
+                                         : "         ");
+        first = false;
+        settings.out << action.toString() << '\n';
+    }
 }
 
 }
