@@ -383,7 +383,7 @@ void NotJoined::addLeftColumns(Block & block, size_t rows_added) const
 
 void NotJoined::addRightColumns(Block & block, MutableColumns & columns_right) const
 {
-    for (auto & pr : column_indices_right)
+    for (const auto & pr : column_indices_right)
     {
         auto & right_column = columns_right[pr.first];
         auto & result_column = block.getByPosition(pr.second).column;
@@ -398,7 +398,7 @@ void NotJoined::addRightColumns(Block & block, MutableColumns & columns_right) c
 
 void NotJoined::copySameKeys(Block & block) const
 {
-    for (auto & pr : same_result_keys)
+    for (const auto & pr : same_result_keys)
     {
         auto & src_column = block.getByPosition(pr.second).column;
         auto & dst_column = block.getByPosition(pr.first).column;
