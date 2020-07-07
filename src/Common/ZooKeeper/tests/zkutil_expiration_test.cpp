@@ -20,8 +20,8 @@ int main(int argc, char ** argv)
         }
 
         Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
-        Logger::root().setChannel(channel);
-        Logger::root().setLevel("trace");
+        Poco::Logger::root().setChannel(channel);
+        Poco::Logger::root().setLevel("trace");
 
         zkutil::ZooKeeper zk(argv[1]);
         std::string unused;
@@ -39,12 +39,12 @@ int main(int argc, char ** argv)
                 ops.emplace_back(zkutil::makeRemoveRequest("/test/zk_expiration_test", -1));
 
                 Coordination::Responses responses;
-                int32_t code = zk.tryMultiNoThrow(ops, responses);
+                Coordination::Error code = zk.tryMultiNoThrow(ops, responses);
 
-                std::cout << time(nullptr) - time0 << "s: " << zkutil::ZooKeeper::error2string(code) << std::endl;
+                std::cout << time(nullptr) - time0 << "s: " << Coordination::errorMessage(code) << std::endl;
                 try
                 {
-                    if (code)
+                    if (code != Coordination::Error::ZOK)
                         std::cout << "Path: " << zkutil::KeeperMultiException(code, ops, responses).getPathForFirstFailedOp() << std::endl;
                 }
                 catch (...)

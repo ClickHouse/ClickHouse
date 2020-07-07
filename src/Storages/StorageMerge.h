@@ -31,26 +31,28 @@ public:
 
     Pipes read(
         const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
 
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked
-    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
+    bool mayBenefitFromIndexForIn(
+        const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
 private:
     String source_database;
     OptimizedRegularExpression table_name_regexp;
     Context global_context;
 
-    using StorageWithLockAndName = std::tuple<StoragePtr, TableStructureReadLockHolder, String>;
+    using StorageWithLockAndName = std::tuple<StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
 
     StorageListWithLocks getSelectedTables(const String & query_id, const Settings & settings) const;
@@ -61,7 +63,7 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
-    DatabaseTablesIteratorPtr getDatabaseIterator() const;
+    DatabaseTablesIteratorPtr getDatabaseIterator(const Context & context) const;
 
     NamesAndTypesList getVirtuals() const override;
 
@@ -73,18 +75,30 @@ protected:
         const String & table_name_regexp_,
         const Context & context_);
 
-    Block getQueryHeader(const Names & column_names, const SelectQueryInfo & query_info,
-                         const Context & context, QueryProcessingStage::Enum processed_stage);
+    Block getQueryHeader(
+        const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage);
 
     Pipes createSources(
-        const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
-        const UInt64 max_block_size, const Block & header, const StorageWithLockAndName & storage_with_lock,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        const QueryProcessingStage::Enum & processed_stage,
+        const UInt64 max_block_size,
+        const Block & header,
+        const StorageWithLockAndName & storage_with_lock,
         Names & real_column_names,
-        const std::shared_ptr<Context> & modified_context, size_t streams_num, bool has_table_virtual_column,
+        const std::shared_ptr<Context> & modified_context,
+        size_t streams_num,
+        bool has_table_virtual_column,
         bool concat_streams = false);
 
-    void convertingSourceStream(const Block & header, const Context & context, ASTPtr & query,
-                                Pipe & pipe, QueryProcessingStage::Enum processed_stage);
+    void convertingSourceStream(
+        const Block & header, const StorageMetadataPtr & metadata_snapshot,
+        const Context & context, ASTPtr & query,
+        Pipe & pipe, QueryProcessingStage::Enum processed_stage);
 };
 
 }

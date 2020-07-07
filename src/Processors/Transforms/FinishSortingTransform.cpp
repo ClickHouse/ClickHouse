@@ -112,7 +112,7 @@ void FinishSortingTransform::consume(Chunk chunk)
         }
     }
 
-    /// If we reach here, that means that current cunk is first in portion
+    /// If we reach here, that means that current chunk is first in portion
     /// or it all consists of rows with the same key as tail of a previous chunk.
     chunks.push_back(std::move(chunk));
 }

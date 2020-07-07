@@ -10,4 +10,4 @@ toc_title: LIMIT
 
 `n` and `m` must be non-negative integers.
 
-If there is no [ORDER BY](order-by.md) clause that explicitly sorts results, the choice of rows for the result may be arbitrary and non-deterministic.
+If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) clause that explicitly sorts results, the choice of rows for the result may be arbitrary and non-deterministic.

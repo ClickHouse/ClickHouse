@@ -138,37 +138,91 @@ def test_mysql_client(mysql_client, server_address):
     assert stdout == '\n'.join(['column', '0', '0', '1', '1', '5', '5', 'tmp_column', '0', '1', ''])
 
 
-def test_mysql_federated(mysql_server, server_address):
-    node.query('''DROP DATABASE IF EXISTS mysql_federated''', settings={"password": "123"})
-    node.query('''CREATE DATABASE mysql_federated''', settings={"password": "123"})
-    node.query('''CREATE TABLE mysql_federated.test (col UInt32) ENGINE = Log''', settings={"password": "123"})
-    node.query('''INSERT INTO mysql_federated.test VALUES (0), (1), (5)''', settings={"password": "123"})
-
-    code, (_, stderr) = mysql_server.exec_run('''
-        mysql
-        -e "DROP SERVER IF EXISTS clickhouse;"
-        -e "CREATE SERVER clickhouse FOREIGN DATA WRAPPER mysql OPTIONS (USER 'default', PASSWORD '123', HOST '{host}', PORT {port}, DATABASE 'mysql_federated');"
-        -e "DROP DATABASE IF EXISTS mysql_federated;"
-        -e "CREATE DATABASE mysql_federated;"
+    # Show table status.
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "show table status like 'xx';"
     '''.format(host=server_address, port=server_port), demux=True)
-
     assert code == 0
 
-    code, (stdout, stderr) = mysql_server.exec_run('''
-        mysql
-        -e "CREATE TABLE mysql_federated.test(`col` int UNSIGNED) ENGINE=FEDERATED CONNECTION='clickhouse';"
-        -e "SELECT * FROM mysql_federated.test ORDER BY col;"
+    # show variables.
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "show variables;"
     '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
 
-    assert stdout == '\n'.join(['col', '0', '1', '5', ''])
-
-    code, (stdout, stderr) = mysql_server.exec_run('''
-        mysql
-        -e "INSERT INTO mysql_federated.test VALUES (0), (1), (5);"
-        -e "SELECT * FROM mysql_federated.test ORDER BY col;"
+    # Kill query.
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "kill query 0;"
     '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
 
-    assert stdout == '\n'.join(['col', '0', '0', '1', '1', '5', '5', ''])
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "kill query where query_id='mysql:0';"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+
+def test_mysql_federated(mysql_server, server_address):
+    # For some reason it occasionally fails without retries.
+    retries = 100
+    for try_num in range(retries):
+        node.query('''DROP DATABASE IF EXISTS mysql_federated''', settings={"password": "123"})
+        node.query('''CREATE DATABASE mysql_federated''', settings={"password": "123"})
+        node.query('''CREATE TABLE mysql_federated.test (col UInt32) ENGINE = Log''', settings={"password": "123"})
+        node.query('''INSERT INTO mysql_federated.test VALUES (0), (1), (5)''', settings={"password": "123"})
+
+        code, (stdout, stderr) = mysql_server.exec_run('''
+            mysql
+            -e "DROP SERVER IF EXISTS clickhouse;"
+            -e "CREATE SERVER clickhouse FOREIGN DATA WRAPPER mysql
+            OPTIONS (USER 'default', PASSWORD '123', HOST '{host}', PORT {port}, DATABASE 'mysql_federated');"
+            -e "DROP DATABASE IF EXISTS mysql_federated;"
+            -e "CREATE DATABASE mysql_federated;"
+        '''.format(host=server_address, port=server_port), demux=True)
+
+        if code != 0:
+            print("stdout", stdout)
+            print("stderr", stderr)
+            if try_num + 1 < retries and "Can't connect to local MySQL server through socket" in stderr:
+                time.sleep(1)
+                continue
+        assert code == 0
+
+        code, (stdout, stderr) = mysql_server.exec_run('''
+            mysql
+            -e "CREATE TABLE mysql_federated.test(`col` int UNSIGNED) ENGINE=FEDERATED CONNECTION='clickhouse';"
+            -e "SELECT * FROM mysql_federated.test ORDER BY col;"
+        '''.format(host=server_address, port=server_port), demux=True)
+
+        if code != 0:
+            print("stdout", stdout)
+            print("stderr", stderr)
+            if try_num + 1 < retries and "Can't connect to local MySQL server through socket" in stderr:
+                time.sleep(1)
+                continue
+        assert code == 0
+
+        assert stdout == '\n'.join(['col', '0', '1', '5', ''])
+
+        code, (stdout, stderr) = mysql_server.exec_run('''
+            mysql
+            -e "INSERT INTO mysql_federated.test VALUES (0), (1), (5);"
+            -e "SELECT * FROM mysql_federated.test ORDER BY col;"
+        '''.format(host=server_address, port=server_port), demux=True)
+
+        if code != 0:
+            print("stdout", stdout)
+            print("stderr", stderr)
+            if try_num + 1 < retries and "Can't connect to local MySQL server through socket" in stderr:
+                time.sleep(1)
+                continue
+        assert code == 0
+
+        assert stdout == '\n'.join(['col', '0', '0', '1', '1', '5', '5', ''])
 
 
 def test_python_client(server_address):

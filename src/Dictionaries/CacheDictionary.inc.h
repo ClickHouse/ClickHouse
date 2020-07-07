@@ -302,37 +302,33 @@ void CacheDictionary::getItemsString(
 
     /// Request new values sync.
     /// We have request both cache_not_found_ids and cache_expired_ids.
-    if (!cache_not_found_ids.empty())
+    std::vector<Key> required_ids;
+    required_ids.reserve(cache_not_found_ids.size() + cache_expired_ids.size());
+    std::transform(
+        std::begin(cache_not_found_ids), std::end(cache_not_found_ids),
+        std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
+    std::transform(
+        std::begin(cache_expired_ids), std::end(cache_expired_ids),
+        std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
+
+    auto on_cell_updated = [&] (const auto id, const auto cell_idx)
     {
-        std::vector<Key> required_ids;
-        required_ids.reserve(cache_not_found_ids.size() + cache_expired_ids.size());
-        std::transform(
-                std::begin(cache_not_found_ids), std::end(cache_not_found_ids),
-                std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
-        std::transform(
-                std::begin(cache_expired_ids), std::end(cache_expired_ids),
-                std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
+        const auto attribute_value = attribute_array[cell_idx];
 
-        auto on_cell_updated = [&] (const auto id, const auto cell_idx)
-        {
-            const auto attribute_value = attribute_array[cell_idx];
+        map[id] = String{attribute_value};
+        total_length += (attribute_value.size + 1) * cache_not_found_ids[id].size();
+    };
 
-            map[id] = String{attribute_value};
-            total_length += (attribute_value.size + 1) * cache_not_found_ids[id].size();
-        };
+    auto on_id_not_found = [&] (const auto id, const auto)
+    {
+        for (const auto row : cache_not_found_ids[id])
+            total_length += get_default(row).size + 1;
+    };
 
-        auto on_id_not_found = [&] (const auto id, const auto)
-        {
-            for (const auto row : cache_not_found_ids[id])
-                total_length += get_default(row).size + 1;
-        };
+    auto update_unit_ptr = std::make_shared<UpdateUnit>(required_ids, on_cell_updated, on_id_not_found);
 
-        auto update_unit_ptr = std::make_shared<UpdateUnit>(required_ids, on_cell_updated, on_id_not_found);
-
-        tryPushToUpdateQueueOrThrow(update_unit_ptr);
-        waitForCurrentUpdateFinish(update_unit_ptr);
-    }
-
+    tryPushToUpdateQueueOrThrow(update_unit_ptr);
+    waitForCurrentUpdateFinish(update_unit_ptr);
     out->getChars().reserve(total_length);
 
     for (const auto row : ext::range(0, ext::size(ids)))

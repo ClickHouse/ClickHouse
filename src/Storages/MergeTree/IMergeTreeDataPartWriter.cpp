@@ -65,6 +65,7 @@ void IMergeTreeDataPartWriter::Stream::addToChecksums(MergeTreeData::DataPart::C
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
@@ -73,6 +74,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     : data_part(data_part_)
     , part_path(data_part_->getFullRelativePath())
     , storage(data_part_->storage)
+    , metadata_snapshot(metadata_snapshot_)
     , columns_list(columns_list_)
     , marks_file_extension(marks_file_extension_)
     , index_granularity(index_granularity_)
@@ -162,7 +164,7 @@ void IMergeTreeDataPartWriter::fillIndexGranularity(size_t index_granularity_for
 
 void IMergeTreeDataPartWriter::initPrimaryIndex()
 {
-    if (storage.hasPrimaryKey())
+    if (metadata_snapshot->hasPrimaryKey())
     {
         index_file_stream = data_part->volume->getDisk()->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
@@ -173,9 +175,9 @@ void IMergeTreeDataPartWriter::initPrimaryIndex()
 
 void IMergeTreeDataPartWriter::initSkipIndices()
 {
-    for (const auto & index : skip_indices)
+    for (const auto & index_helper : skip_indices)
     {
-        String stream_name = index->getFileName();
+        String stream_name = index_helper->getFileName();
         skip_indices_streams.emplace_back(
                 std::make_unique<IMergeTreeDataPartWriter::Stream>(
                         stream_name,
@@ -184,7 +186,7 @@ void IMergeTreeDataPartWriter::initSkipIndices()
                         part_path + stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size,
                         0, settings.aio_threshold));
-        skip_indices_aggregators.push_back(index->createIndexAggregator());
+        skip_indices_aggregators.push_back(index_helper->createIndexAggregator());
         skip_index_filling.push_back(0);
     }
 
@@ -221,7 +223,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & p
 
     while (index_mark < total_marks && current_row < rows)
     {
-        if (storage.hasPrimaryKey())
+        if (metadata_snapshot->hasPrimaryKey())
         {
             for (size_t j = 0; j < primary_columns_num; ++j)
             {
@@ -253,7 +255,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
     /// Filling and writing skip indices like in MergeTreeDataPartWriterWide::writeColumn
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
-        const auto index = skip_indices[i];
+        const auto index_helper = skip_indices[i];
         auto & stream = *skip_indices_streams[i];
         size_t prev_pos = 0;
         skip_index_current_data_mark = skip_index_data_mark;
@@ -269,7 +271,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
                 limit = index_granularity.getMarkRows(skip_index_current_data_mark);
                 if (skip_indices_aggregators[i]->empty())
                 {
-                    skip_indices_aggregators[i] = index->createIndexAggregator();
+                    skip_indices_aggregators[i] = index_helper->createIndexAggregator();
                     skip_index_filling[i] = 0;
 
                     if (stream.compressed.offset() >= settings.min_compress_block_size)
@@ -294,7 +296,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
                 ++skip_index_filling[i];
 
                 /// write index if it is filled
-                if (skip_index_filling[i] == index->granularity)
+                if (skip_index_filling[i] == index_helper->index.granularity)
                 {
                     skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
                     skip_index_filling[i] = 0;

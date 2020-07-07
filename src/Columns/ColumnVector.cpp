@@ -289,13 +289,6 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
     equal_range = std::move(new_ranges);
 }
 
-
-template <typename T>
-const char * ColumnVector<T>::getFamilyName() const
-{
-    return TypeName<T>::get();
-}
-
 template <typename T>
 MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 {
@@ -413,6 +406,31 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     }
 
     return res;
+}
+
+template <typename T>
+void ColumnVector<T>::applyZeroMap(const IColumn::Filter & filt, bool inverted)
+{
+    size_t size = data.size();
+    if (size != filt.size())
+        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    const UInt8 * filt_pos = filt.data();
+    const UInt8 * filt_end = filt_pos + size;
+    T * data_pos = data.data();
+
+    if (inverted)
+    {
+        for (; filt_pos < filt_end; ++filt_pos, ++data_pos)
+            if (!*filt_pos)
+                *data_pos = 0;
+    }
+    else
+    {
+        for (; filt_pos < filt_end; ++filt_pos, ++data_pos)
+            if (*filt_pos)
+                *data_pos = 0;
+    }
 }
 
 template <typename T>

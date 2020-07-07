@@ -1,12 +1,14 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 CFLAGS(
-    -DUSE_SSL -DUSE_XXHASH
+    -DUSE_H3 -DUSE_SSL -DUSE_XXHASH
 )
 
 ADDINCL(
-    library/consistent_hashing
+    library/cpp/consistent_hashing
     contrib/libs/farmhash
+    contrib/libs/h3/h3lib/include
     contrib/libs/hyperscan/src
     contrib/libs/icu/common
     contrib/libs/libdivide
@@ -19,13 +21,14 @@ PEERDIR(
     clickhouse/src/Dictionaries
     contrib/libs/farmhash
     contrib/libs/fastops/fastops
+    contrib/libs/h3
     contrib/libs/hyperscan
     contrib/libs/icu
     contrib/libs/libdivide
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash
-    library/consistent_hashing
+    library/cpp/consistent_hashing
 )
 
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
@@ -90,6 +93,7 @@ SRCS(
     array/hasAll.cpp
     array/hasAny.cpp
     array/has.cpp
+    array/hasSubstr.cpp
     array/indexOf.cpp
     array/length.cpp
     array/range.cpp
@@ -119,6 +123,7 @@ SRCS(
     blockNumber.cpp
     blockSerializedSize.cpp
     blockSize.cpp
+    buildId.cpp
     caseWithExpression.cpp
     cbrt.cpp
     coalesce.cpp
@@ -143,7 +148,8 @@ SRCS(
     exp10.cpp
     exp2.cpp
     exp.cpp
-    extractAllGroups.cpp
+    extractAllGroupsHorizontal.cpp
+    extractAllGroupsVertical.cpp
     extract.cpp
     extractGroups.cpp
     extractTimeZoneFromFunctionArguments.cpp
@@ -151,6 +157,9 @@ SRCS(
     finalizeAggregation.cpp
     formatDateTime.cpp
     formatString.cpp
+    fromUnixTimestamp64Micro.cpp
+    fromUnixTimestamp64Milli.cpp
+    fromUnixTimestamp64Nano.cpp
     FunctionFactory.cpp
     FunctionFQDN.cpp
     FunctionHelpers.cpp
@@ -168,6 +177,7 @@ SRCS(
     FunctionsRound.cpp
     FunctionsStringArray.cpp
     FunctionsStringSimilarity.cpp
+    fuzzBits.cpp
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
@@ -188,14 +198,28 @@ SRCS(
     geohashDecode.cpp
     geohashEncode.cpp
     geohashesInBox.cpp
+    geoToH3.cpp
     getMacro.cpp
     getScalar.cpp
     getSizeOfEnumType.cpp
+    globalVariable.cpp
     greatCircleDistance.cpp
     greater.cpp
     greaterOrEquals.cpp
     greatest.cpp
+    h3EdgeAngle.cpp
+    h3EdgeLengthM.cpp
+    h3GetBaseCell.cpp
+    h3GetResolution.cpp
+    h3HexAreaM2.cpp
+    h3IndexesAreNeighbors.cpp
+    h3IsValid.cpp
+    h3kRing.cpp
+    h3ToChildren.cpp
+    h3ToParent.cpp
+    h3ToString.cpp
     hasColumnInTable.cpp
+    hasThreadFuzzer.cpp
     hasTokenCaseInsensitive.cpp
     hasToken.cpp
     hostName.cpp
@@ -205,7 +229,9 @@ SRCS(
     ifNull.cpp
     IFunction.cpp
     ignore.cpp
+    ilike.cpp
     in.cpp
+    initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
     intExp10.cpp
@@ -217,6 +243,7 @@ SRCS(
     isNotNull.cpp
     isNull.cpp
     isValidUTF8.cpp
+    isZeroOrNull.cpp
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
@@ -265,6 +292,7 @@ SRCS(
     neighbor.cpp
     notEmpty.cpp
     notEquals.cpp
+    notILike.cpp
     notLike.cpp
     now64.cpp
     now.cpp
@@ -281,10 +309,10 @@ SRCS(
     rand64.cpp
     randConstant.cpp
     rand.cpp
+    randomFixedString.cpp
     randomPrintableASCII.cpp
     randomString.cpp
     randomStringUTF8.cpp
-    randomFixedString.cpp
     regexpQuoteMeta.cpp
     registerFunctionsArithmetic.cpp
     registerFunctionsComparison.cpp
@@ -304,6 +332,7 @@ SRCS(
     registerFunctionsStringRegexp.cpp
     registerFunctionsStringSearch.cpp
     registerFunctionsTuple.cpp
+    registerFunctionsUnixTimestamp64.cpp
     registerFunctionsVisitParam.cpp
     reinterpretAsFixedString.cpp
     reinterpretAsString.cpp
@@ -330,6 +359,7 @@ SRCS(
     sleepEachRow.cpp
     sqrt.cpp
     startsWith.cpp
+    stringToH3.cpp
     substring.cpp
     subtractDays.cpp
     subtractHours.cpp
@@ -341,6 +371,7 @@ SRCS(
     subtractYears.cpp
     tan.cpp
     tanh.cpp
+    TargetSpecific.cpp
     tgamma.cpp
     throwIf.cpp
     timeSlot.cpp
@@ -352,6 +383,7 @@ SRCS(
     toDayOfMonth.cpp
     toDayOfWeek.cpp
     toDayOfYear.cpp
+    toFixedString.cpp
     toHour.cpp
     toISOWeek.cpp
     toISOYear.cpp
@@ -385,6 +417,9 @@ SRCS(
     toTime.cpp
     toTimeZone.cpp
     toTypeName.cpp
+    toUnixTimestamp64Micro.cpp
+    toUnixTimestamp64Milli.cpp
+    toUnixTimestamp64Nano.cpp
     toValidUTF8.cpp
     toYear.cpp
     toYYYYMM.cpp
@@ -414,8 +449,10 @@ SRCS(
     URL/extractURLParameters.cpp
     URL/firstSignificantSubdomain.cpp
     URL/fragment.cpp
+    URL/netloc.cpp
     URL/path.cpp
     URL/pathFull.cpp
+    URL/port.cpp
     URL/protocol.cpp
     URL/queryStringAndFragment.cpp
     URL/queryString.cpp

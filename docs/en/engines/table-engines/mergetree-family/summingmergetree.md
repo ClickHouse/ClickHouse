@@ -5,7 +5,7 @@ toc_title: SummingMergeTree
 
 # SummingMergeTree {#summingmergetree}
 
-The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](mergetree.md)) with one row which contains summarized values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
+The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains summarized values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
 We recommend to use the engine together with `MergeTree`. Store complete data in `MergeTree` table, and use `SummingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
 
@@ -35,7 +35,7 @@ For a description of request parameters, see [request description](../../../sql-
 
 **Query clauses**
 
-When creating a `SummingMergeTree` table the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
+When creating a `SummingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
 
 <details markdown="1">
 
@@ -96,7 +96,7 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 
 When data are inserted into a table, they are saved as-is. ClickHouse merges the inserted parts of data periodically and this is when rows with the same primary key are summed and replaced with one for each resulting part of data.
 
-ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) an aggregate function [sum()](../../../sql-reference/aggregate-functions/reference.md#agg_function-sum) and `GROUP BY` clause should be used in a query as described in the example above.
+ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) an aggregate function [sum()](../../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum) and `GROUP BY` clause should be used in a query as described in the example above.
 
 ### Common Rules for Summation {#common-rules-for-summation}
 
@@ -110,7 +110,7 @@ The values are not summarized for columns in the primary key.
 
 ### The Summation in the Aggregatefunction Columns {#the-summation-in-the-aggregatefunction-columns}
 
-For columns of [AggregateFunction type](../../../sql-reference/data-types/aggregatefunction.md) ClickHouse behaves as [AggregatingMergeTree](aggregatingmergetree.md) engine aggregating according to the function.
+For columns of [AggregateFunction type](../../../sql-reference/data-types/aggregatefunction.md) ClickHouse behaves as [AggregatingMergeTree](../../../engines/table-engines/mergetree-family/aggregatingmergetree.md) engine aggregating according to the function.
 
 ### Nested Structures {#nested-structures}
 
@@ -132,7 +132,7 @@ Examples:
 [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 ```
 
-When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference.md) function for aggregation of `Map`.
+When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference/summap.md) function for aggregation of `Map`.
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
 

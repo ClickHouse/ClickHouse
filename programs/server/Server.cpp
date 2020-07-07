@@ -17,6 +17,7 @@
 #include <common/phdr_cache.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
+#include <common/errnoToString.h>
 #include <common/coverage.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
@@ -53,13 +54,15 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
-#include "HTTPHandlerFactory.h"
+#include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
-#include "TCPHandlerFactory.h"
+#include <Server/TCPHandlerFactory.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
-#include "MySQLHandlerFactory.h"
+#include <Server/MySQLHandlerFactory.h>
+#include <Server/PostgreSQLHandlerFactory.h>
+
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
@@ -89,7 +92,7 @@ namespace CurrentMetrics
 namespace
 {
 
-void setupTmpPath(Logger * log, const std::string & path)
+void setupTmpPath(Poco::Logger * log, const std::string & path)
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
@@ -125,6 +128,7 @@ namespace ErrorCodes
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
 
@@ -210,9 +214,55 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
     BaseDaemon::defineOptions(options);
 }
 
+
+/// Check that there is no user-level settings at the top level in config.
+/// This is a common source of mistake (user don't know where to write user-level setting).
+void checkForUserSettingsAtTopLevel(const Poco::Util::AbstractConfiguration & config, const std::string & path)
+{
+    if (config.getBool("skip_check_for_incorrect_settings", false))
+        return;
+
+    Settings settings;
+    for (const auto & setting : settings)
+    {
+        std::string name = setting.getName().toString();
+        if (config.has(name))
+        {
+            throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
+                " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
+                " You can add it to <profiles><default> if you want to change default value of this setting."
+                " You can also disable the check - specify <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
+                " in the main configuration file.",
+                name, path),
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        }
+    }
+}
+
+void checkForUsersNotInMainConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_path,
+    const std::string & users_config_path,
+    Poco::Logger * log)
+{
+    if (config.getBool("skip_check_for_incorrect_settings", false))
+        return;
+
+    if (config.has("users") || config.has("profiles") || config.has("quotas"))
+    {
+        /// We cannot throw exception here, because we have support for obsolete 'conf.d' directory
+        /// (that does not correspond to config.d or users.d) but substitute configuration to both of them.
+
+        LOG_ERROR(log, "The <users>, <profiles> and <quotas> elements should be located in users config file: {} not in main config {}."
+            " Also note that you should place configuration changes to the appropriate *.d directory like 'users.d'.",
+            users_config_path, config_path);
+    }
+}
+
+
 int Server::main(const std::vector<std::string> & /*args*/)
 {
-    Logger * log = &logger();
+    Poco::Logger * log = &logger();
     UseSSL use_ssl;
 
     ThreadStatus thread_status;
@@ -235,6 +285,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (ThreadFuzzer::instance().isEffective())
         LOG_WARNING(log, "ThreadFuzzer is enabled. Application will run slowly and unstable.");
+
+#if !defined(NDEBUG) || !defined(__OPTIMIZE__)
+    LOG_WARNING(log, "Server was built in debug mode. It will work slowly.");
+#endif
+
+#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
+    LOG_WARNING(log, "Server was built with sanitizer. It will work slowly.");
+#endif
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
@@ -260,6 +318,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
+
+    checkForUserSettingsAtTopLevel(config(), config_path);
 
     const auto memory_amount = getMemoryAmount();
 
@@ -318,7 +378,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     global_context->setPath(path);
 
-    StatusFile status{path + "status"};
+    StatusFile status{path + "status", StatusFile::write_full_info};
 
     SCOPE_EXIT({
         /** Ask to cancel background jobs all table engines,
@@ -371,6 +431,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
 
+    /// Initialize global thread pool
+    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
 
     /// Storage with temporary data for processing of heavy queries.
     {
@@ -465,13 +527,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
-    auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
+    auto main_config_reloader = std::make_unique<ConfigReloader>(
+        config_path,
         include_from_path,
         config().getString("path", ""),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
+            checkForUserSettingsAtTopLevel(*config, config_path);
+
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
@@ -500,12 +565,21 @@ int Server::main(const std::vector<std::string> & /*args*/)
         if (Poco::File(config_dir + users_config_path).exists())
             users_config_path = config_dir + users_config_path;
     }
-    auto users_config_reloader = std::make_unique<ConfigReloader>(users_config_path,
+
+    if (users_config_path != config_path)
+        checkForUsersNotInMainConfig(config(), config_path, users_config_path, log);
+
+    auto users_config_reloader = std::make_unique<ConfigReloader>(
+        users_config_path,
         include_from_path,
         config().getString("path", ""),
         zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
         std::make_shared<Poco::Event>(),
-        [&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
+        [&](ConfigurationPtr config)
+        {
+            global_context->setUsersConfig(config);
+            checkForUserSettingsAtTopLevel(*config, users_config_path);
+        },
         /* already_loaded = */ false);
 
     /// Reload config in SYSTEM RELOAD CONFIG query.
@@ -534,7 +608,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory",
+            formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setUncompressedCache(uncompressed_cache_size);
 
@@ -549,7 +624,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (mark_cache_size > max_cache_size)
     {
         mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory",
+            formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_size);
 
@@ -573,12 +649,22 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (max_server_memory_usage == 0)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was set to {}", formatReadableSizeWithBinarySuffix(max_server_memory_usage));
+        LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
+            " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
+            formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+            formatReadableSizeWithBinarySuffix(memory_amount),
+            max_server_memory_usage_to_ram_ratio);
     }
     else if (max_server_memory_usage > default_max_server_memory_usage)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(max_server_memory_usage));
+        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
+            " because the system has low amount of memory. The amount was"
+            " calculated as {} available"
+            " * {:.2f} max_server_memory_usage_to_ram_ratio",
+            formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+            formatReadableSizeWithBinarySuffix(memory_amount),
+            max_server_memory_usage_to_ram_ratio);
     }
 
     total_memory_tracker.setOrRaiseHardLimit(max_server_memory_usage);
@@ -695,7 +781,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (!hasLinuxCapability(CAP_SYS_NICE))
     {
-        LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."
+        LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_priority' will have no effect."
             " It could happen due to incorrect ClickHouse package installation."
             " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep {}'."
             " Note that it will not work on 'nosuid' mounted filesystems.",
@@ -775,7 +861,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         };
 
         /// This object will periodically calculate some metrics.
-        AsynchronousMetrics async_metrics(*global_context);
+        AsynchronousMetrics async_metrics(*global_context,
+            config().getUInt("asynchronous_metrics_update_period_s", 60));
         attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         for (const auto & listen_host : listen_hosts)
@@ -797,7 +884,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                     if (listen_try)
                     {
-                        LOG_ERROR(log, "{}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
+                        LOG_WARNING(log, "{}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                             "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
                             "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
                             " Example for disabled IPv4: <listen_host>::</listen_host>",
@@ -926,6 +1013,21 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: {}", address.toString());
             });
 
+            create_server("postgresql_port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(Poco::Timespan());
+                socket.setSendTimeout(settings.send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                    new PostgreSQLHandlerFactory(*this),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+
+                LOG_INFO(log, "Listening for PostgreSQL compatibility protocol: " + address.toString());
+            });
+
             /// Prometheus (if defined and not setup yet with http_port)
             create_server("prometheus.port", [&](UInt16 port)
             {
@@ -941,7 +1043,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
 
         if (servers.empty())
-             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
+                ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
         global_context->enableNamedSessions();
 

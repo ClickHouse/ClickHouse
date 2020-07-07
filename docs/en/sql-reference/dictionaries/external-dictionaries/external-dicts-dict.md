@@ -29,7 +29,7 @@ If dictionary is configured using xml file, than dictionary configuration has th
 </dictionary>
 ```
 
-Corresponding [DDL-query](../../statements/create.md#create-dictionary-query) has the following structure:
+Corresponding [DDL-query](../../../sql-reference/statements/create.md#create-dictionary-query) has the following structure:
 
 ``` sql
 CREATE DICTIONARY dict_name
@@ -43,9 +43,9 @@ LIFETIME(...) -- Lifetime of dictionary in memory
 ```
 
 -   `name` – The identifier that can be used to access the dictionary. Use the characters `[a-zA-Z0-9_\-]`.
--   [source](external-dicts-dict-sources.md) — Source of the dictionary.
--   [layout](external-dicts-dict-layout.md) — Dictionary layout in memory.
--   [structure](external-dicts-dict-structure.md) — Structure of the dictionary . A key and attributes that can be retrieved by this key.
--   [lifetime](external-dicts-dict-lifetime.md) — Frequency of dictionary updates.
+-   [source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md) — Source of the dictionary.
+-   [layout](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) — Dictionary layout in memory.
+-   [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md) — Structure of the dictionary . A key and attributes that can be retrieved by this key.
+-   [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) — Frequency of dictionary updates.
 
 [Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict/) <!--hide-->

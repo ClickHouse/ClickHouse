@@ -15,7 +15,6 @@
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/narrowBlockInputStreams.h>
@@ -27,6 +26,7 @@
 #include <hdfs/hdfs.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
+
 
 namespace DB
 {
@@ -49,8 +49,11 @@ StorageHDFS::StorageHDFS(const String & uri_,
     , compression_method(compression_method_)
 {
     context.getRemoteHostFilter().checkURL(Poco::URI(uri));
-    setColumns(columns_);
-    setConstraints(constraints_);
+
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 }
 
 namespace
@@ -261,9 +264,10 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
 
 Pipes StorageHDFS::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & context_,
-    QueryProcessingStage::Enum  /*processed_stage*/,
+    QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
@@ -292,16 +296,16 @@ Pipes StorageHDFS::read(
 
     for (size_t i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<HDFSSource>(
-                sources_info, uri_without_path, format_name, compression_method, getSampleBlock(), context_, max_block_size));
+                sources_info, uri_without_path, format_name, compression_method, metadata_snapshot->getSampleBlock(), context_, max_block_size));
 
     return pipes;
 }
 
-BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     return std::make_shared<HDFSBlockOutputStream>(uri,
         format_name,
-        getSampleBlock(),
+        metadata_snapshot->getSampleBlock(),
         context,
         chooseCompressionMethod(uri, compression_method));
 }

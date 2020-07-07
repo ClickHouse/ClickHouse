@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -16,6 +17,9 @@ SRCS(
     CacheDictionary_generate1.cpp
     CacheDictionary_generate2.cpp
     CacheDictionary_generate3.cpp
+    CassandraBlockInputStream.cpp
+    CassandraDictionarySource.cpp
+    CassandraHelpers.cpp
     ClickHouseDictionarySource.cpp
     ComplexKeyCacheDictionary.cpp
     ComplexKeyCacheDictionary_createAttributeWithType.cpp
@@ -24,8 +28,8 @@ SRCS(
     ComplexKeyCacheDictionary_generate3.cpp
     ComplexKeyCacheDictionary_setAttributeValue.cpp
     ComplexKeyCacheDictionary_setDefaultAttributeValue.cpp
-    ComplexKeyHashedDictionary.cpp
     ComplexKeyDirectDictionary.cpp
+    ComplexKeyHashedDictionary.cpp
     DictionaryBlockInputStreamBase.cpp
     DictionaryFactory.cpp
     DictionarySourceFactory.cpp
@@ -49,7 +53,6 @@ SRCS(
     HTTPDictionarySource.cpp
     LibraryDictionarySource.cpp
     LibraryDictionarySourceExternal.cpp
-    MongoDBBlockInputStream.cpp
     MongoDBDictionarySource.cpp
     MySQLDictionarySource.cpp
     PolygonDictionary.cpp
@@ -58,6 +61,8 @@ SRCS(
     RedisBlockInputStream.cpp
     RedisDictionarySource.cpp
     registerDictionaries.cpp
+    SSDCacheDictionary.cpp
+    SSDComplexKeyCacheDictionary.cpp
     writeParenthesisedString.cpp
     XDBCDictionarySource.cpp
 

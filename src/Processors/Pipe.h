@@ -23,7 +23,7 @@ public:
     /// Will connect pipes outputs with transform inputs automatically.
     Pipe(Pipes && pipes, ProcessorPtr transform);
     /// Create pipe from output port. If pipe was created that way, it possibly will not have tree shape.
-    Pipe(OutputPort * port);
+    explicit Pipe(OutputPort * port);
 
     Pipe(const Pipe & other) = delete;
     Pipe(Pipe && other) = default;
@@ -62,12 +62,12 @@ public:
 
     /// Do not allow to change the table while the processors of pipe are alive.
     /// TODO: move it to pipeline.
-    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
     /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
     void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { storage_holders.emplace_back(std::move(storage)); }
 
-    const std::vector<TableStructureReadLockHolder> & getTableLocks() const { return table_locks; }
+    const std::vector<TableLockHolder> & getTableLocks() const { return table_locks; }
     const std::vector<std::shared_ptr<Context>> & getContexts() const { return interpreter_context; }
     const std::vector<StoragePtr> & getStorageHolders() const { return storage_holders; }
 
@@ -80,7 +80,7 @@ private:
     /// It is the max number of processors which can be executed in parallel for each step. See QueryPipeline::Streams.
     size_t max_parallel_streams = 0;
 
-    std::vector<TableStructureReadLockHolder> table_locks;
+    std::vector<TableLockHolder> table_locks;
 
     /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
     /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,

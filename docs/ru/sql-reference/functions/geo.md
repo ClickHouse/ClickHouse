@@ -40,7 +40,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 Вычисляет угловое расстояние на сфере по [формуле большого круга](https://en.wikipedia.org/wiki/Great-circle_distance).
 
 ``` sql
-greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
 **Входные параметры**
@@ -382,4 +382,295 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index
 └────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/geo/) <!--hide-->
+## h3GetBaseCell {#h3getbasecell}
+
+Определяет номер базовой (верхнеуровневой) шестиугольной H3-ячейки для указанной ячейки.
+
+**Синтаксис**
+
+``` sql
+h3GetBaseCell(index)
+```
+
+**Параметр**
+
+-   `index` — индекс шестиугольной ячейки. Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Индекс базовой шестиугольной ячейки. 
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT h3GetBaseCell(612916788725809151) as basecell;
+```
+
+Результат:
+
+``` text
+┌─basecell─┐
+│       12 │
+└──────────┘
+```
+
+## h3HexAreaM2 {#h3hexaream2}
+
+Определяет среднюю площадь шестиугольной H3-ячейки заданного разрешения в квадратных метрах. 
+
+**Синтаксис**
+
+``` sql
+h3HexAreaM2(resolution)
+```
+
+**Параметр**
+
+-   `resolution` — разрешение. Диапазон: `[0, 15]`. 
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Площадь в квадратных метрах. Тип: [Float64](../../sql-reference/data-types/float.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT h3HexAreaM2(13) as area;
+```
+
+Результат:
+
+``` text
+┌─area─┐
+│ 43.9 │
+└──────┘
+```
+
+## h3IndexesAreNeighbors {#h3indexesareneighbors}
+
+Определяет, являются ли H3-ячейки соседями.
+
+**Синтаксис**
+
+``` sql
+h3IndexesAreNeighbors(index1, index2)
+```
+
+**Параметры**
+
+-   `index1` — индекс шестиугольной ячейки. Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+-   `index2` — индекс шестиугольной ячейки. Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   `1` — ячейки являются соседями.
+-   `0` — ячейки не являются соседями. 
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n;
+```
+
+Результат:
+
+``` text
+┌─n─┐
+│ 1 │
+└───┘
+```
+
+## h3ToChildren {#h3tochildren}
+
+Формирует массив дочерних (вложенных) H3-ячеек для указанной ячейки.
+
+**Синтаксис**
+
+``` sql
+h3ToChildren(index, resolution)
+```
+
+**Параметры**
+
+-   `index` — индекс шестиугольной ячейки. Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+-   `resolution` — разрешение. Диапазон: `[0, 15]`. Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Массив дочерних H3-ячеек. 
+
+Тип: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT h3ToChildren(599405990164561919, 6) AS children;
+```
+
+Результат:
+
+``` text
+┌─children───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [603909588852408319,603909588986626047,603909589120843775,603909589255061503,603909589389279231,603909589523496959,603909589657714687] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## h3ToParent {#h3toparent}
+
+Определяет родительскую (более крупную) H3-ячейку, содержащую указанную ячейку.
+
+**Синтаксис**
+
+``` sql
+h3ToParent(index, resolution)
+```
+
+**Параметры**
+
+-   `index` — индекс шестиугольной ячейки. Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+-   `resolution` — разрешение. Диапазон: `[0, 15]`. Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Индекс родительской H3-ячейки. 
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT h3ToParent(599405990164561919, 3) as parent;
+```
+
+Результат:
+
+``` text
+┌─────────────parent─┐
+│ 590398848891879423 │
+└────────────────────┘
+```
+
+## h3ToString {#h3tostring}
+
+Преобразует H3-индекс из числового представления `H3Index` в строковое.
+
+``` sql
+h3ToString(index)
+```
+
+**Параметр**
+
+-   `index` — индекс шестиугольной ячейки. Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Строковое представление H3-индекса. 
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT h3ToString(617420388352917503) as h3_string;
+```
+
+Результат:
+
+``` text
+┌─h3_string───────┐
+│ 89184926cdbffff │
+└─────────────────┘
+```
+
+## stringToH3 {#stringtoh3}
+
+Преобразует H3-индекс из строкового представления в числовое представление `H3Index`.
+
+**Синтаксис**
+
+``` sql
+stringToH3(index_str)
+```
+
+**Параметр**
+
+-   `index_str` — строковое представление H3-индекса. Тип: [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Числовое представление индекса шестиугольной ячейки. 
+-   `0`, если при преобразовании возникла ошибка. 
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT stringToH3('89184926cc3ffff') as index;
+```
+
+Результат:
+
+``` text
+┌──────────────index─┐
+│ 617420388351344639 │
+└────────────────────┘
+```
+
+## h3GetResolution {#h3getresolution}
+
+Определяет разрешение H3-ячейки.
+
+**Синтаксис**
+
+``` sql
+h3GetResolution(index)
+```
+
+**Параметр**
+
+-   `index` — индекс шестиугольной ячейки. Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Разрешение ячейки. Диапазон: `[0, 15]`. 
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT h3GetResolution(617420388352917503) as res;
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│   9 │
+└─────┘
+```
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/functions/geo/) <!--hide-->

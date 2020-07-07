@@ -359,7 +359,7 @@ private:
     /// Wait for the completion of all threads.
     std::atomic<bool> joined_threads { false };
 
-    Logger * log = &Logger::get("ParallelInputsProcessor");
+    Poco::Logger * log = &Poco::Logger::get("ParallelInputsProcessor");
 };
 
 

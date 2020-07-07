@@ -97,7 +97,8 @@ DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName 
         getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
                                                    aggregate_function_name, params_row, "function " + getName());
 
-        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row);
+        AggregateFunctionProperties properties;
+        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
     }
 
     return aggregate_function->getReturnType();
@@ -187,7 +188,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 
     for (size_t i = 0; i < input_rows_count; ++i)
         if (!res_col_aggregate_function)
-            agg_func.insertResultInto(places[i], res_col);
+            agg_func.insertResultInto(places[i], res_col, arena.get());
         else
             res_col_aggregate_function->insertFrom(places[i]);
     block.getByPosition(result).column = std::move(result_holder);

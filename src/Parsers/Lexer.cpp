@@ -305,7 +305,12 @@ Token Lexer::nextTokenImpl()
             return Token(TokenType::ErrorSinglePipeMark, token_begin, pos);
         }
         case '@':
-            return Token(TokenType::At, token_begin, ++pos);
+        {
+            ++pos;
+            if (pos < end && *pos == '@')
+                return Token(TokenType::DoubleAt, token_begin, ++pos);
+            return Token(TokenType::At, token_begin, pos);
+        }
 
         default:
             if (isWordCharASCII(*pos))

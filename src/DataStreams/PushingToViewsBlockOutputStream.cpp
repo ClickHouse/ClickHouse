@@ -19,15 +19,21 @@ namespace DB
 
 PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     const StoragePtr & storage_,
-    const Context & context_, const ASTPtr & query_ptr_, bool no_destination)
-    : storage(storage_), context(context_), query_ptr(query_ptr_)
+    const StorageMetadataPtr & metadata_snapshot_,
+    const Context & context_,
+    const ASTPtr & query_ptr_,
+    bool no_destination)
+    : storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+    , context(context_)
+    , query_ptr(query_ptr_)
 {
     /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
     addTableLock(
-            storage->lockStructureForShare(true, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout));
+            storage->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout));
 
     /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
@@ -59,7 +65,8 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
     for (const auto & database_table : dependencies)
     {
-        auto dependent_table = DatabaseCatalog::instance().getTable(database_table);
+        auto dependent_table = DatabaseCatalog::instance().getTable(database_table, context);
+        auto dependent_metadata_snapshot = dependent_table->getInMemoryMetadataPtr();
 
         ASTPtr query;
         BlockOutputStreamPtr out;
@@ -67,12 +74,12 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
             addTableLock(
-                    materialized_view->lockStructureForShare(
-                            true, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout));
+                    materialized_view->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout));
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
-            query = materialized_view->getInnerQuery();
+            auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
+            query = dependent_metadata_snapshot->getSelectQuery().inner_query;
 
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->table_id = inner_table_id;
@@ -83,7 +90,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             /// Insert only columns returned by select.
             auto list = std::make_shared<ASTExpressionList>();
-            const auto & inner_table_columns = inner_table->getColumns();
+            const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
             for (auto & column : header)
                 /// But skip columns which storage doesn't have.
                 if (inner_table_columns.hasPhysical(column.name))
@@ -97,9 +104,11 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             out = io.out;
         }
         else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
-            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *insert_context, ASTPtr(), true);
+            out = std::make_shared<PushingToViewsBlockOutputStream>(
+                dependent_table, dependent_metadata_snapshot, *insert_context, ASTPtr(), true);
         else
-            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *insert_context, ASTPtr());
+            out = std::make_shared<PushingToViewsBlockOutputStream>(
+                dependent_table, dependent_metadata_snapshot, *insert_context, ASTPtr());
 
         views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr});
     }
@@ -107,7 +116,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     /// Do not push to destination table if the flag is set
     if (!no_destination)
     {
-        output = storage->write(query_ptr, context);
+        output = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), context);
         replicated_output = dynamic_cast<ReplicatedMergeTreeBlockOutputStream *>(output.get());
     }
 }
@@ -118,9 +127,9 @@ Block PushingToViewsBlockOutputStream::getHeader() const
     /// If we don't write directly to the destination
     /// then expect that we're inserting with precalculated virtual columns
     if (output)
-        return storage->getSampleBlock();
+        return metadata_snapshot->getSampleBlock();
     else
-        return storage->getSampleBlockWithVirtuals();
+        return metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals());
 }
 
 
@@ -153,7 +162,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     const Settings & settings = context.getSettingsRef();
     if (settings.parallel_view_processing && views.size() > 1)
     {
-        // Push to views concurrently if enabled, and more than one view is attached
+        // Push to views concurrently if enabled and more than one view is attached
         ThreadPool pool(std::min(size_t(settings.max_threads), views.size()));
         for (size_t view_num = 0; view_num < views.size(); ++view_num)
         {
@@ -208,6 +217,45 @@ void PushingToViewsBlockOutputStream::writeSuffix()
 
     std::exception_ptr first_exception;
 
+    const Settings & settings = context.getSettingsRef();
+    bool parallel_processing = false;
+
+    /// Run writeSuffix() for views in separate thread pool.
+    /// In could have been done in PushingToViewsBlockOutputStream::process, however
+    /// it is not good if insert into main table fail but into view succeed.
+    if (settings.parallel_view_processing && views.size() > 1)
+    {
+        parallel_processing = true;
+
+        // Push to views concurrently if enabled and more than one view is attached
+        ThreadPool pool(std::min(size_t(settings.max_threads), views.size()));
+        auto thread_group = CurrentThread::getGroup();
+
+        for (auto & view : views)
+        {
+            if (view.exception)
+                continue;
+
+            pool.scheduleOrThrowOnError([thread_group, &view]
+            {
+                setThreadName("PushingToViews");
+                if (thread_group)
+                    CurrentThread::attachToIfDetached(thread_group);
+
+                try
+                {
+                    view.out->writeSuffix();
+                }
+                catch (...)
+                {
+                    view.exception = std::current_exception();
+                }
+            });
+        }
+        // Wait for concurrent view processing
+        pool.wait();
+    }
+
     for (auto & view : views)
     {
         if (view.exception)
@@ -217,6 +265,9 @@ void PushingToViewsBlockOutputStream::writeSuffix()
 
             continue;
         }
+
+        if (parallel_processing)
+            continue;
 
         try
         {
@@ -272,9 +323,9 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             Context local_context = *select_context;
             local_context.addViewSource(
                 StorageValues::create(
-                    storage->getStorageID(), storage->getColumns(), block, storage->getVirtuals()));
+                    storage->getStorageID(), metadata_snapshot->getColumns(), block, storage->getVirtuals()));
             select.emplace(view.query, local_context, SelectQueryOptions());
-            in = std::make_shared<MaterializingBlockInputStream>(select->execute().in);
+            in = std::make_shared<MaterializingBlockInputStream>(select->execute().getInputStream());
 
             /// Squashing is needed here because the materialized view query can generate a lot of blocks
             /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY

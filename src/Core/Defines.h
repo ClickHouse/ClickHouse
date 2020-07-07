@@ -87,7 +87,7 @@
 #define DBMS_DISTRIBUTED_SIGNATURE_HEADER 0xCAFEDACEull
 #define DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT 0xCAFECABEull
 
-#if !__has_include(<sanitizer/asan_interface.h>)
+#if !__has_include(<sanitizer/asan_interface.h>) || !defined(ADDRESS_SANITIZER)
 #   define ASAN_UNPOISON_MEMORY_REGION(a, b)
 #   define ASAN_POISON_MEMORY_REGION(a, b)
 #endif
