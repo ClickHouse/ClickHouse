@@ -187,6 +187,9 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
                 if (ranges.empty())
                     break;
 
+                if (column.column_const)
+                    continue;
+
                 if (isCollationRequired(column.description))
                 {
                     const ColumnString & column_string = assert_cast<const ColumnString &>(*column.column);

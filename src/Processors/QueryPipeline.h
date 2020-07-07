@@ -133,6 +133,8 @@ public:
     void addCreatingSetsTransform(ProcessorPtr transform);
     /// Resize pipeline to single output and add IOutputFormat. Pipeline will be completed after this transformation.
     void setOutputFormat(ProcessorPtr output);
+    /// Get current OutputFormat.
+    IOutputFormat * getOutputFormat() const { return output_format; }
     /// Sink is a processor with single input port and no output ports. Creates sink for each output port.
     /// Pipeline will be completed after this transformation.
     void setSinks(const ProcessorGetterWithStreamKind & getter);
@@ -191,6 +193,13 @@ public:
 
     /// Set upper limit for the recommend number of threads
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
+
+    /// Update upper limit for the recommend number of threads
+    void limitMaxThreads(size_t max_threads_)
+    {
+        if (max_threads == 0 || max_threads_ < max_threads)
+            max_threads = max_threads_;
+    }
 
     /// Convert query pipeline to single or several pipes.
     Pipe getPipe() &&;

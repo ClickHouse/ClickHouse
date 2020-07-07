@@ -19,6 +19,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessRightsElement.h>
+#include <Access/ContextAccess.h>
 #include <Common/DNSResolver.h>
 #include <Common/Macros.h>
 #include <common/getFQDNOrHostName.h>
@@ -1278,7 +1279,7 @@ private:
 };
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, AccessRightsElements && query_required_access)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, AccessRightsElements && query_requires_access, bool query_requires_grant_option)
 {
     /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
@@ -1323,10 +1324,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     /// the local current database or a shard's default database.
     bool need_replace_current_database
         = (std::find_if(
-               query_required_access.begin(),
-               query_required_access.end(),
+               query_requires_access.begin(),
+               query_requires_access.end(),
                [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); })
-           != query_required_access.end());
+           != query_requires_access.end());
 
     if (need_replace_current_database)
     {
@@ -1355,29 +1356,31 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
             AddDefaultDatabaseVisitor visitor(current_database);
             visitor.visitDDL(query_ptr);
 
-            query_required_access.replaceEmptyDatabase(current_database);
+            query_requires_access.replaceEmptyDatabase(current_database);
         }
         else
         {
-            size_t old_num_elements = query_required_access.size();
-            for (size_t i = 0; i != old_num_elements; ++i)
+            for (size_t i = 0; i != query_requires_access.size();)
             {
-                auto & element = query_required_access[i];
+                auto & element = query_requires_access[i];
                 if (element.isEmptyDatabase())
                 {
-                    element.setDatabase(shard_default_databases[0]);
-                    for (size_t j = 1; j != shard_default_databases.size(); ++j)
-                    {
-                        query_required_access.push_back(element);
-                        query_required_access.back().setDatabase(shard_default_databases[j]);
-                    }
+                    query_requires_access.insert(query_requires_access.begin() + i + 1, shard_default_databases.size() - 1, element);
+                    for (size_t j = 0; j != shard_default_databases.size(); ++j)
+                        query_requires_access[i + j].replaceEmptyDatabase(shard_default_databases[j]);
+                    i += shard_default_databases.size();
                 }
+                else
+                    ++i;
             }
         }
     }
 
     /// Check access rights, assume that all servers have the same users config
-    context.checkAccess(query_required_access);
+    if (query_requires_grant_option)
+        context.getAccess()->checkGrantOption(query_requires_access);
+    else
+        context.checkAccess(query_requires_access);
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
@@ -1394,6 +1397,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     return io;
 }
 
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access, bool query_requires_grant_option)
+{
+    return executeDDLQueryOnCluster(query_ptr, context, AccessRightsElements{query_requires_access}, query_requires_grant_option);
+}
 
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context)
 {

@@ -18,3 +18,7 @@ Nullable(UInt8)	\N	1	ok	ok	ok
 Nullable(UInt8)	\N	1	ok	ok	ok
 Nullable(UInt8)	\N	1	ok	ok	ok
 \N	1	Nullable(Int8)	\N	ok
+\N	Nullable(Float64)	0
+\N	Nullable(Float64)	0
+1
+1

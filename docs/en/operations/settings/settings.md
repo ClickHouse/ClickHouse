@@ -727,6 +727,17 @@ The INSERT query also contains data for INSERT that is processed by a separate s
 
 Default value: 256 KiB.
 
+## max\_parser\_depth {#max_parser_depth}
+
+Limits maximum recursion depth in the recursive descent parser. Allows to control stack size.
+
+Possible values:
+
+- Positive integer.
+- 0 — Recursion depth is unlimited.
+
+Default value: 1000.
+
 ## interactive\_delay {#interactive-delay}
 
 The interval in microseconds for checking whether request execution has been cancelled and sending the progress.
@@ -1368,13 +1379,11 @@ Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Default value: 32768 (32 KiB)
 
-## format\_avro\_schema\_registry\_url {#settings-format_avro_schema_registry_url}
+## format\_avro\_schema\_registry\_url {#format_avro_schema_registry_url}
 
-Sets Confluent Schema Registry URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format
+Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format.
 
-Type: URL
-
-Default value: Empty
+Default value: `Empty`.
 
 ## background\_pool\_size {#background_pool_size}
 
@@ -1417,6 +1426,23 @@ Possible values:
 -   Any positive integer.
 
 Default value: 16.
+
+## always_fetch_merged_part {#always_fetch_merged_part}
+
+Prohibits data parts merging in [Replicated*MergeTree](../../engines/table-engines/mergetree-family/replication.md)-engine tables.
+
+When merging is prohibited, the replica never merges parts and always downloads merged parts from other replicas. If there is no required data yet, the replica waits for it. CPU and disk load on the replica server decreases, but the network load on cluster increases. This setting can be useful on servers with relatively weak CPUs or slow disks, such as servers for backups storage.
+
+Possible values:
+
+-   0 — `Replicated*MergeTree`-engine tables merge data parts at the replica.
+-   1 — `Replicated*MergeTree`-engine tables don't merge data parts at the replica. The tables download merged data parts from other replicas.
+
+Default value: 0.
+
+**See Also** 
+
+-   [Data Replication](../../engines/table-engines/mergetree-family/replication.md)
 
 ## background\_distributed\_schedule\_pool\_size {#background_distributed_schedule_pool_size}
 
