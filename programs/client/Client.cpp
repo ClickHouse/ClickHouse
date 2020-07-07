@@ -784,43 +784,71 @@ private:
             return;
         }
 
-        /// If 'query' parameter is not set, read a query from stdin.
-        /// The query is read entirely into memory (streaming is disabled).
+        // Try to stream the queries from stdin, without reading all of them
+        // into memory. The interface of the parser does not support streaming,
+        // in particular, it can't distinguish the end of partial input buffer
+        // and the final end of input file. This means we have to try to split
+        // the input into separate queries here. Two patterns of input are
+        // especially interesing:
+        // 1) multiline query:
+        //      select 1
+        //      from system.numbers;
+        //
+        // 2) csv insert with in-place data:
+        //      insert into t format CSV 1;2
+        //
+        // (1) means we can't split on new line, and (2) means we can't split on
+        // semicolon. Solution: split on ';\n'. This sequence is frequent enough
+        // in the SQL tests which are our principal input for fuzzing. Now we
+        // have another interesting case:
+        // 3) escaped semicolon followed by newline, e.g.
+        //      select ';
+        //          '
+        //
+        // To handle (3), parse until we can, and read more data if the parser
+        // complains. Hopefully this should be enough...
         ReadBufferFromFileDescriptor in(STDIN_FILENO);
         std::string text;
         while (!in.eof())
         {
-            // Read until ';'
+            // Read until separator.
             while (!in.eof())
             {
-                char * next_semicolon = find_first_symbols<';'>(in.position(),
+                char * next_separator = find_first_symbols<';'>(in.position(),
                     in.buffer().end());
 
-                if (next_semicolon < in.buffer().end())
+                if (next_separator < in.buffer().end())
                 {
-                    // Found the semicolon, append it as well.
-                    next_semicolon++;
-                    text.append(in.position(), next_semicolon - in.position());
-                    in.position() = next_semicolon;
-                    break;
+                    next_separator++;
+                    if (next_separator < in.buffer().end()
+                        && *next_separator == '\n')
+                    {
+                        // Found ';\n', append it to the query text and try to
+                        // parse.
+                        next_separator++;
+                        text.append(in.position(), next_separator - in.position());
+                        in.position() = next_separator;
+                        break;
+                    }
                 }
 
                 // Didn't find the semicolon and reached the end of buffer.
-                text.append(in.position(), next_semicolon - in.position());
-                in.position() = next_semicolon;
+                text.append(in.position(), next_separator - in.position());
+                in.position() = next_separator;
 
                 if (text.size() > 1024 * 1024)
                 {
-                    // We've read a lot of text and still haven't seen a semicolon.
+                    // We've read a lot of text and still haven't seen a separator.
                     // Likely some pathological input, just fall through to prevent
                     // too long loops.
                     break;
                 }
             }
 
+            // Parse and execute what we've read.
             fprintf(stderr, "will now parse '%s'\n", text.c_str());
 
-            const auto new_end = processWithFuzzing(text);
+            const auto * new_end = processWithFuzzing(text);
 
             if (new_end > &text[0])
             {
@@ -840,17 +868,19 @@ private:
             {
                 // Uh-oh...
                 std::cerr << "Lost connection to the server." << std::endl;
-                last_exception_received_from_server.reset(new Exception(210, "~"));
+                last_exception_received_from_server
+                    = std::make_unique<Exception>(210, "~");
                 return;
             }
 
             if (text.size() > 4 * 1024)
             {
-                // Some pathological situation where the text is larger than 1MB
+                // Some pathological situation where the text is larger than 4kB
                 // and we still cannot parse a single query in it. Abort.
                 std::cerr << "Read too much text and still can't parse a query."
                      " Aborting." << std::endl;
-                last_exception_received_from_server.reset(new Exception(1, "~"));
+                last_exception_received_from_server
+                    = std::make_unique<Exception>(1, "~");
                 // return;
                 exit(1);
             }
@@ -990,7 +1020,7 @@ private:
                 ++begin;
             }
 
-            const auto this_query_begin = begin;
+            const auto * this_query_begin = begin;
             ASTPtr orig_ast = parseQuery(begin, end, true);
 
             if (!orig_ast)
@@ -999,7 +1029,7 @@ private:
                 return begin;
             }
 
-            auto as_insert = orig_ast->as<ASTInsertQuery>();
+            auto * as_insert = orig_ast->as<ASTInsertQuery>();
             if (as_insert && as_insert->data)
             {
                 // INSERT data is ended by newline
@@ -1019,9 +1049,13 @@ private:
                 ASTPtr ast_to_process;
                 try
                 {
+                    std::stringstream dump_before_fuzz;
+                    fuzz_base->dumpTree(dump_before_fuzz);
                     auto base_before_fuzz = fuzz_base->formatForErrorMessage();
+
                     ast_to_process = fuzz_base->clone();
                     fuzzer.fuzzMain(ast_to_process);
+
                     auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 
                     // Debug AST cloning errors.
@@ -1030,6 +1064,10 @@ private:
                         fprintf(stderr, "base before fuzz: %s\n"
                             "base after fuzz: %s\n", base_before_fuzz.c_str(),
                             base_after_fuzz.c_str());
+                        fprintf(stderr, "dump before fuzz:\n%s\n",
+                            dump_before_fuzz.str().c_str());
+                        fprintf(stderr, "dump after fuzz:\n");
+                        fuzz_base->dumpTree(std::cerr);
                         assert(false);
                     }
 
@@ -1052,10 +1090,14 @@ private:
                     std::cerr << "Error on processing query: " << ast_to_process->formatForErrorMessage() << std::endl << last_exception_received_from_server->message();
                 }
 
-                if (received_exception_from_server && !ignore_error)
+                if (received_exception_from_server)
                 {
-                    // fuzz again
-                    fprintf(stderr, "got error, will fuzz again\n");
+                    // Query completed with error, ignore it and fuzz again.
+                    fprintf(stderr, "Got error, will fuzz again\n");
+
+                    received_exception_from_server = false;
+                    last_exception_received_from_server.reset();
+
                     continue;
                 }
                 else if (ast_to_process->formatForErrorMessage().size() > 500)
@@ -1111,6 +1153,7 @@ private:
     void processParsedSingleQuery()
     {
         resetOutput();
+        last_exception_received_from_server.reset();
         received_exception_from_server = false;
 
         if (echo_queries)

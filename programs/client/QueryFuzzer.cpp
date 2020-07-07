@@ -35,7 +35,7 @@ namespace ErrorCodes
 
 Field QueryFuzzer::getRandomField(int type)
 {
-    switch(type)
+    switch (type)
     {
     case 0:
     {
@@ -458,4 +458,4 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
     std::cout << std::endl << std::endl;
 }
 
-} // namespace DB
+}
