@@ -121,7 +121,7 @@ def test_add_disk(started_cluster):
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
         except:
-            """"""
+            pass
 
 
 def test_add_disk_without_first_check(started_cluster):
@@ -141,7 +141,7 @@ def test_add_disk_without_first_check(started_cluster):
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
         except:
-            """"""
+            pass
 
 
 def test_add_disk_to_separate_config(started_cluster):
@@ -173,7 +173,7 @@ def test_add_disk_to_separate_config(started_cluster):
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
         except:
-            """"""
+            pass
 
 
 def test_add_policy(started_cluster):
@@ -207,7 +207,7 @@ def test_add_policy(started_cluster):
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
         except:
-            """"""
+            pass
 
 
 def test_new_policy_works(started_cluster):
@@ -256,7 +256,7 @@ def test_new_policy_works(started_cluster):
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
         except:
-            """"""
+            pass
 
 
 def test_add_volume_to_policy(started_cluster):
@@ -294,7 +294,7 @@ def test_add_volume_to_policy(started_cluster):
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
         except:
-            """"""
+            pass
 
 
 def test_add_disk_to_policy(started_cluster):
@@ -332,7 +332,7 @@ def test_add_disk_to_policy(started_cluster):
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
         except:
-            """"""
+            pass
 
 
 def test_remove_disk(started_cluster):
@@ -364,7 +364,7 @@ def test_remove_disk(started_cluster):
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
         except:
-            """"""
+            pass
 
 
 def test_remove_policy(started_cluster):
@@ -401,7 +401,7 @@ def test_remove_policy(started_cluster):
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
         except:
-            """"""
+            pass
 
 
 def test_remove_volume_from_policy(started_cluster):
@@ -445,7 +445,7 @@ def test_remove_volume_from_policy(started_cluster):
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
         except:
-            """"""
+            pass
 
 
 def test_remove_disk_from_policy(started_cluster):
@@ -489,4 +489,4 @@ def test_remove_disk_from_policy(started_cluster):
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
         except:
-            """"""
+            pass
