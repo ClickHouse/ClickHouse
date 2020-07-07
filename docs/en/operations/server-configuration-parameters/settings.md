@@ -398,6 +398,27 @@ The cache is shared for the server and memory is allocated as needed. The cache 
 <mark_cache_size>5368709120</mark_cache_size>
 ```
 
+
+## max_server_memory_usage {#max_server_memory_usage}
+
+Limits total RAM usage by the ClickHouse server. You can specify it only for the default profile.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited.
+
+Default value: `0`.
+
+**Additional Info**
+
+On hosts with low RAM and swap, you possibly need setting `max_server_memory_usage_to_ram_ratio > 1`.
+
+**See also**
+
+-   [max_memory_usage](../settings/query-complexity.md#settings_max_memory_usage)
+
+
 ## max\_concurrent\_queries {#max-concurrent-queries}
 
 The maximum number of simultaneously processed requests.
