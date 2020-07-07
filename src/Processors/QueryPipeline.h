@@ -7,13 +7,14 @@
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Storages/IStorage_fwd.h>
-#include <Storages/TableLockHolder.h>
 
 namespace DB
 {
 
+class TableStructureReadLock;
+using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
+using TableStructureReadLocks = std::vector<TableStructureReadLockHolder>;
 
-using TableLockHolders = std::vector<TableLockHolder>;
 class Context;
 
 class IOutputFormat;
@@ -145,7 +146,7 @@ public:
 
     const Block & getHeader() const { return current_header; }
 
-    void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
     void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { storage_holders.emplace_back(std::move(storage)); }
 
@@ -179,7 +180,7 @@ private:
     /// because QueryPipeline is alive until query is finished.
     std::vector<std::shared_ptr<Context>> interpreter_context;
     std::vector<StoragePtr> storage_holders;
-    TableLockHolders table_locks;
+    TableStructureReadLocks table_locks;
 
     /// Common header for each stream.
     Block current_header;

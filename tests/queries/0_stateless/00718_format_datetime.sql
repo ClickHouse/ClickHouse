@@ -1,4 +1,4 @@
-SET send_logs_level = 'fatal';
+SET send_logs_level = 'none';
 
 SELECT formatDateTime(); -- { serverError 42 }
 SELECT formatDateTime('not a datetime', 'IGNORED'); -- { serverError 43 }

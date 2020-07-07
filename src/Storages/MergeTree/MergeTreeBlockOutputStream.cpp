@@ -8,7 +8,7 @@ namespace DB
 
 Block MergeTreeBlockOutputStream::getHeader() const
 {
-    return metadata_snapshot->getSampleBlock();
+    return storage.getSampleBlock();
 }
 
 
@@ -16,12 +16,12 @@ void MergeTreeBlockOutputStream::write(const Block & block)
 {
     storage.delayInsertOrThrowIfNeeded();
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block);
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block);
         storage.renameTempPartAndAdd(part, &storage.increment);
 
         PartLog::addNewPart(storage.global_context, part, watch.elapsed());

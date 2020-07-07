@@ -11,6 +11,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 
+
 namespace DB
 {
 
@@ -30,9 +31,6 @@ class ASTFunction;
 class ASTExpressionList;
 class ASTSelectQuery;
 struct ASTTablesInSelectQueryElement;
-
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
@@ -153,6 +151,9 @@ protected:
     void analyzeAggregation();
     bool makeAggregateDescriptions(ExpressionActionsPtr & actions);
 
+    /// columns - the columns that are present before the transformations begin.
+    void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
+
     const ASTSelectQuery * getSelectQuery() const;
 
     bool isRemoteStorage() const;
@@ -175,8 +176,7 @@ struct ExpressionAnalysisResult
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
 
-    ExpressionActionsPtr before_join;
-    ExpressionActionsPtr join;
+    ExpressionActionsPtr before_join;   /// including JOIN
     ExpressionActionsPtr before_where;
     ExpressionActionsPtr before_aggregation;
     ExpressionActionsPtr before_having;
@@ -202,7 +202,6 @@ struct ExpressionAnalysisResult
 
     ExpressionAnalysisResult(
         SelectQueryExpressionAnalyzer & query_analyzer,
-        const StorageMetadataPtr & metadata_snapshot,
         bool first_stage,
         bool second_stage,
         bool only_types,
@@ -212,7 +211,7 @@ struct ExpressionAnalysisResult
     /// Filter for row-level security.
     bool hasFilter() const { return filter_info.get(); }
 
-    bool hasJoin() const { return join.get(); }
+    bool hasJoin() const { return before_join.get(); }
     bool hasPrewhere() const { return prewhere_info.get(); }
     bool hasWhere() const { return before_where.get(); }
     bool hasHaving() const { return before_having.get(); }
@@ -233,21 +232,17 @@ public:
         const ASTPtr & query_,
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
-        const StorageMetadataPtr & metadata_snapshot_,
         const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
         const SelectQueryOptions & options_ = {})
-        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_)
-        , metadata_snapshot(metadata_snapshot_)
-        , required_result_columns(required_result_columns_)
-        , query_options(options_)
+    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_)
+    ,   required_result_columns(required_result_columns_), query_options(options_)
     {
     }
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
     bool hasGlobalSubqueries() { return has_global_subqueries; }
-    bool hasTableJoin() const { return syntax->ast_join; }
 
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
@@ -265,7 +260,6 @@ public:
     void appendProjectResult(ExpressionActionsChain & chain) const;
 
 private:
-    StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.
     NameSet required_result_columns;
     SelectQueryOptions query_options;
@@ -306,8 +300,7 @@ private:
 
     /// Before aggregation:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
-    bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
-    bool appendJoin(ExpressionActionsChain & chain);
+    bool appendJoin(ExpressionActionsChain & chain, bool only_types);
     /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
     void appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();

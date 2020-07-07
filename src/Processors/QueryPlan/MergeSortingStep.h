@@ -7,7 +7,6 @@
 namespace DB
 {
 
-/// Sorts stream of data. See MergeSortingTransform.
 class MergeSortingStep : public ITransformingStep
 {
 public:

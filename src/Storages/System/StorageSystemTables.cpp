@@ -33,8 +33,7 @@ namespace ErrorCodes
 StorageSystemTables::StorageSystemTables(const std::string & name_)
     : IStorage({"system", name_})
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription(
+    setColumns(ColumnsDescription(
     {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
@@ -56,7 +55,6 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
     }));
-    setInMemoryMetadata(storage_metadata);
 }
 
 
@@ -245,7 +243,7 @@ protected:
                     continue;
 
                 StoragePtr table = nullptr;
-                TableLockHolder lock;
+                TableStructureReadLockHolder lock;
 
                 if (need_lock_structure)
                 {
@@ -257,7 +255,8 @@ protected:
                     }
                     try
                     {
-                        lock = table->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+                        lock = table->lockStructureForShare(
+                                false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
                     }
                     catch (const Exception & e)
                     {
@@ -360,15 +359,11 @@ protected:
                 else
                     src_index += 2;
 
-                StorageMetadataPtr metadata_snapshot;
-                if (table != nullptr)
-                    metadata_snapshot = table->getInMemoryMetadataPtr();
-
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    assert(metadata_snapshot != nullptr);
-                    if ((expression_ptr = metadata_snapshot->getPartitionKeyAST()))
+                    assert(table != nullptr);
+                    if ((expression_ptr = table->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -376,8 +371,8 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(metadata_snapshot != nullptr);
-                    if ((expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
+                    assert(table != nullptr);
+                    if ((expression_ptr = table->getSortingKey().expression_list_ast))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -385,8 +380,8 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(metadata_snapshot != nullptr);
-                    if ((expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
+                    assert(table != nullptr);
+                    if ((expression_ptr = table->getPrimaryKey().expression_list_ast))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -394,8 +389,8 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    assert(metadata_snapshot != nullptr);
-                    if ((expression_ptr = metadata_snapshot->getSamplingKeyAST()))
+                    assert(table != nullptr);
+                    if ((expression_ptr = table->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -451,20 +446,19 @@ private:
 
 Pipes StorageSystemTables::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    check(column_names);
 
     /// Create a mask of what columns are needed in the result.
 
     NameSet names_set(column_names.begin(), column_names.end());
 
-    Block sample_block = metadata_snapshot->getSampleBlock();
+    Block sample_block = getSampleBlock();
     Block res_block;
 
     std::vector<UInt8> columns_mask(sample_block.columns());

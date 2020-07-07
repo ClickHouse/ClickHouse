@@ -19,8 +19,7 @@ namespace DB
 StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
     : IStorage({"system", name_})
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription({
+    setColumns(ColumnsDescription({
         { "database",                             std::make_shared<DataTypeString>()   },
         { "table",                                std::make_shared<DataTypeString>()   },
         { "engine",                               std::make_shared<DataTypeString>()   },
@@ -53,20 +52,18 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
         { "active_replicas",                      std::make_shared<DataTypeUInt8>()    },
         { "zookeeper_exception",                  std::make_shared<DataTypeString>()   },
     }));
-    setInMemoryMetadata(storage_metadata);
 }
 
 
 Pipes StorageSystemReplicas::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    check(column_names);
 
     const auto access = context.getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
@@ -146,7 +143,7 @@ Pipes StorageSystemReplicas::read(
         col_engine = filtered_block.getByName("engine").column;
     }
 
-    MutableColumns res_columns = metadata_snapshot->getSampleBlock().cloneEmptyColumns();
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
 
     for (size_t i = 0, size = col_database->size(); i < size; ++i)
     {
@@ -187,7 +184,7 @@ Pipes StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.zookeeper_exception);
     }
 
-    Block header = metadata_snapshot->getSampleBlock();
+    Block header = getSampleBlock();
 
     Columns fin_columns;
     fin_columns.reserve(res_columns.size());
@@ -203,7 +200,7 @@ Pipes StorageSystemReplicas::read(
     Chunk chunk(std::move(fin_columns), num_rows);
 
     Pipes pipes;
-    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));
     return pipes;
 }
 

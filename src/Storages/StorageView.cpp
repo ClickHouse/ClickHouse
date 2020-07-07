@@ -38,8 +38,7 @@ StorageView::StorageView(
     const ColumnsDescription & columns_)
     : IStorage(table_id_)
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+    setColumns(columns_);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -47,14 +46,12 @@ StorageView::StorageView(
     SelectQueryDescription description;
 
     description.inner_query = query.select->ptr();
-    storage_metadata.setSelectQuery(description);
-    setInMemoryMetadata(storage_metadata);
+    setSelectQuery(description);
 }
 
 
 Pipes StorageView::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -63,7 +60,7 @@ Pipes StorageView::read(
 {
     Pipes pipes;
 
-    ASTPtr current_inner_query = metadata_snapshot->getSelectQuery().inner_query;
+    ASTPtr current_inner_query = getSelectQuery().inner_query;
 
     if (query_info.view_query)
     {
@@ -86,9 +83,8 @@ Pipes StorageView::read(
     /// And also convert to expected structure.
     pipeline.addSimpleTransform([&](const Block & header)
     {
-        return std::make_shared<ConvertingTransform>(
-            header, metadata_snapshot->getSampleBlockForColumns(
-                column_names, getVirtuals(), getStorageID()), ConvertingTransform::MatchColumnsMode::Name);
+        return std::make_shared<ConvertingTransform>(header, getSampleBlockForColumns(column_names),
+                                                     ConvertingTransform::MatchColumnsMode::Name);
     });
 
     pipes = std::move(pipeline).getPipes();

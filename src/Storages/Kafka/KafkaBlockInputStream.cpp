@@ -19,23 +19,15 @@ namespace ErrorCodes
 const auto MAX_FAILED_POLL_ATTEMPTS = 10;
 
 KafkaBlockInputStream::KafkaBlockInputStream(
-    StorageKafka & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
-    const std::shared_ptr<Context> & context_,
-    const Names & columns,
-    Poco::Logger * log_,
-    size_t max_block_size_,
-    bool commit_in_suffix_)
+    StorageKafka & storage_, const std::shared_ptr<Context> & context_, const Names & columns, Poco::Logger * log_, size_t max_block_size_, bool commit_in_suffix_)
     : storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
     , context(context_)
     , column_names(columns)
     , log(log_)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
-    , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
-    , virtual_header(metadata_snapshot->getSampleBlockForColumns(
-            {"_topic", "_key", "_offset", "_partition", "_timestamp", "_timestamp_ms", "_headers.name", "_headers.value"}, storage.getVirtuals(), storage.getStorageID()))
+    , non_virtual_header(storage.getSampleBlockNonMaterialized())
+    , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp","_timestamp_ms","_headers.name","_headers.value"}))
 {
 }
 
@@ -52,7 +44,7 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
 
 Block KafkaBlockInputStream::getHeader() const
 {
-    return metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
+    return storage.getSampleBlockForColumns(column_names);
 }
 
 void KafkaBlockInputStream::readPrefixImpl()

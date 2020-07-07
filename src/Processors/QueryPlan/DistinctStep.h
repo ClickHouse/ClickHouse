@@ -5,7 +5,6 @@
 namespace DB
 {
 
-/// Execute DISTINCT for specified columns.
 class DistinctStep : public ITransformingStep
 {
 public:
