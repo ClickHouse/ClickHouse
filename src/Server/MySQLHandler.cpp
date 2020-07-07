@@ -45,9 +45,9 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-static String select_empty_replacement_query(const String & query);
-static String show_table_status_replacement_query(const String & query);
-static String kill_connection_id_replacement_query(const String & query);
+static String selectEmptyReplacementQuery(const String & query);
+static String showTableStatusReplacementQuery(const String & query);
+static String killConnectionIdReplacementQuery(const String & query);
 
 MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled, size_t connection_id_)
@@ -62,9 +62,9 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
     if (ssl_enabled)
         server_capability_flags |= CLIENT_SSL;
 
-    replacements.emplace("KILL QUERY", kill_connection_id_replacement_query);
-    replacements.emplace("SHOW TABLE STATUS LIKE", show_table_status_replacement_query);
-    replacements.emplace("SHOW VARIABLES", select_empty_replacement_query);
+    replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
+    replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
+    replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
 }
 
 void MySQLHandler::run()
@@ -380,14 +380,14 @@ static bool isFederatedServerSetupSetCommand(const String & query)
 }
 
 /// Replace "[query(such as SHOW VARIABLES...)]" into "".
-static String select_empty_replacement_query(const String & query)
+static String selectEmptyReplacementQuery(const String & query)
 {
     std::ignore = query;
     return "select ''";
 }
 
 /// Replace "SHOW TABLE STATUS LIKE 'xx'" into "SELECT ... FROM system.tables WHERE name LIKE 'xx'".
-static String show_table_status_replacement_query(const String & query)
+static String showTableStatusReplacementQuery(const String & query)
 {
     const String prefix = "SHOW TABLE STATUS LIKE ";
     if (query.size() > prefix.size())
@@ -421,7 +421,7 @@ static String show_table_status_replacement_query(const String & query)
 }
 
 /// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id = 'mysql:[connection_id]'".
-static String kill_connection_id_replacement_query(const String & query)
+static String killConnectionIdReplacementQuery(const String & query)
 {
     const String prefix = "KILL QUERY ";
     if (query.size() > prefix.size())
