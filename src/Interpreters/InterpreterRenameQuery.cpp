@@ -18,23 +18,6 @@ InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Contex
 }
 
 
-struct RenameDescription
-{
-    RenameDescription(const ASTRenameQuery::Element & elem, const String & current_database) :
-        from_database_name(elem.from.database.empty() ? current_database : elem.from.database),
-        from_table_name(elem.from.table),
-        to_database_name(elem.to.database.empty() ? current_database : elem.to.database),
-        to_table_name(elem.to.table)
-    {}
-
-    String from_database_name;
-    String from_table_name;
-
-    String to_database_name;
-    String to_table_name;
-};
-
-
 BlockIO InterpreterRenameQuery::execute()
 {
     const auto & rename = query_ptr->as<const ASTRenameQuery &>();
@@ -51,7 +34,7 @@ BlockIO InterpreterRenameQuery::execute()
       *  or we will be in inconsistent state. (It is worth to be fixed.)
       */
 
-    std::vector<RenameDescription> descriptions;
+    RenameDescriptions descriptions;
     descriptions.reserve(rename.elements.size());
 
     /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
@@ -75,19 +58,40 @@ BlockIO InterpreterRenameQuery::execute()
     for (auto & table_guard : table_guards)
         table_guard.second = database_catalog.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name);
 
+    if (rename.database)
+        return executeToDatabase(rename, descriptions);
+    else
+        return executeToTables(rename, descriptions);
+}
+
+BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions)
+{
+    auto & database_catalog = DatabaseCatalog::instance();
+
     for (auto & elem : descriptions)
     {
         if (!rename.exchange)
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), context);
 
         database_catalog.getDatabase(elem.from_database_name)->renameTable(
-            context,
-            elem.from_table_name,
-            *database_catalog.getDatabase(elem.to_database_name),
-            elem.to_table_name,
-            rename.exchange);
+                context,
+                elem.from_table_name,
+                *database_catalog.getDatabase(elem.to_database_name),
+                elem.to_table_name,
+                rename.exchange);
     }
 
+    return {};
+}
+
+BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const RenameDescriptions & descriptions)
+{
+    assert(descriptions.size() == 1);
+    assert(descriptions.front().from_table_name.empty());
+    assert(descriptions.front().to_table_name.empty());
+    const auto & old_name = descriptions.front().from_database_name;
+    const auto & new_name = descriptions.back().to_database_name;
+    DatabaseCatalog::instance().renameDatabase(old_name, new_name);
     return {};
 }
 
@@ -99,6 +103,12 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess() const
     {
         required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.from.database, elem.from.table);
         required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.database, elem.to.table);
+        if (rename.exchange)
+        {
+
+        required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.from.database, elem.from.table);
+        required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to.database, elem.to.table);
+        }
     }
     return required_access;
 }

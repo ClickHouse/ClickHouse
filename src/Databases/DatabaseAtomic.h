@@ -26,6 +26,8 @@ public:
     String getEngineName() const override { return "Atomic"; }
     UUID getUUID() const override { return db_uuid; }
 
+    void renameDatabase(const String & new_name) override;
+
     void renameTable(
             const Context & context,
             const String & table_name,
@@ -64,13 +66,15 @@ private:
     typedef std::unordered_map<UUID, StoragePtr> DetachedTables;
     [[nodiscard]] DetachedTables cleenupDetachedTables();
 
+    void tryCreateMetadataSymlink();
+
     //TODO store path in DatabaseWithOwnTables::tables
     typedef std::unordered_map<String, String> NameToPathMap;
     NameToPathMap table_name_to_path;
 
     DetachedTables detached_tables;
-    const String path_to_table_symlinks;
-    const String path_to_metadata_symlink;
+    String path_to_table_symlinks;
+    String path_to_metadata_symlink;
     const UUID db_uuid;
 };
 

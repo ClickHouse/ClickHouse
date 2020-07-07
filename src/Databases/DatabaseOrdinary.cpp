@@ -163,7 +163,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
                     context,
                     create_query,
                     *this,
-                    getDatabaseName(),
+                    database_name,
                     getMetadataPath() + name_with_query.first,
                     has_force_restore_data_flag);
 

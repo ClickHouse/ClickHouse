@@ -146,7 +146,7 @@ void DatabaseOnDisk::createTable(
 {
     const auto & settings = context.getSettingsRef();
     const auto & create = query->as<ASTCreateQuery &>();
-    assert(getDatabaseName() == create.database && table_name == create.table);
+    assert(table_name == create.table);
 
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
@@ -341,8 +341,14 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
     ASTPtr ast;
 
     auto settings = global_context.getSettingsRef();
-    auto database_metadata_path = global_context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
-    ast = getCreateQueryFromMetadata(database_metadata_path, true);
+    {
+        std::lock_guard lock(mutex);
+        auto database_metadata_path = global_context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
+        ast = parseQueryFromMetadata(log, global_context, database_metadata_path, true);
+        auto & ast_create_query = ast->as<ASTCreateQuery &>();
+        ast_create_query.attach = false;
+        ast_create_query.database = database_name;
+    }
     if (!ast)
     {
         /// Handle databases (such as default) for which there are no database.sql files.
@@ -493,7 +499,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metada
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
-        ast_create_query.database = database_name;
+        ast_create_query.database = getDatabaseName();
     }
 
     return ast;
