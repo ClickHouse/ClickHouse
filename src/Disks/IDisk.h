@@ -171,6 +171,9 @@ public:
 
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
+
+    /// Return disk type - "local", "s3", etc.
+    virtual const String getType() const = 0;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;

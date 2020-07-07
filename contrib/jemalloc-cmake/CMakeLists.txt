@@ -22,9 +22,14 @@ if (ENABLE_JEMALLOC)
             #
             # By enabling percpu_arena number of arenas limited to number of CPUs and hence
             # this problem should go away.
-            set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0")
+            #
+            # muzzy_decay_ms -- use MADV_FREE when available on newer Linuxes, to
+            # avoid spurious latencies and additional work associated with
+            # MADV_DONTNEED. See
+            # https://github.com/ClickHouse/ClickHouse/issues/11121 for motivation.
+            set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:10000")
         else()
-            set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0")
+            set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:10000")
         endif()
         # CACHE variable is empty, to allow changing defaults without necessity
         # to purge cache
