@@ -29,7 +29,7 @@ fi
 # NOTE keep in sync with ./backport.sh.
 # Search for PR numbers in commit messages. First variant is normal merge, and second
 # variant is squashed. Next are some backport message variants.
-find_prs=(sed -n "s/^.*merge[d]*.*#\([[:digit:]]\+\).*$/\1/Ip;
+find_prs=(sed -n "s/^.*merg[eding]*.*#\([[:digit:]]\+\).*$/\1/Ip;
                   s/^.*(#\([[:digit:]]\+\))$/\1/p;
                   s/^.*back[- ]*port[ed of]*.*#\([[:digit:]]\+\).*$/\1/Ip;
                   s/^.*cherry[- ]*pick[ed of]*.*#\([[:digit:]]\+\).*$/\1/Ip")
