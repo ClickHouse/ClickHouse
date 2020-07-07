@@ -421,3 +421,5 @@ add_subdirectory (tests)
 add_subdirectory (utils)
 
 include (cmake/print_include_directories.cmake)
+
+include (cmake/sanitize_target_link_libraries.cmake)
