@@ -108,6 +108,7 @@
 	path = contrib/grpc
 	url = https://github.com/ClickHouse-Extras/grpc.git
 	branch = v1.25.0
+	ignore = dirty 
 [submodule "contrib/aws"]
 	path = contrib/aws
 	url = https://github.com/ClickHouse-Extras/aws-sdk-cpp.git
