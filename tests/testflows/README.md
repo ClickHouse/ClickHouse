@@ -43,6 +43,11 @@ regressions locally using the following command.
 python3 regression.py --local --clickhouse-binary-path "/usr/bin/clickhouse"
 ```
 
+## Output Verbosity
+
+You can control verbosity of the output by specifying the output format with `-o` or `--output` option.
+See `--help` for more details.
+
 [Python 3]: https://www.python.org/
 [Ubuntu]: https://ubuntu.com/ 
 [TestFlows]: https://testflows.com

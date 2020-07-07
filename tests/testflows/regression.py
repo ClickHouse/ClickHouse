@@ -10,9 +10,9 @@ from helpers.argparser import argparser
 @Name("clickhouse")
 @ArgumentParser(argparser)
 def regression(self, local, clickhouse_binary_path):
-    """ClickHouse functional regression module.
+    """ClickHouse regression.
     """
-    Feature(test=load("ldap.regression", "regression"))(
+    Feature(test=load("example.regression", "regression"))(
         local=local, clickhouse_binary_path=clickhouse_binary_path)
 
 if main():
