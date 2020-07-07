@@ -251,7 +251,6 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
             }
             else
             {
-
                 if (!arg.type->equals(*return_type) && !arg.type->equals(*nullable_return_type))
                 {
                     /// If result has array type Array(T) still cast Array(Nullable(U)) to Array(Nullable(T))
