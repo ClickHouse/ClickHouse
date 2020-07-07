@@ -13,8 +13,6 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
 
-#include <filesystem>
-
 namespace DB
 {
 
@@ -521,12 +519,6 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
     std::map<String, StorageID> dropped_metadata;
     String path = global_context->getPath() + "metadata_dropped/";
-
-    if (!std::filesystem::exists(path))
-    {
-        return;
-    }
-
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
     {

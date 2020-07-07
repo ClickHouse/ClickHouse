@@ -1,6 +1,4 @@
 set (CURL_DIR ${ClickHouse_SOURCE_DIR}/contrib/curl)
-set (CURL_LIBRARY ${ClickHouse_SOURCE_DIR}/contrib/curl/lib)
-set (CURL_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/curl/include)
 
 set (SRCS
     ${CURL_DIR}/lib/file.c

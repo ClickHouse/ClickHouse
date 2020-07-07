@@ -5,23 +5,11 @@
 namespace DB
 {
 
-static bool checkColumnsAlreadyDistinct(const Names & columns, const NameSet & distinct_names)
-{
-    bool columns_already_distinct = true;
-    for (const auto & name : columns)
-        if (distinct_names.count(name) == 0)
-            columns_already_distinct = false;
-
-    return columns_already_distinct;
-}
-
-static ITransformingStep::DataStreamTraits getTraits(bool pre_distinct, bool already_distinct_columns)
+static ITransformingStep::DataStreamTraits getTraits()
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = already_distinct_columns, /// Will be calculated separately otherwise
-            .returns_single_stream = !pre_distinct && !already_distinct_columns,
-            .preserves_number_of_streams = pre_distinct || already_distinct_columns,
+            .preserves_distinct_columns = true
     };
 }
 
@@ -32,29 +20,38 @@ DistinctStep::DistinctStep(
     UInt64 limit_hint_,
     const Names & columns_,
     bool pre_distinct_)
-    : ITransformingStep(
-            input_stream_,
-            input_stream_.header,
-            getTraits(pre_distinct_, checkColumnsAlreadyDistinct(columns_, input_stream_.distinct_columns)))
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , set_size_limits(set_size_limits_)
     , limit_hint(limit_hint_)
     , columns(columns_)
     , pre_distinct(pre_distinct_)
 {
-    if (!output_stream->distinct_columns.empty() /// Columns already distinct, do nothing
-        && (!pre_distinct /// Main distinct
-            || input_stream_.has_single_port)) /// pre_distinct for single port works as usual one
-    {
-        /// Build distinct set.
-        for (const auto & name : columns)
-            output_stream->distinct_columns.insert(name);
-    }
+    auto & distinct_columns = pre_distinct ? output_stream->local_distinct_columns
+                                           : output_stream->distinct_columns;
+
+    /// Add more distinct columns.
+    for (const auto & name : columns)
+        distinct_columns.insert(name);
+}
+
+static bool checkColumnsAlreadyDistinct(const Names & columns, const NameSet & distinct_names)
+{
+    bool columns_already_distinct = true;
+    for (const auto & name : columns)
+        if (distinct_names.count(name) == 0)
+            columns_already_distinct = false;
+
+    return columns_already_distinct;
 }
 
 void DistinctStep::transformPipeline(QueryPipeline & pipeline)
 {
     if (checkColumnsAlreadyDistinct(columns, input_streams.front().distinct_columns))
         return;
+
+    if ((pre_distinct || pipeline.getNumStreams() <= 1)
+        && checkColumnsAlreadyDistinct(columns, input_streams.front().local_distinct_columns))
+            return;
 
     if (!pre_distinct)
         pipeline.resize(1);

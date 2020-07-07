@@ -117,7 +117,6 @@ def translate_filter(key, value, _format, _):
             admonition_value = []
             remaining_para_value = []
             in_admonition = True
-            break_value = [pandocfilters.LineBreak(), pandocfilters.Str(' ' * 4)]
             for item in value:
                 if in_admonition:
                     if item.get('t') == 'SoftBreak':
@@ -125,11 +124,9 @@ def translate_filter(key, value, _format, _):
                     else:
                         admonition_value.append(item)
                 else:
-                    if item.get('t') == 'SoftBreak':
-                        remaining_para_value += break_value
-                    else:
-                        remaining_para_value.append(item)
+                    remaining_para_value.append(item)
 
+            break_value = [pandocfilters.LineBreak(), pandocfilters.Str(' ' * 4)]
             if admonition_value[-1].get('t') == 'Quoted':
                 text = process_sentence(admonition_value[-1]['c'][-1])
                 text[0]['c'] = '"' + text[0]['c']
@@ -139,7 +136,7 @@ def translate_filter(key, value, _format, _):
             else:
                 text = admonition_value[-1].get('c')
                 if text:
-                    text = translate.translate(text[0].upper() + text[1:])
+                    text = translate(text[0].upper() + text[1:])
                     admonition_value.append(pandocfilters.Space())
                     admonition_value.append(pandocfilters.Str(f'"{text}"'))
 

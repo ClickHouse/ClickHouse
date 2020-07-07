@@ -6,7 +6,6 @@
 namespace DB
 {
 
-/// Sort separate chunks of data.
 class PartialSortingStep : public ITransformingStep
 {
 public:

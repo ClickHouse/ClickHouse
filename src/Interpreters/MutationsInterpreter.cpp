@@ -137,13 +137,13 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands)
     return select;
 }
 
-ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns)
+ColumnDependencies getAllColumnDependencies(const StoragePtr & storage, const NameSet & updated_columns)
 {
     NameSet new_updated_columns = updated_columns;
     ColumnDependencies dependencies;
     while (!new_updated_columns.empty())
     {
-        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns);
+        auto new_dependencies = storage->getColumnDependencies(new_updated_columns);
         new_updated_columns.clear();
         for (const auto & dependency : new_dependencies)
         {
@@ -163,7 +163,6 @@ ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_
 
 bool isStorageTouchedByMutations(
     StoragePtr storage,
-    const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     Context context_copy)
 {
@@ -184,7 +183,7 @@ bool isStorageTouchedByMutations(
     /// Interpreter must be alive, when we use result of execute() method.
     /// For some reason it may copy context and and give it into ExpressionBlockInputStream
     /// after that we will use context from destroyed stack frame in our stream.
-    InterpreterSelectQuery interpreter(select_query, context_copy, storage, metadata_snapshot, SelectQueryOptions().ignoreLimits());
+    InterpreterSelectQuery interpreter(select_query, context_copy, storage, SelectQueryOptions().ignoreLimits());
     BlockInputStreamPtr in = interpreter.execute().getInputStream();
 
     Block block = in->read();
@@ -201,22 +200,20 @@ bool isStorageTouchedByMutations(
 
 MutationsInterpreter::MutationsInterpreter(
     StoragePtr storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
     MutationCommands commands_,
     const Context & context_,
     bool can_execute_)
     : storage(std::move(storage_))
-    , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
     , context(context_)
     , can_execute(can_execute_)
 {
     mutation_ast = prepare(!can_execute);
     SelectQueryOptions limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
-    select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot_, limits);
+    select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, limits);
 }
 
-static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot)
+static NameSet getKeyColumns(const StoragePtr & storage)
 {
     const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
     if (!merge_tree_data)
@@ -224,10 +221,10 @@ static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPt
 
     NameSet key_columns;
 
-    for (const String & col : metadata_snapshot->getColumnsRequiredForPartitionKey())
+    for (const String & col : merge_tree_data->getColumnsRequiredForPartitionKey())
         key_columns.insert(col);
 
-    for (const String & col : metadata_snapshot->getColumnsRequiredForSortingKey())
+    for (const String & col : merge_tree_data->getColumnsRequiredForSortingKey())
         key_columns.insert(col);
     /// We don't process sample_by_ast separately because it must be among the primary key columns.
 
@@ -241,16 +238,15 @@ static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPt
 }
 
 static void validateUpdateColumns(
-    const StoragePtr & storage,
-    const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns,
+    const StoragePtr & storage, const NameSet & updated_columns,
     const std::unordered_map<String, Names> & column_to_affected_materialized)
 {
-    NameSet key_columns = getKeyColumns(storage, metadata_snapshot);
+    NameSet key_columns = getKeyColumns(storage);
 
     for (const String & column_name : updated_columns)
     {
         auto found = false;
-        for (const auto & col : metadata_snapshot->getColumns().getOrdinary())
+        for (const auto & col : storage->getColumns().getOrdinary())
         {
             if (col.name == column_name)
             {
@@ -261,7 +257,7 @@ static void validateUpdateColumns(
 
         if (!found)
         {
-            for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
+            for (const auto & col : storage->getColumns().getMaterialized())
             {
                 if (col.name == column_name)
                     throw Exception("Cannot UPDATE materialized column " + backQuote(column_name), ErrorCodes::CANNOT_UPDATE_COLUMN);
@@ -297,8 +293,8 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
 
 
-    const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
-    const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
+    const ColumnsDescription & columns_desc = storage->getColumns();
+    const IndicesDescription & indices_desc = storage->getSecondaryIndices();
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     NameSet updated_columns;
@@ -329,11 +325,11 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             }
         }
 
-        validateUpdateColumns(storage, metadata_snapshot, updated_columns, column_to_affected_materialized);
+        validateUpdateColumns(storage, updated_columns, column_to_affected_materialized);
     }
 
     /// Columns, that we need to read for calculation of skip indices or TTL expressions.
-    auto dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
+    auto dependencies = getAllColumnDependencies(storage, updated_columns);
 
     /// First, break a sequence of commands into stages.
     for (const auto & command : commands)
@@ -411,7 +407,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
-            if (metadata_snapshot->hasRowsTTL())
+            if (storage->hasRowsTTL())
             {
                 for (const auto & column : all_columns)
                     dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
@@ -419,7 +415,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             else
             {
                 NameSet new_updated_columns;
-                auto column_ttls = metadata_snapshot->getColumns().getColumnTTLs();
+                auto column_ttls = storage->getColumns().getColumnTTLs();
                 for (const auto & elem : column_ttls)
                 {
                     dependencies.emplace(elem.first, ColumnDependency::TTL_TARGET);
@@ -427,7 +423,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 auto all_columns_vec = all_columns.getNames();
-                auto all_dependencies = getAllColumnDependencies(metadata_snapshot, NameSet(all_columns_vec.begin(), all_columns_vec.end()));
+                auto all_dependencies = getAllColumnDependencies(storage, NameSet(all_columns_vec.begin(), all_columns_vec.end()));
 
                 for (const auto & dependency : all_dependencies)
                 {
@@ -436,7 +432,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 /// Recalc only skip indices of columns, that could be updated by TTL.
-                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns);
+                auto new_dependencies = storage->getColumnDependencies(new_updated_columns);
                 for (const auto & dependency : new_dependencies)
                 {
                     if (dependency.kind == ColumnDependency::SKIP_INDEX)
@@ -506,7 +502,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
-                InterpreterSelectQuery interpreter{select_query, context, storage, metadata_snapshot, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
+                InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
 
                 auto first_stage_header = interpreter.getSampleBlock();
                 auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
@@ -528,7 +524,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
 ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & prepared_stages, bool dry_run)
 {
-    NamesAndTypesList all_columns = metadata_snapshot->getColumns().getAllPhysical();
+    NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
 
 
     /// Next, for each stage calculate columns changed by this and previous stages.
@@ -671,7 +667,7 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::ve
     return in;
 }
 
-void MutationsInterpreter::validate()
+void MutationsInterpreter::validate(TableStructureReadLockHolder &)
 {
     const Settings & settings = context.getSettingsRef();
 
@@ -696,7 +692,7 @@ void MutationsInterpreter::validate()
     addStreamsForLaterStages(stages, in)->getHeader();
 }
 
-BlockInputStreamPtr MutationsInterpreter::execute()
+BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &)
 {
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
@@ -733,7 +729,7 @@ size_t MutationsInterpreter::evaluateCommandsSize()
 
 std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIfPossible(const Block & header) const
 {
-    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+    Names sort_columns = storage->getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);

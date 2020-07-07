@@ -96,8 +96,6 @@ public:
 
     void setReadOnly(const String & path) override;
 
-    const String getType() const override { return "s3"; }
-
 private:
     bool tryReserve(UInt64 bytes);
 

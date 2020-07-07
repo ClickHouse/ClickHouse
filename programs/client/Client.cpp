@@ -103,7 +103,6 @@ namespace ErrorCodes
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int DEADLOCK_AVOIDED;
-    extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
 
@@ -124,7 +123,7 @@ private:
     };
     bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
-    bool has_received_logs = false;      /// We have received some logs, do not use previous cursor position, to avoid overlaps with logs
+    bool send_logs    = false;           /// send_logs_level passed, do not use previous cursor position, to avoid overlaps with logs
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
@@ -133,12 +132,7 @@ private:
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
     String query_id;                     /// Current query_id.
-    String full_query; /// Current query as it was given to the client.
-
-    // Current query as it will be sent to the server. It may differ from the
-    // full query for INSERT queries, for which the data that follows the query
-    // is stripped and sent separately.
-    String query_to_send;
+    String query;                        /// Current query.
 
     String format;                       /// Query results output format.
     bool is_default_format = true;       /// false, if format is set in the config or command line.
@@ -183,10 +177,10 @@ private:
     ASTPtr parsed_query;
 
     /// The last exception that was received from the server. Is used for the return code in batch mode.
-    std::unique_ptr<Exception> last_exception_received_from_server;
+    std::unique_ptr<Exception> last_exception;
 
     /// If the last query resulted in exception.
-    bool received_exception_from_server = false;
+    bool got_exception = false;
     int expected_server_error = 0;
     int expected_client_error = 0;
     int actual_server_error = 0;
@@ -622,7 +616,7 @@ private:
 
                 try
                 {
-                    if (!processQueryText(input))
+                    if (!process(input))
                         break;
                 }
                 catch (const Exception & e)
@@ -663,8 +657,8 @@ private:
             nonInteractive();
 
             /// If exception code isn't zero, we should return non-zero return code anyway.
-            if (last_exception_received_from_server)
-                return last_exception_received_from_server->code() != 0 ? last_exception_received_from_server->code() : -1;
+            if (last_exception)
+                return last_exception->code() != 0 ? last_exception->code() : -1;
 
             return 0;
         }
@@ -759,163 +753,135 @@ private:
             readStringUntilEOF(text, in);
         }
 
-        processQueryText(text);
+        process(text);
     }
 
-    bool processQueryText(const String & text)
+
+    bool process(const String & text)
     {
         if (exit_strings.end() != exit_strings.find(trim(text, [](char c){ return isWhitespaceASCII(c) || c == ';'; })))
             return false;
 
-        if (!config().has("multiquery"))
-        {
-            processTextAsSingleQuery(text);
-            return true;
-        }
-
-        return processMultiQuery(text);
-    }
-
-    bool processMultiQuery(const String & text)
-    {
         const bool test_mode = config().has("testmode");
-
-        {   /// disable logs if expects errors
-            TestHint test_hint(test_mode, text);
-            if (test_hint.clientError() || test_hint.serverError())
-                processTextAsSingleQuery("SET send_logs_level = 'none'");
-        }
-
-        /// Several queries separated by ';'.
-        /// INSERT data is ended by the end of line, not ';'.
-
-        const char * begin = text.data();
-        const char * end = begin + text.size();
-
-        while (begin < end)
+        if (config().has("multiquery"))
         {
-            const char * pos = begin;
-            ASTPtr orig_ast = parseQuery(pos, end, true);
+            {   /// disable logs if expects errors
+                TestHint test_hint(test_mode, text);
+                if (test_hint.clientError() || test_hint.serverError())
+                    process("SET send_logs_level = 'none'");
+            }
 
-            if (!orig_ast)
+            /// Several queries separated by ';'.
+            /// INSERT data is ended by the end of line, not ';'.
+
+            const char * begin = text.data();
+            const char * end = begin + text.size();
+
+            while (begin < end)
             {
-                if (ignore_error)
+                const char * pos = begin;
+                ASTPtr ast = parseQuery(pos, end, true);
+
+                if (!ast)
                 {
-                    Tokens tokens(begin, end);
-                    IParser::Pos token_iterator(tokens, context.getSettingsRef().max_parser_depth);
-                    while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
-                        ++token_iterator;
-                    begin = token_iterator->end;
+                    if (ignore_error)
+                    {
+                        Tokens tokens(begin, end);
+                        IParser::Pos token_iterator(tokens, context.getSettingsRef().max_parser_depth);
+                        while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                            ++token_iterator;
+                        begin = token_iterator->end;
 
-                    continue;
+                        continue;
+                    }
+                    return true;
                 }
-                return true;
-            }
 
-            auto * insert = orig_ast->as<ASTInsertQuery>();
+                auto * insert = ast->as<ASTInsertQuery>();
 
-            if (insert && insert->data)
-            {
-                pos = find_first_symbols<'\n'>(insert->data, end);
-                insert->end = pos;
-            }
-
-            String str = text.substr(begin - text.data(), pos - begin);
-
-            begin = pos;
-            while (isWhitespaceASCII(*begin) || *begin == ';')
-                ++begin;
-
-            TestHint test_hint(test_mode, str);
-            expected_client_error = test_hint.clientError();
-            expected_server_error = test_hint.serverError();
-
-            try
-            {
-                auto ast_to_process = orig_ast;
                 if (insert && insert->data)
                 {
-                    ast_to_process = nullptr;
-                    processTextAsSingleQuery(str);
+                    pos = find_first_symbols<'\n'>(insert->data, end);
+                    insert->end = pos;
                 }
-                else
+
+                String str = text.substr(begin - text.data(), pos - begin);
+
+                begin = pos;
+                while (isWhitespaceASCII(*begin) || *begin == ';')
+                    ++begin;
+
+                TestHint test_hint(test_mode, str);
+                expected_client_error = test_hint.clientError();
+                expected_server_error = test_hint.serverError();
+
+                try
                 {
-                    parsed_query = ast_to_process;
-                    full_query = str;
-                    query_to_send = str;
-                    processParsedSingleQuery();
+                    auto ast_to_process = ast;
+                    if (insert && insert->data)
+                        ast_to_process = nullptr;
+
+                    if (!processSingleQuery(str, ast_to_process) && !ignore_error)
+                        return false;
+                }
+                catch (...)
+                {
+                    last_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    actual_client_error = last_exception->code();
+                    if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
+                        std::cerr << "Error on processing query: " << str << std::endl << last_exception->message();
+                    got_exception = true;
+                }
+
+                if (!test_hint.checkActual(actual_server_error, actual_client_error, got_exception, last_exception))
+                    connection->forceConnected(connection_parameters.timeouts);
+
+                if (got_exception && !ignore_error)
+                {
+                    if (is_interactive)
+                        break;
+                    else
+                        return false;
                 }
             }
-            catch (...)
-            {
-                last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-                actual_client_error = last_exception_received_from_server->code();
-                if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
-                    std::cerr << "Error on processing query: " << str << std::endl << last_exception_received_from_server->message();
-                received_exception_from_server = true;
-            }
 
-            if (!test_hint.checkActual(actual_server_error, actual_client_error, received_exception_from_server, last_exception_received_from_server))
-                connection->forceConnected(connection_parameters.timeouts);
-
-            if (received_exception_from_server && !ignore_error)
-            {
-                if (is_interactive)
-                    break;
-                else
-                    return false;
-            }
-        }
-
-        return true;
-    }
-
-
-    void processTextAsSingleQuery(const String & text_)
-    {
-        full_query = text_;
-
-        /// Some parts of a query (result output and formatting) are executed
-        /// client-side. Thus we need to parse the query.
-        const char * begin = full_query.data();
-        parsed_query = parseQuery(begin, begin + full_query.size(), false);
-
-        if (!parsed_query)
-            return;
-
-        // An INSERT query may have the data that follow query text. Remove the
-        /// Send part of query without data, because data will be sent separately.
-        auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (insert && insert->data)
-        {
-            query_to_send = full_query.substr(0, insert->data - full_query.data());
+            return true;
         }
         else
         {
-            query_to_send = full_query;
+            return processSingleQuery(text);
         }
-
-        processParsedSingleQuery();
     }
 
-    // Parameters are in global variables:
-    // 'parsed_query' -- the query AST,
-    // 'query_to_send' -- the query text that is sent to server,
-    // 'full_query' -- for INSERT queries, contains the query and the data that
-    // follow it. Its memory is referenced by ASTInsertQuery::begin, end.
-    void processParsedSingleQuery()
+
+    bool processSingleQuery(const String & line, ASTPtr parsed_query_ = nullptr)
     {
         resetOutput();
-        received_exception_from_server = false;
+        got_exception = false;
 
         if (echo_queries)
         {
-            writeString(full_query, std_out);
+            writeString(line, std_out);
             writeChar('\n', std_out);
             std_out.next();
         }
 
         watch.restart();
+
+        query = line;
+
+        /// Some parts of a query (result output and formatting) are executed client-side.
+        /// Thus we need to parse the query.
+        parsed_query = parsed_query_;
+        if (!parsed_query)
+        {
+            const char * begin = query.data();
+            parsed_query = parseQuery(begin, begin + query.size(), false);
+        }
+
+        if (!parsed_query)
+            return true;
+
         processed_rows = 0;
         progress.reset();
         show_progress_bar = false;
@@ -942,6 +908,8 @@ private:
 
             connection->forceConnected(connection_parameters.timeouts);
 
+            send_logs = context.getSettingsRef().send_logs_level != LogsLevel::none;
+
             ASTPtr input_function;
             if (insert && insert->select)
                 insert->tryFindInputFunction(input_function);
@@ -958,7 +926,7 @@ private:
         }
 
         /// Do not change context (current DB, settings) in case of an exception.
-        if (!received_exception_from_server)
+        if (!got_exception)
         {
             if (const auto * set_query = parsed_query->as<ASTSetQuery>())
             {
@@ -996,6 +964,8 @@ private:
         {
             std::cerr << watch.elapsedSeconds() << "\n";
         }
+
+        return true;
     }
 
 
@@ -1027,19 +997,17 @@ private:
             visitor.visit(parsed_query);
 
             /// Get new query after substitutions. Note that it cannot be done for INSERT query with embedded data.
-            query_to_send = serializeAST(*parsed_query);
+            query = serializeAST(*parsed_query);
         }
 
-        int retries_left = 10;
-        for (;;)
+        static constexpr size_t max_retries = 10;
+        for (size_t retry = 0; retry < max_retries; ++retry)
         {
-            assert(retries_left > 0);
-
             try
             {
                 connection->sendQuery(
                     connection_parameters.timeouts,
-                    query_to_send,
+                    query,
                     query_id,
                     QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
@@ -1053,19 +1021,11 @@ private:
             }
             catch (const Exception & e)
             {
-                /// Retry when the server said "Client should retry" and no rows
-                /// has been received yet.
-                if (processed_rows == 0
-                    && e.code() == ErrorCodes::DEADLOCK_AVOIDED
-                    && --retries_left)
-                {
-                    std::cerr << "Got a transient error from the server, will"
-                        << " retry (" << retries_left << " retries left)";
-                }
-                else
-                {
-                    throw;
-                }
+                /// Retry when the server said "Client should retry" and no rows has been received yet.
+                if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && retry + 1 < max_retries)
+                    continue;
+
+                throw;
             }
         }
     }
@@ -1074,13 +1034,18 @@ private:
     /// Process the query that requires transferring data blocks to the server.
     void processInsertQuery()
     {
-        const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
+        /// Send part of query without data, because data will be sent separately.
+        const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
+        String query_without_data = parsed_insert_query.data
+            ? query.substr(0, parsed_insert_query.data - query.data())
+            : query;
+
         if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
         connection->sendQuery(
             connection_parameters.timeouts,
-            query_to_send,
+            query_without_data,
             query_id,
             QueryProcessingStage::Complete,
             &context.getSettingsRef(),
@@ -1347,8 +1312,8 @@ private:
                 return true;
 
             case Protocol::Server::Exception:
-                onReceiveExceptionFromServer(*packet.exception);
-                last_exception_received_from_server = std::move(packet.exception);
+                onException(*packet.exception);
+                last_exception = std::move(packet.exception);
                 return false;
 
             case Protocol::Server::Log:
@@ -1379,8 +1344,8 @@ private:
                     return true;
 
                 case Protocol::Server::Exception:
-                    onReceiveExceptionFromServer(*packet.exception);
-                    last_exception_received_from_server = std::move(packet.exception);
+                    onException(*packet.exception);
+                    last_exception = std::move(packet.exception);
                     return false;
 
                 case Protocol::Server::Log:
@@ -1413,8 +1378,8 @@ private:
                     return true;
 
                 case Protocol::Server::Exception:
-                    onReceiveExceptionFromServer(*packet.exception);
-                    last_exception_received_from_server = std::move(packet.exception);
+                    onException(*packet.exception);
+                    last_exception = std::move(packet.exception);
                     return false;
 
                 case Protocol::Server::Log:
@@ -1514,8 +1479,7 @@ private:
                 }
                 else
                 {
-                    out_logs_buf = std::make_unique<WriteBufferFromFile>(
-                        server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                    out_logs_buf = std::make_unique<WriteBufferFromFile>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
                     wb = out_logs_buf.get();
                 }
             }
@@ -1554,7 +1518,6 @@ private:
 
     void onLogData(Block & block)
     {
-        has_received_logs = true;
         initLogsOutputStream();
         logs_out_stream->write(block);
         logs_out_stream->flush();
@@ -1590,7 +1553,7 @@ private:
     void clearProgress()
     {
         written_progress_chars = 0;
-        if (!has_received_logs)
+        if (!send_logs)
             std::cerr << "\r" CLEAR_TO_END_OF_LINE;
     }
 
@@ -1618,7 +1581,7 @@ private:
 
         const char * indicator = indicators[increment % 8];
 
-        if (!has_received_logs && written_progress_chars)
+        if (!send_logs && written_progress_chars)
             message << '\r';
 
         size_t prefix_size = message.count();
@@ -1672,7 +1635,7 @@ private:
 
         message << CLEAR_TO_END_OF_LINE;
 
-        if (has_received_logs)
+        if (send_logs)
             message << '\n';
 
         ++increment;
@@ -1697,10 +1660,10 @@ private:
     }
 
 
-    void onReceiveExceptionFromServer(const Exception & e)
+    void onException(const Exception & e)
     {
         resetOutput();
-        received_exception_from_server = true;
+        got_exception = true;
 
         actual_server_error = e.code();
         if (expected_server_error)
@@ -1912,12 +1875,6 @@ public:
 
         /// Parse main commandline options.
         po::parsed_options parsed = po::command_line_parser(common_arguments).options(main_description).run();
-        auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
-        // unrecognized_options[0] is "", I don't understand why we need "" as the first argument which unused
-        if (unrecognized_options.size() > 1)
-        {
-            throw Exception("Unrecognized option '" + unrecognized_options[1] + "'", ErrorCodes::UNRECOGNIZED_ARGUMENTS);
-        }
         po::variables_map options;
         po::store(parsed, options);
         po::notify(options);
@@ -2074,12 +2031,6 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     catch (const boost::program_options::error & e)
     {
         std::cerr << "Bad arguments: " << e.what() << std::endl;
-        return 1;
-    }
-    catch (const DB::Exception & e)
-    {
-        std::string text = e.displayText();
-        std::cerr << "Code: " << e.code() << ". " << text << std::endl;
         return 1;
     }
     catch (...)
