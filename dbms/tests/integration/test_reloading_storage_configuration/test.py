@@ -52,7 +52,7 @@ def start_over():
         try:
             os.remove(separate_configuration_path)
         except:
-            """"""
+            pass
 
 
 def add_disk(node, name, path, separate_file=False):
