@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/LimitTransform.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -9,7 +10,9 @@ static ITransformingStep::DataStreamTraits getTraits()
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = true
+            .preserves_distinct_columns = true,
+            .returns_single_stream = false,
+            .preserves_number_of_streams = true,
     };
 }
 
@@ -24,7 +27,6 @@ LimitStep::LimitStep(
     , always_read_till_end(always_read_till_end_)
     , with_ties(with_ties_), description(std::move(description_))
 {
-
 }
 
 void LimitStep::transformPipeline(QueryPipeline & pipeline)
@@ -33,6 +35,32 @@ void LimitStep::transformPipeline(QueryPipeline & pipeline)
         pipeline.getHeader(), limit, offset, pipeline.getNumStreams(), always_read_till_end, with_ties, description);
 
     pipeline.addPipe({std::move(transform)});
+}
+
+void LimitStep::describeActions(FormatSettings & settings) const
+{
+    String prefix(settings.offset, ' ');
+    settings.out << prefix << "Limit " << limit << '\n';
+    settings.out << prefix << "Offset " << offset << '\n';
+
+    if (with_ties || always_read_till_end)
+    {
+        settings.out << prefix;
+
+        String str;
+        if (with_ties)
+            settings.out << "WITH TIES";
+
+        if (always_read_till_end)
+        {
+            if (!with_ties)
+                settings.out << ", ";
+
+            settings.out << "Reads all data";
+        }
+
+        settings.out << '\n';
+    }
 }
 
 }

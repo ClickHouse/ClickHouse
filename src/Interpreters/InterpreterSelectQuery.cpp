@@ -46,7 +46,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/AddingDelayedStreamStep.h>
+#include <Processors/QueryPlan/AddingDelayedSourceStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -54,7 +54,7 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
-#include <Processors/QueryPlan/OffsetsStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/FinishSortingStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -886,7 +886,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
                 {
                     auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
-                    auto add_non_joined_rows_step = std::make_unique<AddingDelayedStreamStep>(
+                    auto add_non_joined_rows_step = std::make_unique<AddingDelayedSourceStep>(
                             query_plan.getCurrentDataStream(), std::move(source));
 
                     add_non_joined_rows_step->setStepDescription("Add non-joined rows after JOIN");
@@ -962,7 +962,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                   */
 
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
-                    executeMergeSorted(query_plan, "before ORDER BY");
+                    executeMergeSorted(query_plan, "for ORDER BY");
                 else    /// Otherwise, just sort.
                     executeOrder(query_plan, query_info.input_order_info);
             }
@@ -1589,7 +1589,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
             limit,
             SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode));
 
-    partial_sorting->setStepDescription("Sort each block before ORDER BY");
+    partial_sorting->setStepDescription("Sort each block for ORDER BY");
     query_plan.addStep(std::move(partial_sorting));
 
     /// Merge the sorted blocks.
@@ -1600,11 +1600,11 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
             settings.max_bytes_before_external_sort, context->getTemporaryVolume(),
             settings.min_free_disk_space_for_temporary_data);
 
-    merge_sorting_step->setStepDescription("Merge sorted blocks before ORDER BY");
+    merge_sorting_step->setStepDescription("Merge sorted blocks for ORDER BY");
     query_plan.addStep(std::move(merge_sorting_step));
 
     /// If there are several streams, we merge them into one
-    executeMergeSorted(query_plan, output_order_descr, limit, "before ORDER BY");
+    executeMergeSorted(query_plan, output_order_descr, limit, "for ORDER BY");
 }
 
 
@@ -1785,7 +1785,7 @@ void InterpreterSelectQuery::executeOffset(QueryPlan & query_plan)
         UInt64 limit_offset;
         std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, *context);
 
-        auto offsets_step = std::make_unique<OffsetsStep>(query_plan.getCurrentDataStream(), limit_offset);
+        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset);
         query_plan.addStep(std::move(offsets_step));
     }
 }

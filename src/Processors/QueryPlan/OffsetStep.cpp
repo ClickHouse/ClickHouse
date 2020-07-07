@@ -1,0 +1,38 @@
+#include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/OffsetTransform.h>
+#include <Processors/QueryPipeline.h>
+#include <IO/Operators.h>
+
+namespace DB
+{
+
+static ITransformingStep::DataStreamTraits getTraits()
+{
+    return ITransformingStep::DataStreamTraits
+    {
+            .preserves_distinct_columns = true,
+            .returns_single_stream = false,
+            .preserves_number_of_streams = true,
+    };
+}
+
+OffsetStep::OffsetStep(const DataStream & input_stream_, size_t offset_)
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+    , offset(offset_)
+{
+}
+
+void OffsetStep::transformPipeline(QueryPipeline & pipeline)
+{
+    auto transform = std::make_shared<OffsetTransform>(
+            pipeline.getHeader(), offset, pipeline.getNumStreams());
+
+    pipeline.addPipe({std::move(transform)});
+}
+
+void OffsetStep::describeActions(FormatSettings & settings) const
+{
+    settings.out << String(settings.offset, ' ') << "Offset " << offset << '\n';
+}
+
+}

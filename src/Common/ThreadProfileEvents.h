@@ -53,8 +53,12 @@ namespace ProfileEvents
     extern const Event PerfCpuMigrations;
     extern const Event PerfAlignmentFaults;
     extern const Event PerfEmulationFaults;
-    extern const Event PerfPageFaultsMinor;
-    extern const Event PerfPageFaultsMajor;
+    extern const Event PerfMinEnabledTime;
+    extern const Event PerfMinEnabledRunningTime;
+    extern const Event PerfDataTLBReferences;
+    extern const Event PerfDataTLBMisses;
+    extern const Event PerfInstructionTLBReferences;
+    extern const Event PerfInstructionTLBMisses;
 #endif
 }
 
@@ -158,7 +162,7 @@ struct PerfEventValue
     UInt64 time_running = 0;
 };
 
-static constexpr size_t NUMBER_OF_RAW_EVENTS = 18;
+static constexpr size_t NUMBER_OF_RAW_EVENTS = 20;
 
 struct PerfDescriptorsHolder : boost::noncopyable
 {

@@ -875,9 +875,13 @@ arrayReduce(agg_func, arr1, arr2, ..., arrN)
 
 **Example**
 
+Query:
+
 ``` sql
 SELECT arrayReduce('max', [1, 2, 3])
 ```
+
+Result:
 
 ``` text
 ┌─arrayReduce('max', [1, 2, 3])─┐
@@ -887,9 +891,13 @@ SELECT arrayReduce('max', [1, 2, 3])
 
 If an aggregate function takes multiple arguments, then this function must be applied to multiple arrays of the same size.
 
+Query:
+
 ``` sql
 SELECT arrayReduce('maxIf', [3, 5], [1, 0])
 ```
+
+Result:
 
 ``` text
 ┌─arrayReduce('maxIf', [3, 5], [1, 0])─┐
@@ -899,9 +907,13 @@ SELECT arrayReduce('maxIf', [3, 5], [1, 0])
 
 Example with a parametric aggregate function:
 
+Query:
+
 ``` sql
 SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 ```
+
+Result:
 
 ``` text
 ┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
@@ -923,11 +935,17 @@ arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
 
 -   `agg_func` — The name of an aggregate function which should be a constant [string](../../sql-reference/data-types/string.md).
 -   `ranges` — The ranges to aggretate which should be an [array](../../sql-reference/data-types/array.md) of [tuples](../../sql-reference/data-types/tuple.md) which containing the index and the length of each range.
--   `arr` — Any number of [array](../../sql-reference/data-types/array.md) type columns as the parameters of the aggregation function.
+-   `arr` — Any number of [Array](../../sql-reference/data-types/array.md) type columns as the parameters of the aggregation function.
 
 **Returned value**
 
+- Array containing results of the aggregate function over specified ranges.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
 **Example**
+
+Query:
 
 ``` sql
 SELECT arrayReduceInRanges(
@@ -936,6 +954,8 @@ SELECT arrayReduceInRanges(
     [1000000, 200000, 30000, 4000, 500, 60, 7]
 ) AS res
 ```
+
+Result:
 
 ``` text
 ┌─res─────────────────────────┐

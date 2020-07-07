@@ -547,7 +547,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema)
+AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, const FormatSettings & format_settings)
 {
     const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
@@ -557,12 +557,15 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
 
     column_found.resize(header.columns());
     row_action = createAction(header, schema_root);
-
-    for (size_t i = 0; i < header.columns(); ++i)
+    // fail on missing fields when allow_missing_fields = false
+    if (!format_settings.avro.allow_missing_fields)
     {
-        if (!column_found[i])
+        for (size_t i = 0; i < header.columns(); ++i)
         {
-            throw Exception("Field " + header.getByPosition(i).name + " not found in Avro schema", ErrorCodes::THERE_IS_NO_COLUMN);
+            if (!column_found[i])
+            {
+                throw Exception("Field " + header.getByPosition(i).name + " not found in Avro schema", ErrorCodes::THERE_IS_NO_COLUMN);
+            }
         }
     }
 }
@@ -581,10 +584,10 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
 }
 
 
-AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
+AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , file_reader(std::make_unique<InputStreamReadBufferAdapter>(in_))
-    , deserializer(output.getHeader(), file_reader.dataSchema())
+    , deserializer(output.getHeader(), file_reader.dataSchema(), format_settings_)
 {
     file_reader.init();
 }
@@ -712,6 +715,7 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
     , input_stream(std::make_unique<InputStreamReadBufferAdapter>(in))
     , decoder(avro::binaryDecoder())
+    , format_settings(format_settings_)
 
 {
     decoder->init(*input_stream);
@@ -736,7 +740,7 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     if (it == deserializer_cache.end())
     {
         auto schema = schema_registry->getSchema(schema_id);
-        AvroDeserializer deserializer(output.getHeader(), schema);
+        AvroDeserializer deserializer(output.getHeader(), schema, format_settings);
         it = deserializer_cache.emplace(schema_id, deserializer).first;
     }
     return it->second;
@@ -748,9 +752,9 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
         ReadBuffer & buf,
         const Block & sample,
         const RowInputFormatParams & params,
-        const FormatSettings &)
+        const FormatSettings & settings)
     {
-        return std::make_shared<AvroRowInputFormat>(sample, buf, params);
+        return std::make_shared<AvroRowInputFormat>(sample, buf, params, settings);
     });
 
     factory.registerInputFormatProcessor("AvroConfluent",[](

@@ -83,6 +83,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.ttl)
             command.ttl = ast_col_decl.ttl;
 
+        command.first = command_ast->first;
         command.if_not_exists = command_ast->if_not_exists;
 
         return command;
@@ -133,6 +134,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.codec)
             command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
 
+        if (command_ast->column)
+            command.after_column = getIdentifierName(command_ast->column);
+
+        command.first = command_ast->first;
         command.if_exists = command_ast->if_exists;
 
         return command;
@@ -269,7 +274,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         column.codec = codec;
         column.ttl = ttl;
 
-        metadata.columns.add(column, after_column);
+        metadata.columns.add(column, after_column, first);
 
         /// Slow, because each time a list is copied
         metadata.columns.flattenNested();
@@ -282,7 +287,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
     }
     else if (type == MODIFY_COLUMN)
     {
-        metadata.columns.modify(column_name, [&](ColumnDescription & column)
+        metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
             if (codec)
             {
@@ -727,6 +732,10 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
         metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
         metadata_copy.primary_key.definition_ast = nullptr;
     }
+
+    /// And in partition key expression
+    if (metadata_copy.partition_key.definition_ast != nullptr)
+        metadata_copy.partition_key.recalculateWithNewColumns(metadata_copy.columns, context);
 
     /// Changes in columns may lead to changes in secondary indices
     for (auto & index : metadata_copy.secondary_indices)
