@@ -90,6 +90,14 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority);
 }
 
+Int64 ConnectionPoolWithFailover::getPriority() const
+{
+    return (*std::max_element(nested_pools.begin(), nested_pools.end(), [](const auto &a, const auto &b)
+    {
+        return a->getPriority() - b->getPriority();
+    }))->getPriority();
+}
+
 ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
 {
     const Base::PoolStates states = getPoolStates();

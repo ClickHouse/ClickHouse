@@ -102,7 +102,7 @@ CassandraDictionarySource::CassandraDictionarySource(
     , dict_struct(dict_struct_)
     , settings(settings_)
     , sample_block(sample_block_)
-    , query_builder(dict_struct, settings.db, settings.table, settings.where, IdentifierQuotingStyle::DoubleQuotes)
+    , query_builder(dict_struct, settings.db, "", settings.table, settings.where, IdentifierQuotingStyle::DoubleQuotes)
 {
     cassandraCheck(cass_cluster_set_contact_points(cluster, settings.host.c_str()));
     if (settings.port)

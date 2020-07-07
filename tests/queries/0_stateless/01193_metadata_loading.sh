@@ -19,7 +19,7 @@ threads=10
 count_multiplier=1
 max_time_ms=1000
 
-debug_or_sanitizer_build=`$CLICKHOUSE_CLIENT -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'"`
+debug_or_sanitizer_build=`$CLICKHOUSE_CLIENT -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%' OR hasThreadFuzzer()"`
 
 if [[ debug_or_sanitizer_build -eq 1 ]]; then tables=100; count_multiplier=10; max_time_ms=1500; fi
 
