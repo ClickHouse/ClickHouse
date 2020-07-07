@@ -38,5 +38,15 @@
     <query tag='LEFT ON (noopt)'>SELECT COUNT() FROM ints l LEFT JOIN ints r ON l.i64 = r.i64 WHERE i32 = 200042 SETTINGS partial_merge_join_optimizations = 0</query>
     <query tag='LEFT IN (noopt)'>SELECT COUNT() FROM ints l LEFT JOIN ints r USING i64 WHERE i32 IN(42, 100042, 200042, 300042, 400042) SETTINGS partial_merge_join_optimizations = 0</query>
     
+    <query tag='RIGHT'>SELECT COUNT() FROM ints l RIGHT JOIN ints r USING i64 WHERE i32 = 200042</query>
+    <query tag='RIGHT KEY'>SELECT COUNT() FROM ints l RIGHT JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 200042</query>
+    <query tag='RIGHT ON'>SELECT COUNT() FROM ints l RIGHT JOIN ints r ON l.i64 = r.i64 WHERE i32 = 200042</query>
+    <query tag='RIGHT IN'>SELECT COUNT() FROM ints l RIGHT JOIN ints r USING i64 WHERE i32 IN(42, 100042, 200042, 300042, 400042)</query>
+
+    <query tag='FULL'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 = 200042</query>
+    <query tag='FULL KEY'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 200042</query>
+    <query tag='FULL ON'>SELECT COUNT() FROM ints l FULL JOIN ints r ON l.i64 = r.i64 WHERE i32 = 200042</query>
+    <query tag='FULL IN'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 IN(42, 100042, 200042, 300042, 400042)</query>
+    
     <drop_query>DROP TABLE IF EXISTS ints</drop_query>
 </test>
