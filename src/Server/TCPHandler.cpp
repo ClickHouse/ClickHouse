@@ -214,17 +214,18 @@ void TCPHandler::runImpl()
                 if (&context != &query_context.value())
                     throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
 
+                auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
                 state.need_receive_data_for_input = true;
 
                 /// Send ColumnsDescription for input storage.
                 if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
                     && query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
                 {
-                    sendTableColumns(input_storage->getColumns());
+                    sendTableColumns(metadata_snapshot->getColumns());
                 }
 
                 /// Send block to the client - input storage structure.
-                state.input_header = input_storage->getSampleBlock();
+                state.input_header = metadata_snapshot->getSampleBlock();
                 sendData(state.input_header);
             });
 
@@ -475,7 +476,10 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
         if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
         {
             if (!table_id.empty())
-                sendTableColumns(DatabaseCatalog::instance().getTable(table_id, *query_context)->getColumns());
+            {
+                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, *query_context);
+                sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
+            }
         }
     }
 
@@ -953,8 +957,9 @@ bool TCPHandler::receiveData(bool scalar)
                     storage = temporary_table.getTable();
                     query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
                 }
+                auto metadata_snapshot = storage->getInMemoryMetadataPtr();
                 /// The data will be written directly to the table.
-                state.io.out = storage->write(ASTPtr(), *query_context);
+                state.io.out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
             }
             if (state.need_receive_data_for_input)
                 state.block_for_input = block;

@@ -66,7 +66,7 @@ void CreatingSetsTransform::startSubquery(SubqueryForSet & subquery)
     elapsed_nanoseconds = 0;
 
     if (subquery.table)
-        table_out = subquery.table->write({}, context);
+        table_out = subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), context);
 
     done_with_set = !subquery.set;
     done_with_join = !subquery.join;

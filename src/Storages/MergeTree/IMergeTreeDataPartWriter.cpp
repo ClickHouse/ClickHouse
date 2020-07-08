@@ -65,6 +65,7 @@ void IMergeTreeDataPartWriter::Stream::addToChecksums(MergeTreeData::DataPart::C
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
@@ -73,6 +74,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     : data_part(data_part_)
     , part_path(data_part_->getFullRelativePath())
     , storage(data_part_->storage)
+    , metadata_snapshot(metadata_snapshot_)
     , columns_list(columns_list_)
     , marks_file_extension(marks_file_extension_)
     , index_granularity(index_granularity_)
@@ -162,7 +164,7 @@ void IMergeTreeDataPartWriter::fillIndexGranularity(size_t index_granularity_for
 
 void IMergeTreeDataPartWriter::initPrimaryIndex()
 {
-    if (storage.hasPrimaryKey())
+    if (metadata_snapshot->hasPrimaryKey())
     {
         index_file_stream = data_part->volume->getDisk()->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
@@ -221,7 +223,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & p
 
     while (index_mark < total_marks && current_row < rows)
     {
-        if (storage.hasPrimaryKey())
+        if (metadata_snapshot->hasPrimaryKey())
         {
             for (size_t j = 0; j < primary_columns_num; ++j)
             {

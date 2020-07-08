@@ -196,6 +196,12 @@
     M(PerfCpuMigrations, "Number of times the process has migrated to a new CPU") \
     M(PerfAlignmentFaults, "Number of alignment faults. These happen when unaligned memory accesses happen; the kernel can handle these but it reduces performance. This happens only on some architectures (never on x86).") \
     M(PerfEmulationFaults, "Number of emulation faults. The kernel sometimes traps on unimplemented instructions and emulates them for user space. This can negatively impact performance.") \
+    M(PerfMinEnabledTime, "For all events, minimum time that an event was enabled. Used to track event multiplexing influence") \
+    M(PerfMinEnabledRunningTime, "Running time for event with minimum enabled time. Used to track the amount of event multiplexing") \
+    M(PerfDataTLBReferences, "Data TLB references") \
+    M(PerfDataTLBMisses, "Data TLB misses") \
+    M(PerfInstructionTLBReferences, "Instruction TLB references") \
+    M(PerfInstructionTLBMisses, "Instruction TLB misses") \
     \
     M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
     \

@@ -106,7 +106,7 @@ public:
     /// Inserts results into a column.
     /// This method must be called once, from single thread.
     /// After this method was called for state, you can't do anything with state but destroy.
-    virtual void insertResultInto(AggregateDataPtr place, IColumn & to) const = 0;
+    virtual void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const = 0;
 
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
@@ -289,6 +289,11 @@ struct AggregateFunctionProperties
       * or we should return non-Nullable type with default value (example: count, countDistinct).
       */
     bool returns_default_when_only_null = false;
+
+    /** Result varies depending on the data order (example: groupArray).
+      * Some may also name this property as "non-commutative".
+      */
+    bool is_order_dependent = false;
 };
 
 

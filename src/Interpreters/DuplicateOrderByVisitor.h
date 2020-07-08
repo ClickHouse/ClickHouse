@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Functions/FunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
@@ -24,7 +25,9 @@ public:
     bool & is_stateful;
     void visit(ASTFunction & ast_function, ASTPtr &)
     {
-        if (ast_function.name == "any" || ast_function.name == "groupArray")
+        auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(ast_function.name);
+
+        if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
         {
             is_stateful = true;
             return;
@@ -85,7 +88,6 @@ public:
         if (done)
             return;
 
-        /// Disable optimization for distributed tables
         for (const auto & elem : select_query.children)
         {
             if (elem->as<ASTSetQuery>() && !elem->as<ASTSetQuery>()->is_standalone)

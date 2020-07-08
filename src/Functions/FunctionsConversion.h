@@ -534,7 +534,8 @@ enum class ConvertFromStringExceptionMode
 enum class ConvertFromStringParsingMode
 {
     Normal,
-    BestEffort  /// Only applicable for DateTime. Will use sophisticated method, that is slower.
+    BestEffort,  /// Only applicable for DateTime. Will use sophisticated method, that is slower.
+    BestEffortUS
 };
 
 template <typename FromDataType, typename ToDataType, typename Name,
@@ -586,7 +587,7 @@ struct ConvertThroughParsing
                 local_time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
             }
 
-            if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
+            if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort || parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
                 utc_time_zone = &DateLUT::instance("UTC");
         }
 
@@ -673,6 +674,12 @@ struct ConvertThroughParsing
                         parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
+                }
+                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
+                {
+                    time_t res;
+                    parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                    vec_to[i] = res;
                 }
                 else
                 {
@@ -931,7 +938,7 @@ public:
             // toUnixTimestamp(value[, timezone : String])
             || std::is_same_v<Name, NameToUnixTimestamp>
             // toDate(value[, timezone : String])
-            || std::is_same_v<ToDataType, DataTypeDate> // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this arument is ignored below.
+            || std::is_same_v<ToDataType, DataTypeDate> // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this argument is ignored below.
             // toDateTime(value[, timezone: String])
             || std::is_same_v<ToDataType, DataTypeDateTime>
             // toDateTime64(value, scale : Integer[, timezone: String])
@@ -1578,6 +1585,7 @@ using FunctionToDecimal64OrNull = FunctionConvertFromString<DataTypeDecimal<Deci
 using FunctionToDecimal128OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrNull, ConvertFromStringExceptionMode::Null>;
 
 struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
+struct NameParseDateTimeBestEffortUS { static constexpr auto name = "parseDateTimeBestEffortUS"; };
 struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
 struct NameParseDateTimeBestEffortOrNull { static constexpr auto name = "parseDateTimeBestEffortOrNull"; };
 struct NameParseDateTime64BestEffort { static constexpr auto name = "parseDateTime64BestEffort"; };
@@ -1587,6 +1595,8 @@ struct NameParseDateTime64BestEffortOrNull { static constexpr auto name = "parse
 
 using FunctionParseDateTimeBestEffort = FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTimeBestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTimeBestEffortUS = FunctionConvertFromString<
+    DataTypeDateTime, NameParseDateTimeBestEffortUS, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffortUS>;
 using FunctionParseDateTimeBestEffortOrZero = FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTimeBestEffortOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
 using FunctionParseDateTimeBestEffortOrNull = FunctionConvertFromString<

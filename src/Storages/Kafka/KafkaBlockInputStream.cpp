@@ -19,15 +19,23 @@ namespace ErrorCodes
 const auto MAX_FAILED_POLL_ATTEMPTS = 10;
 
 KafkaBlockInputStream::KafkaBlockInputStream(
-    StorageKafka & storage_, const std::shared_ptr<Context> & context_, const Names & columns, Poco::Logger * log_, size_t max_block_size_, bool commit_in_suffix_)
+    StorageKafka & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    const std::shared_ptr<Context> & context_,
+    const Names & columns,
+    Poco::Logger * log_,
+    size_t max_block_size_,
+    bool commit_in_suffix_)
     : storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
     , context(context_)
     , column_names(columns)
     , log(log_)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
-    , non_virtual_header(storage.getSampleBlockNonMaterialized())
-    , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp","_timestamp_ms","_headers.name","_headers.value"}))
+    , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
+    , virtual_header(metadata_snapshot->getSampleBlockForColumns(
+            {"_topic", "_key", "_offset", "_partition", "_timestamp", "_timestamp_ms", "_headers.name", "_headers.value"}, storage.getVirtuals(), storage.getStorageID()))
 {
 }
 
@@ -44,7 +52,7 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
 
 Block KafkaBlockInputStream::getHeader() const
 {
-    return storage.getSampleBlockForColumns(column_names);
+    return metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
 }
 
 void KafkaBlockInputStream::readPrefixImpl()
@@ -132,6 +140,13 @@ Block KafkaBlockInputStream::readImpl()
 
         if (new_rows)
         {
+            // In read_kafka_message(), ReadBufferFromKafkaConsumer::nextImpl()
+            // will be called, that may make something unusable, i.e. clean
+            // ReadBufferFromKafkaConsumer::messages, which is accessed from
+            // ReadBufferFromKafkaConsumer::currentTopic() (and other helpers).
+            if (buffer->isStalled())
+                throw Exception("Polled messages became unusable", ErrorCodes::LOGICAL_ERROR);
+
             buffer->storeLastReadMessageOffset();
 
             auto topic         = buffer->currentTopic();
@@ -178,13 +193,13 @@ Block KafkaBlockInputStream::readImpl()
 
             total_rows = total_rows + new_rows;
         }
-        else if (buffer->isStalled())
-        {
-            ++failed_poll_attempts;
-        }
         else if (buffer->polledDataUnusable())
         {
             break;
+        }
+        else if (buffer->isStalled())
+        {
+            ++failed_poll_attempts;
         }
         else
         {

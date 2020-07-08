@@ -9,7 +9,9 @@ static ITransformingStep::DataStreamTraits getTraits()
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = false
+            .preserves_distinct_columns = false,
+            .returns_single_stream = true,
+            .preserves_number_of_streams = false,
     };
 }
 

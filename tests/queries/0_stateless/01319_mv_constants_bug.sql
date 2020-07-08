@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS distributed_table_1;
 DROP TABLE IF EXISTS distributed_table_2;
 DROP TABLE IF EXISTS local_table_1;
 DROP TABLE IF EXISTS local_table_2;
+DROP TABLE IF EXISTS local_table_merged;
 
 CREATE TABLE local_table_1 (id String) ENGINE = MergeTree ORDER BY (id);
 CREATE TABLE local_table_2(id String) ENGINE = MergeTree ORDER BY (id);

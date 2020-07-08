@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/QueryPipeline.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -9,7 +10,9 @@ static ITransformingStep::DataStreamTraits getTraits()
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = true
+            .preserves_distinct_columns = true,
+            .returns_single_stream = true,
+            .preserves_number_of_streams = false,
     };
 }
 
@@ -35,6 +38,32 @@ void LimitByStep::transformPipeline(QueryPipeline & pipeline)
 
         return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
     });
+}
+
+void LimitByStep::describeActions(FormatSettings & settings) const
+{
+    String prefix(settings.offset, ' ');
+
+    settings.out << prefix << "Columns: ";
+
+    if (columns.empty())
+        settings.out << "none\n";
+    else
+    {
+        bool first = true;
+        for (const auto & column : columns)
+        {
+            if (!first)
+                settings.out << ", ";
+            first = false;
+
+            settings.out << column;
+        }
+        settings.out << '\n';
+    }
+
+    settings.out << prefix << "Length " << group_length << '\n';
+    settings.out << prefix << "Offset " << group_offset << '\n';
 }
 
 }
