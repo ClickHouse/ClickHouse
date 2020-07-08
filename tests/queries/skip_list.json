@@ -104,7 +104,10 @@
         "00180_attach_materialized_view",
         "00116_storage_set",
         "00816_long_concurrent_alter_column",
-        "00992_system_parts_race_condition_zookeeper"
+        "00992_system_parts_race_condition_zookeeper",
+        "01320_create_sync_race_condition",
+        "01305_replica_create_drop_zookeeper",
+        "01193_metadata_loading"
     ],
     "polymorphic-parts": [
         "avx",
