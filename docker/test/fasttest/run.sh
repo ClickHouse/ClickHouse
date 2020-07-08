@@ -28,7 +28,7 @@ fi
 
 git submodule update --init --recursive | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/submodule_log.txt
 
-CMAKE_LIBS_CONFIG="-DENABLE_RDKAFKA=0 -DENABLE_S3=0"
+CMAKE_LIBS_CONFIG="-DENABLE_RDKAFKA=0 -DENABLE_S3=0 -DUSE_SENTRY=0 -DENABLE_AMQPCPP=0 -DENABLE_HDFS=0 -DENABLE_MYSQL=0 -DENABLE_GRPC=0 -DENABLE_CURL=0 -DENABLE_EMBEDDED_COMPILER=0"
 
 export CCACHE_DIR=/ccache
 export CCACHE_BASEDIR=/ClickHouse
