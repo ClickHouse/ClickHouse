@@ -309,6 +309,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingUInt64, max_bytes_in_join, 0, "Maximum size of the hash table for JOIN (in number of bytes in memory).", 0) \
     M(SettingOverflowMode, join_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.", 0) \
     M(SettingBool, join_any_take_last_row, false, "When disabled (default) ANY JOIN will take the first found row for a key. When enabled, it will take the last row seen if there are multiple rows for the same key.", IMPORTANT) \
+    M(SettingJoinAlgorithm, join_algorithm, JoinAlgorithm::HASH, "Forward compatibility setting. It does nothing in current version but allows to upgrade without an error.", 0) \
     M(SettingBool, partial_merge_join, false, "Use partial merge join instead of hash join for LEFT and INNER JOINs.", 0) \
     M(SettingBool, partial_merge_join_optimizations, false, "Enable optimizations in partial merge join", 0) \
     M(SettingUInt64, default_max_bytes_in_join, 100000000, "Maximum size of right-side table if limit's required but max_bytes_in_join is not set.", 0) \
