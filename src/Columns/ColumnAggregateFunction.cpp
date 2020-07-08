@@ -88,35 +88,35 @@ void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
 MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr column)
 {
     /** If the aggregate function returns an unfinalized/unfinished state,
-        * then you just need to copy pointers to it and also shared ownership of data.
-        *
-        * Also replace the aggregate function with the nested function.
-        * That is, if this column is the states of the aggregate function `aggState`,
-        * then we return the same column, but with the states of the aggregate function `agg`.
-        * These are the same states, changing only the function to which they correspond.
-        *
-        * Further is quite difficult to understand.
-        * Example when this happens:
-        *
-        * SELECT k, finalizeAggregation(quantileTimingState(0.5)(x)) FROM ... GROUP BY k WITH TOTALS
-        *
-        * This calculates the aggregate function `quantileTimingState`.
-        * Its return type AggregateFunction(quantileTiming(0.5), UInt64)`.
-        * Due to the presence of WITH TOTALS, during aggregation the states of this aggregate function will be stored
-        *  in the ColumnAggregateFunction column of type
-        *  AggregateFunction(quantileTimingState(0.5), UInt64).
-        * Then, in `TotalsHavingTransform`, it will be called `convertToValues` method,
-        *  to get the "ready" values.
-        * But it just converts a column of type
-        *   `AggregateFunction(quantileTimingState(0.5), UInt64)`
-        * into `AggregateFunction(quantileTiming(0.5), UInt64)`
-        * - in the same states.
-        *column_aggregate_func
-        * Then `finalizeAggregation` function will be calculated, which will call `convertToValues` already on the result.
-        * And this converts a column of type
-        *   AggregateFunction(quantileTiming(0.5), UInt64)
-        * into UInt16 - already finished result of `quantileTiming`.
-        */
+      * then you just need to copy pointers to it and also shared ownership of data.
+      *
+      * Also replace the aggregate function with the nested function.
+      * That is, if this column is the states of the aggregate function `aggState`,
+      * then we return the same column, but with the states of the aggregate function `agg`.
+      * These are the same states, changing only the function to which they correspond.
+      *
+      * Further is quite difficult to understand.
+      * Example when this happens:
+      *
+      * SELECT k, finalizeAggregation(quantileTimingState(0.5)(x)) FROM ... GROUP BY k WITH TOTALS
+      *
+      * This calculates the aggregate function `quantileTimingState`.
+      * Its return type AggregateFunction(quantileTiming(0.5), UInt64)`.
+      * Due to the presence of WITH TOTALS, during aggregation the states of this aggregate function will be stored
+      *  in the ColumnAggregateFunction column of type
+      *  AggregateFunction(quantileTimingState(0.5), UInt64).
+      * Then, in `TotalsHavingTransform`, it will be called `convertToValues` method,
+      *  to get the "ready" values.
+      * But it just converts a column of type
+      *   `AggregateFunction(quantileTimingState(0.5), UInt64)`
+      * into `AggregateFunction(quantileTiming(0.5), UInt64)`
+      * - in the same states.
+      *
+      * Then `finalizeAggregation` function will be calculated, which will call `convertToValues` already on the result.
+      * And this converts a column of type
+      *   AggregateFunction(quantileTiming(0.5), UInt64)
+      * into UInt16 - already finished result of `quantileTiming`.
+      */
     auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*column);
     auto & func = column_aggregate_func.func;
     auto & data = column_aggregate_func.data;
