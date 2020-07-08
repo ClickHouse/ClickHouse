@@ -336,3 +336,19 @@ def test_get_csv_default(cluster):
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
     result = run_query(instance, get_query)
     assert result == '1\t2\t3\n'
+
+
+def test_infinite_redirect(cluster):
+    bucket = "redirected"
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    filename = "test.csv"
+    get_query = "select * from s3('http://resolver:8080/{bucket}/{file}', 'CSV', '{table_format}')".format(
+        bucket="redirected",
+        file=filename,
+        table_format=table_format)
+    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    try:
+        result = run_query(instance, get_query)
+    except Exception as e:
+        assert str(e).find("Too many redirects while trying to access") != -1
+
