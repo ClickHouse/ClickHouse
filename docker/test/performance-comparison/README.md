@@ -23,7 +23,7 @@ The check status summarizes the report in a short text message like `1 faster, 1
 * `1 slower` -- how many queries are slower,
 * `1 too long` -- how many queries are taking too long to run,
 * `1 unstable` -- how many queries have unstable results,
-* `1 errors` -- how many errors there are in total. The number of errors includes slower tests, tests that are too long, errors while running the tests and building reports, etc. Please look at the main report page to investigate these errors.
+* `1 errors` -- how many errors there are in total. Action is required for every error, this number must be zero. The number of errors includes slower tests, tests that are too long, errors while running the tests and building reports, etc. Please look at the main report page to investigate these errors.
 
 The report page itself constists of a several tables. Some of them always signify errors, e.g. "Run errors" -- the very presence of this table indicates that there were errors during the test, that are not normal and must be fixed. Some tables are mostly informational, e.g. "Test times" -- they reflect normal test results. But if a cell in such table is marked in red, this also means an error, e.g., a test is taking too long to run.
 
