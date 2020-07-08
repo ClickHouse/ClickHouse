@@ -32,6 +32,7 @@ public:
     /// - Used with policy for temporary data
     /// - Ignores all limitations
     /// - Shares last access with reserve()
+    // TODO: Remove getNextDisk, move it's behaviour to VolumeJBOD::getDisk(), if it was called without argument.
     DiskPtr getNextDisk();
 
     /// Uses Round-robin to choose disk for reservation.
