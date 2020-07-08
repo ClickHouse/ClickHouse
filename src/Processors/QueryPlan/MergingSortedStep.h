@@ -21,6 +21,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    void describeActions(FormatSettings & settings) const override;
+
 private:
     SortDescription sort_description;
     size_t max_block_size;

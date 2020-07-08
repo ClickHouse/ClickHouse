@@ -7,9 +7,23 @@
 0
 1
 4
-SELECT avg(log(2) * number) AS k\nFROM numbers(10000000)\nGROUP BY \n    number % 3,\n    number % 2\nHAVING avg(log(2) * number) > 3465735.3\nORDER BY k ASC
-SELECT avg(log(2) * number) AS k\nFROM numbers(10000000)\nWHERE ((number % 5) * (number % 5)) < 5\nGROUP BY number % 5\nORDER BY k ASC
-SELECT (number % 5) * (number % 5) AS k\nFROM numbers(10000000)\nWHERE ((number % 5) * (number % 5)) < 5\nGROUP BY number % 5\nORDER BY k ASC
+SELECT avg(log(2) * number) AS k
+FROM numbers(10000000)
+GROUP BY 
+    number % 3,
+    number % 2
+HAVING avg(log(2) * number) > 3465735.3
+ORDER BY k ASC
+SELECT avg(log(2) * number) AS k
+FROM numbers(10000000)
+WHERE ((number % 5) * (number % 5)) < 5
+GROUP BY number % 5
+ORDER BY k ASC
+SELECT (number % 5) * (number % 5) AS k
+FROM numbers(10000000)
+WHERE ((number % 5) * (number % 5)) < 5
+GROUP BY number % 5
+ORDER BY k ASC
 3465735.9027997246
 3465735.902799725
 3465736.595946905
@@ -19,6 +33,25 @@ SELECT (number % 5) * (number % 5) AS k\nFROM numbers(10000000)\nWHERE ((number 
 0
 1
 4
-SELECT avg(log(2) * number) AS k\nFROM numbers(10000000)\nGROUP BY \n    (number % 2) * (number % 3),\n    number % 3,\n    number % 2\nHAVING avg(log(2) * number) > 3465735.3\nORDER BY k ASC
-SELECT avg(log(2) * number) AS k\nFROM numbers(10000000)\nWHERE ((number % 5) * (number % 5)) < 5\nGROUP BY \n    number % 5,\n    (number % 5) * (number % 5)\nORDER BY k ASC
-SELECT (number % 5) * (number % 5) AS k\nFROM numbers(10000000)\nWHERE ((number % 5) * (number % 5)) < 5\nGROUP BY \n    number % 5,\n    (number % 5) * (number % 5)\nORDER BY k ASC
+SELECT avg(log(2) * number) AS k
+FROM numbers(10000000)
+GROUP BY 
+    (number % 2) * (number % 3),
+    number % 3,
+    number % 2
+HAVING avg(log(2) * number) > 3465735.3
+ORDER BY k ASC
+SELECT avg(log(2) * number) AS k
+FROM numbers(10000000)
+WHERE ((number % 5) * (number % 5)) < 5
+GROUP BY 
+    number % 5,
+    (number % 5) * (number % 5)
+ORDER BY k ASC
+SELECT (number % 5) * (number % 5) AS k
+FROM numbers(10000000)
+WHERE ((number % 5) * (number % 5)) < 5
+GROUP BY 
+    number % 5,
+    (number % 5) * (number % 5)
+ORDER BY k ASC

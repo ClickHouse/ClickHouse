@@ -219,6 +219,7 @@ SRCS(
     h3ToParent.cpp
     h3ToString.cpp
     hasColumnInTable.cpp
+    hasThreadFuzzer.cpp
     hasTokenCaseInsensitive.cpp
     hasToken.cpp
     hostName.cpp
@@ -230,6 +231,7 @@ SRCS(
     ignore.cpp
     ilike.cpp
     in.cpp
+    initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
     intExp10.cpp
