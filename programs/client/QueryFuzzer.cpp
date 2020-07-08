@@ -118,7 +118,7 @@ Field QueryFuzzer::fuzzField(Field field)
             str = str + str + str + str;
             break;
         case 4:
-            if (str.size() > 0)
+            if (!str.empty())
             {
                 str[fuzz_rand() % str.size()] = '\0';
             }
@@ -132,7 +132,7 @@ Field QueryFuzzer::fuzzField(Field field)
     {
         auto & arr = field.reinterpret<FieldVector>();
 
-        if (fuzz_rand() % 5 == 0 && arr.size() > 0)
+        if (fuzz_rand() % 5 == 0 && !arr.empty())
         {
             size_t pos = fuzz_rand() % arr.size();
             arr.erase(arr.begin() + pos);
