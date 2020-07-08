@@ -39,6 +39,21 @@ These are errors that must be fixed. This table shows queries that take signific
 #### Partial queries
 Informational, no action required if no red cells. Shows the queries we are unable to run on an old server -- probably because they contain a new function. You should see this table when you add a new function and a performance test for it. Check that the run time and variance are acceptable (run time between 0.1 and 1 seconds, variance below 10%). If not, they will be highlighted in red.
 
+#### Changes in performance
+These are the queries for which we observe a statistically significant change in performance. Note that there will always be some false positives -- we try to filter by p < 0.001, and have 2000 queries, so two false positives per run are expected. In practice we have more -- e.g. code layout changed because of some unknowable jitter in compiler internals, so the change we observe is real, but it is a 'false positive' in the sense that it is not directly caused by your changes. If, based on your knowledge of ClickHouse internals, you can decide that the observed test changes are not relevant to the changes made in the tested PR, you can ignore them.
+
+You can find flame graphs for queries with performance changes in the test output archive, in files named as 'my_test_0_Cpu_SELECT 1 FROM....FORMAT Null.left.svg'. First goes the test name, then the query number in the test, then the trace type (same as in `system.trace_log`), and then the server version (left is old and right is new).
+
+#### Unstable queries
+These are queries for which we did not observe a statistically significant change in performance, but for which the variance in query performance is very high. This means that we are likely to observe big changes in performance even in the absence of real changes, e.g. when comparing the server to itself. Such queries are going to have bad sensitivity as performance tests -- if a query has, say, 50% expected variability, this means we are going to see changes in performance up to 50%, even when there were no real changes in the code. And because of this, we won't be able to detect changes less than 50% with such a query, which is pretty bad. The reasons for the high variability must be investigated and fixed; ideally, the variability should be brought under 5-10%. 
+
+The most frequent reason for instability is that the query is just too short -- e.g. below 0.1 seconds. Bringing query time to 0.2 seconds or above usually helps.
+Other reasons may include:
+* using a lot of memory which is allocated differently between servers, so the access time may vary. This may apply to your queries if you have a `Memory` engine table that is bigger than 1 GB. For example, this problem has plagued `arithmetic` and `logical_functions` tests for a long time.
+* having some threshold behavior in the query, e.g. you insert to a Buffer table and it is flushed only on some query runs, so you get a much higher time for them.
+Investigating the instablility is the hardest problem in performance testing, and we still have not been able to understand the reasons behind the instability of some queries. There are some data that can help you in the performance test output archive. Look for files named 'my_unstable_test_0_SELECT 1...FORMAT Null.{left,right}.metrics.rep'. They contain metrics from `system.query_log.ProfileEvents` and functions from stack traces from `system.trace_log`, that vary significantly between query runs. The second column is array of \[min, med, max] values for the metric. Say, if you see `PerfCacheMisses` there, it may mean that the code being tested has not-so-cache-local memory access pattern that is sensitive to memory layout.
+
+
 ### How to run
 Run the entire docker container, specifying PR number (0 for master)
 and SHA of the commit to test. The reference revision is determined as a nearest
