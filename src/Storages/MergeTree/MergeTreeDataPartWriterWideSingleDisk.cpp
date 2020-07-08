@@ -19,18 +19,19 @@ namespace
 MergeTreeDataPartWriterWideSingleDisk::MergeTreeDataPartWriterWideSingleDisk(
     const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : MergeTreeDataPartWriterWide(
-    data_part_, columns_list_, indices_to_recalc_,
+    data_part_, columns_list_, metadata_snapshot_, indices_to_recalc_,
     marks_file_extension_, default_codec_, settings_, index_granularity_
 )
 {
     index_writer = std::make_unique<MergeTreeDataPartIndexWriterSingleDisk>(*this);
-    const auto & columns = storage.getColumns();
+    const auto & columns = metadata_snapshot->getColumns();
     for (const auto & it : columns_list)
         addStreams(it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec), settings.estimated_size);
 }
