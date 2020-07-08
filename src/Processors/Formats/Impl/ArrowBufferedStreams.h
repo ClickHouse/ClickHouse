@@ -34,6 +34,7 @@ private:
     ARROW_DISALLOW_COPY_AND_ASSIGN(ArrowBufferedOutputStream);
 };
 
+
 class RandomAccessFileFromSeekableReadBuffer : public arrow::io::RandomAccessFile
 {
 public:
@@ -60,6 +61,7 @@ private:
 
     ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromSeekableReadBuffer);
 };
+
 
 std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in);
 
