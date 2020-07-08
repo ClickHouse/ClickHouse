@@ -83,5 +83,10 @@
     "docker/test/testflows/runner": {
         "name": "yandex/clickhouse-testflows-runner",
         "dependent": []
+    },
+    "docker/test/fasttest": {
+        "name": "yandex/clickhouse-fasttest",
+        "dependent": []
     }
+
 }

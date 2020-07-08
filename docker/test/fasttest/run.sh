@@ -5,12 +5,22 @@ set -x -e
 ls -la
 
 git clone https://github.com/ClickHouse/ClickHouse.git | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/clone_log.txt
+
+if [ "$PULL_REQUEST_NUMBER" != "0"]; then
+    if git fetch origin "+refs/pull/$PULL_REQUEST_NUMBER/merge"; then
+        git checkout FETCH_HEAD
+        echo 'Clonned merge head'
+    else
+        git fetch
+        git checkout $COMMIT_SHA
+    fi
+fi
 cd ClickHouse
 CLICKHOUSE_DIR=`pwd`
 
 git submodule update --init --recursive | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/submodule_log.txt
 
-CMAKE_LIBS_CONFIG="-DENABLE_RDKAFKA=0"
+CMAKE_LIBS_CONFIG="-DENABLE_RDKAFKA=0 -DENABLE_S3=0"
 
 export CCACHE_DIR=/ccache
 export CCACHE_BASEDIR=/ClickHouse
@@ -35,6 +45,7 @@ mkdir -p /etc/clickhouse-server
 mkdir -p /etc/clickhouse-client
 mkdir -p /etc/clickhouse-server/config.d
 mkdir -p /etc/clickhouse-server/users.d
+mkdir -p /var/log/clickhouse-server
 cp $CLICKHOUSE_DIR/programs/server/config.xml /etc/clickhouse-server/
 cp $CLICKHOUSE_DIR/programs/server/users.xml /etc/clickhouse-server/
 
@@ -64,8 +75,6 @@ ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/
 ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml
 
-service zookeeper start && sleep 5
-
 clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
 
 until clickhouse-client --query "SELECT 1"
@@ -74,3 +83,5 @@ do
 done
 
 clickhouse-test --testname --shard --zookeeper 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
+
+mv /var/log/clickhouse-server/* /test_output
