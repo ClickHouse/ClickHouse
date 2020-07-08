@@ -30,11 +30,11 @@ struct QueryFuzzer
     std::unordered_set<std::string> aliases_set;
     std::vector<std::string> aliases;
 
-    std::unordered_map<std::string, const ASTPtr> column_like_map;
-    std::vector<const ASTPtr> column_like;
+    std::unordered_map<std::string, ASTPtr> column_like_map;
+    std::vector<ASTPtr> column_like;
 
-    std::unordered_map<std::string, const ASTPtr> table_like_map;
-    std::vector<const ASTPtr> table_like;
+    std::unordered_map<std::string, ASTPtr> table_like_map;
+    std::vector<ASTPtr> table_like;
 
     // This is the only function you have to call -- it will modify the passed
     // ASTPtr to point to new AST with some random changes.
