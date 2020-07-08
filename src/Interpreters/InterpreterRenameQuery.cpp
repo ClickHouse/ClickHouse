@@ -5,7 +5,6 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/DDLWorker.h>
 #include <Access/AccessRightsElement.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -89,9 +88,14 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     assert(descriptions.size() == 1);
     assert(descriptions.front().from_table_name.empty());
     assert(descriptions.front().to_table_name.empty());
+
     const auto & old_name = descriptions.front().from_database_name;
     const auto & new_name = descriptions.back().to_database_name;
-    DatabaseCatalog::instance().renameDatabase(old_name, new_name);
+    auto & catalog = DatabaseCatalog::instance();
+
+    auto db = catalog.getDatabase(old_name);
+    catalog.assertDatabaseDoesntExist(new_name);
+    db->renameDatabase(new_name);
     return {};
 }
 

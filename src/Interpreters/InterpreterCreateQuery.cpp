@@ -197,7 +197,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     try
     {
         /// TODO Attach db only after it was loaded. Now it's not possible because of view dependencies
-        DatabaseCatalog::instance().attachDatabase(database_name, create.uuid, database);
+        DatabaseCatalog::instance().attachDatabase(database_name, database);
         added = true;
 
         if (need_write_metadata)

@@ -121,9 +121,9 @@ public:
     DatabasePtr getDatabaseForTemporaryTables() const;
     DatabasePtr getSystemDatabase() const;
 
-    void attachDatabase(const String & database_name, const UUID & uuid, const DatabasePtr & database);
+    void attachDatabase(const String & database_name, const DatabasePtr & database);
     DatabasePtr detachDatabase(const String & database_name, bool drop = false, bool check_empty = true);
-    void renameDatabase(const String & old_name, const String & new_name);
+    void updateDatabaseName(const String & old_name, const String & new_name);
 
     /// database_name must be not empty
     DatabasePtr getDatabase(const String & database_name) const;

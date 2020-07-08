@@ -115,7 +115,7 @@ void DatabaseCatalog::loadDatabases()
     drop_delay_sec = global_context->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, *global_context);
-    attachDatabase(TEMPORARY_DATABASE, UUIDHelpers::Nil, db_for_temporary_and_external_tables);
+    attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
 
     loadMarkedAsDroppedTables();
     auto task_holder = global_context->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
@@ -248,13 +248,15 @@ void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_
         throw Exception("Database " + backQuoteIfNeed(database_name) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
 }
 
-void DatabaseCatalog::attachDatabase(const String & database_name, const UUID & uuid, const DatabasePtr & database)
+void DatabaseCatalog::attachDatabase(const String & database_name, const DatabasePtr & database)
 {
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
-    if (uuid != UUIDHelpers::Nil)
-        db_uuid_map.emplace(uuid, database);
+    UUID db_uuid = database->getUUID();
+    assert((db_uuid != UUIDHelpers::Nil) ^ (dynamic_cast<DatabaseAtomic *>(database.get()) == nullptr));
+    if (db_uuid != UUIDHelpers::Nil)
+        db_uuid_map.emplace(db_uuid, database);
 }
 
 
@@ -263,13 +265,18 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
     if (database_name == TEMPORARY_DATABASE)
         throw Exception("Cannot detach database with temporary tables.", ErrorCodes::DATABASE_ACCESS_DENIED);
 
-    std::shared_ptr<IDatabase> db;
+    DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
         assertDatabaseExistsUnlocked(database_name);
         db = databases.find(database_name)->second;
+        db_uuid_map.erase(db->getUUID());
+        databases.erase(database_name);
+    }
 
-        if (check_empty)
+    if (check_empty)
+    {
+        try
         {
             if (!db->empty())
                 throw Exception("New table appeared in database being dropped or detached. Try again.",
@@ -278,9 +285,11 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
             if (!drop && database_atomic)
                 database_atomic->assertCanBeDetached(false);
         }
-
-        db_uuid_map.erase(db->getUUID());
-        databases.erase(database_name);
+        catch (...)
+        {
+            attachDatabase(database_name, db);
+            throw;
+        }
     }
 
     db->shutdown();
@@ -300,36 +309,15 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
     return db;
 }
 
-void DatabaseCatalog::renameDatabase(const String & old_name, const String & new_name)
+void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name)
 {
     std::lock_guard lock{databases_mutex};
-    assertDatabaseExistsUnlocked(old_name);
-    assertDatabaseDoesntExistUnlocked(new_name);
+    assert(databases.find(new_name) == databases.end());
     auto it = databases.find(old_name);
+    assert(it != databases.end());
     auto db = it->second;
-    db->renameDatabase(new_name);
-
     databases.erase(it);
     databases.emplace(new_name, db);
-
-    auto depend_it = view_dependencies.begin();
-    while (depend_it != view_dependencies.end())
-    {
-        if (depend_it->first.database_name == old_name)
-        {
-            auto table_id = depend_it->first;
-            auto dependencies = std::move(depend_it->second);
-            depend_it = view_dependencies.erase(depend_it);
-            table_id.database_name = new_name;
-            view_dependencies.emplace(std::move(table_id), std::move(dependencies));
-        }
-        else
-            ++depend_it;
-    }
-
-    auto old_database_metadata_path = global_context->getPath() + "metadata/" + escapeForFileName(old_name) + ".sql";
-    auto new_database_metadata_path = global_context->getPath() + "metadata/" + escapeForFileName(new_name) + ".sql";
-    renameNoReplace(old_database_metadata_path, new_database_metadata_path);
 }
 
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
