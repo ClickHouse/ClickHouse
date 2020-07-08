@@ -44,7 +44,8 @@ RUN apt-get --allow-unauthenticated update -y \
           qemu-user-static \
           sudo \
           moreutils \
-          curl
+          curl \
+          brotli
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && wget --quiet -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
