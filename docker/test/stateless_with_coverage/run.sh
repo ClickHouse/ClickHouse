@@ -66,8 +66,7 @@ ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/con
     ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/; \
-    ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml; \
-    ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer
+    ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml
 
 service zookeeper start
 sleep 5
@@ -76,7 +75,8 @@ start_clickhouse
 
 sleep 10
 
-if cat /usr/bin/clickhouse-test | grep -q '--use-skip-list'; then
+
+if cat /usr/bin/clickhouse-test | grep -q -- "--use-skip-list"; then
     SKIP_LIST_OPT="--use-skip-list"
 fi
 

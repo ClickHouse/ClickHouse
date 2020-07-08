@@ -43,11 +43,18 @@ fi
 
 ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml
 
+echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/environment
+echo "TSAN_SYMBOLIZER_PATH=/usr/lib/llvm-10/bin/llvm-symbolizer" >> /etc/environment
+echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment
+echo "ASAN_SYMBOLIZER_PATH=/usr/lib/llvm-10/bin/llvm-symbolizer" >> /etc/environment
+echo "UBSAN_SYMBOLIZER_PATH=/usr/lib/llvm-10/bin/llvm-symbolizer" >> /etc/environment
+echo "LLVM_SYMBOLIZER_PATH=/usr/lib/llvm-10/bin/llvm-symbolizer" >> /etc/environment
+
 service zookeeper start
 sleep 5
 service clickhouse-server start && sleep 5
 
-if cat /usr/bin/clickhouse-test | grep -q '--use-skip-list'; then
+if cat /usr/bin/clickhouse-test | grep -q -- "--use-skip-list"; then
     SKIP_LIST_OPT="--use-skip-list"
 fi
 
