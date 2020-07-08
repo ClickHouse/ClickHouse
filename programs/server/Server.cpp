@@ -295,7 +295,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
 
     /** Context contains all that query execution is dependent:
-      *  settings, available functions, data types, aggregate functions, databases...
+      *  settings, available functions, data types, aggregate functions, databases, ...
       */
     auto shared_context = Context::createShared();
     auto global_context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
