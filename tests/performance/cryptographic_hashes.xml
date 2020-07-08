@@ -33,15 +33,15 @@
         <substitution>
            <name>numbers_small</name>
            <values>
-               <value>numbers(10000)</value>
-               <value>numbers_mt(100000)</value>
+               <value>numbers(100000)</value>
+               <value>numbers_mt(1000000)</value>
            </values>
         </substitution>
         <substitution>
            <name>numbers_medium</name>
            <values>
-               <value>numbers(100000)</value>
-               <value>numbers_mt(1000000)</value>
+               <value>numbers(1000000)</value>
+               <value>numbers_mt(10000000)</value>
            </values>
         </substitution>
         <substitution>
