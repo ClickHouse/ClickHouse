@@ -2,6 +2,8 @@
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
+#include <Interpreters/ExpressionActions.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -44,6 +46,39 @@ void TotalsHavingStep::transformPipeline(QueryPipeline & pipeline)
             filter_column_name, totals_mode, auto_include_threshold, final);
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
+}
+
+static String totalsModeToString(TotalsMode totals_mode, double auto_include_threshold)
+{
+    switch (totals_mode)
+    {
+        case TotalsMode::BEFORE_HAVING:
+            return "before_having";
+        case TotalsMode::AFTER_HAVING_INCLUSIVE:
+            return "after_having_inclusive";
+        case TotalsMode::AFTER_HAVING_EXCLUSIVE:
+            return "after_having_exclusive";
+        case TotalsMode::AFTER_HAVING_AUTO:
+            return "after_having_auto threshold " + std::to_string(auto_include_threshold);
+    }
+
+    __builtin_unreachable();
+}
+
+void TotalsHavingStep::describeActions(FormatSettings & settings) const
+{
+    String prefix(settings.offset, ' ');
+    settings.out << prefix << "Filter column: " << filter_column_name << '\n';
+    settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
+
+    bool first = true;
+    for (const auto & action : expression->getActions())
+    {
+        settings.out << prefix << (first ? "Actions: "
+                                         : "         ");
+        first = false;
+        settings.out << action.toString() << '\n';
+    }
 }
 
 }
