@@ -100,7 +100,7 @@
 	url = https://github.com/ClickHouse-Extras/fastops
 [submodule "contrib/orc"]
 	path = contrib/orc
-	url = https://github.com/nikitamikhaylov/orc
+	url = https://github.com/apache/orc
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11.git
@@ -108,7 +108,6 @@
 	path = contrib/grpc
 	url = https://github.com/ClickHouse-Extras/grpc.git
 	branch = v1.25.0
-	ignore = dirty 
 [submodule "contrib/aws"]
 	path = contrib/aws
 	url = https://github.com/ClickHouse-Extras/aws-sdk-cpp.git
