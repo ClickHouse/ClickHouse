@@ -20,6 +20,8 @@ public:
     String getName() const override { return "Filter"; }
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    void describeActions(FormatSettings & settings) const override;
+
 private:
     ExpressionActionsPtr expression;
     String filter_column_name;

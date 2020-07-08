@@ -169,7 +169,7 @@ MergeTreeData::MergeTreeData(
     const auto settings = getSettings();
 
     /// NOTE: using the same columns list as is read when performing actual merges.
-    merging_params.check(metadata_.getColumns().getAllPhysical());
+    merging_params.check(metadata_);
 
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
@@ -521,8 +521,10 @@ void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_poli
 }
 
 
-void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) const
+void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadata) const
 {
+    const auto columns = metadata.getColumns().getAllPhysical();
+
     if (!sign_column.empty() && mode != MergingParams::Collapsing && mode != MergingParams::VersionedCollapsing)
         throw Exception("Sign column for MergeTree cannot be specified in modes except Collapsing or VersionedCollapsing.",
                         ErrorCodes::LOGICAL_ERROR);
@@ -607,6 +609,21 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
                 throw Exception(
                         "Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
         }
+
+        /// Check that summing columns are not in partition key.
+        if (metadata.isPartitionKeyDefined())
+        {
+            auto partition_key_columns = metadata.getPartitionKey().column_names;
+
+            Names names_intersection;
+            std::set_intersection(columns_to_sum.begin(), columns_to_sum.end(),
+                                  partition_key_columns.begin(), partition_key_columns.end(),
+                                  std::back_inserter(names_intersection));
+
+            if (!names_intersection.empty())
+                throw Exception("Colums: " + Nested::createCommaSeparatedStringFrom(names_intersection) +
+                " listed both in colums to sum and in partition key. That is not allowed.", ErrorCodes::BAD_ARGUMENTS);
+        }
     }
 
     if (mode == MergingParams::Replacing)
@@ -637,7 +654,6 @@ String MergeTreeData::MergingParams::getModeName() const
 
     __builtin_unreachable();
 }
-
 
 Int64 MergeTreeData::getMaxBlockNumber() const
 {
