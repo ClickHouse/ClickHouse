@@ -373,8 +373,8 @@ target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_C
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
 
 if (USE_ORC)
-    target_link_libraries(clickhouse_common_io PUBLIC ${ORC_LIBRARIES})
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR})
+    dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} ${CMAKE_BINARY_DIR}/contrib/orc/c++/include)
 endif ()
 
 if (ENABLE_TESTS AND USE_GTEST)
