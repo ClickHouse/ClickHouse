@@ -73,7 +73,7 @@ def test_system_tables(start_cluster):
             "volume_name": "main",
             "volume_priority": "1",
             "disks": ["jbod1"],
-            "max_data_part_size": "0",
+            "volume_type": "JBOD",
             "move_factor": 0.1,
         },
         {
@@ -81,7 +81,7 @@ def test_system_tables(start_cluster):
             "volume_name": "external",
             "volume_priority": "2",
             "disks": ["external"],
-            "max_data_part_size": "0",
+            "volume_type": "JBOD",
             "move_factor": 0.1,
         },
         {
@@ -89,7 +89,7 @@ def test_system_tables(start_cluster):
             "volume_name": "m",
             "volume_priority": "1",
             "disks": ["jbod1"],
-            "max_data_part_size": "0",
+            "volume_type": "JBOD",
             "move_factor": 0.1,
         },
         {
@@ -97,7 +97,7 @@ def test_system_tables(start_cluster):
             "volume_name": "e",
             "volume_priority": "2",
             "disks": ["external"],
-            "max_data_part_size": "0",
+            "volume_type": "JBOD",
             "move_factor": 0.1,
         },
         {
@@ -105,7 +105,7 @@ def test_system_tables(start_cluster):
             "volume_name": "main",
             "volume_priority": "1",
             "disks": ["jbod1", "jbod2"],
-            "max_data_part_size": "10485760",
+            "volume_type": "JBOD",
             "move_factor": 0.1,
         },
         {
@@ -113,7 +113,7 @@ def test_system_tables(start_cluster):
             "volume_name": "external",
             "volume_priority": "2",
             "disks": ["external"],
-            "max_data_part_size": "0",
+            "volume_type": "JBOD",
             "move_factor": 0.1,
         },
         {
@@ -121,7 +121,7 @@ def test_system_tables(start_cluster):
             "volume_name": "main",
             "volume_priority": "1",
             "disks": ["jbod1"],
-            "max_data_part_size": "0",
+            "volume_type": "JBOD",
             "move_factor": 0.7,
         },
         {
@@ -129,7 +129,7 @@ def test_system_tables(start_cluster):
             "volume_name": "external",
             "volume_priority": "2",
             "disks": ["external"],
-            "max_data_part_size": "0",
+            "volume_type": "JBOD",
             "move_factor": 0.7,
         },
         {
@@ -137,7 +137,7 @@ def test_system_tables(start_cluster):
             "volume_name": "small",
             "volume_priority": "1",
             "disks": ["default"],
-            "max_data_part_size": "2097152",
+            "volume_type": "JBOD",
             "move_factor": 0.1,
         },
         {
@@ -145,7 +145,7 @@ def test_system_tables(start_cluster):
             "volume_name": "big",
             "volume_priority": "2",
             "disks": ["external"],
-            "max_data_part_size": "20971520",
+            "volume_type": "JBOD",
             "move_factor": 0.1,
         },
         {
@@ -153,7 +153,7 @@ def test_system_tables(start_cluster):
             "volume_name": "special_warning_zero_volume",
             "volume_priority": "1",
             "disks": ["default"],
-            "max_data_part_size": "0",
+            "volume_type": "JBOD",
             "move_factor": 0.1,
         },
         {
@@ -161,7 +161,7 @@ def test_system_tables(start_cluster):
             "volume_name": "special_warning_default_volume",
             "volume_priority": "2",
             "disks": ["external"],
-            "max_data_part_size": "0",
+            "volume_type": "JBOD",
             "move_factor": 0.1,
         },
         {
@@ -169,7 +169,7 @@ def test_system_tables(start_cluster):
             "volume_name": "special_warning_small_volume",
             "volume_priority": "3",
             "disks": ["jbod1"],
-            "max_data_part_size": "1024",
+            "volume_type": "JBOD",
             "move_factor": 0.1,
         },
         {
@@ -177,7 +177,7 @@ def test_system_tables(start_cluster):
             "volume_name": "special_warning_big_volume",
             "volume_priority": "4",
             "disks": ["jbod2"],
-            "max_data_part_size": "1024000000",
+            "volume_type": "JBOD",
             "move_factor": 0.1,
         },
     ]

@@ -27,6 +27,7 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & n
              {"volume_type", std::make_shared<DataTypeString>()},
              {"move_factor", std::make_shared<DataTypeFloat32>()}
     }));
+    // TODO: Add string column with custom volume-type-specific options
     setInMemoryMetadata(storage_metadata);
 }
 
