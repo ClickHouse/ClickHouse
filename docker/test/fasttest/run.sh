@@ -5,18 +5,26 @@ set -x -e
 ls -la
 
 git clone https://github.com/ClickHouse/ClickHouse.git | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/clone_log.txt
+cd ClickHouse
+CLICKHOUSE_DIR=`pwd`
 
-if [ "$PULL_REQUEST_NUMBER" != "0"]; then
+
+if [ "$PULL_REQUEST_NUMBER" != "0" ]; then
     if git fetch origin "+refs/pull/$PULL_REQUEST_NUMBER/merge"; then
         git checkout FETCH_HEAD
         echo 'Clonned merge head'
     else
         git fetch
         git checkout $COMMIT_SHA
+        echo 'Checked out to commit'
+    fi
+else
+    if [ "$COMMIT_SHA" != "" ]; then
+        git checkout $COMMIT_SHA
     fi
 fi
-cd ClickHouse
-CLICKHOUSE_DIR=`pwd`
+
+
 
 git submodule update --init --recursive | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/submodule_log.txt
 
