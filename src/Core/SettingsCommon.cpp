@@ -414,6 +414,12 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, LOAD_BALANCING_LIST_OF_NAMES, ErrorCodes::
     M(ANY, "ANY")
 IMPLEMENT_SETTING_ENUM(JoinStrictness, JOIN_STRICTNESS_LIST_OF_NAMES, ErrorCodes::UNKNOWN_JOIN_STRICTNESS)
 
+#define JOIN_ALGORITHM_NAMES(M) \
+    M(AUTO, "auto") \
+    M(HASH, "hash") \
+    M(PARTIAL_MERGE, "partial_merge") \
+    M(PREFER_PARTIAL_MERGE, "prefer_partial_merge")
+IMPLEMENT_SETTING_ENUM(JoinAlgorithm, JOIN_ALGORITHM_NAMES, ErrorCodes::UNKNOWN_JOIN_STRICTNESS)
 
 #define TOTALS_MODE_LIST_OF_NAMES(M) \
     M(BEFORE_HAVING, "before_having") \
