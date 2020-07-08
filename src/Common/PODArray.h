@@ -471,7 +471,7 @@ public:
         else
         {
             for (auto from_it = from_begin; from_it != from_end; ++from_it, ++it)
-                *it = *from_it;
+                new (&*it) T{*from_it};
         }
 
         this->c_end += bytes_to_copy;
@@ -633,7 +633,7 @@ public:
         {
             auto it = begin();
             for (auto from_it = from_begin; from_it != from_end; ++from_it)
-                *it = *from_it;
+                new (&*it) T{*from_it};
         }
         this->c_end = this->c_start + bytes_to_copy;
     }
