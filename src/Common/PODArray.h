@@ -102,7 +102,7 @@ protected:
 
     void alloc_for_num_elements(size_t num_elements)
     {
-        alloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(num_elements)));
+        alloc(minimum_memory_for_elements(num_elements));
     }
 
     template <typename ... TAllocatorParams>
@@ -212,9 +212,23 @@ public:
     }
 
     template <typename ... TAllocatorParams>
+    void reserve_exact(size_t n, TAllocatorParams &&... allocator_params)
+    {
+        if (n > capacity())
+            realloc(minimum_memory_for_elements(n), std::forward<TAllocatorParams>(allocator_params)...);
+    }
+
+    template <typename ... TAllocatorParams>
     void resize(size_t n, TAllocatorParams &&... allocator_params)
     {
         reserve(n, std::forward<TAllocatorParams>(allocator_params)...);
+        resize_assume_reserved(n);
+    }
+
+    template <typename ... TAllocatorParams>
+    void resize_exact(size_t n, TAllocatorParams &&... allocator_params)
+    {
+        reserve_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
         resize_assume_reserved(n);
     }
 
@@ -428,6 +442,7 @@ public:
     void insertSmallAllowReadWriteOverflow15(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
         static_assert(pad_right_ >= 15);
+        static_assert(sizeof(T) == sizeof(*from_begin));
         insertPrepare(from_begin, from_end, std::forward<TAllocatorParams>(allocator_params)...);
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
         memcpySmallAllowReadWriteOverflow15(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
@@ -438,23 +453,40 @@ public:
     void insert(iterator it, It1 from_begin, It2 from_end)
     {
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
-        size_t bytes_to_move = (end() - it) * sizeof(T);
+        size_t bytes_to_move = this->byte_size(end() - it);
 
         insertPrepare(from_begin, from_end);
 
         if (unlikely(bytes_to_move))
             memcpy(this->c_end + bytes_to_copy - bytes_to_move, this->c_end - bytes_to_move, bytes_to_move);
 
-        memcpy(this->c_end - bytes_to_move, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+        if constexpr (sizeof(*from_begin) == sizeof(T))
+        {
+            memcpy(this->c_end - bytes_to_move, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+        }
+        else
+        {
+            for (auto from_it = from_begin; from_it != from_end; ++from_it, ++it)
+                *it = *from_it;
+        }
+
         this->c_end += bytes_to_copy;
     }
 
     template <typename It1, typename It2>
     void insert_assume_reserved(It1 from_begin, It2 from_end)
     {
-        size_t bytes_to_copy = this->byte_size(from_end - from_begin);
-        memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
-        this->c_end += bytes_to_copy;
+        if constexpr (sizeof(*from_begin) == sizeof(T))
+        {
+            size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+            memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+            this->c_end += bytes_to_copy;
+        }
+        else
+        {
+            for (auto it = from_begin; it != from_end; ++it)
+                push_back(*it);
+        }
     }
 
     template <typename... TAllocatorParams>
@@ -577,7 +609,7 @@ public:
     template <typename... TAllocatorParams>
     void assign(size_t n, const T & x, TAllocatorParams &&... allocator_params)
     {
-        this->resize(n, std::forward<TAllocatorParams>(allocator_params)...);
+        this->resize_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
         std::fill(begin(), end(), x);
     }
 
@@ -586,10 +618,19 @@ public:
     {
         size_t required_capacity = from_end - from_begin;
         if (required_capacity > this->capacity())
-            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
+            this->reserve_exact(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = this->byte_size(required_capacity);
-        memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+        if constexpr (sizeof(*from_begin) == sizeof(T))
+        {
+            memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+        }
+        else
+        {
+            auto it = begin();
+            for (auto from_it = from_begin; from_it != from_end; ++from_it)
+                *it = *from_it;
+        }
         this->c_end = this->c_start + bytes_to_copy;
     }
 
