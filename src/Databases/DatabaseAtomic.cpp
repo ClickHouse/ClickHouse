@@ -389,6 +389,7 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
 
 void DatabaseAtomic::renameDatabase(const String & new_name)
 {
+    /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
     try
     {
         Poco::File(path_to_metadata_symlink).remove();
@@ -398,8 +399,16 @@ void DatabaseAtomic::renameDatabase(const String & new_name)
         LOG_WARNING(log, getCurrentExceptionMessage(true));
     }
 
+    auto new_name_escaped = escapeForFileName(new_name);
+    auto old_database_metadata_path = global_context.getPath() + "metadata/" + escapeForFileName(getDatabaseName()) + ".sql";
+    auto new_database_metadata_path = global_context.getPath() + "metadata/" + new_name_escaped + ".sql";
+    renameNoReplace(old_database_metadata_path, new_database_metadata_path);
+
+    String old_path_to_table_symlinks;
+
     {
         std::lock_guard lock(mutex);
+        DatabaseCatalog::instance().updateDatabaseName(database_name, new_name);
         database_name = new_name;
 
         for (auto & table : tables)
@@ -409,12 +418,12 @@ void DatabaseAtomic::renameDatabase(const String & new_name)
             table.second->renameInMemory(table_id);
         }
 
-        path_to_metadata_symlink = global_context.getPath() + "metadata/" + escapeForFileName(database_name);
-        String old_path_to_table_symlinks = path_to_table_symlinks;
-        path_to_table_symlinks = global_context.getPath() + "data/" + escapeForFileName(database_name) + "/";
-        Poco::File(old_path_to_table_symlinks).renameTo(path_to_table_symlinks);
+        path_to_metadata_symlink = global_context.getPath() + "metadata/" + new_name_escaped;
+        old_path_to_table_symlinks = path_to_table_symlinks;
+        path_to_table_symlinks = global_context.getPath() + "data/" + new_name_escaped + "/";
     }
 
+    Poco::File(old_path_to_table_symlinks).renameTo(path_to_table_symlinks);
     tryCreateMetadataSymlink();
 }
 
