@@ -569,12 +569,12 @@ void optimizeUsing(const ASTSelectQuery * select_query)
         expression_list = uniq_expressions_list;
 }
 
-void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_miltiif)
+void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
 {
     /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
     OptimizeIfWithConstantConditionVisitor(aliases).visit(query);
 
-    if (if_chain_to_miltiif)
+    if (if_chain_to_multiif)
         OptimizeIfChainsVisitor().visit(query);
 }
 
@@ -969,7 +969,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     executeScalarSubqueries(query, context, subquery_depth, result.scalars, select_options.only_analyze);
 
     {
-        optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
+        optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 
         /// Move arithmetic operations out of aggregation functions
         if (settings.optimize_arithmetic_operations_in_aggregate_functions)
@@ -1046,7 +1046,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
     executeScalarSubqueries(query, context, 0, result.scalars, false);
 
-    optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
+    optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 
     if (allow_aggregations)
     {
