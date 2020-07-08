@@ -512,7 +512,7 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
 /// Optimize duplicate ORDER BY and DISTINCT
 void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, const Context & context)
 {
-    DuplicateOrderByVisitor::Data order_by_data{context, false};
+    DuplicateOrderByVisitor::Data order_by_data{context};
     DuplicateOrderByVisitor(order_by_data).visit(query);
     DuplicateDistinctVisitor::Data distinct_data{};
     DuplicateDistinctVisitor(distinct_data).visit(query);
