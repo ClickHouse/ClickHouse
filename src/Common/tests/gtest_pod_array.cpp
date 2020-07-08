@@ -33,6 +33,34 @@ TEST(Common, PODArrayInsert)
     EXPECT_EQ(str, std::string(chars.data(), chars.size()));
 }
 
+TEST(Common, PODInsertIteratorRange)
+{
+    size_t size = 1 << 20;
+    char value = 123;
+
+    PODArray<size_t> big;
+    PODArray<char> small(size, value);
+
+    EXPECT_EQ(big.size(), 0);
+    EXPECT_EQ(small.size(), size);
+
+    big.insert(small.begin(), small.end());
+
+    EXPECT_EQ(big.size(), size);
+    EXPECT_EQ(big.back(), value);
+
+    big.assign(small.begin(), small.end());
+
+    EXPECT_EQ(big.size(), size);
+    EXPECT_EQ(big.back(), value);
+
+    big.insert(big.begin(), small.begin(), small.end());
+
+    EXPECT_EQ(big.size(), size * 2);
+    EXPECT_EQ(big.front(), value);
+    EXPECT_EQ(big.back(), value);
+}
+
 TEST(Common, PODPushBackRawMany)
 {
     PODArray<char> chars;
