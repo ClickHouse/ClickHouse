@@ -319,7 +319,7 @@ struct ContextShared
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
-    mutable VolumeSingleDiskPtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
+    mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -547,7 +547,7 @@ String Context::getDictionariesLibPath() const
     return shared->dictionaries_lib_path;
 }
 
-VolumeSingleDiskPtr Context::getTemporaryVolume() const
+VolumePtr Context::getTemporaryVolume() const
 {
     auto lock = getLock();
     return shared->tmp_volume;
@@ -572,7 +572,7 @@ void Context::setPath(const String & path)
         shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
 }
 
-VolumeSingleDiskPtr Context::setTemporaryStorage(const String & path, const String & policy_name)
+VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
 {
     std::lock_guard lock(shared->storage_policies_mutex);
 
@@ -590,8 +590,7 @@ VolumeSingleDiskPtr Context::setTemporaryStorage(const String & path, const Stri
         StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
              throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-        auto tmp_vol = tmp_policy->getVolume(0);
-        shared->tmp_volume = std::make_shared<SingleDiskVolume>(tmp_vol->getName() + "_tmp_volume", tmp_vol->getDisk());
+        shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
     if (shared->tmp_volume->getDisks().empty())

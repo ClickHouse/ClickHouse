@@ -765,7 +765,17 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
-        const std::string tmp_path = params.tmp_volume->getDisk()->getPath();
+
+        std::string tmp_path;
+        VolumeJBODPtr vol;
+        if ((vol = dynamic_pointer_cast<VolumeJBOD>(params.tmp_volume)) != nullptr)
+        {
+            tmp_path = vol->getNextDisk()->getPath();
+        }
+        else
+        {
+            tmp_path = params.tmp_volume->getDisk()->getPath();
+        }
 
         // enoughSpaceInDirectory() is not enough to make it right, since
         // another process (or another thread of aggregator) can consume all
