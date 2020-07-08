@@ -2,8 +2,8 @@
 FROM ubuntu:19.10
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
-ARG COMMIT_SHA=''
-ARG PULL_REQUEST_NUMBER=''
+ENV COMMIT_SHA=''
+ENV PULL_REQUEST_NUMBER=''
 
 RUN apt-get --allow-unauthenticated update -y && apt-get install --yes wget gnupg
 RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
