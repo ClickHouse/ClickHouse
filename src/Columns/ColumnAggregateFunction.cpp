@@ -123,10 +123,8 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
 
     if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
     {
-        auto res = column_aggregate_func.createView();
-        res->set(function_state->getNestedFunction());
-        res->data.assign(data.begin(), data.end());
-        return res;
+        column_aggregate_func.set(function_state->getNestedFunction());
+        return column_aggregate_func.getPtr();
     }
 
     MutableColumnPtr res = func->getReturnType()->createColumn();
