@@ -1,2 +1,3 @@
 9
-SELECT any(number) + (any(number) * 2)\nFROM numbers(3, 10)
+SELECT any(number) + (any(number) * 2)
+FROM numbers(3, 10)

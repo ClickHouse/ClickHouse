@@ -739,6 +739,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 
+    Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
+
     Block header = pipes.at(0).getHeader();
     for (size_t i = 0; i < sort_columns_size; ++i)
         sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
@@ -767,7 +769,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         case MergeTreeData::MergingParams::Summing:
             merged_transform = std::make_unique<SummingSortedTransform>(
-                header, pipes.size(), sort_description, data.merging_params.columns_to_sum, merge_block_size);
+                header, pipes.size(), sort_description, data.merging_params.columns_to_sum, partition_key_columns, merge_block_size);
             break;
 
         case MergeTreeData::MergingParams::Aggregating:
