@@ -94,6 +94,12 @@ static bool isInPrimaryKey(const SortDescription & description, const std::strin
     return false;
 }
 
+static bool isInPartitionKey(const std::string & column_name, const Names & partition_key_columns)
+{
+    auto is_in_partition_key = std::find(partition_key_columns.begin(), partition_key_columns.end(), column_name);
+    return is_in_partition_key != partition_key_columns.end();
+}
+
 /// Returns true if merge result is not empty
 static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
                      Row & row, const ColumnRawPtrs & raw_columns, size_t row_number)
@@ -181,7 +187,8 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
 static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header,
     const SortDescription & description,
-    const Names & column_names_to_sum)
+    const Names & column_names_to_sum,
+    const Names & partition_key_columns)
 {
     size_t num_columns = header.columns();
     SummingSortedAlgorithm::ColumnsDefinition def;
@@ -223,8 +230,8 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 continue;
             }
 
-            /// Are they inside the PK?
-            if (isInPrimaryKey(description, column.name, i))
+            /// Are they inside the primary key or partiton key?
+            if (isInPrimaryKey(description, column.name, i) ||  isInPartitionKey(column.name, partition_key_columns))
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
@@ -617,9 +624,10 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const Block & header, size_t num_inputs,
     SortDescription description_,
     const Names & column_names_to_sum,
+    const Names & partition_key_columns,
     size_t max_block_size)
     : IMergingAlgorithmWithDelayedChunk(num_inputs, std::move(description_))
-    , columns_definition(defineColumns(header, description, column_names_to_sum))
+    , columns_definition(defineColumns(header, description, column_names_to_sum, partition_key_columns))
     , merged_data(getMergedDataColumns(header, columns_definition), max_block_size, columns_definition)
 {
 }
