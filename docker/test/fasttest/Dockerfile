@@ -43,7 +43,8 @@ RUN apt-get --allow-unauthenticated update -y \
           unixodbc \
           qemu-user-static \
           sudo \
-          moreutils
+          moreutils \
+          curl
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && wget --quiet -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
