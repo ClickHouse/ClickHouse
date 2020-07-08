@@ -36,7 +36,7 @@ private:
     String upload_id;
     std::vector<String> part_tags;
 
-    Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
+    Poco::Logger * log = nullptr;
 
 public:
     explicit WriteBufferFromS3(
@@ -53,7 +53,15 @@ public:
 
     ~WriteBufferFromS3() override;
 
-private:
+protected:
+    WriteBufferFromS3(
+        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        const String & bucket_,
+        const String & key_,
+        size_t minimum_upload_part_size_,
+        size_t buffer_size_,
+        const String & log_name_);
+
     void initiate();
     void writePart(const String & data);
     void complete();

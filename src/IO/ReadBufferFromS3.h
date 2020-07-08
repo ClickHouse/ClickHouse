@@ -33,7 +33,7 @@ private:
     Aws::S3::Model::GetObjectResult read_result;
     std::unique_ptr<ReadBuffer> impl;
 
-    Poco::Logger * log = &Poco::Logger::get("ReadBufferFromS3");
+    Poco::Logger * log = nullptr;
 
 public:
     explicit ReadBufferFromS3(
@@ -46,7 +46,13 @@ public:
 
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
-
+protected:
+    ReadBufferFromS3(
+        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        const String & bucket_,
+        const String & key_,
+        size_t buffer_size_,
+        const String & log_name_);
 private:
     std::unique_ptr<ReadBuffer> initialize();
 };

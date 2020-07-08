@@ -22,8 +22,19 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, size_t buffer_size_, const String & log_name_)
+    : SeekableReadBuffer(nullptr, 0)
+    , client_ptr(std::move(client_ptr_))
+    , bucket(bucket_)
+    , key(key_)
+    , buffer_size(buffer_size_)
+    , log(&Poco::Logger::get(log_name_))
+{
+}
+
+ReadBufferFromS3::ReadBufferFromS3(
     std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, size_t buffer_size_)
-    : SeekableReadBuffer(nullptr, 0), client_ptr(std::move(client_ptr_)), bucket(bucket_), key(key_), buffer_size(buffer_size_)
+    : ReadBufferFromS3(client_ptr_, bucket_, key_, buffer_size_, "ReadBufferFromS3")
 {
 }
 

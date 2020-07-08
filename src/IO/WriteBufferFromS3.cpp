@@ -33,7 +33,8 @@ WriteBufferFromS3::WriteBufferFromS3(
     const String & bucket_,
     const String & key_,
     size_t minimum_upload_part_size_,
-    size_t buffer_size_)
+    size_t buffer_size_,
+    const String & log_name_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)
@@ -41,8 +42,19 @@ WriteBufferFromS3::WriteBufferFromS3(
     , minimum_upload_part_size{minimum_upload_part_size_}
     , temporary_buffer{std::make_unique<WriteBufferFromOwnString>()}
     , last_part_size{0}
+    , log(&Poco::Logger::get(log_name_))
 {
     initiate();
+}
+
+WriteBufferFromS3::WriteBufferFromS3(
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+    const String & bucket_,
+    const String & key_,
+    size_t minimum_upload_part_size_,
+    size_t buffer_size_)
+    : WriteBufferFromS3(client_ptr_, bucket_, key_, minimum_upload_part_size_, buffer_size_, "WriteBufferFromS3")
+{
 }
 
 

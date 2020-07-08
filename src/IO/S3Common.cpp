@@ -5,7 +5,6 @@
 #    include <IO/S3Common.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <Storages/StorageS3Settings.h>
-
 #    include <aws/core/auth/AWSCredentialsProvider.h>
 #    include <aws/core/utils/logging/LogMacros.h>
 #    include <aws/core/utils/logging/LogSystemInterface.h>
@@ -20,7 +19,7 @@
 #    include <re2/re2.h>
 #    include <common/logger_useful.h>
 
-namespace
+namespace DB::S3
 {
 const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
@@ -36,72 +35,52 @@ const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::U
     };
     return mapping.at(log_level);
 }
-
-class AWSLogger final : public Aws::Utils::Logging::LogSystemInterface
+void AWSLogger::Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...)
 {
-public:
-    ~AWSLogger() final = default;
+    const auto & [level, prio] = convertLogLevel(log_level);
+    LOG_IMPL(log, level, prio, "{}: {}", tag, format_str);
+}
 
-    Aws::Utils::Logging::LogLevel GetLogLevel() const final { return Aws::Utils::Logging::LogLevel::Trace; }
-
-    void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final // NOLINT
-    {
-        const auto & [level, prio] = convertLogLevel(log_level);
-        LOG_IMPL(log, level, prio, "{}: {}", tag, format_str);
-    }
-
-    void LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream) final
-    {
-        const auto & [level, prio] = convertLogLevel(log_level);
-        LOG_IMPL(log, level, prio, "{}: {}", tag, message_stream.str());
-    }
-
-    void Flush() final {}
-
-private:
-    Poco::Logger * log = &Poco::Logger::get("AWSClient");
-};
-
-class S3AuthSigner : public Aws::Client::AWSAuthV4Signer
+void AWSLogger::LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream)
 {
-public:
-    S3AuthSigner(
-        const Aws::Client::ClientConfiguration & client_configuration,
-        const Aws::Auth::AWSCredentials & credentials,
-        const DB::HeaderCollection & headers_)
-        : Aws::Client::AWSAuthV4Signer(
-            std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials),
-            "s3",
-            client_configuration.region,
-            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-            false)
-        , headers(headers_)
-    {
-    }
+    const auto & [level, prio] = convertLogLevel(log_level);
+    LOG_IMPL(log, level, prio, "{}: {}", tag, message_stream.str());
+}
 
-    bool SignRequest(Aws::Http::HttpRequest & request, const char * region, bool sign_body) const override
-    {
-        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, sign_body);
-        for (const auto & header : headers)
-            request.SetHeaderValue(header.name, header.value);
-        return result;
-    }
+S3AuthSigner::S3AuthSigner(
+    const Aws::Client::ClientConfiguration & client_configuration,
+    const Aws::Auth::AWSCredentials & credentials,
+    const DB::HeaderCollection & headers_)
+    : Aws::Client::AWSAuthV4Signer(
+        std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials),
+        "s3",
+        client_configuration.region,
+        Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+        false)
+    , headers(headers_)
+{
+}
 
-    bool PresignRequest(
-        Aws::Http::HttpRequest & request,
-        const char * region,
-        const char * serviceName,
-        long long expiration_time_sec) const override // NOLINT
-    {
-        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, serviceName, expiration_time_sec);
-        for (const auto & header : headers)
-            request.SetHeaderValue(header.name, header.value);
-        return result;
-    }
+bool S3AuthSigner::SignRequest(Aws::Http::HttpRequest & request, const char * region, bool sign_body) const
+{
+    auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, sign_body);
+    for (const auto & header : headers)
+        request.SetHeaderValue(header.name, header.value);
+    return result;
+}
 
-private:
-    const DB::HeaderCollection headers;
-};
+bool S3AuthSigner::PresignRequest(
+    Aws::Http::HttpRequest & request,
+    const char * region,
+    const char * serviceName,
+    long long expiration_time_sec) const
+{
+    auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, serviceName, expiration_time_sec);
+    for (const auto & header : headers)
+        request.SetHeaderValue(header.name, header.value);
+    return result;
+}
+
 }
 
 namespace DB
@@ -197,6 +176,29 @@ namespace S3
             std::make_shared<S3AuthSigner>(cfg, std::move(credentials), std::move(headers)),
             std::move(cfg), // Client configuration.
             is_virtual_hosted_style || cfg.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
+        );
+    }
+    
+    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
+        const String & endpoint,
+        const String & region,
+        bool is_https_scheme,
+        const String & access_key_id,
+        const String & secret_access_key)
+    {
+        Aws::Client::ClientConfiguration cfg;
+        if (!endpoint.empty())
+            cfg.endpointOverride = endpoint;
+        cfg.scheme = is_https_scheme ? Aws::Http::Scheme::HTTPS : Aws::Http::Scheme::HTTP;
+        cfg.region = region;
+
+        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+
+        return std::make_shared<Aws::S3::S3Client>(
+                credentials, // Aws credentials.
+                std::move(cfg), // Client configuration.
+                Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
+                endpoint.empty() // Use virtual addressing only if endpoint is not specified.
         );
     }
 
