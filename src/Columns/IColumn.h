@@ -216,6 +216,9 @@ public:
     /// WeakHash32 must have the same size as column.
     virtual void updateWeakHash32(WeakHash32 & hash) const = 0;
 
+    /// Update state of hash with all column.
+    virtual void updateHashFast(SipHash & hash) const = 0;
+
     /** Removes elements that don't match the filter.
       * Is used in WHERE and HAVING operations.
       * If result_size_hint > 0, then makes advance reserve(result_size_hint) for the result column;
