@@ -1,8 +1,6 @@
 #!/bin/bash
 set -e
 
-script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-
 from="$1"
 to="$2"
 log_command=(git log "$from..$to" --first-parent)
@@ -84,5 +82,5 @@ done
 
 echo "### ClickHouse release $to FIXME as compared to $from
 " > changelog.md
-"$script_dir/format-changelog.py" changelog-prs-filtered.txt >> changelog.md
+./format-changelog.py changelog-prs-filtered.txt >> changelog.md
 cat changelog.md

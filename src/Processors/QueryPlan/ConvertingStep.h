@@ -4,7 +4,6 @@
 namespace DB
 {
 
-/// Convert one block structure to another. See ConvertingTransform.
 class ConvertingStep : public ITransformingStep
 {
 public:

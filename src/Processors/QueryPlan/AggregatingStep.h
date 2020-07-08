@@ -10,7 +10,6 @@ namespace DB
 struct AggregatingTransformParams;
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
-/// Aggregation. See AggregatingTransform.
 class AggregatingStep : public ITransformingStep
 {
 public:

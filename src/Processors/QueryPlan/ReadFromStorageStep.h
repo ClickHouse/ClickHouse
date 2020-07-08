@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Core/QueryProcessingStage.h>
-#include <Storages/TableLockHolder.h>
+#include <Storages/TableStructureLockHolder.h>
 #include <Interpreters/SelectQueryOptions.h>
 
 namespace DB
@@ -8,9 +8,6 @@ namespace DB
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
-
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 struct SelectQueryInfo;
 
@@ -21,8 +18,7 @@ class ReadFromStorageStep : public IQueryPlanStep
 {
 public:
     ReadFromStorageStep(
-        TableLockHolder table_lock,
-        StorageMetadataPtr & metadata_snapshot,
+        TableStructureReadLockHolder table_lock,
         SelectQueryOptions options,
         StoragePtr storage,
         const Names & required_columns,
@@ -39,8 +35,7 @@ public:
     QueryPipelinePtr updatePipeline(QueryPipelines) override;
 
 private:
-    TableLockHolder table_lock;
-    StorageMetadataPtr metadata_snapshot;
+    TableStructureReadLockHolder table_lock;
     SelectQueryOptions options;
 
     StoragePtr storage;

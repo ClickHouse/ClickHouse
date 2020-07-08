@@ -118,8 +118,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     if (host_name.empty())
     {
         const StoragePtr & table = DatabaseCatalog::instance().getTable({database_name, table_name}, global_context);
-        auto table_metadata = table->getInMemoryMetadataPtr();
-        has_column = table_metadata->getColumns().hasPhysical(column_name);
+        has_column = table->getColumns().hasPhysical(column_name);
     }
     else
     {

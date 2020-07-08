@@ -285,9 +285,6 @@ public:
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
 
-    /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
-    void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
-
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()
     {

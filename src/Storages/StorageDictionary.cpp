@@ -100,9 +100,7 @@ StorageDictionary::StorageDictionary(
     : IStorage(table_id_)
     , dictionary_name(dictionary_name_)
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription{getNamesAndTypes(dictionary_structure_)});
-    setInMemoryMetadata(storage_metadata);
+    setColumns(ColumnsDescription{getNamesAndTypes(dictionary_structure_)});
 }
 
 
@@ -113,7 +111,6 @@ void StorageDictionary::checkTableCanBeDropped() const
 
 Pipes StorageDictionary::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,

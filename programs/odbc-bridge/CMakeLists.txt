@@ -10,6 +10,7 @@ set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     PingHandler.cpp
     validateODBCConnectionString.cpp
 )
+
 set (CLICKHOUSE_ODBC_BRIDGE_LINK
     PRIVATE
         clickhouse_parsers

@@ -377,7 +377,7 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
             }
 
             if (!res_col_aggregate_function)
-                agg_func.insertResultInto(place, result_data, arena.get());
+                agg_func.insertResultInto(place, result_data);
             else
                 res_col_aggregate_function->insertFrom(place);
         }

@@ -5,7 +5,6 @@
 namespace DB
 {
 
-/// Finish sorting of pre-sorted data. See FinishSortingTransform.
 class FinishSortingStep : public ITransformingStep
 {
 public:

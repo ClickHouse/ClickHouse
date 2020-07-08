@@ -4,7 +4,6 @@
 namespace DB
 {
 
-/// Executes LIMIT BY for specified columns. See LimitByTransform.
 class LimitByStep : public ITransformingStep
 {
 public:

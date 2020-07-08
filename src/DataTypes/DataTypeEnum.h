@@ -119,9 +119,6 @@ public:
 
     bool textCanContainOnlyValidUTF8() const override;
     size_t getSizeOfValueInMemory() const override { return sizeof(FieldType); }
-
-    /// Check current Enum type extends another Enum type (contains all fields with same values).
-    bool contains(const IDataType & rhs) const;
 };
 
 

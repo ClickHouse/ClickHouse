@@ -126,7 +126,7 @@ struct MatchImpl
         {
             size_t size = offsets.size();
 
-            auto regexp = Regexps::get<like, true>(pattern);
+            const auto & regexp = Regexps::get<like, true>(pattern);
 
             std::string required_substring;
             bool is_trivial;
@@ -281,7 +281,7 @@ struct MatchImpl
         {
             size_t size = data.size() / n;
 
-            auto regexp = Regexps::get<like, true>(pattern);
+            const auto & regexp = Regexps::get<like, true>(pattern);
 
             std::string required_substring;
             bool is_trivial;
