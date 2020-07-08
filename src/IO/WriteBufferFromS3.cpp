@@ -65,10 +65,9 @@ void WriteBufferFromS3::nextImpl()
 
         if (last_part_size > minimum_upload_part_size)
         {
-            temporary_buffer->finalize();
             writePart(temporary_buffer->str());
             last_part_size = 0;
-            temporary_buffer = std::make_unique<WriteBufferFromOwnString>();
+            temporary_buffer->restart();
         }
     }
 }
@@ -78,7 +77,6 @@ void WriteBufferFromS3::finalize()
 {
     next();
 
-    temporary_buffer->finalize();
     if (is_multipart)
         writePart(temporary_buffer->str());
 
@@ -192,7 +190,7 @@ void WriteBufferFromS3::complete()
 
         /// This could be improved using an adapter to WriteBuffer.
         const std::shared_ptr<Aws::IOStream> input_data = Aws::MakeShared<Aws::StringStream>("temporary buffer", temporary_buffer->str());
-        temporary_buffer = std::make_unique<WriteBufferFromOwnString>();
+        temporary_buffer.reset(new WriteBufferFromOwnString());
         req.SetBody(input_data);
 
         auto outcome = client_ptr->PutObject(req);
