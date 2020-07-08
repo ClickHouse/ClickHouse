@@ -66,8 +66,7 @@ ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/con
     ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/; \
-    ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/; \
-    ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer
+    ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/;
 
 
 service zookeeper start
@@ -106,7 +105,7 @@ LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "RENAME TA
 LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW TABLES FROM test"
 
-if cat /usr/bin/clickhouse-test | grep -q '--use-skip-list'; then
+if cat /usr/bin/clickhouse-test | grep -q -- "--use-skip-list"; then
     SKIP_LIST_OPT="--use-skip-list"
 fi
 
