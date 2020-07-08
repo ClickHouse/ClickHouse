@@ -460,7 +460,7 @@ public:
         if (unlikely(bytes_to_move))
             memcpy(this->c_end + bytes_to_copy - bytes_to_move, this->c_end - bytes_to_move, bytes_to_move);
 
-        if constexpr (std::is_same_v<T, decltype(*from_begin)>)
+        if constexpr (std::is_same_v<T, std::decay_t<decltype(*from_begin)>>)
         {
             memcpy(this->c_end - bytes_to_move, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
         }
@@ -476,7 +476,7 @@ public:
     template <typename It1, typename It2>
     void insert_assume_reserved(It1 from_begin, It2 from_end)
     {
-        if constexpr (std::is_same_v<T, decltype(*from_begin)>)
+        if constexpr (std::is_same_v<T, std::decay_t<decltype(*from_begin)>>)
         {
             size_t bytes_to_copy = this->byte_size(from_end - from_begin);
             memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
@@ -621,7 +621,7 @@ public:
             this->reserve_exact(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = this->byte_size(required_capacity);
-        if constexpr (std::is_same_v<T, decltype(*from_begin)>)
+        if constexpr (std::is_same_v<T, std::decay_t<decltype(*from_begin)>>)
         {
             memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
         }
