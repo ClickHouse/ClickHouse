@@ -20,7 +20,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = StripeLog
 ```
 
-See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) query.
+See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 ## Writing the Data {#table_engines-stripelog-writing-the-data}
 
