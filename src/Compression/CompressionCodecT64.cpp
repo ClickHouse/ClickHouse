@@ -630,7 +630,7 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     throw Exception("Cannot decompress with T64", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
-void CompressionCodecT64::useInfoAboutType(DataTypePtr data_type)
+void CompressionCodecT64::useInfoAboutType(const DataTypePtr & data_type)
 {
     if (data_type)
     {

@@ -10,6 +10,7 @@
 #include <Compression/LZ4_decompress_faster.h>
 #include <Compression/CompressionInfo.h>
 
+
 namespace DB
 {
 
@@ -57,7 +58,7 @@ public:
     static uint8_t readMethod(const char * source);
 
     /// Some codecs may use information about column type which appears after codec creation
-    virtual void useInfoAboutType(DataTypePtr /* data_type */) {}
+    virtual void useInfoAboutType(const DataTypePtr & /* data_type */) {}
 
     /// Return true if this codec actually compressing something. Otherwise it can be just transformation that helps compression (e.g. Delta).
     virtual bool isCompression() const = 0;
