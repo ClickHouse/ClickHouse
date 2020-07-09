@@ -1,9 +1,9 @@
 CREATE DATABASE test_01114_1\nENGINE = Atomic
 CREATE DATABASE test_01114_2\nENGINE = Atomic
 CREATE DATABASE test_01114_3\nENGINE = Ordinary
-test_01114_1	Atomic	store	metadata	test_01114_1
-test_01114_2	Atomic	store	metadata	test_01114_2
-test_01114_3	Ordinary	test_01114_3	metadata	test_01114_3
+test_01114_1	Atomic	store	00001114-1000-4000-8000-000000000001	1
+test_01114_2	Atomic	store	00001114-1000-4000-8000-000000000002	1
+test_01114_3	Ordinary	test_01114_3	test_01114_3	1
 20
 100
 CREATE TABLE test_01114_2.mt UUID \'00001114-0000-4000-8000-000000000002\'\n(\n    `n` UInt64\n)\nENGINE = MergeTree()\nPARTITION BY n % 5\nORDER BY tuple()\nSETTINGS index_granularity = 8192
