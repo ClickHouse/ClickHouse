@@ -184,6 +184,42 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
+### netloc {#netloc}
+
+Extracts network locality (`username:password@host:port`) from a URL.
+
+**Syntax**
+
+```sql
+netloc(URL)
+```
+
+**Parameters**
+
+-   `url` — URL. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-  `username:password@host:port`.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT netloc('http://paul@www.example.com:80/');
+```
+
+Result:
+
+``` text
+┌─netloc('http://paul@www.example.com:80/')─┐
+│ paul@www.example.com:80                   │
+└───────────────────────────────────────────┘
+```
+
 ## Functions that Remove Part of a URL {#functions-that-remove-part-of-a-url}
 
 If the URL doesn’t have anything similar, the URL remains unchanged.

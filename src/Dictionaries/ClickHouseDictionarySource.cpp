@@ -66,7 +66,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , where{config.getString(config_prefix + ".where", "")}
     , update_field{config.getString(config_prefix + ".update_field", "")}
     , invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
-    , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
+    , query_builder{dict_struct, db, "", table, where, IdentifierQuotingStyle::Backticks}
     , sample_block{sample_block_}
     , context(context_)
     , is_local{isLocalAddress({host, port}, secure ? context.getTCPPortSecure().value_or(0) : context.getTCPPort())}
@@ -97,7 +97,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
     , update_field{other.update_field}
     , invalidate_query{other.invalidate_query}
     , invalidate_query_response{other.invalidate_query_response}
-    , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
+    , query_builder{dict_struct, db, "", table, where, IdentifierQuotingStyle::Backticks}
     , sample_block{other.sample_block}
     , context(other.context)
     , is_local{other.is_local}

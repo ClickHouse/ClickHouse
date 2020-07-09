@@ -713,7 +713,10 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     for (const auto & column : block_to_write)
         list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
 
-    InterpreterInsertQuery interpreter{insert, global_context, allow_materialized};
+    auto insert_context = Context(global_context);
+    insert_context.makeQueryContext();
+
+    InterpreterInsertQuery interpreter{insert, insert_context, allow_materialized};
 
     auto block_io = interpreter.execute();
     block_io.out->writePrefix();

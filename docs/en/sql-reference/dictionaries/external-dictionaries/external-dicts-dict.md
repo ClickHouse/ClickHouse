@@ -29,7 +29,7 @@ If dictionary is configured using xml file, than dictionary configuration has th
 </dictionary>
 ```
 
-Corresponding [DDL-query](../../../sql-reference/statements/create.md#create-dictionary-query) has the following structure:
+Corresponding [DDL-query](../../../sql-reference/statements/create/dictionary.md) has the following structure:
 
 ``` sql
 CREATE DICTIONARY dict_name
