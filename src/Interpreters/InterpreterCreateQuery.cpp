@@ -325,7 +325,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 const auto tmp_column_name = final_column_name + "_tmp";
                 const auto * data_type_ptr = column_names_and_types.back().type.get();
 
-
                 default_expr_list->children.emplace_back(
                     setAlias(addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
                         final_column_name));
