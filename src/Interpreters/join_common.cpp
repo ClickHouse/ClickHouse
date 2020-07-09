@@ -104,6 +104,16 @@ void removeLowCardinalityInplace(Block & block)
     }
 }
 
+void removeLowCardinalityInplace(Block & block, const Names & names)
+{
+    for (const String & column_name : names)
+    {
+        auto & col = block.getByName(column_name);
+        col.column = recursiveRemoveLowCardinality(col.column);
+        col.type = recursiveRemoveLowCardinality(col.type);
+    }
+}
+
 void splitAdditionalColumns(const Block & sample_block, const Names & key_names, Block & block_keys, Block & block_others)
 {
     block_others = materializeBlock(sample_block);
