@@ -176,7 +176,7 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 
 ### netloc {#netloc}
 
-Извлекает сетевое расположение из URL. Работает так же, как [urlparse.netloc](https://docs.python.org/2/library/urlparse.html) в Python.
+Извлекает сетевую локальность (`username:password@host:port`) из URL.
 
 **Синтаксис**
 
@@ -190,7 +190,7 @@ netloc(URL)
 
 **Возвращаемое значение**
 
--   логин(если есть)@имя хоста:порт(если есть).
+-   `username:password@host:port`.
 
 Тип: `String`.
 

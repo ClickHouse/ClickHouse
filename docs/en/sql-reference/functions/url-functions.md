@@ -183,9 +183,10 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘
 ```
+
 ### netloc {#netloc}
 
-Extracts network location from a URL. Similar to [urlparse.netloc](https://docs.python.org/2/library/urlparse.html) in Python.
+Extracts network locality (`username:password@host:port`) from a URL.
 
 **Syntax**
 
@@ -199,7 +200,7 @@ netloc(URL)
 
 **Returned value**
 
--   login(if exists)@hostname:port(if exists).
+-  `username:password@host:port`.
 
 Type: `String`.
 
