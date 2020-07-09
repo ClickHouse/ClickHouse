@@ -38,6 +38,7 @@ void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
 void registerFunctionsUnixTimestamp64(FunctionFactory & factory);
+void registerFunctionBayesAB(FunctionFactory &);
 
 
 void registerFunctions()
@@ -80,6 +81,7 @@ void registerFunctions()
     registerFunctionsIntrospection(factory);
     registerFunctionsConsistentHashing(factory);
     registerFunctionsUnixTimestamp64(factory);
+    registerFunctionBayesAB(factory);
 }
 
 }
