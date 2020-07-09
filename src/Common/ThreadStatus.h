@@ -60,6 +60,7 @@ public:
     Context * global_context = nullptr;
 
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
+    std::function<void()> fatal_error_callback;
 
     std::vector<UInt64> thread_ids;
 
