@@ -34,7 +34,7 @@ These actions are described in detail below.
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, [`codec`](../../sql-reference/statements/create.md#codecs) and `default_expr` (see the section [Default expressions](../../sql-reference/statements/create.md#create-default-values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](../../sql-reference/statements/create/table.md#codecs) and `default_expr` (see the section [Default expressions](../../sql-reference/statements/create/table.md#create-default-values)).
 
 If the `IF NOT EXISTS` clause is included, the query won’t return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
@@ -182,7 +182,7 @@ Also, they are replicated (syncing indices metadata through ZooKeeper).
 
 ### Manipulations with Constraints {#manipulations-with-constraints}
 
-See more on [constraints](../../sql-reference/statements/create.md#constraints)
+See more on [constraints](../../sql-reference/statements/create/table.md#constraints)
 
 Constraints could be added or deleted using following syntax:
 

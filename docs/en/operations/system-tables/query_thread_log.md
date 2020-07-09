@@ -9,7 +9,7 @@ To start logging:
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query\_thread\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse doesn’t delete data from the table automatically. See [Introduction](index.md#system-tables-introduction) for more details.
+ClickHouse doesn’t delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
 
 Columns:
 
@@ -110,4 +110,4 @@ ProfileEvents.Values: [1,97,81,5,81]
 
 **See Also**
 
--   [system.query\_log](query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
+-   [system.query\_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.

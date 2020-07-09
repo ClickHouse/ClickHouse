@@ -1,479 +1,474 @@
-# GRANT
+---
+toc_priority: 39
+toc_title: GRANT
+---
 
-- Присваивает [привилегии](#grant-privileges) пользователям или ролям ClickHouse.
-- Назначает роли пользователям или другим ролям.
+# GRANT {#grant}
 
-Отозвать привилегию можно с помощью выражения [REVOKE](revoke.md). Чтобы вывести список присвоенных привилегий, воспользуйтесь выражением [SHOW GRANTS](show.md#show-grants-statement).
+-   Grants [privileges](#grant-privileges) to ClickHouse user accounts or roles.
+-   Assigns roles to user accounts or to the other roles.
 
-## Синтаксис присвоения привилегий {#grant-privigele-syntax}
+To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md) statement. Also you can list granted privileges with the [SHOW GRANTS](../../sql-reference/statements/show.md#show-grants-statement) statement.
 
-```sql
+## Granting Privilege Syntax {#grant-privigele-syntax}
+
+``` sql
 GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
 ```
 
-- `privilege` — Тип привилегии
-- `role` — Роль пользователя ClickHouse.
-- `user` — Пользователь ClickHouse.
+-   `privilege` — Type of privilege.
+-   `role` — ClickHouse user role.
+-   `user` — ClickHouse user account.
 
-`WITH GRANT OPTION` разрешает пользователю или роли выполнять запрос `GRANT`. Пользователь может выдавать только те привилегии, которые есть у него, той же или меньшей области действий.
+The `WITH GRANT OPTION` clause grants `user` or `role` with permission to execute the `GRANT` query. Users can grant privileges of the same scope they have and less.
 
+## Assigning Role Syntax {#assign-role-syntax}
 
-## Синтаксис назначения ролей {#assign-role-syntax}
-
-```sql
+``` sql
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
 ```
 
-- `role` — Роль пользователя ClickHouse.
-- `user` — Пользователь ClickHouse.
+-   `role` — ClickHouse user role.
+-   `user` — ClickHouse user account.
 
-`WITH ADMIN OPTION` присваивает привилегию [ADMIN OPTION](#admin-option-privilege) пользователю или роли.
+The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option-privilege) privilege to `user` or `role`.
 
-## Использование {#grant-usage}
+## Usage {#grant-usage}
 
-Для использования `GRANT` пользователь должен иметь привилегию `GRANT OPTION`. Пользователь может выдавать привилегии только внутри области действий назначенных ему самому привилегий.
+To use `GRANT`, your account must have the `GRANT OPTION` privilege. You can grant privileges only inside the scope of your account privileges.
 
-Например, администратор выдал привилегию пользователю `john`:
+For example, administrator has granted privileges to the `john` account by the query:
 
-```sql
+``` sql
 GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 ```
 
-Это означает, что пользователю `john` разрешено выполнять:
+It means that `john` has the permission to execute:
 
-- `SELECT x,y FROM db.table`.
-- `SELECT x FROM db.table`.
-- `SELECT y FROM db.table`.
+-   `SELECT x,y FROM db.table`.
+-   `SELECT x FROM db.table`.
+-   `SELECT y FROM db.table`.
 
-`john` не может выполнить `SELECT z FROM db.table` или `SELECT * FROM db.table`. После обработки данных запросов ClickHouse ничего не вернет — даже `x` или `y`. Единственное исключение — если таблица содержит только столбцы `x` и `y`. В таком случае ClickHouse вернет все данные.
+`john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse doesn’t return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns. In this case ClickHouse returns all the data.
 
-Также у `john` есть привилегия `GRANT OPTION`. `john` может выдать другим пользователям привилегии той же или меньшей области действий из тех, которые есть у него.
+Also `john` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or smaller scope.
 
-При присвоении привилегий допускается использовать астериск (`*`) вместо имени таблицы или базы данных. Например, запрос `GRANT SELECT ON db.* TO john` позволит пользователю `john` выполнять `SELECT` над всеми таблицам в базе данных `db`. Также вы можете опускать имя базы данных. В таком случае привилегии позволят совершать операции над текущей базой данных. Например, запрос `GRANT SELECT ON * TO john` выдаст привилегию на выполнение `SELECT` над всеми таблицами в текущей базе данных; `GRANT SELECT ON mytable TO john` — только над таблицей `mytable` в текущей базе данных.
+Specifying privileges you can use asterisk (`*`) instead of a table or a database name. For example, the `GRANT SELECT ON db.* TO john` query allows `john` to execute the `SELECT` query over all the tables in `db` database. Also, you can omit database name. In this case privileges are granted for current database. For example, `GRANT SELECT ON * TO john` grants the privilege on all the tables in the current database, `GRANT SELECT ON mytable TO john` grants the privilege on the `mytable` table in the current database.
 
-Доступ к базе данных `system` разрешен всегда (данная база данных используется при обработке запросов).
+Access to the `system` database is always allowed (since this database is used for processing queries).
 
-Вы можете присвоить несколько привилегий нескольким пользователям в одном запросе. Запрос `GRANT SELECT, INSERT ON *.* TO john, robin` позволит пользователям `john` и `robin` выполнять `INSERT` и `SELECT` над всеми таблицами всех баз данных на сервере.
+You can grant multiple privileges to multiple accounts in one query. The query `GRANT SELECT, INSERT ON *.* TO john, robin` allows accounts `john` and `robin` to execute the `INSERT` and `SELECT` queries over all the tables in all the databases on the server.
 
+## Privileges {#grant-privileges}
 
-## Привилегии {#grant-privileges}
+Privilege is a permission to execute specific kind of queries.
 
-Привилегия — это разрешение на выполнение определенного типа запросов.
+Privileges have a hierarchical structure. A set of permitted queries depends on the privilege scope.
 
-Привилегии имеют иерархическую структуру. Набор разрешенных запросов зависит от области действия привилегии.
+Hierarchy of privileges:
 
-Иерархия привилегий:
+-   [SELECT](#grant-select)
+-   [INSERT](#grant-insert)
+-   [ALTER](#grant-alter)
+    -   `ALTER TABLE`
+        -   `ALTER UPDATE`
+        -   `ALTER DELETE`
+        -   `ALTER COLUMN`
+            -   `ALTER ADD COLUMN`
+            -   `ALTER DROP COLUMN`
+            -   `ALTER MODIFY COLUMN`
+            -   `ALTER COMMENT COLUMN`
+            -   `ALTER CLEAR COLUMN`
+            -   `ALTER RENAME COLUMN`
+        -   `ALTER INDEX`
+            -   `ALTER ORDER BY`
+            -   `ALTER ADD INDEX`
+            -   `ALTER DROP INDEX`
+            -   `ALTER MATERIALIZE INDEX`
+            -   `ALTER CLEAR INDEX`
+        -   `ALTER CONSTRAINT`
+            -   `ALTER ADD CONSTRAINT`
+            -   `ALTER DROP CONSTRAINT`
+        -   `ALTER TTL`
+        -   `ALTER MATERIALIZE TTL`
+        -   `ALTER SETTINGS`
+        -   `ALTER MOVE PARTITION`
+        -   `ALTER FETCH PARTITION`
+        -   `ALTER FREEZE PARTITION`
+    -   `ALTER VIEW`
+        -   `ALTER VIEW REFRESH`
+        -   `ALTER VIEW MODIFY QUERY`
+-   [CREATE](#grant-create)
+    -   `CREATE DATABASE`
+    -   `CREATE TABLE`
+    -   `CREATE VIEW`
+    -   `CREATE DICTIONARY`
+    -   `CREATE TEMPORARY TABLE`
+-   [DROP](#grant-drop)
+    -   `DROP DATABASE`
+    -   `DROP TABLE`
+    -   `DROP VIEW`
+    -   `DROP DICTIONARY`
+-   [TRUNCATE](#grant-truncate)
+-   [OPTIMIZE](#grant-optimize)
+-   [SHOW](#grant-show)
+    -   `SHOW DATABASES`
+    -   `SHOW TABLES`
+    -   `SHOW COLUMNS`
+    -   `SHOW DICTIONARIES`
+-   [KILL QUERY](#grant-kill-query)
+-   [ACCESS MANAGEMENT](#grant-access-management)
+    -   `CREATE USER`
+    -   `ALTER USER`
+    -   `DROP USER`
+    -   `CREATE ROLE`
+    -   `ALTER ROLE`
+    -   `DROP ROLE`
+    -   `CREATE ROW POLICY`
+    -   `ALTER ROW POLICY`
+    -   `DROP ROW POLICY`
+    -   `CREATE QUOTA`
+    -   `ALTER QUOTA`
+    -   `DROP QUOTA`
+    -   `CREATE SETTINGS PROFILE`
+    -   `ALTER SETTINGS PROFILE`
+    -   `DROP SETTINGS PROFILE`
+    -   `SHOW ACCESS`
+        -   `SHOW_USERS`
+        -   `SHOW_ROLES`
+        -   `SHOW_ROW_POLICIES`
+        -   `SHOW_QUOTAS`
+        -   `SHOW_SETTINGS_PROFILES`
+    -   `ROLE ADMIN`
+-   [SYSTEM](#grant-system)
+    -   `SYSTEM SHUTDOWN`
+    -   `SYSTEM DROP CACHE`
+        -   `SYSTEM DROP DNS CACHE`
+        -   `SYSTEM DROP MARK CACHE`
+        -   `SYSTEM DROP UNCOMPRESSED CACHE`
+    -   `SYSTEM RELOAD`
+        -   `SYSTEM RELOAD CONFIG`
+        -   `SYSTEM RELOAD DICTIONARY`
+        -   `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+    -   `SYSTEM MERGES`
+    -   `SYSTEM TTL MERGES`
+    -   `SYSTEM FETCHES`
+    -   `SYSTEM MOVES`
+    -   `SYSTEM SENDS`
+        -   `SYSTEM DISTRIBUTED SENDS`
+        -   `SYSTEM REPLICATED SENDS`
+    -   `SYSTEM REPLICATION QUEUES`
+    -   `SYSTEM SYNC REPLICA`
+    -   `SYSTEM RESTART REPLICA`
+    -   `SYSTEM FLUSH`
+        -   `SYSTEM FLUSH DISTRIBUTED`
+        -   `SYSTEM FLUSH LOGS`
+-   [INTROSPECTION](#grant-introspection)
+    -   `addressToLine`
+    -   `addressToSymbol`
+    -   `demangle`
+-   [SOURCES](#grant-sources)
+    -   `FILE`
+    -   `URL`
+    -   `REMOTE`
+    -   `YSQL`
+    -   `ODBC`
+    -   `JDBC`
+    -   `HDFS`
+    -   `S3`
+-   [dictGet](#grant-dictget)
 
-- [SELECT](#grant-select)
-- [INSERT](#grant-insert)
-- [ALTER](#grant-alter)
-    - `ALTER TABLE`
-        - `ALTER UPDATE`
-        - `ALTER DELETE`
-        - `ALTER COLUMN`
-            - `ALTER ADD COLUMN`
-            - `ALTER DROP COLUMN`
-            - `ALTER MODIFY COLUMN`
-            - `ALTER COMMENT COLUMN`
-            - `ALTER CLEAR COLUMN`
-            - `ALTER RENAME COLUMN`
-        - `ALTER INDEX`
-            - `ALTER ORDER BY`
-            - `ALTER ADD INDEX`
-            - `ALTER DROP INDEX`
-            - `ALTER MATERIALIZE INDEX`
-            - `ALTER CLEAR INDEX`
-        - `ALTER CONSTRAINT`
-            - `ALTER ADD CONSTRAINT`
-            - `ALTER DROP CONSTRAINT`
-        - `ALTER TTL`
-        - `ALTER MATERIALIZE TTL`
-        - `ALTER SETTINGS`
-        - `ALTER MOVE PARTITION`
-        - `ALTER FETCH PARTITION`
-        - `ALTER FREEZE PARTITION`
-    - `ALTER VIEW`
-        - `ALTER VIEW REFRESH `
-        - `ALTER VIEW MODIFY QUERY`
-- [CREATE](#grant-create)
-    - `CREATE DATABASE`
-    - `CREATE TABLE`
-    - `CREATE VIEW`
-    - `CREATE DICTIONARY`
-    - `CREATE TEMPORARY TABLE`
-- [DROP](#grant-drop)
-    - `DROP DATABASE`
-    - `DROP TABLE`
-    - `DROP VIEW`
-    - `DROP DICTIONARY`
-- [TRUNCATE](#grant-truncate)
-- [OPTIMIZE](#grant-optimize)
-- [SHOW](#grant-show)
-    - `SHOW DATABASES`
-    - `SHOW TABLES`
-    - `SHOW COLUMNS`
-    - `SHOW DICTIONARIES`
-- [KILL QUERY](#grant-kill-query)
-- [ACCESS MANAGEMENT](#grant-access-management)
-    - `CREATE USER`
-    - `ALTER USER`
-    - `DROP USER`
-    - `CREATE ROLE`
-    - `ALTER ROLE`
-    - `DROP ROLE`
-    - `CREATE ROW POLICY`
-    - `ALTER ROW POLICY`
-    - `DROP ROW POLICY`
-    - `CREATE QUOTA`
-    - `ALTER QUOTA`
-    - `DROP QUOTA`
-    - `CREATE SETTINGS PROFILE`
-    - `ALTER SETTINGS PROFILE`
-    - `DROP SETTINGS PROFILE`
-    - `SHOW ACCESS`
-        - `SHOW_USERS`
-        - `SHOW_ROLES`
-        - `SHOW_ROW_POLICIES`
-        - `SHOW_QUOTAS`
-        - `SHOW_SETTINGS_PROFILES`
-    - `ROLE ADMIN`
-- [SYSTEM](#grant-system)
-    - `SYSTEM SHUTDOWN`
-    - `SYSTEM DROP CACHE`
-        - `SYSTEM DROP DNS CACHE`
-        - `SYSTEM DROP MARK CACHE`
-        - `SYSTEM DROP UNCOMPRESSED CACHE`
-    - `SYSTEM RELOAD`
-        - `SYSTEM RELOAD CONFIG`
-        - `SYSTEM RELOAD DICTIONARY`
-        - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
-    - `SYSTEM MERGES`
-    - `SYSTEM TTL MERGES`
-    - `SYSTEM FETCHES`
-    - `SYSTEM MOVES`
-    - `SYSTEM SENDS`
-        - `SYSTEM DISTRIBUTED SENDS`
-        - `SYSTEM REPLICATED SENDS`
-    - `SYSTEM REPLICATION QUEUES`
-    - `SYSTEM SYNC REPLICA`
-    - `SYSTEM RESTART REPLICA`
-    - `SYSTEM FLUSH`
-        - `SYSTEM FLUSH DISTRIBUTED`
-        - `SYSTEM FLUSH LOGS`
-- [INTROSPECTION](#grant-introspection)
-    - `addressToLine`
-    - `addressToSymbol`
-    - `demangle`
-- [SOURCES](#grant-sources)
-    - `FILE`
-    - `URL`
-    - `REMOTE`
-    - `YSQL`
-    - `ODBC`
-    - `JDBC`
-    - `HDFS`
-    - `S3`
-- [dictGet](#grant-dictget)
+Examples of how this hierarchy is treated:
 
-Примеры того, как трактуется данная иерархия:
+-   The `ALTER` privilege includes all other `ALTER*` privileges.
+-   `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT` and `ALTER DROP CONSTRAINT` privileges.
 
-- Привилегия `ALTER` включает все остальные `ALTER*` привилегии. 
-- `ALTER CONSTRAINT` включает `ALTER ADD CONSTRAINT` и `ALTER DROP CONSTRAINT`.
+Privileges are applied at different levels. Knowing of a level suggests syntax available for privilege.
 
-Привилегии применяются на разных уровнях. Уровень определяет синтаксис присваивания привилегии.
+Levels (from lower to higher):
 
-Уровни (от низшего к высшему):
+-   `COLUMN` — Privilege can be granted for column, table, database, or globally.
+-   `TABLE` — Privilege can be granted for table, database, or globally.
+-   `VIEW` — Privilege can be granted for view, database, or globally.
+-   `DICTIONARY` — Privilege can be granted for dictionary, database, or globally.
+-   `DATABASE` — Privilege can be granted for database or globally.
+-   `GLOBAL` — Privilege can be granted only globally.
+-   `GROUP` — Groups privileges of different levels. When `GROUP`-level privilege is granted, only that privileges from the group are granted which correspond to the used syntax.
 
-- `COLUMN` — Привилегия присваивается для столбца, таблицы, базы данных или глобально.
-- `TABLE` — Привилегия присваивается для таблицы, базы данных или глобально.
-- `VIEW` — Привилегия присваивается для представления, базы данных или глобально.
-- `DICTIONARY` — Привилегия присваивается для словаря, базы данных или глобально.
-- `DATABASE` — Привилегия присваивается для базы данных или глобально.
-- `GLOBAL` — Привилегия присваивается только глобально.
-- `GROUP` — Группирует привилегии разных уровней. При присвоении привилегии уровня `GROUP` присваиваются только привилегии из группы в соответствии с используемым синтаксисом.
+Examples of allowed syntax:
 
-Примеры допустимого синтаксиса:
+-   `GRANT SELECT(x) ON db.table TO user`
+-   `GRANT SELECT ON db.* TO user`
 
-- `GRANT SELECT(x) ON db.table TO user`
-- `GRANT SELECT ON db.* TO user`
+Examples of disallowed syntax:
 
-Примеры недопустимого синтаксиса:
+-   `GRANT CREATE USER(x) ON db.table TO user`
+-   `GRANT CREATE USER ON db.* TO user`
 
-- `GRANT CREATE USER(x) ON db.table TO user`
-- `GRANT CREATE USER ON db.* TO user`
+The special privilege [ALL](#grant-all) grants all the privileges to a user account or a role.
 
-Специальная привилегия [ALL](#grant-all) присваивает все привилегии пользователю или роли.
+By default, a user account or a role has no privileges.
 
-По умолчанию пользователь или роль не имеют привилегий.
+If a user or a role has no privileges, it is displayed as [NONE](#grant-none) privilege.
 
-Отсутствие привилегий у пользователя или роли отображается как привилегия [NONE](#grant-none).
-
-Выполнение некоторых запросов требует определенного набора привилегий. Например, чтобы выполнить запрос [RENAME](misc.md#misc_operations-rename), нужны следующие привилегии: `SELECT`, `CREATE TABLE`, `INSERT` и `DROP TABLE`.
-
+Some queries by their implementation require a set of privileges. For example, to execute the [RENAME](../../sql-reference/statements/misc.md#misc_operations-rename) query you need the following privileges: `SELECT`, `CREATE TABLE`, `INSERT` and `DROP TABLE`.
 
 ### SELECT {#grant-select}
 
-Разрешает выполнять запросы [SELECT](select/index.md).
+Allows executing [SELECT](../../sql-reference/statements/select/index.md) queries.
 
-Уровень: `COLUMN`.
+Privilege level: `COLUMN`.
 
-**Описание**
+**Description**
 
-Пользователь с данной привилегией может выполнять запросы `SELECT` над определенными столбцами из определенной таблицы и базы данных. При включении в запрос других столбцов запрос ничего не вернет.
+User granted with this privilege can execute `SELECT` queries over a specified list of columns in the specified table and database. If user includes other columns then specified a query returns no data.
 
-Рассмотрим следующую привилегию:
+Consider the following privilege:
 
-```sql
+``` sql
 GRANT SELECT(x,y) ON db.table TO john
 ```
 
-Данная привилегия позволяет пользователю `john` выполнять выборку данных из столбцов `x` и/или `y` в `db.table`, например, `SELECT x FROM db.table`. `john` не может выполнить `SELECT z FROM db.table` или `SELECT * FROM db.table`. После обработки данных запросов ClickHouse ничего не вернет — даже `x` или `y`. Единственное исключение — если таблица содержит только столбцы `x` и `y`. В таком случае ClickHouse вернет все данные.
+This privilege allows `john` to execute any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`, for example, `SELECT x FROM db.table`. `john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse doesn’t return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
 
 ### INSERT {#grant-insert}
 
-Разрешает выполнять запросы [INSERT](insert-into.md).
+Allows executing [INSERT](../../sql-reference/statements/insert-into.md) queries.
 
-Уровень: `COLUMN`.
+Privilege level: `COLUMN`.
 
-**Описание**
+**Description**
 
-Пользователь с данной привилегией может выполнять запросы `INSERT` над определенными столбцами из определенной таблицы и базы данных. При включении в запрос других столбцов запрос не добавит никаких данных.
+User granted with this privilege can execute `INSERT` queries over a specified list of columns in the specified table and database. If user includes other columns then specified a query doesn’t insert any data.
 
-**Пример**
+**Example**
 
-```sql
+``` sql
 GRANT INSERT(x,y) ON db.table TO john
 ```
 
-Присвоенная привилегия позволит пользователю `john` вставить данные в столбцы `x` и/или `y` в `db.table`.
+The granted privilege allows `john` to insert data to the `x` and/or `y` columns in `db.table`.
 
 ### ALTER {#grant-alter}
 
-Разрешает выполнять запросы [ALTER](alter.md) в соответствии со следующей иерархией привилегий:
+Allows executing [ALTER](../../sql-reference/statements/alter.md) queries according to the following hierarchy of privileges:
 
-- `ALTER`. Уровень: `COLUMN`. 
-    - `ALTER TABLE`. Уровень: `GROUP`
-        - `ALTER UPDATE`. Уровень: `COLUMN`.  Алиасы: `UPDATE`
-        - `ALTER DELETE`. Уровень: `COLUMN`. Алиасы: `DELETE`
-        - `ALTER COLUMN`. Уровень: `GROUP`
-            - `ALTER ADD COLUMN`. Уровень: `COLUMN`. Алиасы: `ADD COLUMN`
-            - `ALTER DROP COLUMN`. Уровень: `COLUMN`. Алиасы: `DROP COLUMN`
-            - `ALTER MODIFY COLUMN`. Уровень: `COLUMN`. Алиасы: `MODIFY COLUMN`
-            - `ALTER COMMENT COLUMN`. Уровень: `COLUMN`. Алиасы: `COMMENT COLUMN`
-            - `ALTER CLEAR COLUMN`. Уровень: `COLUMN`. Алиасы: `CLEAR COLUMN`
-            - `ALTER RENAME COLUMN`. Уровень: `COLUMN`. Алиасы: `RENAME COLUMN`
-        - `ALTER INDEX`. Уровень: `GROUP`. Алиасы: `INDEX`
-            - `ALTER ORDER BY`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
-            - `ALTER ADD INDEX`. Уровень: `TABLE`. Алиасы: `ADD INDEX`
-            - `ALTER DROP INDEX`. Уровень: `TABLE`. Алиасы: `DROP INDEX`
-            - `ALTER MATERIALIZE INDEX`. Уровень: `TABLE`. Алиасы: `MATERIALIZE INDEX`
-            - `ALTER CLEAR INDEX`. Уровень: `TABLE`. Алиасы: `CLEAR INDEX`
-        - `ALTER CONSTRAINT`. Уровень: `GROUP`. Алиасы: `CONSTRAINT`
-            - `ALTER ADD CONSTRAINT`. Уровень: `TABLE`. Алиасы: `ADD CONSTRAINT`
-            - `ALTER DROP CONSTRAINT`. Уровень: `TABLE`. Алиасы: `DROP CONSTRAINT`
-        - `ALTER TTL`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY TTL`, `MODIFY TTL`
-        - `ALTER MATERIALIZE TTL`. Уровень: `TABLE`. Алиасы: `MATERIALIZE TTL`
-        - `ALTER SETTINGS`. Уровень: `TABLE`. Алиасы: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
-        - `ALTER MOVE PARTITION`. Уровень: `TABLE`. Алиасы: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
-        - `ALTER FETCH PARTITION`. Уровень: `TABLE`. Алиасы: `FETCH PARTITION`
-        - `ALTER FREEZE PARTITION`. Уровень: `TABLE`. Алиасы: `FREEZE PARTITION`
-    - `ALTER VIEW` Уровень: `GROUP`
-        - `ALTER VIEW REFRESH `. Уровень: `VIEW`. Алиасы: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
-        - `ALTER VIEW MODIFY QUERY`. Уровень: `VIEW`. Алиасы: `ALTER TABLE MODIFY QUERY`
+-   `ALTER`. Level: `COLUMN`.
+    -   `ALTER TABLE`. Level: `GROUP`
+        -   `ALTER UPDATE`. Level: `COLUMN`. Aliases: `UPDATE`
+        -   `ALTER DELETE`. Level: `COLUMN`. Aliases: `DELETE`
+        -   `ALTER COLUMN`. Level: `GROUP`
+            -   `ALTER ADD COLUMN`. Level: `COLUMN`. Aliases: `ADD COLUMN`
+            -   `ALTER DROP COLUMN`. Level: `COLUMN`. Aliases: `DROP COLUMN`
+            -   `ALTER MODIFY COLUMN`. Level: `COLUMN`. Aliases: `MODIFY COLUMN`
+            -   `ALTER COMMENT COLUMN`. Level: `COLUMN`. Aliases: `COMMENT COLUMN`
+            -   `ALTER CLEAR COLUMN`. Level: `COLUMN`. Aliases: `CLEAR COLUMN`
+            -   `ALTER RENAME COLUMN`. Level: `COLUMN`. Aliases: `RENAME COLUMN`
+        -   `ALTER INDEX`. Level: `GROUP`. Aliases: `INDEX`
+            -   `ALTER ORDER BY`. Level: `TABLE`. Aliases: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
+            -   `ALTER ADD INDEX`. Level: `TABLE`. Aliases: `ADD INDEX`
+            -   `ALTER DROP INDEX`. Level: `TABLE`. Aliases: `DROP INDEX`
+            -   `ALTER MATERIALIZE INDEX`. Level: `TABLE`. Aliases: `MATERIALIZE INDEX`
+            -   `ALTER CLEAR INDEX`. Level: `TABLE`. Aliases: `CLEAR INDEX`
+        -   `ALTER CONSTRAINT`. Level: `GROUP`. Aliases: `CONSTRAINT`
+            -   `ALTER ADD CONSTRAINT`. Level: `TABLE`. Aliases: `ADD CONSTRAINT`
+            -   `ALTER DROP CONSTRAINT`. Level: `TABLE`. Aliases: `DROP CONSTRAINT`
+        -   `ALTER TTL`. Level: `TABLE`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
+        -   `ALTER MATERIALIZE TTL`. Level: `TABLE`. Aliases: `MATERIALIZE TTL`
+        -   `ALTER SETTINGS`. Level: `TABLE`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
+        -   `ALTER MOVE PARTITION`. Level: `TABLE`. Aliases: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
+        -   `ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `FETCH PARTITION`
+        -   `ALTER FREEZE PARTITION`. Level: `TABLE`. Aliases: `FREEZE PARTITION`
+    -   `ALTER VIEW` Level: `GROUP`
+        -   `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
+        -   `ALTER VIEW MODIFY QUERY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`
 
-Примеры того, как трактуется данная иерархия:
+Examples of how this hierarchy is treated:
 
-- Привилегия `ALTER` включает все остальные `ALTER*` привилегии. 
-- `ALTER CONSTRAINT` включает `ALTER ADD CONSTRAINT` и `ALTER DROP CONSTRAINT`.
+-   The `ALTER` privilege includes all other `ALTER*` privileges.
+-   `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT` and `ALTER DROP CONSTRAINT` privileges.
 
-**Дополнительно**
+**Notes**
 
-- Привилегия `MODIFY SETTING` позволяет изменять настройки движков таблиц. Не влияет на настройки или конфигурационные параметры сервера.
-- Операция `ATTACH` требует наличие привилегии [CREATE](#grant-create).
-- Операция `DETACH` требует наличие привилегии [DROP](#grant-drop).
-- Для остановки мутации с помощью [KILL MUTATION](misc.md#kill-mutation-statement), необходима привилегия на выполнение данной мутации. Например, чтобы остановить запрос `ALTER UPDATE`, необходима одна из привилегий: `ALTER UPDATE`, `ALTER TABLE` или `ALTER`.
+-   The `MODIFY SETTING` privilege allows modifying table engine settings. It doesn’t affect settings or server configuration parameters.
+-   The `ATTACH` operation needs the [CREATE](#grant-create) privilege.
+-   The `DETACH` operation needs the [DROP](#grant-drop) privilege.
+-   To stop mutation by the [KILL MUTATION](../../sql-reference/statements/misc.md#kill-mutation) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
 
 ### CREATE {#grant-create}
 
-Разрешает выполнять DDL-запросы [CREATE](create.md) и [ATTACH](misc.md#attach) в соответствии со следующей иерархией привилегий:
+Allows executing [CREATE](../../sql-reference/statements/create.md) and [ATTACH](../../sql-reference/statements/misc.md#attach) DDL-queries according to the following hierarchy of privileges:
 
-- `CREATE`. Уровень: `GROUP`
-    - `CREATE DATABASE`. Уровень: `DATABASE`
-    - `CREATE TABLE`. Уровень: `TABLE`
-    - `CREATE VIEW`. Уровень: `VIEW`
-    - `CREATE DICTIONARY`. Уровень: `DICTIONARY`
-    - `CREATE TEMPORARY TABLE`. Уровень: `GLOBAL`
+-   `CREATE`. Level: `GROUP`
+    -   `CREATE DATABASE`. Level: `DATABASE`
+    -   `CREATE TABLE`. Level: `TABLE`
+    -   `CREATE VIEW`. Level: `VIEW`
+    -   `CREATE DICTIONARY`. Level: `DICTIONARY`
+    -   `CREATE TEMPORARY TABLE`. Level: `GLOBAL`
 
-**Дополнительно**
+**Notes**
 
-- Для удаления созданной таблицы пользователю необходима привилегия [DROP](#grant-drop).
+-   To delete the created table, a user needs [DROP](#grant-drop).
 
 ### DROP {#grant-drop}
 
-Разрешает выполнять запросы [DROP](misc.md#drop) и [DETACH](misc.md#detach-statement) в соответствии со следующей иерархией привилегий:
+Allows executing [DROP](../../sql-reference/statements/misc.md#drop) and [DETACH](../../sql-reference/statements/misc.md#detach) queries according to the following hierarchy of privileges:
 
-- `DROP`. Уровень: 
-    - `DROP DATABASE`. Уровень: `DATABASE`
-    - `DROP TABLE`. Уровень: `TABLE`
-    - `DROP VIEW`. Уровень: `VIEW`
-    - `DROP DICTIONARY`. Уровень: `DICTIONARY`
-
+-   `DROP`. Level:
+    -   `DROP DATABASE`. Level: `DATABASE`
+    -   `DROP TABLE`. Level: `TABLE`
+    -   `DROP VIEW`. Level: `VIEW`
+    -   `DROP DICTIONARY`. Level: `DICTIONARY`
 
 ### TRUNCATE {#grant-truncate}
 
-Разрешает выполнять запросы [TRUNCATE](misc.md#truncate-statement).
+Allows executing [TRUNCATE](../../sql-reference/statements/misc.md#truncate-statement) queries.
 
-Уровень: `TABLE`.
+Privilege level: `TABLE`.
 
 ### OPTIMIZE {#grant-optimize}
 
-Разрешает выполнять запросы [OPTIMIZE TABLE](misc.md#misc_operations-optimize).
+Allows executing [OPTIMIZE TABLE](../../sql-reference/statements/misc.md#misc_operations-optimize) queries.
 
-Уровень: `TABLE`.
+Privilege level: `TABLE`.
 
 ### SHOW {#grant-show}
 
-Разрешает выполнять запросы `SHOW`, `DESCRIBE`, `USE` и `EXISTS` в соответствии со следующей иерархией привилегий:
+Allows executing `SHOW`, `DESCRIBE`, `USE`, and `EXISTS` queries according to the following hierarchy of privileges:
 
-- `SHOW`. Уровень: `GROUP`
-    - `SHOW DATABASES`. Уровень: `DATABASE`. Разрешает выполнять запросы `SHOW DATABASES`, `SHOW CREATE DATABASE`, `USE <database>`.
-    - `SHOW TABLES`. Уровень: `TABLE`. Разрешает выполнять запросы `SHOW TABLES`, `EXISTS <table>`, `CHECK <table>`.
-    - `SHOW COLUMNS`. Уровень: `COLUMN`. Разрешает выполнять запросы `SHOW CREATE TABLE`, `DESCRIBE`.
-    - `SHOW DICTIONARIES`. Уровень: `DICTIONARY`. Разрешает выполнять запросы `SHOW DICTIONARIES`, `SHOW CREATE DICTIONARY`, `EXISTS <dictionary>`.
+-   `SHOW`. Level: `GROUP`
+    -   `SHOW DATABASES`. Level: `DATABASE`. Allows to execute `SHOW DATABASES`, `SHOW CREATE DATABASE`, `USE <database>` queries.
+    -   `SHOW TABLES`. Level: `TABLE`. Allows to execute `SHOW TABLES`, `EXISTS <table>`, `CHECK <table>` queries.
+    -   `SHOW COLUMNS`. Level: `COLUMN`. Allows to execute `SHOW CREATE TABLE`, `DESCRIBE` queries.
+    -   `SHOW DICTIONARIES`. Level: `DICTIONARY`. Allows to execute `SHOW DICTIONARIES`, `SHOW CREATE DICTIONARY`, `EXISTS <dictionary>` queries.
 
-**Дополнительно**
+**Notes**
 
-У пользователя есть привилегия `SHOW`, если ему присвоена любая другая привилегия по отношению к определенной таблице, словарю или базе данных.
-
+A user has the `SHOW` privilege if it has any other privilege concerning the specified table, dictionary or database.
 
 ### KILL QUERY {#grant-kill-query}
 
-Разрешает выполнять запросы [KILL](misc.md#kill-query-statement) в соответствии со следующей иерархией привилегий:
+Allows executing [KILL](../../sql-reference/statements/misc.md#kill-query-statement) queries according to the following hierarchy of privileges:
 
-Уровень: `GLOBAL`.
+Privilege level: `GLOBAL`.
 
-**Дополнительно**
+**Notes**
 
-`KILL QUERY` позволяет пользователю останавливать запросы других пользователей.
-
+`KILL QUERY` privilege allows one user to kill queries of other users.
 
 ### ACCESS MANAGEMENT {#grant-access-management}
 
-Разрешает пользователю выполнять запросы на управление пользователями, ролями и политиками доступа к строкам.
+Allows a user to execute queries that manage users, roles and row policies.
 
-- `ACCESS MANAGEMENT`. Уровень: `GROUP`
-    - `CREATE USER`. Уровень: `GLOBAL`
-    - `ALTER USER`. Уровень: `GLOBAL`
-    - `DROP USER`. Уровень: `GLOBAL`
-    - `CREATE ROLE`. Уровень: `GLOBAL`
-    - `ALTER ROLE`. Уровень: `GLOBAL`
-    - `DROP ROLE`. Уровень: `GLOBAL`
-    - `ROLE ADMIN`. Уровень: `GLOBAL`
-    - `CREATE ROW POLICY`. Уровень: `GLOBAL`. Алиасы: `CREATE POLICY`
-    - `ALTER ROW POLICY`. Уровень: `GLOBAL`. Алиасы: `ALTER POLICY`
-    - `DROP ROW POLICY`. Уровень: `GLOBAL`. Алиасы: `DROP POLICY`
-    - `CREATE QUOTA`. Уровень: `GLOBAL`
-    - `ALTER QUOTA`. Уровень: `GLOBAL`
-    - `DROP QUOTA`. Уровень: `GLOBAL`
-    - `CREATE SETTINGS PROFILE`. Уровень: `GLOBAL`. Алиасы: `CREATE PROFILE`
-    - `ALTER SETTINGS PROFILE`. Уровень: `GLOBAL`. Алиасы: `ALTER PROFILE`
-    - `DROP SETTINGS PROFILE`. Уровень: `GLOBAL`. Алиасы: `DROP PROFILE`
-    - `SHOW ACCESS`. Уровень: `GROUP`
-        - `SHOW_USERS`. Уровень: `GLOBAL`. Алиасы: `SHOW CREATE USER`
-        - `SHOW_ROLES`. Уровень: `GLOBAL`. Алиасы: `SHOW CREATE ROLE`
-        - `SHOW_ROW_POLICIES`. Уровень: `GLOBAL`. Алиасы: `SHOW POLICIES`, `SHOW CREATE ROW POLICY`, `SHOW CREATE POLICY`
-        - `SHOW_QUOTAS`. Уровень: `GLOBAL`. Алиасы: `SHOW CREATE QUOTA`
-        - `SHOW_SETTINGS_PROFILES`. Уровень: `GLOBAL`. Алиасы: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
+-   `ACCESS MANAGEMENT`. Level: `GROUP`
+    -   `CREATE USER`. Level: `GLOBAL`
+    -   `ALTER USER`. Level: `GLOBAL`
+    -   `DROP USER`. Level: `GLOBAL`
+    -   `CREATE ROLE`. Level: `GLOBAL`
+    -   `ALTER ROLE`. Level: `GLOBAL`
+    -   `DROP ROLE`. Level: `GLOBAL`
+    -   `ROLE ADMIN`. Level: `GLOBAL`
+    -   `CREATE ROW POLICY`. Level: `GLOBAL`. Aliases: `CREATE POLICY`
+    -   `ALTER ROW POLICY`. Level: `GLOBAL`. Aliases: `ALTER POLICY`
+    -   `DROP ROW POLICY`. Level: `GLOBAL`. Aliases: `DROP POLICY`
+    -   `CREATE QUOTA`. Level: `GLOBAL`
+    -   `ALTER QUOTA`. Level: `GLOBAL`
+    -   `DROP QUOTA`. Level: `GLOBAL`
+    -   `CREATE SETTINGS PROFILE`. Level: `GLOBAL`. Aliases: `CREATE PROFILE`
+    -   `ALTER SETTINGS PROFILE`. Level: `GLOBAL`. Aliases: `ALTER PROFILE`
+    -   `DROP SETTINGS PROFILE`. Level: `GLOBAL`. Aliases: `DROP PROFILE`
+    -   `SHOW ACCESS`. Level: `GROUP`
+        -   `SHOW_USERS`. Level: `GLOBAL`. Aliases: `SHOW CREATE USER`
+        -   `SHOW_ROLES`. Level: `GLOBAL`. Aliases: `SHOW CREATE ROLE`
+        -   `SHOW_ROW_POLICIES`. Level: `GLOBAL`. Aliases: `SHOW POLICIES`, `SHOW CREATE ROW POLICY`, `SHOW CREATE POLICY`
+        -   `SHOW_QUOTAS`. Level: `GLOBAL`. Aliases: `SHOW CREATE QUOTA`
+        -   `SHOW_SETTINGS_PROFILES`. Level: `GLOBAL`. Aliases: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
 
-Привилегия `ROLE ADMIN` разрешает пользователю назначать и отзывать любые роли, включая те, которые не назначены пользователю с опцией администратора.
+The `ROLE ADMIN` privilege allows a user to assign and revoke any roles including those which are not assigned to the user with the admin option.
 
 ### SYSTEM {#grant-system}
 
-Разрешает выполнять запросы [SYSTEM](system.md) в соответствии со следующей иерархией привилегий:
+Allows a user to execute [SYSTEM](../../sql-reference/statements/system.md) queries according to the following hierarchy of privileges.
 
-- `SYSTEM`. Уровень: `GROUP`
-    - `SYSTEM SHUTDOWN`. Уровень: `GLOBAL`. Алиасы: `SYSTEM KILL`, `SHUTDOWN`
-    - `SYSTEM DROP CACHE`. Алиасы: `DROP CACHE`
-        - `SYSTEM DROP DNS CACHE`. Уровень: `GLOBAL`. Алиасы: `SYSTEM DROP DNS`, `DROP DNS CACHE`, `DROP DNS`
-        - `SYSTEM DROP MARK CACHE`. Уровень: `GLOBAL`. Алиасы: `SYSTEM DROP MARK`, `DROP MARK CACHE`, `DROP MARKS`
-        - `SYSTEM DROP UNCOMPRESSED CACHE`. Уровень: `GLOBAL`. Алиасы: `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
-    - `SYSTEM RELOAD`. Уровень: `GROUP`
-        - `SYSTEM RELOAD CONFIG`. Уровень: `GLOBAL`. Алиасы: `RELOAD CONFIG`
-        - `SYSTEM RELOAD DICTIONARY`. Уровень: `GLOBAL`. Алиасы: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
-        - `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Уровень: `GLOBAL`. Алиасы: `RELOAD EMBEDDED DICTIONARIES`
-    - `SYSTEM MERGES`. Уровень: `TABLE`. Алиасы: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
-    - `SYSTEM TTL MERGES`. Уровень: `TABLE`. Алиасы: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
-    - `SYSTEM FETCHES`. Уровень: `TABLE`. Алиасы: `SYSTEM STOP FETCHES`, `SYSTEM START FETCHES`, `STOP FETCHES`, `START FETCHES`
-    - `SYSTEM MOVES`. Уровень: `TABLE`. Алиасы: `SYSTEM STOP MOVES`, `SYSTEM START MOVES`, `STOP MOVES`, `START MOVES`
-    - `SYSTEM SENDS`. Уровень: `GROUP`. Алиасы: `SYSTEM STOP SENDS`, `SYSTEM START SENDS`, `STOP SENDS`, `START SENDS`
-        - `SYSTEM DISTRIBUTED SENDS`. Уровень: `TABLE`. Алиасы: `SYSTEM STOP DISTRIBUTED SENDS`, `SYSTEM START DISTRIBUTED SENDS`, `STOP DISTRIBUTED SENDS`, `START DISTRIBUTED SENDS`
-        - `SYSTEM REPLICATED SENDS`. Уровень: `TABLE`. Алиасы: `SYSTEM STOP REPLICATED SENDS`, `SYSTEM START REPLICATED SENDS`, `STOP REPLICATED SENDS`, `START REPLICATED SENDS`
-    - `SYSTEM REPLICATION QUEUES`. Уровень: `TABLE`. Алиасы: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
-    - `SYSTEM SYNC REPLICA`. Уровень: `TABLE`. Алиасы: `SYNC REPLICA`
-    - `SYSTEM RESTART REPLICA`. Уровень: `TABLE`. Алиасы: `RESTART REPLICA`
-    - `SYSTEM FLUSH`. Уровень: `GROUP`
-        - `SYSTEM FLUSH DISTRIBUTED`. Уровень: `TABLE`. Алиасы: `FLUSH DISTRIBUTED`
-        - `SYSTEM FLUSH LOGS`. Уровень: `GLOBAL`. Алиасы: `FLUSH LOGS`
+-   `SYSTEM`. Level: `GROUP`
+    -   `SYSTEM SHUTDOWN`. Level: `GLOBAL`. Aliases: `SYSTEM KILL`, `SHUTDOWN`
+    -   `SYSTEM DROP CACHE`. Aliases: `DROP CACHE`
+        -   `SYSTEM DROP DNS CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP DNS`, `DROP DNS CACHE`, `DROP DNS`
+        -   `SYSTEM DROP MARK CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP MARK`, `DROP MARK CACHE`, `DROP MARKS`
+        -   `SYSTEM DROP UNCOMPRESSED CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
+    -   `SYSTEM RELOAD`. Level: `GROUP`
+        -   `SYSTEM RELOAD CONFIG`. Level: `GLOBAL`. Aliases: `RELOAD CONFIG`
+        -   `SYSTEM RELOAD DICTIONARY`. Level: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+        -   `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Level: `GLOBAL`. Aliases: R`ELOAD EMBEDDED DICTIONARIES`
+    -   `SYSTEM MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
+    -   `SYSTEM TTL MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
+    -   `SYSTEM FETCHES`. Level: `TABLE`. Aliases: `SYSTEM STOP FETCHES`, `SYSTEM START FETCHES`, `STOP FETCHES`, `START FETCHES`
+    -   `SYSTEM MOVES`. Level: `TABLE`. Aliases: `SYSTEM STOP MOVES`, `SYSTEM START MOVES`, `STOP MOVES`, `START MOVES`
+    -   `SYSTEM SENDS`. Level: `GROUP`. Aliases: `SYSTEM STOP SENDS`, `SYSTEM START SENDS`, `STOP SENDS`, `START SENDS`
+        -   `SYSTEM DISTRIBUTED SENDS`. Level: `TABLE`. Aliases: `SYSTEM STOP DISTRIBUTED SENDS`, `SYSTEM START DISTRIBUTED SENDS`, `STOP DISTRIBUTED SENDS`, `START DISTRIBUTED SENDS`
+        -   `SYSTEM REPLICATED SENDS`. Level: `TABLE`. Aliases: `SYSTEM STOP REPLICATED SENDS`, `SYSTEM START REPLICATED SENDS`, `STOP REPLICATED SENDS`, `START REPLICATED SENDS`
+    -   `SYSTEM REPLICATION QUEUES`. Level: `TABLE`. Aliases: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
+    -   `SYSTEM SYNC REPLICA`. Level: `TABLE`. Aliases: `SYNC REPLICA`
+    -   `SYSTEM RESTART REPLICA`. Level: `TABLE`. Aliases: `RESTART REPLICA`
+    -   `SYSTEM FLUSH`. Level: `GROUP`
+        -   `SYSTEM FLUSH DISTRIBUTED`. Level: `TABLE`. Aliases: `FLUSH DISTRIBUTED`
+        -   `SYSTEM FLUSH LOGS`. Level: `GLOBAL`. Aliases: `FLUSH LOGS`
 
-Привилегия `SYSTEM RELOAD EMBEDDED DICTIONARIES` имплицитно присваивается привилегией `SYSTEM RELOAD DICTIONARY ON *.*`.
-
+The `SYSTEM RELOAD EMBEDDED DICTIONARIES` privilege implicitly granted by the `SYSTEM RELOAD DICTIONARY ON *.*` privilege.
 
 ### INTROSPECTION {#grant-introspection}
 
-Разрешает использовать функции [интроспекции](../../operations/optimizing-performance/sampling-query-profiler.md).
+Allows using [introspection](../../operations/optimizing-performance/sampling-query-profiler.md) functions.
 
-- `INTROSPECTION`. Уровень: `GROUP`. Алиасы: `INTROSPECTION FUNCTIONS`
-    - `addressToLine`. Уровень: `GLOBAL`
-    - `addressToSymbol`. Уровень: `GLOBAL`
-    - `demangle`. Уровень: `GLOBAL`
-
+-   `INTROSPECTION`. Level: `GROUP`. Aliases: `INTROSPECTION FUNCTIONS`
+    -   `addressToLine`. Level: `GLOBAL`
+    -   `addressToSymbol`. Level: `GLOBAL`
+    -   `demangle`. Level: `GLOBAL`
 
 ### SOURCES {#grant-sources}
 
-Разрешает использовать внешние источники данных. Применяется к [движкам таблиц](../../engines/table-engines/index.md) и [табличным функциям](../table-functions/index.md#table-functions).
+Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../../sql-reference/table-functions/index.md#table-functions).
 
-- `SOURCES`. Уровень: `GROUP`
-    - `FILE`. Уровень: `GLOBAL`
-    - `URL`. Уровень: `GLOBAL`
-    - `REMOTE`. Уровень: `GLOBAL`
-    - `YSQL`. Уровень: `GLOBAL`
-    - `ODBC`. Уровень: `GLOBAL`
-    - `JDBC`. Уровень: `GLOBAL`
-    - `HDFS`. Уровень: `GLOBAL`
-    - `S3`. Уровень: `GLOBAL`
+-   `SOURCES`. Level: `GROUP`
+    -   `FILE`. Level: `GLOBAL`
+    -   `URL`. Level: `GLOBAL`
+    -   `REMOTE`. Level: `GLOBAL`
+    -   `YSQL`. Level: `GLOBAL`
+    -   `ODBC`. Level: `GLOBAL`
+    -   `JDBC`. Level: `GLOBAL`
+    -   `HDFS`. Level: `GLOBAL`
+    -   `S3`. Level: `GLOBAL`
 
-Привилегия `SOURCES` разрешает использование всех источников. Также вы можете присвоить привилегию для каждого источника отдельно. Для использования источников необходимы дополнительные привилегии.
+The `SOURCES` privilege enables use of all the sources. Also you can grant a privilege for each source individually. To use sources, you need additional privileges.
 
-Примеры:
+Examples:
 
-- Чтобы создать таблицу с [движком MySQL](../../engines/table-engines/integrations/mysql.md), необходимы привилегии `CREATE TABLE (ON db.table_name)` и `MYSQL`.
-- Чтобы использовать [табличную функцию mysql](../table-functions/mysql.md), необходимы привилегии `CREATE TEMPORARY TABLE` и `MYSQL`.
+-   To create a table with the [MySQL table engine](../../engines/table-engines/integrations/mysql.md), you need `CREATE TABLE (ON db.table_name)` and `MYSQL` privileges.
+-   To use the [mysql table function](../../sql-reference/table-functions/mysql.md), you need `CREATE TEMPORARY TABLE` and `MYSQL` privileges.
 
 ### dictGet {#grant-dictget}
 
-- `dictGet`. Алиасы: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+-   `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictIsIn`
 
-Разрешает вызывать функции [dictGet](../functions/ext-dict-functions.md#dictget), [dictHas](../functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../functions/ext-dict-functions.md#dictisin).
+Allows a user to execute [dictGet](../../sql-reference/functions/ext-dict-functions.md#dictget), [dictHas](../../sql-reference/functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../../sql-reference/functions/ext-dict-functions.md#dictisin) functions.
 
-Уровень: `DICTIONARY`.
+Privilege level: `DICTIONARY`.
 
-**Примеры**
+**Examples**
 
-- `GRANT dictGet ON mydb.mydictionary TO john`
-- `GRANT dictGet ON mydictionary TO john`
+-   `GRANT dictGet ON mydb.mydictionary TO john`
+-   `GRANT dictGet ON mydictionary TO john`
 
 ### ALL {#grant-all}
 
-Присваивает пользователю или роли все привилегии на объект с регулируемым доступом.
-
+Grants all the privileges on regulated entity to a user account or a role.
 
 ### NONE {#grant-none}
 
-Не присваивает никаких привилегий.
-
+Doesn’t grant any privileges.
 
 ### ADMIN OPTION {#admin-option-privilege}
 
-Привилегия `ADMIN OPTION` разрешает пользователю назначать свои роли другому пользователю.
+The `ADMIN OPTION` privilege allows a user to grant their role to another user.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/grant/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/grant/) <!--hide-->
