@@ -407,8 +407,8 @@ endif ()
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
-if (OS_LINUX AND NOT ENABLE_JEMALLOC)
-    message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
+if (NOT ENABLE_JEMALLOC)
+    message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")
 endif ()
 
 macro (add_executable target)
