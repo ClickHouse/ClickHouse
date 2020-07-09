@@ -1,6 +1,6 @@
 ---
-toc_title: ROW POLICY
 toc_priority: 7
+toc_title: ROW POLICY
 ---
 
 # CREATE ROW POLICY {#create-row-policy-statement}
@@ -17,7 +17,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [ON CLUSTER cluster
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
-`ON CLUSTER` clause allows creating row policies on a cluster, see  [Distributed DDL](../../../sql-reference/distributed-ddl.md).
+`ON CLUSTER` clause allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
 ## AS Clause {#create-row-policy-as}
 

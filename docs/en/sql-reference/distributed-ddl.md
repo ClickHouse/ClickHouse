@@ -1,6 +1,6 @@
 ---
-toc_title: Distributed DDL
 toc_priority: 32
+toc_title: Distributed DDL
 ---
 
 # Distributed DDL Queries (ON CLUSTER Clause) {#distributed-ddl-queries-on-cluster-clause}

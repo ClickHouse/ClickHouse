@@ -1,6 +1,6 @@
 ---
-toc_title: USER
 toc_priority: 5
+toc_title: USER
 ---
 
 # CREATE USER {#create-user-statement}
@@ -17,7 +17,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
-`ON CLUSTER` clause allows creating users on a cluster, see  [Distributed DDL](../../../sql-reference/distributed-ddl.md).
+`ON CLUSTER` clause allows creating users on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
 ## Identification {#identification}
 

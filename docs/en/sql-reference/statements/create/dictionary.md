@@ -1,6 +1,6 @@
 ---
-toc_title: DICTIONARY
 toc_priority: 4
+toc_title: DICTIONARY
 ---
 
 # CREATE DICTIONARY {#create-dictionary-query}
@@ -25,7 +25,7 @@ LIFETIME([MIN val1] MAX val2)
 
 External dictionary structure consists of attributes. Dictionary attributes are specified similarly to table columns. The only required attribute property is its type, all other properties may have default values.
 
-`ON CLUSTER` clause allows creating dictionary on a cluster, see  [Distributed DDL](../../../sql-reference/distributed-ddl.md).
+`ON CLUSTER` clause allows creating dictionary on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
 Depending on dictionary [layout](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) one or more attributes can be specified as dictionary keys.
 

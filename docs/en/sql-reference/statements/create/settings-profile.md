@@ -1,6 +1,6 @@
 ---
-toc_title: SETTINGS PROFILE
 toc_priority: 9
+toc_title: SETTINGS PROFILE
 ---
 
 # CREATE SETTINGS PROFILE {#create-settings-profile-statement}
@@ -14,7 +14,7 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_na
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
 
-`ON CLUSTER` clause allows creating settings profiles on a cluster, see  [Distributed DDL](../../../sql-reference/distributed-ddl.md).
+`ON CLUSTER` clause allows creating settings profiles on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
 ## Example {#create-settings-profile-syntax}
 

@@ -1,6 +1,6 @@
 ---
-toc_title: TABLE
 toc_priority: 2
+toc_title: TABLE
 ---
 
 # CREATE TABLE {#create-table-query}
@@ -9,9 +9,9 @@ Creates a new table. This query can have various syntax forms depending on a use
 
 By default, tables are created only on the current server. Distributed DDL queries are implemented as `ON CLUSTER` clause, which is [described separately](../../../sql-reference/distributed-ddl.md).
 
-## Syntax Forms
+## Syntax Forms {#syntax-forms}
 
-### With Explicit Schema
+### With Explicit Schema {#with-explicit-schema}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -29,7 +29,7 @@ A column description is `name type` in the simplest case. Example: `RegionID UIn
 
 Expressions can also be defined for default values (see below).
 
-### With a Schema Similar to Other Table
+### With a Schema Similar to Other Table {#with-a-schema-similar-to-other-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
@@ -37,7 +37,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
 
-## From a Table Function
+## From a Table Function {#from-a-table-function}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
@@ -69,12 +69,13 @@ If the data type and default expression are defined explicitly, this expression 
 
 Default expressions may be defined as an arbitrary expression from table constants and columns. When creating and changing the table structure, it checks that expressions don’t contain loops. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
 
-### DEFAULT
+### DEFAULT {#default}
+
 `DEFAULT expr`
 
 Normal default value. If the INSERT query doesn’t specify the corresponding column, it will be filled in by computing the corresponding expression.
 
-### MATERIALIZED
+### MATERIALIZED {#materialized}
 
 `MATERIALIZED expr`
 
@@ -82,7 +83,8 @@ Materialized expression. Such a column can’t be specified for INSERT, because 
 For an INSERT without a list of columns, these columns are not considered.
 In addition, this column is not substituted when using an asterisk in a SELECT query. This is to preserve the invariant that the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
 
-### ALIAS
+### ALIAS {#alias}
+
 `ALIAS expr`
 
 Synonym. Such a column isn’t stored in the table at all.

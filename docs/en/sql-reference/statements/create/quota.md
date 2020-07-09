@@ -1,6 +1,6 @@
 ---
-toc_title: QUOTA
 toc_priority: 8
+toc_title: QUOTA
 ---
 
 # CREATE QUOTA {#create-quota-statement}
@@ -18,7 +18,7 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
-`ON CLUSTER` clause allows creating quotas on a cluster, see  [Distributed DDL](../../../sql-reference/distributed-ddl.md).
+`ON CLUSTER` clause allows creating quotas on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
 ## Example {#create-quota-example}
 
