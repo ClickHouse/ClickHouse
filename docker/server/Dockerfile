@@ -18,9 +18,9 @@ RUN apt-get update \
         apt-get --yes -o "Dpkg::Options::=--force-confdef" -o "Dpkg::Options::=--force-confold" upgrade \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --allow-unauthenticated --yes --no-install-recommends \
-            clickhouse-common-static=$version \
-            clickhouse-client=$version \
-            clickhouse-server=$version \
+            clickhouse-common-static \
+            clickhouse-client \
+            clickhouse-server \
             locales \
             wget \
     && rm -rf \
