@@ -24,10 +24,9 @@ arrow::Status ArrowBufferedOutputStream::Close()
     return arrow::Status::OK();
 }
 
-arrow::Status ArrowBufferedOutputStream::Tell(int64_t * position) const
+arrow::Result<int64_t> ArrowBufferedOutputStream::Tell() const
 {
-    *position = total_length;
-    return arrow::Status::OK();
+    return arrow::Result<int64_t>(total_length);
 }
 
 arrow::Status ArrowBufferedOutputStream::Write(const void * data, int64_t length)
@@ -42,10 +41,9 @@ RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(S
 {
 }
 
-arrow::Status RandomAccessFileFromSeekableReadBuffer::GetSize(int64_t * size)
+arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::GetSize()
 {
-    *size = file_size;
-    return arrow::Status::OK();
+    return arrow::Result<int64_t>(file_size);
 }
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Close()
@@ -54,25 +52,25 @@ arrow::Status RandomAccessFileFromSeekableReadBuffer::Close()
     return arrow::Status::OK();
 }
 
-arrow::Status RandomAccessFileFromSeekableReadBuffer::Tell(int64_t * position) const
+arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Tell() const
 {
-    *position = in.getPosition();
-    return arrow::Status::OK();
+    return arrow::Result<int64_t>(in.getPosition());
 }
 
-arrow::Status RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes, int64_t * bytes_read, void * out)
+arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes, void * out)
 {
-    *bytes_read = in.readBig(reinterpret_cast<char *>(out), nbytes);
-    return arrow::Status::OK();
+    int64_t bytes_read = in.readBig(reinterpret_cast<char *>(out), nbytes);
+    return arrow::Result<int64_t>(bytes_read);
 }
 
-arrow::Status RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes, std::shared_ptr<arrow::Buffer> * out)
+arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes)
 {
     std::shared_ptr<arrow::Buffer> buf;
     ARROW_RETURN_NOT_OK(arrow::AllocateBuffer(nbytes, &buf));
     size_t n = in.readBig(reinterpret_cast<char *>(buf->mutable_data()), nbytes);
-    *out = arrow::SliceBuffer(buf, 0, n);
-    return arrow::Status::OK();
+
+    auto read_buffer = arrow::SliceBuffer(buf, 0, n);
+    return arrow::Result<std::shared_ptr<arrow::Buffer>>(read_buffer);
 }
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Seek(int64_t position)

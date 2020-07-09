@@ -248,6 +248,7 @@ void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t sub
 
 const std::unordered_set<String> possibly_injective_function_names
 {
+        "dictGet",
         "dictGetString",
         "dictGetUInt8",
         "dictGetUInt16",
@@ -327,10 +328,18 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                     continue;
                 }
 
-                const auto & dict_name = function->arguments->children[0]->as<ASTLiteral &>().value.safeGet<String>();
-                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name);
-                const auto & attr_name = function->arguments->children[1]->as<ASTLiteral &>().value.safeGet<String>();
+                const auto * dict_name_ast = function->arguments->children[0]->as<ASTLiteral>();
+                const auto * attr_name_ast = function->arguments->children[1]->as<ASTLiteral>();
+                if (!dict_name_ast || !attr_name_ast)
+                {
+                    ++i;
+                    continue;
+                }
 
+                const auto & dict_name = dict_name_ast->value.safeGet<String>();
+                const auto & attr_name = attr_name_ast->value.safeGet<String>();
+
+                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name);
                 if (!dict_ptr->isInjective(attr_name))
                 {
                     ++i;
@@ -569,12 +578,12 @@ void optimizeUsing(const ASTSelectQuery * select_query)
         expression_list = uniq_expressions_list;
 }
 
-void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_miltiif)
+void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
 {
     /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
     OptimizeIfWithConstantConditionVisitor(aliases).visit(query);
 
-    if (if_chain_to_miltiif)
+    if (if_chain_to_multiif)
         OptimizeIfChainsVisitor().visit(query);
 }
 
@@ -969,7 +978,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     executeScalarSubqueries(query, context, subquery_depth, result.scalars, select_options.only_analyze);
 
     {
-        optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
+        optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 
         /// Move arithmetic operations out of aggregation functions
         if (settings.optimize_arithmetic_operations_in_aggregate_functions)
@@ -1046,7 +1055,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
     executeScalarSubqueries(query, context, 0, result.scalars, false);
 
-    optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
+    optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 
     if (allow_aggregations)
     {
