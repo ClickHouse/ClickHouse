@@ -69,7 +69,7 @@ Returns the following `String` type columns:
 
 -   `name` — Column name.
 -   `type`— Column type.
--   `default_type` — Clause that is used in [default expression](../../sql-reference/statements/create.md#create-default-values) (`DEFAULT`, `MATERIALIZED` or `ALIAS`). Column contains an empty string, if the default expression isn’t specified.
+-   `default_type` — Clause that is used in [default expression](../../sql-reference/statements/create/table.md#create-default-values) (`DEFAULT`, `MATERIALIZED` or `ALIAS`). Column contains an empty string, if the default expression isn’t specified.
 -   `default_expression` — Value specified in the `DEFAULT` clause.
 -   `comment_expression` — Comment text.
 

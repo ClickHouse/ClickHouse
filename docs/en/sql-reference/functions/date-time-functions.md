@@ -149,6 +149,63 @@ Rounds down a date with time to the start of the hour.
 
 Rounds down a date with time to the start of the minute.
 
+## toStartOfSecond {#tostartofsecond}
+
+Truncates sub-seconds.
+
+**Syntax**
+
+``` sql
+toStartOfSecond(value[, timezone])
+```
+
+**Parameters**
+
+-   `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Input value without sub-seconds.
+
+Type: [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Examples**
+
+Query without timezone:
+
+``` sql
+WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64
+SELECT toStartOfSecond(dt64);
+```
+
+Result:
+
+``` text
+┌───toStartOfSecond(dt64)─┐
+│ 2020-01-01 10:20:30.000 │
+└─────────────────────────┘
+```
+
+Query with timezone:
+
+``` sql
+WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64
+SELECT toStartOfSecond(dt64, 'Europe/Moscow');
+```
+
+Result:
+
+``` text
+┌─toStartOfSecond(dt64, 'Europe/Moscow')─┐
+│                2020-01-01 13:20:30.000 │
+└────────────────────────────────────────┘
+```
+
+**See also**
+
+-   [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
+
 ## toStartOfFiveMinute {#tostartoffiveminute}
 
 Rounds down a date with time to the start of the five-minute interval.

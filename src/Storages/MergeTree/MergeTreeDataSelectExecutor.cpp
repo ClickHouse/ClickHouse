@@ -1160,6 +1160,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 
+    Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
+
     Block header = pipes.at(0).getHeader();
     for (size_t i = 0; i < sort_columns_size; ++i)
         sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
@@ -1180,7 +1182,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedTransform>(header, pipes.size(),
-                           sort_description, data.merging_params.columns_to_sum, max_block_size);
+                           sort_description, data.merging_params.columns_to_sum, partition_key_columns, max_block_size);
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, pipes.size(),
