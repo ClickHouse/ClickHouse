@@ -3,6 +3,7 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/InflatingExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -37,6 +38,25 @@ void ExpressionStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
+static void doDescribeActions(const ExpressionActionsPtr & expression, IQueryPlanStep::FormatSettings & settings)
+{
+    String prefix(settings.offset, ' ');
+    bool first = true;
+
+    for (const auto & action : expression->getActions())
+    {
+        settings.out << prefix << (first ? "Actions: "
+                                         : "         ");
+        first = false;
+        settings.out << action.toString() << '\n';
+    }
+}
+
+void ExpressionStep::describeActions(FormatSettings & settings) const
+{
+    doDescribeActions(expression, settings);
+}
+
 InflatingExpressionStep::InflatingExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_)
     : ITransformingStep(
         input_stream_,
@@ -62,6 +82,11 @@ void InflatingExpressionStep::transformPipeline(QueryPipeline & pipeline)
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
         return std::make_shared<Transform>(header, expression, on_totals, add_default_totals);
     });
+}
+
+void InflatingExpressionStep::describeActions(FormatSettings & settings) const
+{
+    doDescribeActions(expression, settings);
 }
 
 }

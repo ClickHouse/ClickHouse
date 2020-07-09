@@ -170,6 +170,8 @@ public:
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected(const ConnectionTimeouts & timeouts);
 
+    bool isConnected() const { return connected; }
+
     TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
                                          const TablesStatusRequest & request);
 

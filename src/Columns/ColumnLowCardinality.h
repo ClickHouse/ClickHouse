@@ -93,6 +93,8 @@ public:
 
     void updateWeakHash32(WeakHash32 & hash) const override;
 
+    void updateHashFast(SipHash &) const override;
+
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));

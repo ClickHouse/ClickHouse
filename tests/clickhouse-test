@@ -467,7 +467,7 @@ def main(args):
     if args.use_skip_list:
         tests_to_skip_from_list = collect_tests_to_skip(args.skip_list_path, build_flags)
     else:
-        tests_to_skip_from_list = {}
+        tests_to_skip_from_list = set([])
 
     if args.skip:
         args.skip = set(args.skip) | tests_to_skip_from_list

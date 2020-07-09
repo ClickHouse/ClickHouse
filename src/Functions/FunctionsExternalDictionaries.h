@@ -99,6 +99,10 @@ public:
 
     bool isDictGetFunctionInjective(const Block & sample_block)
     {
+        /// Assume non-injective by default
+        if (!sample_block)
+            return false;
+
         if (sample_block.columns() != 3 && sample_block.columns() != 4)
             throw Exception{"Function dictGet... takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
