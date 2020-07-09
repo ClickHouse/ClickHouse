@@ -791,8 +791,6 @@ protected:
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
-    void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
-
     /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
     void calculateColumnSizesImpl();
     /// Adds or subtracts the contribution of the part to compressed column sizes.
@@ -870,6 +868,8 @@ private:
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
     bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const;
+
+    virtual void startBackgroundMovesIfNeeded() = 0;
 };
 
 }
