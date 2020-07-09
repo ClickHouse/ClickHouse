@@ -4,6 +4,8 @@
 #include <atomic>
 #include <memory>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
@@ -132,7 +134,8 @@ public:
     /** Append a record into log.
       * Writing to table will be done asynchronously and in case of failure, record could be lost.
       */
-    void add(const LogElement & element);
+    template <typename T>
+    void add(T && element);
 
     void stopFlushThread();
 
@@ -225,8 +228,10 @@ void SystemLog<LogElement>::startup()
 
 
 template <typename LogElement>
-void SystemLog<LogElement>::add(const LogElement & element)
+template <typename T>
+void SystemLog<LogElement>::add(T && element)
 {
+//    static_assert(std::is_same<LogElement, typename std::remove_reference<T>::type>);
     /// Memory can be allocated while resizing on queue.push_back.
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
@@ -250,7 +255,6 @@ void SystemLog<LogElement>::add(const LogElement & element)
             requested_flush_before = queue_end;
 
         flush_event.notify_all();
-        LOG_INFO(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
     }
 
     if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)
@@ -272,7 +276,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
         return;
     }
 
-    queue.push_back(element);
+    queue.push_back(std::forward<T>(element));
 }
 
 
