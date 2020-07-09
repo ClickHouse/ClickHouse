@@ -7,7 +7,8 @@
 #include <Common/ClickHouseRevision.h>
 
 
-using namespace DB;
+namespace DB
+{
 
 using TraceDataType = TraceLogElement::TraceDataType;
 
@@ -48,4 +49,6 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(trace);
     columns[i++]->insert(size);
+}
+
 }
