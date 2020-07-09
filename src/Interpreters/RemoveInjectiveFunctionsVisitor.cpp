@@ -1,6 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -34,7 +35,7 @@ static bool removeInjectiveFunction(ASTPtr & ast, const Context & context, const
 void RemoveInjectiveFunctionsMatcher::visit(ASTPtr & ast, const Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
-        visit(func, ast, data);
+        visit(*func, ast, data);
 }
 
 void RemoveInjectiveFunctionsMatcher::visit(ASTFunction & func, ASTPtr &, const Data & data)
@@ -53,7 +54,7 @@ void RemoveInjectiveFunctionsMatcher::visit(ASTFunction & func, ASTPtr &, const 
 
 bool RemoveInjectiveFunctionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 {
-    if (node->as<ASTSubquery> ||
+    if (node->as<ASTSubquery>() ||
         node->as<ASTTableExpression>())
         return false; // NOLINT
     return true;
