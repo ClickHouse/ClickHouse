@@ -161,6 +161,7 @@ interfaces/third-party/client_libraries.md interfaces/third-party/client-librari
 interfaces/third-party_client_libraries.md interfaces/third-party/client-libraries.md
 interfaces/third-party_gui.md interfaces/third-party/gui.md
 interfaces/third_party/index.md interfaces/third-party/index.md
+introduction/index.md 
 introduction/distinctive_features.md introduction/distinctive-features.md
 introduction/features_considered_disadvantages.md introduction/distinctive-features.md
 introduction/possible_silly_questions.md faq/general.md
@@ -289,6 +290,7 @@ query_language/table_functions/remote.md sql-reference/table-functions/remote.md
 query_language/table_functions/url.md sql-reference/table-functions/url.md
 roadmap.md whats-new/roadmap.md
 security_changelog.md whats-new/security-changelog.md
+sql-reference/data-types/domains/overview.md sql-reference/data-types/domains/index.md
 sql_reference/aggregate_functions/combinators.md sql-reference/aggregate-functions/combinators.md
 sql_reference/aggregate_functions/index.md sql-reference/aggregate-functions/index.md
 sql_reference/aggregate_functions/parametric_functions.md sql-reference/aggregate-functions/parametric-functions.md

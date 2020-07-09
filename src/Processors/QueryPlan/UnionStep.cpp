@@ -21,15 +21,24 @@ UnionStep::UnionStep(DataStreams input_streams_, Block result_header, size_t max
 QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines)
 {
     auto pipeline = std::make_unique<QueryPipeline>();
+    QueryPipelineProcessorsCollector collector(*pipeline, this);
+
     if (pipelines.empty())
     {
         pipeline->init(Pipe(std::make_shared<NullSource>(output_stream->header)));
+        processors = collector.detachProcessors();
         return pipeline;
     }
 
     pipeline->unitePipelines(std::move(pipelines), output_stream->header ,max_threads);
 
+    processors = collector.detachProcessors();
     return pipeline;
+}
+
+void UnionStep::describePipeline(FormatSettings & settings) const
+{
+    IQueryPlanStep::describePipeline(processors, settings);
 }
 
 }

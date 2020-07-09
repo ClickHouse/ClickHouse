@@ -28,7 +28,9 @@
 #include <common/demangle.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
+#include <AggregateFunctions/AggregateFunctionResample.h>
 #include <Disks/StoragePolicy.h>
+#include <IO/Operators.h>
 
 
 namespace ProfileEvents
@@ -150,6 +152,42 @@ Block Aggregator::Params::getHeader(
     return materializeBlock(res);
 }
 
+void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
+{
+    Strings res;
+    const auto & header = src_header ? src_header
+                                     : intermediate_header;
+
+    String prefix(indent, ' ');
+
+    {
+        /// Dump keys.
+        out << prefix << "Keys: ";
+
+        bool first = true;
+        for (auto key : keys)
+        {
+            if (!first)
+                out << ", ";
+            first = false;
+
+            if (key >= header.columns())
+                out << "unknown position " << key;
+            else
+                out << header.getByPosition(key).name;
+        }
+
+        out << '\n';
+    }
+
+    if (!aggregates.empty())
+    {
+        out << prefix << "Aggregates:\n";
+
+        for (const auto & aggregate : aggregates)
+            aggregate.explain(out, indent + 4);
+    }
+}
 
 Aggregator::Aggregator(const Params & params_)
     : params(params_),
@@ -1180,10 +1218,17 @@ Block Aggregator::prepareBlockAndFill(
             if (aggregate_functions[i]->isState())
             {
                 /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
-                ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*final_aggregate_columns[i]);
+                if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(final_aggregate_columns[i].get()))
+                    for (auto & pool : data_variants.aggregates_pools)
+                        column_aggregate_func->addArena(pool);
 
-                for (auto & pool : data_variants.aggregates_pools)
-                    column_aggregate_func.addArena(pool);
+                /// Aggregate state can be wrapped into array if aggregate function ends with -Resample combinator.
+                final_aggregate_columns[i]->forEachSubcolumn([&data_variants](auto & subcolumn)
+                {
+                    if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(subcolumn.get()))
+                        for (auto & pool : data_variants.aggregates_pools)
+                            column_aggregate_func->addArena(pool);
+                });
             }
         }
     }

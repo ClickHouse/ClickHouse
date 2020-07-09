@@ -248,7 +248,7 @@ try
     if (!context->getPath().empty())
     {
         /// Lock path directory before read
-        status.emplace(context->getPath() + "status");
+        status.emplace(context->getPath() + "status", StatusFile::write_full_info);
 
         LOG_DEBUG(log, "Loading metadata from {}", context->getPath());
         loadMetadataSystem(*context);

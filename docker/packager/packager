@@ -149,6 +149,8 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
 
     if clang_tidy:
         cmake_flags.append('-DENABLE_CLANG_TIDY=1')
+        # Don't stop on first error to find more clang-tidy errors in one run.
+        result.append('NINJA_FLAGS=-k0')
 
     if with_coverage:
         cmake_flags.append('-DWITH_COVERAGE=1')
