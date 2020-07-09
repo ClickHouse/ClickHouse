@@ -95,13 +95,11 @@ There can be no more than one exchange per table. One exchange can be shared bet
 Exchange type options:
 -   `direct` - Routing is based on exact matching of keys. Example table key list: `key1,key2,key3,key4,key5`, message key can eqaul any of them.
 -   `fanout` - Routing to all tables (where exchange name is the same) regardless of the keys.
--   `topic` - Routing is based on patterns with dot-separated keys. Examples: `\*.logs`, `records.\*.\*.2020`, `\*.2018,\*.2019,\*.2020`.
--   `headers` - Routing is based on `key=value` matches with a setting `x-match=all` or `x-match=any`. Example: `x-match=all,format=logs,type=report,year=2020`.
--   `consistent-hash` - A sharding exchange. The exchange will distribute data between all bound tables (where exchange name is the same).
-For more details see RabbitMQ documentation.
+-   `topic` - Routing is based on patterns with dot-separated keys. Examples: `*.logs`, `records.*.*.2020`, `*.2018,*.2019,*.2020`.
+-   `headers` - Routing is based on `key=value` matches with a setting `x-match=all` or `x-match=any`. Example table key list: `x-match=all,format=logs,type=report,year=2020`.
+-   `consistent-hash` - Data is evenly distributed between all bound tables (where exchange name is the same). Note that this exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
 
-If exchange type is not specified, then default is `fanout` and routing keys for data publishing must be randomized in range `[1, num_consumers]` for every message/batch (or in range `[1, num_consumers * num_queues]` if `rabbitmq_num_queues` is set). This default table configuration works quicker then any other, especially when `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` parameters are set.
-Note that `consistent-hash` exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
+If exchange type is not specified, then default is `fanout` and routing keys for data publishing must be randomized in range `[1, num_consumers]` for every message/batch (or in range `[1, num_consumers * num_queues]` if `rabbitmq_num_queues` is set). This table configuration works quicker then any other, especially when `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` parameters are set.
 
 If `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` parameters are specified along with `rabbitmq_exchange_type`, then:
 -   `rabbitmq-consistent-hash-exchange` plugin must be enabled.
