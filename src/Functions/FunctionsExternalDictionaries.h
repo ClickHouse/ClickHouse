@@ -68,6 +68,55 @@ namespace ErrorCodes
   */
 
 
+class FunctionDictHelper
+{
+public:
+    FunctionDictHelper(const Context & context_) : context(context_), external_loader(context.getExternalDictionariesLoader()) {}
+
+    std::shared_ptr<const IDictionaryBase> getDictionary(const String & dictionary_name)
+    {
+        auto dict = std::atomic_load(&dictionary);
+        if (dict)
+            return dict;
+        dict = external_loader.getDictionary(dictionary_name);
+        context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getName());
+        std::atomic_store(&dictionary, dict);
+        return dict;
+    }
+
+    std::shared_ptr<const IDictionaryBase> getDictionary(const ColumnWithTypeAndName & column)
+    {
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(column.column.get());
+        return getDictionary(dict_name_col->getValue<String>());
+    }
+
+    bool isDictGetFunctionInjective(const Block & sample_block)
+    {
+        /// Assume non-injective by default
+        if (!sample_block)
+            return false;
+
+        if (sample_block.columns() != 3 && sample_block.columns() != 4)
+            throw Exception{"Function dictGet... takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(sample_block.getByPosition(0).column.get());
+        if (!dict_name_col)
+            throw Exception{"First argument of function dictGet... must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
+        const auto attr_name_col = checkAndGetColumnConst<ColumnString>(sample_block.getByPosition(1).column.get());
+        if (!attr_name_col)
+            throw Exception{"Second argument of function dictGet... must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
+        return getDictionary(dict_name_col->getValue<String>())->isInjective(attr_name_col->getValue<String>());
+    }
+
+private:
+    const Context & context;
+    const ExternalDictionariesLoader & external_loader;
+    mutable std::shared_ptr<const IDictionaryBase> dictionary;
+};
+
+
 class FunctionDictHas final : public IFunction
 {
 public:
