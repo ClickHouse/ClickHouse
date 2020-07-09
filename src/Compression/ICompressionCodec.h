@@ -1,14 +1,9 @@
 #pragma once
 
 #include <memory>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <DataTypes/IDataType.h>
 #include <boost/noncopyable.hpp>
-#include <IO/UncompressedCache.h>
-#include <Compression/LZ4_decompress_faster.h>
 #include <Compression/CompressionInfo.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -18,6 +13,10 @@ class ICompressionCodec;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 using Codecs = std::vector<CompressionCodecPtr>;
+
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+
 
 /**
 * Represents interface for compression codecs like LZ4, ZSTD, etc.
@@ -40,7 +39,10 @@ public:
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
 
     /// Number of bytes, that will be used to compress uncompressed_size bytes with current codec
-    virtual UInt32 getCompressedReserveSize(UInt32 uncompressed_size) const { return getHeaderSize() + getMaxCompressedDataSize(uncompressed_size); }
+    virtual UInt32 getCompressedReserveSize(UInt32 uncompressed_size) const
+    {
+        return getHeaderSize() + getMaxCompressedDataSize(uncompressed_size);
+    }
 
     /// Some codecs (LZ4, for example) require additional bytes at end of buffer
     virtual UInt32 getAdditionalSizeAtTheEndOfBuffer() const { return 0; }
