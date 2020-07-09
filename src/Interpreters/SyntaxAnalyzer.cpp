@@ -248,6 +248,7 @@ void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t sub
 
 const std::unordered_set<String> possibly_injective_function_names
 {
+        "dictGet",
         "dictGetString",
         "dictGetUInt8",
         "dictGetUInt16",
@@ -327,10 +328,18 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                     continue;
                 }
 
-                const auto & dict_name = function->arguments->children[0]->as<ASTLiteral &>().value.safeGet<String>();
-                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name);
-                const auto & attr_name = function->arguments->children[1]->as<ASTLiteral &>().value.safeGet<String>();
+                const auto * dict_name_ast = function->arguments->children[0]->as<ASTLiteral>();
+                const auto * attr_name_ast = function->arguments->children[1]->as<ASTLiteral>();
+                if (!dict_name_ast || !attr_name_ast)
+                {
+                    ++i;
+                    continue;
+                }
 
+                const auto & dict_name = dict_name_ast->value.safeGet<String>();
+                const auto & attr_name = attr_name_ast->value.safeGet<String>();
+
+                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name);
                 if (!dict_ptr->isInjective(attr_name))
                 {
                     ++i;
