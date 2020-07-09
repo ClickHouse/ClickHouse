@@ -66,6 +66,10 @@ TEST(Common, PODInsertIteratorRange)
     arr1.insert(arr1.begin() + 3, arr2.begin(), arr2.end());
 
     EXPECT_EQ(arr1, (PODArray<uint16_t>{1, 2, 3, 11, 12, 4, 5}));
+
+    arr2.insert(arr2.begin() + 1, arr1.begin(), arr1.end());
+
+    EXPECT_EQ(arr2, (PODArray<uint32_t>{11, 1, 2, 3, 11, 12, 4, 5, 12}));
 }
 
 TEST(Common, PODPushBackRawMany)
