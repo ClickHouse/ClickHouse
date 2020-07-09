@@ -166,7 +166,7 @@ class ClickHouseCluster:
         return cmd
 
     def add_instance(self, name, base_config_dir=None, config_dir=None, main_configs=None, user_configs=None, macros=None,
-                     with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None,
+                     with_zookeeper=False, with_mysql=False, with_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test",
@@ -192,8 +192,8 @@ class ClickHouseCluster:
             self, self.base_dir, name, base_config_dir if base_config_dir else self.base_config_dir,
             config_dir if config_dir else self.config_dir, main_configs or [], user_configs or [], macros or {},
             with_zookeeper,
-            self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio, self.server_bin_path,
-            self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
+            self.zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio, with_cassandra,
+            self.server_bin_path, self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
             env_variables=env_variables or {}, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address,
             ipv6_address=ipv6_address,
             with_installed_binary=with_installed_binary, tmpfs=tmpfs or [])
@@ -750,8 +750,8 @@ class ClickHouseInstance:
 
     def __init__(
             self, cluster, base_path, name, base_config_dir, config_dir, custom_main_configs, custom_user_configs, macros,
-            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio,
-            server_bin_path, odbc_bridge_bin_path,
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio,
+            with_cassandra, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test",
             stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
@@ -787,7 +787,7 @@ class ClickHouseInstance:
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
         self.env_variables = env_variables or {}
         if with_odbc_drivers:
-            self.odbc_ini_path = os.path.dirname(self.docker_compose_path) + "/odbc.ini:/etc/odbc.ini"
+            self.odbc_ini_path = self.path + "/odbc.ini:/etc/odbc.ini"
             self.with_mysql = True
         else:
             self.odbc_ini_path = ""
@@ -1104,9 +1104,9 @@ class ClickHouseInstance:
         if self.with_zookeeper:
             shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
-        print "Copy config dir {} to {}".format(self.config_dir, instance_config_dir)
-        if self.config_dir:
-            distutils.dir_util.copy_tree(self.config_dir, instance_config_dir)
+        # print "Copy config dir {} to {}".format(self.config_dir, instance_config_dir)
+        # if self.config_dir:
+        #     distutils.dir_util.copy_tree(self.config_dir, instance_config_dir)
 
         # Copy config.d configs
         print "Copy custom test config files {} to {}".format(self.custom_main_config_paths, self.config_d_dir)
