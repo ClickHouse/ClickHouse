@@ -129,7 +129,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         bool old_style_database = context.getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
         auto engine = std::make_shared<ASTFunction>();
         auto storage = std::make_shared<ASTStorage>();
-        engine->name = old_style_database ? "Ordinary" : "Atomic";
+        engine->name = !old_style_database ? "Ordinary" : "Atomic"; //FIXME
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
     }
