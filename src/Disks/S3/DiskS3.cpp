@@ -422,7 +422,8 @@ DiskS3::DiskS3(
     String bucket_,
     String s3_root_path_,
     String metadata_path_,
-    size_t min_upload_part_size_)
+    size_t min_upload_part_size_,
+    size_t min_multi_part_upload_size_)
     : name(std::move(name_))
     , client(std::move(client_))
     , proxy_configuration(std::move(proxy_configuration_))
@@ -430,6 +431,7 @@ DiskS3::DiskS3(
     , s3_root_path(std::move(s3_root_path_))
     , metadata_path(std::move(metadata_path_))
     , min_upload_part_size(min_upload_part_size_)
+    , min_multi_part_upload_size(min_multi_part_upload_size_)
 {
 }
 
@@ -543,7 +545,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     bool exist = exists(path);
     /// Path to store new S3 object.
     auto s3_path = getRandomName();
-    bool is_multipart = estimated_size > 10*1024*1024;
+    bool is_multipart = estimated_size >= min_multi_part_upload_size;
     if (!exist || mode == WriteMode::Rewrite)
     {
         /// If metadata file exists - remove and create new.

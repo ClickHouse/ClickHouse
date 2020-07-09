@@ -46,7 +46,7 @@ public:
         const String & bucket_,
         const String & key_,
         size_t minimum_upload_part_size_,
-        bool is_multipart = true,
+        bool is_multipart,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     void nextImpl() override;
