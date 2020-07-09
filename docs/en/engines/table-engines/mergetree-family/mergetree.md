@@ -49,7 +49,7 @@ ORDER BY expr
 [SETTINGS name=value, ...]
 ```
 
-For a description of parameters, see the [CREATE query description](../../../sql-reference/statements/create.md).
+For a description of parameters, see the [CREATE query description](../../../sql-reference/statements/create/table.md).
 
 ### Query Clauses {#mergetree-query-clauses}
 
