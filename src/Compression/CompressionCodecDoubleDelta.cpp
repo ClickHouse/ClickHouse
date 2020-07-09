@@ -411,7 +411,7 @@ void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 s
     }
 }
 
-void CompressionCodecDoubleDelta::useInfoAboutType(DataTypePtr data_type)
+void CompressionCodecDoubleDelta::useInfoAboutType(const DataTypePtr & data_type)
 {
     data_bytes_size = getDataBytesSize(data_type);
 }

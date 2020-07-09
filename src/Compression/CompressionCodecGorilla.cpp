@@ -328,7 +328,7 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
     }
 }
 
-void CompressionCodecGorilla::useInfoAboutType(DataTypePtr data_type)
+void CompressionCodecGorilla::useInfoAboutType(const DataTypePtr & data_type)
 {
     data_bytes_size = getDataBytesSize(data_type);
 }

@@ -36,7 +36,7 @@ public:
         return variant == Variant::Byte ? "T64" : "T64('bit')";
     }
 
-    void useInfoAboutType(DataTypePtr data_type) override;
+    void useInfoAboutType(const DataTypePtr & data_type) override;
 
 protected:
     UInt32 doCompressData(const char * src, UInt32 src_size, char * dst) const override;
