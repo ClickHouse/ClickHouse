@@ -21,23 +21,24 @@ UnionStep::UnionStep(DataStreams input_streams_, Block result_header, size_t max
 QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines)
 {
     auto pipeline = std::make_unique<QueryPipeline>();
+    QueryPipelineProcessorsCollector collector(*pipeline, this);
+
     if (pipelines.empty())
     {
         pipeline->init(Pipe(std::make_shared<NullSource>(output_stream->header)));
+        processors = collector.detachProcessors();
         return pipeline;
     }
 
-    size_t num_pipelines = pipelines.size();
-    pipeline->unitePipelines(std::move(pipelines), output_stream->header);
+    pipeline->unitePipelines(std::move(pipelines), output_stream->header ,max_threads);
 
-    if (num_pipelines > 1)
-    {
-        // nested queries can force 1 thread (due to simplicity)
-        // but in case of union this cannot be done.
-        pipeline->setMaxThreads(std::min<UInt64>(num_pipelines, max_threads));
-    }
-
+    processors = collector.detachProcessors();
     return pipeline;
+}
+
+void UnionStep::describePipeline(FormatSettings & settings) const
+{
+    IQueryPlanStep::describePipeline(processors, settings);
 }
 
 }

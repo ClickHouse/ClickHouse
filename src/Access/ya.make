@@ -17,7 +17,6 @@ SRCS(
     EnabledRolesInfo.cpp
     EnabledRowPolicies.cpp
     EnabledSettings.cpp
-    GrantedAccess.cpp
     GrantedRoles.cpp
     IAccessEntity.cpp
     IAccessStorage.cpp

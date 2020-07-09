@@ -153,7 +153,7 @@ If a codec is specified, the default codec doesn’t apply. Codecs can be combin
 Compression is supported for the following table engines:
 
 -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family. Supports column compression codecs and selecting the default compression method by [compression](../../operations/server-configuration-parameters/settings.md#server-settings-compression) settings.
--   [Log](../../engines/table-engines/log-family/log-family.md) family. Uses the `lz4` compression method by default and supports column compression codecs.
+-   [Log](../../engines/table-engines/log-family/index.md) family. Uses the `lz4` compression method by default and supports column compression codecs.
 -   [Set](../../engines/table-engines/special/set.md). Only supported the default compression.
 -   [Join](../../engines/table-engines/special/join.md). Only supported the default compression.
 

@@ -14,6 +14,11 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <common/logger_useful.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int TOO_MANY_REDIRECTS;
+}
+
 namespace DB::S3
 {
 PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & clientConfiguration)
@@ -106,7 +111,7 @@ void PocoHTTPClient::MakeRequestInternal(
 
             if (request.GetContentBody())
             {
-                LOG_DEBUG(log, "Writing request body.");
+                LOG_TRACE(log, "Writing request body.");
                 if (attempt > 0) /// rewind content body buffer.
                 {
                     request.GetContentBody()->clear();
@@ -116,7 +121,7 @@ void PocoHTTPClient::MakeRequestInternal(
                 LOG_DEBUG(log, "Written {} bytes to request body", size);
             }
 
-            LOG_DEBUG(log, "Receiving response...");
+            LOG_TRACE(log, "Receiving response...");
             auto & response_body_stream = session->receiveResponse(poco_response);
 
             int status_code = static_cast<int>(poco_response.getStatus());
@@ -153,8 +158,10 @@ void PocoHTTPClient::MakeRequestInternal(
             else
                 response->GetResponseStream().SetUnderlyingStream(std::make_shared<PocoHTTPResponseStream>(session, response_body_stream));
 
-            break;
+            return;
         }
+        throw Exception(String("Too many redirects while trying to access ") + request.GetUri().GetURIString(),
+            ErrorCodes::TOO_MANY_REDIRECTS);
     }
     catch (...)
     {

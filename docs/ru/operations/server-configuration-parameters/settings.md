@@ -372,6 +372,25 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
+## max_server_memory_usage {#max_server_memory_usage}
+
+Ограничивает объём оперативной памяти, используемой сервером ClickHouse. Настройка может быть задана только для профиля `default`.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — объём используемой памяти не ограничен.
+
+Значение по умолчанию: `0`.
+
+**Дополнительная информация**
+
+На серверах с небольшим объёмом RAM и файла подкачки может потребоваться настройка `max_server_memory_usage_to_ram_ratio > 1`.
+
+**См. также**
+
+-   [max_memory_usage](../settings/query-complexity.md#settings_max_memory_usage)
+
 ## max\_connections {#max-connections}
 
 Максимальное количество входящих соединений.

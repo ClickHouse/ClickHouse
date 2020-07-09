@@ -20,6 +20,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    void describeActions(FormatSettings & settings) const override;
+
 private:
     SizeLimits set_size_limits;
     UInt64 limit_hint;
