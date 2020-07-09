@@ -3246,10 +3246,7 @@ void StorageReplicatedMergeTree::startup()
 
     try
     {
-        queue.initialize(
-            zookeeper_path, replica_path,
-            getStorageID().getFullTableName() + " (ReplicatedMergeTreeQueue)",
-            getDataParts());
+        queue.initialize(getDataParts());
 
         data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(*this);
         global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint);
