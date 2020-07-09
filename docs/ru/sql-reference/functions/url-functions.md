@@ -174,6 +174,42 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
+### netloc {#netloc}
+
+Извлекает сетевое расположение из URL. Работает так же, как [urlparse.netloc](https://docs.python.org/2/library/urlparse.html) в Python.
+
+**Синтаксис**
+
+```sql
+netloc(URL)
+```
+
+**Параметры**
+
+-   `url` — URL. Тип — [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   логин(если есть)@имя хоста:порт(если есть).
+
+Тип: `String`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT netloc('http://paul@www.example.com:80/');
+```
+
+Результат:
+
+``` text
+┌─netloc('http://paul@www.example.com:80/')─┐
+│ paul@www.example.com:80                   │
+└───────────────────────────────────────────┘
+```
+
 ## Функции, удаляющие часть из URL-а {#funktsii-udaliaiushchie-chast-iz-url-a}
 
 Если в URL-е нет ничего похожего, то URL остаётся без изменений.
