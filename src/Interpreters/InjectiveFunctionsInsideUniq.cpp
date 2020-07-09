@@ -11,19 +11,14 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 ///recursive searching of injective functions
 void killInjectiveFuctions(ASTPtr & ast, size_t ind, InjectiveFunctionsInsideUniqMatcher::Data & data)
 {
-    ASTPtr exact_child;
-    if (ast->as<ASTFunction>() && ast->as<ASTFunction>()->arguments->children.size() > ind)
-        exact_child = ast->as<ASTFunction>()->arguments->children[ind];
-    else
+    if (!ast->as<ASTFunction>() || ast->as<ASTFunction>()->arguments->children.size() <= ind)
         return;
+
+    ASTPtr exact_child = ast->as<ASTFunction>()->arguments->children[ind];
+
     const FunctionFactory & function_factory = FunctionFactory::instance();
     const Context & context = data.context;
     if (exact_child->as<ASTFunction>() && function_factory.get(exact_child->as<ASTFunction>()->name, context)->isInjective(Block{}))
@@ -39,9 +34,6 @@ void killInjectiveFuctions(ASTPtr & ast, size_t ind, InjectiveFunctionsInsideUni
 ///cut all injective functions in uniq
 void InjectiveFunctionsInsideUniqMatcher::visit(ASTPtr & current_ast, Data data)
 {
-    if (!current_ast)
-        return;
-
     auto * function_node = current_ast->as<ASTFunction>();
     if (function_node && function_node->name == "uniq")
     {
@@ -53,12 +45,8 @@ void InjectiveFunctionsInsideUniqMatcher::visit(ASTPtr & current_ast, Data data)
 
 bool InjectiveFunctionsInsideUniqMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 {
-    if (!child)
-        throw Exception("AST item should not have nullptr in children", ErrorCodes::LOGICAL_ERROR);
-
     if (node->as<ASTTableExpression>() || node->as<ASTArrayJoin>())
         return false; // NOLINT
-
     return true;
 }
 
