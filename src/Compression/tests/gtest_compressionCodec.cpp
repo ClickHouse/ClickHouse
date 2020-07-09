@@ -13,6 +13,7 @@
 
 #include <fmt/format.h>
 
+#include <random>
 #include <bitset>
 #include <cmath>
 #include <initializer_list>
