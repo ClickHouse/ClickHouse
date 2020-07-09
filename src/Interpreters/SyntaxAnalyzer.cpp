@@ -585,14 +585,11 @@ void optimizeAnyInput(ASTPtr & query, bool optimize_any_input)
     }
 }
 
-void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const Context & context, bool optimize_injective_functions_inside_uniq)
+void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const Context & context)
 {
-    if (optimize_injective_functions_inside_uniq)
-    {
-        /// Removing arithmetic operations from functions
-        InjectiveFunctionsInsideUniqVisitor::Data data = {context};
-        InjectiveFunctionsInsideUniqVisitor(data).visit(query);
-    }
+    /// Removing arithmetic operations from functions
+    InjectiveFunctionsInsideUniqVisitor::Data data = {context};
+    InjectiveFunctionsInsideUniqVisitor(data).visit(query);
 }
 
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
@@ -990,7 +987,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeAnyInput(query, settings.optimize_any_input);
 
         ///remove injective functions inside uniq
-        optimizeInjectiveFunctionsInsideUniq(query, context, settings.optimize_injective_functions_inside_uniq);
+        if (settings.optimize_injective_functions_inside_uniq)
+            optimizeInjectiveFunctionsInsideUniq(query, context);
 
         /// Eliminate min/max/any aggregators of functions of GROUP BY keys
         optimizeAggregateFunctionsOfGroupByKeys(select_query, settings.optimize_aggregators_of_group_by_keys);
