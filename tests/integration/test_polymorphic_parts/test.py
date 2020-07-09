@@ -29,7 +29,7 @@ def insert_random_data(table, node, size):
         str(get_random_array()))) +
     ')' for i in range(size)
     ]
-    
+
     node.query("INSERT INTO {} VALUES {}".format(table, ','.join(data)))
 
 def create_tables(name, nodes, node_settings, shard):
@@ -40,7 +40,7 @@ def create_tables(name, nodes, node_settings, shard):
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/{name}', '{repl}')
         PARTITION BY toYYYYMM(date)
         ORDER BY id
-        SETTINGS index_granularity = 64, index_granularity_bytes = {index_granularity_bytes}, 
+        SETTINGS index_granularity = 64, index_granularity_bytes = {index_granularity_bytes},
         min_rows_for_wide_part = {min_rows_for_wide_part}, min_rows_for_compact_part = {min_rows_for_compact_part},
         in_memory_parts_enable_wal = 1
         '''.format(name=name, shard=shard, repl=i, **settings))
@@ -53,21 +53,21 @@ def create_tables_old_format(name, nodes, shard):
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/{name}', '{repl}', date, id, 64)
         '''.format(name=name, shard=shard, repl=i))
 
-node1 = cluster.add_instance('node1', config_dir="configs", with_zookeeper=True)
-node2 = cluster.add_instance('node2', config_dir="configs", with_zookeeper=True)
+node1 = cluster.add_instance('node1', main_configs=[], user_configs=["configs/users.d/not_optimize_count.xml"], with_zookeeper=True)
+node2 = cluster.add_instance('node2', main_configs=[], user_configs=["configs/users.d/not_optimize_count.xml"], with_zookeeper=True)
 
 settings_default = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 0}
 settings_compact_only = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 1000000, 'min_rows_for_compact_part' : 0}
 settings_not_adaptive = {'index_granularity_bytes' : 0, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 0}
 
-node3 = cluster.add_instance('node3', config_dir="configs", with_zookeeper=True)
-node4 = cluster.add_instance('node4', config_dir="configs", main_configs=['configs/no_leader.xml'], with_zookeeper=True)
+node3 = cluster.add_instance('node3', main_configs=[], user_configs=["configs/users.d/not_optimize_count.xml"], with_zookeeper=True)
+node4 = cluster.add_instance('node4', user_configs=["configs/users.d/not_optimize_count.xml"], main_configs=['configs/no_leader.xml'], with_zookeeper=True)
 
 settings_compact = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 0}
 settings_wide = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 0, 'min_rows_for_compact_part' : 0}
 
-node5 = cluster.add_instance('node5', config_dir='configs', main_configs=['configs/compact_parts.xml'], with_zookeeper=True)
-node6 = cluster.add_instance('node6', config_dir='configs', main_configs=['configs/compact_parts.xml'], with_zookeeper=True)
+node5 = cluster.add_instance('node5', main_configs=['configs/compact_parts.xml'], with_zookeeper=True)
+node6 = cluster.add_instance('node6', main_configs=['configs/compact_parts.xml'], with_zookeeper=True)
 
 settings_in_memory = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 256}
 
@@ -214,8 +214,8 @@ def test_different_part_types_on_replicas(start_cluster, table, part_type):
         "WHERE table = '{}' AND active GROUP BY part_type ORDER BY part_type".format(table))) == TSV(expected)
 
 
-node7 = cluster.add_instance('node7', config_dir="configs_old", with_zookeeper=True, image='yandex/clickhouse-server:19.17.8.54', stay_alive=True, with_installed_binary=True)
-node8 = cluster.add_instance('node8', config_dir="configs", with_zookeeper=True)
+node7 = cluster.add_instance('node7', user_configs=["configs_old/users.d/not_optimize_count.xml"], with_zookeeper=True, image='yandex/clickhouse-server:19.17.8.54', stay_alive=True, with_installed_binary=True)
+node8 = cluster.add_instance('node8', main_configs=[], user_configs=["configs/users.d/not_optimize_count.xml"], with_zookeeper=True)
 
 settings7 = {'index_granularity_bytes' : 10485760}
 settings8 = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 0}
@@ -268,7 +268,7 @@ def test_polymorphic_parts_diff_versions(start_cluster_diff_versions):
 
 @pytest.mark.skip(reason="compatability is temporary broken")
 def test_polymorphic_parts_diff_versions_2(start_cluster_diff_versions):
-    # Replication doesn't work on old version if part is created in compact format, because 
+    # Replication doesn't work on old version if part is created in compact format, because
     #  this version doesn't know anything about it. It's considered to be ok.
 
     node_old = node7
@@ -465,8 +465,8 @@ def test_in_memory_alters(start_cluster):
 
 def test_polymorphic_parts_index(start_cluster):
     node1.query('''
-        CREATE TABLE index_compact(a UInt32, s String) 
-        ENGINE = MergeTree ORDER BY a 
+        CREATE TABLE index_compact(a UInt32, s String)
+        ENGINE = MergeTree ORDER BY a
         SETTINGS min_rows_for_wide_part = 1000, index_granularity = 128, merge_max_block_size = 100''')
 
     node1.query("INSERT INTO index_compact SELECT number, toString(number) FROM numbers(100)")
