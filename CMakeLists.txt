@@ -12,6 +12,20 @@ foreach(policy
     endif()
 endforeach()
 
+# set default policy
+foreach(default_policy_var_name
+        # make option() honor normal variables for BUILD_SHARED_LIBS:
+        # - re2
+        # - snappy
+        CMAKE_POLICY_DEFAULT_CMP0077
+        # Google Test from sources uses too old cmake, 2.6.x, and CMP0022 should
+        # set, to avoid using deprecated LINK_INTERFACE_LIBRARIES(_<CONFIG>)? over
+        # INTERFACE_LINK_LIBRARIES.
+        CMAKE_POLICY_DEFAULT_CMP0022
+    )
+    set(${default_policy_var_name} NEW)
+endforeach()
+
 project(ClickHouse)
 
 include (cmake/arch.cmake)
