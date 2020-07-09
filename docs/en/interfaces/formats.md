@@ -979,7 +979,7 @@ message MessageType {
 }
 ```
 
-are not applied; the [table defaults](../sql-reference/statements/create.md#create-default-values) are used instead of them.
+are not applied; the [table defaults](../sql-reference/statements/create/table.md#create-default-values) are used instead of them.
 
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
