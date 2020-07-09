@@ -322,7 +322,10 @@ create view query_logs as
     select *, 1 version from right_query_log
     ;
 
-create table query_run_metrics_full engine File(TSV, 'analyze/query-run-metrics-full.tsv')
+-- This is a single source of truth on all metrics we have for query runs. The
+-- metrics include ProfileEvents from system.query_log, and query run times
+-- reported by the perf.py test runner.
+create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-arrays.tsv')
     as
     with (
         -- sumMapState with the list of all keys with '-0.' values. Negative zero is because
@@ -354,18 +357,29 @@ create table query_run_metrics_full engine File(TSV, 'analyze/query-run-metrics-
     where (test, query_index) not in partial_queries
     ;
 
-create table query_run_metrics engine File(
+-- This is just for convenience -- human-readable + easy to make plots.
+create table query_run_metrics_denorm engine File(TSV, 'analyze/query-run-metrics-denorm.tsv')
+    as select test, query_index, metric_names, version, query_id, metric_values
+    from query_run_metric_arrays
+    array join metric_names, metric_values
+    order by test, query_index, metric_names, version, query_id
+    ;
+
+-- This is for statistical processing with eqmed.sql
+create table query_run_metrics_for_stats engine File(
         TSV, -- do not add header -- will parse with grep
-        'analyze/query-run-metrics.tsv')
+        'analyze/query-run-metrics-for-stats.tsv')
     as select test, query_index, 0 run, version, metric_values
-    from query_run_metrics_full
+    from query_run_metric_arrays
     order by test, query_index, run, version
     ;
 
+-- This is the list of metric names, so that we can join them back after
+-- statistical processing.
 create table query_run_metric_names engine File(TSV, 'analyze/query-run-metric-names.tsv')
-    as select metric_names from query_run_metrics_full limit 1
+    as select metric_names from query_run_metric_arrays limit 1
     ;
-"
+" 2> >(tee -a analyze/errors.log 1>&2)
 
 # This is a lateral join in bash... please forgive me.
 # We don't have arrayPermute(), so I have to make random permutations with
@@ -375,16 +389,16 @@ create table query_run_metric_names engine File(TSV, 'analyze/query-run-metric-n
 # for each file. I do this in parallel using GNU parallel.
 ( set +x # do not bloat the log
 IFS=$'\n'
-for prefix in $(cut -f1,2 "analyze/query-run-metrics.tsv" | sort | uniq)
+for prefix in $(cut -f1,2 "analyze/query-run-metrics-for-stats.tsv" | sort | uniq)
 do
     file="analyze/tmp/$(echo "$prefix" | sed 's/\t/_/g').tsv"
-    grep "^$prefix	" "analyze/query-run-metrics.tsv" > "$file" &
+    grep "^$prefix	" "analyze/query-run-metrics-for-stats.tsv" > "$file" &
     printf "%s\0\n" \
         "clickhouse-local \
             --file \"$file\" \
             --structure 'test text, query text, run int, version UInt8, metrics Array(float)' \
             --query \"$(cat "$script_dir/eqmed.sql")\" \
-            >> \"analyze/query-reports.tsv\"" \
+            >> \"analyze/query-metric-stats.tsv\"" \
             2>> analyze/errors.log \
         >> analyze/commands.txt
 done
@@ -393,6 +407,33 @@ unset IFS
 )
 
 parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
+
+clickhouse-local --query "
+-- Join the metric names back to the metric statistics we've calculated, and make
+-- a denormalized table of them -- statistics for all metrics for all queries.
+-- The WITH, ARRAY JOIN and CROSS JOIN do not like each other:
+--  https://github.com/ClickHouse/ClickHouse/issues/11868
+--  https://github.com/ClickHouse/ClickHouse/issues/11757
+-- Because of this, we make a view with arrays first, and then apply all the
+-- array joins.
+create view query_metric_stat_arrays as
+    with (select * from file('analyze/query-run-metric-names.tsv',
+        TSV, 'n Array(String)')) as metric_name
+    select test, query_index, metric_name, left, right, diff, stat_threshold
+    from file('analyze/query-metric-stats.tsv', TSV, 'left Array(float),
+        right Array(float), diff Array(float), stat_threshold Array(float),
+        test text, query_index int') reports
+    order by test, query_index, metric_name
+    ;
+
+create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
+        'analyze/query-metric-stats-denorm.tsv')
+    as select test, query_index, metric_name, left, right, diff, stat_threshold
+    from query_metric_stat_arrays
+    left array join metric_name, left, right, diff, stat_threshold
+    order by test, query_index, metric_name
+    ;
+" 2> >(tee -a analyze/errors.log 1>&2)
 }
 
 # Analyze results
@@ -421,6 +462,8 @@ create view partial_query_times as select * from
         'test text, query_index int, time_stddev float, time_median float')
     ;
 
+-- Report for partial queries that we could only run on the new server (e.g.
+-- queries with new functions added in the tested PR).
 create table partial_queries_report engine File(TSV, 'report/partial-queries-report.tsv')
     as select floor(time_median, 3) time,
         floor(time_stddev / time_median, 3) relative_time_stddev,
@@ -430,26 +473,11 @@ create table partial_queries_report engine File(TSV, 'report/partial-queries-rep
     order by test, query_index
     ;
 
--- Make a denormalized table with all metrics for all queries.
--- WITH, ARRAY JOIN and CROSS JOIN do not like each other:
---  https://github.com/ClickHouse/ClickHouse/issues/11868
---  https://github.com/ClickHouse/ClickHouse/issues/11757
--- Because of this, we make a view with arrays first, and then apply all the
--- array joins.
-create view query_metric_stat_arrays as
-    with (select * from file('analyze/query-run-metric-names.tsv',
-        TSV, 'n Array(String)')) as metric_name
-    select metric_name, left, right, diff, stat_threshold, test, query_index
-    from file('analyze/query-reports.tsv', TSV, 'left Array(float),
-        right Array(float), diff Array(float), stat_threshold Array(float),
-        test text, query_index int') reports
-    ;
-
-create table query_metric_stats engine File(TSVWithNamesAndTypes,
-        'report/query-metric-stats.tsv')
-    as select metric_name, left, right, diff, stat_threshold, test, query_index
-    from query_metric_stat_arrays
-    left array join metric_name, left, right, diff, stat_threshold
+create view query_metric_stats as
+    select * from file('analyze/query-metric-stats-denorm.tsv',
+        TSVWithNamesAndTypes,
+        'test text, query_index int, metric_name text, left float, right float,
+            diff float, stat_threshold float')
     ;
 
 -- Main statistics for queries -- query time as reported in query log.
@@ -600,38 +628,6 @@ create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
     as select short, changed_fail, unstable_fail, left, right, diff,
         stat_threshold, test, query_display_name query
     from queries
-    ;
-
--- save all test runs as JSON for the new comparison page
-create table all_query_runs_json engine File(JSON, 'report/all-query-runs.json') as
-    select test, query_index, query_display_name query,
-        left, right, diff, stat_threshold, report_threshold,
-        versions_runs[1] runs_left, versions_runs[2] runs_right
-    from (
-        select
-            test, query_index,
-            groupArrayInsertAt(runs, version) versions_runs
-        from (
-            select
-                test, query_index, version,
-                groupArray(metrics[1]) runs
-            from file('analyze/query-run-metrics.tsv', TSV,
-                'test text, query_index int, run int, version UInt8, metrics Array(float)')
-            group by test, query_index, version
-        )
-        group by test, query_index
-    ) runs
-    left join query_display_names
-        on runs.test = query_display_names.test
-            and runs.query_index = query_display_names.query_index
-    left join file('analyze/report-thresholds.tsv',
-            TSV, 'test text, report_threshold float') thresholds
-        on runs.test = thresholds.test
-    left join query_metric_stats
-        on runs.test = query_metric_stats.test
-            and runs.query_index = query_metric_stats.query_index
-    where
-        query_metric_stats.metric_name = 'server_time'
     ;
 
 -- new report for all queries with all metrics (no page yet)
