@@ -330,7 +330,7 @@ LAYOUT(CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
 
 ### complex\_key\_ssd\_cache {#complex-key-ssd-cache}
 
-This type of storage is for use with composite [keys](external-dicts-dict-structure.md). Similar to `ssd\_cache`.
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `ssd\_cache`.
 
 ### direct {#direct}
 
