@@ -129,7 +129,7 @@ public:
 
     void enableQuotaForCurrentStreams();
 
-    void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header);
+    void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header, size_t max_threads_limit = 0);
 
     PipelineExecutorPtr execute();
 
