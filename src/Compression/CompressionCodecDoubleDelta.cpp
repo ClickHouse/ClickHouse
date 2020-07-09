@@ -308,21 +308,16 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 
 UInt8 getDataBytesSize(DataTypePtr column_type)
 {
-    UInt8 data_bytes_size = 1;
-    if (column_type)
-    {
-        if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec DoubleDelta is not applicable for {} because the data type is not of fixed size",
-                column_type->getName());
+    if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec DoubleDelta is not applicable for {} because the data type is not of fixed size",
+            column_type->getName());
 
-        size_t max_size = column_type->getSizeOfValueInMemory();
-        if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
-            data_bytes_size = static_cast<UInt8>(max_size);
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-                column_type->getName());
-    }
-    return data_bytes_size;
+    size_t max_size = column_type->getSizeOfValueInMemory();
+    if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
+        return static_cast<UInt8>(max_size);
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+            column_type->getName());
 }
 
 }
