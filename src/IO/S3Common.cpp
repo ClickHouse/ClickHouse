@@ -40,26 +40,45 @@ const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::U
 class AWSLogger final : public Aws::Utils::Logging::LogSystemInterface
 {
 public:
+    AWSLogger()
+    {
+        log = &Poco::Logger::get("AWSClient");
+        tag_loggers["AWSAuthV4Signer"] = &Poco::Logger::get("AWSClient (AWSAuthV4Signer)");
+        tag_loggers["AWSClient"] = log;
+    }
+
     ~AWSLogger() final = default;
 
     Aws::Utils::Logging::LogLevel GetLogLevel() const final { return Aws::Utils::Logging::LogLevel::Trace; }
 
     void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final // NOLINT
     {
-        const auto & [level, prio] = convertLogLevel(log_level);
-        LOG_IMPL(log, level, prio, "{}: {}", tag, format_str);
+        callLogImpl(log_level, tag, format_str); /// FIXME. Variadic arguments?
     }
 
     void LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream) final
     {
+        callLogImpl(log_level, tag, message_stream.str().c_str());
+    }
+
+    void callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * message)
+    {
         const auto & [level, prio] = convertLogLevel(log_level);
-        LOG_IMPL(log, level, prio, "{}: {}", tag, message_stream.str());
+        if (tag_loggers.count(tag) > 0)
+        {
+            LOG_IMPL(tag_loggers[tag], level, prio, "{}", message);
+        }
+        else
+        {
+            LOG_IMPL(log, level, prio, "{}: {}", tag, message);
+        }
     }
 
     void Flush() final {}
 
 private:
-    Poco::Logger * log = &Poco::Logger::get("AWSClient");
+    Poco::Logger * log;
+    std::unordered_map<String, Poco::Logger *> tag_loggers;
 };
 
 class S3AuthSigner : public Aws::Client::AWSAuthV4Signer
