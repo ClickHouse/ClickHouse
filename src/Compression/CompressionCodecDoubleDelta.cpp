@@ -420,8 +420,8 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
         if (arguments)
             throw Exception("Codec DoubleDelta does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
 
-        UInt8 delta_bytes_size = getDataBytesSize(column_type);
-        return std::make_shared<CompressionCodecDoubleDelta>(delta_bytes_size);
+        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;   /// Maybe postponed to the call to "useInfoAboutType"
+        return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
     });
 }
 }
