@@ -231,7 +231,7 @@ template <typename LogElement>
 template <typename T>
 void SystemLog<LogElement>::add(T && element)
 {
-//    static_assert(std::is_same<LogElement, typename std::remove_reference<T>::type>);
+    static_assert(std::is_same<LogElement, typename std::remove_reference<T>::type>::value);
     /// Memory can be allocated while resizing on queue.push_back.
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
