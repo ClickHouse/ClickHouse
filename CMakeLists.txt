@@ -392,10 +392,6 @@ include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
-if (OS_LINUX AND NOT ENABLE_JEMALLOC)
-    message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
-endif ()
-
 if (USE_OPENCL)
     if (OS_DARWIN)
         set(OPENCL_LINKER_FLAGS "-framework OpenCL")
@@ -410,6 +406,10 @@ if (TARGET global-group)
 endif ()
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
+
+if (OS_LINUX AND NOT ENABLE_JEMALLOC)
+    message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
+endif ()
 
 macro (add_executable target)
     # invoke built-in add_executable
