@@ -48,7 +48,6 @@ namespace ErrorCodes
 static String selectEmptyReplacementQuery(const String & query);
 static String showTableStatusReplacementQuery(const String & query);
 static String killConnectionIdReplacementQuery(const String & query);
-static String selectDatabaseReplacementQuery(const String & query);
 
 MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled, size_t connection_id_)
@@ -66,7 +65,6 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
     replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
     replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
     replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
-    replacements.emplace("SELECT DATABASE()", selectDatabaseReplacementQuery);
 }
 
 void MySQLHandler::run()
@@ -437,16 +435,6 @@ static String killConnectionIdReplacementQuery(const String & query)
         }
     }
     return query;
-}
-
-/// Replace "SELECT DATABASE()" into "SELECT currentDatabase() AS `DATABASE()`".
-static String selectDatabaseReplacementQuery(const String & query)
-{
-    const String prefix = "SELECT DATABASE()";
-    if (query.size() > prefix.size())
-        return query;
-    else
-        return ("SELECT currentDatabase() AS `DATABASE()`");
 }
 
 }
