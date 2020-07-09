@@ -297,7 +297,7 @@ Examples of how this hierarchy is treated:
 
 ### CREATE {#grant-create}
 
-Allows executing [CREATE](../../sql-reference/statements/create.md) and [ATTACH](../../sql-reference/statements/misc.md#attach) DDL-queries according to the following hierarchy of privileges:
+Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [ATTACH](../../sql-reference/statements/misc.md#attach) DDL-queries according to the following hierarchy of privileges:
 
 -   `CREATE`. Level: `GROUP`
     -   `CREATE DATABASE`. Level: `DATABASE`

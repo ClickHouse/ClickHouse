@@ -153,7 +153,7 @@ namespace
             : sample_block(sample_block_)
         {
             write_buf = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size), compression_method, 3);
+                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, true), compression_method, 3);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
