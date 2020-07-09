@@ -65,7 +65,8 @@ case "$stage" in
     ;&
 "clone")
     time clone
-    stage=download time ch/docker/test/fuzzer/run-fuzzer.sh
+    export stage=download
+    time ch/docker/test/fuzzer/run-fuzzer.sh
     ;;
 "download")
     time download
