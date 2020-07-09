@@ -26,7 +26,7 @@ static void removeInjectiveFuctions(ASTPtr & ast, size_t child_number, Injective
         if (exact_child->as<ASTFunction>()->arguments->children.size() == 1)
             ast->as<ASTFunction>()->arguments->children[child_number] = (exact_child->as<ASTFunction>()->arguments->children[0])->clone();
         if (ast->as<ASTFunction>() && exact_child->as<ASTFunction>()->arguments->children.size() == 1)
-            killInjectiveFuctions(ast, child_number, data);
+            removeInjectiveFuctions(ast, child_number, data);
     }
 }
 
