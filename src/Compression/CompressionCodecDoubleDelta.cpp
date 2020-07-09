@@ -419,8 +419,12 @@ void CompressionCodecDoubleDelta::useInfoAboutType(DataTypePtr data_type)
 void registerCodecDoubleDelta(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::DoubleDelta);
-    factory.registerCompressionCodecWithType("DoubleDelta", method_code, [&](const ASTPtr &, DataTypePtr column_type) -> CompressionCodecPtr
+    factory.registerCompressionCodecWithType("DoubleDelta", method_code,
+        [&](const ASTPtr & arguments, DataTypePtr column_type) -> CompressionCodecPtr
     {
+        if (arguments)
+            throw Exception("Codec DoubleDelta does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
+
         UInt8 delta_bytes_size = getDataBytesSize(column_type);
         return std::make_shared<CompressionCodecDoubleDelta>(delta_bytes_size);
     });

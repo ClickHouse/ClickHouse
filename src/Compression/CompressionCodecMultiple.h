@@ -8,7 +8,6 @@ namespace DB
 class CompressionCodecMultiple final : public ICompressionCodec
 {
 public:
-    CompressionCodecMultiple() = default;
     CompressionCodecMultiple(Codecs codecs_, bool sanity_check);
 
     uint8_t getMethodByte() const override;
@@ -32,9 +31,5 @@ private:
 
     String getCodecDescImpl() const;
 };
-
-
-class CompressionCodecFactory;
-void registerCodecMultiple(CompressionCodecFactory & factory);
 
 }

@@ -113,7 +113,4 @@ private:
     UInt8 data_bytes_size;
 };
 
-class CompressionCodecFactory;
-void registerCodecGorilla(CompressionCodecFactory & factory);
-
 }
