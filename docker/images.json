@@ -31,6 +31,10 @@
         "name": "yandex/clickhouse-integration-test",
         "dependent": []
     },
+    "docker/test/fuzzer": {
+        "name": "yandex/clickhouse-fuzzer",
+        "dependent": []
+    },
     "docker/test/performance-comparison": {
         "name": "yandex/clickhouse-performance-comparison",
         "dependent": []
