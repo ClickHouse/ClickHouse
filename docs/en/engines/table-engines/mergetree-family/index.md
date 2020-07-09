@@ -14,4 +14,4 @@ For production usage [ReplicatedMergeTree](replication.md) is the way to go, bec
 
 All other engines of MergeTree family add extra functionality for some specific use cases. Usually, it's implemented as additional data manipulation in background.
 
-The main downside of MergeTree engines is that they are rather heavy-weight. So the typical pattern is to have not so many of them. If you need many small tables, for example for temporary data, consider [Log engine family](../log-family/index.md).
+The main downside of MergeTree engines is that they are rather heavy-weight. So the typical pattern is to have not so many of them. If you need many small tables, for example for temporary data, consider [Log engine family](../../../engines/table-engines/log-family/index.md).
