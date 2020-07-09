@@ -49,7 +49,7 @@ function configure
 
 function fuzz
 {
-    ./clickhouse server --config-file db/config.xml -- --path db 2>&1 | tail -1000000 > server-log.txt &
+    ./clickhouse server --config-file db/config.xml -- --path db 2>&1 | tail -1000000 > server.log &
     server_pid=$!
     kill -0 $server_pid
     while ! ./clickhouse client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
@@ -57,7 +57,7 @@ function fuzz
     echo Server started
 
     for f in $(ls ch/tests/queries/0_stateless/*.sql | sort -R); do cat $f; echo ';'; done \
-        | ./clickhouse client --query-fuzzer-runs=10 2>&1 | tail -1000000 > fuzzer-log.txt
+        | ./clickhouse client --query-fuzzer-runs=10 2>&1 | tail -1000000 > fuzzer.log
 }
 
 case "$stage" in
