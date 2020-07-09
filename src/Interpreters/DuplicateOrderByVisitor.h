@@ -81,19 +81,9 @@ public:
     using TypeToVisit = ASTSelectQuery;
 
     const Context & context;
-    bool done = false;
 
     void visit(ASTSelectQuery & select_query, ASTPtr &)
     {
-        if (done)
-            return;
-
-        for (const auto & elem : select_query.children)
-        {
-            if (elem->as<ASTSetQuery>() && !elem->as<ASTSetQuery>()->is_standalone)
-                return;
-        }
-
         if (select_query.orderBy() || select_query.groupBy())
         {
             for (auto & elem : select_query.children)

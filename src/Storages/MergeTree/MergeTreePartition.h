@@ -12,6 +12,9 @@ class Block;
 class MergeTreeData;
 struct FormatSettings;
 struct MergeTreeDataPartChecksums;
+struct StorageInMemoryMetadata;
+
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// This class represents a partition value of a single part and encapsulates its loading/storing logic.
 struct MergeTreePartition
@@ -36,6 +39,8 @@ public:
     void store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
 
     void assign(const MergeTreePartition & other) { value.assign(other.value); }
+
+    void create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row);
 };
 
 }
