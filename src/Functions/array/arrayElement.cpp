@@ -780,16 +780,13 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         ArrayImpl::NullMapBuilder builder;
         Block source_block;
 
-        const auto & input_type = typeid_cast<const DataTypeNullable &>(
-            *typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType()).getNestedType();
+        const auto & input_type = typeid_cast<const DataTypeNullable &>(*typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType()).getNestedType();
         const auto & tmp_ret_type = typeid_cast<const DataTypeNullable &>(*block.getByPosition(result).type).getNestedType();
 
         if (col_array)
         {
             const auto & nullable_col = typeid_cast<const ColumnNullable &>(col_array->getData());
             const auto & nested_col = nullable_col.getNestedColumnPtr();
-
-            std::cerr << "!\n";
 
             /// Put nested_col inside a ColumnArray.
             source_block =
@@ -850,8 +847,6 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
     }
     else if (!isColumnConst(*block.getByPosition(arguments[1]).column))
     {
-        std::cerr << "!!\n";
-
         if (!(executeArgument<UInt8>(block, arguments, result, builder, input_rows_count)
             || executeArgument<UInt16>(block, arguments, result, builder, input_rows_count)
             || executeArgument<UInt32>(block, arguments, result, builder, input_rows_count)
