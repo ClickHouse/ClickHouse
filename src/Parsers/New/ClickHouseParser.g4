@@ -8,15 +8,15 @@ options {
 
 queryList: queryStmt (SEMICOLON queryStmt)* SEMICOLON?;
 
-queryStmt: selectUnionStmt;
-
-// SELECT statement
-
-selectUnionStmt:
-    selectStmt (UNION ALL selectStmt)*
+queryStmt:  // NOTE: |ParserTreeVisitor::visitQueryStmtAsParent()| callers depend on this rule
+    ( selectUnionStmt | insertStmt )
     (INTO OUTFILE STRING_LITERAL)?
     (FORMAT identifier)?
     ;
+
+// SELECT statement
+
+selectUnionStmt: selectStmt (UNION ALL selectStmt)*;
 selectStmt:
     withClause?
     SELECT DISTINCT? columnExprList
@@ -47,36 +47,42 @@ limitClause: LIMIT limitExpr;
 settingsClause: SETTINGS settingExprList;
 
 joinExpr: tableIdentifier; // TODO: not complete!
-limitExpr: NUMBER_LITERAL (COMMA NUMBER_LITERAL)? | NUMBER_LITERAL OFFSET NUMBER_LITERAL;
+limitExpr: NUMBER_LITERAL ((COMMA | OFFSET) NUMBER_LITERAL)?;
 orderExprList: orderExpr (COMMA orderExpr)*;
 orderExpr: columnExpr (ASCENDING | DESCENDING)? (NULLS (FIRST | LAST))? (COLLATE STRING_LITERAL)?;
 ratioExpr: NUMBER_LITERAL (SLASH NUMBER_LITERAL); // TODO: not complete!
 settingExprList: settingExpr (COMMA settingExpr)*;
 settingExpr: identifier EQ_SINGLE LITERAL;
 
+// INSERT statement
+
+insertStmt:
+    INSERT INTO  // TODO: not complete!
+    ;
+
 // Columns
 
 columnExprList: columnExpr (COMMA columnExpr)*;
 columnExpr
-    : LITERAL                                   // literal
-    | ASTERISK                                  // * (all columns)
-    | columnIdentifier                         // identifier
-    | LPAREN columnExpr RPAREN                 // tuple
-    | LPAREN selectStmt RPAREN                 // subquery
-    | LBRACKET columnExprList? RBRACKET       // array
+    : LITERAL                                                                     # Literal
+    | ASTERISK                                                                    # Asterisk
+    | columnIdentifier                                                            # Id
+    | LPAREN columnExpr RPAREN                                                    # Tuple
+    | LPAREN selectStmt RPAREN                                                    # Subquery
+    | LBRACKET columnExprList? RBRACKET                                           # Array
 
     // NOTE: rules below are sorted according to operators' priority - the most priority on top.
-    | columnExpr LBRACKET columnExpr RBRACKET // array access
-    | columnExpr DOT NUMBER_LITERAL            // tuple access
-    | unaryOp columnExpr
-    | columnExpr IS NOT? NULL_SQL
-    | columnExpr binaryOp columnExpr
-    | columnExpr QUERY columnExpr COLON columnExpr
-    | columnExpr NOT? BETWEEN columnExpr AND columnExpr
-    | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END
-    | INTERVAL columnExpr INTERVAL_TYPE
-    | columnFunctionExpr                      // function call
-    | columnExpr AS identifier                 // alias
+    | columnExpr LBRACKET columnExpr RBRACKET                                     # ArrayAccess
+    | columnExpr DOT NUMBER_LITERAL                                               # TupleAccess
+    | unaryOp columnExpr                                                          # Unary
+    | columnExpr IS NOT? NULL_SQL                                                 # IsNull
+    | columnExpr binaryOp columnExpr                                              # Binary
+    | columnExpr QUERY columnExpr COLON columnExpr                                # Ternary
+    | columnExpr NOT? BETWEEN columnExpr AND columnExpr                           # Between
+    | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END  # Case
+    | INTERVAL columnExpr INTERVAL_TYPE                                           # Interval
+    | columnFunctionExpr                                                          # FunctionCall
+    | columnExpr AS identifier                                                    # Alias
     ;
 columnFunctionExpr
     : identifier (LPAREN (LITERAL (COMMA LITERAL)*)? RPAREN)? LPAREN columnArgList? RPAREN

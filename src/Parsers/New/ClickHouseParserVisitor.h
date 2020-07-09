@@ -4,6 +4,7 @@
 #pragma once
 
 
+#include "antlr4-runtime.h"
 #include "ClickHouseParser.h"
 
 
@@ -65,9 +66,43 @@ public:
 
     virtual antlrcpp::Any visitSettingExpr(ClickHouseParser::SettingExprContext *context) = 0;
 
+    virtual antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext *context) = 0;
+
     virtual antlrcpp::Any visitColumnExprList(ClickHouseParser::ColumnExprListContext *context) = 0;
 
-    virtual antlrcpp::Any visitColumnExpr(ClickHouseParser::ColumnExprContext *context) = 0;
+    virtual antlrcpp::Any visitTupleAccess(ClickHouseParser::TupleAccessContext *context) = 0;
+
+    virtual antlrcpp::Any visitTernary(ClickHouseParser::TernaryContext *context) = 0;
+
+    virtual antlrcpp::Any visitBetween(ClickHouseParser::BetweenContext *context) = 0;
+
+    virtual antlrcpp::Any visitSubquery(ClickHouseParser::SubqueryContext *context) = 0;
+
+    virtual antlrcpp::Any visitUnary(ClickHouseParser::UnaryContext *context) = 0;
+
+    virtual antlrcpp::Any visitCase(ClickHouseParser::CaseContext *context) = 0;
+
+    virtual antlrcpp::Any visitArray(ClickHouseParser::ArrayContext *context) = 0;
+
+    virtual antlrcpp::Any visitArrayAccess(ClickHouseParser::ArrayAccessContext *context) = 0;
+
+    virtual antlrcpp::Any visitAlias(ClickHouseParser::AliasContext *context) = 0;
+
+    virtual antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *context) = 0;
+
+    virtual antlrcpp::Any visitIsNull(ClickHouseParser::IsNullContext *context) = 0;
+
+    virtual antlrcpp::Any visitId(ClickHouseParser::IdContext *context) = 0;
+
+    virtual antlrcpp::Any visitFunctionCall(ClickHouseParser::FunctionCallContext *context) = 0;
+
+    virtual antlrcpp::Any visitBinary(ClickHouseParser::BinaryContext *context) = 0;
+
+    virtual antlrcpp::Any visitAsterisk(ClickHouseParser::AsteriskContext *context) = 0;
+
+    virtual antlrcpp::Any visitTuple(ClickHouseParser::TupleContext *context) = 0;
+
+    virtual antlrcpp::Any visitInterval(ClickHouseParser::IntervalContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnFunctionExpr(ClickHouseParser::ColumnFunctionExprContext *context) = 0;
 
