@@ -52,7 +52,7 @@ void RemoveInjectiveFunctionsMatcher::visit(ASTFunction & func, ASTPtr &, const 
     }
 }
 
-bool RemoveInjectiveFunctionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
+bool RemoveInjectiveFunctionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 {
     if (node->as<ASTSubquery>() ||
         node->as<ASTTableExpression>())
