@@ -990,7 +990,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeAnyInput(query, settings.optimize_any_input);
 
         ///remove injective functions inside uniq
-        optimizeInjectiveFunctionsInsideUniq(query, context, settings.injective_functions_inside_uniq);
+        optimizeInjectiveFunctionsInsideUniq(query, context, settings.optimize_injective_functions_inside_uniq);
 
         /// Eliminate min/max/any aggregators of functions of GROUP BY keys
         optimizeAggregateFunctionsOfGroupByKeys(select_query, settings.optimize_aggregators_of_group_by_keys);
