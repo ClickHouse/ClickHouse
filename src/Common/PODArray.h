@@ -453,9 +453,11 @@ public:
         this->c_end += bytes_to_copy;
     }
 
+    /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
     template <typename It1, typename It2>
     void insert(iterator it, It1 from_begin, It2 from_end)
     {
+        size_t position = it - begin();
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
         size_t bytes_to_move = this->byte_size(end() - it);
 
@@ -470,6 +472,7 @@ public:
         }
         else
         {
+            it = begin() + position;
             for (auto from_it = from_begin; from_it != from_end; ++from_it, ++it)
                 new (&*it) T(*from_it);
         }
