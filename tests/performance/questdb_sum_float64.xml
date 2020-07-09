@@ -1,0 +1,33 @@
+<test>
+    <settings>
+        <max_threads>4</max_threads>
+        <max_memory_usage>20G</max_memory_usage>
+        <use_uncompressed_cache>1</use_uncompressed_cache>
+        <merge_tree_max_rows_to_use_cache>2000000000</merge_tree_max_rows_to_use_cache>
+        <merge_tree_max_bytes_to_use_cache>10G</merge_tree_max_bytes_to_use_cache>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>engine</name>
+            <values>
+                <value>Memory</value>
+                <value>MergeTree ORDER BY tuple()</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>type</name>
+            <values>
+                <value>Float64</value>
+                <value>Float64 NULL</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE `zz_{type}_{engine}` (x {type}) ENGINE {engine}</create_query>
+    <fill_query>INSERT INTO `zz_{type}_{engine}` SELECT rand() FROM numbers(500000000)</fill_query>
+
+    <query>SELECT sum(x) FROM `zz_{type}_{engine}`</query>
+
+    <drop_query>DROP TABLE IF EXISTS `zz_{type}_{engine}`</drop_query>
+</test>
