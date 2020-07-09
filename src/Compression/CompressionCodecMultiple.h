@@ -8,6 +8,7 @@ namespace DB
 class CompressionCodecMultiple final : public ICompressionCodec
 {
 public:
+    CompressionCodecMultiple() = default;   /// Need for CompressionFactory to register codec by method byte.
     CompressionCodecMultiple(Codecs codecs_, bool sanity_check);
 
     uint8_t getMethodByte() const override;

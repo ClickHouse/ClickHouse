@@ -152,6 +152,7 @@ void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
 void registerCodecGorilla(CompressionCodecFactory & factory);
+void registerCodecMultiple(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -163,6 +164,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecT64(*this);
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
+    registerCodecMultiple(*this);
 
     default_codec = get("LZ4", {}, false);
 }
