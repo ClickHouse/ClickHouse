@@ -13,10 +13,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int CANNOT_COMPRESS;
-extern const int CANNOT_DECOMPRESS;
-extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
-extern const int ILLEGAL_CODEC_PARAMETER;
+    extern const int CANNOT_COMPRESS;
+    extern const int CANNOT_DECOMPRESS;
+    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
+    extern const int ILLEGAL_CODEC_PARAMETER;
+    extern const int BAD_ARGUMENTS;
 }
 
 CompressionCodecDelta::CompressionCodecDelta(UInt8 delta_bytes_size_)
@@ -31,7 +32,7 @@ uint8_t CompressionCodecDelta::getMethodByte() const
 
 String CompressionCodecDelta::getCodecDesc() const
 {
-    return "Delta(" + toString(delta_bytes_size) + ")";
+    return fmt::format("Delta({})", size_t(delta_bytes_size));
 }
 
 namespace
@@ -41,7 +42,7 @@ template <typename T>
 void compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     if (source_size % sizeof(T) != 0)
-        throw Exception("Cannot delta compress, data size " + toString(source_size) + " is not aligned to " + toString(sizeof(T)), ErrorCodes::CANNOT_COMPRESS);
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot delta compress, data size {}  is not aligned to {}", source_size, sizeof(T));
 
     T prev_src{};
     const char * source_end = source + source_size;
@@ -60,7 +61,7 @@ template <typename T>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     if (source_size % sizeof(T) != 0)
-        throw Exception("Cannot delta decompress, data size " + toString(source_size) + " is not aligned to " + toString(sizeof(T)), ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot delta decompress, data size {}  is not aligned to {}", source_size, sizeof(T));
 
     T accumulator{};
     const char * source_end = source + source_size;
@@ -137,8 +138,12 @@ namespace
 UInt8 getDeltaBytesSize(DataTypePtr column_type)
 {
     UInt8 delta_bytes_size = 1;
-    if (column_type && column_type->haveMaximumSizeOfValue())
+    if (column_type)
     {
+        if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is not applicable for {} because the data type is not of fixed size",
+                column_type->getName());
+
         size_t max_size = column_type->getSizeOfValueInMemory();
         if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
             delta_bytes_size = static_cast<UInt8>(max_size);
