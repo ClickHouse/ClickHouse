@@ -129,7 +129,7 @@ Default value: 0.
 
 ## max\_http\_get\_redirects {#setting-max_http_get_redirects}
 
-Limits the maximum number of HTTP GET redirect hops for [URL](../../engines/table-engines/special/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../sql-reference/statements/create.md#create-table-query) query and by the [url](../../sql-reference/table-functions/url.md) table function.
+Limits the maximum number of HTTP GET redirect hops for [URL](../../engines/table-engines/special/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../sql-reference/statements/create/table.md) query and by the [url](../../sql-reference/table-functions/url.md) table function.
 
 Possible values:
 
@@ -1571,7 +1571,7 @@ Default value: 0.
 
 ## min\_insert\_block\_size\_rows\_for\_materialized\_views {#min-insert-block-size-rows-for-materialized-views}
 
-Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create.md#create-view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
 
 Possible values:
 
@@ -1586,7 +1586,7 @@ Default value: 1048576.
 
 ## min\_insert\_block\_size\_bytes\_for\_materialized\_views {#min-insert-block-size-bytes-for-materialized-views}
 
-Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create.md#create-view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
 
 Possible values:
 

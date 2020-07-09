@@ -39,7 +39,7 @@ The configuration looks like this:
 </yandex>
 ```
 
-Corresponding [DDL-query](../../../sql-reference/statements/create.md#create-dictionary-query):
+Corresponding [DDL-query](../../../sql-reference/statements/create/dictionary.md):
 
 ``` sql
 CREATE DICTIONARY (...)

@@ -17,7 +17,7 @@ It’s also worth noting that ClickHouse is a database management system, not a 
 
 Some column-oriented DBMSs do not use data compression. However, data compression does play a key role in achieving excellent performance.
 
-In addition to efficient general-purpose compression codecs with different trade-offs between disk space and CPU consumption, ClickHouse provides [specialized codecs](../sql-reference/statements/create.md#create-query-specialized-codecs) for specific kinds of data, which allow ClickHouse to compete with and outperform more niche databases, like time-series ones.
+In addition to efficient general-purpose compression codecs with different trade-offs between disk space and CPU consumption, ClickHouse provides [specialized codecs](../sql-reference/statements/create/table.md#create-query-specialized-codecs) for specific kinds of data, which allow ClickHouse to compete with and outperform more niche databases, like time-series ones.
 
 ## Disk Storage of Data {#disk-storage-of-data}
 

@@ -10,7 +10,7 @@ Statements represent various kinds of action you can perform using SQL queries. 
 
 -   [SELECT](../../sql-reference/statements/select/index.md)
 -   [INSERT INTO](../../sql-reference/statements/insert-into.md)
--   [CREATE](../../sql-reference/statements/create.md)
+-   [CREATE](../../sql-reference/statements/create/index.md)
 -   [ALTER](../../sql-reference/statements/alter.md)
 -   [SYSTEM](../../sql-reference/statements/system.md)
 -   [SHOW](../../sql-reference/statements/show.md)
