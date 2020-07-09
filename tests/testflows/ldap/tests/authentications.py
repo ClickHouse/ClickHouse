@@ -165,6 +165,10 @@ def login_after_user_password_changed_in_ldap(self, server):
                     exitcode=4,
                     message=f"DB::Exception: {user['cn']}: Authentication failed: password is incorrect or there is no user with such name"
                 )
+
+            with And("when I try to login with the new password it should work"):
+                login_and_execute_query(username=user["cn"], password="newpassword")
+
     finally:
         with Finally("I make sure LDAP user is deleted"):
             if user is not None:
