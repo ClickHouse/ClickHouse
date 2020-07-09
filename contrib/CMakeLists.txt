@@ -319,4 +319,6 @@ if (USE_SENTRY)
 endif()
 
 add_subdirectory (fmtlib-cmake)
+add_subdirectory (stats-cmake)
+add_subdirectory (gcem)
 
