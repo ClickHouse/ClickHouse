@@ -42,7 +42,7 @@ using UInt8Container = ColumnUInt8::Container;
 using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 
 
-MutableColumnPtr convertFromTernaryData(const UInt8Container & ternary_data, const bool make_nullable)
+MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, const bool make_nullable)
 {
     const size_t rows_count = ternary_data.size();
 
@@ -63,7 +63,7 @@ MutableColumnPtr convertFromTernaryData(const UInt8Container & ternary_data, con
 }
 
 template <typename T>
-bool tryConvertColumnToUInt8(const IColumn * column, UInt8Container & res)
+bool tryConvertColumnToBool(const IColumn * column, UInt8Container & res)
 {
     const auto col = checkAndGetColumn<ColumnVector<T>>(column);
     if (!col)
@@ -71,22 +71,22 @@ bool tryConvertColumnToUInt8(const IColumn * column, UInt8Container & res)
 
     std::transform(
             col->getData().cbegin(), col->getData().cend(), res.begin(),
-            [](const auto x) { return x != 0; });
+            [](const auto x) { return !!x; });
 
     return true;
 }
 
-void convertColumnToUInt8(const IColumn * column, UInt8Container & res)
+void convertAnyColumnToBool(const IColumn * column, UInt8Container & res)
 {
-    if (!tryConvertColumnToUInt8<Int8>(column, res) &&
-        !tryConvertColumnToUInt8<Int16>(column, res) &&
-        !tryConvertColumnToUInt8<Int32>(column, res) &&
-        !tryConvertColumnToUInt8<Int64>(column, res) &&
-        !tryConvertColumnToUInt8<UInt16>(column, res) &&
-        !tryConvertColumnToUInt8<UInt32>(column, res) &&
-        !tryConvertColumnToUInt8<UInt64>(column, res) &&
-        !tryConvertColumnToUInt8<Float32>(column, res) &&
-        !tryConvertColumnToUInt8<Float64>(column, res))
+    if (!tryConvertColumnToBool<Int8>(column, res) &&
+        !tryConvertColumnToBool<Int16>(column, res) &&
+        !tryConvertColumnToBool<Int32>(column, res) &&
+        !tryConvertColumnToBool<Int64>(column, res) &&
+        !tryConvertColumnToBool<UInt16>(column, res) &&
+        !tryConvertColumnToBool<UInt32>(column, res) &&
+        !tryConvertColumnToBool<UInt64>(column, res) &&
+        !tryConvertColumnToBool<Float32>(column, res) &&
+        !tryConvertColumnToBool<Float64>(column, res))
         throw Exception("Unexpected type of column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 }
 
@@ -119,7 +119,7 @@ static bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 }
 
 template <class Op>
-inline bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res)
+inline bool extractConstColumnsAsBool(ColumnRawPtrs & in, UInt8 & res)
 {
     return extractConstColumns<Op>(
         in, res,
@@ -131,7 +131,7 @@ inline bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res)
 }
 
 template <class Op>
-inline bool extractConstColumnsTernary(ColumnRawPtrs & in, UInt8 & res_3v)
+inline bool extractConstColumnsAsTernary(ColumnRawPtrs & in, UInt8 & res_3v)
 {
     return extractConstColumns<Op>(
         in, res_3v,
@@ -145,6 +145,7 @@ inline bool extractConstColumnsTernary(ColumnRawPtrs & in, UInt8 & res_3v)
 }
 
 
+/// N.B. This class calculates result only for non-nullable types
 template <typename Op, size_t N>
 class AssociativeApplierImpl
 {
@@ -158,7 +159,7 @@ public:
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
     inline ResultValueType apply(const size_t i) const
     {
-        const auto & a = vec[i];
+        const auto a = !!vec[i];
         if constexpr (Op::isSaturable())
             return Op::isSaturatedValue(a) ? a : Op::apply(a, next.apply(i));
         else
@@ -179,7 +180,7 @@ public:
     explicit AssociativeApplierImpl(const UInt8ColumnPtrs & in)
         : vec(in[in.size() - 1]->getData()) {}
 
-    inline ResultValueType apply(const size_t i) const { return vec[i]; }
+    inline ResultValueType apply(const size_t i) const { return !!vec[i]; }
 
 private:
     const UInt8Container & vec;
@@ -188,7 +189,7 @@ private:
 
 /// A helper class used by AssociativeGenericApplierImpl
 /// Allows for on-the-fly conversion of any data type into intermediate ternary representation
-using ValueGetter = std::function<Ternary::ResultType (size_t)>;
+using TernaryValueGetter = std::function<Ternary::ResultType (size_t)>;
 
 template <typename ... Types>
 struct ValueGetterBuilderImpl;
@@ -196,7 +197,7 @@ struct ValueGetterBuilderImpl;
 template <typename Type, typename ...Types>
 struct ValueGetterBuilderImpl<Type, Types...>
 {
-    static ValueGetter build(const IColumn * x)
+    static TernaryValueGetter build(const IColumn * x)
     {
         if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(x))
         {
@@ -218,7 +219,7 @@ struct ValueGetterBuilderImpl<Type, Types...>
 template <>
 struct ValueGetterBuilderImpl<>
 {
-    static ValueGetter build(const IColumn * x)
+    static TernaryValueGetter build(const IColumn * x)
     {
         throw Exception(
                 std::string("Unknown numeric column of type: ") + demangle(typeid(x).name()),
@@ -247,13 +248,13 @@ public:
     {
         const auto a = val_getter(i);
         if constexpr (Op::isSaturable())
-            return Op::isSaturatedValue(a) ? a : Op::apply(a, next.apply(i));
+            return Op::isSaturatedValueTernary(a) ? a : Op::apply(a, next.apply(i));
         else
             return Op::apply(a, next.apply(i));
     }
 
 private:
-    const ValueGetter val_getter;
+    const TernaryValueGetter val_getter;
     const AssociativeGenericApplierImpl<Op, N - 1> next;
 };
 
@@ -271,7 +272,7 @@ public:
     inline ResultValueType apply(const size_t i) const { return val_getter(i); }
 
 private:
-    const ValueGetter val_getter;
+    const TernaryValueGetter val_getter;
 };
 
 
@@ -332,13 +333,13 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
 {
     /// Combine all constant columns into a single constant value.
     UInt8 const_3v_value = 0;
-    const bool has_consts = extractConstColumnsTernary<Op>(arguments, const_3v_value);
+    const bool has_consts = extractConstColumnsAsTernary<Op>(arguments, const_3v_value);
 
     /// If the constant value uniquely determines the result, return it.
     if (has_consts && (arguments.empty() || Op::isSaturatedValue(const_3v_value)))
     {
         result_info.column = ColumnConst::create(
-            convertFromTernaryData(UInt8Container({const_3v_value}), result_info.type->isNullable()),
+            buildColumnFromTernaryData(UInt8Container({const_3v_value}), result_info.type->isNullable()),
             input_rows_count
         );
         return;
@@ -349,7 +350,7 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
 
     OperationApplier<Op, AssociativeGenericApplierImpl>::apply(arguments, result_column->getData(), has_consts);
 
-    result_info.column = convertFromTernaryData(result_column->getData(), result_info.type->isNullable());
+    result_info.column = buildColumnFromTernaryData(result_column->getData(), result_info.type->isNullable());
 }
 
 
@@ -402,12 +403,13 @@ struct TypedExecutorInvoker<Op>
 };
 
 
+/// Types of all of the arguments are guaranteed to be non-nullable here
 template <class Op>
 static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & result_info, size_t input_rows_count)
 {
     /// Combine all constant columns into a single constant value.
     UInt8 const_val = 0;
-    bool has_consts = extractConstColumns<Op>(arguments, const_val);
+    bool has_consts = extractConstColumnsAsBool<Op>(arguments, const_val);
 
     /// If the constant value uniquely determines the result, return it.
     if (has_consts && (arguments.empty() || Op::apply(const_val, 0) == Op::apply(const_val, 1)))
@@ -447,7 +449,7 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
         else
         {
             auto converted_column = ColumnUInt8::create(input_rows_count);
-            convertColumnToUInt8(column, converted_column->getData());
+            convertAnyColumnToBool(column, converted_column->getData());
             uint8_args.push_back(converted_column.get());
             converted_columns_holder.emplace_back(std::move(converted_column));
         }
