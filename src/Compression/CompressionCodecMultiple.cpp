@@ -153,4 +153,13 @@ bool CompressionCodecMultiple::isCompression() const
     return false;
 }
 
+
+void registerCodecMultiple(CompressionCodecFactory & factory)
+{
+    factory.registerSimpleCompressionCodec("Multiple", static_cast<UInt8>(CompressionMethodByte::Multiple), [&] ()
+    {
+        return std::make_shared<CompressionCodecMultiple>();
+    });
+}
+
 }
