@@ -147,6 +147,9 @@ UInt8 getDeltaBytesSize(DataTypePtr column_type)
         size_t max_size = column_type->getSizeOfValueInMemory();
         if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
             delta_bytes_size = static_cast<UInt8>(max_size);
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+                column_type->getName());
     }
     return delta_bytes_size;
 }

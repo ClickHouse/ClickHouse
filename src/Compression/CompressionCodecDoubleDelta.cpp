@@ -19,8 +19,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int CANNOT_COMPRESS;
-extern const int CANNOT_DECOMPRESS;
+    extern const int CANNOT_COMPRESS;
+    extern const int CANNOT_DECOMPRESS;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -317,6 +318,9 @@ UInt8 getDataBytesSize(DataTypePtr column_type)
         size_t max_size = column_type->getSizeOfValueInMemory();
         if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
             data_bytes_size = static_cast<UInt8>(max_size);
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+                column_type->getName());
     }
     return data_bytes_size;
 }
