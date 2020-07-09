@@ -217,8 +217,9 @@ void MergeTreeDataPartWriterCompact::addToChecksums(MergeTreeDataPartChecksums &
     for (const auto & [_, stream] : compressed_streams)
     {
         uncompressed_size += stream->hashing_buf.count();
+        auto stream_hash = stream->hashing_buf.getHash();
         uncompressed_hash = CityHash_v1_0_2::CityHash128WithSeed(
-            reinterpret_cast<char *>(&uncompressed_hash), sizeof(uncompressed_hash), uncompressed_hash);
+            reinterpret_cast<char *>(&stream_hash), sizeof(stream_hash), uncompressed_hash);
     }
 
     checksums.files[data_file_name].uncompressed_size = uncompressed_size;
