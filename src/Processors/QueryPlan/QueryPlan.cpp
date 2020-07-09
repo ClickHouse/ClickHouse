@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPipeline.h>
+#include <IO/WriteBuffer.h>
+#include <IO/Operators.h>
 #include <stack>
 
 namespace DB
@@ -11,6 +13,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
 
 void QueryPlan::checkInitialized() const
@@ -153,8 +156,8 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
             bool limit_max_threads = frame.pipelines.empty();
             last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines));
 
-            if (limit_max_threads)
-                last_pipeline->setMaxThreads(max_threads);
+            if (limit_max_threads && max_threads)
+                last_pipeline->limitMaxThreads(max_threads);
 
             stack.pop();
         }
@@ -171,6 +174,137 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
 void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
 {
     interpreter_context.emplace_back(std::move(context));
+}
+
+
+static void explainStep(
+    const IQueryPlanStep & step,
+    IQueryPlanStep::FormatSettings & settings,
+    const QueryPlan::ExplainPlanOptions & options)
+{
+    std::string prefix(settings.offset, ' ');
+    settings.out << prefix;
+    settings.out << step.getName();
+
+    const auto & description = step.getStepDescription();
+    if (options.description && !description.empty())
+        settings.out <<" (" << description << ')';
+
+    settings.out.write('\n');
+
+    if (options.header)
+    {
+        settings.out << prefix;
+
+        if (!step.hasOutputStream())
+            settings.out << "No header";
+        else if (!step.getOutputStream().header)
+            settings.out << "Empty header";
+        else
+        {
+            settings.out << "Header: ";
+            bool first = true;
+
+            for (const auto & elem : step.getOutputStream().header)
+            {
+                if (!first)
+                    settings.out << "\n" << prefix << "        ";
+
+                first = false;
+                elem.dumpStructure(settings.out);
+            }
+        }
+
+        settings.out.write('\n');
+    }
+
+    if (options.actions)
+        step.describeActions(settings);
+}
+
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
+{
+    checkInitialized();
+
+    IQueryPlanStep::FormatSettings settings{.out = buffer, .write_header = options.header};
+
+    struct Frame
+    {
+        Node * node;
+        bool is_description_printed = false;
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> stack;
+    stack.push(Frame{.node = root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+
+        if (!frame.is_description_printed)
+        {
+            settings.offset = (stack.size() - 1) * settings.indent;
+            explainStep(*frame.node->step, settings, options);
+            frame.is_description_printed = true;
+        }
+
+        if (frame.next_child < frame.node->children.size())
+        {
+            stack.push(Frame{frame.node->children[frame.next_child]});
+            ++frame.next_child;
+        }
+        else
+            stack.pop();
+    }
+}
+
+static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings)
+{
+    settings.out << String(settings.offset, settings.indent_char) << "(" << step.getName() << ")\n";
+    size_t current_offset = settings.offset;
+    step.describePipeline(settings);
+    if (current_offset == settings.offset)
+        settings.offset += settings.indent;
+}
+
+void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options)
+{
+    checkInitialized();
+
+    IQueryPlanStep::FormatSettings settings{.out = buffer, .write_header = options.header};
+
+    struct Frame
+    {
+        Node * node;
+        size_t offset = 0;
+        bool is_description_printed = false;
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> stack;
+    stack.push(Frame{.node = root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+
+        if (!frame.is_description_printed)
+        {
+            settings.offset = frame.offset;
+            explainPipelineStep(*frame.node->step, settings);
+            frame.offset = settings.offset;
+            frame.is_description_printed = true;
+        }
+
+        if (frame.next_child < frame.node->children.size())
+        {
+            stack.push(Frame{frame.node->children[frame.next_child], frame.offset});
+            ++frame.next_child;
+        }
+        else
+            stack.pop();
+    }
 }
 
 }

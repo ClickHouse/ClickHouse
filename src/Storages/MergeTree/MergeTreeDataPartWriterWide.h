@@ -1,10 +1,10 @@
-#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
 namespace DB
 {
 
 /// Writes data part in wide format.
-class MergeTreeDataPartWriterWide : public IMergeTreeDataPartWriter
+class MergeTreeDataPartWriterWide : public MergeTreeDataPartWriterOnDisk
 {
 public:
 

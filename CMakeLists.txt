@@ -342,6 +342,7 @@ include (cmake/find/sparsehash.cmake)
 include (cmake/find/re2.cmake)
 include (cmake/find/libgsasl.cmake)
 include (cmake/find/rdkafka.cmake)
+include (cmake/find/amqpcpp.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
 include (cmake/find/opencl.cmake)
@@ -420,3 +421,5 @@ add_subdirectory (tests)
 add_subdirectory (utils)
 
 include (cmake/print_include_directories.cmake)
+
+include (cmake/sanitize_target_link_libraries.cmake)

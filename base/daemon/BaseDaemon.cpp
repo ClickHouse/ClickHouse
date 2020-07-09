@@ -628,7 +628,7 @@ void BaseDaemon::initialize(Application & self)
 
     /// Create pid file.
     if (config().has("pid"))
-        pid.emplace(config().getString("pid"));
+        pid.emplace(config().getString("pid"), DB::StatusFile::write_pid);
 
     /// Change path for logging.
     if (!log_path.empty())
@@ -810,63 +810,6 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
             .binding("pid"));
 
     Poco::Util::ServerApplication::defineOptions(new_options);
-}
-
-bool isPidRunning(pid_t pid)
-{
-    return getpgid(pid) >= 0;
-}
-
-BaseDaemon::PID::PID(const std::string & file_)
-{
-    file = Poco::Path(file_).absolute().toString();
-    Poco::File poco_file(file);
-
-    if (poco_file.exists())
-    {
-        pid_t pid_read = 0;
-        {
-            std::ifstream in(file);
-            if (in.good())
-            {
-                in >> pid_read;
-                if (pid_read && isPidRunning(pid_read))
-                    throw Poco::Exception("Pid file exists and program running with pid = " + std::to_string(pid_read) + ", should not start daemon.");
-            }
-        }
-        std::cerr << "Old pid file exists (with pid = " << pid_read << "), removing." << std::endl;
-        poco_file.remove();
-    }
-
-    int fd = open(file.c_str(),
-        O_CREAT | O_EXCL | O_WRONLY,
-        S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-
-    if (-1 == fd)
-    {
-        if (EEXIST == errno)
-            throw Poco::Exception("Pid file exists, should not start daemon.");
-        throw Poco::CreateFileException("Cannot create pid file.");
-    }
-
-    SCOPE_EXIT({ close(fd); });
-
-    std::stringstream s;
-    s << getpid();
-    if (static_cast<ssize_t>(s.str().size()) != write(fd, s.str().c_str(), s.str().size()))
-        throw Poco::Exception("Cannot write to pid file.");
-}
-
-BaseDaemon::PID::~PID()
-{
-    try
-    {
-        Poco::File(file).remove();
-    }
-    catch (...)
-    {
-        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
 }
 
 void BaseDaemon::handleSignal(int signal_id)

@@ -6,6 +6,7 @@ ARG version=20.6.1.*
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         apt-transport-https \
+        ca-certificates \
         dirmngr \
         gnupg \
     && mkdir -p /etc/apt/sources.list.d \

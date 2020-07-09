@@ -112,11 +112,12 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
       */
     using FileNames = std::map<std::string, ASTPtr>;
+    std::mutex file_names_mutex;
     FileNames file_names;
 
     size_t total_dictionaries = 0;
 
-    auto process_metadata = [&context, &file_names, &total_dictionaries, this](const String & file_name)
+    auto process_metadata = [&context, &file_names, &total_dictionaries, &file_names_mutex, this](const String & file_name)
     {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
@@ -128,6 +129,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
+                std::lock_guard lock{file_names_mutex};
                 file_names[file_name] = ast;
                 total_dictionaries += create_query->is_dictionary;
             }

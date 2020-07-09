@@ -1,7 +1,6 @@
 #include "MergeTreeDataPartCompact.h"
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Poco/File.h>
 
 
@@ -76,7 +75,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
 }
 
 
-void MergeTreeDataPartCompact::calculateEachColumnSizesOnDisk(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size) const
+void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size) const
 {
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
     if (bin_checksum != checksums.files.end())

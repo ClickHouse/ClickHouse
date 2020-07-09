@@ -44,8 +44,13 @@ endif ()
 
 if (USE_INTERNAL_RE2_LIBRARY)
     set(RE2_BUILD_TESTING 0 CACHE INTERNAL "")
-    add_subdirectory (re2)
-    add_subdirectory (re2_st)
+    function(re2_support)
+        # make option() honor normal variables for BUILD_SHARED_LIBS
+        set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+        add_subdirectory (re2)
+        add_subdirectory (re2_st)
+    endfunction()
+    re2_support()
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
@@ -105,6 +110,12 @@ endif ()
 if (ENABLE_LDAP AND USE_INTERNAL_LDAP_LIBRARY)
     add_subdirectory (openldap-cmake)
 endif ()
+
+# Should go before:
+# - mariadb-connector-c
+# - aws-s3-cmake
+# - sentry-native
+add_subdirectory (curl-cmake)
 
 function(mysql_support)
     set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
@@ -216,10 +227,19 @@ if (USE_INTERNAL_AVRO_LIBRARY)
 endif()
 
 if(USE_INTERNAL_GTEST_LIBRARY)
-    # Google Test from sources
-    add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
-    # avoid problems with <regexp.h>
-    target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
+    # Wrap into function because of CMAKE_POLICY_DEFAULT_CMP0022
+    function(googletest_support)
+        set(GOOGLETEST_VERSION 1.10.0) # master
+        # Google Test from sources uses too old cmake, 2.6.x, and CMP0022 should
+        # set, to avoid using deprecated LINK_INTERFACE_LIBRARIES(_<CONFIG>)? over
+        # INTERFACE_LINK_LIBRARIES.
+        set(CMAKE_POLICY_DEFAULT_CMP0022 NEW)
+        # Google Test from sources
+        add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
+        # avoid problems with <regexp.h>
+        target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
+    endfunction()
+    googletest_support()
 elseif(GTEST_SRC_DIR)
     add_subdirectory(${GTEST_SRC_DIR}/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
@@ -263,23 +283,6 @@ if (USE_INTERNAL_GRPC_LIBRARY)
     add_subdirectory(grpc-cmake)
 endif ()
 
-if (USE_INTERNAL_AWS_S3_LIBRARY OR USE_SENTRY)
-    set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
-    set (save_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
-    set (save_CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES})
-    set (save_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
-    set (save_CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH})
-    add_subdirectory(curl-cmake)
-    set (CMAKE_C_FLAGS ${save_CMAKE_C_FLAGS})
-    set (CMAKE_REQUIRED_LIBRARIES ${save_CMAKE_REQUIRED_LIBRARIES})
-    set (CMAKE_CMAKE_REQUIRED_INCLUDES ${save_CMAKE_REQUIRED_INCLUDES})
-    set (CMAKE_REQUIRED_FLAGS ${save_CMAKE_REQUIRED_FLAGS})
-    set (CMAKE_CMAKE_MODULE_PATH ${save_CMAKE_MODULE_PATH})
-
-    # The library is large - avoid bloat.
-    target_compile_options (curl PRIVATE -g0)
-endif ()
-
 if (USE_INTERNAL_AWS_S3_LIBRARY)
     add_subdirectory(aws-s3-cmake)
 
@@ -301,8 +304,13 @@ if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
 
-if (USE_CASSANDRA)
+if (USE_AMQPCPP OR USE_CASSANDRA)
     add_subdirectory (libuv)
+endif()
+if (USE_AMQPCPP)
+    add_subdirectory (amqpcpp-cmake)
+endif()
+if (USE_CASSANDRA)
     add_subdirectory (cassandra)
 endif()
 

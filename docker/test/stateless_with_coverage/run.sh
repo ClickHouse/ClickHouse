@@ -66,8 +66,7 @@ ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/con
     ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/; \
-    ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml; \
-    ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer
+    ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml
 
 service zookeeper start
 sleep 5
@@ -76,7 +75,12 @@ start_clickhouse
 
 sleep 10
 
-LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-test --testname --shard --zookeeper $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+
+if cat /usr/bin/clickhouse-test | grep -q -- "--use-skip-list"; then
+    SKIP_LIST_OPT="--use-skip-list"
+fi
+
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-test --testname --shard --zookeeper "$SKIP_LIST_OPT" $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
 
 kill_clickhouse
 

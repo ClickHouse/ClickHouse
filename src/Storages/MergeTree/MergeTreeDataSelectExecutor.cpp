@@ -968,6 +968,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     };
 
     const size_t min_marks_per_stream = (sum_marks - 1) / num_streams + 1;
+    bool need_preliminary_merge = (parts.size() > settings.read_in_order_two_level_merge_threshold);
 
     for (size_t i = 0; i < num_streams && !parts.empty(); ++i)
     {
@@ -1069,7 +1070,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             }
         }
 
-        if (pipes.size() > 1)
+        if (pipes.size() > 1 && need_preliminary_merge)
         {
             SortDescription sort_description;
             for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
@@ -1087,7 +1088,10 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             res.emplace_back(std::move(pipes), std::move(merging_sorted));
         }
         else
-            res.emplace_back(std::move(pipes.front()));
+        {
+            for (auto && pipe : pipes)
+                res.emplace_back(std::move(pipe));
+        }
     }
 
     return res;
@@ -1156,6 +1160,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 
+    Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
+
     Block header = pipes.at(0).getHeader();
     for (size_t i = 0; i < sort_columns_size; ++i)
         sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
@@ -1176,7 +1182,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedTransform>(header, pipes.size(),
-                           sort_description, data.merging_params.columns_to_sum, max_block_size);
+                           sort_description, data.merging_params.columns_to_sum, partition_key_columns, max_block_size);
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, pipes.size(),
