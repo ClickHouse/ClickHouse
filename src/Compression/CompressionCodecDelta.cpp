@@ -161,7 +161,7 @@ void registerCodecDelta(CompressionCodecFactory & factory)
     UInt8 method_code = UInt8(CompressionMethodByte::Delta);
     factory.registerCompressionCodecWithType("Delta", method_code, [&](const ASTPtr & arguments, DataTypePtr column_type) -> CompressionCodecPtr
     {
-        UInt8 delta_bytes_size;
+        UInt8 delta_bytes_size = 0;
 
         if (arguments && !arguments->children.empty())
         {
@@ -178,7 +178,7 @@ void registerCodecDelta(CompressionCodecFactory & factory)
                 throw Exception("Delta value for delta codec can be 1, 2, 4 or 8, given " + toString(user_bytes_size), ErrorCodes::ILLEGAL_CODEC_PARAMETER);
             delta_bytes_size = static_cast<UInt8>(user_bytes_size);
         }
-        else
+        else if (column_type)
         {
             delta_bytes_size = getDeltaBytesSize(column_type);
         }

@@ -337,7 +337,7 @@ void registerCodecGorilla(CompressionCodecFactory & factory)
         if (arguments)
             throw Exception("Codec Gorilla does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
 
-        UInt8 data_bytes_size = getDataBytesSize(column_type);
+        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;   /// Maybe postponed to the call to "useInfoAboutType"
         return std::make_shared<CompressionCodecGorilla>(data_bytes_size);
     });
 }
