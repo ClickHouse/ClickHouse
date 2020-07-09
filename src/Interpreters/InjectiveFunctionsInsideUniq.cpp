@@ -12,21 +12,21 @@ namespace DB
 {
 
 ///recursive searching of injective functions
-void killInjectiveFuctions(ASTPtr & ast, size_t ind, InjectiveFunctionsInsideUniqMatcher::Data & data)
+static void removeInjectiveFuctions(ASTPtr & ast, size_t child_number, InjectiveFunctionsInsideUniqMatcher::Data & data)
 {
-    if (!ast->as<ASTFunction>() || ast->as<ASTFunction>()->arguments->children.size() <= ind)
+    if (!ast->as<ASTFunction>() || ast->as<ASTFunction>()->arguments->children.size() <= child_number)
         return;
 
-    ASTPtr exact_child = ast->as<ASTFunction>()->arguments->children[ind];
+    ASTPtr exact_child = ast->as<ASTFunction>()->arguments->children[child_number];
 
     const FunctionFactory & function_factory = FunctionFactory::instance();
     const Context & context = data.context;
     if (exact_child->as<ASTFunction>() && function_factory.get(exact_child->as<ASTFunction>()->name, context)->isInjective(Block{}))
     {
         if (exact_child->as<ASTFunction>()->arguments->children.size() == 1)
-            ast->as<ASTFunction>()->arguments->children[ind] = (exact_child->as<ASTFunction>()->arguments->children[0])->clone();
+            ast->as<ASTFunction>()->arguments->children[child_number] = (exact_child->as<ASTFunction>()->arguments->children[0])->clone();
         if (ast->as<ASTFunction>() && exact_child->as<ASTFunction>()->arguments->children.size() == 1)
-            killInjectiveFuctions(ast, ind, data);
+            killInjectiveFuctions(ast, child_number, data);
     }
 }
 
@@ -39,7 +39,7 @@ void InjectiveFunctionsInsideUniqMatcher::visit(ASTPtr & current_ast, Data data)
     {
         size_t amount_of_children = current_ast->as<ASTFunction>()->arguments->children.size();
         for (size_t i = 0; i < amount_of_children; ++i)
-            killInjectiveFuctions(current_ast, i, data);
+            removeInjectiveFuctions(current_ast, i, data);
     }
 }
 
