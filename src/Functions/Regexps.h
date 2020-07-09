@@ -59,19 +59,20 @@ namespace Regexps
       * In destructor, it returns the object back to the Pool for further reuse.
       */
     template <bool like, bool no_capture>
-    inline Pool::Pointer get(const std::string & pattern)
+    inline Pool::Pointer get(const std::string & pattern, int flags = 0)
     {
         /// C++11 has thread-safe function-local statics on most modern compilers.
         static Pool known_regexps; /// Different variables for different pattern parameters.
 
-        return known_regexps.get(pattern, [&pattern]
+        return known_regexps.get(pattern, [flags, &pattern]
         {
-            int flags = OptimizedRegularExpression::RE_DOT_NL;
+            int flags_final = flags | OptimizedRegularExpression::RE_DOT_NL;
+
             if (no_capture)
-                flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
+                flags_final |= OptimizedRegularExpression::RE_NO_CAPTURE;
 
             ProfileEvents::increment(ProfileEvents::RegexpCreated);
-            return new Regexp{createRegexp<like>(pattern, flags)};
+            return new Regexp{createRegexp<like>(pattern, flags_final)};
         });
     }
 }

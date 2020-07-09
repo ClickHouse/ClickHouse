@@ -267,7 +267,7 @@ SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
 
 ## h3GetBaseCell {#h3getbasecell}
 
-Returns the base cell number of the index.
+Returns the base cell number of the H3 index.
 
 **Syntax**
 
@@ -275,20 +275,22 @@ Returns the base cell number of the index.
 h3GetBaseCell(index)
 ```
 
-**Parameters**
+**Parameter**
 
 -   `index` — Hexagon index number. Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
-**Returned values**
+**Returned value**
 
--   Hexagon base cell number. Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+-   Hexagon base cell number. 
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT h3GetBaseCell(612916788725809151) as basecell
+SELECT h3GetBaseCell(612916788725809151) as basecell;
 ```
 
 Result:
@@ -301,7 +303,7 @@ Result:
 
 ## h3HexAreaM2 {#h3hexaream2}
 
-Average hexagon area in square meters at the given resolution.
+Returns average hexagon area in square meters at the given resolution.
 
 **Syntax**
 
@@ -309,20 +311,22 @@ Average hexagon area in square meters at the given resolution.
 h3HexAreaM2(resolution)
 ```
 
-**Parameters**
+**Parameter**
 
 -   `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
-**Returned values**
+**Returned value**
 
--   Area in m². Type: [Float64](../../sql-reference/data-types/float.md).
+-   Area in square meters. 
+
+Type: [Float64](../../sql-reference/data-types/float.md).
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT h3HexAreaM2(13) as area
+SELECT h3HexAreaM2(13) as area;
 ```
 
 Result:
@@ -335,7 +339,7 @@ Result:
 
 ## h3IndexesAreNeighbors {#h3indexesareneighbors}
 
-Returns whether or not the provided H3Indexes are neighbors.
+Returns whether or not the provided H3 indexes are neighbors.
 
 **Syntax**
 
@@ -348,16 +352,19 @@ h3IndexesAreNeighbors(index1, index2)
 -   `index1` — Hexagon index number. Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 -   `index2` — Hexagon index number. Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
-**Returned values**
+**Returned value**
 
--   Returns `1` if the indexes are neighbors, `0` otherwise. Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `1` — Indexes are neighbours.
+-   `0` — Indexes are not neighbours.
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n
+SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n;
 ```
 
 Result:
@@ -370,7 +377,7 @@ Result:
 
 ## h3ToChildren {#h3tochildren}
 
-Returns an array with the child indexes of the given index.
+Returns an array of child indexes for the given H3 index.
 
 **Syntax**
 
@@ -385,14 +392,16 @@ h3ToChildren(index, resolution)
 
 **Returned values**
 
--   Array with the child H3 indexes. Array of type: [UInt64](../../sql-reference/data-types/int-uint.md).
+-   Array of the child H3-indexes. 
+
+Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT h3ToChildren(599405990164561919, 6) AS children
+SELECT h3ToChildren(599405990164561919, 6) AS children;
 ```
 
 Result:
@@ -405,7 +414,7 @@ Result:
 
 ## h3ToParent {#h3toparent}
 
-Returns the parent (coarser) index containing the given index.
+Returns the parent (coarser) index containing the given H3 index.
 
 **Syntax**
 
@@ -418,16 +427,18 @@ h3ToParent(index, resolution)
 -   `index` — Hexagon index number. Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 -   `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
-**Returned values**
+**Returned value**
 
--   Parent H3 index. Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+-   Parent H3 index. 
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT h3ToParent(599405990164561919, 3) as parent
+SELECT h3ToParent(599405990164561919, 3) as parent;
 ```
 
 Result:
@@ -440,26 +451,28 @@ Result:
 
 ## h3ToString {#h3tostring}
 
-Converts the H3Index representation of the index to the string representation.
+Converts the `H3Index` representation of the index to the string representation.
 
 ``` sql
 h3ToString(index)
 ```
 
-**Parameters**
+**Parameter**
 
 -   `index` — Hexagon index number. Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
-**Returned values**
+**Returned value**
 
--   String representation of the H3 index. Type: [String](../../sql-reference/data-types/string.md).
+-   String representation of the H3 index. 
+
+Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT h3ToString(617420388352917503) as h3_string
+SELECT h3ToString(617420388352917503) as h3_string;
 ```
 
 Result:
@@ -472,17 +485,19 @@ Result:
 
 ## stringToH3 {#stringtoh3}
 
-Converts the string representation to H3Index (UInt64) representation.
+Converts the string representation to the `H3Index` (UInt64) representation.
+
+**Syntax**
 
 ``` sql
 stringToH3(index_str)
 ```
 
-**Parameters**
+**Parameter**
 
 -   `index_str` — String representation of the H3 index. Type: [String](../../sql-reference/data-types/string.md).
 
-**Returned values**
+**Returned value**
 
 -   Hexagon index number. Returns 0 on error. Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -491,7 +506,7 @@ stringToH3(index_str)
 Query:
 
 ``` sql
-SELECT stringToH3('89184926cc3ffff') as index
+SELECT stringToH3('89184926cc3ffff') as index;
 ```
 
 Result:
@@ -504,7 +519,7 @@ Result:
 
 ## h3GetResolution {#h3getresolution}
 
-Returns the resolution of the index.
+Returns the resolution of the H3 index.
 
 **Syntax**
 
@@ -512,11 +527,11 @@ Returns the resolution of the index.
 h3GetResolution(index)
 ```
 
-**Parameters**
+**Parameter**
 
 -   `index` — Hexagon index number. Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
-**Returned values**
+**Returned value**
 
 -   Index resolution. Range: `[0, 15]`. Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
@@ -525,7 +540,7 @@ h3GetResolution(index)
 Query:
 
 ``` sql
-SELECT h3GetResolution(617420388352917503) as res
+SELECT h3GetResolution(617420388352917503) as res;
 ```
 
 Result:
@@ -536,4 +551,4 @@ Result:
 └─────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/geo/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/geo/) <!--hide-->

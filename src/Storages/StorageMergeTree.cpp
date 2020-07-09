@@ -20,6 +20,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -87,6 +88,7 @@ StorageMergeTree::StorageMergeTree(
 void StorageMergeTree::startup()
 {
     clearOldPartsFromFilesystem();
+    clearOldWriteAheadLogs();
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
@@ -195,7 +197,10 @@ std::optional<UInt64> StorageMergeTree::totalBytes() const
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
-    return std::make_shared<MergeTreeBlockOutputStream>(*this, metadata_snapshot, context.getSettingsRef().max_partitions_per_insert_block);
+
+    const auto & settings = context.getSettingsRef();
+    return std::make_shared<MergeTreeBlockOutputStream>(
+        *this, metadata_snapshot, settings.max_partitions_per_insert_block);
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const
@@ -695,8 +700,8 @@ bool StorageMergeTree::merge(
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr),
             merging_tagger->reserved_space, deduplicate, force_ttl);
-        merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
 
+        merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         merging_tagger->is_successful = true;
         write_part_log({});
     }
@@ -878,12 +883,12 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
                 clearOldTemporaryDirectories();
             }
             clearOldMutations();
+            clearOldWriteAheadLogs();
         }
 
         ///TODO: read deduplicate option from table config
         if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
             return BackgroundProcessingPoolTaskResult::SUCCESS;
-
 
         if (tryMutatePart())
             return BackgroundProcessingPoolTaskResult::SUCCESS;
@@ -1073,14 +1078,14 @@ void StorageMergeTree::alterPartition(
             case PartitionCommand::FREEZE_PARTITION:
             {
                 auto lock = lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-                freezePartition(command.partition, command.with_name, context, lock);
+                freezePartition(command.partition, metadata_snapshot, command.with_name, context, lock);
             }
             break;
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
                 auto lock = lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-                freezeAll(command.with_name, context, lock);
+                freezeAll(command.with_name, metadata_snapshot, context, lock);
             }
             break;
 
@@ -1097,6 +1102,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
+        auto metadata_snapshot = getInMemoryMetadataPtr();
         String partition_id = getPartitionIDFromQuery(partition, context);
 
         /// TODO: should we include PreComitted parts like in Replicated case?
@@ -1110,7 +1116,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
             for (const auto & part : parts_to_remove)
             {
                 LOG_INFO(log, "Detaching {}", part->relative_path);
-                part->makeCloneInDetached("");
+                part->makeCloneInDetached("", metadata_snapshot);
             }
         }
 
@@ -1171,7 +1177,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        dst_parts.emplace_back(cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info));
+        dst_parts.emplace_back(cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot));
     }
 
     /// ATTACH empty part set
@@ -1255,7 +1261,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        dst_parts.emplace_back(dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info));
+        dst_parts.emplace_back(dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot));
     }
 
     /// empty part set
@@ -1324,7 +1330,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         String checksums_path = part_path + "checksums.txt";
         String tmp_checksums_path = part_path + "checksums.txt.tmp";
-        if (!disk->exists(checksums_path))
+        if (part->isStoredOnDisk() && !disk->exists(checksums_path))
         {
             try
             {

@@ -84,6 +84,7 @@ SRCS(
     ParserDictionaryAttributeDeclaration.cpp
     ParserDropAccessEntityQuery.cpp
     ParserDropQuery.cpp
+    ParserExplainQuery.cpp
     ParserGrantQuery.cpp
     ParserInsertQuery.cpp
     ParserKillQueryQuery.cpp

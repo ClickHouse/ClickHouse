@@ -21,6 +21,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    void describeActions(FormatSettings & settings) const override;
+
 private:
     size_t limit;
     size_t offset;

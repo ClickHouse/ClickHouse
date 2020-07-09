@@ -13,3 +13,8 @@ ClickHouse is an open-source column-oriented database management system that all
 * [Yandex.Messenger channel](https://yandex.ru/chat/#/join/20e380d9-c7be-4123-ab06-e95fb946975e) shares announcements and useful links in Russian.
 * [Contacts](https://clickhouse.tech/#contacts) can help to get your questions answered if there are any.
 * You can also [fill this form](https://clickhouse.tech/#meet) to meet Yandex ClickHouse team in person.
+
+## Upcoming Events		
+
+* [ClickHouse for genetic data (in Russian)](https://cloud.yandex.ru/events/152) on July 14, 2020.
+* [ClickHouse virtual office hours](https://www.eventbrite.com/e/clickhouse-july-virtual-meetup-tickets-111199787558) on July 15, 2020.
