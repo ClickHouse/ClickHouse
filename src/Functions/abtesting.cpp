@@ -85,7 +85,7 @@ ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, 
 
     for (size_t i = 1; i < xs.size(); ++i)
         result.beats_control[i] = static_cast<double>(result.beats_control[i]) / R / C;
-    
+
     // To be best
     std::vector<size_t> count_m(xs.size(), 0);
     std::vector<double> row(xs.size(), 0);
@@ -144,7 +144,7 @@ public:
     const IColumn * getNestedConstColumn(Block & block, const ColumnNumbers & arguments, const size_t n)
     {
         const IColumn * col = block.getByPosition(arguments[n]).column.get();
-        const IColumn * nested_col;	
+        const IColumn * nested_col;
         ColumnPtr materialized_column;
 
         if (const ColumnConst * const_arr = checkAndGetColumnConst<ColumnArray>(col))
@@ -206,8 +206,7 @@ public:
         xs = getDoubleValues(getNestedConstColumn(block, arguments, 3));
         ys = getDoubleValues(getNestedConstColumn(block, arguments, 4));
         if (variant_names.size() != xs.size() || xs.size() != ys.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of arguments doen't match: variant_names: {}, xs: {}, ys: {}", 
-                    variant_names.size(), xs.size(), ys.size());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of arguments doen't match: variant_names: {}, xs: {}, ys: {}", variant_names.size(), xs.size(), ys.size());
 
         if (std::count_if(xs.begin(), xs.end(), [](double v) { return v < 0; }) > 0 ||
             std::count_if(ys.begin(), ys.end(), [](double v) { return v < 0; }) > 0)
