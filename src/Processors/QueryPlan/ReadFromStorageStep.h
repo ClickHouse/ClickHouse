@@ -38,6 +38,8 @@ public:
 
     QueryPipelinePtr updatePipeline(QueryPipelines) override;
 
+    void describePipeline(FormatSettings & settings) const override;
+
 private:
     TableLockHolder table_lock;
     StorageMetadataPtr metadata_snapshot;
@@ -52,6 +54,7 @@ private:
     size_t max_streams;
 
     QueryPipelinePtr pipeline;
+    Processors processors;
 };
 
 }

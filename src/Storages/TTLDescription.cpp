@@ -272,6 +272,29 @@ TTLDescription TTLDescription::getTTLFromAST(
 }
 
 
+TTLTableDescription::TTLTableDescription(const TTLTableDescription & other)
+ : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
+ , rows_ttl(other.rows_ttl)
+ , move_ttl(other.move_ttl)
+{
+}
+
+TTLTableDescription & TTLTableDescription::operator=(const TTLTableDescription & other)
+{
+    if (&other == this)
+        return *this;
+
+    if (other.definition_ast)
+        definition_ast = other.definition_ast->clone();
+    else
+        definition_ast.reset();
+
+    rows_ttl = other.rows_ttl;
+    move_ttl = other.move_ttl;
+
+    return *this;
+}
+
 TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
