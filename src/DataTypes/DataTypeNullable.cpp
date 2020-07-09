@@ -419,7 +419,12 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
     /// This assumes UTF-8 and proper font support. This is Ok, because Pretty formats are "presentational", not for data exchange.
 
     if (col.isNullAt(row_num))
-        writeCString("ᴺᵁᴸᴸ", ostr);
+    {
+        if (settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8)
+            writeCString("ᴺᵁᴸᴸ", ostr);
+        else
+            writeCString("null", ostr);
+    }
     else
         nested_data_type->serializeAsText(col.getNestedColumn(), row_num, ostr, settings);
 }
