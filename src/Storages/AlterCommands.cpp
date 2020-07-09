@@ -493,6 +493,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
 
         if (metadata.isPartitionKeyDefined())
             rename_visitor.visit(metadata.partition_key.definition_ast);
+
+        for (auto & index : metadata.secondary_indices)
+            rename_visitor.visit(index.definition_ast);
     }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
