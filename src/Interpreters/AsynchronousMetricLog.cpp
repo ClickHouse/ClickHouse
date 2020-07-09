@@ -57,7 +57,7 @@ void AsynchronousMetricLog::addValues(const AsynchronousMetricValues & values)
         element.metric_name = key;
         element.value = value;
 
-        add(std::move(element));
+        add(element);
     }
 }
 
