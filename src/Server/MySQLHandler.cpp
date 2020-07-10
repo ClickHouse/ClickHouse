@@ -169,6 +169,11 @@ void MySQLHandler::run()
                 log->log(exc);
                 packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
             }
+            catch (const Poco::Exception & exc)
+            {
+                log->log(exc);
+                packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
+            }
         }
     }
     catch (const Poco::Exception & exc)
