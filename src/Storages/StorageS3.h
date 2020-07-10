@@ -22,7 +22,7 @@ namespace DB
  * It sends HTTP GET to server when select is called and
  * HTTP PUT when insert is called.
  */
-class StorageS3 final : public ext::shared_ptr_helper<StorageS3>, public IStorage
+class StorageS3 : public ext::shared_ptr_helper<StorageS3>, public IStorage
 {
 public:
     StorageS3(const S3::URI & uri,
