@@ -89,6 +89,6 @@ do
     sleep 0.1
 done
 
-clickhouse-test --testname --shard --zookeeper 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
+clickhouse-test --no-long --testname --shard --zookeeper 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
 
 mv /var/log/clickhouse-server/* /test_output
