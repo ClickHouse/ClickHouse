@@ -130,8 +130,12 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     MutableColumnPtr res = func->getReturnType()->createColumn();
     res->reserve(data.size());
 
+    /// insertResultInto may invalidate states, so we must unshare ownership of them
+    column_aggregate_func.ensureOwnership();
+    Arena & arena = column_aggregate_func.createOrGetArena();
+
     for (auto * val : data)
-        func->insertResultInto(val, *res, &column_aggregate_func.createOrGetArena());
+        func->insertResultInto(val, *res, &arena);
 
     return res;
 }
