@@ -28,6 +28,7 @@ private:
     bool nextImpl() override;
 
 public:
+    CompressedReadBufferFromFile(ReadBufferFromFileBase & buf);
     CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf);
 
     CompressedReadBufferFromFile(

@@ -22,7 +22,8 @@ class CachedCompressedReadBuffer : public CompressedReadBufferBase, public ReadB
 private:
     std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator;
     UncompressedCache * cache;
-    std::unique_ptr<ReadBufferFromFileBase> file_in;
+    std::unique_ptr<ReadBufferFromFileBase> file_in_holder;
+    ReadBufferFromFileBase * file_in;
 
     const std::string path;
     size_t file_pos;
@@ -38,6 +39,7 @@ private:
     clockid_t clock_type {};
 
 public:
+    CachedCompressedReadBuffer(const std::string & path_, ReadBufferFromFileBase * file_in_, UncompressedCache * cache_);
     CachedCompressedReadBuffer(const std::string & path, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator, UncompressedCache * cache_);
 
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);

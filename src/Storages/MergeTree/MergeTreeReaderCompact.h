@@ -2,6 +2,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 
 namespace DB
@@ -35,9 +36,21 @@ public:
 private:
     bool isContinuousReading(size_t mark, size_t column_position);
 
-    ReadBuffer * data_buffer;
-    std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
-    std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
+    std::unique_ptr<ReadBufferFromFileBase> file_in;
+
+    struct ColumnStream
+    {
+        std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
+        std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
+        ReadBuffer * data_buffer;
+
+        ColumnStream() = default;
+        ColumnStream(
+            std::unique_ptr<CachedCompressedReadBuffer> cached_buffer_,
+            std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer_);
+    };
+
+    std::unordered_map<String, ColumnStream> column_streams;
 
     MergeTreeMarksLoader marks_loader;
 
@@ -49,7 +62,7 @@ private:
     size_t next_mark = 0;
     std::optional<std::pair<size_t, size_t>> last_read_granule;
 
-    void seekToMark(size_t row_index, size_t column_index);
+    void seekToMark(ColumnStream & stream, size_t row_index, size_t column_index);
 
     void readData(const String & name, IColumn & column, const IDataType & type,
         size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets = false);
