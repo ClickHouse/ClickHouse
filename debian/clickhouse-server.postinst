@@ -12,6 +12,7 @@ CLICKHOUSE_BINDIR=${CLICKHOUSE_BINDIR:=/usr/bin}
 CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM:=clickhouse}
 EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
+CLICKHOUSE_USERS=$CLICKHOUSE_CONFDIR/users.xml
 
 [ -f /usr/share/debconf/confmodule ] && . /usr/share/debconf/confmodule
 [ -f /etc/default/clickhouse ] && . /etc/default/clickhouse
@@ -128,18 +129,22 @@ Please fix this and reinstall this package." >&2
         rm -f ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.cpp ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.so ||:
     fi
 
-    if [ -f /usr/share/debconf/confmodule ]; then
-        db_get clickhouse-server/default-password
-        defaultpassword="$RET"
-        if [ -n "$defaultpassword" ]; then
-            echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
-            chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
-            chmod 600 ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
-        fi
+    # Ask for password for default user. But only if it was not specified in configuration.
+    if [ -n "$($(su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_USERS\" --key=users.default.password" 2>/dev/null; su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_USERS\" --key=users.default.password_sha256_hex" 2>/dev/null) ||: )" ]; then
 
-        # everything went well, so now let's reset the password
-        db_set clickhouse-server/default-password ""
-        # ... done with debconf here
-        db_stop
+        if [ -f /usr/share/debconf/confmodule ]; then
+            db_get clickhouse-server/default-password
+            defaultpassword="$RET"
+            if [ -n "$defaultpassword" ]; then
+                echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+                chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+                chmod 600 ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+            fi
+
+            # everything went well, so now let's reset the password
+            db_set clickhouse-server/default-password ""
+            # ... done with debconf here
+            db_stop
+        fi
     fi
 fi
