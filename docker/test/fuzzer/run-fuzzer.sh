@@ -67,7 +67,7 @@ function fuzz
     echo Server started
 
     fuzzer_exit_code=0
-    ./clickhouse client --query-fuzzer-runs=10 \
+    ./clickhouse client --query-fuzzer-runs=100 \
         < <(for f in $(ls ch/tests/queries/0_stateless/*.sql | sort -R); do cat "$f"; echo ';'; done) \
         > >(tail -1000000 > fuzzer.log) \
         2>&1 \
@@ -89,11 +89,11 @@ case "$stage" in
         echo Using the testing script from docker container
         :
     else
-        # run the testing script from the repository
+        # Run the testing script from the repository
         echo Using the testing script from the repository
         export stage=download
-        time ch/docker/test/fuzzer/run-fuzzer.sh
-        exit $?
+        # Keep the error code
+        time ch/docker/test/fuzzer/run-fuzzer.sh || exit $?
     fi
     ;&
 "download")
