@@ -91,7 +91,6 @@ StorageKafka::StorageKafka(
                             {"_partition", std::make_shared<DataTypeUInt64>()},
                             {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}}, true))
     , global_context(context_.getGlobalContext())
-    , kafka_context(Context(global_context))
     , topics(global_context.getMacros()->expand(topics_))
     , brokers(global_context.getMacros()->expand(brokers_))
     , group(global_context.getMacros()->expand(group_))
@@ -105,8 +104,6 @@ StorageKafka::StorageKafka(
     , skip_broken(skip_broken_)
     , intermediate_commit(intermediate_commit_)
 {
-    kafka_context.makeQueryContext();
-
     setColumns(columns_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
@@ -381,6 +378,9 @@ bool StorageKafka::streamToViews()
     size_t block_size = max_block_size;
     if (block_size == 0)
         block_size = settings.max_block_size;
+
+    auto kafka_context = Context(global_context);
+    kafka_context.makeQueryContext();
 
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
