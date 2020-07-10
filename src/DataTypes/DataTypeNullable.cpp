@@ -423,7 +423,7 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
         if (settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8)
             writeCString("ᴺᵁᴸᴸ", ostr);
         else
-            writeCString("null", ostr);
+            writeCString("NULL", ostr);
     }
     else
         nested_data_type->serializeAsText(col.getNestedColumn(), row_num, ostr, settings);
