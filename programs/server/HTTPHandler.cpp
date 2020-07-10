@@ -215,8 +215,6 @@ void HTTPHandler::processQuery(
     Poco::Net::HTTPServerResponse & response,
     Output & used_output)
 {
-    Context context = server.context();
-
     CurrentThread::QueryScope query_scope(context);
 
     LOG_TRACE(log, "Request URI: " << request.getURI());
