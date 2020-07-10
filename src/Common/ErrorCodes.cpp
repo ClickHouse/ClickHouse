@@ -497,6 +497,7 @@ namespace ErrorCodes
     extern const int CASSANDRA_INTERNAL_ERROR = 528;
     extern const int NOT_A_LEADER = 529;
     extern const int CANNOT_CONNECT_RABBITMQ = 530;
+    extern const int CANNOT_FSTAT = 531;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

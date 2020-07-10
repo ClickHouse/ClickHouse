@@ -27,7 +27,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../../sql-reference/statements/create.md).
+For a description of request parameters, see [statement description](../../../sql-reference/statements/create/table.md).
 
 **ReplacingMergeTree Parameters**
 
