@@ -52,34 +52,6 @@ void ASTAlterQuery::formatImpl(const IAST::FormatSettings & settings, IAST::Form
 //    static_cast<IAST *>(command_list)->formatImpl(settings, state, frame_nested);
 }
 
-bool ParserAlterCommand::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKeyword k_add("ADD");
-    ParserKeyword k_drop("DROP");
-
-    if (k_add.ignore(pos, expected))
-        return parseAddCommand(pos, node, expected);
-    else if (k_drop.ignore(pos, expected))
-        return parseDropCommand(pos, node, expected);
-    return false;
-}
-bool ParserAlterCommand::parseAddCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ASTPtr declare_index;
-    ParserDeclareIndex p_index;
-
-    /// TODO: add column
-    if (!p_index.parse(pos, declare_index, expected))
-        return false;
-
-    return true;
-}
-bool ParserAlterCommand::parseDropCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
-{
-
-    return false;
-}
-
 bool ParserAlterQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr table;
