@@ -120,7 +120,7 @@ TEST(TransformQueryForExternalDatabase, Issue7245)
 
 TEST(TransformQueryForExternalDatabase, Aliases)
 {
-    const State & state = State::instance();
+    const State & state = getState();
 
     check("SELECT field AS value, field AS display WHERE field NOT IN ('') AND display LIKE '%test%'",
           R"(SELECT "field" FROM "test"."table" WHERE ("field" NOT IN ('')) AND ("field" LIKE '%test%'))",
