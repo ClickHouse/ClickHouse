@@ -215,8 +215,6 @@ void HTTPHandler::processQuery(
     Poco::Net::HTTPServerResponse & response,
     Output & used_output)
 {
-    CurrentThread::QueryScope query_scope(context);
-
     LOG_TRACE(log, "Request URI: " << request.getURI());
 
     std::istream & istr = request.stream();
