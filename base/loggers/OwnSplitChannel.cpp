@@ -64,6 +64,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         columns[i++]->insert(msg_ext.thread_id);
         columns[i++]->insert(Int64(msg.getPriority()));
         columns[i++]->insert(msg.getSource());
+        columns[i++]->insert(msg.getSourceLine());
         columns[i++]->insert(msg.getText());
 
         logs_queue->emplace(std::move(columns));
