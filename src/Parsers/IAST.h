@@ -165,7 +165,13 @@ public:
         bool hilite = false;
         bool one_line;
         bool always_quote_identifiers = false;
-        bool is_translate = false; //convert current standard SQL to clickhouse dialect.
+
+        /** True: convert standard update/delete partial SQL to ClickHouse dialect.
+         *  For example, "set col1 = expr1, col2 = expr2 where ..." is mapped to
+         *  "update col1 = expr1, col2 = expr2 where ..."
+         */
+        bool is_translate = false;
+
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
 
         char nl_or_ws;

@@ -107,7 +107,9 @@ public:
     /// For DELETE/UPDATE WHERE: the predicate that filters the rows to delete/update.
     ASTPtr predicate;
 
+    /// True: No WHERE clause for delete/update.
     bool is_default_where_null = false;
+
     /// A list of expressions of the form `column = expr` for the UPDATE command.
     ASTPtr update_assignments;
 

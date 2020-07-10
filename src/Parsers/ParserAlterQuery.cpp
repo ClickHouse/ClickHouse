@@ -103,14 +103,15 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         else
             return false;
     }
-    else if(command_type == ASTAlterCommand::STD_DELETE)
+    else if (command_type == ASTAlterCommand::STD_DELETE)
     {
         if (s_where.ignore(pos, expected))
         {
             if (!parser_exp_elem.parse(pos, command->predicate, expected))
                 return false;
         }
-        if (command->predicate == nullptr) {
+        if (command->predicate == nullptr)
+        {
             Field res;
             res = static_cast<UInt64>(1);
             auto literal = std::make_shared<ASTLiteral>(res);
@@ -118,17 +119,18 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->is_default_where_null = true;
         }
         command->type = ASTAlterCommand::STD_DELETE;
-        }
-    else if(command_type == ASTAlterCommand::STD_UPDATE && s_set.ignore(pos, expected))
+    }
+    else if (command_type == ASTAlterCommand::STD_UPDATE && s_set.ignore(pos, expected))
     {
         if (!parser_assignment_list.parse(pos, command->update_assignments, expected))
             return false;
         if (s_where.ignore(pos, expected))
         {
             if (!parser_exp_elem.parse(pos, command->predicate, expected))
-            return false;
+                return false;
         }
-        if (command->predicate == nullptr) {
+        if (command->predicate == nullptr)
+        {
             Field res;
             res = static_cast<UInt64>(1);
             auto literal = std::make_shared<ASTLiteral>(res);
@@ -620,11 +622,11 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_delete_from("DELETE FROM");
     ParserKeyword s_update_table("UPDATE");
 
-    if(s_delete_from.ignore(pos, expected))
+    if (s_delete_from.ignore(pos, expected))
     {
         query->command_type = ASTAlterCommand::STD_DELETE;
     }
-    else if(s_update_table.ignore(pos, expected))
+    else if (s_update_table.ignore(pos, expected))
     {
         query->command_type = ASTAlterCommand::STD_UPDATE;
     }

@@ -25,8 +25,8 @@ namespace DB
   * ALTER LIVE VIEW [db.name]
   *     [REFRESH]
   *
-  * DELETE FROM db.name [ON CLUSTER cluster] WHERE ...
-  * UPDATE db.name [ON CLUSTER cluster] SET col_name = expr, ... WHERE ...
+  * DELETE FROM db.name [ON CLUSTER cluster] [WHERE ...]
+  * UPDATE db.name [ON CLUSTER cluster] SET col_name = expr, ... [WHERE ...]
   */
 
 class ParserAlterQuery : public IParserBase
@@ -46,8 +46,7 @@ protected:
 public:
     ASTAlterCommand::Type  command_type;
 
-    ParserAlterCommandList(ASTAlterCommand::Type command_type_= ASTAlterCommand::NO_TYPE)
-        : command_type(command_type_)  {}
+    ParserAlterCommandList(ASTAlterCommand::Type command_type_ = ASTAlterCommand::NO_TYPE) : command_type(command_type_) { }
 };
 
 
@@ -60,8 +59,7 @@ protected:
 public:
     ASTAlterCommand::Type  command_type;
 
-    ParserAlterCommand(ASTAlterCommand::Type command_type_= ASTAlterCommand::NO_TYPE)
-        : command_type(command_type_) {}
+    ParserAlterCommand(ASTAlterCommand::Type command_type_ = ASTAlterCommand::NO_TYPE) : command_type(command_type_) { }
 };
 
 
