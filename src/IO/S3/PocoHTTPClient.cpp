@@ -4,6 +4,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/S3/PocoHTTPResponseStream.h>
 #include <IO/S3/PocoHTTPResponseStream.cpp>
+#include <Common/Stopwatch.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
@@ -13,6 +14,21 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event S3ReadMicroseconds;
+    extern const Event S3ReadRequestsCount;
+    extern const Event S3ReadRequestsErrors;
+    extern const Event S3ReadRequestsThrottling;
+    extern const Event S3ReadRequestsRedirects;
+
+    extern const Event S3WriteMicroseconds;
+    extern const Event S3WriteRequestsCount;
+    extern const Event S3WriteRequestsErrors;
+    extern const Event S3WriteRequestsThrottling;
+    extern const Event S3WriteRequestsRedirects;
+}
 
 namespace DB::ErrorCodes
 {
@@ -62,6 +78,40 @@ void PocoHTTPClient::MakeRequestInternal(
     auto uri = request.GetUri().GetURIString();
     LOG_DEBUG(log, "Make request to: {}", uri);
 
+    enum ES3MetricType
+    {
+        Microseconds = 0,
+        Count,
+        Errors,
+        Throttling,
+        Redirects,
+    };
+    
+    auto SelectMetric = [&request](int type)
+    {
+        const ProfileEvents::Event events_map[][2] = {
+            {ProfileEvents::S3ReadMicroseconds, ProfileEvents::S3WriteMicroseconds},
+            {ProfileEvents::S3ReadRequestsCount, ProfileEvents::S3WriteRequestsCount},
+            {ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors},
+            {ProfileEvents::S3ReadRequestsThrottling, ProfileEvents::S3WriteRequestsThrottling},
+            {ProfileEvents::S3ReadRequestsRedirects, ProfileEvents::S3WriteRequestsRedirects},
+        };
+
+        switch (request.GetMethod())
+        {
+            case Aws::Http::HttpMethod::HTTP_GET:
+            case Aws::Http::HttpMethod::HTTP_HEAD:
+                return events_map[type][0]; // Read
+            case Aws::Http::HttpMethod::HTTP_POST:
+            case Aws::Http::HttpMethod::HTTP_DELETE:
+            case Aws::Http::HttpMethod::HTTP_PUT:
+            case Aws::Http::HttpMethod::HTTP_PATCH:
+                return events_map[type][1]; // Write
+        }
+    };
+    
+    ProfileEvents::increment(SelectMetric(Count));
+
     const int MAX_REDIRECT_ATTEMPTS = 10;
     try
     {
@@ -107,11 +157,15 @@ void PocoHTTPClient::MakeRequestInternal(
                 poco_request.set(header_name, header_value);
 
             Poco::Net::HTTPResponse poco_response;
+
+            Stopwatch watch(CLOCK_MONOTONIC);
+
             auto & request_body_stream = session->sendRequest(poco_request);
 
             if (request.GetContentBody())
             {
                 LOG_TRACE(log, "Writing request body.");
+
                 if (attempt > 0) /// rewind content body buffer.
                 {
                     request.GetContentBody()->clear();
@@ -124,6 +178,9 @@ void PocoHTTPClient::MakeRequestInternal(
             LOG_TRACE(log, "Receiving response...");
             auto & response_body_stream = session->receiveResponse(poco_response);
 
+            watch.stop();
+            ProfileEvents::increment(SelectMetric(Microseconds), watch.elapsedMicroseconds());
+
             int status_code = static_cast<int>(poco_response.getStatus());
             LOG_DEBUG(log, "Response status: {}, {}", status_code, poco_response.getReason());
 
@@ -132,6 +189,8 @@ void PocoHTTPClient::MakeRequestInternal(
                 auto location = poco_response.get("location");
                 uri = location;
                 LOG_DEBUG(log, "Redirecting request to new location: {}", location);
+
+                ProfileEvents::increment(SelectMetric(Redirects));
 
                 continue;
             }
@@ -154,6 +213,15 @@ void PocoHTTPClient::MakeRequestInternal(
 
                 response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
                 response->SetClientErrorMessage(error_message);
+
+                if (status_code == 429 || status_code == 503)
+                { // API throttling
+                    ProfileEvents::increment(SelectMetric(Throttling));
+                }
+                else
+                {
+                    ProfileEvents::increment(SelectMetric(Errors));
+                }
             }
             else
                 response->GetResponseStream().SetUnderlyingStream(std::make_shared<PocoHTTPResponseStream>(session, response_body_stream));
@@ -168,6 +236,8 @@ void PocoHTTPClient::MakeRequestInternal(
         tryLogCurrentException(log, fmt::format("Failed to make request to: {}", uri));
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
+
+        ProfileEvents::increment(SelectMetric(Errors));
     }
 }
 }
