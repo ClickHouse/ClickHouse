@@ -28,6 +28,7 @@
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
 #include <Interpreters/AnyInputOptimize.h>
+#include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -601,6 +602,12 @@ void optimizeAnyInput(ASTPtr & query)
     AnyInputVisitor(data).visit(query);
 }
 
+void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const Context & context)
+{
+    RemoveInjectiveFunctionsVisitor::Data data = {context};
+    RemoveInjectiveFunctionsVisitor(data).visit(query);
+}
+
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
@@ -997,6 +1004,10 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         ///Move all operations out of any function
         if (settings.optimize_move_functions_out_of_any)
             optimizeAnyInput(query);
+
+        /// Remove injective functions inside uniq
+        if (settings.optimize_injective_functions_inside_uniq)
+            optimizeInjectiveFunctionsInsideUniq(query, context);
 
         /// Eliminate min/max/any aggregators of functions of GROUP BY keys
         if (settings.optimize_aggregators_of_group_by_keys)
