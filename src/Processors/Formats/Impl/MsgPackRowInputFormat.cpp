@@ -1,5 +1,8 @@
-#include <cstdlib>
 #include <Processors/Formats/Impl/MsgPackRowInputFormat.h>
+
+#if USE_MSGPACK
+
+#include <cstdlib>
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 
@@ -209,3 +212,5 @@ void registerInputFormatProcessorMsgPack(FormatFactory & factory)
 }
 
 }
+
+#endif

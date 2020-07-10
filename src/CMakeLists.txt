@@ -370,7 +370,7 @@ endif()
 
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
-if (USE_INTERNAL_MSGPACK_LIBRARY)
+if (USE_MSGPACK)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
 endif()
 
