@@ -10,6 +10,7 @@ services:
     environment:
       MINIO_ACCESS_KEY: minio
       MINIO_SECRET_KEY: minio123
+      MINIO_PROMETHEUS_AUTH_TYPE: public
     command: server --address :9001 /data1-1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9001/minio/health/live"]
