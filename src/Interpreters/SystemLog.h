@@ -23,6 +23,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/Context.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <IO/WriteHelpers.h>
@@ -63,8 +64,6 @@ namespace ErrorCodes
 
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
 
-
-class Context;
 
 
 class ISystemLog
@@ -371,7 +370,11 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         insert->table_id = table_id;
         ASTPtr query_ptr(insert.release());
 
-        InterpreterInsertQuery interpreter(query_ptr, context);
+        // we need query context to do inserts to target table with MV containing subqueries or joins
+        auto insert_context = Context(context);
+        insert_context.makeQueryContext();
+
+        InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
         io.out->writePrefix();
