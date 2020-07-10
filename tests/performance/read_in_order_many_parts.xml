@@ -10,8 +10,8 @@
         <substitution>
             <name>parts</name>
             <values>
-                <value>200</value>
-                <value>2000</value>
+                <value>100</value>
+                <value>1000</value>
             </values>
         </substitution>
     </substitutions>
