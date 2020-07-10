@@ -8,5 +8,3 @@ add_library(stats)
 
 target_include_directories(stats SYSTEM PUBLIC ${STATS_INCLUDE_DIR})
 target_include_directories(stats SYSTEM PUBLIC ${GCEM_INCLUDE_DIR})
-
-add_dependencies(stats gcem)
