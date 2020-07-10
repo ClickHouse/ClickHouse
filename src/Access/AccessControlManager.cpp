@@ -170,9 +170,9 @@ std::shared_ptr<const SettingsChanges> AccessControlManager::getProfileSettings(
     return settings_profiles_cache->getProfileSettings(profile_name);
 }
 
-const ExternalAuthenticators & AccessControlManager::getExternalAuthenticators() const
+const ExternalAuthenticators * AccessControlManager::getExternalAuthenticators() const
 {
-    return *external_authenticators;
+    return external_authenticators.get();
 }
 
 }

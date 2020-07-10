@@ -89,7 +89,7 @@ public:
 
     /// Checks if the provided password is correct. Returns false if not.
     /// User name and external authenticators' info are used only by some specific authentication type (e.g., LDAP_SERVER).
-    bool isCorrectPassword(const String & password_, const String & user_, const ExternalAuthenticators & external_authenticators) const;
+    bool isCorrectPassword(const String & password_, const String & user_, const ExternalAuthenticators * external_authenticators) const;
 
     friend bool operator ==(const Authentication & lhs, const Authentication & rhs) { return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash); }
     friend bool operator !=(const Authentication & lhs, const Authentication & rhs) { return !(lhs == rhs); }
