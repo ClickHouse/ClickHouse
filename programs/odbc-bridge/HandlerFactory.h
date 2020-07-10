@@ -6,7 +6,6 @@
 #include "MainHandler.h"
 #include "ColumnInfoHandler.h"
 #include "IdentifierQuoteHandler.h"
-#include "SchemaAllowedHandler.h"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -16,7 +15,7 @@
 
 namespace DB
 {
-/** Factory for '/ping', '/', '/columns_info', '/identifier_quote', '/schema_allowed' handlers.
+/** Factory for '/ping', '/', '/columns_info', '/identifier_quote' handlers.
   * Also stores Session pools for ODBC connections
   */
 class HandlerFactory : public Poco::Net::HTTPRequestHandlerFactory

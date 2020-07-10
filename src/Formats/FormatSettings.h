@@ -128,7 +128,6 @@ struct FormatSettings
         String schema_registry_url;
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
-        bool allow_missing_fields = false;
     };
 
     Avro avro;

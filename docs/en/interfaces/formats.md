@@ -979,7 +979,7 @@ message MessageType {
 }
 ```
 
-are not applied; the [table defaults](../sql-reference/statements/create/table.md#create-default-values) are used instead of them.
+are not applied; the [table defaults](../sql-reference/statements/create.md#create-default-values) are used instead of them.
 
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
@@ -1055,11 +1055,11 @@ Each Avro message embeds a schema id that can be resolved to the actual schema w
 
 Schemas are cached once resolved.
 
-Schema Registry URL is configured with [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#format_avro_schema_registry_url).
+Schema Registry URL is configured with [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
 ### Data Types Matching {#data_types-matching-1}
 
-Same as [Avro](#data-format-avro).
+Same as [Avro](#data-format-avro)
 
 ### Usage {#usage}
 
@@ -1093,7 +1093,7 @@ SELECT * FROM topic1_stream;
 ```
 
 !!! note "Warning"
-    Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
+    Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart.
 
 ## Parquet {#data-format-parquet}
 

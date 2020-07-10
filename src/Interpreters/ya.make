@@ -18,7 +18,6 @@ SRCS(
     ActionsVisitor.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
-    AggregateDescription.cpp
     Aggregator.cpp
     AnyInputOptimize.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp

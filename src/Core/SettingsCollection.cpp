@@ -542,7 +542,6 @@ IMPLEMENT_SETTING_ENUM(FormatSettings::DateTimeInputFormat, DATE_TIME_INPUT_FORM
 
 #define LOGS_LEVEL_LIST_OF_NAMES(M) \
     M(none, "none") \
-    M(fatal, "fatal") \
     M(error, "error") \
     M(warning, "warning") \
     M(information, "information") \

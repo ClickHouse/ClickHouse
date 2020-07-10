@@ -117,10 +117,6 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     return result;
 }
 
-void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, const Context & context)
-{
-    *this = getIndexFromAST(definition_ast, new_columns, context);
-}
 
 bool IndicesDescription::has(const String & name) const
 {
@@ -157,7 +153,6 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
 
     return result;
 }
-
 
 ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const ColumnsDescription & columns, const Context & context) const
 {

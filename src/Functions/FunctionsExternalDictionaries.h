@@ -29,10 +29,6 @@
 #include <Dictionaries/FlatDictionary.h>
 #include <Dictionaries/HashedDictionary.h>
 #include <Dictionaries/CacheDictionary.h>
-#if defined(__linux__) || defined(__FreeBSD__)
-#include <Dictionaries/SSDCacheDictionary.h>
-#include <Dictionaries/SSDComplexKeyCacheDictionary.h>
-#endif
 #include <Dictionaries/ComplexKeyHashedDictionary.h>
 #include <Dictionaries/ComplexKeyCacheDictionary.h>
 #include <Dictionaries/ComplexKeyDirectDictionary.h>
@@ -179,22 +175,16 @@ private:
         auto dict = helper.getDictionary(block.getByPosition(arguments[0]));
 
         if (!executeDispatchSimple<FlatDictionary>(block, arguments, result, dict) &&
-            !executeDispatchSimple<DirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchSimple<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatchSimple<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
-            !executeDispatchSimple<SSDCacheDictionary>(block, arguments, result, dict) &&
-#endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
-            !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#endif
+            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict))
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict) &&
+            !executeDispatchSimple<DirectDictionary>(block, arguments, result, dict))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
@@ -335,18 +325,12 @@ private:
         auto dict = helper.getDictionary(block.getByPosition(arguments[0]));
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
+            !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
-            !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
-#endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
-            !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#endif
+            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
@@ -519,18 +503,12 @@ private:
         auto dict = helper.getDictionary(block.getByPosition(arguments[0]));
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
+            !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
-            !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
-#endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
-            !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#endif
+            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
@@ -859,18 +837,12 @@ private:
         auto dict = helper.getDictionary(block.getByPosition(arguments[0]));
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
+            !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
-            !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
-#endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
-            !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#endif
+            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
@@ -1120,18 +1092,12 @@ private:
         auto dict = helper.getDictionary(block.getByPosition(arguments[0]));
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
+            !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
-            !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
-#endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
-            !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#endif
+            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
