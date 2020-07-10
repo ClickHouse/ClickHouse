@@ -24,6 +24,8 @@ namespace DB
 class WriteBufferFromS3 : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
+    bool is_multipart;
+
     String bucket;
     String key;
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
@@ -44,6 +46,7 @@ public:
         const String & bucket_,
         const String & key_,
         size_t minimum_upload_part_size_,
+        bool is_multipart,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     void nextImpl() override;
