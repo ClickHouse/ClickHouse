@@ -36,10 +36,7 @@ namespace
         }
         catch (Exception & e)
         {
-            throw Exception(
-                fmt::format("Error while loading dictionary '{}.{}': {}",
-                    database_name, load_result.name, e.displayText()),
-                e.code());
+            throw Exception("Error while loading dictionary '" + database_name + "." + load_result.name + "': " + e.displayText(), e.code());
         }
     }
 }

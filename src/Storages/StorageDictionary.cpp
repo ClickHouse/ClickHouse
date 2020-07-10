@@ -102,7 +102,7 @@ StorageDictionary::StorageDictionary(
     , dictionary_name(dictionary_name_)
     , location(location_)
 {
-    setColumns(ColumnsDescription{getNamesAndTypes(dictionary_structure_)});
+    setColumns(columns_);
 }
 
 
