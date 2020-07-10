@@ -1021,9 +1021,12 @@ private:
             const AggregateDataPtr data_ptr_1 = is_column_const[1] ? container1[0] : container1[i];
 
             col_to->insertFrom(data_ptr_0);
-            AggregateFunctionGroupBitmapData<T> & bitmap_data_1 = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
+
+            AggregateFunctionGroupBitmapData<T> & bitmap_data_1
+                = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_2
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_1);
+
             Impl<T>::apply(bitmap_data_1, bitmap_data_2);
         }
         block.getByPosition(result).column = std::move(col_to);
