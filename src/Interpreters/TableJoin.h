@@ -113,6 +113,7 @@ public:
     size_t maxFilesToMerge() const { return max_files_to_merge; }
     const String & temporaryFilesCodec() const { return temporary_files_codec; }
     bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
+    bool needStreamWithNonJoinedRows() const;
 
     void resetCollected();
     void addUsingKey(const ASTPtr & ast);
@@ -148,6 +149,10 @@ public:
 
     /// StorageJoin overrides key names (cause of different names qualification)
     void setRightKeys(const Names & keys) { key_names_right = keys; }
+
+    /// Split key and other columns by keys name list
+    void splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const;
+    Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     static bool sameJoin(const TableJoin * x, const TableJoin * y);
 };
