@@ -66,8 +66,8 @@ public:
             return;
         }
 
-        const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
-        if (!function->isDeterministicInScopeOfQuery())
+        const auto function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
+        if (!function || !function->isDeterministicInScopeOfQuery())
         {
             data.preventErase();
         }
