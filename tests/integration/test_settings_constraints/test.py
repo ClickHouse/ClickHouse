@@ -2,8 +2,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance',
-                                config_dir="configs")
+instance = cluster.add_instance('instance', user_configs=["configs/users.xml"])
 
 
 
