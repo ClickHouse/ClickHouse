@@ -282,8 +282,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         serialized_value.resize(UTF8::computeBytesBeforeWidth(
             reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, 1 + format_settings.pretty.max_value_width));
 
-        const char *ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
-                               "⋯" : "...";
+        const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
         if (format_settings.pretty.color)
         {
             serialized_value += "\033[31;1m";
