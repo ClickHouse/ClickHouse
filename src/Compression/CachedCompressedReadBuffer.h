@@ -23,7 +23,7 @@ private:
     std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator;
     UncompressedCache * cache;
     std::unique_ptr<ReadBufferFromFileBase> file_in_holder;
-    ReadBufferFromFileBase * file_in;
+    ReadBufferFromFileBase * file_in = nullptr;
 
     const std::string path;
     size_t file_pos;

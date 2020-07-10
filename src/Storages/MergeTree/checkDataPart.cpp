@@ -96,11 +96,24 @@ IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
+    /// This function calculates only checksum of file content (compressed or uncompressed).
+    auto checksum_file = [](const DiskPtr & disk_, const String & file_path)
+    {
+        auto file_buf = disk_->readFile(file_path);
+        HashingReadBuffer hashing_buf(*file_buf);
+        hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
+        return IMergeTreeDataPart::Checksums::Checksum{hashing_buf.count(), hashing_buf.getHash()};
+    };
+
+    bool check_uncompressed = true;
     /// First calculate checksums for columns data
     if (part_type == MergeTreeDataPartType::COMPACT)
     {
         const auto & file_name = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
-        checksums_data.files[file_name] = checksum_compressed_file(disk, path + file_name);
+        checksums_data.files[file_name] = checksum_file(disk, path + file_name);
+        /// Uncompressed checksums in compact parts are computed in a complex way.
+        /// We check only checksum of compressed file.
+        check_uncompressed = false;
     }
     else if (part_type == MergeTreeDataPartType::WIDE)
     {
@@ -141,10 +154,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             if (txt_checksum_it == checksum_files_txt.end() || txt_checksum_it->second.uncompressed_size == 0)
             {
                 /// The file is not compressed.
-                auto file_buf = disk->readFile(it->path());
-                HashingReadBuffer hashing_buf(*file_buf);
-                hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
-                checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
+                checksums_data.files[file_name] = checksum_file(disk, it->path());
             }
             else /// If we have both compressed and uncompressed in txt, than calculate them
             {
@@ -157,7 +167,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         return {};
 
     if (require_checksums || !checksums_txt.files.empty())
-        checksums_txt.checkEqual(checksums_data, true);
+        checksums_txt.checkEqual(checksums_data, check_uncompressed);
 
     return checksums_data;
 }
