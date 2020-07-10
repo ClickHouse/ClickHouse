@@ -29,6 +29,7 @@
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
 #include <Interpreters/AnyInputOptimize.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
+#include <Interpreters/MonotonicityCheckVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -528,6 +529,51 @@ void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, const Context & context
     DuplicateDistinctVisitor(distinct_data).visit(query);
 }
 
+/// Optimize monotonous functions in ORDER BY
+void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, bool optimize_monotonous_functions_in_order_by,
+                                          const Context & context, const TablesWithColumns & tables_with_columns)
+{
+    if (optimize_monotonous_functions_in_order_by)
+    {
+        auto order_by = select_query->orderBy();
+
+        if (!order_by)
+            return;
+
+        auto group_by = select_query->groupBy();
+        std::unordered_map<String, ASTPtr> group_by_function_hashes;
+        if (group_by)
+        {
+            for (auto & elem: group_by->children)
+            {
+                auto hash = elem->getTreeHash();
+                String key = toString(hash.first) + '_' + toString(hash.second);
+                group_by_function_hashes[key] = elem;
+            }
+        }
+
+        for (size_t i = 0; i < order_by->children.size(); ++i)
+        {
+            auto child = order_by->children[i];
+            if (child->children.empty() || !child->children[0]->as<ASTFunction>())
+                continue;
+
+            auto * order_by_element = child->as<ASTOrderByElement>();
+            auto order_by_function = order_by_element->children[0];
+
+            MonotonicityCheckVisitor::Data monotonicity_checker_data{tables_with_columns, context, group_by_function_hashes};
+            MonotonicityCheckVisitor(monotonicity_checker_data).visit(order_by_function);
+            if (monotonicity_checker_data.monotonicity.is_monotonic)
+            {
+                order_by_element->children[0] = monotonicity_checker_data.identifier->clone();
+                order_by_element->children[0]->setAlias("");
+                if (!monotonicity_checker_data.monotonicity.is_positive)
+                    order_by_element->direction *= -1;
+            }
+        }
+    }
+}
+
 /// Remove duplicate items from LIMIT BY.
 void optimizeLimitBy(const ASTSelectQuery * select_query)
 {
@@ -1019,6 +1065,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         /// Remove duplicate ORDER BY and DISTINCT from subqueries.
         if (settings.optimize_duplicate_order_by_and_distinct)
             optimizeDuplicateOrderByAndDistinct(query, context);
+
+        /// Replace monotonous functions with its argument
+        optimizeMonotonousFunctionsInOrderBy(select_query, settings.optimize_monotonous_functions_in_order_by, context, tables_with_columns);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);

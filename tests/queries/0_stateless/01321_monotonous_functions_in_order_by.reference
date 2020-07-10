@@ -1,0 +1,104 @@
+0
+1
+2
+0
+1
+2
+0
+1
+2
+2
+1
+0
+0
+1
+2
+0
+1
+2
+0
+1
+2
+2
+1
+0
+2
+1
+0
+2
+1
+0
+0
+1
+2
+2
+1
+0
+2
+1
+0
+SELECT number\nFROM numbers(3)\nORDER BY number ASC
+SELECT number\nFROM numbers(3)\nORDER BY abs(toFloat32(number)) ASC
+SELECT number\nFROM numbers(3)\nORDER BY toFloat32(abs(number)) ASC
+SELECT number\nFROM numbers(3)\nORDER BY number DESC
+SELECT number\nFROM numbers(3)\nORDER BY exp(number) ASC
+SELECT roundToExp2(number) AS x\nFROM numbers(3)\nORDER BY \n    number ASC,\n    number ASC
+SELECT number AS x\nFROM numbers(3)\nORDER BY \n    number ASC,\n    number ASC
+SELECT number\nFROM numbers(3)\nORDER BY number DESC
+SELECT number\nFROM numbers(3)\nORDER BY abs(toFloat32(number)) DESC
+SELECT number\nFROM numbers(3)\nORDER BY toFloat32(abs(number)) DESC
+SELECT number\nFROM numbers(3)\nORDER BY number ASC
+SELECT number\nFROM numbers(3)\nORDER BY exp(number) DESC
+SELECT roundToExp2(number) AS x\nFROM numbers(3)\nORDER BY \n    number DESC,\n    number DESC
+0
+1
+2
+0
+1
+2
+0
+1
+2
+2
+1
+0
+0
+1
+2
+0
+1
+2
+0
+1
+2
+2
+1
+0
+2
+1
+0
+2
+1
+0
+0
+1
+2
+2
+1
+0
+2
+1
+0
+SELECT number\nFROM numbers(3)\nORDER BY toFloat32(toFloat64(number)) ASC
+SELECT number\nFROM numbers(3)\nORDER BY abs(toFloat32(number)) ASC
+SELECT number\nFROM numbers(3)\nORDER BY toFloat32(abs(number)) ASC
+SELECT number\nFROM numbers(3)\nORDER BY -number ASC
+SELECT number\nFROM numbers(3)\nORDER BY exp(number) ASC
+SELECT roundToExp2(number) AS x\nFROM numbers(3)\nORDER BY \n    x ASC,\n    toFloat32(x) ASC
+SELECT number AS x\nFROM numbers(3)\nORDER BY \n    toFloat32(x) AS k ASC,\n    toFloat64(k) ASC
+SELECT number\nFROM numbers(3)\nORDER BY toFloat32(toFloat64(number)) DESC
+SELECT number\nFROM numbers(3)\nORDER BY abs(toFloat32(number)) DESC
+SELECT number\nFROM numbers(3)\nORDER BY toFloat32(abs(number)) DESC
+SELECT number\nFROM numbers(3)\nORDER BY -number DESC
+SELECT number\nFROM numbers(3)\nORDER BY exp(number) DESC
+SELECT roundToExp2(number) AS x\nFROM numbers(3)\nORDER BY \n    x DESC,\n    toFloat32(x) DESC
