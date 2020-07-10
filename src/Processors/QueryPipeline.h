@@ -7,18 +7,17 @@
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Storages/IStorage_fwd.h>
-#include <Storages/TableLockHolder.h>
 
 namespace DB
 {
 
+class TableStructureReadLock;
+using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
+using TableStructureReadLocks = std::vector<TableStructureReadLockHolder>;
 
-using TableLockHolders = std::vector<TableLockHolder>;
 class Context;
 
 class IOutputFormat;
-
-class QueryPipelineProcessorsCollector;
 
 class QueryPipeline
 {
@@ -71,27 +70,6 @@ private:
     };
 
 public:
-
-    class ProcessorsContainer
-    {
-    public:
-        bool empty() const { return processors.empty(); }
-        void emplace(ProcessorPtr processor);
-        void emplace(Processors processors_);
-        Processors * getCollectedProcessors() const { return collected_processors; }
-        Processors * setCollectedProcessors(Processors * collected_processors);
-        Processors & get() { return processors; }
-        const Processors & get() const { return processors; }
-        Processors detach() { return std::move(processors); }
-    private:
-        /// All added processors.
-        Processors processors;
-
-        /// If is set, all newly created processors will be added to this too.
-        /// It is needed for debug. See QueryPipelineProcessorsCollector below.
-        Processors * collected_processors = nullptr;
-    };
-
     QueryPipeline() = default;
     QueryPipeline(QueryPipeline &&) = default;
     ~QueryPipeline() = default;
@@ -172,7 +150,7 @@ public:
 
     const Block & getHeader() const { return current_header; }
 
-    void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
     void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { storage_holders.emplace_back(std::move(storage)); }
 
@@ -194,19 +172,9 @@ public:
     /// Set upper limit for the recommend number of threads
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
 
-    /// Update upper limit for the recommend number of threads
-    void limitMaxThreads(size_t max_threads_)
-    {
-        if (max_threads == 0 || max_threads_ < max_threads)
-            max_threads = max_threads_;
-    }
-
     /// Convert query pipeline to single or several pipes.
     Pipe getPipe() &&;
     Pipes getPipes() &&;
-
-    /// Get internal processors.
-    const Processors & getProcessors() const { return processors.get(); }
 
 private:
     /// Destruction order: processors, header, locks, temporary storages, local contexts
@@ -216,12 +184,13 @@ private:
     /// because QueryPipeline is alive until query is finished.
     std::vector<std::shared_ptr<Context>> interpreter_context;
     std::vector<StoragePtr> storage_holders;
-    TableLockHolders table_locks;
+    TableStructureReadLocks table_locks;
 
     /// Common header for each stream.
     Block current_header;
 
-    ProcessorsContainer processors;
+    /// All added processors.
+    Processors processors;
 
     /// Port for each independent "stream".
     Streams streams;
@@ -249,24 +218,6 @@ private:
     void addSimpleTransformImpl(const TProcessorGetter & getter);
 
     void initRowsBeforeLimit();
-
-    friend class QueryPipelineProcessorsCollector;
-};
-
-/// This is a small class which collects newly added processors to QueryPipeline.
-/// Pipeline must live longer that this class.
-class QueryPipelineProcessorsCollector
-{
-public:
-    explicit QueryPipelineProcessorsCollector(QueryPipeline & pipeline_, IQueryPlanStep * step_ = nullptr);
-    ~QueryPipelineProcessorsCollector();
-
-    Processors detachProcessors(size_t group = 0);
-
-private:
-    QueryPipeline & pipeline;
-    IQueryPlanStep * step;
-    Processors processors;
 };
 
 }

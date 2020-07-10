@@ -1,4 +1,10 @@
 <test>
+    <tags>
+        <tag>long</tag>
+    </tags>
+
+
+
     <substitutions>
        <substitution>
            <name>expr</name>

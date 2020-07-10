@@ -13,14 +13,14 @@ namespace ErrorCodes
 }
 
 
-NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot, const MergeTreeData::DataPartPtr & part, Names & columns)
+NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & part, Names & columns)
 {
     NameSet required_columns{std::begin(columns), std::end(columns)};
     NameSet injected_columns;
 
     auto all_column_files_missing = true;
 
-    const auto & storage_columns = metadata_snapshot->getColumns();
+    const auto & storage_columns = storage.getColumns();
     auto alter_conversions = storage.getAlterConversionsForPart(part);
     for (size_t i = 0; i < columns.size(); ++i)
     {
@@ -66,7 +66,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
         */
     if (all_column_files_missing)
     {
-        const auto minimum_size_column_name = part->getColumnNameWithMinumumCompressedSize(metadata_snapshot);
+        const auto minimum_size_column_name = part->getColumnNameWithMinumumCompressedSize();
         columns.push_back(minimum_size_column_name);
         /// correctly report added column
         injected_columns.insert(columns.back());
@@ -214,19 +214,14 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 }
 
 
-MergeTreeReadTaskColumns getReadTaskColumns(
-    const MergeTreeData & storage,
-    const StorageMetadataPtr & metadata_snapshot,
-    const MergeTreeData::DataPartPtr & data_part,
-    const Names & required_columns,
-    const PrewhereInfoPtr & prewhere_info,
-    bool check_columns)
+MergeTreeReadTaskColumns getReadTaskColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & data_part,
+    const Names & required_columns, const PrewhereInfoPtr & prewhere_info, bool check_columns)
 {
     Names column_names = required_columns;
     Names pre_column_names;
 
     /// inject columns required for defaults evaluation
-    bool should_reorder = !injectRequiredColumns(storage, metadata_snapshot, data_part, column_names).empty();
+    bool should_reorder = !injectRequiredColumns(storage, data_part, column_names).empty();
 
     if (prewhere_info)
     {
@@ -238,7 +233,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         if (pre_column_names.empty())
             pre_column_names.push_back(column_names[0]);
 
-        const auto injected_pre_columns = injectRequiredColumns(storage, metadata_snapshot, data_part, pre_column_names);
+        const auto injected_pre_columns = injectRequiredColumns(storage, data_part, pre_column_names);
         if (!injected_pre_columns.empty())
             should_reorder = true;
 
@@ -256,7 +251,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     if (check_columns)
     {
-        const NamesAndTypesList & physical_columns = metadata_snapshot->getColumns().getAllPhysical();
+        const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
         result.pre_columns = physical_columns.addTypes(pre_column_names);
         result.columns = physical_columns.addTypes(column_names);
     }

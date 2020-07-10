@@ -1,11 +1,4 @@
-from bottle import abort, route, run, request, response
-
-
-@route('/redirected/<_path>')
-def infinite_redirect(_path):
-    response.set_header("Location", request.url)
-    response.status = 307
-    return 'Redirected'
+from bottle import abort, route, run, request
 
 
 @route('/<_bucket>/<_path>')

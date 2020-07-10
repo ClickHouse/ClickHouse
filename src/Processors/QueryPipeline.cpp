@@ -69,8 +69,7 @@ void QueryPipeline::init(Pipe pipe)
     init(std::move(pipes));
 }
 
-static OutputPort * uniteExtremes(const std::vector<OutputPort *> & ports, const Block & header,
-                                  QueryPipeline::ProcessorsContainer & processors)
+static OutputPort * uniteExtremes(const std::vector<OutputPort *> & ports, const Block & header, Processors & processors)
 {
     /// Here we calculate extremes for extremes in case we unite several pipelines.
     /// Example: select number from numbers(2) union all select number from numbers(3)
@@ -91,15 +90,14 @@ static OutputPort * uniteExtremes(const std::vector<OutputPort *> & ports, const
     connect(resize->getOutputs().front(), extremes->getInputPort());
     connect(extremes->getOutputPort(), sink->getPort());
 
-    processors.emplace(std::move(resize));
-    processors.emplace(std::move(extremes));
-    processors.emplace(std::move(sink));
+    processors.emplace_back(std::move(resize));
+    processors.emplace_back(std::move(extremes));
+    processors.emplace_back(std::move(sink));
 
     return extremes_port;
 }
 
-static OutputPort * uniteTotals(const std::vector<OutputPort *> & ports, const Block & header,
-                                QueryPipeline::ProcessorsContainer & processors)
+static OutputPort * uniteTotals(const std::vector<OutputPort *> & ports, const Block & header, Processors & processors)
 {
     /// Calculate totals fro several streams.
     /// Take totals from first sources which has any, skip others.
@@ -117,8 +115,8 @@ static OutputPort * uniteTotals(const std::vector<OutputPort *> & ports, const B
 
     connect(concat->getOutputs().front(), limit->getInputPort());
 
-    processors.emplace(std::move(concat));
-    processors.emplace(std::move(limit));
+    processors.emplace_back(std::move(concat));
+    processors.emplace_back(std::move(limit));
 
     return totals_port;
 }
@@ -169,7 +167,8 @@ void QueryPipeline::init(Pipes pipes)
         }
 
         streams.addStream(&pipe.getPort(), pipe.maxParallelStreams());
-        processors.emplace(std::move(pipe).detachProcessors());
+        auto cur_processors = std::move(pipe).detachProcessors();
+        processors.insert(processors.end(), cur_processors.begin(), cur_processors.end());
     }
 
     if (!totals.empty())
@@ -243,7 +242,7 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
         {
             connect(*stream, transform->getInputs().front());
             stream = &transform->getOutputs().front();
-            processors.emplace(std::move(transform));
+            processors.emplace_back(std::move(transform));
         }
     };
 
@@ -294,7 +293,7 @@ void QueryPipeline::setSinks(const ProcessorGetterWithStreamKind & getter)
             transform = std::make_shared<NullSink>(stream->getHeader());
 
         connect(*stream, transform->getInputs().front());
-        processors.emplace(std::move(transform));
+        processors.emplace_back(std::move(transform));
     };
 
     for (auto & stream : streams)
@@ -340,7 +339,7 @@ void QueryPipeline::addPipe(Processors pipe)
             header = output.getHeader();
     }
 
-    processors.emplace(pipe);
+    processors.insert(processors.end(), pipe.begin(), pipe.end());
     current_header = std::move(header);
 }
 
@@ -353,7 +352,7 @@ void QueryPipeline::addDelayedStream(ProcessorPtr source)
 
     IProcessor::PortNumbers delayed_streams = { streams.size() };
     streams.addStream(&source->getOutputs().front(), 0);
-    processors.emplace(std::move(source));
+    processors.emplace_back(std::move(source));
 
     auto processor = std::make_shared<DelayedPortsProcessor>(current_header, streams.size(), delayed_streams);
     addPipe({ std::move(processor) });
@@ -384,7 +383,7 @@ void QueryPipeline::resize(size_t num_streams, bool force, bool strict)
     for (auto & output : resize->getOutputs())
         streams.addStream(&output, 0);
 
-    processors.emplace(std::move(resize));
+    processors.emplace_back(std::move(resize));
 }
 
 void QueryPipeline::enableQuotaForCurrentStreams()
@@ -413,7 +412,7 @@ void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
     streams.assign({ &outputs.front() });
     totals_having_port = &outputs.back();
     current_header = outputs.front().getHeader();
-    processors.emplace(std::move(transform));
+    processors.emplace_back(std::move(transform));
 }
 
 void QueryPipeline::addDefaultTotals()
@@ -435,7 +434,7 @@ void QueryPipeline::addDefaultTotals()
 
     auto source = std::make_shared<SourceFromSingleChunk>(current_header, Chunk(std::move(columns), 1));
     totals_having_port = &source->getPort();
-    processors.emplace(std::move(source));
+    processors.emplace_back(source);
 }
 
 void QueryPipeline::addTotals(ProcessorPtr source)
@@ -449,7 +448,7 @@ void QueryPipeline::addTotals(ProcessorPtr source)
     assertBlocksHaveEqualStructure(current_header, source->getOutputs().front().getHeader(), "QueryPipeline");
 
     totals_having_port = &source->getOutputs().front();
-    processors.emplace(std::move(source));
+    processors.emplace_back(std::move(source));
 }
 
 void QueryPipeline::dropTotalsAndExtremes()
@@ -458,7 +457,7 @@ void QueryPipeline::dropTotalsAndExtremes()
     {
         auto null_sink = std::make_shared<NullSink>(port->getHeader());
         connect(*port, null_sink->getPort());
-        processors.emplace(std::move(null_sink));
+        processors.emplace_back(std::move(null_sink));
         port = nullptr;
     };
 
@@ -487,7 +486,7 @@ void QueryPipeline::addExtremesTransform()
         stream = &transform->getOutputPort();
         extremes.push_back(&transform->getExtremesPort());
 
-        processors.emplace(std::move(transform));
+        processors.emplace_back(std::move(transform));
     }
 
     if (extremes.size() == 1)
@@ -511,8 +510,8 @@ void QueryPipeline::addCreatingSetsTransform(ProcessorPtr transform)
     connect(*streams.back(), concat->getInputs().back());
 
     streams.assign({ &concat->getOutputs().front() });
-    processors.emplace(std::move(transform));
-    processors.emplace(std::move(concat));
+    processors.emplace_back(std::move(transform));
+    processors.emplace_back(std::move(concat));
 }
 
 void QueryPipeline::setOutputFormat(ProcessorPtr output)
@@ -539,17 +538,17 @@ void QueryPipeline::setOutputFormat(ProcessorPtr output)
     {
         auto null_source = std::make_shared<NullSource>(totals.getHeader());
         totals_having_port = &null_source->getPort();
-        processors.emplace(std::move(null_source));
+        processors.emplace_back(std::move(null_source));
     }
 
     if (!extremes_port)
     {
         auto null_source = std::make_shared<NullSource>(extremes.getHeader());
         extremes_port = &null_source->getPort();
-        processors.emplace(std::move(null_source));
+        processors.emplace_back(std::move(null_source));
     }
 
-    processors.emplace(std::move(output));
+    processors.emplace_back(std::move(output));
 
     connect(*streams.front(), main);
     connect(*totals_having_port, totals);
@@ -593,7 +592,6 @@ void QueryPipeline::unitePipelines(
     {
         auto & pipeline = *pipeline_ptr;
         pipeline.checkInitialized();
-        pipeline.processors.setCollectedProcessors(processors.getCollectedProcessors());
 
         if (!pipeline.isCompleted())
         {
@@ -611,7 +609,7 @@ void QueryPipeline::unitePipelines(
 
             connect(*pipeline.extremes_port, converting->getInputPort());
             extremes.push_back(&converting->getOutputPort());
-            processors.emplace(std::move(converting));
+            processors.push_back(std::move(converting));
         }
 
         /// Take totals only from first port.
@@ -622,13 +620,10 @@ void QueryPipeline::unitePipelines(
 
             connect(*pipeline.totals_having_port, converting->getInputPort());
             totals.push_back(&converting->getOutputPort());
-            processors.emplace(std::move(converting));
+            processors.push_back(std::move(converting));
         }
 
-        auto * collector = processors.setCollectedProcessors(nullptr);
-        processors.emplace(pipeline.processors.detach());
-        processors.setCollectedProcessors(collector);
-
+        processors.insert(processors.end(), pipeline.processors.begin(), pipeline.processors.end());
         streams.addStreams(pipeline.streams);
 
         table_locks.insert(table_locks.end(), std::make_move_iterator(pipeline.table_locks.begin()), std::make_move_iterator(pipeline.table_locks.end()));
@@ -670,7 +665,7 @@ void QueryPipeline::unitePipelines(
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 {
-    for (auto & processor : processors.get())
+    for (auto & processor : processors)
     {
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
             source->setProgressCallback(callback);
@@ -684,7 +679,7 @@ void QueryPipeline::setProcessListElement(QueryStatus * elem)
 {
     process_list_element = elem;
 
-    for (auto & processor : processors.get())
+    for (auto & processor : processors)
     {
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
             source->setProcessListElement(elem);
@@ -796,7 +791,7 @@ Pipe QueryPipeline::getPipe() &&
 
 Pipes QueryPipeline::getPipes() &&
 {
-    Pipe pipe(processors.detach(), streams.at(0), totals_having_port, extremes_port);
+    Pipe pipe(std::move(processors), streams.at(0), totals_having_port, extremes_port);
     pipe.max_parallel_streams = streams.maxParallelStreams();
 
     for (auto & lock : table_locks)
@@ -828,7 +823,7 @@ PipelineExecutorPtr QueryPipeline::execute()
     if (!isCompleted())
         throw Exception("Cannot execute pipeline because it is not completed.", ErrorCodes::LOGICAL_ERROR);
 
-    return std::make_shared<PipelineExecutor>(processors.get(), process_list_element);
+    return std::make_shared<PipelineExecutor>(processors, process_list_element);
 }
 
 QueryPipeline & QueryPipeline::operator= (QueryPipeline && rhs)
@@ -856,51 +851,6 @@ QueryPipeline & QueryPipeline::operator= (QueryPipeline && rhs)
     interpreter_context = std::move(rhs.interpreter_context);
 
     return *this;
-}
-
-void QueryPipeline::ProcessorsContainer::emplace(ProcessorPtr processor)
-{
-    if (collected_processors)
-        collected_processors->emplace_back(processor);
-
-    processors.emplace_back(std::move(processor));
-}
-
-void QueryPipeline::ProcessorsContainer::emplace(Processors processors_)
-{
-    for (auto & processor : processors_)
-        emplace(std::move(processor));
-}
-
-Processors * QueryPipeline::ProcessorsContainer::setCollectedProcessors(Processors * collected_processors_)
-{
-    if (collected_processors && collected_processors_)
-        throw Exception("Cannot set collected processors to QueryPipeline because "
-                        "another one object was already created for current pipeline." , ErrorCodes::LOGICAL_ERROR);
-
-    std::swap(collected_processors, collected_processors_);
-    return collected_processors_;
-}
-
-QueryPipelineProcessorsCollector::QueryPipelineProcessorsCollector(QueryPipeline & pipeline_, IQueryPlanStep * step_)
-    : pipeline(pipeline_), step(step_)
-{
-    pipeline.processors.setCollectedProcessors(&processors);
-}
-
-QueryPipelineProcessorsCollector::~QueryPipelineProcessorsCollector()
-{
-    pipeline.processors.setCollectedProcessors(nullptr);
-}
-
-Processors QueryPipelineProcessorsCollector::detachProcessors(size_t group)
-{
-    for (auto & processor : processors)
-        processor->setQueryPlanStep(step, group);
-
-    Processors res;
-    res.swap(processors);
-    return res;
 }
 
 }

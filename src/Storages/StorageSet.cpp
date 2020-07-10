@@ -32,18 +32,15 @@ namespace ErrorCodes
 class SetOrJoinBlockOutputStream : public IBlockOutputStream
 {
 public:
-    SetOrJoinBlockOutputStream(
-        StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
-        const String & backup_path_, const String & backup_tmp_path_,
-        const String & backup_file_name_);
+    SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
+        const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_);
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    Block getHeader() const override { return table.getSampleBlock(); }
     void write(const Block & block) override;
     void writeSuffix() override;
 
 private:
     StorageSetOrJoinBase & table;
-    StorageMetadataPtr metadata_snapshot;
     String backup_path;
     String backup_tmp_path;
     String backup_file_name;
@@ -53,20 +50,14 @@ private:
 };
 
 
-SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
-    StorageSetOrJoinBase & table_,
-    const StorageMetadataPtr & metadata_snapshot_,
-    const String & backup_path_,
-    const String & backup_tmp_path_,
-    const String & backup_file_name_)
-    : table(table_)
-    , metadata_snapshot(metadata_snapshot_)
-    , backup_path(backup_path_)
-    , backup_tmp_path(backup_tmp_path_)
-    , backup_file_name(backup_file_name_)
-    , backup_buf(backup_tmp_path + backup_file_name)
-    , compressed_backup_buf(backup_buf)
-    , backup_stream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock())
+SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
+    const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_)
+    : table(table_),
+    backup_path(backup_path_), backup_tmp_path(backup_tmp_path_),
+    backup_file_name(backup_file_name_),
+    backup_buf(backup_tmp_path + backup_file_name),
+    compressed_backup_buf(backup_buf),
+    backup_stream(compressed_backup_buf, 0, table.getSampleBlock())
 {
 }
 
@@ -90,10 +81,10 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 }
 
 
-BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     UInt64 id = ++increment;
-    return std::make_shared<SetOrJoinBlockOutputStream>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin");
+    return std::make_shared<SetOrJoinBlockOutputStream>(*this, path, path + "tmp/", toString(id) + ".bin");
 }
 
 
@@ -105,11 +96,8 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const Context & context_)
     : IStorage(table_id_)
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
-    storage_metadata.setConstraints(constraints_);
-    setInMemoryMetadata(storage_metadata);
-
+    setColumns(columns_);
+    setConstraints(constraints_);
 
     if (relative_path_.empty())
         throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
@@ -128,8 +116,7 @@ StorageSet::StorageSet(
     : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_},
     set(std::make_shared<Set>(SizeLimits(), false, true))
 {
-
-    Block header = getInMemoryMetadataPtr()->getSampleBlock();
+    Block header = getSampleBlock();
     header = header.sortColumns();
     set->setHeader(header);
 
@@ -142,13 +129,13 @@ void StorageSet::finishInsert() { set->finishInsert(); }
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
 
-void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
+void StorageSet::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
     Poco::File(path + "tmp/").createDirectories();
 
-    Block header = metadata_snapshot->getSampleBlock();
+    Block header = getSampleBlock();
     header = header.sortColumns();
 
     increment = 0;
