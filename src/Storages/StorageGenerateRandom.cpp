@@ -393,11 +393,11 @@ StorageGenerateRandom::StorageGenerateRandom(const StorageID & table_id_, const 
     static constexpr size_t MAX_STRING_SIZE = 1 << 30;
 
     if (max_array_length > MAX_ARRAY_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in GenerateRandom: {}, maximum: {}",
-                        max_array_length, MAX_ARRAY_SIZE);
+        throw Exception("Too large array size in GenerateRandom: " + toString(max_array_length) + ", maximum: " + toString(MAX_ARRAY_SIZE),
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE);
     if (max_string_length > MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in GenerateRandom: {}, maximum: {}",
-                        max_string_length, MAX_STRING_SIZE);
+        throw Exception("Too large string size in GenerateRandom: " + toString(max_string_length) + ", maximum: " + toString(MAX_STRING_SIZE),
+            ErrorCodes::TOO_LARGE_STRING_SIZE);
 
     random_seed = random_seed_ ? sipHash64(*random_seed_) : randomSeed();
     setColumns(columns_);
