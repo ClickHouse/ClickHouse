@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/MergeSortingStep.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
-#include <IO/Operators.h>
 
 namespace DB
 {
@@ -10,9 +9,7 @@ static ITransformingStep::DataStreamTraits getTraits()
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = true,
-            .returns_single_stream = false,
-            .preserves_number_of_streams = true,
+            .preserves_distinct_columns = true
     };
 }
 
@@ -49,17 +46,6 @@ void MergeSortingStep::transformPipeline(QueryPipeline & pipeline)
                 tmp_volume,
                 min_free_disk_space);
     });
-}
-
-void MergeSortingStep::describeActions(FormatSettings & settings) const
-{
-    String prefix(settings.offset, ' ');
-    settings.out << prefix << "Sort description: ";
-    dumpSortDescription(description, input_streams.front().header, settings.out);
-    settings.out << '\n';
-
-    if (limit)
-        settings.out << prefix << "Limit " << limit << '\n';
 }
 
 }

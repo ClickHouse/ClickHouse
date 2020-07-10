@@ -175,9 +175,6 @@ void registerInputFormatProcessorTemplate(FormatFactory & factory);
 void registerOutputFormatProcessorTemplate(FormatFactory & factory);
 void registerInputFormatProcessorMsgPack(FormatFactory & factory);
 void registerOutputFormatProcessorMsgPack(FormatFactory & factory);
-void registerInputFormatProcessorORC(FormatFactory & factory);
-void registerOutputFormatProcessorORC(FormatFactory & factory);
-
 
 /// File Segmentation Engines for parallel reading
 
@@ -210,5 +207,6 @@ void registerOutputFormatProcessorPostgreSQLWire(FormatFactory & factory);
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
 void registerInputFormatProcessorRegexp(FormatFactory & factory);
 void registerInputFormatProcessorJSONAsString(FormatFactory & factory);
+void registerInputFormatProcessorORC(FormatFactory & factory);
 
 }

@@ -275,11 +275,8 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
         switch (*buf.position())
         {
             case '+':
-            {
                 break;
-            }
             case '-':
-            {
                 if constexpr (is_signed_v<T>)
                     negative = true;
                 else
@@ -290,7 +287,6 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                         return ReturnType(false);
                 }
                 break;
-            }
             case '0': [[fallthrough]];
             case '1': [[fallthrough]];
             case '2': [[fallthrough]];
@@ -301,27 +297,20 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '7': [[fallthrough]];
             case '8': [[fallthrough]];
             case '9':
-            {
                 if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
                 {
-                    /// Perform relativelly slow overflow check only when
-                    /// number of decimal digits so far is close to the max for given type.
-                    /// Example: 20 * 10 will overflow Int8.
-
-                    if (buf.count() - initial_pos + 1 >= std::numeric_limits<T>::max_digits10)
+                    // perform relativelly slow overflow check only when number of decimal digits so far is close to the max for given type.
+                    if (buf.count() - initial_pos >= std::numeric_limits<T>::max_digits10)
                     {
-                        T signed_res = res;
-                        if (common::mulOverflow<T>(signed_res, 10, signed_res)
-                            || common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
+                        if (common::mulOverflow(res, static_cast<decltype(res)>(10), res)
+                            || common::addOverflow(res, static_cast<decltype(res)>(*buf.position() - '0'), res))
                             return ReturnType(false);
-                        res = signed_res;
                         break;
                     }
                 }
                 res *= 10;
                 res += *buf.position() - '0';
                 break;
-            }
             default:
                 goto end;
         }
@@ -329,23 +318,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     }
 
 end:
-    if (!negative)
-    {
-        x = res;
-    }
-    else
-    {
-        if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
-        {
-            x = res;
-            if (common::mulOverflow<T>(x, -1, x))
-                return ReturnType(false);
-        }
-        else
-        {
-            x = -res;
-        }
-    }
+    x = negative ? -res : res;
 
     return ReturnType(true);
 }
@@ -454,9 +427,6 @@ void readBackQuotedString(String & s, ReadBuffer & buf);
 void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readStringUntilEOF(String & s, ReadBuffer & buf);
-
-// Reads the line until EOL, unescaping backslash escape sequences.
-// Buffer pointer is left at EOL, don't forget to advance it.
 void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
 
@@ -518,9 +488,7 @@ struct NullSink
 };
 
 void parseUUID(const UInt8 * src36, UInt8 * dst16);
-void parseUUIDWithoutSeparator(const UInt8 * src36, UInt8 * dst16);
 void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
-void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
 
 template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
@@ -607,30 +575,15 @@ inline bool tryReadDateText(DayNum & date, ReadBuffer & buf)
 inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
 {
     char s[36];
-    size_t size = buf.read(s, 32);
+    size_t size = buf.read(s, 36);
 
-    if (size == 32)
-    {
-        if (s[8] == '-')
-        {
-            size += buf.read(&s[32], 4);
-
-            if (size != 36)
-            {
-                s[size] = 0;
-                throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
-            }
-
-            parseUUID(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
-        }
-        else
-            parseUUIDWithoutSeparator(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
-    }
-    else
+    if (size != 36)
     {
         s[size] = 0;
         throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
     }
+
+    parseUUID(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
 }
 
 
@@ -705,34 +658,35 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         return ReturnType(false);
     }
 
-    DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> components{static_cast<DateTime64::NativeType>(whole), 0};
+    DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> c{static_cast<DateTime64::NativeType>(whole), 0};
 
     if (!buf.eof() && *buf.position() == '.')
     {
-        ++buf.position();
-
-        /// Read digits, up to 'scale' positions.
-        for (size_t i = 0; i < scale; ++i)
+        buf.ignore(1); // skip separator
+        const auto pos_before_fractional = buf.count();
+        if (!tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(c.fractional, buf))
         {
-            if (!buf.eof() && isNumericASCII(*buf.position()))
-            {
-                components.fractional *= 10;
-                components.fractional += *buf.position() - '0';
-                ++buf.position();
-            }
-            else
-            {
-                /// Adjust to scale.
-                components.fractional *= 10;
-            }
+            return ReturnType(false);
         }
 
-        /// Ignore digits that are out of precision.
-        while (!buf.eof() && isNumericASCII(*buf.position()))
-            ++buf.position();
+        // Adjust fractional part to the scale, since decimalFromComponents knows nothing
+        // about convention of ommiting trailing zero on fractional part
+        // and assumes that fractional part value is less than 10^scale.
+
+        // If scale is 3, but we read '12', promote fractional part to '120'.
+        // And vice versa: if we read '1234', denote it to '123'.
+        const auto fractional_length = static_cast<Int32>(buf.count() - pos_before_fractional);
+        if (const auto adjust_scale = static_cast<Int32>(scale) - fractional_length; adjust_scale > 0)
+        {
+            c.fractional *= common::exp10_i64(adjust_scale);
+        }
+        else if (adjust_scale < 0)
+        {
+            c.fractional /= common::exp10_i64(-1 * adjust_scale);
+        }
     }
 
-    datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
+    datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(c, scale);
 
     return ReturnType(true);
 }

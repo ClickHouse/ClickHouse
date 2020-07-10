@@ -13,8 +13,7 @@ namespace DB
 {
 
 ReadFromStorageStep::ReadFromStorageStep(
-    TableLockHolder table_lock_,
-    StorageMetadataPtr & metadata_snapshot_,
+    TableStructureReadLockHolder table_lock_,
     SelectQueryOptions options_,
     StoragePtr storage_,
     const Names & required_columns_,
@@ -24,7 +23,6 @@ ReadFromStorageStep::ReadFromStorageStep(
     size_t max_block_size_,
     size_t max_streams_)
     : table_lock(std::move(table_lock_))
-    , metadata_snapshot(metadata_snapshot_)
     , options(std::move(options_))
     , storage(std::move(storage_))
     , required_columns(required_columns_)
@@ -37,11 +35,11 @@ ReadFromStorageStep::ReadFromStorageStep(
     /// Note: we read from storage in constructor of step because we don't know real header before reading.
     /// It will be fixed when storage return QueryPlanStep itself.
 
-    Pipes pipes = storage->read(required_columns, metadata_snapshot, query_info, *context, processing_stage, max_block_size, max_streams);
+    Pipes pipes = storage->read(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
 
     if (pipes.empty())
     {
-        Pipe pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID())));
+        Pipe pipe(std::make_shared<NullSource>(storage->getSampleBlockForColumns(required_columns)));
 
         if (query_info.prewhere_info)
         {
@@ -68,7 +66,6 @@ ReadFromStorageStep::ReadFromStorageStep(
     }
 
     pipeline = std::make_unique<QueryPipeline>();
-    QueryPipelineProcessorsCollector collector(*pipeline, this);
 
     /// Table lock is stored inside pipeline here.
     pipeline->addTableLock(table_lock);
@@ -114,7 +111,7 @@ ReadFromStorageStep::ReadFromStorageStep(
         }
     }
 
-    if (pipes.size() == 1 && !storage->isView())
+    if (pipes.size() == 1)
         pipeline->setMaxThreads(1);
 
     for (auto & pipe : pipes)
@@ -125,9 +122,7 @@ ReadFromStorageStep::ReadFromStorageStep(
     pipeline->addInterpreterContext(std::move(context));
     pipeline->addStorageHolder(std::move(storage));
 
-    processors = collector.detachProcessors();
-
-    output_stream = DataStream{.header = pipeline->getHeader(), .has_single_port = pipeline->getNumStreams() == 1};
+    output_stream = DataStream{.header = pipeline->getHeader()};
 }
 
 ReadFromStorageStep::~ReadFromStorageStep() = default;
@@ -135,11 +130,6 @@ ReadFromStorageStep::~ReadFromStorageStep() = default;
 QueryPipelinePtr ReadFromStorageStep::updatePipeline(QueryPipelines)
 {
     return std::move(pipeline);
-}
-
-void ReadFromStorageStep::describePipeline(FormatSettings & settings) const
-{
-    IQueryPlanStep::describePipeline(processors, settings);
 }
 
 }
