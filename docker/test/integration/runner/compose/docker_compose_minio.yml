@@ -17,32 +17,23 @@ services:
       - proxy2
 
   # HTTP proxies for Minio.
-  # TODO: Remove build section and replace with yandex/clickhouse-s3-proxy image after this commit merge.
   proxy1:
-    build:
-      context: ../../../docker/test/integration/s3_proxy/
-      network: host
+    image: yandex/clickhouse-s3-proxy
     ports:
       - "8080" # Redirect proxy port
       - "80"   # Reverse proxy port
       - "443"  # Reverse proxy port (secure)
 
   proxy2:
-    build:
-      context: ../../../docker/test/integration/s3_proxy/
-      network: host
+    image: yandex/clickhouse-s3-proxy
     ports:
       - "8080"
       - "80"
       - "443"
 
   # Empty container to run proxy resolver.
-  # TODO: Remove build section and replace with yandex/clickhouse-python-bottle image after this commit merge.
   resolver:
-    build:
-      context: ../../../docker/test/integration/
-      dockerfile: resolver/Dockerfile
-      network: host
+    image: yandex/clickhouse-python-bottle
     ports:
       - "8080"
     tty: true
