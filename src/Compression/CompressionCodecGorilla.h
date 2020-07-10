@@ -97,7 +97,7 @@ public:
 
     String getCodecDesc() const override;
 
-    void useInfoAboutType(DataTypePtr data_type) override;
+    void useInfoAboutType(const DataTypePtr & data_type) override;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
@@ -112,8 +112,5 @@ protected:
 private:
     UInt8 data_bytes_size;
 };
-
-class CompressionCodecFactory;
-void registerCodecGorilla(CompressionCodecFactory & factory);
 
 }
