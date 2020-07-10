@@ -74,7 +74,7 @@ ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-s
 ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/disks.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/secure_ports.xml /etc/clickhouse-server/config.d/
+#ln -s /usr/share/clickhouse-test/config/secure_ports.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/clusters.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/graphite.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/
