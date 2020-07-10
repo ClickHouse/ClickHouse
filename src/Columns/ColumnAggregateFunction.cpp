@@ -135,6 +135,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     auto & func = column_aggregate_func.func;
     auto & data = column_aggregate_func.data;
 
+    /// insertResultInto may invalidate states, so we must unshare ownership of them
     column_aggregate_func.ensureOwnership();
 
     MutableColumnPtr res = func->getReturnType()->createColumn();
