@@ -5,7 +5,7 @@ namespace DB
 {
 
 ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_, std::shared_ptr<Context> context_)
-    : ISourceStep(DataStream{.header = pipe_.getHeader(), .has_single_port = true})
+    : ISourceStep(DataStream{.header = pipe_.getHeader()})
     , pipe(std::move(pipe_))
     , context(std::move(context_))
 {

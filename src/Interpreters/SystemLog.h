@@ -457,9 +457,8 @@ void SystemLog<LogElement>::prepareTable()
 
     if (table)
     {
-        auto metadata_snapshot = table->getInMemoryMetadataPtr();
         const Block expected = LogElement::createBlock();
-        const Block actual = metadata_snapshot->getSampleBlockNonMaterialized();
+        const Block actual = table->getSampleBlockNonMaterialized();
 
         if (!blocksHaveEqualStructure(actual, expected))
         {

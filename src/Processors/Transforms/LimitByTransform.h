@@ -6,7 +6,6 @@
 namespace DB
 {
 
-/// Executes LIMIT BY for specified columns.
 class LimitByTransform : public ISimpleTransform
 {
 public:

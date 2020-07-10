@@ -27,7 +27,7 @@ class StorageJoin final : public ext::shared_ptr_helper<StorageJoin>, public Sto
 public:
     String getName() const override { return "Join"; }
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     /// Access the innards.
     HashJoinPtr & getJoin() { return join; }
@@ -38,7 +38,6 @@ public:
 
     Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
