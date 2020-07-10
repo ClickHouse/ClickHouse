@@ -61,7 +61,8 @@ static void likeStringToBloomFilter(
         bloom_filter.add(token.c_str(), token.size());
 }
 /// Unified condition for equals, startsWith and endsWith
-bool MergeTreeConditionFullText::createFunctionEqualsCondition(RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenExtractorPtr token_extractor)
+bool MergeTreeConditionFullText::createFunctionEqualsCondition(
+    RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenExtractorPtr token_extractor)
 {
     out.function = RPNElement::FUNCTION_EQUALS;
     out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -774,12 +775,10 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
     if (index.type == NgramTokenExtractor::getName())
     {
         size_t n = index.arguments[0].get<size_t>();
-        BloomFilterParameters params
-        {
-            .filter_size = index.arguments[1].get<size_t>(),
-            .filter_hashes = index.arguments[2].get<size_t>(),
-            .seed = index.arguments[3].get<size_t>(),
-        };
+        BloomFilterParameters params(
+            index.arguments[1].get<size_t>(),
+            index.arguments[2].get<size_t>(),
+            index.arguments[3].get<size_t>());
 
         auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
 
@@ -787,12 +786,10 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
     }
     else if (index.type == SplitTokenExtractor::getName())
     {
-        BloomFilterParameters params
-        {
-            .filter_size = index.arguments[0].get<size_t>(),
-            .filter_hashes = index.arguments[1].get<size_t>(),
-            .seed = index.arguments[2].get<size_t>(),
-        };
+        BloomFilterParameters params(
+            index.arguments[0].get<size_t>(),
+            index.arguments[1].get<size_t>(),
+            index.arguments[2].get<size_t>());
 
         auto tokenizer = std::make_unique<SplitTokenExtractor>();
 
@@ -826,6 +823,14 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
     {
         throw Exception("Unknown index type: " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
     }
+
+    assert(index.arguments.size() >= 3);
+
+    /// Just validate
+    BloomFilterParameters params(
+        index.arguments[0].get<size_t>(),
+        index.arguments[1].get<size_t>(),
+        index.arguments[2].get<size_t>());
 }
 
 }
