@@ -89,6 +89,6 @@ do
     sleep 0.1
 done
 
-clickhouse-test --no-long --testname --shard --zookeeper 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
+clickhouse-test --no-long --testname --shard --zookeeper --skip parquet avro h3 odbc mysql sha256 _orc_ arrow 01098_temporary_and_external_tables 01083_expressions_in_engine_arguments hdfs 00911_tautological_compare protobuf capnproto java_hash hashing secure 00490_special_line_separators_and_characters_outside_of_bmp 00436_convert_charset 00105_shard_collations 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
 
 mv /var/log/clickhouse-server/* /test_output
