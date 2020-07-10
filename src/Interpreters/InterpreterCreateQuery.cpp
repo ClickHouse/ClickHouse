@@ -129,7 +129,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         bool old_style_database = context.getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
         auto engine = std::make_shared<ASTFunction>();
         auto storage = std::make_shared<ASTStorage>();
-        engine->name = !old_style_database ? "Ordinary" : "Atomic"; //FIXME
+        engine->name = old_style_database ? "Ordinary" : "Atomic";
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
     }
@@ -161,9 +161,12 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
     else
     {
-        if (create.uuid != UUIDHelpers::Nil)
+        bool is_on_cluster = context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        if (create.uuid != UUIDHelpers::Nil && !is_on_cluster)
             throw Exception("Ordinary database engine does not support UUID", ErrorCodes::INCORRECT_QUERY);
 
+        /// Ignore UUID if it's ON CLUSTER query
+        create.uuid = UUIDHelpers::Nil;
         metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
 
@@ -672,8 +675,12 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
         else
         {
-            if (create.uuid != UUIDHelpers::Nil)
+            bool is_on_cluster = context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+            if (create.uuid != UUIDHelpers::Nil && !is_on_cluster)
                 throw Exception("Table UUID specified, but engine of database " + create.database + " is not Atomic", ErrorCodes::INCORRECT_QUERY);
+
+            /// Ignore UUID if it's ON CLUSTER query
+            create.uuid = UUIDHelpers::Nil;
         }
 
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
@@ -778,6 +785,8 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 
 BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 {
+    create.uuid = UUIDHelpers::Nil; //FIXME
+
     String dictionary_name = create.table;
 
     create.database = context.resolveDatabase(create.database);
@@ -816,8 +825,10 @@ BlockIO InterpreterCreateQuery::execute()
     auto & create = query_ptr->as<ASTCreateQuery &>();
     if (!create.cluster.empty())
     {
-        /// NOTE: if it's CREATE query and create.database is DatabaseAtomic, different UUIDs will be generated on all servers.
-        /// However, it allows to use UUID as replica name.
+        /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
+        /// It will be ignored if database does not support UUIDs.
+        if (!create.attach && create.uuid == UUIDHelpers::Nil)
+            create.uuid = UUIDHelpers::generateV4();
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
     }
 
