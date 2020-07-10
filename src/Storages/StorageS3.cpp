@@ -5,6 +5,7 @@
 #include <IO/S3Common.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
+#include <Storages/StorageCOS.h>
 #include <Storages/StorageS3Settings.h>
 
 #include <Interpreters/Context.h>
@@ -329,9 +330,9 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMet
         client, uri.bucket, uri.key);
 }
 
-void registerStorageS3(StorageFactory & factory)
+void registerStorageS3Impl(const String & name, bool is_s3, StorageFactory & factory)
 {
-    factory.registerStorage("S3", [](const StorageFactory::Arguments & args)
+    factory.registerStorage(name, [is_s3](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
 
@@ -364,11 +365,24 @@ void registerStorageS3(StorageFactory & factory)
         else
             compression_method = "auto";
 
-        return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.table_id, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
+        if (is_s3)
+            return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.table_id, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
+        else
+            return StorageCOS::create(s3_uri, access_key_id, secret_access_key, args.table_id, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
     },
     {
         .source_access_type = AccessType::S3,
     });
+}
+
+void registerStorageS3(StorageFactory & factory)
+{
+    return registerStorageS3Impl("S3", true, factory);
+}
+
+void registerStorageCOS(StorageFactory & factory)
+{
+    return registerStorageS3Impl("COSN", false, factory);
 }
 
 NamesAndTypesList StorageS3::getVirtuals() const
