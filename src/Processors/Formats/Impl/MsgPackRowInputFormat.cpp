@@ -213,4 +213,14 @@ void registerInputFormatProcessorMsgPack(FormatFactory & factory)
 
 }
 
+#else
+
+namespace DB
+{
+class FormatFactory;
+void registerInputFormatProcessorMsgPack(FormatFactory &)
+{
+}
+}
+
 #endif
