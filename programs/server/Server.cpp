@@ -543,6 +543,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             //buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
+            global_context->setExternalAuthenticatorsConfig(*config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
@@ -593,9 +594,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     std::string access_control_local_path = config().getString("access_control_path", "");
     if (!access_control_local_path.empty())
         global_context->getAccessControlManager().setLocalDirectory(access_control_local_path);
-
-    /// Sets external authenticators config (LDAP).
-    global_context->setExternalAuthenticatorsConfig(config());
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
