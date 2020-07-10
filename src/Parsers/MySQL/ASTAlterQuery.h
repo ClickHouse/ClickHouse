@@ -11,28 +11,6 @@ namespace DB
 namespace MySQLParser
 {
 
-class ASTAlterCommand : public IAST
-{
-public:
-    enum Type
-    {
-        ADD_COLUMN,
-        ADD_INDEX,
-        DROP_CONSTRAINT,
-        DROP_COLUMN,
-        DROP_INDEX,
-        DROP_PRIMARY_KEY,
-        DROP_FOREIGN_KEY,
-    };
-
-    /// For ADD INDEX
-    ASTDeclareIndex * add_index;
-
-    /// For ADD COLUMN
-    ASTDeclareColumn * add_column;
-
-};
-
 class ASTAlterQuery : public IAST
 {
 public:
@@ -46,18 +24,6 @@ public:
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-};
-
-class ParserAlterCommand : public IParserBase
-{
-protected:
-    const char * getName() const override { return "alter command"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-    bool parseAddCommand(Pos & pos, ASTPtr & node, Expected & expected);
-
-    bool parseDropCommand(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 class ParserAlterQuery : public IParserBase
