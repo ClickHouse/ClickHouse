@@ -90,6 +90,7 @@ target_link_libraries (common
         ${Poco_Foundation_LIBRARY}
         ${CITYHASH_LIBRARIES}
         ${Boost_SYSTEM_LIBRARY}
+        fmt
 )
 
 if (ENABLE_TESTS)
