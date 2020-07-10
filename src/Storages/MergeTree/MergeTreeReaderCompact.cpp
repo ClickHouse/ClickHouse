@@ -45,40 +45,31 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
 {
     size_t buffer_size = settings.max_read_buffer_size;
     const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+    file_in = data_part->volume->getDisk()->readFile(
+                full_data_path, buffer_size, 0,
+                settings.min_bytes_to_use_direct_io,
+                settings.min_bytes_to_use_mmap_io);
 
-    if (uncompressed_cache)
+    auto full_path = fullPath(data_part->volume->getDisk(), full_data_path);
+    for (const auto & column : columns)
     {
-        auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            fullPath(data_part->volume->getDisk(), full_data_path),
-            [this, full_data_path, buffer_size]()
-            {
-                return data_part->volume->getDisk()->readFile(
-                    full_data_path,
-                    buffer_size,
-                    0,
-                    settings.min_bytes_to_use_direct_io,
-                    settings.min_bytes_to_use_mmap_io);
-            },
-            uncompressed_cache);
+        
+        std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
+        std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
+        if (uncompressed_cache)
+        {
+            cached_buffer = std::make_unique<CachedCompressedReadBuffer>(full_path, file_in.get(), uncompressed_cache);
+            if (profile_callback_)
+                cached_buffer->setProfileCallback(profile_callback_, clock_type_);
+        }
+        else
+        {
+            non_cached_buffer = std::make_unique<CompressedReadBufferFromFile>(*file_in);
+            if (profile_callback_)
+                non_cached_buffer->setProfileCallback(profile_callback_, clock_type_);
+        }
 
-        if (profile_callback_)
-            buffer->setProfileCallback(profile_callback_, clock_type_);
-
-        cached_buffer = std::move(buffer);
-        data_buffer = cached_buffer.get();
-    }
-    else
-    {
-        auto buffer =
-            std::make_unique<CompressedReadBufferFromFile>(
-                data_part->volume->getDisk()->readFile(
-                    full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io));
-
-        if (profile_callback_)
-            buffer->setProfileCallback(profile_callback_, clock_type_);
-
-        non_cached_buffer = std::move(buffer);
-        data_buffer = non_cached_buffer.get();
+        column_streams[column.name] = ColumnStream{std::move(cached_buffer), std::move(non_cached_buffer)};
     }
 
     size_t columns_num = columns.size();
@@ -181,15 +172,16 @@ void MergeTreeReaderCompact::readData(
     const String & name, IColumn & column, const IDataType & type,
     size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets)
 {
+    auto & stream = column_streams[name];
     if (!isContinuousReading(from_mark, column_position))
-        seekToMark(from_mark, column_position);
+        seekToMark(stream, from_mark, column_position);
 
     auto buffer_getter = [&](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
     {
         if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != IDataType::Substream::ArraySizes))
             return nullptr;
 
-        return data_buffer;
+        return stream.data_buffer;
     };
 
     IDataType::DeserializeBinaryBulkSettings deserialize_settings;
@@ -209,15 +201,15 @@ void MergeTreeReaderCompact::readData(
 }
 
 
-void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
+void MergeTreeReaderCompact::seekToMark(ColumnStream & stream, size_t row_index, size_t column_index)
 {
     MarkInCompressedFile mark = marks_loader.getMark(row_index, column_index);
     try
     {
-        if (cached_buffer)
-            cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
-        if (non_cached_buffer)
-            non_cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+        if (stream.cached_buffer)
+            stream.cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+        if (stream.non_cached_buffer)
+            stream.non_cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
     }
     catch (Exception & e)
     {
@@ -237,6 +229,18 @@ bool MergeTreeReaderCompact::isContinuousReading(size_t mark, size_t column_posi
     const auto & [last_mark, last_column] = *last_read_granule;
     return (mark == last_mark && column_position == last_column + 1)
         || (mark == last_mark + 1 && column_position == 0 && last_column == data_part->getColumns().size() - 1);
+}
+
+MergeTreeReaderCompact::ColumnStream::ColumnStream(
+    std::unique_ptr<CachedCompressedReadBuffer> cached_buffer_,
+    std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer_)
+    : cached_buffer(std::move(cached_buffer_))
+    , non_cached_buffer(std::move(non_cached_buffer_))
+{
+    if (cached_buffer)
+        data_buffer = cached_buffer.get();
+    else
+        data_buffer = non_cached_buffer.get();
 }
 
 }

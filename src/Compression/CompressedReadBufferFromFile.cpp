@@ -37,6 +37,12 @@ bool CompressedReadBufferFromFile::nextImpl()
     return true;
 }
 
+CompressedReadBufferFromFile::CompressedReadBufferFromFile(ReadBufferFromFileBase & file_in_)
+    : BufferWithOwnMemory<ReadBuffer>(0), file_in(file_in_)
+{
+    compressed_in = &file_in;
+}
+
 CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf)
     : BufferWithOwnMemory<ReadBuffer>(0), p_file_in(std::move(buf)), file_in(*p_file_in)
 {
