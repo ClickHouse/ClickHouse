@@ -175,8 +175,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     true,                   /// require_part_metadata
                     attach,
                     [this] (const std::string & name) { enqueuePartForCheck(name); })
-    , zookeeper_path(global_context.getMacros()->expand(zookeeper_path_, table_id_.database_name, table_id_.table_name))
-    , replica_name(global_context.getMacros()->expand(replica_name_, table_id_.database_name, table_id_.table_name))
+    , zookeeper_path(zookeeper_path_)
+    , replica_name(replica_name_)
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())

@@ -7,6 +7,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/Macros.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -324,8 +325,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        add_mandatory_param("path in ZooKeeper");
-        add_mandatory_param("replica name");
+        if (is_extended_storage_def)
+        {
+            add_optional_param("path in ZooKeeper");
+            add_optional_param("replica name");
+        }
+        else
+        {
+            add_mandatory_param("path in ZooKeeper");
+            add_mandatory_param("replica name");
+        }
     }
 
     if (!is_extended_storage_def)
@@ -394,28 +403,50 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
-        if (ast && ast->value.getType() == Field::Types::String)
-            zookeeper_path = safeGet<String>(ast->value);
-        else
-            throw Exception(
-                "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
-                ErrorCodes::BAD_ARGUMENTS);
-        ++arg_num;
+        bool has_arguments = arg_num + 2 <= arg_cnt
+                          && engine_args[arg_num]->as<ASTLiteral>()
+                          && engine_args[arg_num + 1]->as<ASTLiteral>();
 
-        ast = engine_args[arg_num]->as<ASTLiteral>();
-        if (ast && ast->value.getType() == Field::Types::String)
-            replica_name = safeGet<String>(ast->value);
-        else
-            throw Exception(
-                "Replica name must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
-                ErrorCodes::BAD_ARGUMENTS);
+        if (has_arguments)
+        {
+            const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::String)
+                zookeeper_path = safeGet<String>(ast->value);
+            else
+                throw Exception(
+                        "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                        ErrorCodes::BAD_ARGUMENTS);
+            ++arg_num;
 
-        if (replica_name.empty())
-            throw Exception(
-                "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def),
-                ErrorCodes::NO_REPLICA_NAME_GIVEN);
-        ++arg_num;
+            ast = engine_args[arg_num]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::String)
+                replica_name = safeGet<String>(ast->value);
+            else
+                throw Exception(
+                        "Replica name must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                        ErrorCodes::BAD_ARGUMENTS);
+
+            if (replica_name.empty())
+                throw Exception(
+                        "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                        ErrorCodes::NO_REPLICA_NAME_GIVEN);
+            ++arg_num;
+        }
+        else if (is_extended_storage_def)
+        {
+            /// Try use default values if arguments are not specified.
+            /// It works for ON CLUSTER queries when database engine is Atomic and there are {shard} and {replica} in config.
+            zookeeper_path = "/clickhouse/tables/{uuid}/{shard}";
+            replica_name = "{replica}";     /// TODO maybe use hostname if {replica} is not defined?
+        }
+        else
+            throw Exception("Expected zookeper_path and replica_name arguments", ErrorCodes::LOGICAL_ERROR);
+
+        /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
+        bool is_on_cluster = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        bool allow_uuid_macro = is_on_cluster || args.query.attach;
+        zookeeper_path = args.context.getMacros()->expand(zookeeper_path, args.table_id, allow_uuid_macro);
+        replica_name = args.context.getMacros()->expand(replica_name, args.table_id, false);
     }
 
     /// This merging param maybe used as part of sorting key

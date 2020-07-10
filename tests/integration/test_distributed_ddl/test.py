@@ -295,6 +295,30 @@ def test_socket_timeout(test_cluster):
     for i in range(0, 100):
         instance.query("select hostName() as host, count() from cluster('cluster', 'system', 'settings') group by host")
 
+def test_replicated_without_arguments(test_cluster):
+    def insert_and_check(i):
+        for name in ['ch1', 'ch2', 'ch3', 'ch4']:
+            test_cluster.instances[name].query("INSERT INTO test_atomic.rmt VALUES (?, hostName())".replace('?', str(i)))
+        for name in ['ch1', 'ch2', 'ch3', 'ch4']:
+            test_cluster.instances[name].query("SYSTEM SYNC REPLICA test_atomic.rmt")
+        assert instance.query("SELECT * FROM cluster('cluster', 'test_atomic', 'rmt') ORDER BY s") == TSV("?\tch1\n?\tch2\n?\tch3\n?\tch4\n".replace('?', str(i)))
+
+    instance = test_cluster.instances['ch1']
+    test_cluster.ddl_check_query(instance, "CREATE DATABASE test_atomic ON CLUSTER cluster ENGINE=Atomic")
+    test_cluster.ddl_check_query(instance, "CREATE TABLE test_atomic.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n")
+    assert instance.query("SELECT count(DISTINCT uuid) FROM cluster('cluster', 'system', 'databases') WHERE name='test_atomic'") == "1\n"
+    assert instance.query("SELECT count(DISTINCT uuid) FROM cluster('cluster', 'system', 'tables') WHERE database='test_atomic' AND name='rmt'") == "1\n"
+    insert_and_check(1)
+    test_cluster.ddl_check_query(instance, "DROP TABLE test_atomic.rmt ON CLUSTER cluster")
+    test_cluster.ddl_check_query(instance, "CREATE TABLE test_atomic.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n")
+    insert_and_check(2)
+    test_cluster.ddl_check_query(instance, "RENAME TABLE test_atomic.rmt TO test_atomic.rmt_renamed ON CLUSTER cluster")
+    test_cluster.ddl_check_query(instance, "CREATE TABLE test_atomic.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n")
+    insert_and_check(3)
+    test_cluster.ddl_check_query(instance, "EXCHANGE TABLES test_atomic.rmt AND test_atomic.rmt_renamed ON CLUSTER cluster")
+    assert instance.query("SELECT DISTINCT n FROM cluster('cluster', 'test_atomic', 'rmt')") == "2\n"
+    assert instance.query("SELECT DISTINCT n FROM cluster('cluster', 'test_atomic', 'rmt_renamed')") == "3\n"
+
 if __name__ == '__main__':
     with contextmanager(test_cluster)() as ctx_cluster:
        for name, instance in ctx_cluster.instances.items():

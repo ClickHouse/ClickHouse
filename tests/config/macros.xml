@@ -1,5 +1,7 @@
 <yandex>
     <macros>
         <test>Hello, world!</test>
+        <shard>s1</shard>
+        <replica>r1</replica>
     </macros>
 </yandex>
