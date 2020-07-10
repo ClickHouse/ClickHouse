@@ -1090,6 +1090,13 @@ private:
                     std::cerr << "Error on processing query: " << ast_to_process->formatForErrorMessage() << std::endl << last_exception_received_from_server->message();
                 }
 
+                if (!connection->isConnected())
+                {
+                    // Probably the server is dead because we found an assertion
+                    // failure. Fail fast.
+                    return begin;
+                }
+
                 if (received_exception_from_server)
                 {
                     // Query completed with error, ignore it and fuzz again.
