@@ -1,18 +1,17 @@
 #include "InternalTextLogsRowOutputStream.h"
-#include <Core/Block.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <Common/typeid_cast.h>
-#include <Common/HashTable/Hash.h>
-#include <DataTypes/IDataType.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
+#include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/typeid_cast.h>
 #include <common/terminalColors.h>
 
 
 namespace DB
 {
-
 Block InternalTextLogsRowOutputStream::getHeader() const
 {
     return InternalTextLogsQueue::getSampleBlock();
@@ -94,13 +93,13 @@ void InternalTextLogsRowOutputStream::write(const Block & block)
         writeString(source, wb);
         if (color)
             writeCString(resetColor(), wb);
-        
+
         Int32 source_line = array_source_line[row_num];
         writeCString("[", wb);
-        if (color) 
+        if (color)
             writeString(setColor(intHash64(source_line)), wb);
         writeIntText(source_line, wb);
-        if (color) 
+        if (color)
             writeCString(resetColor(), wb);
         writeCString("]: ", wb);
 
