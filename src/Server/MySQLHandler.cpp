@@ -167,7 +167,6 @@ void MySQLHandler::run()
             catch (...)
             {
                 packet_sender->sendPacket(ERR_Packet(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)), true);
-                throw;
             }
         }
     }
