@@ -844,20 +844,24 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         {
             if (all_columns.has(command.column_name) || all_columns.hasNested(command.column_name))
             {
-                for (const ColumnDescription & column : all_columns)
+                if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
-                    const auto & default_expression = column.default_desc.expression;
-                    if (default_expression)
+                    /// Check if we are going to DROP a column that some other columns depend on.
+                    for (const ColumnDescription & column : all_columns)
                     {
-                        ASTPtr query = default_expression->clone();
-                        auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns.getAll());
-                        const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
-                        const auto required_columns = actions->getRequiredColumns();
+                        const auto & default_expression = column.default_desc.expression;
+                        if (default_expression)
+                        {
+                            ASTPtr query = default_expression->clone();
+                            auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns.getAll());
+                            const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
+                            const auto required_columns = actions->getRequiredColumns();
 
-                        if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
-                            throw Exception(
-                                "Cannot drop column " + backQuote(command.column_name) + ", because column " + backQuote(column.name) + " depends on it",
-                                ErrorCodes::ILLEGAL_COLUMN);
+                            if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
+                                throw Exception("Cannot drop column " + backQuote(command.column_name)
+                                        + ", because column " + backQuote(column.name) + " depends on it",
+                                    ErrorCodes::ILLEGAL_COLUMN);
+                        }
                     }
                 }
                 all_columns.remove(command.column_name);
