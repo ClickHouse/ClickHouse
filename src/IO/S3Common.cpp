@@ -42,9 +42,9 @@ class AWSLogger final : public Aws::Utils::Logging::LogSystemInterface
 public:
     AWSLogger()
     {
-        log = &Poco::Logger::get("AWSClient");
+        default_logger = &Poco::Logger::get("AWSClient");
         tag_loggers["AWSAuthV4Signer"] = &Poco::Logger::get("AWSClient (AWSAuthV4Signer)");
-        tag_loggers["AWSClient"] = log;
+        tag_loggers["AWSClient"] = default_logger;
     }
 
     ~AWSLogger() final = default;
@@ -70,14 +70,14 @@ public:
         }
         else
         {
-            LOG_IMPL(log, level, prio, "{}: {}", tag, message);
+            LOG_IMPL(default_logger, level, prio, "{}: {}", tag, message);
         }
     }
 
     void Flush() final {}
 
 private:
-    Poco::Logger * log;
+    Poco::Logger * default_logger;
     std::unordered_map<String, Poco::Logger *> tag_loggers;
 };
 
