@@ -494,7 +494,7 @@ void optimizeAggregateFunctionsOfGroupByKeys(ASTSelectQuery * select_query)
 }
 
 /// Remove duplicate items from ORDER BY.
-void optimizeOrderBy(const ASTSelectQuery * select_query)
+void optimizeDuplicatesInOrderBy(const ASTSelectQuery * select_query)
 {
     if (!select_query->orderBy())
         return;
@@ -533,47 +533,41 @@ void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, const Context & context
 /// Optimize ORDER BY x, y, f(x), g(x, y), f(h(x)), t(f(x), g(x)) into ORDER BY x, y
 /// in case if f(), g(), h(), t() are deterministic (in scope of query).
 /// Don't optimize ORDER BY f(x), g(x), x even if f(x) is bijection for x or g(x).
-void optimizeRedundantFunctionsInOrderBy(ASTSelectQuery * select_query, const Context & context)
+void optimizeRedundantFunctionsInOrderBy(const ASTSelectQuery * select_query, const Context & context)
 {
-    auto order_by = select_query->orderBy();
+    const auto & order_by = select_query->orderBy();
     if (!order_by)
         return;
 
-    std::unordered_set<String> keys;
-    ASTs result;
-    result.reserve(order_by->children.size());
+    std::unordered_set<String> prev_keys;
+    ASTs modified;
+    modified.reserve(order_by->children.size());
 
-    /// Order by contains ASTOrderByElement as children, not ASTIdentifier or ASTFunction.
     for (auto & order_by_element : order_by->children)
     {
-        if (order_by_element->children.empty())
-            continue;
-
+        /// Order by contains ASTOrderByElement as children and meaning item only as a grand child.
         ASTPtr & name_or_function = order_by_element->children[0];
+
         if (name_or_function->as<ASTFunction>())
         {
-            if (!keys.empty())
+            if (!prev_keys.empty())
             {
-                RedundantFunctionsInOrderByVisitor::Data data{keys, context};
+                RedundantFunctionsInOrderByVisitor::Data data{prev_keys, context};
                 RedundantFunctionsInOrderByVisitor(data).visit(name_or_function);
-                if (data.should_be_erased)
+                if (data.redundant)
                     continue;
             }
         }
 
+        /// @note Leave duplicate keys unchanged. They would be removed in optimizeDuplicatesInOrderBy()
         if (auto * identifier = name_or_function->as<ASTIdentifier>())
-        {
-            String identifier_name = getIdentifierName(identifier);
-            if (!keys.count(identifier_name))
-                keys.emplace(std::move(identifier_name));
-            else
-                continue;
-        }
+            prev_keys.emplace(getIdentifierName(identifier));
 
-        result.push_back(order_by_element);
+        modified.push_back(order_by_element);
     }
 
-    order_by->children = std::move(result);
+    if (modified.size() < order_by->children.size())
+        order_by->children = std::move(modified);
 }
 
 /// Remove duplicate items from LIMIT BY.
@@ -1062,7 +1056,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
             optimizeAggregateFunctionsOfGroupByKeys(select_query);
 
         /// Remove duplicate items from ORDER BY.
-        optimizeOrderBy(select_query);
+        optimizeDuplicatesInOrderBy(select_query);
 
         /// Remove duplicate ORDER BY and DISTINCT from subqueries.
         if (settings.optimize_duplicate_order_by_and_distinct)

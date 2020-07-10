@@ -16,75 +16,69 @@ public:
     {
         std::unordered_set<String> & keys;
         const Context & context;
-        bool should_be_erased = true;
+        bool redundant = true;
         bool done = false;
+
+        void preventErase()
+        {
+            redundant = false;
+            done = true;
+        }
     };
 
     static void visit(const ASTPtr & ast, Data & data)
     {
-        auto * ast_function = ast->as<ASTFunction>();
-        if (ast_function)
-        {
-            visit(*ast_function, data);
-        }
+        if (const auto * func = ast->as<ASTFunction>())
+            visit(*func, data);
     }
 
-    static void visit(ASTFunction & ast_function, Data & data)
+    static void visit(const ASTFunction & ast_function, Data & data)
     {
         if (data.done)
             return;
 
-        if (ast_function.name == "lambda")
-        {
-            data.should_be_erased = false;
-            data.done = true;
-            return;
-        }
+        bool is_lambda = (ast_function.name == "lambda");
 
-        auto arguments = ast_function.arguments;
+        const auto & arguments = ast_function.arguments;
+        bool has_arguments = arguments && !arguments->children.empty();
 
-        if (!arguments || arguments->children.empty())
+        if (is_lambda || !has_arguments)
         {
-            data.should_be_erased = false;
-            data.done = true;
+            data.preventErase();
             return;
         }
 
         /// If we meet function as argument then we have already checked
         /// arguments of it and if it can be erased
-        for (const auto & identifier_or_function : arguments->children)
+        for (const auto & arg : arguments->children)
         {
-            auto * identifier = identifier_or_function->as<ASTIdentifier>();
-            if (identifier && !data.keys.count(getIdentifierName(identifier)))
-            {
-                data.should_be_erased = false;
-                data.done = true;
-                return;
-            }
+            /// Allow functions: visit them later
+            if (arg->as<ASTFunction>())
+                continue;
 
-            if (!identifier && !identifier_or_function->as<ASTFunction>())
-            {
-                data.should_be_erased = false;
-                data.done = true;
-                return;
-            }
+            /// Allow known identifiers: they are present in ORDER BY before current item
+            if (auto * identifier = arg->as<ASTIdentifier>())
+                if (data.keys.count(getIdentifierName(identifier)))
+                    continue;
+
+            /// Reject erase others
+            data.preventErase();
+            return;
         }
 
         const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
         if (!function->isDeterministicInScopeOfQuery())
         {
-            data.should_be_erased = false;
-            data.done = true;
+            data.preventErase();
         }
     }
 
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &)
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
-        return true;
+        return node->as<ASTFunction>();
     }
-
 };
 
-using RedundantFunctionsInOrderByVisitor = InDepthNodeVisitor<RedundantFunctionsInOrderByMatcher, true>;
+using RedundantFunctionsInOrderByVisitor = ConstInDepthNodeVisitor<RedundantFunctionsInOrderByMatcher, true>;
 
 }
