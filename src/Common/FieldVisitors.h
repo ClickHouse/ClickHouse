@@ -48,7 +48,7 @@ template <typename Visitor, typename F1, typename F2>
 auto applyVisitor(Visitor && visitor, F1 && field1, F2 && field2)
 {
     return Field::dispatch(
-        [&field1, &field2, &visitor](auto & field1_value)
+        [&field2, &visitor](auto & field1_value)
         {
             return Field::dispatch(
                 [&field1_value, &visitor](auto & field2_value)
