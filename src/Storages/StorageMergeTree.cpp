@@ -102,12 +102,7 @@ void StorageMergeTree::startup()
         /// Ensure that thread started only after assignment to 'merging_mutating_task_handle' is done.
         merge_pool.startTask(merging_mutating_task_handle);
 
-        if (areBackgroundMovesNeeded())
-        {
-            auto & move_pool = global_context.getBackgroundMovePool();
-            moving_task_handle = move_pool.createTask([this] { return movePartsTask(); });
-            move_pool.startTask(moving_task_handle);
-        }
+        startBackgroundMovesIfNeeded();
     }
     catch (...)
     {
@@ -470,6 +465,18 @@ bool StorageMergeTree::isMutationDone(Int64 mutation_version) const
             return false;
     return true;
 }
+
+
+void StorageMergeTree::startBackgroundMovesIfNeeded()
+{
+    if (areBackgroundMovesNeeded() && !moving_task_handle)
+    {
+        auto & move_pool = global_context.getBackgroundMovePool();
+        moving_task_handle = move_pool.createTask([this] { return movePartsTask(); });
+        move_pool.startTask(moving_task_handle);
+    }
+}
+
 
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
 {

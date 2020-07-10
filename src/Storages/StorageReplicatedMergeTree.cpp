@@ -3242,12 +3242,7 @@ void StorageReplicatedMergeTree::startup()
             pool.startTask(queue_task_handle);
         }
 
-        if (areBackgroundMovesNeeded())
-        {
-            auto & pool = global_context.getBackgroundMovePool();
-            move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
-            pool.startTask(move_parts_task_handle);
-        }
+        startBackgroundMovesIfNeeded();
     }
     catch (...)
     {
@@ -5675,4 +5670,16 @@ MutationCommands StorageReplicatedMergeTree::getFirtsAlterMutationCommandsForPar
 {
     return queue.getFirstAlterMutationCommandsForPart(part);
 }
+
+
+void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
+{
+    if (areBackgroundMovesNeeded() && !move_parts_task_handle)
+    {
+        auto & pool = global_context.getBackgroundMovePool();
+        move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
+        pool.startTask(move_parts_task_handle);
+    }
+}
+
 }
