@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionNull.h>
 #include <AggregateFunctions/AggregateFunctionNothing.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include "registerAggregateFunctions.h"
 
@@ -36,6 +37,19 @@ public:
         const DataTypes & arguments,
         const Array & params) const override
     {
+        /// If applied to aggregate function with -State combinator, we apply -Null combinator to it's nested_function instead of itself.
+        /// Because Nullable AggregateFunctionState does not make sense and ruins the logic of managing aggregate function states.
+
+        if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(nested_function.get()))
+        {
+            auto transformed_nested_function = transformAggregateFunction(function_state->getNestedFunction(), properties, arguments, params);
+
+            return std::make_shared<AggregateFunctionState>(
+                transformed_nested_function,
+                transformed_nested_function->getArgumentTypes(),
+                transformed_nested_function->getParameters());
+        }
+
         bool has_nullable_types = false;
         bool has_null_types = false;
         for (const auto & arg_type : arguments)
