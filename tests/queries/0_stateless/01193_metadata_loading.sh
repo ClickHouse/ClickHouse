@@ -39,9 +39,7 @@ done
 wait
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE $db.table_merge (i UInt64, d Date, s String, n Nested(i UInt8, f Float32)) ENGINE=Merge('$db', '^table_')"
-#FIXME the following query leads to segfault
-#$CLICKHOUSE_CLIENT -q "SELECT count() * $count_multiplier, i, d, s, n.i, n.f FROM $db.table_merge GROUP BY i, d, s, n.i, n.f ORDER BY i"
-$CLICKHOUSE_CLIENT -q "SELECT 10000, i, d, s, n.i, n.f FROM $db.table_1_1 GROUP BY i, d, s, n.i, n.f ORDER BY i"
+$CLICKHOUSE_CLIENT -q "SELECT count() * $count_multiplier, i, d, s, n.i, n.f FROM $db.table_merge GROUP BY i, d, s, n.i, n.f ORDER BY i"
 
 db_engine=`$CLICKHOUSE_CLIENT -q "SELECT engine FROM system.databases WHERE name='$db'"`
 
@@ -53,7 +51,6 @@ $CLICKHOUSE_CLIENT -q "SELECT '01193_metadata_loading', $elapsed_ms FORMAT Null"
 
 if [[ $elapsed_ms -le $max_time_ms ]]; then echo ok; fi
 
-#$CLICKHOUSE_CLIENT -q "SELECT count() * $count_multiplier, i, d, s, n.i, n.f FROM $db.table_merge GROUP BY i, d, s, n.i, n.f ORDER BY i"
-$CLICKHOUSE_CLIENT -q "SELECT 8000, i, d, s, n.i, n.f FROM $db.table_1_1 GROUP BY i, d, s, n.i, n.f ORDER BY i"
+$CLICKHOUSE_CLIENT -q "SELECT count() * $count_multiplier, i, d, s, n.i, n.f FROM $db.table_merge GROUP BY i, d, s, n.i, n.f ORDER BY i"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE $db"
