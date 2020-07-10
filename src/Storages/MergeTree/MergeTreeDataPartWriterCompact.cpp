@@ -17,7 +17,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         default_codec_, settings_, index_granularity_)
     , plain_file(data_part->volume->getDisk()->writeFile(
             part_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
-            settings.max_compress_block_size, 
+            settings.max_compress_block_size,
             WriteMode::Rewrite,
             settings.estimated_size,
             settings.aio_threshold))
@@ -31,7 +31,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const auto & storage_columns = metadata_snapshot->getColumns();
     for (const auto & column : columns_list)
         compressed_streams[column.name] = std::make_unique<CompressedStream>(
-            plain_hashing, storage_columns.getCodecOrDefault(column.name, default_codec)); 
+            plain_hashing, storage_columns.getCodecOrDefault(column.name, default_codec));
 }
 
 void MergeTreeDataPartWriterCompact::write(

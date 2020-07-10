@@ -79,6 +79,8 @@ CachedCompressedReadBuffer::CachedCompressedReadBuffer(
 {
     if (file_in == nullptr)
         throw Exception("Neither file_in nor file_in_creator is initialized in CachedCompressedReadBuffer", ErrorCodes::LOGICAL_ERROR);
+
+    compressed_in = file_in;
 }
 
 CachedCompressedReadBuffer::CachedCompressedReadBuffer(

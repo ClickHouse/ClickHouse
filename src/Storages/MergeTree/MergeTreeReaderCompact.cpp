@@ -53,7 +53,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     auto full_path = fullPath(data_part->volume->getDisk(), full_data_path);
     for (const auto & column : columns)
     {
-        
+
         std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
         std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
         if (uncompressed_cache)
@@ -69,7 +69,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                 non_cached_buffer->setProfileCallback(profile_callback_, clock_type_);
         }
 
-        column_streams[column.name] = ColumnStream{std::move(cached_buffer), std::move(non_cached_buffer)};
+        auto column_from_part = getColumnFromPart(column);
+        column_streams[column_from_part.name] = ColumnStream{std::move(cached_buffer), std::move(non_cached_buffer)};
     }
 
     size_t columns_num = columns.size();
