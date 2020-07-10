@@ -42,7 +42,7 @@ mkdir build
 cd build
 CLICKHOUSE_BUILD_DIR=`pwd`
 cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_C_COMPILER=clang-10 $CMAKE_LIBS_CONFIG | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/cmake_log.txt
-ninja | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/build_log.txt
+ninja clickhouse-bundle | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/build_log.txt
 ninja install | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/install_log.txt
 
 
