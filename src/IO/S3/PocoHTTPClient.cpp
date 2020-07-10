@@ -75,7 +75,12 @@ void PocoHTTPClient::MakeRequestInternal(
 
             auto request_configuration = per_request_configuration(request);
             if (!request_configuration.proxyHost.empty())
-                session->setProxy(request_configuration.proxyHost, request_configuration.proxyPort);
+                session->setProxy(
+                    request_configuration.proxyHost,
+                    request_configuration.proxyPort,
+                    Aws::Http::SchemeMapper::ToString(request_configuration.proxyScheme),
+                    false
+                );
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 

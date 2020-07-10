@@ -5,50 +5,46 @@ services:
     image: minio/minio
     volumes:
       - data1-1:/data1
+      - ${MINIO_CERTS_DIR:-}:/certs
     ports:
       - "9001:9001"
     environment:
       MINIO_ACCESS_KEY: minio
       MINIO_SECRET_KEY: minio123
-    command: server --address :9001 /data1-1
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9001/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+    command: server --address :9001 --certs-dir /certs /data1-1
     depends_on:
-      - redirect
-      - resolver
+      - proxy1
+      - proxy2
 
-# Redirects all requests to origin Minio.
-  redirect:
-    image: schmunk42/nginx-redirect
-    volumes:
-      - /nginx:/nginx
-    environment:
-      - SERVER_REDIRECT=minio1:9001
-      - SERVER_REDIRECT_CODE=307
-      - SERVER_ACCESS_LOG=/nginx/access.log
-
-# HTTP proxies for Minio.
+  # HTTP proxies for Minio.
+  # TODO: Remove build section and replace with yandex/clickhouse-s3-proxy image after this commit merge.
   proxy1:
-    image: vimagick/tinyproxy
+    build:
+      context: ../../../docker/test/integration/s3_proxy/
+      network: host
     ports:
-      - "4081:8888"
+      - "8080" # Redirect proxy port
+      - "80"   # Reverse proxy port
+      - "443"  # Reverse proxy port (secure)
 
   proxy2:
-    image: vimagick/tinyproxy
+    build:
+      context: ../../../docker/test/integration/s3_proxy/
+      network: host
     ports:
-      - "4082:8888"
+      - "8080"
+      - "80"
+      - "443"
 
-# Empty container to run proxy resolver.
+  # Empty container to run proxy resolver.
+  # TODO: Remove build section and replace with yandex/clickhouse-python-bottle image after this commit merge.
   resolver:
     build:
       context: ../../../docker/test/integration/
       dockerfile: resolver/Dockerfile
       network: host
     ports:
-      - "4083:8080"
+      - "8080"
     tty: true
     depends_on:
       - proxy1
