@@ -164,15 +164,10 @@ void MySQLHandler::run()
                 log->log(exc);
                 throw;
             }
-            catch (const Exception & exc)
+            catch (...)
             {
-                log->log(exc);
-                packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
-            }
-            catch (const Poco::Exception & exc)
-            {
-                log->log(exc);
-                packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
+                packet_sender->sendPacket(ERR_Packet(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)), true);
+                throw;
             }
         }
     }
