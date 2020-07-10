@@ -51,5 +51,5 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 **See Also**
 
--   [stochasticLinearRegression](stochasticlinearregression.md#agg_functions-stochasticlinearregression)
+-   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md#agg_functions-stochasticlinearregression)
 -   [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
