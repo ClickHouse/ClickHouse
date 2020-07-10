@@ -1,0 +1,46 @@
+[0,1,2]
+[0,1,2]
+[0,1,2]
+0	0	0	0
+0	1	1	1
+2	2	2	2
+3	3	3	3
+4	0		0
+5	0		0
+0	0
+1	1
+2	2
+3	3
+0	0
+1	1
+2	2
+3	3
+SELECT groupArray(x)\nFROM \n(\n    SELECT number AS x\n    FROM numbers(3)\n    ORDER BY x ASC\n)
+SELECT groupArray(x)\nFROM \n(\n    SELECT number AS x\n    FROM numbers(3)\n    ORDER BY x ASC\n)
+SELECT groupArray(x)\nFROM \n(\n    SELECT number AS x\n    FROM numbers(3)\n    ORDER BY \n        exp(x) ASC,\n        x ASC\n)
+SELECT \n    key,\n    a,\n    b,\n    c\nFROM \n(\n    SELECT number + 2 AS key\n    FROM numbers(4)\n) AS s\nALL FULL OUTER JOIN test AS t USING (key)\nORDER BY \n    key ASC,\n    t.key ASC
+SELECT \n    key,\n    a\nFROM test\nORDER BY \n    key ASC,\n    a ASC
+SELECT \n    key,\n    a\nFROM test\nORDER BY \n    key ASC,\n    exp(key + a) ASC
+[0,1,2]
+[0,1,2]
+[0,1,2]
+0	0	0	0
+0	1	1	1
+2	2	2	2
+3	3	3	3
+4	0		0
+5	0		0
+0	0
+1	1
+2	2
+3	3
+0	0
+1	1
+2	2
+3	3
+SELECT groupArray(x)\nFROM \n(\n    SELECT number AS x\n    FROM numbers(3)\n    ORDER BY \n        x ASC,\n        exp(x) ASC\n)
+SELECT groupArray(x)\nFROM \n(\n    SELECT number AS x\n    FROM numbers(3)\n    ORDER BY \n        x ASC,\n        exp(exp(x)) ASC\n)
+SELECT groupArray(x)\nFROM \n(\n    SELECT number AS x\n    FROM numbers(3)\n    ORDER BY \n        exp(x) ASC,\n        x ASC\n)
+SELECT \n    key,\n    a,\n    b,\n    c\nFROM \n(\n    SELECT number + 2 AS key\n    FROM numbers(4)\n) AS s\nALL FULL OUTER JOIN test AS t USING (key)\nORDER BY \n    key ASC,\n    t.key ASC
+SELECT \n    key,\n    a\nFROM test\nORDER BY \n    key ASC,\n    a ASC,\n    exp(key + a) ASC
+SELECT \n    key,\n    a\nFROM test\nORDER BY \n    key ASC,\n    exp(key + a) ASC
