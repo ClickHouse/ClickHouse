@@ -28,10 +28,10 @@ def cleanup_after_test():
         yield
     finally:
         instance.query("DROP USER IF EXISTS A, B")
-        instance.query("DROP TABLE IF EXISTS default.table")
+        instance.query("DROP TABLE IF EXISTS test.view_1")
 
 
-def test_grant_and_revoke():
+def test_smoke():
     instance.query("CREATE USER A")
     assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test.table", user='A')
     
@@ -105,6 +105,68 @@ def test_revoke_requires_grant_option():
     assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.table TO B\n"
     instance.query("REVOKE SELECT ON test.table FROM B", user='A')
     assert instance.query("SHOW GRANTS FOR B") == ""
+
+
+def test_implicit_show_grants():
+    instance.query("CREATE USER A")
+    assert instance.query("select count() FROM system.databases WHERE name='test'", user="A") == "0\n"
+    assert instance.query("select count() FROM system.tables WHERE database='test' AND name='table'", user="A") == "0\n"
+    assert instance.query("select count() FROM system.columns WHERE database='test' AND table='table'", user="A") == "0\n"
+
+    instance.query("GRANT SELECT(x) ON test.table TO A")
+    assert instance.query("SHOW GRANTS FOR A") == "GRANT SELECT(x) ON test.table TO A\n"
+    assert instance.query("select count() FROM system.databases WHERE name='test'", user="A") == "1\n"
+    assert instance.query("select count() FROM system.tables WHERE database='test' AND name='table'", user="A") == "1\n"
+    assert instance.query("select count() FROM system.columns WHERE database='test' AND table='table'", user="A") == "1\n"
+
+    instance.query("GRANT SELECT ON test.table TO A")
+    assert instance.query("SHOW GRANTS FOR A") == "GRANT SELECT ON test.table TO A\n"
+    assert instance.query("select count() FROM system.databases WHERE name='test'", user="A") == "1\n"
+    assert instance.query("select count() FROM system.tables WHERE database='test' AND name='table'", user="A") == "1\n"
+    assert instance.query("select count() FROM system.columns WHERE database='test' AND table='table'", user="A") == "2\n"
+
+    instance.query("GRANT SELECT ON test.* TO A")
+    assert instance.query("SHOW GRANTS FOR A") == "GRANT SELECT ON test.* TO A\n"
+    assert instance.query("select count() FROM system.databases WHERE name='test'", user="A") == "1\n"
+    assert instance.query("select count() FROM system.tables WHERE database='test' AND name='table'", user="A") == "1\n"
+    assert instance.query("select count() FROM system.columns WHERE database='test' AND table='table'", user="A") == "2\n"
+
+    instance.query("GRANT SELECT ON *.* TO A")
+    assert instance.query("SHOW GRANTS FOR A") == "GRANT SELECT ON *.* TO A\n"
+    assert instance.query("select count() FROM system.databases WHERE name='test'", user="A") == "1\n"
+    assert instance.query("select count() FROM system.tables WHERE database='test' AND name='table'", user="A") == "1\n"
+    assert instance.query("select count() FROM system.columns WHERE database='test' AND table='table'", user="A") == "2\n"
+
+    instance.query("REVOKE ALL ON *.* FROM A")
+    assert instance.query("select count() FROM system.databases WHERE name='test'", user="A") == "0\n"
+    assert instance.query("select count() FROM system.tables WHERE database='test' AND name='table'", user="A") == "0\n"
+    assert instance.query("select count() FROM system.columns WHERE database='test' AND table='table'", user="A") == "0\n"
+
+
+def test_implicit_create_view_grant():
+    instance.query("CREATE USER A")
+    expected_error = "Not enough privileges"
+    assert expected_error in instance.query_and_get_error("CREATE VIEW test.view_1 AS SELECT 1", user="A")
+
+    instance.query("GRANT CREATE TABLE ON test.* TO A")
+    instance.query("CREATE VIEW test.view_1 AS SELECT 1", user="A")
+    assert instance.query("SELECT * FROM test.view_1") == "1\n"
+
+    instance.query("REVOKE CREATE TABLE ON test.* FROM A")
+    instance.query("DROP TABLE test.view_1")
+    assert expected_error in instance.query_and_get_error("CREATE VIEW test.view_1 AS SELECT 1", user="A")
+
+
+def test_implicit_create_temporary_table_grant():
+    instance.query("CREATE USER A")
+    expected_error = "Not enough privileges"
+    assert expected_error in instance.query_and_get_error("CREATE TEMPORARY TABLE tmp(name String)", user="A")
+
+    instance.query("GRANT CREATE TABLE ON test.* TO A")
+    instance.query("CREATE TEMPORARY TABLE tmp(name String)", user="A")
+
+    instance.query("REVOKE CREATE TABLE ON *.* FROM A")
+    assert expected_error in instance.query_and_get_error("CREATE TEMPORARY TABLE tmp(name String)", user="A")
 
 
 def test_introspection():
