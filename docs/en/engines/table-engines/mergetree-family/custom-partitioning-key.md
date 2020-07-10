@@ -77,7 +77,7 @@ Let’s break down the name of the first part: `201901_1_3_1`:
 
 The `active` column shows the status of the part. `1` is active; `0` is inactive. The inactive parts are, for example, source parts remaining after merging to a larger part. The corrupted data parts are also indicated as inactive.
 
-As you can see in the example, there are several separated parts of the same partition (for example, `201901_1_3_1` and `201901_1_9_2`). This means that these parts are not merged yet. ClickHouse merges the inserted parts of data periodically, approximately 15 minutes after inserting. In addition, you can perform a non-scheduled merge using the [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) query. Example:
+As you can see in the example, there are several separated parts of the same partition (for example, `201901_1_3_1` and `201901_1_9_2`). This means that these parts are not merged yet. ClickHouse merges the inserted parts of data periodically, approximately 15 minutes after inserting. In addition, you can perform a non-scheduled merge using the [OPTIMIZE](../../../sql-reference/statements/optimize.md) query. Example:
 
 ``` sql
 OPTIMIZE TABLE visits PARTITION 201902;
