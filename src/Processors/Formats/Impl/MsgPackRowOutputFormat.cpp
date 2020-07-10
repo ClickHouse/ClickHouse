@@ -1,4 +1,7 @@
 #include <Processors/Formats/Impl/MsgPackRowOutputFormat.h>
+
+#if USE_MSGPACK
+
 #include <Formats/FormatFactory.h>
 #include <Common/assert_cast.h>
 
@@ -157,3 +160,5 @@ void registerOutputFormatProcessorMsgPack(FormatFactory & factory)
 }
 
 }
+
+#endif
