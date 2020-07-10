@@ -536,6 +536,8 @@ private:
 
     MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
+    void startBackgroundMovesIfNeeded() override;
+
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */

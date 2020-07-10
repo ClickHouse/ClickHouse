@@ -186,10 +186,11 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
                 while (!ranges.empty() && limit && limit <= ranges.back().first)
                     ranges.pop_back();
 
-
                 if (ranges.empty())
                     break;
 
+                if (column.column_const)
+                    continue;
 
                 if (isCollationRequired(column.description))
                 {
