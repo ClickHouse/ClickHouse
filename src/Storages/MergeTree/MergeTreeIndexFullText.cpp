@@ -826,6 +826,10 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
 
     assert(index.arguments.size() >= 3);
 
+    for (const auto & arg : index.arguments)
+        if (arg.getType() != Field::Types::UInt64)
+            throw Exception("All parameters to *bf_v1 index must be unsigned integers", ErrorCodes::BAD_ARGUMENTS);
+
     /// Just validate
     BloomFilterParameters params(
         index.arguments[0].get<size_t>(),
