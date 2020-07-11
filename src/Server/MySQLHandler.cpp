@@ -438,4 +438,3 @@ static String killConnectionIdReplacementQuery(const String & query)
 }
 
 }
-

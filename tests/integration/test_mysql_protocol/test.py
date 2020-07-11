@@ -145,14 +145,22 @@ def test_mysql_client(mysql_client, server_address):
     '''.format(host=server_address, port=server_port), demux=True)
     assert code == 0
 
-    # show variables.
+def test_mysql_replacement_query(mysql_client, server_address):
+    # SHOW TABLE STATUS LIKE.
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "show table status like 'xx';"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+    # SHOW VARIABLES.
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default
         --password=123 -e "show variables;"
     '''.format(host=server_address, port=server_port), demux=True)
     assert code == 0
 
-    # Kill query.
+    # KILL QUERY.
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default
         --password=123 -e "kill query 0;"
@@ -164,6 +172,21 @@ def test_mysql_client(mysql_client, server_address):
         --password=123 -e "kill query where query_id='mysql:0';"
     '''.format(host=server_address, port=server_port), demux=True)
     assert code == 0
+
+    # SELECT DATABASE().
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "select database();"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == 'database()\ndefault\n'
+
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "select DATABASE();"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == 'DATABASE()\ndefault\n'
 
 
 def test_mysql_federated(mysql_server, server_address):
