@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -1108,27 +1109,34 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
     block = block.cloneWithColumns(std::move(dst_columns));
 }
 
-static void checkTypeOfKey(const Block & block_left, const Block & block_right)
-{
-    const auto & [c1, left_type_origin, left_name] = block_left.safeGetByPosition(0);
-    const auto & [c2, right_type_origin, right_name] = block_right.safeGetByPosition(0);
-    auto left_type = removeNullable(left_type_origin);
-    auto right_type = removeNullable(right_type_origin);
 
-    if (!left_type->equals(*right_type))
-        throw Exception("Type mismatch of columns to joinGet by: "
-            + left_name + " " + left_type->getName() + " at left, "
-            + right_name + " " + right_type->getName() + " at right",
-            ErrorCodes::TYPE_MISMATCH);
-}
-
-
-DataTypePtr HashJoin::joinGetReturnType(const String & column_name, bool or_null) const
+DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
 {
     std::shared_lock lock(data->rwlock);
 
+    size_t num_keys = data_types.size();
+    if (right_table_keys.columns() != num_keys)
+        throw Exception(
+            "Number of arguments for function joinGet" + toString(or_null ? "OrNull" : "")
+                + " doesn't match: passed, should be equal to " + toString(num_keys),
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    for (size_t i = 0; i < num_keys; ++i)
+    {
+        const auto & left_type_origin = data_types[i];
+        const auto & [c2, right_type_origin, right_name] = right_table_keys.safeGetByPosition(i);
+        auto left_type = removeNullable(left_type_origin);
+        auto right_type = removeNullable(right_type_origin);
+        if (!left_type->equals(*right_type))
+            throw Exception(
+                "Type mismatch in joinGet key " + toString(i) + ": found type " + left_type->getName() + ", while the needed type is "
+                    + right_type->getName(),
+                ErrorCodes::TYPE_MISMATCH);
+    }
+
     if (!sample_block_with_columns_to_add.has(column_name))
         throw Exception("StorageJoin doesn't contain column " + column_name, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+
     auto elem = sample_block_with_columns_to_add.getByName(column_name);
     if (or_null)
         elem.type = makeNullable(elem.type);
@@ -1137,34 +1145,33 @@ DataTypePtr HashJoin::joinGetReturnType(const String & column_name, bool or_null
 
 
 template <typename Maps>
-void HashJoin::joinGetImpl(Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const
+ColumnWithTypeAndName HashJoin::joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const
 {
-    joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::RightAny>(
-        block, {block.getByPosition(0).name}, block_with_columns_to_add, maps_);
+    // Assemble the key block with correct names.
+    Block keys;
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        auto key = block.getByPosition(i);
+        key.name = key_names_right[i];
+        keys.insert(std::move(key));
+    }
+
+    joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(
+        keys, key_names_right, block_with_columns_to_add, maps_);
+    return keys.getByPosition(keys.columns() - 1);
 }
 
 
-// TODO: support composite key
 // TODO: return multiple columns as named tuple
 // TODO: return array of values when strictness == ASTTableJoin::Strictness::All
-void HashJoin::joinGet(Block & block, const String & column_name, bool or_null) const
+ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add) const
 {
     std::shared_lock lock(data->rwlock);
-
-    if (key_names_right.size() != 1)
-        throw Exception("joinGet only supports StorageJoin containing exactly one key", ErrorCodes::UNSUPPORTED_JOIN_KEYS);
-
-    checkTypeOfKey(block, right_table_keys);
-
-    auto elem = sample_block_with_columns_to_add.getByName(column_name);
-    if (or_null)
-        elem.type = makeNullable(elem.type);
-    elem.column = elem.type->createColumn();
 
     if ((strictness == ASTTableJoin::Strictness::Any || strictness == ASTTableJoin::Strictness::RightAny) &&
         kind == ASTTableJoin::Kind::Left)
     {
-        joinGetImpl(block, {elem}, std::get<MapsOne>(data->maps));
+        return joinGetImpl(block, block_with_columns_to_add, std::get<MapsOne>(data->maps));
     }
     else
         throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
@@ -1262,7 +1269,7 @@ struct AdderNonJoined
                 ++rows_added;
             }
         }
-    }
+}
 };
 
 
