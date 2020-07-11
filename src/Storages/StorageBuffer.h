@@ -51,12 +51,6 @@ public:
         size_t rows;    /// The number of rows in the block.
         size_t bytes;   /// The number of (uncompressed) bytes in the block.
     };
-    /// Lifetime
-    struct LifeTimeWrites
-    {
-        std::atomic<size_t> rows = 0;
-        std::atomic<size_t> bytes = 0;
-    };
 
     std::string getName() const override { return "Buffer"; }
 
@@ -125,7 +119,12 @@ private:
     StorageID destination_id;
     bool allow_materialized;
 
-    LifeTimeWrites writes;
+    /// Lifetime
+    struct LifeTimeWrites
+    {
+        std::atomic<size_t> rows = 0;
+        std::atomic<size_t> bytes = 0;
+    } writes;
 
     Poco::Logger * log;
 

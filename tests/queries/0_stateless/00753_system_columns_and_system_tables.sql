@@ -107,5 +107,7 @@ INSERT INTO check_system_tables SELECT * FROM numbers_mt(50);
 SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
 OPTIMIZE TABLE check_system_tables; -- flush
 SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
+INSERT INTO check_system_tables SELECT * FROM numbers_mt(101); -- direct block write (due to min_rows exceeded)
+SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
 DROP TABLE check_system_tables;
 DROP TABLE check_system_tables_null;
