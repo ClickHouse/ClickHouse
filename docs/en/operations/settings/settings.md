@@ -1599,4 +1599,25 @@ Default value: 268435456.
 
 -   [min\_insert\_block\_size\_bytes](#min-insert-block-size-bytes)
 
+## output_format_pretty_grid_charset {#output-format-pretty-grid-charset}
+
+Allows to change a charset which is used for printing grids borders. Available charsets are following: UTF-8, ASCII.
+
+**Example** 
+
+```text
+SET output_format_pretty_grid_charset = 'UTF-8';
+SELECT * FROM a;
+┌─a─┐
+│ 1 │
+└───┘
+
+SET output_format_pretty_grid_charset = 'ASCII';
+SELECT * FROM a;
++-a-+
+| 1 |
++---+
+```
+
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
