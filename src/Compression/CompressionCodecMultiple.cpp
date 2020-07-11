@@ -105,12 +105,10 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
     return 1 + codecs.size() + source_size;
 }
 
-void CompressionCodecMultiple::useInfoAboutType(DataTypePtr data_type)
+void CompressionCodecMultiple::useInfoAboutType(const DataTypePtr & data_type)
 {
     for (auto & codec : codecs)
-    {
         codec->useInfoAboutType(data_type);
-    }
 }
 
 void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
@@ -154,6 +152,7 @@ bool CompressionCodecMultiple::isCompression() const
             return true;
     return false;
 }
+
 
 void registerCodecMultiple(CompressionCodecFactory & factory)
 {

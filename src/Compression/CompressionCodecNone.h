@@ -25,6 +25,4 @@ protected:
     bool isNone() const override { return true; }
 };
 
-class CompressionCodecFactory;
-void registerCodecNone(CompressionCodecFactory & factory);
 }

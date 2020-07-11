@@ -19,8 +19,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int CANNOT_COMPRESS;
-extern const int CANNOT_DECOMPRESS;
+    extern const int CANNOT_COMPRESS;
+    extern const int CANNOT_DECOMPRESS;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -223,14 +224,16 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 
 UInt8 getDataBytesSize(DataTypePtr column_type)
 {
-    UInt8 delta_bytes_size = 1;
-    if (column_type && column_type->haveMaximumSizeOfValue())
-    {
-        size_t max_size = column_type->getSizeOfValueInMemory();
-        if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
-            delta_bytes_size = static_cast<UInt8>(max_size);
-    }
-    return delta_bytes_size;
+    if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Gorilla is not applicable for {} because the data type is not of fixed size",
+            column_type->getName());
+
+    size_t max_size = column_type->getSizeOfValueInMemory();
+    if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
+        return static_cast<UInt8>(max_size);
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+            column_type->getName());
 }
 
 }
@@ -320,7 +323,7 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
     }
 }
 
-void CompressionCodecGorilla::useInfoAboutType(DataTypePtr data_type)
+void CompressionCodecGorilla::useInfoAboutType(const DataTypePtr & data_type)
 {
     data_bytes_size = getDataBytesSize(data_type);
 }
@@ -328,10 +331,14 @@ void CompressionCodecGorilla::useInfoAboutType(DataTypePtr data_type)
 void registerCodecGorilla(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::Gorilla);
-    factory.registerCompressionCodecWithType("Gorilla", method_code, [&](const ASTPtr &, DataTypePtr column_type) -> CompressionCodecPtr
+    factory.registerCompressionCodecWithType("Gorilla", method_code,
+        [&](const ASTPtr & arguments, DataTypePtr column_type) -> CompressionCodecPtr
     {
-        UInt8 delta_bytes_size = getDataBytesSize(column_type);
-        return std::make_shared<CompressionCodecGorilla>(delta_bytes_size);
+        if (arguments)
+            throw Exception("Codec Gorilla does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
+
+        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;   /// Maybe postponed to the call to "useInfoAboutType"
+        return std::make_shared<CompressionCodecGorilla>(data_bytes_size);
     });
 }
 }

@@ -4,6 +4,7 @@
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -66,6 +67,22 @@ void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
                 header, prefix_description, result_description, max_block_size, limit);
         });
     }
+}
+
+void FinishSortingStep::describeActions(FormatSettings & settings) const
+{
+    String prefix(settings.offset, ' ');
+
+    settings.out << prefix << "Prefix sort description: ";
+    dumpSortDescription(prefix_description, input_streams.front().header, settings.out);
+    settings.out << '\n';
+
+    settings.out << prefix << "Result sort description: ";
+    dumpSortDescription(result_description, input_streams.front().header, settings.out);
+    settings.out << '\n';
+
+    if (limit)
+        settings.out << prefix << "Limit " << limit << '\n';
 }
 
 }

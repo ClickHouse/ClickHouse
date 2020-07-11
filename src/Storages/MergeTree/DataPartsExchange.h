@@ -31,6 +31,8 @@ public:
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
+    void sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
+    void sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
 
 private:
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
@@ -51,6 +53,7 @@ public:
 
     /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
     MergeTreeData::MutableDataPartPtr fetchPart(
+        const StorageMetadataPtr & metadata_snapshot,
         const String & part_name,
         const String & replica_path,
         const String & host,
@@ -66,12 +69,18 @@ public:
     ActionBlocker blocker;
 
 private:
-    MergeTreeData::MutableDataPartPtr downloadPart(
+    MergeTreeData::MutableDataPartPtr downloadPartToDisk(
             const String & part_name,
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,
             const ReservationPtr reservation,
+            PooledReadWriteBufferFromHTTP & in);
+
+    MergeTreeData::MutableDataPartPtr downloadPartToMemory(
+            const String & part_name,
+            const StorageMetadataPtr & metadata_snapshot,
+            ReservationPtr reservation,
             PooledReadWriteBufferFromHTTP & in);
 
     MergeTreeData & data;

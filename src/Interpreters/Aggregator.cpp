@@ -30,6 +30,7 @@
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <AggregateFunctions/AggregateFunctionResample.h>
 #include <Disks/StoragePolicy.h>
+#include <IO/Operators.h>
 
 
 namespace ProfileEvents
@@ -151,6 +152,42 @@ Block Aggregator::Params::getHeader(
     return materializeBlock(res);
 }
 
+void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
+{
+    Strings res;
+    const auto & header = src_header ? src_header
+                                     : intermediate_header;
+
+    String prefix(indent, ' ');
+
+    {
+        /// Dump keys.
+        out << prefix << "Keys: ";
+
+        bool first = true;
+        for (auto key : keys)
+        {
+            if (!first)
+                out << ", ";
+            first = false;
+
+            if (key >= header.columns())
+                out << "unknown position " << key;
+            else
+                out << header.getByPosition(key).name;
+        }
+
+        out << '\n';
+    }
+
+    if (!aggregates.empty())
+    {
+        out << prefix << "Aggregates:\n";
+
+        for (const auto & aggregate : aggregates)
+            aggregate.explain(out, indent + 4);
+    }
+}
 
 Aggregator::Aggregator(const Params & params_)
     : params(params_),

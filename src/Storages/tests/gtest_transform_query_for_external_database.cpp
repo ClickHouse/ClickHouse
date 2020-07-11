@@ -5,6 +5,7 @@
 #include <Parsers/parseQuery.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/StorageMemory.h>
@@ -27,6 +28,8 @@ struct State
         {"apply_type", std::make_shared<DataTypeUInt8>()},
         {"apply_status", std::make_shared<DataTypeUInt8>()},
         {"create_time", std::make_shared<DataTypeDateTime>()},
+        {"field", std::make_shared<DataTypeString>()},
+        {"value", std::make_shared<DataTypeString>()},
     };
 
     static const State & instance()
@@ -115,5 +118,14 @@ TEST(TransformQueryForExternalDatabase, Issue7245)
 
     check("select apply_id from test.table where apply_type = 2 and create_time > addDays(toDateTime('2019-01-01 01:02:03'),-7) and apply_status in (3,4)",
           R"(SELECT "apply_id", "apply_type", "apply_status", "create_time" FROM "test"."table" WHERE ("apply_type" = 2) AND ("create_time" > '2018-12-25 01:02:03') AND ("apply_status" IN (3, 4)))",
+          state.context, state.columns);
+}
+
+TEST(TransformQueryForExternalDatabase, Aliases)
+{
+    const State & state = State::instance();
+
+    check("SELECT field AS value, field AS display WHERE field NOT IN ('') AND display LIKE '%test%'",
+          R"(SELECT "field" FROM "test"."table" WHERE ("field" NOT IN ('')) AND ("field" LIKE '%test%'))",
           state.context, state.columns);
 }
