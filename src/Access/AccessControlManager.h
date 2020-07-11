@@ -87,7 +87,7 @@ public:
 
     std::shared_ptr<const SettingsChanges> getProfileSettings(const String & profile_name) const;
 
-    const ExternalAuthenticators * getExternalAuthenticators() const;
+    const ExternalAuthenticators & getExternalAuthenticators() const;
 
 private:
     class ContextAccessCache;

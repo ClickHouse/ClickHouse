@@ -25,13 +25,14 @@ namespace DB
 class ExternalAuthenticators
 {
 public:
-    explicit ExternalAuthenticators(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
+    void reset();
+    void setConfig(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
 
     void setLDAPServerParams(const String & server, const LDAPServerParams & params);
     LDAPServerParams getLDAPServerParams(const String & server) const;
 
 private:
-    mutable std::mutex mutex;
+    mutable std::recursive_mutex mutex;
     std::map<String, LDAPServerParams> ldap_server_params;
 };
 

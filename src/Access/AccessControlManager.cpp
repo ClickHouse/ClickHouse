@@ -65,7 +65,8 @@ AccessControlManager::AccessControlManager()
       role_cache(std::make_unique<RoleCache>(*this)),
       row_policy_cache(std::make_unique<RowPolicyCache>(*this)),
       quota_cache(std::make_unique<QuotaCache>(*this)),
-      settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this))
+      settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
+      external_authenticators(std::make_unique<ExternalAuthenticators>())
 {
 }
 
@@ -82,7 +83,7 @@ void AccessControlManager::setLocalDirectory(const String & directory_path)
 
 void AccessControlManager::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    external_authenticators = std::make_unique<ExternalAuthenticators>(config, getLogger());
+    external_authenticators->setConfig(config, getLogger());
 }
 
 
@@ -170,9 +171,9 @@ std::shared_ptr<const SettingsChanges> AccessControlManager::getProfileSettings(
     return settings_profiles_cache->getProfileSettings(profile_name);
 }
 
-const ExternalAuthenticators * AccessControlManager::getExternalAuthenticators() const
+const ExternalAuthenticators & AccessControlManager::getExternalAuthenticators() const
 {
-    return external_authenticators.get();
+    return *external_authenticators;
 }
 
 }
