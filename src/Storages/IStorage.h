@@ -460,6 +460,16 @@ public:
     /// when considering in-memory blocks.
     virtual std::optional<UInt64> totalBytes() const { return {}; }
 
+    /// Number of rows INSERTed since server start.
+    ///
+    /// Does not takes underlying Storage (if any) into account.
+    virtual std::optional<UInt64> lifetimeRows() const { return {}; }
+
+    /// Number of bytes INSERTed since server start.
+    ///
+    /// Does not takes underlying Storage (if any) into account.
+    virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
+
 private:
     /// Lock required for alter queries (lockForAlter). Always taken for write
     /// (actually can be replaced with std::mutex, but for consistency we use
