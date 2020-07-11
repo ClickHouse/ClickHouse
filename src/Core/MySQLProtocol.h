@@ -102,8 +102,11 @@ enum Command
     COM_TIME = 0xf,
     COM_DELAYED_INSERT = 0x10,
     COM_CHANGE_USER = 0x11,
-    COM_RESET_CONNECTION = 0x1f,
-    COM_DAEMON = 0x1d
+    COM_BINLOG_DUMP = 0x12,
+    COM_REGISTER_SLAVE = 0x15,
+    COM_DAEMON = 0x1d,
+    COM_BINLOG_DUMP_GTID = 0x1e,
+    COM_RESET_CONNECTION = 0x1f
 };
 
 enum ColumnType
@@ -122,8 +125,13 @@ enum ColumnType
     MYSQL_TYPE_TIME = 0x0b,
     MYSQL_TYPE_DATETIME = 0x0c,
     MYSQL_TYPE_YEAR = 0x0d,
+    MYSQL_TYPE_NEWDATE = 0x0e,
     MYSQL_TYPE_VARCHAR = 0x0f,
     MYSQL_TYPE_BIT = 0x10,
+    MYSQL_TYPE_TIMESTAMP2 = 0x11,
+    MYSQL_TYPE_DATETIME2 = 0x12,
+    MYSQL_TYPE_TIME2 = 0x13,
+    MYSQL_TYPE_JSON = 0xf5,
     MYSQL_TYPE_NEWDECIMAL = 0xf6,
     MYSQL_TYPE_ENUM = 0xf7,
     MYSQL_TYPE_SET = 0xf8,
@@ -136,6 +144,14 @@ enum ColumnType
     MYSQL_TYPE_GEOMETRY = 0xff
 };
 
+enum ResponsePacketType
+{
+    PACKET_OK = 0x00,
+    PACKET_ERR = 0xff,
+    PACKET_EOF = 0xfe,
+    PACKET_AUTH_SWITCH = 0xfe,
+    PACKET_LOCALINFILE = 0xfb,
+};
 
 // https://dev.mysql.com/doc/dev/mysql-server/latest/group__group__cs__column__definition__flags.html
 enum ColumnDefinitionFlags
@@ -227,17 +243,18 @@ protected:
 };
 
 
-class ClientPacket
+class ReadPacket
 {
 public:
-    ClientPacket() = default;
+    ReadPacket() = default;
 
-    ClientPacket(ClientPacket &&) = default;
+    ReadPacket(ReadPacket &&) = default;
 
-    virtual void read(ReadBuffer & in, uint8_t & sequence_id)
+    virtual void readPayload(ReadBuffer & in, uint8_t & sequence_id)
     {
         PacketPayloadReadBuffer payload(in, sequence_id);
-        readPayload(payload);
+        payload.next();
+        readPayloadImpl(payload);
         if (!payload.eof())
         {
             std::stringstream tmp;
@@ -246,19 +263,19 @@ public:
         }
     }
 
-    virtual void readPayload(ReadBuffer & buf) = 0;
+    virtual void readPayloadImpl(ReadBuffer & buf) = 0;
 
-    virtual ~ClientPacket() = default;
+    virtual ~ReadPacket() = default;
 };
 
 
-class LimitedClientPacket : public ClientPacket
+class LimitedReadPacket : public ReadPacket
 {
 public:
-    void read(ReadBuffer & in, uint8_t & sequence_id) override
+    void readPayload(ReadBuffer & in, uint8_t & sequence_id) override
     {
         LimitReadBuffer limited(in, 10000, true, "too long MySQL packet.");
-        ClientPacket::read(limited, sequence_id);
+        ReadPacket::readPayload(limited, sequence_id);
     }
 };
 
@@ -359,7 +376,6 @@ protected:
     virtual void writePayloadImpl(WriteBuffer & buffer) const = 0;
 };
 
-
 /* Writes and reads packets, keeping sequence-id.
  * Throws ProtocolError, if packet with incorrect sequence-id was received.
  */
@@ -387,9 +403,9 @@ public:
     {
     }
 
-    void receivePacket(ClientPacket & packet)
+    void receivePacket(ReadPacket & packet)
     {
-        packet.read(*in, sequence_id);
+        packet.readPayload(*in, sequence_id);
     }
 
     template<class T>
@@ -416,6 +432,13 @@ public:
 
 uint64_t readLengthEncodedNumber(ReadBuffer & ss);
 
+inline void readLengthEncodedString(String & s, ReadBuffer & buffer)
+{
+    uint64_t len = readLengthEncodedNumber(buffer);
+    s.resize(len);
+    buffer.readStrict(reinterpret_cast<char *>(s.data()), len);
+}
+
 void writeLengthEncodedNumber(uint64_t x, WriteBuffer & buffer);
 
 inline void writeLengthEncodedString(const String & s, WriteBuffer & buffer)
@@ -435,8 +458,9 @@ size_t getLengthEncodedNumberSize(uint64_t x);
 size_t getLengthEncodedStringSize(const String & s);
 
 
-class Handshake : public WritePacket
+class Handshake : public WritePacket, public ReadPacket
 {
+public:
     int protocol_version = 0xa;
     String server_version;
     uint32_t connection_id;
@@ -445,8 +469,10 @@ class Handshake : public WritePacket
     uint32_t status_flags;
     String auth_plugin_name;
     String auth_plugin_data;
-public:
-    explicit Handshake(uint32_t capability_flags_, uint32_t connection_id_, String server_version_, String auth_plugin_name_, String auth_plugin_data_)
+
+    Handshake() : connection_id(0x00), capability_flags(0x00), character_set(0x00), status_flags(0x00) { }
+
+    Handshake(uint32_t capability_flags_, uint32_t connection_id_, String server_version_, String auth_plugin_name_, String auth_plugin_data_)
         : protocol_version(0xa)
         , server_version(std::move(server_version_))
         , connection_id(connection_id_)
@@ -456,12 +482,6 @@ public:
         , auth_plugin_name(std::move(auth_plugin_name_))
         , auth_plugin_data(std::move(auth_plugin_data_))
     {
-    }
-
-protected:
-    size_t getPayloadSize() const override
-    {
-        return 26 + server_version.size() + auth_plugin_data.size() + auth_plugin_name.size();
     }
 
     void writePayloadImpl(WriteBuffer & buffer) const override
@@ -480,16 +500,62 @@ protected:
         writeString(auth_plugin_name, buffer);
         writeChar(0x0, 1, buffer);
     }
+
+    void readPayloadImpl(ReadBuffer & payload) override
+    {
+        payload.readStrict(reinterpret_cast<char *>(&protocol_version), 1);
+        readNullTerminated(server_version, payload);
+        payload.readStrict(reinterpret_cast<char *>(&connection_id), 4);
+
+        auth_plugin_data.resize(AUTH_PLUGIN_DATA_PART_1_LENGTH);
+        payload.readStrict(auth_plugin_data.data(), AUTH_PLUGIN_DATA_PART_1_LENGTH);
+
+        payload.ignore(1);
+        payload.readStrict(reinterpret_cast<char *>(&capability_flags), 2);
+        payload.readStrict(reinterpret_cast<char *>(&character_set), 1);
+        payload.readStrict(reinterpret_cast<char *>(&status_flags), 2);
+        payload.readStrict((reinterpret_cast<char *>(&capability_flags)) + 2, 2);
+
+        UInt8 auth_plugin_data_length = 0;
+        if (capability_flags & MySQLProtocol::CLIENT_PLUGIN_AUTH)
+        {
+            payload.readStrict(reinterpret_cast<char *>(&auth_plugin_data_length), 1);
+        }
+        else
+        {
+            payload.ignore(1);
+        }
+
+        payload.ignore(10);
+        if (capability_flags & MySQLProtocol::CLIENT_SECURE_CONNECTION)
+        {
+            UInt8 part2_length = (SCRAMBLE_LENGTH - AUTH_PLUGIN_DATA_PART_1_LENGTH);
+            auth_plugin_data.resize(SCRAMBLE_LENGTH);
+            payload.readStrict(auth_plugin_data.data() + AUTH_PLUGIN_DATA_PART_1_LENGTH, part2_length);
+            payload.ignore(1);
+        }
+
+        if (capability_flags & MySQLProtocol::CLIENT_PLUGIN_AUTH)
+        {
+            readNullTerminated(auth_plugin_name, payload);
+        }
+    }
+
+protected:
+    size_t getPayloadSize() const override
+    {
+        return 26 + server_version.size() + auth_plugin_data.size() + auth_plugin_name.size();
+    }
 };
 
-class SSLRequest : public ClientPacket
+class SSLRequest : public ReadPacket
 {
 public:
     uint32_t capability_flags;
     uint32_t max_packet_size;
     uint8_t character_set;
 
-    void readPayload(ReadBuffer & buf) override
+    void readPayloadImpl(ReadBuffer & buf) override
     {
         buf.readStrict(reinterpret_cast<char *>(&capability_flags), 4);
         buf.readStrict(reinterpret_cast<char *>(&max_packet_size), 4);
@@ -497,20 +563,71 @@ public:
     }
 };
 
-class HandshakeResponse : public LimitedClientPacket
+class HandshakeResponse : public WritePacket, public ReadPacket
 {
 public:
-    uint32_t capability_flags = 0;
-    uint32_t max_packet_size = 0;
-    uint8_t character_set = 0;
+    uint32_t capability_flags;
+    uint32_t max_packet_size;
+    uint8_t character_set;
     String username;
-    String auth_response;
     String database;
+    String auth_response;
     String auth_plugin_name;
 
-    HandshakeResponse() = default;
+    HandshakeResponse() : capability_flags(0x00), max_packet_size(0x00), character_set(0x00) { }
 
-    void readPayload(ReadBuffer & payload) override
+    HandshakeResponse(
+        UInt32 capability_flags_,
+        UInt32 max_packet_size_,
+        UInt8 character_set_,
+        const String & username_,
+        const String & database_,
+        const String & auth_response_,
+        const String & auth_plugin_name_)
+        : capability_flags(capability_flags_)
+        , max_packet_size(max_packet_size_)
+        , character_set(character_set_)
+        , username(std::move(username_))
+        , database(std::move(database_))
+        , auth_response(std::move(auth_response_))
+        , auth_plugin_name(std::move(auth_plugin_name_))
+    {
+    }
+
+    void writePayloadImpl(WriteBuffer & buffer) const override
+    {
+        buffer.write(reinterpret_cast<const char *>(&capability_flags), 4);
+        buffer.write(reinterpret_cast<const char *>(&max_packet_size), 4);
+        buffer.write(reinterpret_cast<const char *>(&character_set), 1);
+        writeChar(0x0, 23, buffer);
+
+        writeNulTerminatedString(username, buffer);
+        if (capability_flags & CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA)
+        {
+            writeLengthEncodedString(auth_response, buffer);
+        }
+        else if (capability_flags & CLIENT_SECURE_CONNECTION)
+        {
+            writeChar(auth_response.size(), buffer);
+            writeString(auth_response.data(), auth_response.size(), buffer);
+        }
+        else
+        {
+            writeNulTerminatedString(auth_response, buffer);
+        }
+
+        if (capability_flags & CLIENT_CONNECT_WITH_DB)
+        {
+            writeNulTerminatedString(database, buffer);
+        }
+
+        if (capability_flags & CLIENT_PLUGIN_AUTH)
+        {
+            writeNulTerminatedString(auth_plugin_name, buffer);
+        }
+    }
+
+    void readPayloadImpl(ReadBuffer & payload) override
     {
         payload.readStrict(reinterpret_cast<char *>(&capability_flags), 4);
         payload.readStrict(reinterpret_cast<char *>(&max_packet_size), 4);
@@ -521,9 +638,7 @@ public:
 
         if (capability_flags & CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA)
         {
-            auto len = readLengthEncodedNumber(payload);
-            auth_response.resize(len);
-            payload.readStrict(auth_response.data(), len);
+            readLengthEncodedString(auth_response, payload);
         }
         else if (capability_flags & CLIENT_SECURE_CONNECTION)
         {
@@ -546,6 +661,36 @@ public:
         {
             readNullTerminated(auth_plugin_name, payload);
         }
+    }
+
+protected:
+    size_t getPayloadSize() const override
+    {
+        size_t size = 0;
+        size += 4 + 4 + 1 + 23;
+        size += username.size() + 1;
+
+        if (capability_flags & CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA)
+        {
+            size += getLengthEncodedStringSize(auth_response);
+        }
+        else if (capability_flags & CLIENT_SECURE_CONNECTION)
+        {
+            size += (1 + auth_response.size());
+        }
+        else
+        {
+            size += (auth_response.size() + 1);
+        }
+        if (capability_flags & CLIENT_CONNECT_WITH_DB)
+        {
+            size += (database.size() + 1);
+        }
+        if (capability_flags & CLIENT_PLUGIN_AUTH)
+        {
+            size += (auth_plugin_name.size() + 1);
+        }
+        return size;
     }
 };
 
@@ -573,12 +718,12 @@ protected:
     }
 };
 
-class AuthSwitchResponse : public LimitedClientPacket
+class AuthSwitchResponse : public LimitedReadPacket
 {
 public:
     String value;
 
-    void readPayload(ReadBuffer & payload) override
+    void readPayloadImpl(ReadBuffer & payload) override
     {
         readStringUntilEOF(value, payload);
     }
@@ -604,17 +749,25 @@ protected:
 };
 
 
-class OK_Packet : public WritePacket
+class OK_Packet : public WritePacket, public ReadPacket
 {
+public:
     uint8_t header;
     uint32_t capabilities;
     uint64_t affected_rows;
+    uint64_t last_insert_id;
     int16_t warnings = 0;
     uint32_t status_flags;
     String session_state_changes;
     String info;
-public:
-    OK_Packet(uint8_t header_,
+
+    OK_Packet(uint32_t capabilities_)
+        : header(0x00), capabilities(capabilities_), affected_rows(0x00), last_insert_id(0x00), status_flags(0x00)
+    {
+    }
+
+    OK_Packet(
+        uint8_t header_,
         uint32_t capabilities_,
         uint64_t affected_rows_,
         uint32_t status_flags_,
@@ -624,11 +777,70 @@ public:
         : header(header_)
         , capabilities(capabilities_)
         , affected_rows(affected_rows_)
+        , last_insert_id(0)
         , warnings(warnings_)
         , status_flags(status_flags_)
         , session_state_changes(std::move(session_state_changes_))
         , info(std::move(info_))
     {
+    }
+
+    void writePayloadImpl(WriteBuffer & buffer) const override
+    {
+        buffer.write(header);
+        writeLengthEncodedNumber(affected_rows, buffer);
+        writeLengthEncodedNumber(last_insert_id, buffer); /// last insert-id
+
+        if (capabilities & CLIENT_PROTOCOL_41)
+        {
+            buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
+            buffer.write(reinterpret_cast<const char *>(&warnings), 2);
+        }
+        else if (capabilities & CLIENT_TRANSACTIONS)
+        {
+            buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
+        }
+
+        if (capabilities & CLIENT_SESSION_TRACK)
+        {
+            writeLengthEncodedString(info, buffer);
+            if (status_flags & SERVER_SESSION_STATE_CHANGED)
+                writeLengthEncodedString(session_state_changes, buffer);
+        }
+        else
+        {
+            writeString(info, buffer);
+        }
+    }
+
+    void readPayloadImpl(ReadBuffer & payload) override
+    {
+        payload.readStrict(reinterpret_cast<char *>(&header), 1);
+        affected_rows = readLengthEncodedNumber(payload);
+        last_insert_id = readLengthEncodedNumber(payload);
+
+        if (capabilities & CLIENT_PROTOCOL_41)
+        {
+            payload.readStrict(reinterpret_cast<char *>(&status_flags), 2);
+            payload.readStrict(reinterpret_cast<char *>(&warnings), 2);
+        }
+        else if (capabilities & CLIENT_TRANSACTIONS)
+        {
+            payload.readStrict(reinterpret_cast<char *>(&status_flags), 2);
+        }
+
+        if (capabilities & CLIENT_SESSION_TRACK)
+        {
+            readLengthEncodedString(info, payload);
+            if (status_flags & SERVER_SESSION_STATE_CHANGED)
+            {
+                readLengthEncodedString(session_state_changes, payload);
+            }
+        }
+        else
+        {
+            readString(info, payload);
+        }
     }
 
 protected:
@@ -658,67 +870,99 @@ protected:
 
         return result;
     }
+};
+
+class EOF_Packet : public WritePacket, public ReadPacket
+{
+public:
+    UInt8 header = 0xfe;
+    int warnings;
+    int status_flags;
+
+    EOF_Packet() : warnings(0x00), status_flags(0x00) { }
+
+    EOF_Packet(int warnings_, int status_flags_) : warnings(warnings_), status_flags(status_flags_) { }
 
     void writePayloadImpl(WriteBuffer & buffer) const override
     {
-        buffer.write(header);
-        writeLengthEncodedNumber(affected_rows, buffer);
-        writeLengthEncodedNumber(0, buffer); /// last insert-id
-
-        if (capabilities & CLIENT_PROTOCOL_41)
-        {
-            buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
-            buffer.write(reinterpret_cast<const char *>(&warnings), 2);
-        }
-        else if (capabilities & CLIENT_TRANSACTIONS)
-        {
-            buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
-        }
-
-        if (capabilities & CLIENT_SESSION_TRACK)
-        {
-            writeLengthEncodedString(info, buffer);
-            if (status_flags & SERVER_SESSION_STATE_CHANGED)
-                writeLengthEncodedString(session_state_changes, buffer);
-        }
-        else
-        {
-            writeString(info, buffer);
-        }
+        buffer.write(header); // EOF header
+        buffer.write(reinterpret_cast<const char *>(&warnings), 2);
+        buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
     }
-};
 
-class EOF_Packet : public WritePacket
-{
-    int warnings;
-    int status_flags;
-public:
-    EOF_Packet(int warnings_, int status_flags_) : warnings(warnings_), status_flags(status_flags_)
-    {}
+    void readPayloadImpl(ReadBuffer & payload) override
+    {
+        payload.readStrict(reinterpret_cast<char *>(&header), 1);
+        assert(header == 0xfe);
+        payload.readStrict(reinterpret_cast<char *>(&warnings), 2);
+        payload.readStrict(reinterpret_cast<char *>(&status_flags), 2);
+    }
 
 protected:
     size_t getPayloadSize() const override
     {
         return 5;
     }
-
-    void writePayloadImpl(WriteBuffer & buffer) const override
-    {
-        buffer.write(0xfe); // EOF header
-        buffer.write(reinterpret_cast<const char *>(&warnings), 2);
-        buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
-    }
 };
 
-class ERR_Packet : public WritePacket
+class AuthSwitch_Packet : public ReadPacket
 {
+public:
+    String plugin_name;
+
+    AuthSwitch_Packet() { }
+
+    void readPayloadImpl(ReadBuffer & payload) override
+    {
+        payload.readStrict(reinterpret_cast<char *>(&header), 1);
+        assert(header == 0xfe);
+        readStringUntilEOF(plugin_name, payload);
+    }
+
+private:
+    UInt8 header = 0x00;
+};
+
+class ERR_Packet : public WritePacket, public ReadPacket
+{
+public:
+    UInt8 header = 0xff;
     int error_code;
     String sql_state;
     String error_message;
-public:
+
+    ERR_Packet() : error_code(0x00) { }
+
     ERR_Packet(int error_code_, String sql_state_, String error_message_)
         : error_code(error_code_), sql_state(std::move(sql_state_)), error_message(std::move(error_message_))
     {
+    }
+
+    void writePayloadImpl(WriteBuffer & buffer) const override
+    {
+        buffer.write(header);
+        buffer.write(reinterpret_cast<const char *>(&error_code), 2);
+        buffer.write('#');
+        buffer.write(sql_state.data(), sql_state.length());
+        buffer.write(error_message.data(), std::min(error_message.length(), MYSQL_ERRMSG_SIZE));
+    }
+
+    void readPayloadImpl(ReadBuffer & payload) override
+    {
+        payload.readStrict(reinterpret_cast<char *>(&header), 1);
+        assert(header == 0xff);
+
+        payload.readStrict(reinterpret_cast<char *>(&error_code), 2);
+
+        /// SQL State [optional: # + 5bytes string]
+        UInt8 sharp = static_cast<unsigned char>(*payload.position());
+        if (sharp == 0x23)
+        {
+            payload.ignore(1);
+            sql_state.resize(5);
+            payload.readStrict(reinterpret_cast<char *>(sql_state.data()), 5);
+        }
+        readString(error_message, payload);
     }
 
 protected:
@@ -726,19 +970,68 @@ protected:
     {
         return 4 + sql_state.length() + std::min(error_message.length(), MYSQL_ERRMSG_SIZE);
     }
-
-    void writePayloadImpl(WriteBuffer & buffer) const override
-    {
-        buffer.write(0xff);
-        buffer.write(reinterpret_cast<const char *>(&error_code), 2);
-        buffer.write('#');
-        buffer.write(sql_state.data(), sql_state.length());
-        buffer.write(error_message.data(), std::min(error_message.length(), MYSQL_ERRMSG_SIZE));
-    }
 };
 
-class ColumnDefinition : public WritePacket
+/// https://dev.mysql.com/doc/internals/en/generic-response-packets.html
+class PacketResponse : public ReadPacket
 {
+public:
+    OK_Packet ok;
+    ERR_Packet err;
+    EOF_Packet eof;
+    AuthSwitch_Packet auth_switch;
+    UInt64 column_length = 0;
+
+    PacketResponse(UInt32 server_capability_flags_) : ok(OK_Packet(server_capability_flags_)) { }
+    PacketResponse(UInt32 server_capability_flags_, bool is_handshake_)
+        : ok(OK_Packet(server_capability_flags_)), is_handshake(is_handshake_)
+    {
+    }
+
+    void readPayloadImpl(ReadBuffer & payload) override
+    {
+        UInt16 header = static_cast<unsigned char>(*payload.position());
+        switch (header)
+        {
+            case PACKET_OK:
+                packetType = PACKET_OK;
+                ok.readPayloadImpl(payload);
+                break;
+            case PACKET_ERR:
+                packetType = PACKET_ERR;
+                err.readPayloadImpl(payload);
+                break;
+            case PACKET_EOF:
+                if (is_handshake)
+                {
+                    packetType = PACKET_AUTH_SWITCH;
+                    auth_switch.readPayloadImpl(payload);
+                }
+                else
+                {
+                    packetType = PACKET_EOF;
+                    eof.readPayloadImpl(payload);
+                }
+                break;
+            case PACKET_LOCALINFILE:
+                packetType = PACKET_LOCALINFILE;
+                break;
+            default:
+                packetType = PACKET_OK;
+                column_length = readLengthEncodedNumber(payload);
+        }
+    }
+
+    ResponsePacketType getType() { return packetType; }
+
+private:
+    bool is_handshake = false;
+    ResponsePacketType packetType = PACKET_OK;
+};
+
+class ColumnDefinition : public WritePacket, public ReadPacket
+{
+public:
     String schema;
     String table;
     String org_table;
@@ -750,7 +1043,9 @@ class ColumnDefinition : public WritePacket
     ColumnType column_type;
     uint16_t flags;
     uint8_t decimals = 0x00;
-public:
+
+    ColumnDefinition() : character_set(0x00), column_length(0), column_type(MYSQL_TYPE_DECIMAL), flags(0x00) { }
+
     ColumnDefinition(
         String schema_,
         String table_,
@@ -781,13 +1076,6 @@ public:
     {
     }
 
-protected:
-    size_t getPayloadSize() const override
-    {
-        return 13 + getLengthEncodedStringSize("def") + getLengthEncodedStringSize(schema) + getLengthEncodedStringSize(table) + getLengthEncodedStringSize(org_table) + \
-            getLengthEncodedStringSize(name) + getLengthEncodedStringSize(org_name) + getLengthEncodedNumberSize(next_length);
-    }
-
     void writePayloadImpl(WriteBuffer & buffer) const override
     {
         writeLengthEncodedString(std::string("def"), buffer); /// always "def"
@@ -804,14 +1092,40 @@ protected:
         buffer.write(reinterpret_cast<const char *>(&decimals), 2);
         writeChar(0x0, 2, buffer);
     }
+
+    void readPayloadImpl(ReadBuffer & payload) override
+    {
+        String def;
+        readLengthEncodedString(def, payload);
+        assert(def == "def");
+        readLengthEncodedString(schema, payload);
+        readLengthEncodedString(table, payload);
+        readLengthEncodedString(org_table, payload);
+        readLengthEncodedString(name, payload);
+        readLengthEncodedString(org_name, payload);
+        next_length = readLengthEncodedNumber(payload);
+        payload.readStrict(reinterpret_cast<char *>(&character_set), 2);
+        payload.readStrict(reinterpret_cast<char *>(&column_length), 4);
+        payload.readStrict(reinterpret_cast<char *>(&column_type), 1);
+        payload.readStrict(reinterpret_cast<char *>(&flags), 2);
+        payload.readStrict(reinterpret_cast<char *>(&decimals), 2);
+        payload.ignore(2);
+    }
+
+protected:
+    size_t getPayloadSize() const override
+    {
+        return 13 + getLengthEncodedStringSize("def") + getLengthEncodedStringSize(schema) + getLengthEncodedStringSize(table) + getLengthEncodedStringSize(org_table) + \
+            getLengthEncodedStringSize(name) + getLengthEncodedStringSize(org_name) + getLengthEncodedNumberSize(next_length);
+    }
 };
 
-class ComFieldList : public LimitedClientPacket
+class ComFieldList : public LimitedReadPacket
 {
 public:
     String table, field_wildcard;
 
-    void readPayload(ReadBuffer & payload) override
+    void readPayloadImpl(ReadBuffer & payload) override
     {
         // Command byte has been already read from payload.
         readNullTerminated(table, payload);
@@ -928,6 +1242,30 @@ public:
             scramble[i] &= 0x7f;
             if (scramble[i] == '\0' || scramble[i] == '$')
                 scramble[i] = scramble[i] + 1;
+        }
+    }
+
+    Native41(const String & password, const String & auth_plugin_data)
+    {
+        /// https://dev.mysql.com/doc/internals/en/secure-password-authentication.html
+        /// SHA1( password ) XOR SHA1( "20-bytes random data from server" <concat> SHA1( SHA1( password ) ) )
+        Poco::SHA1Engine engine1;
+        engine1.update(password.data());
+        const Poco::SHA1Engine::Digest & password_sha1 = engine1.digest();
+
+        Poco::SHA1Engine engine2;
+        engine2.update(password_sha1.data(), password_sha1.size());
+        const Poco::SHA1Engine::Digest & password_double_sha1 = engine2.digest();
+
+        Poco::SHA1Engine engine3;
+        engine3.update(auth_plugin_data.data(), auth_plugin_data.size());
+        engine3.update(password_double_sha1.data(), password_double_sha1.size());
+        const Poco::SHA1Engine::Digest & digest = engine3.digest();
+
+        scramble.resize(SCRAMBLE_LENGTH);
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+        {
+            scramble[i] = static_cast<unsigned char>(password_sha1[i] ^ digest[i]);
         }
     }
 
@@ -1137,5 +1475,109 @@ private:
 
 }
 
+namespace Replication
+{
+    /// https://dev.mysql.com/doc/internals/en/com-register-slave.html
+    class RegisterSlave : public WritePacket
+    {
+    public:
+        UInt8 header = COM_REGISTER_SLAVE;
+        UInt32 server_id;
+        String slaves_hostname;
+        String slaves_users;
+        String slaves_password;
+        size_t slaves_mysql_port;
+        UInt32 replication_rank;
+        UInt32 master_id;
+
+        RegisterSlave(UInt32 server_id_) : server_id(server_id_), slaves_mysql_port(0x00), replication_rank(0x00), master_id(0x00) { }
+
+        void writePayloadImpl(WriteBuffer & buffer) const override
+        {
+            buffer.write(header);
+            buffer.write(reinterpret_cast<const char *>(&server_id), 4);
+            writeLengthEncodedString(slaves_hostname, buffer);
+            writeLengthEncodedString(slaves_users, buffer);
+            writeLengthEncodedString(slaves_password, buffer);
+            buffer.write(reinterpret_cast<const char *>(&slaves_mysql_port), 2);
+            buffer.write(reinterpret_cast<const char *>(&replication_rank), 4);
+            buffer.write(reinterpret_cast<const char *>(&master_id), 4);
+        }
+
+    protected:
+        size_t getPayloadSize() const override
+        {
+            return 1 + 4 + getLengthEncodedStringSize(slaves_hostname) + getLengthEncodedStringSize(slaves_users)
+                + getLengthEncodedStringSize(slaves_password) + 2 + 4 + 4;
+        }
+    };
+
+    /// https://dev.mysql.com/doc/internals/en/com-binlog-dump.html
+    class BinlogDump : public WritePacket
+    {
+    public:
+        UInt8 header = COM_BINLOG_DUMP;
+        UInt32 binlog_pos;
+        UInt16 flags;
+        UInt32 server_id;
+        String binlog_file_name;
+
+        BinlogDump(UInt32 binlog_pos_, String binlog_file_name_, UInt32 server_id_)
+            : binlog_pos(binlog_pos_), flags(0x00), server_id(server_id_), binlog_file_name(std::move(binlog_file_name_))
+        {
+        }
+
+        void writePayloadImpl(WriteBuffer & buffer) const override
+        {
+            buffer.write(header);
+            buffer.write(reinterpret_cast<const char *>(&binlog_pos), 4);
+            buffer.write(reinterpret_cast<const char *>(&flags), 2);
+            buffer.write(reinterpret_cast<const char *>(&server_id), 4);
+            buffer.write(binlog_file_name.data(), binlog_file_name.size());
+            buffer.write(0x00);
+        }
+
+    protected:
+        size_t getPayloadSize() const override { return 1 + 4 + 2 + 4 + binlog_file_name.size() + 1; }
+    };
+
+    /// https://dev.mysql.com/doc/internals/en/com-binlog-dump-gtid.html
+    class BinlogDumpGTID : public WritePacket
+    {
+    public:
+        UInt8 header = COM_BINLOG_DUMP_GTID;
+        UInt64 binlog_pos;
+        UInt16 flags;
+        UInt32 server_id;
+        String binlog_file_name;
+        String gtid_datas;
+
+        BinlogDumpGTID(UInt32 server_id_, String gtid_datas_)
+            : binlog_pos(4), flags(0x04), server_id(server_id_), binlog_file_name(""), gtid_datas(std::move(gtid_datas_))
+        {
+        }
+
+        void writePayloadImpl(WriteBuffer & buffer) const override
+        {
+            buffer.write(header);
+            buffer.write(reinterpret_cast<const char *>(&flags), 2);
+            buffer.write(reinterpret_cast<const char *>(&server_id), 4);
+
+            UInt32 file_size = binlog_file_name.size();
+            buffer.write(reinterpret_cast<const char *>(&file_size), 4);
+
+            buffer.write(binlog_file_name.data(), binlog_file_name.size());
+            buffer.write(reinterpret_cast<const char *>(&binlog_pos), 8);
+
+            UInt32 gtid_size = gtid_datas.size();
+            buffer.write(reinterpret_cast<const char *>(&gtid_size), 4);
+            buffer.write(gtid_datas.data(), gtid_datas.size());
+        }
+
+    protected:
+        size_t getPayloadSize() const override { return 1 + 2 + 4 + 4 + binlog_file_name.size() + 8 + 4 + gtid_datas.size(); }
+    };
 }
+}
+
 }
