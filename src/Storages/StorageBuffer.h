@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <atomic>
 #include <thread>
 #include <ext/shared_ptr_helper.h>
 #include <Core/NamesAndTypes.h>
@@ -50,6 +51,12 @@ public:
         size_t rows;    /// The number of rows in the block.
         size_t bytes;   /// The number of (uncompressed) bytes in the block.
     };
+    /// Lifetime
+    struct LifeTimeWrites
+    {
+        std::atomic<size_t> rows = 0;
+        std::atomic<size_t> bytes = 0;
+    };
 
     std::string getName() const override { return "Buffer"; }
 
@@ -94,6 +101,10 @@ public:
     std::optional<UInt64> totalRows() const override;
     std::optional<UInt64> totalBytes() const override;
 
+    std::optional<UInt64> lifetimeRows() const override { return writes.rows; }
+    std::optional<UInt64> lifetimeBytes() const override { return writes.bytes; }
+
+
 private:
     Context global_context;
 
@@ -113,6 +124,8 @@ private:
 
     StorageID destination_id;
     bool allow_materialized;
+
+    LifeTimeWrites writes;
 
     Poco::Logger * log;
 
