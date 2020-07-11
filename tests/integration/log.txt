@@ -1,0 +1,137 @@
+clickhouse_integration_tests_volume
+Start tests
+============================= test session starts ==============================
+platform linux2 -- Python 2.7.17, pytest-4.6.11, py-1.8.2, pluggy-0.13.1 -- /usr/bin/python
+cachedir: .pytest_cache
+rootdir: /ClickHouse/tests/integration, inifile: pytest.ini
+plugins: timeout-1.4.1
+timeout: 300.0s
+timeout method: signal
+timeout func_only: False
+collecting ... collected 1 item
+
+test_storage_mysql/test.py::test_enum_type /usr/local/lib/python2.7/dist-packages/requests/__init__.py:80: RequestsDependencyWarning: urllib3 (1.23) or chardet (3.0.4) doesn't match a supported version!
+  RequestsDependencyWarning)
+/usr/local/lib/python2.7/dist-packages/requests/__init__.py:80: RequestsDependencyWarning: urllib3 (1.23) or chardet (3.0.4) doesn't match a supported version!
+  RequestsDependencyWarning)
+Removing network clickhouse_default
+Network clickhouse_default not found.
+/usr/local/lib/python2.7/dist-packages/requests/__init__.py:80: RequestsDependencyWarning: urllib3 (1.23) or chardet (3.0.4) doesn't match a supported version!
+  RequestsDependencyWarning)
+Creating network "rootteststoragemysql_default" with the default driver
+Creating rootteststoragemysql_mysql1_1 ... 
+[1A[2KCreating rootteststoragemysql_mysql1_1 ... [32mdone[0m[1B/usr/local/lib/python2.7/dist-packages/requests/__init__.py:80: RequestsDependencyWarning: urllib3 (1.23) or chardet (3.0.4) doesn't match a supported version!
+  RequestsDependencyWarning)
+Starting rootteststoragemysql_mysql1_1 ... 
+[1A[2KStarting rootteststoragemysql_mysql1_1 ... [32mdone[0m[1BCreating rootteststoragemysql_node1_1  ... 
+[1A[2KCreating rootteststoragemysql_node1_1  ... [32mdone[0m[1BCan't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Can't connect to MySQL (2013, 'Lost connection to MySQL server during query')
+Mysql Started
+FAILED/usr/local/lib/python2.7/dist-packages/requests/__init__.py:80: RequestsDependencyWarning: urllib3 (1.23) or chardet (3.0.4) doesn't match a supported version!
+  RequestsDependencyWarning)
+/usr/local/lib/python2.7/dist-packages/requests/__init__.py:80: RequestsDependencyWarning: urllib3 (1.23) or chardet (3.0.4) doesn't match a supported version!
+  RequestsDependencyWarning)
+Killing rootteststoragemysql_node1_1  ... 
+Killing rootteststoragemysql_mysql1_1 ... 
+[2A[2KKilling rootteststoragemysql_node1_1  ... [32mdone[0m[2B[1A[2KKilling rootteststoragemysql_mysql1_1 ... [32mdone[0m[1B/usr/local/lib/python2.7/dist-packages/requests/__init__.py:80: RequestsDependencyWarning: urllib3 (1.23) or chardet (3.0.4) doesn't match a supported version!
+  RequestsDependencyWarning)
+Removing rootteststoragemysql_node1_1  ... 
+Removing rootteststoragemysql_mysql1_1 ... 
+[2A[2KRemoving rootteststoragemysql_node1_1  ... [32mdone[0m[2B[1A[2KRemoving rootteststoragemysql_mysql1_1 ... [32mdone[0m[1BRemoving network rootteststoragemysql_default
+
+
+=================================== FAILURES ===================================
+________________________________ test_enum_type ________________________________
+
+started_cluster = <helpers.cluster.ClickHouseCluster instance at 0x7f7a53dda2d0>
+
+    def test_enum_type(started_cluster):
+        table_name = 'test_enum_type'
+        conn = get_mysql_conn()
+        create_mysql_table(conn, table_name)
+        node1.query('''
+    CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, source Enum8('IP' = 1, 'URL' = 2)) ENGINE = MySQL('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse', 1);
+    '''.format(table_name, table_name))
+>       node1.query("INSERT INTO {}(id, name, age, money, source) VALUES (1,'name',0, 0, cast('IP', 'Enum8(\'IP\' = 1, \'URL\' = 2)'))".format(table_name))
+
+test_storage_mysql/test.py:125: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+helpers/cluster.py:741: in query
+    return self.client.query(sql, stdin, timeout, settings, user, password, ignore_error)
+helpers/client.py:21: in query
+    return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, ignore_error=ignore_error).get_answer()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <helpers.client.CommandRequest instance at 0x7f7a4c7ccd20>
+
+    def get_answer(self):
+        self.process.wait()
+        self.stdout_file.seek(0)
+        self.stderr_file.seek(0)
+    
+        stdout = self.stdout_file.read()
+        stderr = self.stderr_file.read()
+    
+        if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
+            raise QueryTimeoutExceedException('Client timed out!')
+    
+        if (self.process.returncode != 0 or stderr) and not self.ignore_error:
+>           raise QueryRuntimeException('Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
+E           QueryRuntimeException: Client failed! Return code: 62, stderr: Error on processing query: INSERT INTO test_enum_type(id, name, age, money, source) VALUES (1,'name',0, 0, cast('IP', 'Enum8('IP' = 1, 'URL' = 2)'))
+E           Code: 62, e.displayText() = DB::Exception: Cannot parse expression of type Enum8('IP' = 1, 'URL' = 2) here: cast('IP', 'Enum8('IP' = 1, 'URL' = 2)')), Stack trace (when copying this message, always include the lines below):
+E           
+E           0. /data/array/work/ClickHouse/build/../contrib/poco/Foundation/src/Exception.cpp:27: Poco::Exception::Exception(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, int) @ 0xc7b833c in /clickhouse
+E           1. /data/array/work/ClickHouse/build/../src/Common/Exception.cpp:37: DB::Exception::Exception(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, int) @ 0x544ee09 in /clickhouse
+E           2. /data/array/work/ClickHouse/build/../contrib/libcxx/include/string:2134: DB::ValuesBlockInputFormat::parseExpression(DB::IColumn&, unsigned long) (.cold) @ 0x5134988 in /clickhouse
+E           3. /data/array/work/ClickHouse/build/../src/Processors/Formats/Impl/ValuesBlockInputFormat.cpp:180: DB::ValuesBlockInputFormat::readRow(std::__1::vector<COW<DB::IColumn>::mutable_ptr<DB::IColumn>, std::__1::allocator<COW<DB::IColumn>::mutable_ptr<DB::IColumn> > >&, unsigned long) (.cold) @ 0x51350cb in /clickhouse
+E           4. /data/array/work/ClickHouse/build/../contrib/libcxx/include/functional:1909: DB::ValuesBlockInputFormat::generate() @ 0x9f5e66d in /clickhouse
+E           5. /data/array/work/ClickHouse/build/../contrib/libcxx/include/vector:1003: DB::ISource::work() @ 0x9df8447 in /clickhouse
+E           6. /data/array/work/ClickHouse/build/../src/Processors/Formats/InputStreamFromInputFormat.h:49: DB::InputStreamFromInputFormat::readImpl() @ 0x9dc839d in /clickhouse
+E           7. /data/array/work/ClickHouse/build/../contrib/libcxx/include/vector:1003: DB::IBlockInputStream::read() @ 0x95f2c4d in /clickhouse
+E           8. /data/array/work/ClickHouse/build/../contrib/libcxx/include/vector:1003: DB::AsynchronousBlockInputStream::calculate() @ 0x95ea533 in /clickhouse
+E           9. /data/array/work/ClickHouse/build/../contrib/libcxx/include/atomic:856: std::__1::__function::__func<DB::AsynchronousBlockInputStream::next()::'lambda'(), std::__1::allocator<DB::AsynchronousBlockInputStream::next()::'lambda'()>, void ()>::operator()() @ 0x95ea984 in /clickhouse
+E           10. /data/array/work/ClickHouse/build/../contrib/libcxx/include/atomic:856: ThreadPoolImpl<ThreadFromGlobalPool>::worker(std::__1::__list_iterator<ThreadFromGlobalPool, void*>) @ 0x54599d7 in /clickhouse
+E           11. /data/array/work/ClickHouse/build/../src/Common/ThreadPool.h:167: ThreadFromGlobalPool::ThreadFromGlobalPool<void ThreadPoolImpl<ThreadFromGlobalPool>::scheduleImpl<void>(std::__1::function<void ()>, int, std::__1::optional<unsigned long>)::'lambda1'()>(void&&, void ThreadPoolImpl<ThreadFromGlobalPool>::scheduleImpl<void>(std::__1::function<void ()>, int, std::__1::optional<unsigned long>)::'lambda1'()&&...)::'lambda'()::operator()() const @ 0x545a116 in /clickhouse
+E           12. /data/array/work/ClickHouse/build/../contrib/libcxx/include/atomic:856: ThreadPoolImpl<std::__1::thread>::worker(std::__1::__list_iterator<std::__1::thread, void*>) @ 0x5458ef7 in /clickhouse
+E           13. /data/array/work/ClickHouse/build/../contrib/libcxx/include/memory:2615: void* std::__1::__thread_proxy<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct> >, void ThreadPoolImpl<std::__1::thread>::scheduleImpl<void>(std::__1::function<void ()>, int, std::__1::optional<unsigned long>)::'lambda1'()> >(void*) @ 0x545750f in /clickhouse
+E           14. start_thread @ 0x76db in /lib/x86_64-linux-gnu/libpthread-2.27.so
+E           15. /build/glibc-OTsEL5/glibc-2.27/misc/../sysdeps/unix/sysv/linux/x86_64/clone.S:97: __clone @ 0x12188f in /usr/lib/debug/lib/x86_64-linux-gnu/libc-2.27.so
+E            (version 20.6.1.1)
+
+helpers/client.py:103: QueryRuntimeException
+=============================== warnings summary ===============================
+/usr/local/lib/python2.7/dist-packages/requests/__init__.py:80
+  /usr/local/lib/python2.7/dist-packages/requests/__init__.py:80: RequestsDependencyWarning: urllib3 (1.23) or chardet (3.0.4) doesn't match a supported version!
+    RequestsDependencyWarning)
+
+/usr/local/lib/python2.7/dist-packages/psycopg2/__init__.py:144
+  /usr/local/lib/python2.7/dist-packages/psycopg2/__init__.py:144: UserWarning: The psycopg2 wheel package will be renamed from release 2.8; in order to keep installing from binary please use "pip install psycopg2-binary" instead. For details see: <http://initd.org/psycopg/docs/install.html#binary-install-from-pypi>.
+    """)
+
+-- Docs: https://docs.pytest.org/en/latest/warnings.html
+==================== 1 failed, 2 warnings in 17.66 seconds =====================
+Running pytest container as: 'docker run --net=host  --rm --name clickhouse_integration_tests --privileged --volume=/data/array/work/ClickHouse//build/programs/clickhouse-odbc-bridge:/clickhouse-odbc-bridge --volume=/data/array/work/ClickHouse//build/programs/clickhouse:/clickhouse         --volume=/data/array/work/ClickHouse/programs/server/:/clickhouse-config --volume=/data/array/work/ClickHouse:/ClickHouse --volume=clickhouse_integration_tests_volume:/var/lib/docker -e PYTEST_OPTS='test_storage_mysql/test.py::test_enum_type  -ss -vv' yandex/clickhouse-integration-tests-runner '.
+Traceback (most recent call last):
+  File "./runner", line 115, in <module>
+    subprocess.check_call(cmd, shell=True)
+  File "/usr/lib/python2.7/subprocess.py", line 190, in check_call
+    raise CalledProcessError(retcode, cmd)
+subprocess.CalledProcessError: Command 'docker run --net=host  --rm --name clickhouse_integration_tests --privileged --volume=/data/array/work/ClickHouse//build/programs/clickhouse-odbc-bridge:/clickhouse-odbc-bridge --volume=/data/array/work/ClickHouse//build/programs/clickhouse:/clickhouse         --volume=/data/array/work/ClickHouse/programs/server/:/clickhouse-config --volume=/data/array/work/ClickHouse:/ClickHouse --volume=clickhouse_integration_tests_volume:/var/lib/docker -e PYTEST_OPTS='test_storage_mysql/test.py::test_enum_type  -ss -vv' yandex/clickhouse-integration-tests-runner ' returned non-zero exit status 1

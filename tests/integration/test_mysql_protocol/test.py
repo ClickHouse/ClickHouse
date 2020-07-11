@@ -118,8 +118,8 @@ def test_mysql_client(mysql_client, server_address):
     '''.format(host=server_address, port=server_port), demux=True)
 
     assert stdout == 'count()\n1\n'
-    assert stderr == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
-                     "ERROR 81 (00000) at line 1: Database system2 doesn't exist\n"
+    assert stderr[:-20] == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
+                     "ERROR 81 (00000) at line 1: Code: 81, e.displayText() = DB::Exception: Database system2 doesn't exist"
 
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
@@ -144,9 +144,8 @@ def test_mysql_client_exception(mysql_client, server_address):
         -e "CREATE TABLE default.t1_remote_mysql AS mysql('127.0.0.1:10086','default','t1_local','default','');"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    prefix = "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
+    assert stderr[:-20] == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
             "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 2002, e.displayText() = mysqlxx::ConnectionFailed: Can't connect to MySQL server on '127.0.0.1' (115) ((nullptr):0)"
-    assert stderr.startswith(prefix) == True
 
 
 def test_mysql_replacement_query(mysql_client, server_address):
@@ -258,7 +257,7 @@ def test_python_client(server_address):
     with pytest.raises(pymysql.InternalError) as exc_info:
         client.query('select name from tables')
 
-    assert exc_info.value.args == (60, "Table default.tables doesn't exist.")
+    assert exc_info.value.args[1][:-19] == "Code: 60, e.displayText() = DB::Exception: Table default.tables doesn't exist."
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute("select 1 as a, 'тест' as b")
@@ -274,7 +273,7 @@ def test_python_client(server_address):
     with pytest.raises(pymysql.InternalError) as exc_info:
         client.query('select name from tables')
 
-    assert exc_info.value.args == (60, "Table default.tables doesn't exist.")
+    assert exc_info.value.args[1][:-19] == "Code: 60, e.displayText() = DB::Exception: Table default.tables doesn't exist."
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute("select 1 as a, 'тест' as b")
@@ -285,7 +284,7 @@ def test_python_client(server_address):
     with pytest.raises(pymysql.InternalError) as exc_info:
         client.select_db('system2')
 
-    assert exc_info.value.args == (81, "Database system2 doesn't exist")
+    assert exc_info.value.args[1][:-19] == "Code: 81, e.displayText() = DB::Exception: Database system2 doesn't exist"
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute('CREATE DATABASE x')
