@@ -3,7 +3,7 @@ toc_priority: 39
 toc_title: GRANT
 ---
 
-# GRANT {#grant}
+# GRANT Statement {#grant}
 
 -   Grants [privileges](#grant-privileges) to ClickHouse user accounts or roles.
 -   Assigns roles to user accounts or to the other roles.

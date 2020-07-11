@@ -60,7 +60,7 @@ Management queries:
 
 -   [CREATE USER](../sql-reference/statements/create/user.md)
 -   [ALTER USER](../sql-reference/statements/alter.md#alter-user-statement)
--   [DROP USER](../sql-reference/statements/misc.md#drop-user-statement)
+-   [DROP USER](../sql-reference/statements/drop.md)
 -   [SHOW CREATE USER](../sql-reference/statements/show.md#show-create-user-statement)
 
 ### Settings Applying {#access-control-settings-applying}
@@ -86,9 +86,9 @@ Management queries:
 
 -   [CREATE ROLE](../sql-reference/statements/create/role.md)
 -   [ALTER ROLE](../sql-reference/statements/alter.md#alter-role-statement)
--   [DROP ROLE](../sql-reference/statements/misc.md#drop-role-statement)
--   [SET ROLE](../sql-reference/statements/misc.md#set-role-statement)
--   [SET DEFAULT ROLE](../sql-reference/statements/misc.md#set-default-role-statement)
+-   [DROP ROLE](../sql-reference/statements/drop.md)
+-   [SET ROLE](../sql-reference/statements/set-role.md)
+-   [SET DEFAULT ROLE](../sql-reference/statements/set-role.md#set-default-role-statement)
 -   [SHOW CREATE ROLE](../sql-reference/statements/show.md#show-create-role-statement)
 
 Privileges can be granted to a role by the [GRANT](../sql-reference/statements/grant.md) query. To revoke privileges from a role ClickHouse provides the [REVOKE](../sql-reference/statements/revoke.md) query.
@@ -101,7 +101,7 @@ Management queries:
 
 -   [CREATE ROW POLICY](../sql-reference/statements/create/row-policy.md)
 -   [ALTER ROW POLICY](../sql-reference/statements/alter.md#alter-row-policy-statement)
--   [DROP ROW POLICY](../sql-reference/statements/misc.md#drop-row-policy-statement)
+-   [DROP ROW POLICY](../sql-reference/statements/drop.md#drop-row-policy-statement)
 -   [SHOW CREATE ROW POLICY](../sql-reference/statements/show.md#show-create-row-policy-statement)
 
 ## Settings Profile {#settings-profiles-management}
@@ -112,7 +112,7 @@ Management queries:
 
 -   [CREATE SETTINGS PROFILE](../sql-reference/statements/create/settings-profile.md#create-settings-profile-statement)
 -   [ALTER SETTINGS PROFILE](../sql-reference/statements/alter.md#alter-settings-profile-statement)
--   [DROP SETTINGS PROFILE](../sql-reference/statements/misc.md#drop-settings-profile-statement)
+-   [DROP SETTINGS PROFILE](../sql-reference/statements/drop.md#drop-settings-profile-statement)
 -   [SHOW CREATE SETTINGS PROFILE](../sql-reference/statements/show.md#show-create-settings-profile-statement)
 
 ## Quota {#quotas-management}
@@ -125,7 +125,7 @@ Management queries:
 
 -   [CREATE QUOTA](../sql-reference/statements/create/quota.md)
 -   [ALTER QUOTA](../sql-reference/statements/alter.md#alter-quota-statement)
--   [DROP QUOTA](../sql-reference/statements/misc.md#drop-quota-statement)
+-   [DROP QUOTA](../sql-reference/statements/drop.md#drop-quota-statement)
 -   [SHOW CREATE QUOTA](../sql-reference/statements/show.md#show-create-quota-statement)
 
 ## Enabling SQL-driven Access Control and Account Management {#enabling-access-control}
