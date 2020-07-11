@@ -414,7 +414,7 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
     fuzz(ast);
 
     std::cout << std::endl;
-    formatAST(*ast, std::cout);
+    formatAST(*ast, std::cout, false /*highlight*/);
     std::cout << std::endl << std::endl;
 }
 
