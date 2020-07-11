@@ -150,8 +150,15 @@ void parseAndAddLDAPServers(ExternalAuthenticators & external_authenticators, co
 
 }
 
-ExternalAuthenticators::ExternalAuthenticators(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+void ExternalAuthenticators::reset() {
+    std::scoped_lock lock(mutex);
+    ldap_server_params.clear();
+}
+
+void ExternalAuthenticators::setConfig(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
 {
+    std::scoped_lock lock(mutex);
+    reset();
     parseAndAddLDAPServers(*this, config, log);
 }
 
