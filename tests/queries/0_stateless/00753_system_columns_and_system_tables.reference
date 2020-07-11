@@ -33,3 +33,8 @@ Check total_bytes/total_rows for Memory
 Check total_bytes/total_rows for Buffer
 0	0
 256	50
+Check lifetime_bytes/lifetime_rows for Buffer
+100	50
+100	50
+200	100
+200	100
