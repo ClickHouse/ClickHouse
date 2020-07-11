@@ -150,7 +150,8 @@ void parseAndAddLDAPServers(ExternalAuthenticators & external_authenticators, co
 
 }
 
-void ExternalAuthenticators::reset() {
+void ExternalAuthenticators::reset()
+{
     std::scoped_lock lock(mutex);
     ldap_server_params.clear();
 }
