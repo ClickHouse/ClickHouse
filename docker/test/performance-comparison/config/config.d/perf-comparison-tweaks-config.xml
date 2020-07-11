@@ -22,4 +22,5 @@
     <uncompressed_cache_size>1000000000</uncompressed_cache_size>
 
     <asynchronous_metrics_update_period_s>10</asynchronous_metrics_update_period_s>
+    <!-- test comment -->
 </yandex>
