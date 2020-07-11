@@ -279,7 +279,7 @@ Pipes StorageBuffer::read(
 }
 
 
-static void appendBlock(StorageBuffer::LifeTimeWrites &writes, const Block & from, Block & to)
+static void appendBlock(const Block & from, Block & to)
 {
     if (!to)
         throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
@@ -294,9 +294,6 @@ static void appendBlock(StorageBuffer::LifeTimeWrites &writes, const Block & fro
 
     CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
     CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, bytes);
-
-    writes.rows += rows;
-    writes.bytes += bytes;
 
     size_t old_rows = to.rows();
 
@@ -370,6 +367,9 @@ public:
         }
 
         size_t bytes = block.bytes();
+
+        storage.writes.rows += rows;
+        storage.writes.bytes += bytes;
 
         /// If the block already exceeds the maximum limit, then we skip the buffer.
         if (rows > storage.max_thresholds.rows || bytes > storage.max_thresholds.bytes)
@@ -449,7 +449,7 @@ private:
         if (!buffer.first_write_time)
             buffer.first_write_time = current_time;
 
-        appendBlock(storage.writes, sorted_block, buffer.data);
+        appendBlock(sorted_block, buffer.data);
     }
 };
 
