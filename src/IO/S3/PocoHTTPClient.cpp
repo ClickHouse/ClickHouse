@@ -79,7 +79,7 @@ void PocoHTTPClient::MakeRequestInternal(
                     request_configuration.proxyHost,
                     request_configuration.proxyPort,
                     Aws::Http::SchemeMapper::ToString(request_configuration.proxyScheme),
-                    false /// Disable proxy tunneling by default.
+                    false /// Disable proxy tunneling by default
                 );
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
