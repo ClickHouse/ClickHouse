@@ -2,8 +2,9 @@
 toc_priority: 6
 toc_title: RabbitMQ
 ---
+# RabbitMQ Engine
 
-This engine works with [RabbitMQ](https://www.rabbitmq.com).
+This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.com).
 
 RabbitMQ lets you:
 -   Publish or subscribe to data flows.
@@ -44,7 +45,18 @@ Optional parameters:
 -   `rabbitmq_num_queues` – The number of queues per consumer. Default: `1`. Specify more queues if the capacity of one queue per consumer is insufficient. Single queue can contain up to 50K messages at the same time.
 -   `rabbitmq_transactional_channel` –  Wrap insert queries in transactions. Default: `0`.
 
-Examples:
+Required configuration:
+
+The RabbitMQ server configuration should be added using the ClickHouse config file.
+
+``` xml
+ <rabbitmq>
+    <username>root</username>
+    <password>clickhouse</password>
+ </rabbitmq>
+```
+
+Example:
 
 ``` sql
   CREATE TABLE queue (
@@ -54,29 +66,7 @@ Examples:
                             rabbitmq_exchange_name = 'exchange1',
                             rabbitmq_format = 'JSONEachRow',
                             rabbitmq_num_consumers = 5;
-
-  SELECT * FROM queue LIMIT 5;
-
-  CREATE TABLE queue2 (
-    key UInt64,
-    value UInt64
-  ) ENGINE = RabbitMQ('localhost:5672', 'key1', 'exchange1', 'JSONEachRow', '\\n');
-
 ```
-
-<details markdown="1">
-
-<summary>Deprecated Method for Creating a Table</summary>
-
-!!! attention "Attention"
-    Do not use this method in new projects. If possible, switch old projects to the method described above.
-
-``` sql
-RabbitMQ(rabbitmq_host_port, rabbitmq_routing_key_list, rabbitmq_exchange_name, rabbitmq_format
-      [, rabbitmq_row_delimiter, rabbitmq_exchange_type, rabbitmq_num_consumers, rabbitmq_num_queues, rabbitmq_transactional_channel])
-```
-
-</details>
 
 ## Description {#description}
 
@@ -127,11 +117,3 @@ Example:
   SELECT key, value FROM daily ORDER BY key;
 ```
 
-## Configuration {#configuration}
-
-``` xml
- <rabbitmq>
-    <username>root</username>
-    <password>clickhouse</password>
- </rabbitmq>
-```
