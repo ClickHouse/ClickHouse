@@ -979,7 +979,7 @@ message MessageType {
 }
 ```
 
-are not applied; the [table defaults](../sql-reference/statements/create.md#create-default-values) are used instead of them.
+are not applied; the [table defaults](../sql-reference/statements/create/table.md#create-default-values) are used instead of them.
 
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
@@ -1055,11 +1055,11 @@ Each Avro message embeds a schema id that can be resolved to the actual schema w
 
 Schemas are cached once resolved.
 
-Schema Registry URL is configured with [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+Schema Registry URL is configured with [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#format_avro_schema_registry_url).
 
 ### Data Types Matching {#data_types-matching-1}
 
-Same as [Avro](#data-format-avro)
+Same as [Avro](#data-format-avro).
 
 ### Usage {#usage}
 
@@ -1093,7 +1093,7 @@ SELECT * FROM topic1_stream;
 ```
 
 !!! note "Warning"
-    Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart.
+    Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
 
 ## Parquet {#data-format-parquet}
 
@@ -1147,11 +1147,11 @@ To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-e
 
 [Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats. ClickHouse supports read and write operations for these formats.
 
-`Arrow` is Apache Arrow's "file mode" format. It is designed for in-memory random access.
+`Arrow` is Apache Arrow’s “file mode” format. It is designed for in-memory random access.
 
 ## ArrowStream {#data-format-arrow-stream}
 
-`ArrowStream` is Apache Arrow's "stream mode" format. It is designed for in-memory stream processing.
+`ArrowStream` is Apache Arrow’s “stream mode” format. It is designed for in-memory stream processing.
 
 ## ORC {#data-format-orc}
 

@@ -1,15 +1,13 @@
-#include "config_functions.h"
-#if USE_H3
-#    include <Functions/GatherUtils/GatherUtils.h>
-#    include <Functions/GatherUtils/Sources.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Columns/ColumnString.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/IFunction.h>
-#    include <Common/typeid_cast.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/Sources.h>
+#include <Functions/IFunction.h>
+#include <Common/typeid_cast.h>
 
-#    include <h3api.h>
+#include <h3api.h>
 
 
 namespace DB
@@ -99,4 +97,3 @@ void registerFunctionStringToH3(FunctionFactory & factory)
 }
 
 }
-#endif

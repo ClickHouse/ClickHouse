@@ -5,7 +5,7 @@ toc_title: CollapsingMergeTree
 
 # CollapsingMergeTree {#table_engine-collapsingmergetree}
 
-The engine inherits from [MergeTree](mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
+The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
 
 `CollapsingMergeTree` asynchronously deletes (collapses) pairs of rows if all of the fields in a sorting key (`ORDER BY`) are equivalent excepting the particular field `Sign` which can have `1` and `-1` values. Rows without a pair are kept. For more details see the [Collapsing](#table_engine-collapsingmergetree-collapsing) section of the document.
 
@@ -26,7 +26,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of query parameters, see [query description](../../../sql-reference/statements/create.md).
+For a description of query parameters, see [query description](../../../sql-reference/statements/create/table.md).
 
 **CollapsingMergeTree Parameters**
 
@@ -36,7 +36,7 @@ For a description of query parameters, see [query description](../../../sql-refe
 
 **Query clauses**
 
-When creating a `CollapsingMergeTree` table, the same [query clauses](mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
+When creating a `CollapsingMergeTree` table, the same [query clauses](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
 
 <details markdown="1">
 

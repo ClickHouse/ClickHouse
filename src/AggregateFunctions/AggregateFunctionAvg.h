@@ -19,6 +19,8 @@ namespace ErrorCodes
 template <typename T, typename Denominator>
 struct AggregateFunctionAvgData
 {
+    using NumeratorType = T;
+
     T numerator = 0;
     Denominator denominator = 0;
 
@@ -80,7 +82,7 @@ public:
         readBinary(this->data(place).denominator, buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         auto & column = static_cast<ColVecResult &>(to);
         column.getData().push_back(this->data(place).template result<ResultType>());

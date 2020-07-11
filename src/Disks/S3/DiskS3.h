@@ -26,7 +26,8 @@ public:
         String bucket_,
         String s3_root_path_,
         String metadata_path_,
-        size_t min_upload_part_size_);
+        size_t min_upload_part_size_,
+        size_t min_multi_part_upload_size_);
 
     const String & getName() const override { return name; }
 
@@ -96,6 +97,8 @@ public:
 
     void setReadOnly(const String & path) override;
 
+    const String getType() const override { return "s3"; }
+
 private:
     bool tryReserve(UInt64 bytes);
 
@@ -107,6 +110,7 @@ private:
     const String s3_root_path;
     const String metadata_path;
     size_t min_upload_part_size;
+    size_t min_multi_part_upload_size;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;

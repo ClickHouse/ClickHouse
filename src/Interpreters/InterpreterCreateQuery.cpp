@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -24,6 +25,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
@@ -70,6 +72,7 @@ namespace ErrorCodes
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
     extern const int DICTIONARY_ALREADY_EXISTS;
+    extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -252,8 +255,8 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
 {
     auto res = std::make_shared<ASTExpressionList>();
 
-    for (const auto & index : indices.indices)
-        res->children.push_back(index->clone());
+    for (const auto & index : indices)
+        res->children.push_back(index.definition_ast->clone());
 
     return res;
 }
@@ -275,6 +278,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     /** all default_expressions as a single expression list,
      *  mixed with conversion-columns for each explicitly specified type */
+
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     NamesAndTypesList column_names_and_types;
 
@@ -283,9 +287,23 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
         DataTypePtr column_type = nullptr;
+
         if (col_decl.type)
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
+
+            if (col_decl.null_modifier)
+            {
+                if (column_type->isNullable())
+                    throw Exception("Cant use [NOT] NULL modifier with Nullable type", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
+                if (*col_decl.null_modifier)
+                    column_type = makeNullable(column_type);
+            }
+            else if (context.getSettingsRef().data_type_default_nullable)
+            {
+                column_type = makeNullable(column_type);
+            }
+
             column_names_and_types.emplace_back(col_decl.name, column_type);
         }
         else
@@ -306,7 +324,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 const auto & final_column_name = col_decl.name;
                 const auto tmp_column_name = final_column_name + "_tmp";
                 const auto * data_type_ptr = column_names_and_types.back().type.get();
-
 
                 default_expr_list->children.emplace_back(
                     setAlias(addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
@@ -387,7 +404,7 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(const A
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(ASTCreateQuery & create) const
 {
     TableProperties properties;
-    TableStructureReadLockHolder as_storage_lock;
+    TableLockHolder as_storage_lock;
 
     if (create.columns_list)
     {
@@ -399,8 +416,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
 
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
-                properties.indices.indices.push_back(
-                    std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
+                properties.indices.push_back(
+                    IndexDescription::getIndexFromAST(index->clone(), properties.columns, context));
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints);
     }
@@ -410,16 +427,16 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, context);
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
-        as_storage_lock = as_storage->lockStructureForShare(
-                false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        properties.columns = as_storage->getColumns();
+        as_storage_lock = as_storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+        auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
+        properties.columns = as_storage_metadata->getColumns();
 
         /// Secondary indices make sense only for MergeTree family of storage engines.
         /// We should not copy them for other storages.
         if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
-            properties.indices = as_storage->getIndices();
+            properties.indices = as_storage_metadata->getSecondaryIndices();
 
-        properties.constraints = as_storage->getConstraints();
+        properties.constraints = as_storage_metadata->getConstraints();
     }
     else if (create.select)
     {
@@ -688,6 +705,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// But if "shutdown" is called before "startup", it will exit early, because there are no background tasks to wait.
     /// Then background task is created by "startup" method. And when destructor of a table object is called, background task is still active,
     /// and the task will use references to freed data.
+
+    /// Also note that "startup" method is exception-safe. If exception is thrown from "startup",
+    /// we can safely destroy the object without a call to "shutdown", because there is guarantee
+    /// that no background threads/similar resources remain after exception from "startup".
 
     res->startup();
     return true;

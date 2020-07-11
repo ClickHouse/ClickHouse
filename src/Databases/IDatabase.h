@@ -22,7 +22,6 @@ class Context;
 struct Settings;
 struct ConstraintsDescription;
 struct IndicesDescription;
-struct TableStructureWriteLockHolder;
 class ASTCreateQuery;
 using Dictionaries = std::vector<String>;
 
@@ -40,6 +39,10 @@ public:
     virtual bool isValid() const = 0;
 
     virtual const String & name() const = 0;
+
+    /// This method can return nullptr if it's Lazy database
+    /// (a database with support for lazy tables loading
+    /// - it maintains a list of tables but tables are loaded lazily).
     virtual const StoragePtr & table() const = 0;
 
     virtual ~IDatabaseTablesIterator() = default;
@@ -233,7 +236,7 @@ public:
     using ASTModifier = std::function<void(IAST &)>;
 
     /// Change the table structure in metadata.
-    /// You must call under the TableStructureLock of the corresponding table . If engine_modifier is empty, then engine does not change.
+    /// You must call under the alter_lock of the corresponding table . If engine_modifier is empty, then engine does not change.
     virtual void alterTable(
         const Context & /*context*/,
         const StorageID & /*table_id*/,

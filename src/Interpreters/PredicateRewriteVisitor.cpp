@@ -17,7 +17,7 @@ namespace DB
 {
 
 PredicateRewriteVisitorData::PredicateRewriteVisitorData(
-    const Context & context_, const ASTs & predicates_, const Names & column_names_, bool optimize_final_)
+    const Context & context_, const ASTs & predicates_, Names && column_names_, bool optimize_final_)
     : context(context_), predicates(predicates_), column_names(column_names_), optimize_final(optimize_final_)
 {
 }
@@ -76,7 +76,7 @@ static void cleanAliasAndCollectIdentifiers(ASTPtr & predicate, std::vector<ASTI
     }
 
     if (const auto alias = predicate->tryGetAlias(); !alias.empty())
-        predicate->setAlias("");
+        predicate->setAlias({});
 
     if (ASTIdentifier * identifier = predicate->as<ASTIdentifier>())
         identifiers.emplace_back(identifier);

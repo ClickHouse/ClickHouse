@@ -18,7 +18,11 @@ SRCS(
     ActionsVisitor.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
+    AggregateDescription.cpp
     Aggregator.cpp
+    AnyInputOptimize.cpp
+    ArithmeticOperationsInAgrFuncOptimize.cpp
+    ArithmeticOperationsInAgrFuncOptimize.h
     ArrayJoinAction.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp
@@ -57,6 +61,7 @@ SRCS(
     HashJoin.cpp
     IdentifierSemantic.cpp
     IExternalLoadable.cpp
+    RemoveInjectiveFunctionsVisitor.cpp
     InJoinSubqueriesPreprocessor.cpp
     inplaceBlockConversions.cpp
     InternalTextLogsQueue.cpp
@@ -83,6 +88,7 @@ SRCS(
     InterpreterSelectWithUnionQuery.cpp
     InterpreterSetQuery.cpp
     InterpreterSetRoleQuery.cpp
+    InterpreterShowAccessQuery.cpp
     InterpreterShowAccessEntitiesQuery.cpp
     InterpreterShowCreateAccessEntityQuery.cpp
     InterpreterShowCreateQuery.cpp
@@ -103,6 +109,7 @@ SRCS(
     MarkTableIdentifiersVisitor.cpp
     MergeJoin.cpp
     MetricLog.cpp
+    AsynchronousMetricLog.cpp
     MutationsInterpreter.cpp
     NullableUtils.cpp
     OptimizeIfChains.cpp

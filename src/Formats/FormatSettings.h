@@ -42,7 +42,16 @@ struct FormatSettings
     {
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
+        UInt64 max_value_width = 10000;
         bool color = true;
+
+        enum class Charset
+        {
+            UTF8,
+            ASCII,
+        };
+
+        Charset charset = Charset::UTF8;
     };
 
     Pretty pretty;
@@ -127,6 +136,7 @@ struct FormatSettings
         String schema_registry_url;
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
+        bool allow_missing_fields = false;
     };
 
     Avro avro;
