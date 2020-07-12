@@ -102,7 +102,7 @@ protected:
 
     void alloc_for_num_elements(size_t num_elements)
     {
-        alloc(minimum_memory_for_elements(num_elements));
+        alloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(num_elements)));
     }
 
     template <typename ... TAllocatorParams>
