@@ -155,7 +155,7 @@ ENGINE = <Engine>
 圧縮は、次の表エンジンでサポートされます:
 
 -   [メルゲツリー](../../engines/table-engines/mergetree-family/mergetree.md) 家族だ 支柱の圧縮コーデックとの選択のデフォルトの圧縮メソッドによる [圧縮](../../operations/server-configuration-parameters/settings.md#server-settings-compression) 設定。
--   [ログ](../../engines/table-engines/log-family/log-family.md) 家族だ を使用して `lz4` 圧縮メソッドはデフォルト対応カラムの圧縮コーデック.
+-   [ログ](../../engines/table-engines/log-family/index.md) 家族だ を使用して `lz4` 圧縮メソッドはデフォルト対応カラムの圧縮コーデック.
 -   [セット](../../engines/table-engines/special/set.md). 既定の圧縮のみをサポートしました。
 -   [参加](../../engines/table-engines/special/join.md). 既定の圧縮のみをサポートしました。
 

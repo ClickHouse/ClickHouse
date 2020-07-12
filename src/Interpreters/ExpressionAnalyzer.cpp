@@ -1159,7 +1159,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             /// You may find it strange but we support read_in_order for HashJoin and do not support for MergeJoin.
             auto join_algo = join->getTableJoinAlgo();
-            join_allow_read_in_order = typeid_cast<HashJoin *>(join_algo.get()) && !join_algo->hasStreamWithNonJoinedRows();
+            bool has_delayed_stream = query_analyzer.analyzedJoin().needStreamWithNonJoinedRows();
+            join_allow_read_in_order = typeid_cast<HashJoin *>(join_algo.get()) && !has_delayed_stream;
         }
 
         optimize_read_in_order =

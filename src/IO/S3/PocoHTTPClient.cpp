@@ -14,6 +14,11 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <common/logger_useful.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int TOO_MANY_REDIRECTS;
+}
+
 namespace DB::S3
 {
 PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & clientConfiguration)
@@ -70,7 +75,12 @@ void PocoHTTPClient::MakeRequestInternal(
 
             auto request_configuration = per_request_configuration(request);
             if (!request_configuration.proxyHost.empty())
-                session->setProxy(request_configuration.proxyHost, request_configuration.proxyPort);
+                session->setProxy(
+                    request_configuration.proxyHost,
+                    request_configuration.proxyPort,
+                    Aws::Http::SchemeMapper::ToString(request_configuration.proxyScheme),
+                    false /// Disable proxy tunneling by default
+                );
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
@@ -153,8 +163,10 @@ void PocoHTTPClient::MakeRequestInternal(
             else
                 response->GetResponseStream().SetUnderlyingStream(std::make_shared<PocoHTTPResponseStream>(session, response_body_stream));
 
-            break;
+            return;
         }
+        throw Exception(String("Too many redirects while trying to access ") + request.GetUri().GetURIString(),
+            ErrorCodes::TOO_MANY_REDIRECTS);
     }
     catch (...)
     {
