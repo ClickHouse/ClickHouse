@@ -27,6 +27,7 @@ void registerStorages()
     registerStorageMaterializedView(factory);
     registerStorageLiveView(factory);
     registerStorageGenerateRandom(factory);
+    registerStorageMySQLReplica(factory);
 
 #if USE_AWS_S3
     registerStorageS3(factory);
