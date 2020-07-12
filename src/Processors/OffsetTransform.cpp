@@ -10,7 +10,7 @@ namespace ErrorCodes
 }
 
 OffsetTransform::OffsetTransform(
-    const Block & header_, size_t offset_, size_t num_streams)
+    const Block & header_, UInt64 offset_, size_t num_streams)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , offset(offset_)
 {
@@ -135,7 +135,7 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
 
     rows_read += rows;
 
-    if (rows_read < offset)
+    if (rows_read <= offset)
     {
         data.current_chunk.clear();
 
@@ -150,7 +150,7 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
         return Status::NeedData;
     }
 
-    if (!(rows_read >= offset + rows))
+    if (!(rows <= std::numeric_limits<UInt64>::max() - offset && rows_read >= offset + rows))
         splitChunk(data);
 
     output.push(std::move(data.current_chunk));
@@ -161,22 +161,30 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
 
 void OffsetTransform::splitChunk(PortsData & data) const
 {
-    size_t num_rows = data.current_chunk.getNumRows();
-    size_t num_columns = data.current_chunk.getNumColumns();
+    UInt64 num_rows = data.current_chunk.getNumRows();
+    UInt64 num_columns = data.current_chunk.getNumColumns();
 
     /// return a piece of the block
-    size_t start = std::max(
-        static_cast<Int64>(0),
-        static_cast<Int64>(offset) - static_cast<Int64>(rows_read) + static_cast<Int64>(num_rows));
+    UInt64 start = 0;
 
-    size_t length = static_cast<Int64>(rows_read) - static_cast<Int64>(offset);
+    /// ------------[....(...).]
+    /// <----------------------> rows_read
+    ///             <----------> num_rows
+    /// <---------------> offset
+    ///             <---> start
 
-    if (length == num_rows)
+    assert(offset < rows_read);
+
+    if (offset + num_rows > rows_read)
+        start = offset + num_rows - rows_read;
+    else
         return;
+
+    UInt64 length = num_rows - start;
 
     auto columns = data.current_chunk.detachColumns();
 
-    for (size_t i = 0; i < num_columns; ++i)
+    for (UInt64 i = 0; i < num_columns; ++i)
         columns[i] = columns[i]->cut(start, length);
 
     data.current_chunk.setColumns(std::move(columns), length);

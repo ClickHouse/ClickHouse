@@ -13,10 +13,9 @@ namespace DB
 class OffsetTransform : public IProcessor
 {
 private:
+    UInt64 offset;
+    UInt64 rows_read = 0; /// including the last read block
 
-    size_t offset;
-
-    size_t rows_read = 0; /// including the last read block
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
     /// State of port's pair.
