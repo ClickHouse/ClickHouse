@@ -58,17 +58,23 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected &) override;
 };
 
-class ParserDeclareOption : public IParserBase
+template <bool recursive_>
+class ParserDeclareOptionImpl : public IParserBase
 {
 protected:
+    bool recursive = recursive_;
+
     std::vector<OptionDescribe> options_collection;
 
     const char * getName() const override { return "option declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 public:
-    ParserDeclareOption(const std::vector<OptionDescribe> & options_collection_) : options_collection(options_collection_) {}
+    ParserDeclareOptionImpl(const std::vector<OptionDescribe> & options_collection_) : options_collection(options_collection_) {}
 };
+
+using ParserDeclareOption = ParserDeclareOptionImpl<false>;
+using ParserDeclareOptions = ParserDeclareOptionImpl<true>;
 
 }
 

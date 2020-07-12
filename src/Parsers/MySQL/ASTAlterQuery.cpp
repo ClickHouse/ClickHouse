@@ -1,11 +1,12 @@
 #include <Parsers/MySQL/ASTAlterQuery.h>
 
 #include <Interpreters/StorageID.h>
+#include <Common/quoteString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Common/quoteString.h>
+#include <Parsers/MySQL/ASTAlterCommand.h>
 
 namespace DB
 {
@@ -27,7 +28,7 @@ ASTPtr ASTAlterQuery::clone() const
     return res;
 }
 
-void ASTAlterQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
+/*void ASTAlterQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
     frame.need_parens = false;
 
@@ -50,7 +51,7 @@ void ASTAlterQuery::formatImpl(const IAST::FormatSettings & settings, IAST::Form
     frame_nested.need_parens = false;
     ++frame_nested.indent;
 //    static_cast<IAST *>(command_list)->formatImpl(settings, state, frame_nested);
-}
+}*/
 
 bool ParserAlterQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {

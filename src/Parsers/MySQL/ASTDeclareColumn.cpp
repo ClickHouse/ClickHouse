@@ -49,8 +49,7 @@ bool ParserDeclareColumn::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (!ParserDataType().parse(pos, column_data_type, expected))
         return false;
 
-    if (!parseColumnDeclareOptions(pos, column_options, expected))
-            return false;
+    parseColumnDeclareOptions(pos, column_options, expected);
 
     auto declare_column = std::make_shared<ASTDeclareColumn>();
     declare_column->name = getIdentifierName(column_name);
@@ -68,7 +67,7 @@ bool ParserDeclareColumn::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 }
 bool ParserDeclareColumn::parseColumnDeclareOptions(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserDeclareOption p_non_generate_options{
+    ParserDeclareOptions p_non_generate_options{
         {
             OptionDescribe("ZEROFILL", "zero_fill", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("NULL", "is_null", std::make_unique<ParserAlwaysTrue>()),

@@ -5,6 +5,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/MySQL/ASTDeclareTableOptions.h>
 
 namespace DB
@@ -13,12 +14,37 @@ namespace DB
 namespace MySQLParser
 {
 
+ASTPtr ASTAlterCommand::clone() const
+{
+    auto res = std::make_shared<ASTAlterCommand>(*this);
+    res->children.clear();
+
+    if (index_decl)
+        res->set(res->index_decl, index_decl->clone());
+
+    if (default_expression)
+        res->set(res->default_expression, default_expression->clone());
+
+    if (additional_columns)
+        res->set(res->additional_columns, additional_columns->clone());
+
+    if (order_by_columns)
+        res->set(res->order_by_columns, additional_columns->clone());
+
+    if (properties)
+        res->set(res->properties, properties->clone());
+
+    return res;
+}
+
 bool ParserAlterCommand::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword k_add("ADD");
     ParserKeyword k_drop("DROP");
     ParserKeyword k_alter("ALTER");
     ParserKeyword k_rename("RENAME");
+    ParserKeyword k_modify("MODIFY");
+    ParserKeyword k_change("CHANGE");
 
     if (k_add.ignore(pos, expected))
         return parseAddCommand(pos, node, expected);
@@ -28,13 +54,12 @@ bool ParserAlterCommand::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected &
         return parseAlterCommand(pos, node, expected);
     else if (k_rename.ignore(pos, expected))
         return parseRenameCommand(pos, node, expected);
+    else if (k_modify.ignore(pos, expected))
+        return parseModifyCommand(pos, node, expected);
+    else if (k_change.ignore(pos, expected))
+        return parseModifyCommand(pos, node, expected, true);
     else
         return parseOtherCommand(pos, node, expected);
-
-    //  | MODIFY [COLUMN] col_name column_definition [FIRST | AFTER col_name]
-    //  | CHANGE [COLUMN] old_col_name new_col_name column_definition [FIRST | AFTER col_name]
-
-
 }
 
 bool ParserAlterCommand::parseAddCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
@@ -273,45 +298,89 @@ bool ParserAlterCommand::parseRenameCommand(IParser::Pos & pos, ASTPtr & node, E
 
 bool ParserAlterCommand::parseOtherCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    //  | CONVERT TO CHARACTER SET charset_name [COLLATE collation_name]
-    //  | [DEFAULT] CHARACTER SET [=] charset_name [COLLATE [=] collation_name]
-    //  | LOCK [=] {DEFAULT | NONE | SHARED | EXCLUSIVE}
-    //  | ORDER BY col_name [, col_name] ...
+    auto alter_command = std::make_shared<ASTAlterCommand>();
 
-    if (ParserKeyword("FORCE").ignore(pos, expected))
+    if (ParserKeyword("ORDER BY").ignore(pos, expected))
     {
-        /// FORCE
-    }
-    else if (ParserKeyword("ALGORITHM").ignore(pos, expected))
-    {
-        /// ALGORITHM [=] {DEFAULT | INSTANT | INPLACE | COPY}
-    }
-    else if (ParserKeyword("WITH").ignore(pos, expected) || ParserKeyword("WITHOUT").ignore(pos, expected))
-    {
-        /// {WITHOUT | WITH} VALIDATION
-    }
-    else if (ParserKeyword("IMPORT").ignore(pos, expected) || ParserKeyword("DISCARD").ignore(pos, expected))
-    {
-        /// {DISCARD | IMPORT} TABLESPACE
-    }
-    else if (ParserKeyword("ENABLE").ignore(pos, expected) || ParserKeyword("DISABLE").ignore(pos, expected))
-    {
-        /// {DISABLE | ENABLE} KEYS
+        /// ORDER BY col_name [, col_name] ...
+        ASTPtr columns;
+        ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma));
+
+        if (!columns_p.parse(pos, columns, expected))
+            return false;
+
+        alter_command->type = ASTAlterCommand::ORDER_BY;
+        alter_command->set(alter_command->order_by_columns, columns);
     }
     else
     {
-        ASTPtr table_options;
+        ParserDeclareOption options_p{
+            {
+                OptionDescribe("FORCE", "force", std::make_shared<ParserAlwaysTrue>()),
+                OptionDescribe("ALGORITHM", "algorithm", std::make_shared<ParserIdentifier>()),
+                OptionDescribe("WITH VALIDATION", "validation", std::make_shared<ParserAlwaysTrue>()),
+                OptionDescribe("WITHOUT VALIDATION", "validation", std::make_shared<ParserAlwaysFalse>()),
+                OptionDescribe("IMPORT TABLESPACE", "import_tablespace", std::make_shared<ParserAlwaysTrue>()),
+                OptionDescribe("DISCARD TABLESPACE", "import_tablespace", std::make_shared<ParserAlwaysFalse>()),
+                OptionDescribe("ENABLE KEYS", "enable_keys", std::make_shared<ParserAlwaysTrue>()),
+                OptionDescribe("DISABLE KEYS", "enable_keys", std::make_shared<ParserAlwaysFalse>()),
+                /// TODO: with collate
+                OptionDescribe("CONVERT TO CHARACTER SET", "charset", std::make_shared<ParserCharsetName>()),
+                OptionDescribe("CHARACTER SET", "charset", std::make_shared<ParserCharsetName>()),
+                OptionDescribe("DEFAULT CHARACTER SET", "charset", std::make_shared<ParserCharsetName>()),
+                OptionDescribe("LOCK", "lock", std::make_shared<ParserIdentifier>())
+            }
+        };
+
+        ASTPtr properties_options;
         ParserDeclareTableOptions table_options_p;
 
-        if (!table_options_p.parse(pos, table_options, expected))
+        if (!options_p.parse(pos, properties_options, expected) && !table_options_p.parse(pos, properties_options, expected))
             return false;
 
-        /// set.
+        alter_command->type = ASTAlterCommand::MODIFY_PROPERTIES;
+        alter_command->set(alter_command->properties, properties_options);
     }
 
-    return false;
+    node = alter_command;
+    return true;
 }
 
+bool ParserAlterCommand::parseModifyCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool exists_old_column_name)
+{
+    ASTPtr old_column_name;
+    auto alter_command = std::make_shared<ASTAlterCommand>();
+
+    ParserKeyword("COLUMN").ignore(pos, expected);
+    if (exists_old_column_name && !ParserIdentifier().parse(pos, old_column_name, expected))
+        return false;
+
+    ASTPtr additional_column;
+    if (!ParserDeclareColumn().parse(pos, additional_column, expected))
+        return false;
+
+    if (ParserKeyword("FIRST").ignore(pos, expected))
+        alter_command->first = true;
+    else if (ParserKeyword("AFTER").ignore(pos, expected))
+    {
+        ASTPtr after_column;
+        ParserIdentifier identifier_p;
+        if (!identifier_p.parse(pos, after_column, expected))
+            return false;
+
+        alter_command->column_name = getIdentifierName(after_column);
+    }
+
+    node = alter_command;
+    alter_command->type = ASTAlterCommand::MODIFY_COLUMN;
+    alter_command->set(alter_command->additional_columns, std::make_shared<ASTExpressionList>());
+    alter_command->additional_columns->children.emplace_back(additional_column);
+
+    if (exists_old_column_name)
+        alter_command->old_name = getIdentifierName(old_column_name);
+
+    return true;
+}
 }
 
 }

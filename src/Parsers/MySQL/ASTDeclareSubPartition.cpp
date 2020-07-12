@@ -23,7 +23,7 @@ bool ParserDeclareSubPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (!p_identifier.parse(pos, logical_name, expected))
         return false;
 
-    if (!ParserDeclareOption{
+    if (!ParserDeclareOptions{
         {
             OptionDescribe("ENGINE", "engine", std::make_shared<ParserIdentifier>()),
             OptionDescribe("STORAGE ENGINE", "engine", std::make_shared<ParserIdentifier>()),

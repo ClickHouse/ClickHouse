@@ -31,9 +31,9 @@ public:
 
         MODIFY_CHECK,
         MODIFY_COLUMN,
-        MODIFY_TABLE_OPTIONS,
         MODIFY_INDEX_VISIBLE,
         MODIFY_COLUMN_DEFAULT,
+        MODIFY_PROPERTIES,
 
         ORDER_BY,
 
@@ -50,6 +50,8 @@ public:
 
     /// For ADD COLUMN
     ASTExpressionList * additional_columns;
+    /// For ORDER BY
+    ASTExpressionList * order_by_columns;
 
     bool first = false;
     bool index_visible = false;
@@ -60,6 +62,12 @@ public:
     String index_name;
     String column_name;
     String constraint_name;
+
+    IAST * properties;
+
+    ASTPtr clone() const override;
+
+    String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 };
 
 class ParserAlterCommand : public IParserBase
@@ -76,6 +84,8 @@ protected:
     bool parseAlterCommand(Pos & pos, ASTPtr & node, Expected & expected);
 
     bool parseRenameCommand(Pos & pos, ASTPtr & node, Expected & expected);
+
+    bool parseModifyCommand(Pos & pos, ASTPtr & node, Expected & expected, bool exists_old_column_name = false);
 
     bool parseOtherCommand(Pos & pos, ASTPtr & node, Expected & expected);
 };
