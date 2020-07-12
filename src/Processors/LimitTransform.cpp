@@ -293,6 +293,8 @@ void LimitTransform::splitChunk(PortsData & data)
 
     assert(offset < rows_read);
 
+    std::cerr << fmt::format("offset: {}, limit: {}, num_rows: {}, rows_read: {}\n", offset, limit, num_rows, rows_read);
+
     if (offset + num_rows > rows_read)
         start = offset + num_rows - rows_read;
 
@@ -321,7 +323,7 @@ void LimitTransform::splitChunk(PortsData & data)
         if (offset + limit < rows_read - num_rows)
             length = 0;
         else
-            length = offset + limit - (rows_read - num_rows);
+            length = offset + limit - (rows_read - num_rows) - start;
     }
 
     /// check if other rows in current block equals to last one in limit
