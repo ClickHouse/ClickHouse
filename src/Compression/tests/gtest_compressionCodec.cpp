@@ -13,6 +13,7 @@
 
 #include <fmt/format.h>
 
+#include <random>
 #include <bitset>
 #include <cmath>
 #include <initializer_list>
@@ -473,7 +474,8 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 }
 
 template <typename Timer>
-void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSequence & test_sequence, std::optional<double> expected_compression_ratio = std::optional<double>{})
+void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSequence & test_sequence,
+                     std::optional<double> expected_compression_ratio = {})
 {
     const auto & source_data = test_sequence.serialized_data;
 
@@ -540,11 +542,6 @@ TEST_P(CodecTest, TranscodingWithDataType)
     testTranscoding(*codec);
 }
 
-TEST_P(CodecTest, TranscodingWithoutDataType)
-{
-    const auto codec = makeCodec(CODEC_WITHOUT_DATA_TYPE);
-    testTranscoding(*codec);
-}
 
 // Param is tuple-of-tuple to simplify instantiating with values, since typically group of cases test only one codec.
 class CodecTestCompatibility : public ::testing::TestWithParam<std::tuple<Codec, std::tuple<CodecTestSequence, std::string>>>
