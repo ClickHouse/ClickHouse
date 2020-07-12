@@ -253,6 +253,7 @@ TEST(ParserAlterCommand, AlterOptionsCommand)
     EXPECT_EQ(ast->as<ASTAlterCommand>()->properties->as<ASTDeclareOptions>()->changes["checksum"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
     EXPECT_EQ(ast->as<ASTAlterCommand>()->properties->as<ASTDeclareOptions>()->changes["auto_increment"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
 
+    EXPECT_THROW(tryParserQuery(alter_p, "FORCE ALGORITHM DEFAULT"), Exception);
     EXPECT_THROW(tryParserQuery(alter_p, "ALGORITHM DEFAULT AUTO_INCREMENT 1"), Exception);
 }
 
