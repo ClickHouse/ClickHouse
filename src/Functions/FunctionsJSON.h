@@ -221,9 +221,9 @@ private:
                 {
                     const auto & column_const = assert_cast<const ColumnConst &>(*column.column);
                     if (isString(column.type))
-                        moves.emplace_back(MoveType::ConstKey, column_const.getValue<String>());
+                        moves.emplace_back(MoveType::ConstKey, column_const.getField().get<String>());
                     else
-                        moves.emplace_back(MoveType::ConstIndex, column_const.getInt(0));
+                        moves.emplace_back(MoveType::ConstIndex, column_const.getField().get<Int64>());
                 }
                 else
                 {

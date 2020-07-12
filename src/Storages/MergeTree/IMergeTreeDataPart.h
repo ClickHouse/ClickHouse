@@ -46,6 +46,7 @@ namespace ErrorCodes
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
 public:
+
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
     using ValueSizeMap = std::map<std::string, double>;
@@ -76,7 +77,6 @@ public:
 
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
-        const StorageMetadataPtr & metadata_snapshot,
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
@@ -86,7 +86,6 @@ public:
 
     virtual MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
-        const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
@@ -143,7 +142,7 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinumumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const;
+    String getColumnNameWithMinumumCompressedSize() const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 

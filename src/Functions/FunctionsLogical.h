@@ -61,8 +61,7 @@ struct AndImpl
     using ResultType = UInt8;
 
     static inline constexpr bool isSaturable() { return true; }
-    static inline constexpr bool isSaturatedValue(bool a) { return !a; }
-    static inline constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::False; }
+    static inline constexpr bool isSaturatedValue(UInt8 a) { return a == Ternary::False; }
     static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a & b; }
     static inline constexpr bool specialImplementationForNulls() { return true; }
 };
@@ -72,8 +71,7 @@ struct OrImpl
     using ResultType = UInt8;
 
     static inline constexpr bool isSaturable() { return true; }
-    static inline constexpr bool isSaturatedValue(bool a) { return a; }
-    static inline constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::True; }
+    static inline constexpr bool isSaturatedValue(UInt8 a) { return a == Ternary::True; }
     static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a | b; }
     static inline constexpr bool specialImplementationForNulls() { return true; }
 };
@@ -84,8 +82,7 @@ struct XorImpl
 
     static inline constexpr bool isSaturable() { return false; }
     static inline constexpr bool isSaturatedValue(bool) { return false; }
-    static inline constexpr bool isSaturatedValueTernary(UInt8) { return false; }
-    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a != b; }
+    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return !!a != !!b; }
     static inline constexpr bool specialImplementationForNulls() { return false; }
 
 #if USE_EMBEDDED_COMPILER

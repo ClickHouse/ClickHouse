@@ -31,19 +31,9 @@ namespace ErrorCodes
 
 
 ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
-    StorageReplicatedMergeTree & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
-    size_t quorum_,
-    size_t quorum_timeout_ms_,
-    size_t max_parts_per_block_,
-    bool deduplicate_)
-    : storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
-    , quorum(quorum_)
-    , quorum_timeout_ms(quorum_timeout_ms_)
-    , max_parts_per_block(max_parts_per_block_)
-    , deduplicate(deduplicate_)
-    , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
+    StorageReplicatedMergeTree & storage_, size_t quorum_, size_t quorum_timeout_ms_, size_t max_parts_per_block_, bool deduplicate_)
+    : storage(storage_), quorum(quorum_), quorum_timeout_ms(quorum_timeout_ms_), max_parts_per_block(max_parts_per_block_), deduplicate(deduplicate_),
+    log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (quorum == 1)
@@ -53,7 +43,7 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
 
 Block ReplicatedMergeTreeBlockOutputStream::getHeader() const
 {
-    return metadata_snapshot->getSampleBlock();
+    return storage.getSampleBlock();
 }
 
 
@@ -130,7 +120,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
     if (quorum)
         checkQuorumPrecondition(zookeeper);
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block);
 
     for (auto & current_block : part_blocks)
     {
@@ -138,7 +128,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block);
 
         String block_id;
 
@@ -211,7 +201,7 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
 void ReplicatedMergeTreeBlockOutputStream::commitPart(
     zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id)
 {
-    metadata_snapshot->check(part->getColumns());
+    storage.check(part->getColumns());
     assertSessionIsNotExpired(zookeeper);
 
     /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.

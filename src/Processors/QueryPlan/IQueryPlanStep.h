@@ -9,19 +9,13 @@ using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 using QueryPipelines = std::vector<QueryPipelinePtr>;
 
 /// Description of data stream.
-/// Single logical data stream may relate to many ports of pipeline.
 class DataStream
 {
 public:
     Block header;
 
-    /// Tuples with those columns are distinct.
-    /// It doesn't mean that columns are distinct separately.
-    /// Removing any column from this list brakes this invariant.
     NameSet distinct_columns = {};
-
-    /// QueryPipeline has single port. Totals or extremes ports are not counted.
-    bool has_single_port = false;
+    NameSet local_distinct_columns = {}; /// Those columns are distinct in separate thread, but not in general.
 
     /// Things which may be added:
     /// * sort description

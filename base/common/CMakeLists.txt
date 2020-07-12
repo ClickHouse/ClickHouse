@@ -77,8 +77,10 @@ target_link_libraries (common
         Poco::Util
         Poco::Foundation
         replxx
-        cctz
         fmt
+
+    PRIVATE
+        cctz
 )
 
 if (ENABLE_TESTS)

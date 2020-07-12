@@ -2,7 +2,6 @@ LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
-    contrib/libs/poco/MongoDB
 )
 
 NO_COMPILER_WARNINGS()
@@ -45,7 +44,6 @@ SRCS(
     SquashingBlockOutputStream.cpp
     SquashingTransform.cpp
     TTLBlockInputStream.cpp
-    MongoDBBlockInputStream.cpp
 )
 
 END()

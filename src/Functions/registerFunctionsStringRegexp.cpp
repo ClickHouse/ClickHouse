@@ -4,9 +4,7 @@ namespace DB
 class FunctionFactory;
 
 void registerFunctionLike(FunctionFactory &);
-void registerFunctionILike(FunctionFactory &);
 void registerFunctionNotLike(FunctionFactory &);
-void registerFunctionNotILike(FunctionFactory &);
 void registerFunctionMatch(FunctionFactory &);
 void registerFunctionExtract(FunctionFactory &);
 void registerFunctionReplaceOne(FunctionFactory &);
@@ -26,9 +24,7 @@ void registerFunctionExtractAllGroupsHorizontal(FunctionFactory &);
 void registerFunctionsStringRegexp(FunctionFactory & factory)
 {
     registerFunctionLike(factory);
-    registerFunctionILike(factory);
     registerFunctionNotLike(factory);
-    registerFunctionNotILike(factory);
     registerFunctionMatch(factory);
     registerFunctionExtract(factory);
     registerFunctionReplaceOne(factory);
@@ -45,4 +41,6 @@ void registerFunctionsStringRegexp(FunctionFactory & factory)
     registerFunctionExtractAllGroupsVertical(factory);
     registerFunctionExtractAllGroupsHorizontal(factory);
 }
+
 }
+

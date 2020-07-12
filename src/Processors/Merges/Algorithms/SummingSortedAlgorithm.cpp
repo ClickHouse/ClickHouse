@@ -505,7 +505,7 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
             {
                 try
                 {
-                    desc.function->insertResultInto(desc.state.data(), *desc.merged_column, nullptr);
+                    desc.function->insertResultInto(desc.state.data(), *desc.merged_column);
 
                     /// Update zero status of current row
                     if (desc.column_numbers.size() == 1)

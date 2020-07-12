@@ -9,9 +9,7 @@ static ITransformingStep::DataStreamTraits getTraits()
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = true,
-            .returns_single_stream = false,
-            .preserves_number_of_streams = true,
+            .preserves_distinct_columns = true
     };
 }
 
@@ -23,10 +21,13 @@ OffsetsStep::OffsetsStep(const DataStream & input_stream_, size_t offset_)
 
 void OffsetsStep::transformPipeline(QueryPipeline & pipeline)
 {
-    auto transform = std::make_shared<OffsetTransform>(
-            pipeline.getHeader(), offset, pipeline.getNumStreams());
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+    {
+        if (stream_type != QueryPipeline::StreamType::Main)
+            return nullptr;
 
-    pipeline.addPipe({std::move(transform)});
+        return std::make_shared<OffsetTransform>(header, offset, 1);
+    });
 }
 
 }
