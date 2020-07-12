@@ -140,7 +140,8 @@ void registerDiskS3(DiskFactory & factory)
             uri.key,
             metadata_path,
             context.getSettingsRef().s3_min_upload_part_size,
-            config.getUInt64(config_prefix + ".min_multi_part_upload_size", 10*1024*1024));
+            config.getUInt64(config_prefix + ".min_multi_part_upload_size", 10*1024*1024),
+            config.getUInt64(config_prefix + ".read_seek_threshold", 1024*1024));
 
         /// This code is used only to check access to the corresponding disk.
         checkWriteAccess(*s3disk);
