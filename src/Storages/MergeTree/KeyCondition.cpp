@@ -1169,6 +1169,11 @@ bool KeyCondition::matchesExactContinuousRange() const
             continue;
         }
 
+        if (element.function == RPNElement::Function::FUNCTION_UNKNOWN)
+        {
+            continue;
+        }
+
         return false;
     }
 
