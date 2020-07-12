@@ -49,7 +49,7 @@ public:
     struct Values
     {
         /// Least significat 32 bits from time_t at beginning of the day.
-        /// If the unix timestamp of beginning of the day is negative (example: 1970-01-01 MSK, where time_t == -10800), then value is zero.
+        /// If the unix timestamp of beginning of the day is negative (example: 1970-01-01 MSK, where time_t == -10800), then value will overflow.
         /// Change to time_t; change constants above; and recompile the sources if you need to support time after 2105 year.
         UInt32 date;
 
@@ -103,7 +103,8 @@ private:
         if ((guess == 0 || t >= lut[guess].date) && t < lut[DayNum(guess + 1)].date)
             return guess;
 
-        /// Time zones that have offset 0 from UTC do daylight saving time change (if any) towards increasing UTC offset (example: British Standard Time).
+        /// Time zones that have offset 0 from UTC do daylight saving time change (if any)
+        /// towards increasing UTC offset (example: British Standard Time).
         if (t >= lut[DayNum(guess + 1)].date)
             return DayNum(guess + 1);
 
@@ -285,11 +286,11 @@ public:
       *  each minute, with added or subtracted leap second, spans exactly 60 unix timestamps.
       */
 
-    inline unsigned toSecond(time_t t) const { return t % 60; }
+    inline unsigned toSecond(time_t t) const { return t < DATE_LUT_MAX ? t % 60 : 60 + Int32(t) % 60; }
 
     inline unsigned toMinute(time_t t) const
     {
-        if (offset_is_whole_number_of_hours_everytime)
+        if (offset_is_whole_number_of_hours_everytime && t < DATE_LUT_MAX)
             return (t / 60) % 60;
 
         UInt32 date = find(t).date;
