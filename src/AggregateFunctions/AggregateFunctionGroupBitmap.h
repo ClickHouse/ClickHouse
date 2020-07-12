@@ -6,8 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnAggregateFunction.h>
 
-// TODO include this last because of a broken roaring header. See the comment
-// inside.
+// TODO include this last because of a broken roaring header. See the comment inside.
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
 namespace DB

@@ -507,11 +507,15 @@ public:
 
     /// Change MergeTreeSettings
     void changeSettings(
-           const ASTPtr & new_settings,
-           TableLockHolder & table_lock_holder);
+        const ASTPtr & new_settings,
+        TableLockHolder & table_lock_holder);
 
     /// Freezes all parts.
-    void freezeAll(const String & with_name, const StorageMetadataPtr & metadata_snapshot, const Context & context, TableLockHolder & table_lock_holder);
+    void freezeAll(
+        const String & with_name,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Context & context,
+        TableLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
