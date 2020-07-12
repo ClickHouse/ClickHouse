@@ -143,7 +143,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     size_t year_months_lut_index = 0;
     size_t first_day_of_last_month = 0;
 
-    for (size_t day = 0; day < DATE_LUT_SIZE; ++day)
+    for (size_t day = 0; day < DATE_LUT_MAX_DAY_NUM; ++day)
     {
         const Values & values = lut[day];
 
