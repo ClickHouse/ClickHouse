@@ -45,6 +45,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
         ParserIdentifier p_identifier;
+
         if (!p_identifier.parse(pos, node, expected))
             return false;
 
@@ -63,7 +64,7 @@ protected:
 
 bool ParserDeclareTableOptions::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserDeclareOption{
+    return ParserDeclareOptions{
         {
             OptionDescribe("AUTO_INCREMENT", "auto_increment", std::make_shared<ParserLiteral>()),
             OptionDescribe("AVG_ROW_LENGTH", "avg_row_length", std::make_shared<ParserLiteral>()),

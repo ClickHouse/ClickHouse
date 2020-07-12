@@ -11,7 +11,8 @@ namespace DB
 namespace MySQLParser
 {
 
-bool ParserDeclareOption::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+template <bool recursive_>
+bool ParserDeclareOptionImpl<recursive_>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     std::unordered_map<String, ASTPtr> changes;
     std::unordered_map<String, std::shared_ptr<IParser>> usage_parsers_cached;
@@ -26,7 +27,7 @@ bool ParserDeclareOption::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         return iterator->second;
     };
 
-    while (true)
+    do
     {
         ASTPtr value;
         bool found{false};
@@ -57,9 +58,7 @@ bool ParserDeclareOption::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
         if (!found)
             break;
-
-//        ParserToken{TokenType::Comma}.ignore(pos, expected);
-    }
+    } while (recursive);
 
     if (!changes.empty())
     {
@@ -69,7 +68,7 @@ bool ParserDeclareOption::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         node = options_declare;
     }
 
-    return true;
+    return !changes.empty();
 }
 
 ASTPtr ASTDeclareOptions::clone() const
@@ -135,6 +134,10 @@ bool ParserCharsetName::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected &)
 
     return false;
 }
+
+template class ParserDeclareOptionImpl<true>;
+template class ParserDeclareOptionImpl<false>;
+
 }
 
 }

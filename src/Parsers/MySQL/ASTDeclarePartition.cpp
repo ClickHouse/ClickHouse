@@ -75,7 +75,7 @@ bool ParserDeclarePartition::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
         }
     }
 
-    if (!ParserDeclareOption{
+    if (!ParserDeclareOptions{
         {
             OptionDescribe("ENGINE", "engine", std::make_shared<ParserIdentifier>()),
             OptionDescribe("STORAGE ENGINE", "engine", std::make_shared<ParserIdentifier>()),

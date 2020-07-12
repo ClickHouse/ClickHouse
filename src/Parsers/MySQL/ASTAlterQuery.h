@@ -22,8 +22,8 @@ public:
 
     String getID(char delim) const override { return "AlterQuery" + (delim + database) + delim + table; }
 
-protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+/*protected:
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;*/
 };
 
 class ParserAlterQuery : public IParserBase

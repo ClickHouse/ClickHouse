@@ -66,7 +66,7 @@ bool ParserDeclareIndex::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected &
     ASTPtr declare_reference;
     ParserIndexColumn p_expression;
 
-    ParserDeclareOption p_index_options{
+    ParserDeclareOptions p_index_options{
         {
             OptionDescribe("KEY_BLOCK_SIZE", "key_block_size", std::make_unique<ParserLiteral>()),
             OptionDescribe("USING", "index_type", std::make_unique<ParserIdentifier>()),
