@@ -368,6 +368,9 @@ public:
 
         size_t bytes = block.bytes();
 
+        storage.writes.rows += rows;
+        storage.writes.bytes += bytes;
+
         /// If the block already exceeds the maximum limit, then we skip the buffer.
         if (rows > storage.max_thresholds.rows || bytes > storage.max_thresholds.bytes)
         {
