@@ -408,6 +408,17 @@ void DiskMemory::setReadOnly(const String &)
     throw Exception("Method setReadOnly is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
+void DiskMemory::truncateFile(const String & path, size_t size)
+{
+    std::lock_guard lock(mutex);
+
+    auto file_it = files.find(path);
+    if (file_it == files.end())
+        throw Exception("File '" + path + "' doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+
+    file_it->second.data.resize(size);
+}
+
 
 using DiskMemoryPtr = std::shared_ptr<DiskMemory>;
 
