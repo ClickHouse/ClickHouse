@@ -1,6 +1,7 @@
-#include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/QueryPipeline.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
+#include <Processors/Transforms/DistinctTransform.h>
 
 namespace DB
 {
@@ -31,7 +32,8 @@ DistinctStep::DistinctStep(
     const SizeLimits & set_size_limits_,
     UInt64 limit_hint_,
     const Names & columns_,
-    bool pre_distinct_)
+    bool pre_distinct_,
+    InputOrderInfoPtr distinct_info_)
     : ITransformingStep(
             input_stream_,
             input_stream_.header,
@@ -40,6 +42,7 @@ DistinctStep::DistinctStep(
     , limit_hint(limit_hint_)
     , columns(columns_)
     , pre_distinct(pre_distinct_)
+    , distinct_info(distinct_info_)
 {
     if (!output_stream->distinct_columns.empty() /// Columns already distinct, do nothing
         && (!pre_distinct /// Main distinct
@@ -59,13 +62,26 @@ void DistinctStep::transformPipeline(QueryPipeline & pipeline)
     if (!pre_distinct)
         pipeline.resize(1);
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+    if (pre_distinct && distinct_info)
     {
-        if (stream_type != QueryPipeline::StreamType::Main)
-            return nullptr;
+        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+        {
+            if (stream_type != QueryPipeline::StreamType::Main)
+                return nullptr;
 
-        return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
-    });
+            return std::make_shared<DistinctSortedTransform>(header, set_size_limits, limit_hint, distinct_info->order_key_prefix_descr, columns);
+        });
+    }
+    else
+    {
+        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+        {
+            if (stream_type != QueryPipeline::StreamType::Main)
+                return nullptr;
+
+            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
+        });
+    }
 }
 
 }

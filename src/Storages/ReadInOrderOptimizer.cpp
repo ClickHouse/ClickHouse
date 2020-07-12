@@ -12,25 +12,27 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static std::optional<Names> tryGetSortingKeyColumns(const StoragePtr & storage)
+static std::optional<Names> tryGetSortingKeyColumns(const StoragePtr & storage,
+                                                    const StorageMetadataPtr & metadata_snapshot)
 {
     Names sorting_key_columns;
-    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+    if (dynamic_cast<const MergeTreeData *>(storage.get()))
     {
-        if (!merge_tree->hasSortingKey())
+        if (!metadata_snapshot->hasSortingKey())
             return {};
-        sorting_key_columns = merge_tree->getSortingKeyColumns();
+        sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
     }
-    else if (const auto * part = dynamic_cast<const StorageFromMergeTreeDataPart *>(storage.get()))
+    else if (dynamic_cast<const StorageFromMergeTreeDataPart *>(storage.get()))
     {
-        if (!part->hasSortingKey())
+        if (!metadata_snapshot->hasSortingKey())
             return {};
-        sorting_key_columns = part->getSortingKeyColumns();
+        sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
     }
     else /// Inapplicable storage type
     {
         return {};
     }
+    return sorting_key_columns;
 }
 
 ReadInOrderOptimizer::ReadInOrderOptimizer(
@@ -50,9 +52,10 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
         forbidden_columns.insert(elem.first);
 }
 
-InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot) const
+InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage,
+                                                      const StorageMetadataPtr & metadata_snapshot) const
 {
-    auto sorting_key_object = tryGetSortingKeyColumns(storage);
+    auto sorting_key_object = tryGetSortingKeyColumns(storage, metadata_snapshot);
     if (!sorting_key_object.has_value())
         return {};
 
@@ -132,13 +135,14 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage
 }
 
 ReadInOrderOptimizerForDistinct::ReadInOrderOptimizerForDistinct(const Names & source_columns_)
-    : source_columns(source_columns_)
+    : source_columns(source_columns_.begin(), source_columns_.end())
 {
 }
 
-InputOrderInfoPtr ReadInOrderOptimizerForDistinct::getInputOrder(const StoragePtr & storage) const
+InputOrderInfoPtr ReadInOrderOptimizerForDistinct::getInputOrder(const StoragePtr & storage,
+                                                                 const StorageMetadataPtr & metadata_snapshot) const
 {
-    auto sorting_key_object = tryGetSortingKeyColumns(storage);
+    auto sorting_key_object = tryGetSortingKeyColumns(storage, metadata_snapshot);
     if (!sorting_key_object.has_value())
         return {};
 
@@ -146,8 +150,7 @@ InputOrderInfoPtr ReadInOrderOptimizerForDistinct::getInputOrder(const StoragePt
     SortDescription order_key_prefix_descr;
     for (const auto & sorting_key_column: sorting_key_columns)
     {
-        const auto it = std::find(source_columns.cbegin(), source_columns.cend(), sorting_key_column);
-        if (it == source_columns.cend())
+        if (source_columns.find(sorting_key_column) == source_columns.end())
             break;
         order_key_prefix_descr.emplace_back(sorting_key_column, 1, 1);
     }

@@ -61,11 +61,7 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
     {
         bool need_finish_sorting = (group_by_info->order_key_prefix_descr.size() < group_by_sort_description.size());
 
-        if (need_finish_sorting)
-        {
-            /// TOO SLOW
-        }
-        else
+        if (!need_finish_sorting)
         {
             if (pipeline.getNumStreams() > 1)
             {

@@ -33,10 +33,10 @@ class ReadInOrderOptimizerForDistinct
 {
 public:
     explicit ReadInOrderOptimizerForDistinct(const Names & source_columns_);
-    InputOrderInfoPtr getInputOrder(const StoragePtr & storage) const;
+    InputOrderInfoPtr getInputOrder(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot) const;
 
 private:
-    Names source_columns;
+    NameSet source_columns;
 };
 
 }

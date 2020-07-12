@@ -900,7 +900,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             if (expressions.need_aggregate)
             {
                 executeAggregation(query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
-                /// We need to reset input order info, so that executeOrder can't use  it
+                /// We need to reset input order info, so that executeOrder can't use it
                 query_info.input_order_info.reset();
             }
             else
@@ -1358,7 +1358,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         if (!analysis_result.optimize_aggregation_in_order && analysis_result.optimize_distinct_in_order)
         {
             query_info.distinct_optimizer = std::make_shared<ReadInOrderOptimizerForDistinct>(analysis_result.selected_columns);
-            query_info.distinct_order_info = query_info.distinct_optimizer->getInputOrder(storage);
+            query_info.distinct_order_info = query_info.distinct_optimizer->getInputOrder(storage, metadata_snapshot);
         }
 
         auto read_step = std::make_unique<ReadFromStorageStep>(
@@ -1644,7 +1644,7 @@ void InterpreterSelectQuery::executeProjection(QueryPlan & query_plan, const Exp
 }
 
 
-void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct, InputOrderInfoPtr input_order)
+void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct, InputOrderInfoPtr distinct_info)
 {
     auto & query = getSelectQuery();
     if (query.distinct)
@@ -1660,35 +1660,17 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
 
         SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
 
+        if (distinct_info && !settings.optimize_distinct_in_order)
+            distinct_info = nullptr;
+
         auto distinct_step = std::make_unique<DistinctStep>(
                 query_plan.getCurrentDataStream(),
-                limits, limit_for_distinct, columns, pre_distinct);
+                limits, limit_for_distinct, columns, pre_distinct, std::move(distinct_info));
 
         if (pre_distinct)
             distinct_step->setStepDescription("Preliminary DISTINCT");
 
         query_plan.addStep(std::move(distinct_step));
-
-//        if (input_order)
-//        {
-//            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-//            {
-//                if (stream_type == QueryPipeline::StreamType::Totals)
-//                    return nullptr;
-//
-//                return std::make_shared<DistinctSortedTransform>(header, limits, limit_for_distinct, input_order->order_key_prefix_descr, columns);
-//            });
-//        }
-//        else
-//        {
-//            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-//            {
-//                if (stream_type == QueryPipeline::StreamType::Totals)
-//                    return nullptr;
-//
-//                return std::make_shared<DistinctTransform>(header, limits, limit_for_distinct, columns);
-//            });
-//        }
     }
 }
 
