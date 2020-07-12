@@ -167,7 +167,7 @@ void OffsetTransform::splitChunk(PortsData & data) const
     /// return a piece of the block
     UInt64 start = 0;
 
-    /// ------------[....(...).]
+    /// ------------[....(.....]
     /// <----------------------> rows_read
     ///             <----------> num_rows
     /// <---------------> offset
