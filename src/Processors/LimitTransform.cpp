@@ -304,10 +304,25 @@ void LimitTransform::splitChunk(PortsData & data)
     ///                  <---> length
     ///             <---> start
 
+    /// Or:
+
+    /// ------------[....(.....][....)....]
+    /// <---------------------------------> rows_read
+    ///                         <---------> num_rows
+    /// <---------------> offset
+    ///                  <-----------> limit
+    ///                         <----> length
+    ///                         0 = start
+
     UInt64 length = num_rows - start;
 
-    if (!limit_is_unreachable && start + limit < num_rows)
-        length = limit;
+    if (!limit_is_unreachable && offset + limit < rows_read)
+    {
+        if (offset + limit < rows_read - num_rows)
+            length = 0;
+        else
+            length = offset + limit - (rows_read - num_rows);
+    }
 
     /// check if other rows in current block equals to last one in limit
     if (with_ties && length)
