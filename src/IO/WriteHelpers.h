@@ -656,13 +656,6 @@ inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 template <char delimiter = '-'>
 inline void writeDateText(DayNum date, WriteBuffer & buf)
 {
-    if (unlikely(!date))
-    {
-        static const char s[] = {'0', '0', '0', '0', delimiter, '0', '0', delimiter, '0', '0'};
-        buf.write(s, sizeof(s));
-        return;
-    }
-
     writeDateText<delimiter>(LocalDate(date), buf);
 }
 
@@ -719,18 +712,6 @@ inline void writeDateTimeText(const LocalDateTime & datetime, WriteBuffer & buf)
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' '>
 inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    if (unlikely(!datetime))
-    {
-        static const char s[] =
-        {
-            '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
-            between_date_time_delimiter,
-            '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'
-        };
-        buf.write(s, sizeof(s));
-        return;
-    }
-
     const auto & values = date_lut.getValues(datetime);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
@@ -743,21 +724,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
 {
     static constexpr UInt32 MaxScale = DecimalUtils::maxPrecision<DateTime64>();
     scale = scale > MaxScale ? MaxScale : scale;
-    if (unlikely(!datetime64))
-    {
-        static const char s[] =
-        {
-            '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
-            between_date_time_delimiter,
-            '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0',
-            fractional_time_delimiter,
-            // Exactly MaxScale zeros
-            '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'
-        };
-        buf.write(s, sizeof(s) - (MaxScale - scale)
-                  + (scale == 0 ? -1 : 0)); // if scale is zero, also remove the fractional_time_delimiter.
-        return;
-    }
+
     auto c = DecimalUtils::split(datetime64, scale);
     const auto & values = date_lut.getValues(c.whole);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
