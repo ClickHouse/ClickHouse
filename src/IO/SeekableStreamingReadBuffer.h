@@ -2,14 +2,19 @@
 
 #include <IO/ReadBufferFromFileBase.h>
 
+
 namespace DB
 {
 
 class SeekableStreamingReadBuffer : public ReadBufferFromFileBase
 {
     std::unique_ptr<ReadBufferFromFileBase> nested;
+    UInt64 read_seek_threshold;
+
 public:
-    SeekableStreamingReadBuffer(std::unique_ptr<ReadBufferFromFileBase> nested_): nested(std::move(nested_))
+    SeekableStreamingReadBuffer(std::unique_ptr<ReadBufferFromFileBase> nested_, UInt64 read_seek_threshold_)
+        : nested(std::move(nested_))
+        , read_seek_threshold(read_seek_threshold_)
     {
         swap(*nested);
     }
@@ -34,7 +39,7 @@ public:
             whence = SEEK_SET;
         }
 
-        if (whence == SEEK_SET && off >= position && off < position + 1024*1024)
+        if (whence == SEEK_SET && off >= position && off < position + static_cast<off_t>(read_seek_threshold))
         {
             swap(*nested);
             nested->ignore(off - position);
