@@ -26,9 +26,28 @@ public:
 
     off_t seek(off_t off, int whence) override
     {
-        swap(*nested);
-        off_t position = nested->seek(off, whence);
-        swap(*nested);
+        off_t position = getPosition();
+
+        if (whence == SEEK_CUR)
+        {
+            off += position;
+            whence = SEEK_SET;
+        }
+
+        if (whence == SEEK_SET && off >= position && off < position + 1024*1024)
+        {
+            swap(*nested);
+            nested->ignore(off - position);
+            swap(*nested);
+            position = off;
+        }
+        else
+        {
+            swap(*nested);
+            position = nested->seek(off, whence);
+            swap(*nested);
+        }
+
         return position;
     }
 
