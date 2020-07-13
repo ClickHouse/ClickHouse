@@ -92,7 +92,7 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     , mysql_database_name(mysql_database_name_), pool(std::move(pool_)), client(std::move(client_)), settings(settings_)
 {
     /// TODO: 做简单的check, 失败即报错
-    query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ")";
+    query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
     startSynchronization();
 }
 
