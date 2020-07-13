@@ -30,20 +30,20 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
         forbidden_columns.insert(elem.first);
 }
 
-InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage) const
+InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot) const
 {
     Names sorting_key_columns;
-    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+    if (dynamic_cast<const MergeTreeData *>(storage.get()))
     {
-        if (!merge_tree->hasSortingKey())
+        if (!metadata_snapshot->hasSortingKey())
             return {};
-        sorting_key_columns = merge_tree->getSortingKeyColumns();
+        sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
     }
-    else if (const auto * part = dynamic_cast<const StorageFromMergeTreeDataPart *>(storage.get()))
+    else if (dynamic_cast<const StorageFromMergeTreeDataPart *>(storage.get()))
     {
-        if (!part->hasSortingKey())
+        if (!metadata_snapshot->hasSortingKey())
             return {};
-        sorting_key_columns = part->getSortingKeyColumns();
+        sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
     }
     else /// Inapplicable storage type
     {

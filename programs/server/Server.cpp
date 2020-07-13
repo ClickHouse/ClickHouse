@@ -61,6 +61,8 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include <Server/MySQLHandlerFactory.h>
+#include <Server/PostgreSQLHandlerFactory.h>
+
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
@@ -376,7 +378,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     global_context->setPath(path);
 
-    StatusFile status{path + "status"};
+    StatusFile status{path + "status", StatusFile::write_full_info};
 
     SCOPE_EXIT({
         /** Ask to cancel background jobs all table engines,
@@ -429,6 +431,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
 
+    /// Initialize global thread pool
+    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
 
     /// Storage with temporary data for processing of heavy queries.
     {
@@ -604,7 +608,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory",
+            formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setUncompressedCache(uncompressed_cache_size);
 
@@ -619,7 +624,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (mark_cache_size > max_cache_size)
     {
         mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory",
+            formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_size);
 
@@ -643,12 +649,22 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (max_server_memory_usage == 0)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was set to {}", formatReadableSizeWithBinarySuffix(max_server_memory_usage));
+        LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
+            " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
+            formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+            formatReadableSizeWithBinarySuffix(memory_amount),
+            max_server_memory_usage_to_ram_ratio);
     }
     else if (max_server_memory_usage > default_max_server_memory_usage)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(max_server_memory_usage));
+        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
+            " because the system has low amount of memory. The amount was"
+            " calculated as {} available"
+            " * {:.2f} max_server_memory_usage_to_ram_ratio",
+            formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+            formatReadableSizeWithBinarySuffix(memory_amount),
+            max_server_memory_usage_to_ram_ratio);
     }
 
     total_memory_tracker.setOrRaiseHardLimit(max_server_memory_usage);
@@ -765,7 +781,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (!hasLinuxCapability(CAP_SYS_NICE))
     {
-        LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."
+        LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_priority' will have no effect."
             " It could happen due to incorrect ClickHouse package installation."
             " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep {}'."
             " Note that it will not work on 'nosuid' mounted filesystems.",
@@ -845,7 +861,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         };
 
         /// This object will periodically calculate some metrics.
-        AsynchronousMetrics async_metrics(*global_context);
+        AsynchronousMetrics async_metrics(*global_context,
+            config().getUInt("asynchronous_metrics_update_period_s", 60));
         attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         for (const auto & listen_host : listen_hosts)
@@ -867,7 +884,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                     if (listen_try)
                     {
-                        LOG_ERROR(log, "{}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
+                        LOG_WARNING(log, "{}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                             "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
                             "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
                             " Example for disabled IPv4: <listen_host>::</listen_host>",
@@ -996,6 +1013,21 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: {}", address.toString());
             });
 
+            create_server("postgresql_port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(Poco::Timespan());
+                socket.setSendTimeout(settings.send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                    new PostgreSQLHandlerFactory(*this),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+
+                LOG_INFO(log, "Listening for PostgreSQL compatibility protocol: " + address.toString());
+            });
+
             /// Prometheus (if defined and not setup yet with http_port)
             create_server("prometheus.port", [&](UInt16 port)
             {
@@ -1011,7 +1043,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
 
         if (servers.empty())
-             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
+                ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
         global_context->enableNamedSessions();
 

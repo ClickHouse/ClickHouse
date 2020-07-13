@@ -46,7 +46,8 @@ namespace
             throw Exception("Only HTTP/HTTPS schemas allowed in proxy resolver config: " + proxy_scheme, ErrorCodes::BAD_ARGUMENTS);
         auto proxy_port = proxy_resolver_config.getUInt(prefix + ".proxy_port");
 
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Configured proxy resolver: {}, Scheme: {}, Port: {}", endpoint.toString(), proxy_scheme, proxy_port);
+        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Configured proxy resolver: {}, Scheme: {}, Port: {}",
+            endpoint.toString(), proxy_scheme, proxy_port);
 
         return std::make_shared<S3::ProxyResolverConfiguration>(endpoint, proxy_scheme, proxy_port);
     }
@@ -115,6 +116,8 @@ void registerDiskS3(DiskFactory & factory)
         if (uri.key.back() != '/')
             throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
+        cfg.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
+        cfg.httpRequestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
         cfg.endpointOverride = uri.endpoint;
 
         auto proxy_config = getProxyConfiguration(config_prefix, config);
@@ -136,7 +139,8 @@ void registerDiskS3(DiskFactory & factory)
             uri.bucket,
             uri.key,
             metadata_path,
-            context.getSettingsRef().s3_min_upload_part_size);
+            context.getSettingsRef().s3_min_upload_part_size,
+            config.getUInt64(config_prefix + ".min_multi_part_upload_size", 10*1024*1024));
 
         /// This code is used only to check access to the corresponding disk.
         checkWriteAccess(*s3disk);

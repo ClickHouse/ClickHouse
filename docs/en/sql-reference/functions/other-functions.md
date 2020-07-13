@@ -13,19 +13,19 @@ Returns a string with the name of the host that this function was performed on. 
 
 Gets a named value from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration.
 
-**Syntax** 
+**Syntax**
 
-```sql
+``` sql
 getMacro(name);
 ```
 
 **Parameters**
 
-- `name` — Name to retrieve from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
+-   `name` — Name to retrieve from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
-- Value of the specified macro.
+-   Value of the specified macro.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -33,7 +33,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 The example `macros` section in the server configuration file:
 
-```xml
+``` xml
 <macros>
     <test>Value</test>
 </macros>
@@ -41,13 +41,13 @@ The example `macros` section in the server configuration file:
 
 Query:
 
-```sql
+``` sql
 SELECT getMacro('test');
 ```
 
 Result:
 
-```text
+``` text
 ┌─getMacro('test')─┐
 │ Value            │
 └──────────────────┘
@@ -55,12 +55,12 @@ Result:
 
 An alternative way to get the same value:
 
-```sql
+``` sql
 SELECT * FROM system.macros
 WHERE macro = 'test';
 ```
 
-```text
+``` text
 ┌─macro─┬─substitution─┐
 │ test  │ Value        │
 └───────┴──────────────┘
@@ -242,7 +242,7 @@ Result:
 
 Checks whether the argument is a constant expression.
 
-A constant expression means an expression whose resulting value is known at the query analysis (i.e. before execution). For example, expressions over [literals](../syntax.md#literals) are constant expressions.
+A constant expression means an expression whose resulting value is known at the query analysis (i.e. before execution). For example, expressions over [literals](../../sql-reference/syntax.md#literals) are constant expressions.
 
 The function is intended for development, debugging and demonstration.
 
@@ -254,26 +254,26 @@ isConstant(x)
 
 **Parameters**
 
-- `x` — Expression to check.
+-   `x` — Expression to check.
 
 **Returned values**
 
-- `1` — `x` is constant.
-- `0` — `x` is non-constant.
+-   `1` — `x` is constant.
+-   `0` — `x` is non-constant.
 
-Type: [UInt8](../data-types/int-uint.md).
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
 Query:
 
-```sql
+``` sql
 SELECT isConstant(x + 1) FROM (SELECT 43 AS x)
 ```
 
 Result:
 
-```text
+``` text
 ┌─isConstant(plus(x, 1))─┐
 │                      1 │
 └────────────────────────┘
@@ -281,13 +281,13 @@ Result:
 
 Query:
 
-```sql
+``` sql
 WITH 3.14 AS pi SELECT isConstant(cos(pi))
 ```
 
 Result:
 
-```text
+``` text
 ┌─isConstant(cos(pi))─┐
 │                   1 │
 └─────────────────────┘
@@ -295,13 +295,13 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT isConstant(number) FROM numbers(1)
 ```
 
 Result:
 
-```text
+``` text
 ┌─isConstant(number)─┐
 │                  0 │
 └────────────────────┘
@@ -345,7 +345,7 @@ Result:
     │     inf │                            42 │
     └─────────┴───────────────────────────────┘
 
-You can get similar result by using [ternary operator](conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
+You can get similar result by using [ternary operator](../../sql-reference/functions/conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
 
 ## isNaN(x) {#isnanx}
 
@@ -732,7 +732,7 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-Same as for [runningDifference](./other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
+Same as for [runningDifference](../../sql-reference/functions/other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
 
 ## MACNumToString(num) {#macnumtostringnum}
 
@@ -783,7 +783,7 @@ Returns size on disk (without taking into account compression).
 blockSerializedSize(value[, value[, ...]])
 ```
 
-**Parameters:**
+**Parameters**
 
 -   `value` — Any value.
 
@@ -793,9 +793,13 @@ blockSerializedSize(value[, value[, ...]])
 
 **Example**
 
+Query:
+
 ``` sql
 SELECT blockSerializedSize(maxState(1)) as x
 ```
+
+Result:
 
 ``` text
 ┌─x─┐
@@ -917,7 +921,7 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 
 Creates an array with a single value.
 
-Used for internal implementation of [arrayJoin](array-join.md#functions_arrayjoin).
+Used for internal implementation of [arrayJoin](../../sql-reference/functions/array-join.md#functions_arrayjoin).
 
 ``` sql
 SELECT replicate(x, arr);
@@ -1050,11 +1054,110 @@ Result:
 
 Takes state of aggregate function. Returns result of aggregation (finalized state).
 
-## runningAccumulate {#function-runningaccumulate}
+## runningAccumulate {#runningaccumulate}
 
-Takes the states of the aggregate function and returns a column with values, are the result of the accumulation of these states for a set of block lines, from the first to the current line.
-For example, takes state of aggregate function (example runningAccumulate(uniqState(UserID))), and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.
-So, result of function depends on partition of data to blocks and on order of data in block.
+Accumulates states of an aggregate function for each row of a data block.
+
+!!! warning "Warning"
+    The state is reset for each new data block.
+
+**Syntax**
+
+``` sql
+runningAccumulate(agg_state[, grouping]);
+```
+
+**Parameters**
+
+-   `agg_state` — State of the aggregate function. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+-   `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../../sql-reference/data-types/index.md) for which the equality operator is defined.
+
+**Returned value**
+
+-   Each resulting row contains a result of the aggregate function, accumulated for all the input rows from 0 to the current position. `runningAccumulate` resets states for each new data block or when the `grouping` value changes.
+
+Type depends on the aggregate function used.
+
+**Examples**
+
+Consider how you can use `runningAccumulate` to find the cumulative sum of numbers without and with grouping.
+
+Query:
+
+``` sql
+SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number as k, sumState(k) AS sum_k FROM numbers(10) GROUP BY k ORDER BY k);
+```
+
+Result:
+
+``` text
+┌─k─┬─res─┐
+│ 0 │   0 │
+│ 1 │   1 │
+│ 2 │   3 │
+│ 3 │   6 │
+│ 4 │  10 │
+│ 5 │  15 │
+│ 6 │  21 │
+│ 7 │  28 │
+│ 8 │  36 │
+│ 9 │  45 │
+└───┴─────┘
+```
+
+The subquery generates `sumState` for every number from `0` to `9`. `sumState` returns the state of the [sum](../../sql-reference/aggregate-functions/reference/sum.md) function that contains the sum of a single number.
+
+The whole query does the following:
+
+1.  For the first row, `runningAccumulate` takes `sumState(0)` and returns `0`.
+2.  For the second row, the function merges `sumState(0)` and `sumState(1)` resulting in `sumState(0 + 1)`, and returns `1` as a result.
+3.  For the third row, the function merges `sumState(0 + 1)` and `sumState(2)` resulting in `sumState(0 + 1 + 2)`, and returns `3` as a result.
+4.  The actions are repeated until the block ends.
+
+The following example shows the `groupping` parameter usage:
+
+Query:
+
+``` sql
+SELECT
+    grouping,
+    item,
+    runningAccumulate(state, grouping) AS res
+FROM
+(
+    SELECT
+        toInt8(number / 4) AS grouping,
+        number AS item,
+        sumState(number) AS state
+    FROM numbers(15)
+    GROUP BY item
+    ORDER BY item ASC
+);
+```
+
+Result:
+
+``` text
+┌─grouping─┬─item─┬─res─┐
+│        0 │    0 │   0 │
+│        0 │    1 │   1 │
+│        0 │    2 │   3 │
+│        0 │    3 │   6 │
+│        1 │    4 │   4 │
+│        1 │    5 │   9 │
+│        1 │    6 │  15 │
+│        1 │    7 │  22 │
+│        2 │    8 │   8 │
+│        2 │    9 │  17 │
+│        2 │   10 │  27 │
+│        2 │   11 │  38 │
+│        3 │   12 │  12 │
+│        3 │   13 │  25 │
+│        3 │   14 │  39 │
+└──────────┴──────┴─────┘
+```
+
+As you can see, `runningAccumulate` merges states for each group of rows separately.
 
 ## joinGet {#joinget}
 
@@ -1072,7 +1175,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Parameters**
 
--   `join_storage_table_name` — an [identifier](../syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
+-   `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
 -   `value_column` — name of the column of the table that contains required data.
 -   `join_keys` — list of keys.
 
@@ -1199,5 +1302,52 @@ SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers 
 │      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                               30 │
 └────────┴────────────────────────────────┴──────────────────────────────────┘
 ```
+
+## randomString {#randomstring}
+
+Generates a binary string of the specified length filled with random bytes (including zero bytes).
+
+**Syntax**
+
+``` sql
+randomString(length)
+```
+
+**Parameters**
+
+-   `length` — String length. Positive integer.
+
+**Returned value**
+
+-   String filled with random bytes.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT randomString(30) AS str, length(str) AS len FROM numbers(2) FORMAT Vertical;
+```
+
+Result:
+
+``` text
+Row 1:
+──────
+str: 3 G  :   pT ?w тi  k aV f6
+len: 30
+
+Row 2:
+──────
+str: 9 ,]    ^   )  ]??  8
+len: 30
+```
+
+**See Also**
+
+-   [generateRandom](../../sql-reference/table-functions/generate.md#generaterandom)
+-   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->

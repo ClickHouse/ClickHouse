@@ -56,7 +56,7 @@ void checkColumn(
             {
                 if (it->second != hash[i])
                 {
-                    std::cout << "Different hashes for the same equivalent class (" << val << "):\n";
+                    std::cout << "Different hashes for the same equivalent class (" << size_t(val) << "):\n";
                     std::cout << print_for_row(it->first) << '\n';
                     std::cout << print_for_row(i) << std::endl;
                 }

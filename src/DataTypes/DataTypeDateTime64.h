@@ -45,6 +45,8 @@ public:
     void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     bool equals(const IDataType & rhs) const override;
+
+    bool canBePromoted() const override { return false; }
 };
 
 /** Tansform-type wrapper for DateTime64, applies given Transform to DateTime64 value or only to a whole part of it.
@@ -60,7 +62,7 @@ public:
  * OR
  *      R execute(DateTime64 value, Int64 scale_factor, ... , const TimeZoneImpl &)
  *
- * Wehere R and T could be arbitrary types.
+ * Where R and T could be arbitrary types.
 */
 template <typename Transform>
 class TransformDateTime64 : public Transform

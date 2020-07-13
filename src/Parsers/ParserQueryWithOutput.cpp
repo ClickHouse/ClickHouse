@@ -15,9 +15,11 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ParserShowAccessEntitiesQuery.h>
+#include <Parsers/ParserShowAccessQuery.h>
 #include <Parsers/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/ParserShowGrantsQuery.h>
 #include <Parsers/ParserShowPrivilegesQuery.h>
+#include <Parsers/ParserExplainQuery.h>
 
 
 namespace DB
@@ -38,25 +40,18 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
     ParserWatchQuery watch_p;
+    ParserShowAccessQuery show_access_p;
     ParserShowAccessEntitiesQuery show_access_entities_p;
     ParserShowCreateAccessEntityQuery show_create_access_entity_p;
     ParserShowGrantsQuery show_grants_p;
     ParserShowPrivilegesQuery show_privileges_p;
+    ParserExplainQuery explain_p(enable_debug_queries);
 
     ASTPtr query;
 
-    ParserKeyword s_ast("AST");
-    ParserKeyword s_analyze("ANALYZE");
-    bool explain_ast = false;
-    bool analyze_syntax = false;
-
-    if (enable_explain && s_ast.ignore(pos, expected))
-        explain_ast = true;
-
-    if (enable_explain && s_analyze.ignore(pos, expected))
-        analyze_syntax = true;
-
-    bool parsed = select_p.parse(pos, query, expected)
+    bool parsed =
+           explain_p.parse(pos, query, expected)
+        || select_p.parse(pos, query, expected)
         || show_create_access_entity_p.parse(pos, query, expected) /// should be before `show_tables_p`
         || show_tables_p.parse(pos, query, expected)
         || table_p.parse(pos, query, expected)
@@ -70,6 +65,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || kill_query_p.parse(pos, query, expected)
         || optimize_p.parse(pos, query, expected)
         || watch_p.parse(pos, query, expected)
+        || show_access_p.parse(pos, query, expected)
         || show_access_entities_p.parse(pos, query, expected)
         || show_grants_p.parse(pos, query, expected)
         || show_privileges_p.parse(pos, query, expected);
@@ -113,19 +109,17 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query_with_output.children.push_back(query_with_output.settings_ast);
     }
 
-    if (explain_ast)
+    if (auto * ast = query->as<ASTExplainQuery>())
     {
-        node = std::make_shared<ASTExplainQuery>(ASTExplainQuery::ParsedAST);
-        node->children.push_back(query);
+        /// Set default format TSV, because output is a single string column.
+        if (!ast->format)
+        {
+            ast->format = std::make_shared<ASTIdentifier>("TSV");
+            ast->children.push_back(ast->format);
+        }
     }
-    else if (analyze_syntax)
-    {
-        node = std::make_shared<ASTExplainQuery>(ASTExplainQuery::AnalyzedSyntax);
-        node->children.push_back(query);
-    }
-    else
-        node = query;
 
+    node = std::move(query);
     return true;
 }
 
