@@ -7,6 +7,6 @@ CREATE TEMPORARY TABLE constrained
 
 insert into constrained values ('a');
 
-DROP TEMPORARY TABLE constrained;
-CREATE TEMPORARY TABLE constrained (x UInt8, CONSTRAINT bogus CHECK 0);
+DROP TABLE constrained;
+CREATE TABLE constrained (x UInt8, CONSTRAINT bogus CHECK 0) ENGINE = Memory();
 INSERT INTO constrained VALUES (1); -- { serverError 469 }
