@@ -87,5 +87,13 @@
     "docker/test/testflows/runner": {
         "name": "yandex/clickhouse-testflows-runner",
         "dependent": []
+    },
+    "docker/test/integration/s3_proxy": {
+        "name": "yandex/clickhouse-s3-proxy",
+        "dependent": []
+    },
+    "docker/test/integration/resolver": {
+        "name": "yandex/clickhouse-python-bottle",
+        "dependent": []
     }
 }
