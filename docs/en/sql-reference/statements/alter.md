@@ -3,7 +3,7 @@ toc_priority: 36
 toc_title: ALTER
 ---
 
-## ALTER {#query_language_queries_alter}
+## ALTER Statement {#query_language_queries_alter}
 
 The `ALTER` query is only supported for `*MergeTree` tables, as well as `Merge`and`Distributed`. The query has several variations.
 

@@ -16,13 +16,13 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
 
 ## Managing Roles {#managing-roles}
 
-A user can be assigned multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](../../../sql-reference/statements/misc.md#set-role-statement) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges granted directly to it’s user account, they are also combined with the privileges granted by roles.
+A user can be assigned multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](../../../sql-reference/statements/set-role.md) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges granted directly to it’s user account, they are also combined with the privileges granted by roles.
 
-User can have default roles which apply at user login. To set default roles, use the [SET DEFAULT ROLE](../../../sql-reference/statements/misc.md#set-default-role-statement) statement or the [ALTER USER](../../../sql-reference/statements/alter.md#alter-user-statement) statement.
+User can have default roles which apply at user login. To set default roles, use the [SET DEFAULT ROLE](../../../sql-reference/statements/set-role.md#set-default-role-statement) statement or the [ALTER USER](../../../sql-reference/statements/alter.md#alter-user-statement) statement.
 
 To revoke a role, use the [REVOKE](../../../sql-reference/statements/revoke.md) statement.
 
-To delete role, use the [DROP ROLE](../../../sql-reference/statements/misc.md#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
+To delete role, use the [DROP ROLE](../../../sql-reference/statements/drop.md#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
 
 ## Examples {#create-role-examples}
 
