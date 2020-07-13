@@ -61,23 +61,32 @@ def add_config(config, timeout=20, restart=False):
                 with When("I output the content of the config"):
                     debug(config.content)
 
-            with When("I add the config", description=config.path):
-                command = f"cat <<HEREDOC > {config.path}\n{config.content}\nHEREDOC"
-                node.command(command, steps=False, exitcode=0)
+            with node.cluster.shell(node.name) as bash:
+                bash.expect(bash.prompt)
+                bash.send("tail -f /var/log/clickhouse-server/clickhouse-server.log")
 
-            with Then(f"{config.preprocessed_name} should be updated", description=f"timeout {timeout}"):
-                started = time.time()
-                command = f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name} | grep {config.uid}{' > /dev/null' if not settings.debug else ''}"
-                while time.time() - started < timeout:
-                    exitcode = node.command(command, steps=False).exitcode
-                    if exitcode == 0:
-                        break
-                    time.sleep(1)
-                assert exitcode == 0, error()
+                with When("I add the config", description=config.path):
+                    command = f"cat <<HEREDOC > {config.path}\n{config.content}\nHEREDOC"
+                    node.command(command, steps=False, exitcode=0)
 
-            if restart:
-                with When("I restart ClickHouse to apply the config changes"):
-                    node.restart(safe=False)
+                with Then(f"{config.preprocessed_name} should be updated", description=f"timeout {timeout}"):
+                    started = time.time()
+                    command = f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name} | grep {config.uid}{' > /dev/null' if not settings.debug else ''}"
+                    while time.time() - started < timeout:
+                        exitcode = node.command(command, steps=False).exitcode
+                        if exitcode == 0:
+                            break
+                        time.sleep(1)
+                    assert exitcode == 0, error()
+
+#                if restart:
+#                    with When("I restart ClickHouse to apply the config changes"):
+#                        node.restart(safe=False)
+
+                with When("I wait for config to be loaded"):
+                    started = time.time()
+                    bash.expect(f"ConfigReloader: Loaded config '/etc/clickhouse-server/{config.preprocessed_name}', performed update on configuration", timeout=timeout)
+                    time.sleep(10)
         yield
     finally:
         with Finally(f"I remove {config.name}"):
