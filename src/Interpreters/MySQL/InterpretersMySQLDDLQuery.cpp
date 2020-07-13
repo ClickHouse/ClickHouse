@@ -6,6 +6,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/MySQL/ASTAlterCommand.h>
 #include <Parsers/MySQL/ASTDeclareColumn.h>
@@ -19,6 +20,7 @@
 #include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -363,15 +365,39 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
 
         if (alter_command->type == MySQLParser::ASTAlterCommand::ADD_COLUMN)
         {
-            const auto & additional_columns = getColumnsList(alter_command->additional_columns);
+            const auto & additional_columns_name_and_type = getColumnsList(alter_command->additional_columns);
+            const auto & additional_columns = InterpreterCreateQuery::formatColumns(additional_columns_name_and_type);
 
-            for (const auto & additional_column : InterpreterCreateQuery::formatColumns(additional_columns)->children)
+            String default_after_column;
+            for (size_t index = 0; index < additional_columns_name_and_type.size(); ++index)
             {
                 auto rewritten_command = std::make_shared<ASTAlterCommand>();
                 rewritten_command->type = ASTAlterCommand::ADD_COLUMN;
                 rewritten_command->first = alter_command->first;
-                rewritten_command->col_decl = additional_column;
-                rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
+                rewritten_command->col_decl = additional_columns->children[index]->clone();
+
+                if (!alter_command->column_name.empty())
+                {
+                    rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
+                    rewritten_command->children.push_back(rewritten_command->column);
+                }
+                else
+                {
+                    if (default_after_column.empty())
+                    {
+                        StoragePtr storage = DatabaseCatalog::instance().getTable({clickhouse_db, alter_query.table}, context);
+                        Block storage_header = storage->getInMemoryMetadataPtr()->getSampleBlock();
+
+                        /// Put the sign and version columns last
+                        default_after_column = storage_header.getByPosition(storage_header.columns() - 3).name;
+                    }
+
+                    rewritten_command->column = std::make_shared<ASTIdentifier>(default_after_column);
+                    rewritten_command->children.push_back(rewritten_command->column);
+                    default_after_column = rewritten_command->col_decl->as<ASTColumnDeclaration>()->name;
+                }
+
+                rewritten_command->children.push_back(rewritten_command->col_decl);
                 rewritten_query->command_list->add(rewritten_command);
             }
         }
@@ -384,11 +410,15 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
         }
         else if (alter_command->type == MySQLParser::ASTAlterCommand::RENAME_COLUMN)
         {
-            auto rewritten_command = std::make_shared<ASTAlterCommand>();
-            rewritten_command->type = ASTAlterCommand::RENAME_COLUMN;
-            rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->old_name);
-            rewritten_command->rename_to = std::make_shared<ASTIdentifier>(alter_command->column_name);
-            rewritten_query->command_list->add(rewritten_command);
+            if (alter_command->old_name != alter_command->column_name)
+            {
+                /// 'RENAME column_name TO column_name' is not allowed in Clickhouse
+                auto rewritten_command = std::make_shared<ASTAlterCommand>();
+                rewritten_command->type = ASTAlterCommand::RENAME_COLUMN;
+                rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->old_name);
+                rewritten_command->rename_to = std::make_shared<ASTIdentifier>(alter_command->column_name);
+                rewritten_query->command_list->add(rewritten_command);
+            }
         }
         else if (alter_command->type == MySQLParser::ASTAlterCommand::MODIFY_COLUMN)
         {
@@ -398,18 +428,25 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
                 auto rewritten_command = std::make_shared<ASTAlterCommand>();
                 rewritten_command->type = ASTAlterCommand::MODIFY_COLUMN;
                 rewritten_command->first = alter_command->first;
-                rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
-                const auto & modify_columns = getColumnsList(alter_command->additional_columns);
+                auto modify_columns = getColumnsList(alter_command->additional_columns);
 
                 if (modify_columns.size() != 1)
                     throw Exception("It is a bug", ErrorCodes::LOGICAL_ERROR);
 
                 new_column_name = modify_columns.front().name;
+                modify_columns.front().name = alter_command->old_name;
                 rewritten_command->col_decl = InterpreterCreateQuery::formatColumns(modify_columns)->children[0];
+
+                if (!alter_command->column_name.empty())
+                {
+                    rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
+                    rewritten_command->children.push_back(rewritten_command->column);
+                }
+
                 rewritten_query->command_list->add(rewritten_command);
             }
 
-            if (!alter_command->old_name.empty())
+            if (!alter_command->old_name.empty() && alter_command->old_name != new_column_name)
             {
                 auto rewritten_command = std::make_shared<ASTAlterCommand>();
                 rewritten_command->type = ASTAlterCommand::RENAME_COLUMN;
@@ -419,6 +456,9 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
             }
         }
     }
+
+    if (rewritten_query->command_list->commands.empty())
+        return {};
 
     return rewritten_query;
 }
