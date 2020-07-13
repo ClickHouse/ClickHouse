@@ -1,6 +1,7 @@
 #include "HandlerFactory.h"
 #include "PingHandler.h"
 #include "ColumnInfoHandler.h"
+#include "SchemaAllowedHandler.h"
 #include <Poco/URI.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <common/logger_useful.h>
@@ -31,7 +32,7 @@ Poco::Net::HTTPRequestHandler * HandlerFactory::createRequestHandler(const Poco:
             return nullptr;
 #endif
         else if (uri.getPath() == "/schema_allowed")
-#if USE_ODBC
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
             return new SchemaAllowedHandler(keep_alive_timeout, context);
 #else
             return nullptr;

@@ -3,8 +3,6 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 
-#if USE_ODBC
-
 namespace DB
 {
 class Context;
@@ -27,5 +25,3 @@ private:
 };
 
 }
-
-#endif
