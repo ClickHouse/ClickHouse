@@ -140,6 +140,9 @@ MergeTreeData::MergeTreeData(
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
 {
+    const auto settings = getSettings();
+    allow_nullable_key = attach || settings->allow_nullable_key;
+
     if (relative_data_path.empty())
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
@@ -167,7 +170,6 @@ MergeTreeData::MergeTreeData(
     }
 
     setProperties(metadata_, metadata_, attach);
-    const auto settings = getSettings();
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(metadata_);
@@ -244,7 +246,7 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
     return global_context.getStoragePolicy(getSettings()->storage_policy);
 }
 
-static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name)
+static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
 {
     for (const ExpressionAction & action : expr.getActions())
     {
@@ -267,7 +269,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
         if (column && (isColumnConst(*column) || column->isDummy()))
             throw Exception{key_name + " key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
 
-        if (element.type->isNullable())
+        if (!allow_nullable_key && element.type->isNullable())
             throw Exception{key_name + " key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN};
     }
 }
@@ -376,7 +378,7 @@ void MergeTreeData::checkProperties(
         }
     }
 
-    checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting");
+    checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key);
 
 }
 
@@ -423,7 +425,7 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     if (new_partition_key.expression_list_ast->children.empty())
         return;
 
-    checkKeyExpression(*new_partition_key.expression, new_partition_key.sample_block, "Partition");
+    checkKeyExpression(*new_partition_key.expression, new_partition_key.sample_block, "Partition", allow_nullable_key);
 
     /// Add all columns used in the partition key to the min-max index.
     const NamesAndTypesList & minmax_idx_columns_with_types = new_partition_key.expression->getRequiredColumnsWithTypes();
