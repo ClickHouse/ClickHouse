@@ -28,7 +28,7 @@ public:
         String metadata_path_,
         size_t min_upload_part_size_,
         size_t min_multi_part_upload_size_,
-        size_t read_seek_threshold);
+        size_t read_seek_threshold_);
 
     const String & getName() const override { return name; }
 
