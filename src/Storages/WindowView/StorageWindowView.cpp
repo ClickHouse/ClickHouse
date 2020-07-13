@@ -996,9 +996,9 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
     if (window_view.is_proctime)
     {
         fire_signal_lock = std::shared_lock<std::shared_mutex>(window_view.fire_signal_mutex);
-        UInt32 timestamp_now = std::time(nullptr);
-        pipe.addSimpleTransform(std::make_shared<AddingConstColumnTransform<UInt32>>(
-            pipe.getHeader(), std::make_shared<DataTypeDateTime>(), timestamp_now, "____timestamp"));
+        if (window_view.is_time_column_func_now)
+            pipe.addSimpleTransform(std::make_shared<AddingConstColumnTransform<UInt32>>(
+                pipe.getHeader(), std::make_shared<DataTypeDateTime>(), std::time(nullptr), "____timestamp"));
         InterpreterSelectQuery select_block(window_view.getMergeableQuery(), context, {std::move(pipe)}, QueryProcessingStage::WithMergeableState);
 
         source_stream = select_block.execute().getInputStream();
