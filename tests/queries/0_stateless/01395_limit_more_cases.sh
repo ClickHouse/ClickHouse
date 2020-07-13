@@ -32,4 +32,4 @@ for i in $(seq $ITERATIONS); do
                 throwIf((c != 0 OR first != 0 OR last != 0) AND (c != last - first + 1))
             FROM (SELECT * FROM numbers($SIZE) LIMIT $OFFSET, $LIMIT);
         "
-done | $CLICKHOUSE_CLIENT -n --max_block_size $(($RANDOM % 20)) | uniq
+done | $CLICKHOUSE_CLIENT -n --max_block_size $(($RANDOM % 20 + 1)) | uniq
