@@ -28,7 +28,7 @@ public:
         String metadata_path_,
         size_t min_upload_part_size_,
         size_t min_multi_part_upload_size_,
-        size_t read_seek_threshold_);
+        size_t min_bytes_for_seek_);
 
     const String & getName() const override { return name; }
 
@@ -112,7 +112,7 @@ private:
     const String metadata_path;
     size_t min_upload_part_size;
     size_t min_multi_part_upload_size;
-    size_t read_seek_threshold;
+    size_t min_bytes_for_seek;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
