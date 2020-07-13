@@ -121,7 +121,7 @@ time_t DatabaseMaterializeMySQL::getObjectMetadataModificationTime(const String 
 void DatabaseMaterializeMySQL::createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query)
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
-        throw Exception("MySQL database in locality_data mode does not support create table.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("MaterializeMySQL database not support create table.", ErrorCodes::NOT_IMPLEMENTED);
 
     getNestedDatabase()->createTable(context, name, table, query);
 }
@@ -129,7 +129,7 @@ void DatabaseMaterializeMySQL::createTable(const Context & context, const String
 void DatabaseMaterializeMySQL::dropTable(const Context & context, const String & name, bool no_delay)
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
-        throw Exception("MySQL database in locality_data mode does not support drop table.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("MaterializeMySQL database not support drop table.", ErrorCodes::NOT_IMPLEMENTED);
 
     getNestedDatabase()->dropTable(context, name, no_delay);
 }
@@ -137,7 +137,7 @@ void DatabaseMaterializeMySQL::dropTable(const Context & context, const String &
 void DatabaseMaterializeMySQL::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
-        throw Exception("MySQL database in locality_data mode does not support attach table.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("MaterializeMySQL database not support attach table.", ErrorCodes::NOT_IMPLEMENTED);
 
     getNestedDatabase()->attachTable(name, table, relative_table_path);
 }
@@ -145,7 +145,7 @@ void DatabaseMaterializeMySQL::attachTable(const String & name, const StoragePtr
 StoragePtr DatabaseMaterializeMySQL::detachTable(const String & name)
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
-        throw Exception("MySQL database in locality_data mode does not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("MaterializeMySQL database not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
 
     return getNestedDatabase()->detachTable(name);
 }
@@ -153,7 +153,7 @@ StoragePtr DatabaseMaterializeMySQL::detachTable(const String & name)
 void DatabaseMaterializeMySQL::renameTable(const Context & context, const String & name, IDatabase & to_database, const String & to_name, bool exchange)
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
-        throw Exception("MySQL database in locality_data mode does not support rename table.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("MaterializeMySQL database not support rename table.", ErrorCodes::NOT_IMPLEMENTED);
 
     getNestedDatabase()->renameTable(context, name, to_database, to_name, exchange);
 }
@@ -161,7 +161,7 @@ void DatabaseMaterializeMySQL::renameTable(const Context & context, const String
 void DatabaseMaterializeMySQL::alterTable(const Context & context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
-        throw Exception("MySQL database in locality_data mode does not support alter table.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("MaterializeMySQL database not support alter table.", ErrorCodes::NOT_IMPLEMENTED);
 
     getNestedDatabase()->alterTable(context, table_id, metadata);
 }
