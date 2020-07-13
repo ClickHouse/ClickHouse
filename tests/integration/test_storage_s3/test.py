@@ -70,14 +70,6 @@ def get_s3_file_content(cluster, bucket, filename):
     return data_str
 
 
-# Returns nginx access log lines.
-def get_nginx_access_logs():
-    handle = open("/nginx/access.log", "r")
-    data = handle.readlines()
-    handle.close()
-    return data
-
-
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -250,10 +242,9 @@ def test_multipart_put(cluster, maybe_auth, positive):
     else:
         assert positive
 
-        # Use Nginx access logs to count number of parts uploaded to Minio.
-        nginx_logs = get_nginx_access_logs()
-        uploaded_parts = filter(lambda log_line: log_line.find(filename) >= 0 and log_line.find("PUT") >= 0, nginx_logs)
-        assert len(uploaded_parts) > 1
+        # Use proxy access logs to count number of parts uploaded to Minio.
+        proxy_logs = cluster.get_container_logs("proxy1")  # type: str
+        assert proxy_logs.count("PUT /{}/{}".format(bucket, filename)) >= 2
 
         assert csv_data == get_s3_file_content(cluster, bucket, filename)
 
@@ -321,8 +312,7 @@ def run_s3_mock(cluster):
     logging.info("S3 mock started")
 
 
-# Test get values in CSV format with default settings.
-def test_get_csv_default(cluster):
+def test_custom_auth_headers(cluster):
     ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'), ["curl", "-s", "http://resolver:8080"])
     assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
     
@@ -343,12 +333,16 @@ def test_infinite_redirect(cluster):
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
     get_query = "select * from s3('http://resolver:8080/{bucket}/{file}', 'CSV', '{table_format}')".format(
-        bucket="redirected",
+        bucket=bucket,
         file=filename,
         table_format=table_format)
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    exception_raised = False
     try:
-        result = run_query(instance, get_query)
+        run_query(instance, get_query)
     except Exception as e:
         assert str(e).find("Too many redirects while trying to access") != -1
+        exception_raised = True
+    finally:
+        assert exception_raised
 

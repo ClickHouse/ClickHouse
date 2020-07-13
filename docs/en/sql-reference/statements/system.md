@@ -3,7 +3,7 @@ toc_priority: 37
 toc_title: SYSTEM
 ---
 
-# SYSTEM Queries {#query-language-system}
+# SYSTEM Statements {#query-language-system}
 
 -   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
 -   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)

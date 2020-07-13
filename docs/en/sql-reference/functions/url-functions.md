@@ -190,7 +190,7 @@ Extracts network locality (`username:password@host:port`) from a URL.
 
 **Syntax**
 
-```sql
+``` sql
 netloc(URL)
 ```
 
@@ -200,7 +200,7 @@ netloc(URL)
 
 **Returned value**
 
--  `username:password@host:port`.
+-   `username:password@host:port`.
 
 Type: `String`.
 
