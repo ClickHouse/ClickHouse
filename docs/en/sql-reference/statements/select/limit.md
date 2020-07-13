@@ -18,7 +18,7 @@ When you set `WITH TIES` modifier for `LIMIT n[,m]` and specify `ORDER BY expr_l
 
 This modifier also can be combined with [ORDER BY ... WITH FILL modifier](../../../sql-reference/statements/select/order-by.md#orderby-with-fill).
 
-For example, following query
+For example, the following query
 ```sql
 SELECT * FROM (
     SELECT number%50 AS n FROM numbers(100)
