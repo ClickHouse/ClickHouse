@@ -12,6 +12,7 @@
 #include <Common/parseAddress.h>
 #include "DatabaseFactory.h"
 #include <Poco/File.h>
+#include <Poco/Path.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
