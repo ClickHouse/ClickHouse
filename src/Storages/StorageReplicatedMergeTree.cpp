@@ -153,6 +153,18 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeper() const
 }
 
 
+static std::string normalizeZooKeeperPath(std::string zookeeper_path)
+{
+    if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
+        zookeeper_path.resize(zookeeper_path.size() - 1);
+    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
+    if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
+        zookeeper_path = "/" + zookeeper_path;
+
+    return zookeeper_path;
+}
+
+
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & zookeeper_path_,
     const String & replica_name_,
@@ -177,6 +189,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     [this] (const std::string & name) { enqueuePartForCheck(name); })
     , zookeeper_path(zookeeper_path_)
     , replica_name(replica_name_)
+    , replica_path(zookeeper_path + "/replicas/" + replica_name)
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())
@@ -186,13 +199,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , part_check_thread(*this)
     , restarting_thread(*this)
 {
-    if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
-        zookeeper_path.resize(zookeeper_path.size() - 1);
-    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
-    if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
-        zookeeper_path = "/" + zookeeper_path;
-    replica_path = zookeeper_path + "/replicas/" + replica_name;
-
     queue_updating_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
 
@@ -201,6 +207,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     merge_selecting_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
+
     /// Will be activated if we win leader election.
     merge_selecting_task->deactivate();
 
@@ -1433,7 +1440,6 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
             return false;
         }
     }
-
 
     MergeTreePartInfo new_part_info = MergeTreePartInfo::fromPartName(
         entry.new_part_name, format_version);
@@ -3246,10 +3252,7 @@ void StorageReplicatedMergeTree::startup()
 
     try
     {
-        queue.initialize(
-            zookeeper_path, replica_path,
-            getStorageID().getFullTableName() + " (ReplicatedMergeTreeQueue)",
-            getDataParts());
+        queue.initialize(getDataParts());
 
         data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(*this);
         global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint);
