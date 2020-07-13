@@ -82,6 +82,7 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
 
 bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection)
 {
+    /// TODO: MySQL 5.7
     Block header{
         {std::make_shared<DataTypeString>(), "Log_name"},
         {std::make_shared<DataTypeUInt64>(), "File_size"},
@@ -128,11 +129,11 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
         WriteBufferFromFile out(persistent_tmp_path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_TRUNC | O_CREAT | O_EXCL);
 
         /// TSV format metadata file.
-        writeString("Version:\t1\n", out);
-        writeString("Binlog File:\t" + binlog_file + "\n", out);
-        writeString("Executed GTID:\t" + executed_gtid_set + "\n", out);
-        writeString("Binlog Position:\t" + toString(binlog_position) + "\n", out);
-        writeString("Data Version:\t" + toString(version) + "\n", out);
+        writeString("Version:\t1", out);
+        writeString("\nBinlog File:\t" + binlog_file, out);
+        writeString("\nExecuted GTID:\t" + executed_gtid_set, out);
+        writeString("\nBinlog Position:\t" + toString(binlog_position), out);
+        writeString("\nData Version:\t" + toString(version), out);
 
         out.next();
         out.sync();
@@ -148,14 +149,14 @@ MaterializeMetadata::MaterializeMetadata(mysqlxx::PoolWithFailover::Entry & conn
     if (Poco::File(persistent_path).exists())
     {
         ReadBufferFromFile in(persistent_path, DBMS_DEFAULT_BUFFER_SIZE);
-        assertString("Version:\t1\n", in);
-        assertString("Binlog File:\t", in);
+        assertString("Version:\t1", in);
+        assertString("\nBinlog File:\t", in);
         readString(binlog_file, in);
-        assertString("Executed GTID:\t", in);
+        assertString("\nExecuted GTID:\t", in);
         readString(executed_gtid_set, in);
-        assertString("Binlog Position:\t", in);
+        assertString("\nBinlog Position:\t", in);
         readIntText(binlog_position, in);
-        assertString("Data Version:\t", in);
+        assertString("\nData Version:\t", in);
         readIntText(version, in);
 
         if (checkBinlogFileExists(connection))

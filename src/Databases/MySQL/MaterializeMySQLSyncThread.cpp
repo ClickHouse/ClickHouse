@@ -92,6 +92,7 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     , mysql_database_name(mysql_database_name_), pool(std::move(pool_)), client(std::move(client_)), settings(settings_)
 {
     /// TODO: 做简单的check, 失败即报错
+    /// binlog_format = ROW binlog_row_image = FULL
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
     startSynchronization();
 }
@@ -138,7 +139,6 @@ void MaterializeMySQLSyncThread::synchronization()
     }
     catch (...)
     {
-        /// TODO: set
         tryLogCurrentException(log);
         getDatabase(database_name).setException(std::current_exception());
     }
@@ -169,7 +169,7 @@ static inline BlockOutputStreamPtr getTableOutput(const String & database_name, 
     BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuoteIfNeed(table_name) + " VALUES", context, database_name, comment);
 
     if (!res.out)
-        throw Exception("LOGICAL ERROR:", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     return res.out;
 }
