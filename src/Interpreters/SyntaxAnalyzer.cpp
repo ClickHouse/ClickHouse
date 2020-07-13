@@ -538,34 +538,32 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const C
     if (!order_by)
         return;
 
-    auto group_by = select_query->groupBy();
-    std::unordered_map<String, ASTPtr> group_by_function_hashes;
-    if (group_by)
+    std::unordered_map<String, ASTPtr> group_by_hashes;
+    if (auto group_by = select_query->groupBy())
     {
-        for (auto & elem: group_by->children)
+        for (auto & elem : group_by->children)
         {
             auto hash = elem->getTreeHash();
             String key = toString(hash.first) + '_' + toString(hash.second);
-            group_by_function_hashes[key] = elem;
+            group_by_hashes[key] = elem;
         }
     }
 
-    for (size_t i = 0; i < order_by->children.size(); ++i)
+    for (auto & child : order_by->children)
     {
-        auto child = order_by->children[i];
-        if (child->children.empty() || !child->children[0]->as<ASTFunction>())
+        auto * order_by_element = child->as<ASTOrderByElement>();
+        auto & ast_func = order_by_element->children[0];
+        if (!ast_func->as<ASTFunction>())
             continue;
 
-        auto * order_by_element = child->as<ASTOrderByElement>();
-        auto order_by_function = order_by_element->children[0];
+        MonotonicityCheckVisitor::Data data{tables_with_columns, context, group_by_hashes};
+        MonotonicityCheckVisitor(data).visit(ast_func);
 
-        MonotonicityCheckVisitor::Data monotonicity_checker_data{tables_with_columns, context, group_by_function_hashes};
-        MonotonicityCheckVisitor(monotonicity_checker_data).visit(order_by_function);
-        if (monotonicity_checker_data.monotonicity.is_monotonic)
+        if (data.monotonicity.is_monotonic)
         {
-            order_by_element->children[0] = monotonicity_checker_data.identifier->clone();
-            order_by_element->children[0]->setAlias("");
-            if (!monotonicity_checker_data.monotonicity.is_positive)
+            ast_func = data.identifier->clone();
+            ast_func->setAlias("");
+            if (!data.monotonicity.is_positive)
                 order_by_element->direction *= -1;
         }
     }

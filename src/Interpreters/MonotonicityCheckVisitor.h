@@ -36,15 +36,11 @@ public:
 
     static void visit(const ASTPtr & ast, Data & data)
     {
-        auto * ast_function = ast->as<ASTFunction>();
-        if (ast_function)
-        {
+        if (const auto * ast_function = ast->as<ASTFunction>())
             visit(*ast_function, data);
-        }
     }
 
-
-    static void visit(ASTFunction & ast_function, Data & data)
+    static void visit(const ASTFunction & ast_function, Data & data)
     {
         if (!data.monotonicity.is_monotonic)
             return;
