@@ -38,7 +38,7 @@ public:
 
     String getName() const override
     {
-        return "S3";
+        return name;
     }
 
     Pipes read(
@@ -62,6 +62,7 @@ private:
     UInt64 min_upload_part_size;
     String compression_method;
     std::shared_ptr<Aws::S3::S3Client> client;
+    String name;
 };
 
 }

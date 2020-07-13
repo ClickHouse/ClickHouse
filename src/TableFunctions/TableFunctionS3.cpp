@@ -65,8 +65,18 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Conte
 
     ColumnsDescription columns = parseColumnsListFromString(structure, context);
 
+    static constexpr auto S3 = "S3", s3 = "s3", COSN = "COSN", cons = "cosn";
+    Poco::URI uri (filename);
+    S3::URI s3_uri (uri);
+    if (s3_uri.storage_name == S3) {
+        name = s3;
+        storage_type_name = S3;
+    } else {
+        name = cosn;
+        storage_type_name = COSN;
+    }
     /// Create table
-    StoragePtr storage = getStorage(filename, access_key_id, secret_access_key, format, columns, const_cast<Context &>(context), table_name, compression_method);
+    StoragePtr storage = getStorage(s3_uri, access_key_id, secret_access_key, format, columns, const_cast<Context &>(context), table_name, compression_method);
 
     storage->startup();
 
@@ -74,7 +84,7 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Conte
 }
 
 StoragePtr TableFunctionS3::getStorage(
-    const String & source,
+    const URI & uri,
     const String & access_key_id,
     const String & secret_access_key,
     const String & format,
@@ -83,8 +93,6 @@ StoragePtr TableFunctionS3::getStorage(
     const std::string & table_name,
     const String & compression_method)
 {
-    Poco::URI uri (source);
-    S3::URI s3_uri (uri);
 
     UInt64 min_upload_part_size = global_context.getSettingsRef().s3_min_upload_part_size;
     return StorageS3::create(
@@ -101,6 +109,11 @@ StoragePtr TableFunctionS3::getStorage(
 }
 
 void registerTableFunctionS3(TableFunctionFactory & factory)
+{
+    factory.registerFunction<TableFunctionS3>();
+}
+
+void registerTableFunctionCOS(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionS3>();
 }
