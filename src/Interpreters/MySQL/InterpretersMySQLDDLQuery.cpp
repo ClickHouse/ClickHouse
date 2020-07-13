@@ -4,8 +4,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
+#include <Parsers/MySQL/ASTAlterCommand.h>
 #include <Parsers/MySQL/ASTDeclareColumn.h>
 #include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/MySQL/ASTCreateDefines.h>
@@ -335,6 +337,89 @@ ASTPtr InterpreterRenameImpl::getRewrittenQuery(
 
     auto rewritten_query = std::make_shared<ASTRenameQuery>();
     rewritten_query->elements = elements;
+    return rewritten_query;
+}
+
+void InterpreterAlterImpl::validate(const InterpreterAlterImpl::TQuery & /*query*/, const Context & /*context*/)
+{
+}
+
+ASTPtr InterpreterAlterImpl::getRewrittenQuery(
+    const InterpreterAlterImpl::TQuery & alter_query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db)
+{
+    const auto & database_name = context.resolveDatabase(alter_query.database);
+
+    if (database_name != filter_mysql_db)
+        return {};
+
+    auto rewritten_query = std::make_shared<ASTAlterQuery>();
+    rewritten_query->database = clickhouse_db;
+    rewritten_query->table = alter_query.table;
+    rewritten_query->set(rewritten_query->command_list, std::make_shared<ASTAlterCommandList>());
+
+    for (const auto & command_query : alter_query.command_list->children)
+    {
+        const auto & alter_command = command_query->as<MySQLParser::ASTAlterCommand>();
+
+        if (alter_command->type == MySQLParser::ASTAlterCommand::ADD_COLUMN)
+        {
+            const auto & additional_columns = getColumnsList(alter_command->additional_columns);
+
+            for (const auto & additional_column : InterpreterCreateQuery::formatColumns(additional_columns)->children)
+            {
+                auto rewritten_command = std::make_shared<ASTAlterCommand>();
+                rewritten_command->type = ASTAlterCommand::ADD_COLUMN;
+                rewritten_command->first = alter_command->first;
+                rewritten_command->col_decl = additional_column;
+                rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
+                rewritten_query->command_list->add(rewritten_command);
+            }
+        }
+        else if (alter_command->type == MySQLParser::ASTAlterCommand::DROP_COLUMN)
+        {
+            auto rewritten_command = std::make_shared<ASTAlterCommand>();
+            rewritten_command->type = ASTAlterCommand::DROP_COLUMN;
+            rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
+            rewritten_query->command_list->add(rewritten_command);
+        }
+        else if (alter_command->type == MySQLParser::ASTAlterCommand::RENAME_COLUMN)
+        {
+            auto rewritten_command = std::make_shared<ASTAlterCommand>();
+            rewritten_command->type = ASTAlterCommand::RENAME_COLUMN;
+            rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->old_name);
+            rewritten_command->rename_to = std::make_shared<ASTIdentifier>(alter_command->column_name);
+            rewritten_query->command_list->add(rewritten_command);
+        }
+        else if (alter_command->type == MySQLParser::ASTAlterCommand::MODIFY_COLUMN)
+        {
+            String new_column_name;
+
+            {
+                auto rewritten_command = std::make_shared<ASTAlterCommand>();
+                rewritten_command->type = ASTAlterCommand::MODIFY_COLUMN;
+                rewritten_command->first = alter_command->first;
+                rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
+                const auto & modify_columns = getColumnsList(alter_command->additional_columns);
+
+                if (modify_columns.size() != 1)
+                    throw Exception("It is a bug", ErrorCodes::LOGICAL_ERROR);
+
+                new_column_name = modify_columns.front().name;
+                rewritten_command->col_decl = InterpreterCreateQuery::formatColumns(modify_columns)->children[0];
+                rewritten_query->command_list->add(rewritten_command);
+            }
+
+            if (!alter_command->old_name.empty())
+            {
+                auto rewritten_command = std::make_shared<ASTAlterCommand>();
+                rewritten_command->type = ASTAlterCommand::RENAME_COLUMN;
+                rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->old_name);
+                rewritten_command->rename_to = std::make_shared<ASTIdentifier>(new_column_name);
+                rewritten_query->command_list->add(rewritten_command);
+            }
+        }
+    }
+
     return rewritten_query;
 }
 

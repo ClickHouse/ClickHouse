@@ -10,6 +10,7 @@
 #include <Parsers/ParserRenameQuery.h>
 
 #ifdef USE_MYSQL
+#    include <Parsers/MySQL/ASTAlterQuery.h>
 #    include <Parsers/MySQL/ASTCreateQuery.h>
 #endif
 
@@ -38,11 +39,12 @@ bool ParserExternalDDLQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
 #ifdef USE_MYSQL
         ParserDropQuery p_drop_query;
         ParserRenameQuery p_rename_query;
+        MySQLParser::ParserAlterQuery p_alter_query;
         MySQLParser::ParserCreateQuery p_create_query;
-        /// TODO: alter table
 
         res = p_create_query.parse(pos, external_ddl_query->external_ddl, expected)
             || p_drop_query.parse(pos, external_ddl_query->external_ddl, expected)
+            || p_alter_query.parse(pos, external_ddl_query->external_ddl, expected)
             || p_rename_query.parse(pos, external_ddl_query->external_ddl, expected);
 
         if (external_ddl_query->external_ddl)

@@ -6,6 +6,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Parsers/MySQL/ASTAlterQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 
 namespace DB
@@ -21,6 +22,15 @@ struct InterpreterDropImpl
     static void validate(const TQuery & query, const Context & context);
 
     static ASTPtr getRewrittenQuery(const TQuery & drop_query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db);
+};
+
+struct InterpreterAlterImpl
+{
+    using TQuery = MySQLParser::ASTAlterQuery;
+
+    static void validate(const TQuery & query, const Context & context);
+
+    static ASTPtr getRewrittenQuery(const TQuery & alter_query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db);
 };
 
 struct InterpreterRenameImpl
@@ -71,6 +81,7 @@ private:
 };
 
 using InterpreterMySQLDropQuery = InterpreterMySQLDDLQuery<InterpreterDropImpl>;
+using InterpreterMySQLAlterQuery = InterpreterMySQLDDLQuery<InterpreterAlterImpl>;
 using InterpreterMySQLRenameQuery = InterpreterMySQLDDLQuery<InterpreterRenameImpl>;
 using InterpreterMySQLCreateQuery = InterpreterMySQLDDLQuery<InterpreterCreateImpl>;
 

@@ -11,6 +11,7 @@
 #include <Parsers/ASTExternalDDLQuery.h>
 
 #ifdef USE_MYSQL
+#    include <Parsers/MySQL/ASTAlterQuery.h>
 #    include <Parsers/MySQL/ASTCreateQuery.h>
 #    include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 #endif
@@ -49,6 +50,10 @@ BlockIO InterpreterExternalDDLQuery::execute()
             return MySQLInterpreter::InterpreterMySQLRenameQuery(
                 external_ddl_query.external_ddl, context, getIdentifierName(arguments[0]),
                 getIdentifierName(arguments[1])).execute();
+        else if (external_ddl_query.external_ddl->as<MySQLParser::ASTAlterQuery>())
+            return MySQLInterpreter::InterpreterMySQLAlterQuery(
+                external_ddl_query.external_ddl, context, getIdentifierName(arguments[0]),
+                getIdentifierName(arguments[1])) .execute();
         else if (external_ddl_query.external_ddl->as<MySQLParser::ASTCreateQuery>())
             return MySQLInterpreter::InterpreterMySQLCreateQuery(
                 external_ddl_query.external_ddl, context, getIdentifierName(arguments[0]),
