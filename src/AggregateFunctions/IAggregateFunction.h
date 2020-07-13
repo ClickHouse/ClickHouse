@@ -122,8 +122,9 @@ public:
         throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Returns true for aggregate functions of type -State.
+    /** Returns true for aggregate functions of type -State
       * They are executed as other aggregate functions, but not finalized (return an aggregation state that can be combined with another).
+      * Also returns true when the final value of this aggregate function contains State of other aggregate function inside.
       */
     virtual bool isState() const { return false; }
 

@@ -159,7 +159,7 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
     else
         writeString(" WHERE ", out);
 
-    writeQuoted(update_field, out);
+    writeString(update_field, out);
     writeString(" >= '", out);
     writeString(time_point, out);
     writeChar('\'', out);
