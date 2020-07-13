@@ -1335,4 +1335,91 @@ Columns:
 
 If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
 
+## system.quotas {#system_tables-quotas}
+Contains information about [quotas](quotas.md).
+
+Columns:
+-  `name` ([String](../sql-reference/data-types/string.md)) — Quota name.
+-   `id` ([UUID](../sql-reference/data-types/uuid.md)) — Quota ID.
+-   `storage`([String](../sql-reference/data-types/string.md)) — Storage of quotas. Possible value: "users.xml" if a quota configured in the users.xml file, "disk" if a quota configured by an SQL-query.
+-   `keys` ([Array](../sql-reference/data-types/array.md)([Enum8](../sql-reference/data-types/enum.md))) — Key specifies how the quota should be shared. If two connections use the same quota and key, they share the same amounts of resources. Values:
+    -   `[]` — All users share the same quota.
+    -   `['user_name']` — Connections with the same user name share the same quota.
+    -   `['ip_address']` — Connections from the same IP share the same quota.
+    -   `['client_key']` — Connections with the same key share the same quota. A key must be explicitly provided by a client. When using [clickhouse-client](../interfaces/cli.md), pass a key value in the `--quota-key` parameter, or use the `quota_key` parameter in the client configuration file. When using HTTP interface, use the `X-ClickHouse-Quota` header.
+    -   `['user_name', 'client_key']` — Connections with the same `client_key` share the same quota. If a key isn't provided by a client, the qouta is tracked for `user_name`.
+    -   `['client_key', 'ip_address']` — Connections with the same `client_key` share the same quota. If a key isn't provided by a client, the qouta is tracked for `ip_address`.
+-   `durations` ([Array](../sql-reference/data-types/array.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Time interval lengths in seconds.
+-   `apply_to_all` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Logical value. It shows which users the quota is applied to. Values:
+    -   `0` — The quota applies to users specify in the `apply_to_list`.
+    -   `1` — The quota applies to all users except those listed in `apply_to_except`.
+-   `apply_to_list` ([Array](../sql-reference/data-types/array.md)([String](../sql-reference/data-types/string.md))) — List of user names/[roles](../operations/access-rights.md#role-management) that the quota should be applied to.
+-   `apply_to_except` ([Array](../sql-reference/data-types/array.md)([String](../sql-reference/data-types/string.md))) — List of user names/roles that the quota should not apply to.
+
+## system.quota_limits {#system_tables-quota_limits}
+Contains information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to one quota.
+
+Columns:
+-   `quota_name` ([String](../sql-reference/data-types/string.md)) — Quota name.
+-   `duration` ([UInt32](../sql-reference/data-types/int-uint.md)) — Length of the time interval for calculating resource consumption, in seconds. 
+-   `is_randomized_interval` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Logical value. It shows whether the interval is randomized. Interval always starts at the same time if it is not randomized. For example, an interval of 1 minute always starts at an integer number of minutes (i.e. it can start at 11:20:00, but it never starts at 11:20:01), an interval of one day always starts at midnight UTC. If interval is randomized, the very first interval starts at random time, and subsequent intervals starts one by one. Values:
+    -   `0` — Interval is not randomized.
+    -   `1` — Interval is randomized.
+-   `max_queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum number of queries.
+-   `max_errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum number of errors.
+-   `max_result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum number of result rows.
+-   `max_result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum number of RAM volume in bytes used to store a queries result.
+-   `max_read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum number of rows read from all tables and table functions participated in queries.
+-   `max_read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum number of bytes read from all tables and table functions participated in queries.
+-   `max_execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — Maximum of the query execution time, in seconds.
+
+## system.quota_usage {#system_tables-quota_usage}
+Quota usage by the current user: how much is used and how much is left. 
+
+Columns:
+-   `quota_name` ([String](../sql-reference/data-types/string.md)) — Quota name.
+-   `quota_key`([String](../sql-reference/data-types/string.md)) — Key value. For example, if keys = [`ip address`], `quota_key` may have a value '192.168.1.1'.
+-   `start_time`([Nullable](../sql-reference/data-types/nullable.md)([DateTime](../sql-reference/data-types/datetime.md))) — Start time for calculating resource consumption.
+-   `end_time`([Nullable](../sql-reference/data-types/nullable.md)([DateTime](../sql-reference/data-types/datetime.md))) — End time for calculating resource consumption.
+-   `duration` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Length of the time interval for calculating resource consumption, in seconds.
+-   `queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — The total number of requests on this interval.
+-   `max_queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum number of requests.
+-   `errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — The number of queries that threw an exception.
+-   `max_errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum number of errors.
+-   `result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — The total number of rows given as a result.
+-   `max_result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum number of result rows.
+-   `result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — RAM volume in bytes used to store a queries result.
+-   `max_result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum RAM volume used to store a queries result, in bytes.
+-   `read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — The total number of source rows read from tables for running the query on all remote servers.
+-   `max_read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum number of rows read from all tables and table functions participated in queries.
+-   `read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — The total number of bytes read from all tables and table functions participated in queries. 
+-   `max_read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum of bytes read from all tables and table functions.
+-   `execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — The total query execution time, in seconds (wall time).
+-   `max_execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — Maximum of query execution time.
+
+## system.quotas_usage {#system_tables-quotas_usage}
+Quota usage by all users. 
+
+Columns:
+-   `quota_name` ([String](../sql-reference/data-types/string.md)) — Quota name.
+-   `quota_key` ([String](../sql-reference/data-types/string.md)) — Key value.
+-   `is_current` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Quota usage for current user.
+-   `start_time` ([Nullable](../sql-reference/data-types/nullable.md)([DateTime](../sql-reference/data-types/datetime.md)))) — Start time for calculating resource consumption.
+-   `end_time` ([Nullable](../sql-reference/data-types/nullable.md)([DateTime](../sql-reference/data-types/datetime.md)))) — End time for calculating resource consumption.
+-   `duration` ([Nullable](../sql-reference/data-types/nullable.md)([UInt32](../sql-reference/data-types/int-uint.md))) — Length of the time interval for calculating resource consumption, in seconds.
+-   `queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — The total number of requests in this interval.
+-   `max_queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum number of requests.
+-   `errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — The number of queries that threw an exception.
+-   `max_errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum number of errors.
+-   `result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — The total number of rows given as a result.
+-   `max_result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum of source rows read from tables.
+-   `result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — RAM volume in bytes used to store a queries result.
+-   `max_result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum RAM volume used to store a queries result, in bytes.
+-   `read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md)))) — The total number of source rows read from tables for running the query on all remote servers.
+-   `max_read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum number of rows read from all tables and table functions participated in queries.
+-   `read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — The total number of bytes read from all tables and table functions participated in queries. 
+-   `max_read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum of bytes read from all tables and table functions.
+-   `execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — The total query execution time, in seconds (wall time).
+-   `max_execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — Maximum of query execution time.
+
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/) <!--hide-->
