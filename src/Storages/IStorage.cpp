@@ -102,9 +102,9 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settin
     }
 }
 
-void IStorage::checkAlterPartitionIsPossible(const PartitionCommands & /*commands*/, const Settings & /*settings*/) const
+void IStorage::checkAlterPartitionIsPossible(const PartitionCommands & /*commands*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & /*settings*/) const
 {
-    ///TODO alesap
+    throw Exception("Table engine " + getName() + " doesn't support partitioning", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 StorageID IStorage::getStorageID() const
