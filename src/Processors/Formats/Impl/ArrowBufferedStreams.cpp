@@ -7,7 +7,7 @@
 #include <IO/copyData.h>
 #include <arrow/buffer.h>
 #include <arrow/io/api.h>
-#include <arrow/status.h>
+#include <arrow/result.h>
 
 #include <sys/stat.h>
 
@@ -69,12 +69,15 @@ arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbyt
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes)
 {
-    std::shared_ptr<arrow::Buffer> buf;
-    ARROW_RETURN_NOT_OK(arrow::AllocateBuffer(nbytes, &buf));
-    size_t n = in.readBig(reinterpret_cast<char *>(buf->mutable_data()), nbytes);
+    auto buffer_status = arrow::AllocateBuffer(nbytes);
+    ARROW_RETURN_NOT_OK(buffer_status);
 
-    auto read_buffer = arrow::SliceBuffer(buf, 0, n);
-    return arrow::Result<std::shared_ptr<arrow::Buffer>>(read_buffer);
+    auto shared_buffer = std::shared_ptr<arrow::Buffer>(std::move(std::move(*buffer_status)));
+
+    size_t n = in.readBig(reinterpret_cast<char *>(shared_buffer->mutable_data()), nbytes);
+
+    auto read_buffer = arrow::SliceBuffer(shared_buffer, 0, n);
+    return arrow::Result<std::shared_ptr<arrow::Buffer>>(shared_buffer);
 }
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Seek(int64_t position)
