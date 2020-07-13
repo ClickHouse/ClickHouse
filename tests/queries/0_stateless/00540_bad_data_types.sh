@@ -9,7 +9,7 @@ $CLICKHOUSE_CLIENT --query="SELECT CAST(0 AS Nullable)" 2>/dev/null || true;
 $CLICKHOUSE_CLIENT --query="SELECT CAST(0 AS Tuple)" 2>/dev/null || true;
 $CLICKHOUSE_CLIENT --query="SELECT CAST(0 AS FixedString)" 2>/dev/null || true;
 $CLICKHOUSE_CLIENT --query="SELECT CAST(0 AS Enum)" 2>/dev/null || true;
-$CLICKHOUSE_CLIENT --query="SELECT CAST(0 AS DateTime)";
+$CLICKHOUSE_CLIENT --query="SELECT CAST(0 AS DateTime('UTC'))";
 
 echo
 

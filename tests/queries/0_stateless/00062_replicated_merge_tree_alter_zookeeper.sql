@@ -14,7 +14,7 @@ DESC TABLE test.replicated_alter2;
 SHOW CREATE TABLE test.replicated_alter2;
 SELECT * FROM test.replicated_alter1 ORDER BY k;
 
-ALTER TABLE test.replicated_alter1 ADD COLUMN dt DateTime;
+ALTER TABLE test.replicated_alter1 ADD COLUMN dt DateTime('UTC');
 INSERT INTO test.replicated_alter1 VALUES ('2015-01-01', 9, 41, '1992-01-01 08:00:00');
 
 DESC TABLE test.replicated_alter1;
@@ -98,7 +98,7 @@ DESC TABLE test.replicated_alter2;
 SHOW CREATE TABLE test.replicated_alter2;
 SELECT * FROM test.replicated_alter1 ORDER BY k;
 
-ALTER TABLE test.replicated_alter1 MODIFY COLUMN dt Date, MODIFY COLUMN s DateTime DEFAULT '0000-00-00 00:00:00';
+ALTER TABLE test.replicated_alter1 MODIFY COLUMN dt Date, MODIFY COLUMN s DateTime('UTC') DEFAULT '1970-01-01 00:00:00';
 
 DESC TABLE test.replicated_alter1;
 SHOW CREATE TABLE test.replicated_alter1;

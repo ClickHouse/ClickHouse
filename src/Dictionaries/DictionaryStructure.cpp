@@ -42,7 +42,8 @@ namespace
 
 AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
 {
-    static const std::unordered_map<std::string, AttributeUnderlyingType> dictionary{
+    static const std::unordered_map<std::string, AttributeUnderlyingType> dictionary
+    {
         {"UInt8", AttributeUnderlyingType::utUInt8},
         {"UInt16", AttributeUnderlyingType::utUInt16},
         {"UInt32", AttributeUnderlyingType::utUInt32},
@@ -56,12 +57,19 @@ AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
         {"Float64", AttributeUnderlyingType::utFloat64},
         {"String", AttributeUnderlyingType::utString},
         {"Date", AttributeUnderlyingType::utUInt16},
-        {"DateTime", AttributeUnderlyingType::utUInt32},
     };
 
     const auto it = dictionary.find(type);
     if (it != std::end(dictionary))
         return it->second;
+
+    /// Can contain arbitrary scale and timezone parameters.
+    if (type.find("DateTime64") == 0)
+        return AttributeUnderlyingType::utUInt64;
+
+    /// Can contain arbitrary timezone as parameter.
+    if (type.find("DateTime") == 0)
+        return AttributeUnderlyingType::utUInt32;
 
     if (type.find("Decimal") == 0)
     {
