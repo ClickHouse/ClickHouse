@@ -37,7 +37,7 @@
     <query><![CDATA[SELECT {str1} FROM hits_100m_single ORDER BY {str1} LIMIT 2000 format Null]]></query>
     <query><![CDATA[SELECT {str1} FROM hits_100m_single ORDER BY {str1} LIMIT 5000 format Null]]></query>
     <query><![CDATA[SELECT {str1} FROM hits_100m_single ORDER BY {str1} LIMIT 10000 format Null]]></query>
-    <query><![CDATA[SELECT {str1} FROM hits_10m_single ORDER BY {str1} LIMIT 65535 format Null settings max_block_size = 65536]]></query>
+    <query><![CDATA[SELECT {str1} FROM hits_10m_single ORDER BY {str1} LIMIT 65535 format Null]]></query>
 
     <query><![CDATA[SELECT {str1} FROM hits_100m_single ORDER BY {str1}, CounterID LIMIT 10 format Null]]></query>
     <query><![CDATA[SELECT {str1} FROM hits_100m_single ORDER BY {str1}, CounterID LIMIT 300 format Null]]></query>
@@ -45,7 +45,7 @@
     <query><![CDATA[SELECT {str1} FROM hits_10m_single ORDER BY {str1}, CounterID LIMIT 2000 format Null]]></query>
     <query><![CDATA[SELECT {str1} FROM hits_10m_single ORDER BY {str1}, CounterID LIMIT 5000 format Null]]></query>
     <query><![CDATA[SELECT {str1} FROM hits_10m_single ORDER BY {str1}, CounterID LIMIT 10000 format Null]]></query>
-    <query><![CDATA[SELECT {str1} FROM hits_10m_single ORDER BY {str1}, CounterID LIMIT 65535 format Null settings max_block_size = 65536]]></query>
+    <query><![CDATA[SELECT {str1} FROM hits_10m_single ORDER BY {str1}, CounterID LIMIT 65535 format Null]]></query>
 
     <query><![CDATA[SELECT {str1} FROM hits_10m_single ORDER BY {str1} LIMIT 9000000, 10]]></query>
 
