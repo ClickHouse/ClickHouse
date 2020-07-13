@@ -46,6 +46,7 @@ function configure
     cp -av "$repo_dir"/programs/server/config* db
     cp -av "$repo_dir"/programs/server/user* db
     cp -av "$repo_dir"/tests/config db/config.d
+    cp -av "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
 }
 
 function watchdog
@@ -53,6 +54,7 @@ function watchdog
     sleep 3600
 
     echo "Fuzzing run has timed out"
+    ./clickhouse client --query "select elapsed, query from system.processes" ||:
     killall -9 clickhouse clickhouse-server clickhouse-client ||:
 }
 
@@ -74,6 +76,7 @@ function fuzz
         || fuzzer_exit_code=$?
     
     echo "Fuzzer exit code is $fuzzer_exit_code"
+    ./clickhouse client --query "select elapsed, query from system.processes" ||:
     kill -9 $server_pid ||:
     return $fuzzer_exit_code
 }
