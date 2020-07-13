@@ -252,10 +252,35 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
             DB::ErrorCodes::LOGICAL_ERROR);
 }
 
-ASTPtr StorageWindowView::generateCleanCacheQuery(UInt32 timestamp)
+UInt32 StorageWindowView::getCleanupBound()
+{
+    UInt32 w_bound;
+    {
+        std::lock_guard lock(fire_signal_mutex);
+        w_bound = max_fired_watermark;
+        if (w_bound == 0)
+            return 0;
+
+        if (!is_proctime)
+        {
+            if (max_watermark == 0)
+                return 0;
+            if (allowed_lateness)
+            {
+                UInt32 lateness_bound = addTime(max_timestamp, lateness_kind, -1 * lateness_num_units);
+                lateness_bound = getWindowLowerBound(lateness_bound);
+                if (lateness_bound < w_bound)
+                    w_bound = lateness_bound;
+            }
+        }
+    }
+    return w_bound;
+}
+
+ASTPtr StorageWindowView::generateCleanupQuery()
 {
     ASTPtr function_equal;
-    function_equal = makeASTFunction("less", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(timestamp));
+    function_equal = makeASTFunction("less", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(getCleanupBound()));
 
     auto alter_command = std::make_shared<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
@@ -326,31 +351,9 @@ Pipes StorageWindowView::blocksToPipes(BlocksList & blocks, Block & sample_block
     return pipes;
 }
 
-inline void StorageWindowView::cleanCache()
+inline void StorageWindowView::cleanup()
 {
-    UInt32 w_bound;
-    {
-        std::lock_guard lock(fire_signal_mutex);
-        w_bound = max_fired_watermark;
-        if (w_bound == 0)
-            return;
-
-        if (!is_proctime)
-        {
-            if (max_watermark == 0)
-                return;
-            if (allowed_lateness)
-            {
-                UInt32 lateness_bound = addTime(max_timestamp, lateness_kind, -1 * lateness_num_units);
-                lateness_bound = getWindowLowerBound(lateness_bound);
-                if (lateness_bound < w_bound)
-                    w_bound = lateness_bound;
-            }
-        }
-    }
-
-    w_bound = addTime(w_bound, window_kind, -1 * window_num_units);
-    InterpreterAlterQuery alt_query(generateCleanCacheQuery(w_bound), *wv_context);
+    InterpreterAlterQuery alt_query(generateCleanupQuery(), *wv_context);
     alt_query.execute();
 
     std::lock_guard lock(fire_signal_mutex);
@@ -695,14 +698,14 @@ inline void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         fire_signal_condition.notify_all();
 }
 
-void StorageWindowView::threadFuncCleanCache()
+void StorageWindowView::threadFuncCleanup()
 {
     while (!shutdown_called)
     {
         try
         {
             sleep(clean_interval);
-            cleanCache();
+            cleanup();
         }
         catch (...)
         {
@@ -930,7 +933,7 @@ StorageWindowView::StorageWindowView(
     else
         window_column_name = std::regex_replace(window_id_name, std::regex("WINDOW_ID"), "HOP");
 
-    clean_cache_task = wv_context->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanCache(); });
+    clean_cache_task = wv_context->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
     if (is_proctime)
         fire_task = wv_context->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncFireProc(); });
     else

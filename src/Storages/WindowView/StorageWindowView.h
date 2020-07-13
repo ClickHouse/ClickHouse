@@ -113,15 +113,16 @@ private:
     ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
 
     std::shared_ptr<ASTCreateQuery> generateInnerTableCreateQuery(ASTStorage * storage, const String & database_name, const String & table_name);
-    ASTPtr generateCleanCacheQuery(UInt32 timestamp);
+    UInt32 getCleanupBound();
+    ASTPtr generateCleanupQuery();
 
     UInt32 addTime(UInt32 time_sec, IntervalKind::Kind kind, Int64 num_units) const;
     UInt32 getWindowLowerBound(UInt32 time_sec);
     UInt32 getWindowUpperBound(UInt32 time_sec);
 
     void fire(UInt32 watermark);
-    void cleanCache();
-    void threadFuncCleanCache();
+    void cleanup();
+    void threadFuncCleanup();
     void threadFuncFireProc();
     void threadFuncFireEvent();
     void addFireSignal(std::set<UInt32> & signals);
