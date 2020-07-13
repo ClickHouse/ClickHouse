@@ -47,7 +47,7 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
             attachTableUnlocked(
                 dictionary_name,
                 StorageDictionary::create(
-                    StorageID(database_name, dictionary_name),
+                    StorageID(attach_info.create_query),
                     full_name,
                     ExternalDictionariesLoader::getDictionaryStructure(*attach_info.config),
                     StorageDictionary::Location::SameDatabaseAndNameAsDictionary),

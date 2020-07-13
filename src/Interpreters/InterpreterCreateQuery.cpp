@@ -605,6 +605,32 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     }
 }
 
+void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const
+{
+    const auto kind = create.is_dictionary ? "Dictionary" : "Table";
+    const auto kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
+
+    if (database->getEngineName() == "Atomic")
+    {
+        if (create.attach && create.uuid == UUIDHelpers::Nil)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "UUID must be specified in ATTACH {} query for Atomic database engine",
+                            kind_upper);
+        if (!create.attach && create.uuid == UUIDHelpers::Nil)
+            create.uuid = UUIDHelpers::generateV4();
+    }
+    else
+    {
+        bool is_on_cluster = context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        if (create.uuid != UUIDHelpers::Nil && !is_on_cluster)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "{} UUID specified, but engine of database {} is not Atomic", create.database, kind);
+
+        /// Ignore UUID if it's ON CLUSTER query
+        create.uuid = UUIDHelpers::Nil;
+    }
+}
+
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
@@ -665,23 +691,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (need_add_to_database)
     {
         database = DatabaseCatalog::instance().getDatabase(create.database);
-        if (database->getEngineName() == "Atomic")
-        {
-            /// TODO implement ATTACH FROM 'path/to/data': generate UUID and move table data to store/
-            if (create.attach && create.uuid == UUIDHelpers::Nil)
-                throw Exception("UUID must be specified in ATTACH TABLE query for Atomic database engine", ErrorCodes::INCORRECT_QUERY);
-            if (!create.attach && create.uuid == UUIDHelpers::Nil)
-                create.uuid = UUIDHelpers::generateV4();
-        }
-        else
-        {
-            bool is_on_cluster = context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-            if (create.uuid != UUIDHelpers::Nil && !is_on_cluster)
-                throw Exception("Table UUID specified, but engine of database " + create.database + " is not Atomic", ErrorCodes::INCORRECT_QUERY);
-
-            /// Ignore UUID if it's ON CLUSTER query
-            create.uuid = UUIDHelpers::Nil;
-        }
+        assertOrSetUUID(create, database);
 
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
           * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
@@ -785,8 +795,6 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 
 BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 {
-    create.uuid = UUIDHelpers::Nil; //FIXME
-
     String dictionary_name = create.table;
 
     create.database = context.resolveDatabase(create.database);
@@ -810,6 +818,12 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
         auto query = DatabaseCatalog::instance().getDatabase(database_name)->getCreateDictionaryQuery(dictionary_name);
         create = query->as<ASTCreateQuery &>();
         create.attach = true;
+    }
+
+    assertOrSetUUID(create, database);
+
+    if (create.attach)
+    {
         auto config = getDictionaryConfigurationFromAST(create);
         auto modification_time = database->getObjectMetadataModificationTime(dictionary_name);
         database->attachDictionary(dictionary_name, DictionaryAttachInfo{query_ptr, config, modification_time});
