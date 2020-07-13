@@ -2525,6 +2525,19 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const StorageM
         context);
 }
 
+void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition)
+{
+    const String partition_id = getPartitionIDFromQuery(partition, global_context);
+    auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+
+    UInt64 partition_size = 0;
+
+    for (const auto & part : parts_to_remove)
+        partition_size += part->getBytesOnDisk();
+
+    auto table_id = getStorageID();
+    global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
+}
 
 void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, const Context & context)
 {
