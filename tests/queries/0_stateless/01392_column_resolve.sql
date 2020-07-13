@@ -11,8 +11,6 @@ INSERT INTO default.tableClick(clickId, conversionId, value) VALUES ('Click 1', 
 INSERT INTO default.tableClick(clickId, conversionId, value) VALUES ('Click 2', 'Conversion 1', 15);
 INSERT INTO default.tableClick(clickId, conversionId, value) VALUES ('Click 3', 'Conversion 1', 16);
 
-SET multiple_joins_rewriter_version = 2;
-
 SELECT
     conversion.conversionId AS myConversionId,
     click.clickId AS myClickId,
