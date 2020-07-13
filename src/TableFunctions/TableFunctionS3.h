@@ -17,7 +17,6 @@ class Context;
 class TableFunctionS3 : public ITableFunction
 {
 public:
-    static constexpr auto name = "s3";
     std::string getName() const override
     {
         return name;
@@ -39,7 +38,9 @@ private:
         const std::string & table_name,
         const String & compression_method);
 
-    const char * getStorageTypeName() const override { return "S3"; }
+    const char * getStorageTypeName() const override { return storage_type_name; }
+    String name;
+    String storage_type_name;
 };
 
 }

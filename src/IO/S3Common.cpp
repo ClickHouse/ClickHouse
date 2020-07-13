@@ -212,7 +212,11 @@ namespace S3
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
         static const RE2 path_style_pattern("^/([^/]*)/(.*)");
 
+        static constexpr auto S3 = "S3";
+        static constexpr auto COSN = "COSN", COS = "COS";
+
         uri = uri_;
+        storage_name = S3;
 
         if (uri.getHost().empty())
             throw Exception("Host is empty in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
@@ -234,6 +238,15 @@ namespace S3
             key = uri.getPath().substr(1);
             if (key.empty() || key == "/")
                 throw Exception("Key name is empty in virtual hosted style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+            boost::to_upper(name);
+            if (name != S3 || name != COS) {
+                throw Exception("Object storage system name is unrecognized in virtual hosted style S3 URI: " + name + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+            }
+            if (name == S3) {
+                storage_name = name;
+            } else {
+                storage_name = COSN;
+            }
         }
         else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
         {
