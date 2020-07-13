@@ -547,6 +547,8 @@ public:
     /// Moves partition to specified Volume
     void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, const Context & context);
 
+    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
+
     size_t getColumnCompressedSize(const std::string & name) const
     {
         auto lock = lockParts();

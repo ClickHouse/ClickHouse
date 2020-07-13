@@ -102,6 +102,10 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settin
     }
 }
 
+void IStorage::checkAlterPartitionIsPossible(const PartitionCommands & /*commands*/, const Settings & /*settings*/) const
+{
+    ///TODO alesap
+}
 
 StorageID IStorage::getStorageID() const
 {
