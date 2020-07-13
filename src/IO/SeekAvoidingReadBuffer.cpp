@@ -12,13 +12,13 @@ SeekAvoidingReadBuffer::SeekAvoidingReadBuffer(std::unique_ptr<ReadBufferFromFil
 }
 
 
-std::string SeekAvoidingReadBuffer::getFileName() const override
+std::string SeekAvoidingReadBuffer::getFileName() const
 {
     return nested->getFileName();
 }
 
 
-off_t SeekAvoidingReadBuffer::getPosition() override
+off_t SeekAvoidingReadBuffer::getPosition()
 {
     swap(*nested);
     off_t position = nested->getPosition();
@@ -27,7 +27,7 @@ off_t SeekAvoidingReadBuffer::getPosition() override
 }
 
 
-off_t SeekAvoidingReadBuffer::seek(off_t off, int whence) override
+off_t SeekAvoidingReadBuffer::seek(off_t off, int whence)
 {
     off_t position = getPosition();
 
@@ -55,7 +55,7 @@ off_t SeekAvoidingReadBuffer::seek(off_t off, int whence) override
 }
 
 
-bool SeekAvoidingReadBuffer::nextImpl() override
+bool SeekAvoidingReadBuffer::nextImpl()
 {
     swap(*nested);
     bool nested_result = nested->next();
