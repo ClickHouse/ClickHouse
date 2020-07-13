@@ -70,7 +70,7 @@ toc_title: ORDER BY
 
 Внешняя сортировка работает существенно менее эффективно, чем сортировка в оперативке.
 
-## модификаттор ORDER BY expr WITH FILL  {#orderby-with-fill}
+## Модификатор ORDER BY expr WITH FILL  {#orderby-with-fill}
 
 Этот модификатор также может быть скобинирован с модификатором [LIMIT ... WITH TIES](../../../sql-reference/statements/select/limit.md#limit-with-ties)
 
