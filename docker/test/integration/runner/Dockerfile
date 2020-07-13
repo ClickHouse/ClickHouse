@@ -76,4 +76,3 @@ VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
 CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
-

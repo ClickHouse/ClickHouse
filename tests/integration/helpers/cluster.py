@@ -137,12 +137,13 @@ class ClickHouseCluster:
         self.with_cassandra = False
 
         self.with_minio = False
+        self.minio_certs_dir = None
         self.minio_host = "minio1"
         self.minio_bucket = "root"
         self.minio_port = 9001
         self.minio_client = None  # type: Minio
-        self.minio_redirect_host = "redirect"
-        self.minio_redirect_port = 80
+        self.minio_redirect_host = "proxy1"
+        self.minio_redirect_port = 8080
 
         # available when with_kafka == True
         self.schema_registry_client = None
@@ -166,7 +167,7 @@ class ClickHouseCluster:
                      with_redis=False, with_minio=False, with_cassandra=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test",
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
-                     zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True):
+                     zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True, minio_certs_dir=None):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -285,6 +286,7 @@ class ClickHouseCluster:
 
         if with_minio and not self.with_minio:
             self.with_minio = True
+            self.minio_certs_dir = minio_certs_dir
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')])
             self.base_minio_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                    self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
@@ -442,11 +444,11 @@ class ClickHouseCluster:
                 print "Can't connect to Mongo " + str(ex)
                 time.sleep(1)
 
-    def wait_minio_to_start(self, timeout=30):
+    def wait_minio_to_start(self, timeout=30, secure=False):
         minio_client = Minio('localhost:9001',
                              access_key='minio',
                              secret_key='minio123',
-                             secure=False)
+                             secure=secure)
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -568,11 +570,34 @@ class ClickHouseCluster:
                 time.sleep(10)
 
             if self.with_minio and self.base_minio_cmd:
+                env = os.environ.copy()
+                prev_ca_certs = os.environ.get('SSL_CERT_FILE')
+                if self.minio_certs_dir:
+                    minio_certs_dir = p.join(self.base_dir, self.minio_certs_dir)
+                    env['MINIO_CERTS_DIR'] = minio_certs_dir
+                    # Minio client (urllib3) uses SSL_CERT_FILE for certificate validation.
+                    os.environ['SSL_CERT_FILE'] = p.join(minio_certs_dir, 'public.crt')
+                else:
+                    # Attach empty certificates directory to ensure non-secure mode.
+                    minio_certs_dir = p.join(self.instances_dir, 'empty_minio_certs_dir')
+                    os.mkdir(minio_certs_dir)
+                    env['MINIO_CERTS_DIR'] = minio_certs_dir
+
                 minio_start_cmd = self.base_minio_cmd + common_opts
+
                 logging.info("Trying to create Minio instance by command %s", ' '.join(map(str, minio_start_cmd)))
-                subprocess_check_call(minio_start_cmd)
-                logging.info("Trying to connect to Minio...")
-                self.wait_minio_to_start()
+                subprocess.check_call(minio_start_cmd, env=env)
+
+                try:
+                    logging.info("Trying to connect to Minio...")
+                    self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
+                finally:
+                    # Safely return previous value of SSL_CERT_FILE environment variable.
+                    if self.minio_certs_dir:
+                        if prev_ca_certs:
+                            os.environ['SSL_CERT_FILE'] = prev_ca_certs
+                        else:
+                            os.environ.pop('SSL_CERT_FILE')
 
             if self.with_cassandra and self.base_cassandra_cmd:
                 subprocess_check_call(self.base_cassandra_cmd + ['up', '-d', '--force-recreate'])
@@ -1095,7 +1120,6 @@ class ClickHouseInstance:
 
         if self.with_minio:
             depends_on.append("minio1")
-            depends_on.append("redirect")
 
         env_file = _create_env_file(os.path.dirname(self.docker_compose_path), self.env_variables)
 
