@@ -117,6 +117,7 @@ def test_alter_and_drop():
     instance.query("SET max_memory_usage = 120000000", user="robin")
 
 
+@pytest.mark.skip(reason="Not implemented in 20.4")
 def test_show_profiles():
     instance.query("CREATE SETTINGS PROFILE xyz")
     assert instance.query("SHOW SETTINGS PROFILES") == "default\nreadonly\nxyz\n"
