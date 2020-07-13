@@ -12,6 +12,11 @@ class SelectUnionQuery : public Query
 {
     public:
         void appendSelect(PtrTo<SelectStmt> stmt);
+
+        ASTPtr convertToOld() const override;
+
+    private:
+        std::list<PtrTo<SelectStmt>> selects;
 };
 
 }

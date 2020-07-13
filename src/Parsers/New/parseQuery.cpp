@@ -1,9 +1,11 @@
 #include "parseQuery.h"
+#include <memory>
 
 #include <Parsers/New/AST/SelectStmt.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/ClickHouseLexer.h>
 #include <Parsers/New/ClickHouseParser.h>
+#include <support/Any.h>
 
 #include <ANTLRInputStream.h>
 #include <CommonTokenStream.h>
@@ -40,7 +42,7 @@ antlrcpp::Any ParserTreeVisitor::visitSelectUnionStmt(ClickHouseParser::SelectUn
 
 antlrcpp::Any ParserTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx)
 {
-    auto select_stmt = std::make_shared<AST::SelectStmt>();
+    auto select_stmt = std::make_shared<AST::SelectStmt>(ctx->columnExprList()->accept(this));
 
     select_stmt->setWithClause(ctx->withClause()->accept(this));
     select_stmt->setFromClause(ctx->fromClause()->accept(this));
@@ -58,6 +60,12 @@ antlrcpp::Any ParserTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtCon
     return select_stmt;
 }
 
+void ParserTreeVisitor::visitQueryStmtAsParent(AST::Query *query, ClickHouseParser::QueryStmtContext *ctx)
+{
+    if (ctx->OUTFILE()) query->setOutFile(ctx->STRING_LITERAL()->accept(this));
+    if (ctx->FORMAT()) query->setFormat(ctx->identifier()->accept(this));
+}
+
 ASTPtr parseQuery(const std::string & query)
 {
     antlr4::ANTLRInputStream input(query);
@@ -68,7 +76,7 @@ ASTPtr parseQuery(const std::string & query)
     ParserTreeVisitor visitor;
 
     AST::PtrTo<AST::QueryList> new_ast = visitor.visit(parser.queryList());
-    return new_ast->begin()->convertToOld();
+    return (*new_ast->begin())->convertToOld();
 }
 
 }

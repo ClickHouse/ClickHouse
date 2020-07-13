@@ -1,15 +1,20 @@
 #pragma once
 
-#include <Parsers/New/AST/INode.h>
+#include <Parsers/New/AST/Identifier.h>
+#include <Parsers/New/AST/Literal.h>
 
-#include <Parsers/IAST_fwd.h>
 
 namespace DB::AST
 {
 
 class Query : public INode {
-    public:
-        ASTPtr convertToOld() const;
+public:
+    void setOutFile(PtrTo<StringLiteral> literal);
+    void setFormat(PtrTo<Identifier> id);
+
+private:
+    PtrTo<StringLiteral> out_file;
+    PtrTo<Identifier> format;
 };
 
 using QueryList = List<Query, ';'>;

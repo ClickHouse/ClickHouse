@@ -1,4 +1,7 @@
 set (SRCS
+    AST/Query.cpp
+    AST/SelectStmt.cpp
+    AST/SelectUnionQuery.cpp
     ClickHouseLexer.cpp
     ClickHouseParser.cpp
     ClickHouseParserBaseVisitor.cpp
