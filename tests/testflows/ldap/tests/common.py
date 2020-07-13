@@ -86,7 +86,6 @@ def add_config(config, timeout=20, restart=False):
                 with When("I wait for config to be loaded"):
                     started = time.time()
                     bash.expect(f"ConfigReloader: Loaded config '/etc/clickhouse-server/{config.preprocessed_name}', performed update on configuration", timeout=timeout)
-                    time.sleep(10)
         yield
     finally:
         with Finally(f"I remove {config.name}"):
