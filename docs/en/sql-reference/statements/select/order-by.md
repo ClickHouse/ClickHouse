@@ -164,7 +164,7 @@ returns
 
 Field `d1` doesn't fill and use default value cause we don't have repeated values for `d2` value, and sequence for `d1` can't be properly calculated.
 
-Following query with changed field in ORDER BY 
+The following query with a changed field in `ORDER BY` 
 ```sql
 SELECT 
     toDate((number * 10) * 86400) AS d1, 
