@@ -675,6 +675,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     try
     {
+        //FIXME it's for tests
+        if (global_context->getConfigRef().hasProperty("database_atomic_delay_before_drop_table_sec"))
+            global_context->setSetting(StringRef("default_database_engine"), String("Ordinary"));
+
         loadMetadataSystem(*global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();

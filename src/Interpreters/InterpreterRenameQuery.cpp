@@ -67,7 +67,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
 {
     auto & database_catalog = DatabaseCatalog::instance();
 
-    for (auto & elem : descriptions)
+    for (const auto & elem : descriptions)
     {
         if (!rename.exchange)
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), context);
