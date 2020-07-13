@@ -11,6 +11,9 @@
 
 #include <sys/stat.h>
 
+#pragma GCC diagnostic ignored "-Wdeprecated"
+
+
 namespace DB
 {
 

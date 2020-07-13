@@ -11,6 +11,9 @@
 #include "ArrowBufferedStreams.h"
 #include "ArrowColumnToCHColumn.h"
 
+#pragma GCC diagnostic ignored "-Wdeprecated"
+
+
 namespace DB
 {
 
