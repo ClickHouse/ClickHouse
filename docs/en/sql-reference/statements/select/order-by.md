@@ -134,7 +134,7 @@ returns
 └─────┴──────────┘
 ```
 
-For case when we have multiple fields `ORDER BY field2 WITH FILL, field1 WITH FILL` order of filling will follow order of fields in `ORDER BY` clause.
+For the case when we have multiple fields `ORDER BY field2 WITH FILL, field1 WITH FILL` order of filling will follow the order of fields in `ORDER BY` clause.
 
 Example:
 ```sql 
