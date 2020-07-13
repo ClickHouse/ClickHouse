@@ -72,7 +72,7 @@ External sorting works much less effectively than sorting in RAM.
 
 ## ORDER BY expr WITH FILL modifier {#orderby-with-fill}
 
-This modifier also can be combined with [LIMIT ... WITH TIES modifier](../../../sql-reference/statements/select/limit.md#limit-with-ties)
+This modifier also can be combined with [LIMIT ... WITH TIES modifier](../../../sql-reference/statements/select/limit.md#limit-with-ties).
 
 `WITH FILL` modifier can be set after `ORDER BY expr` with optional `FROM expr`, `TO expr` and `STEP expr` parameters. 
 All missed values of `expr` column will be filled sequentially and other columns will be filled as defaults.
