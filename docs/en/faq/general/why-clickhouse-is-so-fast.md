@@ -17,7 +17,7 @@ Indexes
 :   ClickHouse keeps data structures in memory that allows reading not only used columns but only necessary row ranges of those columns.
 
 Data compression
-:   Storing different values of the same column together often leads to better compression ratios (compared to row-oriented systems) because in real data column often has the same or not so many different values for neighboring rows. In addition to general-purpose compression, ClickHouse supports [specialized codecs](../../sql-reference/statements/create.md#create-query-specialized-codecs) that can make data even more compact.
+:   Storing different values of the same column together often leads to better compression ratios (compared to row-oriented systems) because in real data column often has the same or not so many different values for neighboring rows. In addition to general-purpose compression, ClickHouse supports [specialized codecs](../../sql-reference/statements/create/table.md#create-query-specialized-codecs) that can make data even more compact.
 
 Vectorized query execution
 :   ClickHouse not only stores data in columns but also processes data in columns. It leads to better CPU cache utilization and allows for [SIMD](https://en.wikipedia.org/wiki/SIMD) CPU instructions usage.

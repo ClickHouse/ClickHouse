@@ -443,10 +443,7 @@ public:
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.
-    virtual std::optional<UInt64> totalRows() const
-    {
-        return {};
-    }
+    virtual std::optional<UInt64> totalRows() const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)
@@ -461,10 +458,17 @@ public:
     /// Memory part should be estimated as a resident memory size.
     /// In particular, alloctedBytes() is preferable over bytes()
     /// when considering in-memory blocks.
-    virtual std::optional<UInt64> totalBytes() const
-    {
-        return {};
-    }
+    virtual std::optional<UInt64> totalBytes() const { return {}; }
+
+    /// Number of rows INSERTed since server start.
+    ///
+    /// Does not takes underlying Storage (if any) into account.
+    virtual std::optional<UInt64> lifetimeRows() const { return {}; }
+
+    /// Number of bytes INSERTed since server start.
+    ///
+    /// Does not takes underlying Storage (if any) into account.
+    virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
 private:
     /// Lock required for alter queries (lockForAlter). Always taken for write
