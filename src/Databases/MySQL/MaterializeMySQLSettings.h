@@ -14,7 +14,6 @@ class ASTStorage;
 struct MaterializeMySQLSettings : public SettingsCollection<MaterializeMySQLSettings>
 {
 #define LIST_OF_MATERIALIZE_MODE_SETTINGS(M) \
-    M(SettingBool, locality_data, false, "", 0) \
     M(SettingUInt64, max_rows_in_buffer, DEFAULT_BLOCK_SIZE, "", 0) \
     M(SettingUInt64, max_bytes_in_buffer, DBMS_DEFAULT_BUFFER_SIZE, "", 0) \
     M(SettingUInt64, max_rows_in_buffers, DEFAULT_BLOCK_SIZE, "", 0) \
