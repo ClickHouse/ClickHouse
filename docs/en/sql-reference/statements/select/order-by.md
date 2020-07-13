@@ -177,7 +177,7 @@ ORDER BY
     d2 WITH FILL;  
 ```
 
-возвращает
+returns
 ```text
 ┌───d1───────┬───d2───────┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │ 
