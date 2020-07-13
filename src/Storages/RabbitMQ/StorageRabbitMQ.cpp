@@ -75,11 +75,11 @@ StorageRabbitMQ::StorageRabbitMQ(
         , exchange_type(exchange_type_)
         , use_transactional_channel(use_transactional_channel_)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
-        , semaphore(0, num_consumers_)
+        , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
         , login_password(std::make_pair(
                     global_context.getConfigRef().getString("rabbitmq.username"),
                     global_context.getConfigRef().getString("rabbitmq.password")))
-        , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
+        , semaphore(0, num_consumers_)
 {
     loop = std::make_unique<uv_loop_t>();
     uv_loop_init(loop.get());
@@ -158,7 +158,7 @@ Pipes StorageRabbitMQ::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(
-            *this, metadata_snapshot, context, column_names, log);
+            *this, metadata_snapshot, context, column_names);
         auto converting_stream = std::make_shared<ConvertingBlockInputStream>(
             rabbit_stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Name);
         pipes.emplace_back(std::make_shared<SourceFromInputStream>(converting_stream));
@@ -364,7 +364,7 @@ bool StorageRabbitMQ::streamToViews()
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(*this, metadata_snapshot, rabbitmq_context, column_names, log);
+        auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(*this, metadata_snapshot, rabbitmq_context, column_names);
         auto converting_stream = std::make_shared<ConvertingBlockInputStream>(rabbit_stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Name);
 
         streams.emplace_back(converting_stream);
