@@ -90,7 +90,7 @@ When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as 
 When `STEP const_numeric_expr` omitted then sequence of filling use `1.0` for numeric type, `1 day` for Date type and `1 second` for DateTime type.
 
 
-For example, following query
+For example, the following query
 ```sql
 SELECT n, source FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source
