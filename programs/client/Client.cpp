@@ -1054,6 +1054,10 @@ private:
                     auto base_before_fuzz = fuzz_base->formatForErrorMessage();
 
                     ast_to_process = fuzz_base->clone();
+
+                    std::stringstream dump_of_cloned_ast;
+                    ast_to_process->dumpTree(dump_of_cloned_ast);
+
                     fuzzer.fuzzMain(ast_to_process);
 
                     auto base_after_fuzz = fuzz_base->formatForErrorMessage();
@@ -1066,6 +1070,8 @@ private:
                             base_after_fuzz.c_str());
                         fprintf(stderr, "dump before fuzz:\n%s\n",
                             dump_before_fuzz.str().c_str());
+                        fprintf(stderr, "dump of cloned ast:\n%s\n",
+                            dump_of_cloned_ast.str().c_str());
                         fprintf(stderr, "dump after fuzz:\n");
                         fuzz_base->dumpTree(std::cerr);
                         assert(false);
