@@ -2560,7 +2560,12 @@ void MergeTreeData::checkAlterPartitionIsPossible(const PartitionCommands & comm
 {
     for (const auto & command : commands)
     {
-        if (command.partition)
+        if (command.type == PartitionCommand::DROP_DETACHED_PARTITION
+            && !settings.allow_drop_detached)
+            throw DB::Exception("Cannot execute query: DROP DETACHED PART is disabled "
+                                "(see allow_drop_detached setting)", ErrorCodes::SUPPORT_IS_DISABLED);
+
+        if (command.partition && command.type != PartitionCommand::DROP_DETACHED_PARTITION)
         {
             if (command.part)
             {
@@ -2574,12 +2579,6 @@ void MergeTreeData::checkAlterPartitionIsPossible(const PartitionCommands & comm
                 getPartitionIDFromQuery(command.partition, global_context);
             }
         }
-
-        if (command.type == PartitionCommand::DROP_DETACHED_PARTITION
-            && !settings.allow_drop_detached)
-            throw DB::Exception("Cannot execute query: DROP DETACHED PART is disabled "
-                                "(see allow_drop_detached setting)", ErrorCodes::SUPPORT_IS_DISABLED);
-
     }
 }
 
