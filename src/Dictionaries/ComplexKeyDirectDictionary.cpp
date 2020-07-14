@@ -585,14 +585,13 @@ void registerDictionaryComplexKeyDirect(DictionaryFactory & factory)
                                   "for a dictionary of layout 'range_hashed'",
                             ErrorCodes::BAD_ARGUMENTS};
 
-        const String database = config.getString(config_prefix + ".database", "");
-        const String name = config.getString(config_prefix + ".name");
+        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
 
         if (config.has(config_prefix + ".lifetime.min") || config.has(config_prefix + ".lifetime.max"))
             throw Exception{"'lifetime' parameter is redundant for the dictionary' of layout 'direct'", ErrorCodes::BAD_ARGUMENTS};
 
 
-        return std::make_unique<ComplexKeyDirectDictionary>(StorageID{database, name}, dict_struct, std::move(source_ptr));
+        return std::make_unique<ComplexKeyDirectDictionary>(dict_id, dict_struct, std::move(source_ptr));
     };
     factory.registerLayout("complex_key_direct", create_layout, false);
 }

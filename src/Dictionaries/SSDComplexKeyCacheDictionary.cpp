@@ -1736,6 +1736,8 @@ void registerDictionarySSDComplexKeyCache(DictionaryFactory & factory)
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
+        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
+
         if (dict_struct.id)
             throw Exception{"'id' is not supported for dictionary of layout 'complex_key_cache'", ErrorCodes::UNSUPPORTED_METHOD};
 
@@ -1785,7 +1787,7 @@ void registerDictionarySSDComplexKeyCache(DictionaryFactory & factory)
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<SSDComplexKeyCacheDictionary>(
-                StorageID{"", name}, dict_struct, std::move(source_ptr), dict_lifetime, path,
+                dict_id, dict_struct, std::move(source_ptr), dict_lifetime, path,
                 max_partitions_count, file_size / block_size, block_size,
                 read_buffer_size / block_size, write_buffer_size / block_size,
                 max_stored_keys);

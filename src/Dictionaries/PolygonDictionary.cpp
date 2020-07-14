@@ -660,14 +660,13 @@ bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
 
 void registerDictionaryPolygon(DictionaryFactory & factory)
 {
-    auto create_layout = [=](const std::string &,
+    auto create_layout = [=](const std::string & full_name,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
-        const String database = config.getString(config_prefix + ".database", "");
-        const String name = config.getString(config_prefix + ".name");
+        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
 
         if (!dict_struct.key)
             throw Exception{"'key' is required for a dictionary of layout 'polygon'", ErrorCodes::BAD_ARGUMENTS};
@@ -712,13 +711,13 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
                             ErrorCodes::BAD_ARGUMENTS};
 
         if (dict_struct.range_min || dict_struct.range_max)
-            throw Exception{name
+            throw Exception{full_name
                             + ": elements range_min and range_max should be defined only "
                               "for a dictionary of layout 'range_hashed'",
                             ErrorCodes::BAD_ARGUMENTS};
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-        return std::make_unique<SimplePolygonDictionary>(StorageID{database, name}, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type);
+        return std::make_unique<SimplePolygonDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type);
     };
     factory.registerLayout("polygon", create_layout, true);
 }
