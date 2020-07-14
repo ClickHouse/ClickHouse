@@ -1269,7 +1269,7 @@ struct AdderNonJoined
                 ++rows_added;
             }
         }
-}
+    }
 };
 
 
