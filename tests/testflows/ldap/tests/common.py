@@ -63,7 +63,7 @@ def add_config(config, timeout=20, restart=False):
 
             with node.cluster.shell(node.name) as bash:
                 bash.expect(bash.prompt)
-                bash.send("tail -f /var/log/clickhouse-server/clickhouse-server.log")
+                bash.send("tail -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
 
                 with When("I add the config", description=config.path):
                     command = f"cat <<HEREDOC > {config.path}\n{config.content}\nHEREDOC"
