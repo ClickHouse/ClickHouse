@@ -1003,10 +1003,8 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         }
     }
 
-    if(all_columns.empty())
-    {
+    if (all_columns.empty())
         throw Exception{"Cannot DROP or CLEAR all columns", ErrorCodes::BAD_ARGUMENTS};
-    }
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
