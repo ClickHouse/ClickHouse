@@ -295,8 +295,6 @@ private:
     template <typename AncestorType>
     void isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
 
-    const std::string database;
-    const std::string name;
     const DictionaryStructure dict_struct;
     mutable DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;

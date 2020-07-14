@@ -236,7 +236,7 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
 void CacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -247,7 +247,7 @@ void CacheDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, ids, out, [&](const size_t row) { return def->getDataAt(row); });
 }
@@ -256,7 +256,7 @@ void CacheDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, ids, out, [&](const size_t) { return StringRef{def}; });
 }
@@ -893,7 +893,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 
                 const auto * id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
                 if (!id_column)
-                    throw Exception{name + ": id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
+                    throw Exception{getFullName() + ": id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
 
                 const auto & ids = id_column->getData();
 

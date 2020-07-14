@@ -206,8 +206,6 @@ private:
 
     friend struct RangeHashedDIctionaryCallGetBlockInputStreamImpl;
 
-    const std::string database;
-    const std::string name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;

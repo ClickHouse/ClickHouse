@@ -1314,7 +1314,7 @@ SSDCacheDictionary::SSDCacheDictionary(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const \
     { \
         const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         const auto null_value = std::get<TYPE>(null_values[index]); /* NOLINT */ \
         getItemsNumberImpl<TYPE, TYPE>(index, ids, out, [&](const size_t) { return null_value; }); /* NOLINT */ \
     }
@@ -1343,7 +1343,7 @@ SSDCacheDictionary::SSDCacheDictionary(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         getItemsNumberImpl<TYPE, TYPE>( \
             index, \
             ids, \
@@ -1374,7 +1374,7 @@ SSDCacheDictionary::SSDCacheDictionary(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         getItemsNumberImpl<TYPE, TYPE>( \
             index, \
             ids, \
@@ -1430,7 +1430,7 @@ void SSDCacheDictionary::getItemsNumberImpl(
 void SSDCacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
     const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
     const auto null_value = StringRef{std::get<String>(null_values[index])};
 
@@ -1441,7 +1441,7 @@ void SSDCacheDictionary::getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
 {
     const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsStringImpl(index, ids, out, [&](const size_t row) { return def->getDataAt(row); });
 }
@@ -1450,7 +1450,7 @@ void SSDCacheDictionary::getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
 {
     const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsStringImpl(index, ids, out, [&](const size_t) { return StringRef{def}; });
 }

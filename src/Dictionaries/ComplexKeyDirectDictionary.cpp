@@ -36,7 +36,7 @@ ComplexKeyDirectDictionary::ComplexKeyDirectDictionary(
     { \
         dict_struct.validateKeyTypes(key_types); \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
@@ -64,7 +64,7 @@ void ComplexKeyDirectDictionary::getString(
 {
     dict_struct.validateKeyTypes(key_types);
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto & null_value = std::get<StringRef>(attribute.null_values);
     getItemsStringImpl<StringRef, StringRef>(
@@ -84,7 +84,7 @@ void ComplexKeyDirectDictionary::getString(
     { \
         dict_struct.validateKeyTypes(key_types); \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t row) { return def[row]; }); \
@@ -111,7 +111,7 @@ void ComplexKeyDirectDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsStringImpl<StringRef, StringRef>(
         attribute,
@@ -126,7 +126,7 @@ void ComplexKeyDirectDictionary::getString(
     { \
         dict_struct.validateKeyTypes(key_types); \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -153,7 +153,7 @@ void ComplexKeyDirectDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     ComplexKeyDirectDictionary::getItemsStringImpl<StringRef, StringRef>(
         attribute,

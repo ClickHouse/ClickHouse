@@ -39,7 +39,7 @@ ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(
         dict_struct.validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
@@ -71,7 +71,7 @@ void ComplexKeyHashedDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -93,7 +93,7 @@ void ComplexKeyHashedDictionary::getString(
         dict_struct.validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, \
@@ -127,7 +127,7 @@ void ComplexKeyHashedDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -147,7 +147,7 @@ void ComplexKeyHashedDictionary::getString(
         dict_struct.validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -178,7 +178,7 @@ void ComplexKeyHashedDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
