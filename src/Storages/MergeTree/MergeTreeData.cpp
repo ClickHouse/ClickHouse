@@ -1554,7 +1554,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         }
         if (!at_least_one_column_rest)
         {
-            std::string postfix = "";
+            std::string postfix;
             if (dropped_columns.size() > 1)
                 postfix = "s";
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2556,12 +2556,24 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const StorageM
         context);
 }
 
-void MergeTreeData::checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const
+void MergeTreeData::checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings) const
 {
     for (const auto & command : commands)
     {
         if (command.partition)
-            getPartitionIDFromQuery(command.partition, global_context);
+        {
+            if (command.part)
+            {
+                auto part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
+                /// We able to parse it
+                MergeTreePartInfo::fromPartName(part_name, format_version);
+            }
+            else
+            {
+                /// We able to parse it
+                getPartitionIDFromQuery(command.partition, global_context);
+            }
+        }
 
         if (command.type == PartitionCommand::DROP_DETACHED_PARTITION
             && !settings.allow_drop_detached)
