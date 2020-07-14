@@ -415,7 +415,7 @@ public:
         size_t result_size = pattern_to_fill.size();
 
         const DateLUTImpl * time_zone_tmp = nullptr;
-        if (castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type) { return true; }))
+        if (castType(block.getByPosition(arguments[0]).type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
         {
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
         }
@@ -706,13 +706,13 @@ struct NameFormatDateTime
     static constexpr auto name = "formatDateTime";
 };
 
-struct NameFROM_UNIXTIME
+struct NameFromUnixTime
 {
     static constexpr auto name = "FROM_UNIXTIME";
 };
 
 using FunctionFormatDateTime = FunctionFormatDateTimeImpl<NameFormatDateTime, false>;
-using FunctionFROM_UNIXTIME = FunctionFormatDateTimeImpl<NameFROM_UNIXTIME, true>;
+using FunctionFROM_UNIXTIME = FunctionFormatDateTimeImpl<NameFromUnixTime, true>;
 
 void registerFunctionFormatDateTime(FunctionFactory & factory)
 {
