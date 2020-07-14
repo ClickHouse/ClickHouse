@@ -825,9 +825,9 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
          * intended to do a synchronous update. AsyncUpdate thread can touch deallocated memory and explode.
          * */
         update_unit_ptr->can_use_callback = false;
-        throw DB::Exception(
-            "Dictionary " + getName() + " source seems unavailable, because " +
-                toString(timeout_for_wait) + " timeout exceeded.", ErrorCodes::TIMEOUT_EXCEEDED);
+        throw DB::Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                            "Dictionary {} source seems unavailable, because {} timeout exceeded.",
+                            getDictionaryID().getNameForLogs(), toString(timeout_for_wait));
     }
 
 
@@ -838,10 +838,11 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
 void CacheDictionary::tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_ptr) const
 {
     if (!update_queue.tryPush(update_unit_ptr, update_queue_push_timeout_milliseconds))
-        throw DB::Exception(
-                "Cannot push to internal update queue in dictionary " + getFullName() + ". Timelimit of " +
-                std::to_string(update_queue_push_timeout_milliseconds) + " ms. exceeded. Current queue size is " +
-                std::to_string(update_queue.size()), ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL);
+        throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+                "Cannot push to internal update queue in dictionary {}. "
+                "Timelimit of {} ms. exceeded. Current queue size is {}",
+                getDictionaryID().getNameForLogs(), std::to_string(update_queue_push_timeout_milliseconds),
+                std::to_string(update_queue.size()));
 }
 
 void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
@@ -892,7 +893,8 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 
                 const auto * id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
                 if (!id_column)
-                    throw Exception{getFullName() + ": id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
+                    throw Exception{ErrorCodes::TYPE_MISMATCH,
+                                    "{}: id column has type different from UInt64.", getDictionaryID().getNameForLogs()};
 
                 const auto & ids = id_column->getData();
 
@@ -950,8 +952,9 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
             last_exception = std::current_exception();
             backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
 
-            tryLogException(last_exception, log, "Could not update cache dictionary '" + getFullName() +
-                                                 "', next update is scheduled at " + ext::to_string(backoff_end_time.load()));
+            tryLogException(last_exception, log,
+                            "Could not update cache dictionary '" + getDictionaryID().getNameForLogs() +
+                            "', next update is scheduled at " + ext::to_string(backoff_end_time.load()));
         }
     }
 

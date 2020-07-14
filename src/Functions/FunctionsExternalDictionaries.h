@@ -86,7 +86,7 @@ public:
         if (dict)
             return dict;
         dict = external_loader.getDictionary(dictionary_name);
-        context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getName());
+        context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
         std::atomic_store(&dictionary, dict);
         return dict;
     }

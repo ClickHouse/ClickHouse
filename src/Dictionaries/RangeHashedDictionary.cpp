@@ -157,8 +157,8 @@ void RangeHashedDictionary::createAttributes()
         attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{full_name + ": hierarchical attributes not supported by " + getName() + " dictionary.",
-                            ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
+                            getDictionaryID().getNameForLogs()};
     }
 }
 

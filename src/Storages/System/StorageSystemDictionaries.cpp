@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -25,6 +26,7 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
     return {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
+        {"uuid", std::make_shared<DataTypeUUID>()},
         {"status", std::make_shared<DataTypeEnum8>(getStatusEnumAllPossibleValues())},
         {"origin", std::make_shared<DataTypeString>()},
         {"type", std::make_shared<DataTypeString>()},
@@ -58,10 +60,13 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         const auto dict_ptr = std::dynamic_pointer_cast<const IDictionaryBase>(load_result.object);
 
         String database, short_name;
+        UUID uuid = UUIDHelpers::Nil;
         if (dict_ptr)
         {
-            database = dict_ptr->getDatabase();
-            short_name = dict_ptr->getName();
+            auto dict_id = dict_ptr->getDictionaryID();
+            database = dict_id.database_name;
+            short_name = dict_id.table_name;
+            uuid = dict_id.uuid;
         }
         else
         {
@@ -81,6 +86,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         size_t i = 0;
         res_columns[i++]->insert(database);
         res_columns[i++]->insert(short_name);
+        res_columns[i++]->insert(uuid);
         res_columns[i++]->insert(static_cast<Int8>(load_result.status));
         res_columns[i++]->insert(load_result.config ? load_result.config->path : "");
 
