@@ -1079,7 +1079,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
             optimizeRedundantFunctionsInOrderBy(select_query, context);
 
         /// If function "if" has String-type arguments, transform them into enum
-        if (settings.if_transform_strings_to_enum)
+        if (settings.optimize_if_transform_strings_to_enum)
             TransformIfStringsIntoEnum(query);
 
         /// Remove duplicated elements from LIMIT BY clause.
