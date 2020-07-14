@@ -53,6 +53,8 @@ private:
 
     void readData(const String & name, IColumn & column, const IDataType & type,
         size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets = false);
+
+    size_t getReadBufferSize();
 };
 
 }

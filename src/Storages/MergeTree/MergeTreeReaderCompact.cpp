@@ -43,9 +43,32 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
           settings.save_marks_in_cache,
           data_part->getColumns().size())
 {
-    size_t buffer_size = settings.max_read_buffer_size;
-    const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+    size_t columns_num = columns.size();
 
+    column_positions.resize(columns_num);
+    read_only_offsets.resize(columns_num);
+    auto name_and_type = columns.begin();
+    for (size_t i = 0; i < columns_num; ++i, ++name_and_type)
+    {
+        const auto & [name, type] = getColumnFromPart(*name_and_type);
+        auto position = data_part->getColumnPosition(name);
+
+        if (!position && typeid_cast<const DataTypeArray *>(type.get()))
+        {
+            /// If array of Nested column is missing in part,
+            ///  we have to read its offsets if they exist.
+            position = findColumnForOffsets(name);
+            read_only_offsets[i] = (position != std::nullopt);
+        }
+
+        column_positions[i] = std::move(position);
+    }
+
+    auto buffer_size = getReadBufferSize();
+    if (!buffer_size || settings.max_read_buffer_size < buffer_size)
+        buffer_size = settings.max_read_buffer_size;
+
+    const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
@@ -80,28 +103,6 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         non_cached_buffer = std::move(buffer);
         data_buffer = non_cached_buffer.get();
     }
-
-    size_t columns_num = columns.size();
-
-    column_positions.resize(columns_num);
-    read_only_offsets.resize(columns_num);
-    auto name_and_type = columns.begin();
-    for (size_t i = 0; i < columns_num; ++i, ++name_and_type)
-    {
-        const auto & [name, type] = getColumnFromPart(*name_and_type);
-        auto position = data_part->getColumnPosition(name);
-
-        if (!position && typeid_cast<const DataTypeArray *>(type.get()))
-        {
-            /// If array of Nested column is missing in part,
-            ///  we have to read its offsets if they exist.
-            position = findColumnForOffsets(name);
-            read_only_offsets[i] = (position != std::nullopt);
-        }
-
-        column_positions[i] = std::move(position);
-    }
-
 }
 
 size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
@@ -237,6 +238,55 @@ bool MergeTreeReaderCompact::isContinuousReading(size_t mark, size_t column_posi
     const auto & [last_mark, last_column] = *last_read_granule;
     return (mark == last_mark && column_position == last_column + 1)
         || (mark == last_mark + 1 && column_position == 0 && last_column == data_part->getColumns().size() - 1);
+}
+
+
+size_t MergeTreeReaderCompact::getReadBufferSize()
+{
+    size_t buffer_size = 0;
+    size_t columns_num = columns.size();
+    size_t last_column_position = data_part->getColumns().size() - 1;
+    size_t file_size = data_part->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
+    size_t marks_count = data_part->getMarksCount();
+
+    auto next = [&](size_t & row_index, size_t & column_index)
+    {
+        if (column_index == last_column_position)
+        {
+            ++row_index;
+            column_index = 0;
+            if (row_index == marks_count)
+                return false;
+        }
+        else
+            ++column_index;
+
+        return true;
+    };
+
+    for (const auto & mark_range : all_mark_ranges)
+    {
+        for (size_t mark = mark_range.begin; mark <= mark_range.end; ++mark)
+        {
+            for (size_t i = 0; i < columns_num; ++i)
+            {
+                if (!column_positions[i])
+                    continue;
+
+                size_t row_ind = mark;
+                size_t col_ind = *column_positions[i];
+                size_t cur_offset = marks_loader.getMark(mark, col_ind).offset_in_compressed_file;
+
+                while (next(row_ind, col_ind) && cur_offset == marks_loader.getMark(row_ind, col_ind).offset_in_compressed_file)
+                    ;
+
+                size_t next_offset = (row_ind == marks_count ? file_size : marks_loader.getMark(row_ind, col_ind).offset_in_compressed_file);
+                buffer_size = std::max(buffer_size, next_offset - cur_offset);
+            }
+        }
+    }
+
+    return buffer_size;
 }
 
 }
