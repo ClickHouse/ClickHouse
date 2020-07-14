@@ -7,25 +7,25 @@ toc_title: ALTER
 
 Most `ALTER` queries modify table settings or data:
 
--   [COLUMN](column.md)
--   [PARTITION](partition.md)
--   [DELETE](delete.md)
--   [UPDATE](update.md)
--   [ORDER BY](order-by.md)
--   [INDEX](index/index.md)
--   [CONSTRAINT](constraint.md)
--   [TTL](ttl.md)
+-   [COLUMN](../../../sql-reference/statements/alter/column.md)
+-   [PARTITION](../../../sql-reference/statements/alter/partition.md)
+-   [DELETE](../../../sql-reference/statements/alter/delete.md)
+-   [UPDATE](../../../sql-reference/statements/alter/update.md)
+-   [ORDER BY](../../../sql-reference/statements/alter/order-by.md)
+-   [INDEX](../../../sql-reference/statements/alter/index/index.md)
+-   [CONSTRAINT](../../../sql-reference/statements/alter/constraint.md)
+-   [TTL](../../../sql-reference/statements/alter/ttl.md)
 
 !!! note "Note"
     Most `ALTER` queries are supported only for [\*MergeTree](../../../engines/table-engines/mergetree-family/index.md) tables, as well as [Merge](../../../engines/table-engines/special/merge.md) and [Distributed](../../../engines/table-engines/special/distributed.md).
 
 While these `ALTER` settings modify entities related to role-based access control:
 
--   [USER](user.md)
--   [ROLE](role.md)
--   [QUOTA](quota.md)
--   [ROW POLICY](row-policy.md)
--   [SETTINGS PROFILE](settings-profile.md)
+-   [USER](../../../sql-reference/statements/alter/user.md)
+-   [ROLE](../../../sql-reference/statements/alter/role.md)
+-   [QUOTA](../../../sql-reference/statements/alter/quota.md)
+-   [ROW POLICY](../../../sql-reference/statements/alter/row-policy.md)
+-   [SETTINGS PROFILE](../../../sql-reference/statements/alter/settings-profile.md)
 
 ## Synchronicity of ALTER Queries {#synchronicity-of-alter-queries}
 
@@ -33,9 +33,9 @@ For non-replicated tables, all `ALTER` queries are performed synchronously. For 
 
 For `ALTER ... ATTACH|DETACH|DROP` queries, you can use the `replication_alter_partitions_sync` setting to set up waiting. Possible values: `0` – do not wait; `1` – only wait for own execution (default); `2` – wait for all.
 
-## Mutations
+## Mutations {#mutations}
 
-`ALTER` queries that are intended to manipulate table data are implemented with a mechanism called “mutations”, most notably [ALTER TABLE ... DELETE](delete.md) and [ALTER TABLE ... UPDATE](update.md). They are asynchronous background processes similar to merges in [MergeTree](../../../engines/table-engines/mergetree-family/index.md) tables that to produce new “mutated” versions of parts.
+`ALTER` queries that are intended to manipulate table data are implemented with a mechanism called “mutations”, most notably [ALTER TABLE … DELETE](../../../sql-reference/statements/alter/delete.md) and [ALTER TABLE … UPDATE](../../../sql-reference/statements/alter/update.md). They are asynchronous background processes similar to merges in [MergeTree](../../../engines/table-engines/mergetree-family/index.md) tables that to produce new “mutated” versions of parts.
 
 For `*MergeTree` tables mutations execute by **rewriting whole data parts**. There is no atomicity - parts are substituted for mutated parts as soon as they are ready and a `SELECT` query that started executing during a mutation will see data from parts that have already been mutated along with data from parts that have not been mutated yet.
 
