@@ -6,6 +6,14 @@
 #include <Core/QualifiedTableName.h>
 #include <Common/Exception.h>
 
+namespace Poco
+{
+namespace Util
+{
+class AbstractConfiguration;
+}
+}
+
 namespace DB
 {
 
@@ -75,6 +83,9 @@ struct StorageID
     static StorageID createEmpty() { return {}; }
 
     QualifiedTableName getQualifiedName() const { return {database_name, getTableName()}; }
+
+    static StorageID fromDictionaryConfig(const Poco::Util::AbstractConfiguration & config,
+                                          const String & config_prefix);
 
 private:
     StorageID() = default;

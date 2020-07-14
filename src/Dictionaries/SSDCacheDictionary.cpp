@@ -1640,6 +1640,8 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
         if (dict_struct.key)
             throw Exception{"'key' is not supported for dictionary of layout 'cache'", ErrorCodes::UNSUPPORTED_METHOD};
 
+        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
+
         if (dict_struct.range_min || dict_struct.range_max)
             throw Exception{name
                             + ": elements .structure.range_min and .structure.range_max should be defined only "
@@ -1686,7 +1688,7 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<SSDCacheDictionary>(
-                StorageID{"", name}, dict_struct, std::move(source_ptr), dict_lifetime, path,
+                dict_id, dict_struct, std::move(source_ptr), dict_lifetime, path,
                 max_partitions_count, file_size / block_size, block_size,
                 read_buffer_size / block_size, write_buffer_size / block_size,
                 max_stored_keys);

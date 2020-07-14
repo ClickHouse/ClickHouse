@@ -412,10 +412,9 @@ void registerDictionaryComplexKeyCache(DictionaryFactory & factory)
             throw Exception{full_name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
                             ErrorCodes::BAD_ARGUMENTS};
 
-        const String database = config.getString(config_prefix + ".database", "");
-        const String name = config.getString(config_prefix + ".name");
+        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-        return std::make_unique<ComplexKeyCacheDictionary>(StorageID{database, name}, dict_struct, std::move(source_ptr), dict_lifetime, size);
+        return std::make_unique<ComplexKeyCacheDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, size);
     };
     factory.registerLayout("complex_key_cache", create_layout, true);
 }

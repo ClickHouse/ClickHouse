@@ -700,8 +700,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
             throw Exception{full_name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
                             ErrorCodes::BAD_ARGUMENTS};
 
-        const String database = config.getString(config_prefix + ".database", "");
-        const String name = config.getString(config_prefix + ".name");
+        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
         const size_t strict_max_lifetime_seconds =
@@ -710,7 +709,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
         const size_t max_update_queue_size =
                 config.getUInt64(layout_prefix + ".cache.max_update_queue_size", 100000);
         if (max_update_queue_size == 0)
-            throw Exception{name + ": dictionary of layout 'cache' cannot have empty update queue of size 0",
+            throw Exception{full_name + ": dictionary of layout 'cache' cannot have empty update queue of size 0",
                             ErrorCodes::TOO_SMALL_BUFFER_SIZE};
 
         const bool allow_read_expired_keys =
@@ -719,7 +718,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
         const size_t update_queue_push_timeout_milliseconds =
                 config.getUInt64(layout_prefix + ".cache.update_queue_push_timeout_milliseconds", 10);
         if (update_queue_push_timeout_milliseconds < 10)
-            throw Exception{name + ": dictionary of layout 'cache' have too little update_queue_push_timeout",
+            throw Exception{full_name + ": dictionary of layout 'cache' have too little update_queue_push_timeout",
                             ErrorCodes::BAD_ARGUMENTS};
 
         const size_t query_wait_timeout_milliseconds =
@@ -728,11 +727,11 @@ void registerDictionaryCache(DictionaryFactory & factory)
         const size_t max_threads_for_updates =
                 config.getUInt64(layout_prefix + ".max_threads_for_updates", 4);
         if (max_threads_for_updates == 0)
-            throw Exception{name + ": dictionary of layout 'cache' cannot have zero threads for updates.",
+            throw Exception{full_name + ": dictionary of layout 'cache' cannot have zero threads for updates.",
                             ErrorCodes::BAD_ARGUMENTS};
 
         return std::make_unique<CacheDictionary>(
-                StorageID{database, name},
+                dict_id,
                 dict_struct,
                 std::move(source_ptr),
                 dict_lifetime,
