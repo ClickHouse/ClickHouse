@@ -74,7 +74,6 @@
 .syntax .il { color: #f99b15 } /* Literal.Number.Integer.Long */
 
 @media (prefers-color-scheme: dark) {
-.syntax  { background: #2f1e2e; color: #f8f9fa }
 .syntax .k { color: #c78cff } /* Keyword */
 .syntax .gi { color: #64ffbb } /* Generic.Inserted */
 .syntax .ld { color: #64ffbb } /* Literal.Date */
