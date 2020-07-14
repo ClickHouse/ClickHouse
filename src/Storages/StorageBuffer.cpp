@@ -854,7 +854,7 @@ void registerStorageBuffer(StorageFactory & factory)
             if (!typeid_cast<ASTLiteral *>(engine_args[i].get()))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Storae Buffer expects a literal as an argument #{}, got '{}'"
+                    "Storage Buffer expects a literal as an argument #{}, got '{}'"
                     " instead", i, engine_args[i]->formatForErrorMessage());
             }
         }
