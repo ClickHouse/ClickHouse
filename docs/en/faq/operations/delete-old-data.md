@@ -27,7 +27,7 @@ ClickHouse doesn’t have real-time point deletes like in [OLTP](https://en.wiki
 
 This is the most common approach to make your system based on ClickHouse [GDPR](https://gdpr-info.eu)-compliant.
 
-More details on [mutations](../../sql-reference/statements/alter.md#alter-mutations).
+More details on [mutations](../../sql-reference/statements/alter/index.md#alter-mutations).
 
 ## DROP PARTITION {#drop-partition}
 

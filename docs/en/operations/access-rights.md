@@ -59,7 +59,7 @@ Privileges can be granted to a user account by the [GRANT](../sql-reference/stat
 Management queries:
 
 -   [CREATE USER](../sql-reference/statements/create/user.md)
--   [ALTER USER](../sql-reference/statements/alter.md#alter-user-statement)
+-   [ALTER USER](../sql-reference/statements/alter/user.md#alter-user-statement)
 -   [DROP USER](../sql-reference/statements/drop.md)
 -   [SHOW CREATE USER](../sql-reference/statements/show.md#show-create-user-statement)
 
