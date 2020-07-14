@@ -18,7 +18,7 @@ else()
     find_path(MSGPACK_INCLUDE_DIR NAMES msgpack.hpp PATHS ${MSGPACK_INCLUDE_PATHS})
 endif()
 
-if (MSG_PACK_INCLUDE_DIR)
+if (MSGPACK_INCLUDE_DIR)
     set(USE_MSGPACK 1)
 endif()
 
