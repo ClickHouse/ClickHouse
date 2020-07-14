@@ -4,7 +4,6 @@
 namespace DB
 {
 
-/// Unite several logical streams of data into single logical stream with specified structure.
 class UnionStep : public IQueryPlanStep
 {
 public:
@@ -15,12 +14,9 @@ public:
 
     QueryPipelinePtr updatePipeline(QueryPipelines pipelines) override;
 
-    void describePipeline(FormatSettings & settings) const override;
-
 private:
     Block header;
     size_t max_threads;
-    Processors processors;
 };
 
 }

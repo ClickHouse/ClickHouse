@@ -17,7 +17,6 @@ namespace ErrorCodes
 MergeTreeReaderCompact::MergeTreeReaderCompact(
     DataPartCompactPtr data_part_,
     NamesAndTypesList columns_,
-    const StorageMetadataPtr & metadata_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     MarkRanges mark_ranges_,
@@ -25,23 +24,15 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     ValueSizeMap avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
-    : IMergeTreeReader(
-        std::move(data_part_),
-        std::move(columns_),
-        metadata_snapshot_,
-        uncompressed_cache_,
-        mark_cache_,
-        std::move(mark_ranges_),
-        std::move(settings_),
-        std::move(avg_value_size_hints_))
+    : IMergeTreeReader(std::move(data_part_), std::move(columns_),
+        uncompressed_cache_, mark_cache_, std::move(mark_ranges_),
+        std::move(settings_), std::move(avg_value_size_hints_))
     , marks_loader(
-          data_part->volume->getDisk(),
-          mark_cache,
-          data_part->index_granularity_info.getMarksFilePath(data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME),
-          data_part->getMarksCount(),
-          data_part->index_granularity_info,
-          settings.save_marks_in_cache,
-          data_part->getColumns().size())
+        data_part->volume->getDisk(),
+        mark_cache,
+        data_part->index_granularity_info.getMarksFilePath(data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME),
+        data_part->getMarksCount(), data_part->index_granularity_info,
+        settings.save_marks_in_cache, data_part->getColumns().size())
 {
     size_t buffer_size = settings.max_read_buffer_size;
     const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
@@ -57,7 +48,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                     buffer_size,
                     0,
                     settings.min_bytes_to_use_direct_io,
-                    settings.min_bytes_to_use_mmap_io);
+                    0);
             },
             uncompressed_cache);
 
@@ -71,8 +62,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     {
         auto buffer =
             std::make_unique<CompressedReadBufferFromFile>(
-                data_part->volume->getDisk()->readFile(
-                    full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io));
+                data_part->volume->getDisk()->readFile(full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, 0));
 
         if (profile_callback_)
             buffer->setProfileCallback(profile_callback_, clock_type_);
@@ -94,10 +84,11 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         if (!position && typeid_cast<const DataTypeArray *>(type.get()))
         {
             /// If array of Nested column is missing in part,
-            ///  we have to read its offsets if they exist.
+            ///  we have to read it's offsets if they exists.
             position = findColumnForOffsets(name);
             read_only_offsets[i] = (position != std::nullopt);
         }
+
 
         column_positions[i] = std::move(position);
     }
@@ -111,7 +102,6 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 
     size_t read_rows = 0;
     size_t num_columns = columns.size();
-    checkNumberOfColumns(num_columns);
 
     MutableColumns mutable_columns(num_columns);
     auto column_it = columns.begin();
@@ -176,6 +166,23 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 
     return read_rows;
 }
+
+MergeTreeReaderCompact::ColumnPosition MergeTreeReaderCompact::findColumnForOffsets(const String & column_name)
+{
+    String table_name = Nested::extractTableName(column_name);
+    for (const auto & part_column : data_part->getColumns())
+    {
+        if (typeid_cast<const DataTypeArray *>(part_column.type.get()))
+        {
+            auto position = data_part->getColumnPosition(part_column.name);
+            if (position && Nested::extractTableName(part_column.name) == table_name)
+                return position;
+        }
+    }
+
+    return {};
+}
+
 
 void MergeTreeReaderCompact::readData(
     const String & name, IColumn & column, const IDataType & type,

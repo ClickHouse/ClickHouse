@@ -923,9 +923,6 @@ public:
         {
             return getHeader(src_header, intermediate_header, keys, aggregates, final);
         }
-
-        /// Returns keys and aggregated for EXPLAIN query
-        void explain(WriteBuffer & out, size_t indent) const;
     };
 
     Aggregator(const Params & params_);
@@ -1179,22 +1176,19 @@ protected:
         MutableColumns & key_columns,
         AggregateColumnsData & aggregate_columns,
         MutableColumns & final_aggregate_columns,
-        Arena * arena,
         bool final) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
         Mapped & mapped,
-        MutableColumns & final_aggregate_columns,
-        Arena * arena) const;
+        MutableColumns & final_aggregate_columns) const;
 
     template <typename Method, typename Table>
     void convertToBlockImplFinal(
         Method & method,
         Table & data,
         MutableColumns & key_columns,
-        MutableColumns & final_aggregate_columns,
-        Arena * arena) const;
+        MutableColumns & final_aggregate_columns) const;
 
     template <typename Method, typename Table>
     void convertToBlockImplNotFinal(

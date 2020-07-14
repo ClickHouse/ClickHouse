@@ -1,4 +1,4 @@
-# Kafka {#kafka}
+# 卡夫卡 {#kafka}
 
 此引擎与 [Apache Kafka](http://kafka.apache.org/) 结合使用。
 

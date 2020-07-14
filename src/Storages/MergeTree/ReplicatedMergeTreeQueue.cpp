@@ -1025,12 +1025,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
             auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
             if (part)
-            {
-                if (auto part_in_memory = asInMemoryPart(part))
-                    sum_parts_size_in_bytes += part_in_memory->block.bytes();
-                else
-                    sum_parts_size_in_bytes += part->getBytesOnDisk();
-            }
+                sum_parts_size_in_bytes += part->getBytesOnDisk();
         }
 
         if (merger_mutator.merges_blocker.isCancelled())

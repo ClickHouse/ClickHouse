@@ -499,6 +499,7 @@ namespace ErrorCodes
     extern const int CANNOT_CONNECT_RABBITMQ = 530;
     extern const int CANNOT_FSTAT = 531;
 
+
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
     extern const int STD_EXCEPTION = 1001;
@@ -506,7 +507,6 @@ namespace ErrorCodes
 
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
     extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;
-    extern const int UNRECOGNIZED_ARGUMENTS = 2003;
 }
 
 }
