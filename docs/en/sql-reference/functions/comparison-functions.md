@@ -22,14 +22,14 @@ Strings are compared by bytes. A shorter string is smaller than all strings that
 
 ## equals, a = b and a == b operator {#function-equals}
 
-## notEquals, a != b and a \<\> b operator {#function-notequals}
+## notEquals, a != b and a <> b operator {#function-notequals}
 
-## less, \< operator {#function-less}
+## less, < operator {#function-less}
 
-## greater, \> operator {#function-greater}
+## greater, > operator {#function-greater}
 
-## lessOrEquals, \<= operator {#function-lessorequals}
+## lessOrEquals, <= operator {#function-lessorequals}
 
-## greaterOrEquals, \>= operator {#function-greaterorequals}
+## greaterOrEquals, >= operator {#function-greaterorequals}
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/comparison_functions/) <!--hide-->
