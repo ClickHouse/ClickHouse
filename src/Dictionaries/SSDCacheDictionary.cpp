@@ -1276,7 +1276,7 @@ void SSDCacheStorage::collectGarbage()
 }
 
 SSDCacheDictionary::SSDCacheDictionary(
-    const std::string & name_,
+    const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
@@ -1287,7 +1287,7 @@ SSDCacheDictionary::SSDCacheDictionary(
     const size_t read_buffer_size_,
     const size_t write_buffer_size_,
     const size_t max_stored_keys_)
-    : name(name_)
+    : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , dict_lifetime(dict_lifetime_)
@@ -1686,7 +1686,7 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<SSDCacheDictionary>(
-                name, dict_struct, std::move(source_ptr), dict_lifetime, path,
+                StorageID{"", name}, dict_struct, std::move(source_ptr), dict_lifetime, path,
                 max_partitions_count, file_size / block_size, block_size,
                 read_buffer_size / block_size, write_buffer_size / block_size,
                 max_stored_keys);

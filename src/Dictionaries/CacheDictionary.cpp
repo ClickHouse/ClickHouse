@@ -61,8 +61,7 @@ inline size_t CacheDictionary::getCellIdx(const Key id) const
 
 
 CacheDictionary::CacheDictionary(
-    const std::string & database_,
-    const std::string & name_,
+    const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     DictionaryLifetime dict_lifetime_,
@@ -73,9 +72,7 @@ CacheDictionary::CacheDictionary(
     size_t update_queue_push_timeout_milliseconds_,
     size_t query_wait_timeout_milliseconds_,
     size_t max_threads_for_updates_)
-    : database(database_)
-    , name(name_)
-    , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
+    : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -735,8 +732,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
                             ErrorCodes::BAD_ARGUMENTS};
 
         return std::make_unique<CacheDictionary>(
-                database,
-                name,
+                StorageID{database, name},
                 dict_struct,
                 std::move(source_ptr),
                 dict_lifetime,

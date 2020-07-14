@@ -49,17 +49,12 @@ public:
         Tuple,
     };
     IPolygonDictionary(
-            const std::string & database_,
-            const std::string & name_,
+            const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,
             InputType input_type_,
             PointType point_type_);
-
-    const std::string & getDatabase() const override;
-    const std::string & getName() const override;
-    const std::string & getFullName() const override;
 
     std::string getTypeName() const override;
 
@@ -198,7 +193,6 @@ protected:
 
     const std::string database;
     const std::string name;
-    const std::string full_name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
@@ -275,8 +269,7 @@ class SimplePolygonDictionary : public IPolygonDictionary
 {
 public:
     SimplePolygonDictionary(
-            const std::string & database_,
-            const std::string & name_,
+            const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,

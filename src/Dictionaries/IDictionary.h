@@ -4,6 +4,7 @@
 #include <Core/Names.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/IExternalLoadable.h>
+#include <Interpreters/StorageID.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/PODArray.h>
 #include <common/StringRef.h>
@@ -29,9 +30,15 @@ struct IDictionaryBase : public IExternalLoadable
 {
     using Key = UInt64;
 
-    virtual const std::string & getDatabase() const = 0;
-    virtual const std::string & getName() const = 0;
-    virtual const std::string & getFullName() const = 0;
+    IDictionaryBase(const StorageID & dict_id_)
+    : dict_id(dict_id_)
+    , full_name(dict_id.database_name.empty() ? dict_id.getTableName() : dict_id.getFullTableName())
+    {
+    }
+
+    virtual const std::string & getDatabase() const { return dict_id.database_name; }
+    virtual const std::string & getName() const { return dict_id.table_name; }
+    virtual const std::string & getFullName() const { return full_name; }
 
     const std::string & getLoadableName() const override { return getFullName(); }
 
@@ -87,11 +94,17 @@ struct IDictionaryBase : public IExternalLoadable
     {
         return std::static_pointer_cast<const IDictionaryBase>(IExternalLoadable::shared_from_this());
     }
+
+protected:
+    StorageID dict_id;
+    const String full_name;
 };
 
 
 struct IDictionary : IDictionaryBase
 {
+    IDictionary(const StorageID & dict_id_) : IDictionaryBase(dict_id_) {}
+
     virtual bool hasHierarchy() const = 0;
 
     virtual void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const = 0;
