@@ -91,7 +91,7 @@ private:
 
     void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time) const;
 
-    ThreadFromGlobalPool thread{&DatabaseConnectionMySQL::cleanOutdatedTables, this};
+    ThreadFromGlobalPool thread;
 };
 
 }

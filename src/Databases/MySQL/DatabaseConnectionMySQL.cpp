@@ -71,6 +71,7 @@ DatabaseConnectionMySQL::DatabaseConnectionMySQL(
     , mysql_pool(std::move(pool))
 {
     empty(); /// test database is works fine.
+    thread = ThreadFromGlobalPool{&DatabaseConnectionMySQL::cleanOutdatedTables, this};
 }
 
 bool DatabaseConnectionMySQL::empty() const
