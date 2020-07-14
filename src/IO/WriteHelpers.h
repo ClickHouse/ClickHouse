@@ -751,7 +751,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
             between_date_time_delimiter,
             '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0',
             fractional_time_delimiter,
-            // Exactly MaxScale zeroes
+            // Exactly MaxScale zeros
             '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'
         };
         buf.write(s, sizeof(s) - (MaxScale - scale)

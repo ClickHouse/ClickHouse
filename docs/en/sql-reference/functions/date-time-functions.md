@@ -161,14 +161,14 @@ toStartOfSecond(value[, timezone])
 
 **Parameters**
 
--   `value` — Date and time. [DateTime64](../data-types/datetime64.md).
--   `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../data-types/string.md). 
+-   `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
-- Input value without sub-seconds.
+-   Input value without sub-seconds.
 
-Type: [DateTime64](../data-types/datetime64.md).
+Type: [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Examples**
 

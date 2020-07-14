@@ -31,6 +31,10 @@
         "name": "yandex/clickhouse-integration-test",
         "dependent": []
     },
+    "docker/test/fuzzer": {
+        "name": "yandex/clickhouse-fuzzer",
+        "dependent": []
+    },
     "docker/test/performance-comparison": {
         "name": "yandex/clickhouse-performance-comparison",
         "dependent": []
@@ -86,6 +90,14 @@
     },
     "docker/test/fasttest": {
         "name": "yandex/clickhouse-fasttest",
+        "dependent": []
+    },
+    "docker/test/integration/s3_proxy": {
+        "name": "yandex/clickhouse-s3-proxy",
+        "dependent": []
+    },
+    "docker/test/integration/resolver": {
+        "name": "yandex/clickhouse-python-bottle",
         "dependent": []
     }
 

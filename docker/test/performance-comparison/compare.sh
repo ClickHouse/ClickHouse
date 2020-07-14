@@ -282,6 +282,7 @@ do
     sed -n "s/^report-threshold\t/$test_name\t/p" < "$test_file" >> "analyze/report-thresholds.tsv"
     sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
     sed -n "s/^display-name\t/$test_name\t/p" < "$test_file" >> "analyze/query-display-names.tsv"
+    sed -n "s/^short\t/$test_name\t/p" < "$test_file" >> "analyze/marked-short-queries.tsv"
     sed -n "s/^partial\t/$test_name\t/p" < "$test_file" >> "analyze/partial-queries.tsv"
 done
 unset IFS
@@ -291,6 +292,9 @@ clickhouse-local --query "
 create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
     'test text, query_index int, query_id text, version UInt8, time float');
 
+-- Separately process 'partial' queries which we could only run on the new server
+-- because they use new functions. We can't make normal stats for them, but still
+-- have to show some stats so that the PR author can tweak them.
 create view partial_queries as select test, query_index
     from file('analyze/partial-queries.tsv', TSV,
         'test text, query_index int, servers Array(int)');
@@ -303,6 +307,7 @@ create table partial_query_times engine File(TSVWithNamesAndTypes,
     group by test, query_index
     ;
 
+-- Process queries that were run normally, on both servers.
 create view left_query_log as select *
     from file('left-query-log.tsv', TSVWithNamesAndTypes,
         '$(cat "left-query-log.tsv.columns")');
@@ -317,7 +322,10 @@ create view query_logs as
     select *, 1 version from right_query_log
     ;
 
-create table query_run_metrics_full engine File(TSV, 'analyze/query-run-metrics-full.tsv')
+-- This is a single source of truth on all metrics we have for query runs. The
+-- metrics include ProfileEvents from system.query_log, and query run times
+-- reported by the perf.py test runner.
+create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-arrays.tsv')
     as
     with (
         -- sumMapState with the list of all keys with '-0.' values. Negative zero is because
@@ -349,18 +357,29 @@ create table query_run_metrics_full engine File(TSV, 'analyze/query-run-metrics-
     where (test, query_index) not in partial_queries
     ;
 
-create table query_run_metrics engine File(
+-- This is just for convenience -- human-readable + easy to make plots.
+create table query_run_metrics_denorm engine File(TSV, 'analyze/query-run-metrics-denorm.tsv')
+    as select test, query_index, metric_names, version, query_id, metric_values
+    from query_run_metric_arrays
+    array join metric_names, metric_values
+    order by test, query_index, metric_names, version, query_id
+    ;
+
+-- This is for statistical processing with eqmed.sql
+create table query_run_metrics_for_stats engine File(
         TSV, -- do not add header -- will parse with grep
-        'analyze/query-run-metrics.tsv')
+        'analyze/query-run-metrics-for-stats.tsv')
     as select test, query_index, 0 run, version, metric_values
-    from query_run_metrics_full
+    from query_run_metric_arrays
     order by test, query_index, run, version
     ;
 
+-- This is the list of metric names, so that we can join them back after
+-- statistical processing.
 create table query_run_metric_names engine File(TSV, 'analyze/query-run-metric-names.tsv')
-    as select metric_names from query_run_metrics_full limit 1
+    as select metric_names from query_run_metric_arrays limit 1
     ;
-"
+" 2> >(tee -a analyze/errors.log 1>&2)
 
 # This is a lateral join in bash... please forgive me.
 # We don't have arrayPermute(), so I have to make random permutations with
@@ -370,16 +389,16 @@ create table query_run_metric_names engine File(TSV, 'analyze/query-run-metric-n
 # for each file. I do this in parallel using GNU parallel.
 ( set +x # do not bloat the log
 IFS=$'\n'
-for prefix in $(cut -f1,2 "analyze/query-run-metrics.tsv" | sort | uniq)
+for prefix in $(cut -f1,2 "analyze/query-run-metrics-for-stats.tsv" | sort | uniq)
 do
     file="analyze/tmp/$(echo "$prefix" | sed 's/\t/_/g').tsv"
-    grep "^$prefix	" "analyze/query-run-metrics.tsv" > "$file" &
+    grep "^$prefix	" "analyze/query-run-metrics-for-stats.tsv" > "$file" &
     printf "%s\0\n" \
         "clickhouse-local \
             --file \"$file\" \
             --structure 'test text, query text, run int, version UInt8, metrics Array(float)' \
             --query \"$(cat "$script_dir/eqmed.sql")\" \
-            >> \"analyze/query-reports.tsv\"" \
+            >> \"analyze/query-metric-stats.tsv\"" \
             2>> analyze/errors.log \
         >> analyze/commands.txt
 done
@@ -388,6 +407,33 @@ unset IFS
 )
 
 parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
+
+clickhouse-local --query "
+-- Join the metric names back to the metric statistics we've calculated, and make
+-- a denormalized table of them -- statistics for all metrics for all queries.
+-- The WITH, ARRAY JOIN and CROSS JOIN do not like each other:
+--  https://github.com/ClickHouse/ClickHouse/issues/11868
+--  https://github.com/ClickHouse/ClickHouse/issues/11757
+-- Because of this, we make a view with arrays first, and then apply all the
+-- array joins.
+create view query_metric_stat_arrays as
+    with (select * from file('analyze/query-run-metric-names.tsv',
+        TSV, 'n Array(String)')) as metric_name
+    select test, query_index, metric_name, left, right, diff, stat_threshold
+    from file('analyze/query-metric-stats.tsv', TSV, 'left Array(float),
+        right Array(float), diff Array(float), stat_threshold Array(float),
+        test text, query_index int') reports
+    order by test, query_index, metric_name
+    ;
+
+create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
+        'analyze/query-metric-stats-denorm.tsv')
+    as select test, query_index, metric_name, left, right, diff, stat_threshold
+    from query_metric_stat_arrays
+    left array join metric_name, left, right, diff, stat_threshold
+    order by test, query_index, metric_name
+    ;
+" 2> >(tee -a analyze/errors.log 1>&2)
 }
 
 # Analyze results
@@ -403,58 +449,46 @@ build_log_column_definitions
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
 
+short_query_threshold="0.02"
+
 clickhouse-local --query "
 create view query_display_names as select * from
     file('analyze/query-display-names.tsv', TSV,
         'test text, query_index int, query_display_name text')
     ;
 
+create view partial_query_times as select * from
+    file('analyze/partial-query-times.tsv', TSVWithNamesAndTypes,
+        'test text, query_index int, time_stddev float, time_median float')
+    ;
+
+-- Report for partial queries that we could only run on the new server (e.g.
+-- queries with new functions added in the tested PR).
 create table partial_queries_report engine File(TSV, 'report/partial-queries-report.tsv')
-    as select floor(time_median, 3) m, floor(time_stddev / time_median, 3) v,
+    as select floor(time_median, 3) time,
+        floor(time_stddev / time_median, 3) relative_time_stddev,
         test, query_index, query_display_name
-    from file('analyze/partial-query-times.tsv', TSVWithNamesAndTypes,
-        'test text, query_index int, time_stddev float, time_median float') t
+    from partial_query_times
     join query_display_names using (test, query_index)
     order by test, query_index
     ;
 
--- WITH, ARRAY JOIN and CROSS JOIN do not like each other:
---  https://github.com/ClickHouse/ClickHouse/issues/11868
---  https://github.com/ClickHouse/ClickHouse/issues/11757
--- Because of this, we make a view with arrays first, and then apply all the
--- array joins.
-create view query_metric_stat_arrays as
-    with (select * from file('analyze/query-run-metric-names.tsv',
-        TSV, 'n Array(String)')) as metric_name
-    select metric_name, left, right, diff, stat_threshold, test, query_index,
-        query_display_name
-    from file ('analyze/query-reports.tsv', TSV, 'left Array(float),
-        right Array(float), diff Array(float), stat_threshold Array(float),
-        test text, query_index int') reports
-    left join query_display_names
-        on reports.test = query_display_names.test
-            and reports.query_index = query_display_names.query_index
-    ;
-
-create table query_metric_stats engine File(TSVWithNamesAndTypes,
-        'report/query-metric-stats.tsv')
-    as
-    select metric_name, left, right, diff, stat_threshold, test, query_index,
-        query_display_name
-    from query_metric_stat_arrays
-    left array join metric_name, left, right, diff, stat_threshold
+create view query_metric_stats as
+    select * from file('analyze/query-metric-stats-denorm.tsv',
+        TSVWithNamesAndTypes,
+        'test text, query_index int, metric_name text, left float, right float,
+            diff float, stat_threshold float')
     ;
 
 -- Main statistics for queries -- query time as reported in query log.
 create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     as select
-        -- FIXME Comparison mode doesn't make sense for queries that complete
-        -- immediately (on the same order of time as noise). We compute average
-        -- run time between old and new version, and if it is below a threshold,
-        -- we just skip the query. If there is a significant regression, the
-        -- average will be above threshold, we'll process it normally and will
-        -- detect the regression.
-        (left + right) / 2 < 0.02 as short,
+        -- Comparison mode doesn't make sense for queries that complete
+        -- immediately (on the same order of time as noise). If query duration is
+        -- less that some threshold, we just skip it. If there is a significant
+        -- regression in such query, the time will exceed the threshold, and we
+        -- well process it normally and detect the regression.
+        right < $short_query_threshold as short,
 
         not short and abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
         not short and abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
@@ -469,63 +503,22 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     left join file('analyze/report-thresholds.tsv', TSV,
             'test text, report_threshold float') thresholds
         on query_metric_stats.test = thresholds.test
+    left join query_display_names
+        on query_metric_stats.test = query_display_names.test
+            and query_metric_stats.query_index = query_display_names.query_index
     where metric_name = 'server_time'
     order by test, query_index, metric_name
     ;
 
--- keep the table in old format so that we can analyze new and old data together
-create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
-    as select short, changed_fail, unstable_fail, left, right, diff,
-        stat_threshold, test, query_display_name query
-    from queries
-    ;
-
--- save all test runs as JSON for the new comparison page
-create table all_query_runs_json engine File(JSON, 'report/all-query-runs.json') as
-    select test, query_index, query_display_name query,
-        left, right, diff, stat_threshold, report_threshold,
-        versions_runs[1] runs_left, versions_runs[2] runs_right
-    from (
-        select
-            test, query_index,
-            groupArrayInsertAt(runs, version) versions_runs
-        from (
-            select
-                test, query_index, version,
-                groupArray(metrics[1]) runs
-            from file('analyze/query-run-metrics.tsv', TSV,
-                'test text, query_index int, run int, version UInt8, metrics Array(float)')
-            group by test, query_index, version
-        )
-        group by test, query_index
-    ) runs
-    left join query_display_names
-        on runs.test = query_display_names.test
-            and runs.query_index = query_display_names.query_index
-    left join file('analyze/report-thresholds.tsv',
-            TSV, 'test text, report_threshold float') thresholds
-        on runs.test = thresholds.test
-    left join query_metric_stats
-        on runs.test = query_metric_stats.test
-            and runs.query_index = query_metric_stats.query_index
-    where
-        query_metric_stats.metric_name = 'server_time'
-    ;
-
-create table changed_perf_tsv engine File(TSV, 'report/changed-perf.tsv') as
+create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv') as
     select left, right, diff, stat_threshold, changed_fail, test, query_index, query_display_name
     from queries where changed_show order by abs(diff) desc;
 
-create table unstable_queries_tsv engine File(TSV, 'report/unstable-queries.tsv') as
+create table unstable_queries_report engine File(TSV, 'report/unstable-queries.tsv') as
     select left, right, diff, stat_threshold, unstable_fail, test, query_index, query_display_name
     from queries where unstable_show order by stat_threshold desc;
 
-create table queries_for_flamegraph engine File(TSVWithNamesAndTypes,
-        'report/queries-for-flamegraph.tsv') as
-    select test, query_index from queries where unstable_show or changed_show
-    ;
-
-create table test_time_changes_tsv engine File(TSV, 'report/test-time-changes.tsv') as
+create table test_time_changes engine File(TSV, 'report/test-time-changes.tsv') as
     select test, queries, average_time_change from (
         select test, count(*) queries,
             sum(left) as left, sum(right) as right,
@@ -536,22 +529,22 @@ create table test_time_changes_tsv engine File(TSV, 'report/test-time-changes.ts
     )
     ;
 
-create table unstable_tests_tsv engine File(TSV, 'report/unstable-tests.tsv') as
+create table unstable_tests engine File(TSV, 'report/unstable-tests.tsv') as
     select test, sum(unstable_show) total_unstable, sum(changed_show) total_changed
     from queries
     group by test
     order by total_unstable + total_changed desc
     ;
 
-create table test_perf_changes_tsv engine File(TSV, 'report/test-perf-changes.tsv') as
+create table test_perf_changes_report engine File(TSV, 'report/test-perf-changes.tsv') as
     select test,
         queries,
         coalesce(total_unstable, 0) total_unstable,
         coalesce(total_changed, 0) total_changed,
         total_unstable + total_changed total_bad,
         coalesce(toString(floor(average_time_change, 3)), '??') average_time_change_str
-    from test_time_changes_tsv
-    full join unstable_tests_tsv
+    from test_time_changes
+    full join unstable_tests
     using test
     where (abs(average_time_change) > 0.05 and queries > 5)
         or (total_bad > 0)
@@ -559,28 +552,28 @@ create table test_perf_changes_tsv engine File(TSV, 'report/test-perf-changes.ts
     settings join_use_nulls = 1
     ;
 
-create table query_time engine Memory as select *
+create view total_client_time_per_query as select *
     from file('analyze/client-times.tsv', TSV,
         'test text, query_index int, client float, server float');
 
-create table wall_clock engine Memory as select *
-    from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
-
-create table slow_on_client_tsv engine File(TSV, 'report/slow-on-client.tsv') as
+create table slow_on_client_report engine File(TSV, 'report/slow-on-client.tsv') as
     select client, server, floor(client/server, 3) p, test, query_display_name
-    from query_time left join query_display_names using (test, query_index)
+    from total_client_time_per_query left join query_display_names using (test, query_index)
     where p > 1.02 order by p desc;
+
+create table wall_clock_time_per_test engine Memory as select *
+    from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
 
 create table test_time engine Memory as
     select test, sum(client) total_client_time,
         maxIf(client, not short) query_max,
         minIf(client, not short) query_min,
         count(*) queries, sum(short) short_queries
-    from query_time full join queries using (test, query_index)
+    from total_client_time_per_query full join queries using (test, query_index)
     group by test;
 
-create table test_times_tsv engine File(TSV, 'report/test-times.tsv') as
-    select wall_clock.test, real,
+create table test_times_report engine File(TSV, 'report/test-times.tsv') as
+    select wall_clock_time_per_test.test, real,
         floor(total_client_time, 3),
         queries,
         short_queries,
@@ -590,16 +583,52 @@ create table test_times_tsv engine File(TSV, 'report/test-times.tsv') as
     from test_time
     -- wall clock times are also measured for skipped tests, so don't
     -- do full join
-    left join wall_clock using test
+    left join wall_clock_time_per_test using test
     order by avg_real_per_query desc;
 
 -- report for all queries page, only main metric
-create table all_tests_tsv engine File(TSV, 'report/all-queries.tsv') as
+create table all_tests_report engine File(TSV, 'report/all-queries.tsv') as
     select changed_fail, unstable_fail,
         left, right, diff,
         floor(left > right ? left / right : right / left, 3),
         stat_threshold, test, query_index, query_display_name
     from queries order by test, query_index;
+
+-- queries for which we will build flamegraphs (see below)
+create table queries_for_flamegraph engine File(TSVWithNamesAndTypes,
+        'report/queries-for-flamegraph.tsv') as
+    select test, query_index from queries where unstable_show or changed_show
+    ;
+
+-- List of queries that have 'short' duration, but are not marked as 'short' by
+-- the test author (we report them).
+create table unmarked_short_queries_report
+    engine File(TSV, 'report/unmarked-short-queries.tsv')
+    as select time, test, query_index, query_display_name
+    from (
+            select right time, test, query_index from queries where short
+            union all
+            select time_median, test, query_index from partial_query_times
+                where time_median < $short_query_threshold
+        ) times
+        left join query_display_names
+            on times.test = query_display_names.test
+                and times.query_index = query_display_names.query_index
+    where (test, query_index) not in
+        (select * from file('analyze/marked-short-queries.tsv', TSV,
+            'test text, query_index int'))
+    order by test, query_index
+    ;
+
+--------------------------------------------------------------------------------
+-- various compatibility data formats follow, not related to the main report
+
+-- keep the table in old format so that we can analyze new and old data together
+create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
+    as select short, changed_fail, unstable_fail, left, right, diff,
+        stat_threshold, test, query_display_name query
+    from queries
+    ;
 
 -- new report for all queries with all metrics (no page yet)
 create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.tsv') as
@@ -607,6 +636,9 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
         floor(left > right ? left / right : right / left, 3),
         stat_threshold, test, query_index, query_display_name
     from query_metric_stats
+    left join query_display_names
+        on query_metric_stats.test = query_display_names.test
+            and query_metric_stats.query_index = query_display_names.query_index
     order by test, query_index;
 " 2> >(tee -a report/errors.log 1>&2)
 
