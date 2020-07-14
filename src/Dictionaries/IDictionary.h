@@ -38,22 +38,20 @@ struct IDictionaryBase : public IExternalLoadable
     {
     }
 
-    virtual const std::string & getDatabase() const { return dict_id.database_name; }
-    virtual const std::string & getName() const { return dict_id.table_name; }
-    virtual const std::string & getFullName() const { return full_name; }
+    const std::string & getFullName() const { return full_name; }
+    StorageID getDictionaryID() const { return dict_id; }
 
-    const std::string & getLoadableName() const override { return getFullName(); }
+    const std::string & getLoadableName() const override final { return getFullName(); }
 
     /// Specifies that no database is used.
     /// Sometimes we cannot simply use an empty string for that because an empty string is
     /// usually replaced with the current database.
     static constexpr char NO_DATABASE_TAG[] = "<no_database>";
 
-    std::string_view getDatabaseOrNoDatabaseTag() const
+    std::string getDatabaseOrNoDatabaseTag() const
     {
-        const std::string & database = getDatabase();
-        if (!database.empty())
-            return database;
+        if (!dict_id.database_name.empty())
+            return dict_id.database_name;
         return NO_DATABASE_TAG;
     }
 
@@ -118,19 +116,22 @@ struct IDictionary : IDictionaryBase
     virtual void isInVectorVector(
         const PaddedPODArray<Key> & /*child_ids*/, const PaddedPODArray<Key> & /*ancestor_ids*/, PaddedPODArray<UInt8> & /*out*/) const
     {
-        throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Hierarchy is not supported for {} dictionary.", getDictionaryID().getNameForLogs());
     }
 
     virtual void
     isInVectorConstant(const PaddedPODArray<Key> & /*child_ids*/, const Key /*ancestor_id*/, PaddedPODArray<UInt8> & /*out*/) const
     {
-        throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Hierarchy is not supported for {} dictionary.", getDictionaryID().getNameForLogs());
     }
 
     virtual void
     isInConstantVector(const Key /*child_id*/, const PaddedPODArray<Key> & /*ancestor_ids*/, PaddedPODArray<UInt8> & /*out*/) const
     {
-        throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Hierarchy is not supported for {} dictionary.", getDictionaryID().getNameForLogs());
     }
 
     void isInConstantConstant(const Key child_id, const Key ancestor_id, UInt8 & out) const
@@ -146,8 +147,9 @@ inline void checkAttributeType(const IDictionaryBase * dictionary, const std::st
                                AttributeUnderlyingType attribute_type, AttributeUnderlyingType to)
 {
     if (attribute_type != to)
-        throw Exception{dictionary->getFullName() + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute_type)
-                        + ", expected " + toString(to), ErrorCodes::TYPE_MISMATCH};
+        throw Exception{ErrorCodes::TYPE_MISMATCH, "{}: type mismatch: attribute {} has type {}, expected {}",
+                        dictionary->getDictionaryID().getNameForLogs(),
+                        attribute_name, toString(attribute_type), toString(to)};
 }
 
 }

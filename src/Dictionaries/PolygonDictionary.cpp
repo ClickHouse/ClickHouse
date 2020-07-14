@@ -169,7 +169,9 @@ void IPolygonDictionary::createAttributes()
         appendNullValue(attr.underlying_type, attr.null_value);
 
         if (attr.hierarchical)
-            throw Exception{getFullName() + ": hierarchical attributes not supported for dictionary of polygonal type", ErrorCodes::TYPE_MISMATCH};
+            throw Exception{ErrorCodes::TYPE_MISMATCH,
+                            "{}: hierarchical attributes not supported for dictionary of polygonal type",
+                            getDictionaryID().getNameForLogs()};
     }
 }
 
