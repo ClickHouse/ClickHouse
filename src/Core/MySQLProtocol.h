@@ -407,6 +407,23 @@ public:
         packet.readPayload(*in, sequence_id);
     }
 
+    bool tryReceivePacket(ReadPacket & packet, UInt64 millisecond = 0)
+    {
+        if (millisecond != 0)
+        {
+            ReadBufferFromPocoSocket * socket_in = typeid_cast<ReadBufferFromPocoSocket *>(in);
+
+            if (!socket_in)
+                throw Exception("LOGICAL ERROR: Attempt to pull the duration in a non socket stream", ErrorCodes::LOGICAL_ERROR);
+
+            if (!socket_in->poll(millisecond * 1000))
+                return false;
+        }
+
+        packet.readPayload(*in, sequence_id);
+        return true;
+    }
+
     template<class T>
     void sendPacket(const T & packet, bool flush = false)
     {

@@ -125,9 +125,6 @@ void MySQLClient::ping()
 
 void MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String binlog_file_name, UInt64 binlog_pos)
 {
-    if (dump_thread)
-        return;
-
     /// Set binlog checksum to CRC32.
     String checksum = "CRC32";
     writeCommand(Command::COM_QUERY, "SET @master_binlog_checksum = '" + checksum + "'");
@@ -145,34 +142,14 @@ void MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String b
     binlog_pos = binlog_pos < 4 ? 4 : binlog_pos;
     BinlogDump binlog_dump(binlog_pos, binlog_file_name, slave_id);
     packet_sender->sendPacket<BinlogDump>(binlog_dump, true);
-    dump_thread.emplace([this]()
-    {
-        while (true)
-        {
-            try
-            {
-                packet_sender->receivePacket(replication);
-                auto receive_event = replication.readOneEvent();
-                events.push(std::make_pair(receive_event, replication.getPosition()));
-            }
-            catch(...)
-            {
-                tryLogCurrentException("MySQLClient");
-                /// TODO: maybe sleep?
-            }
-        }
-    });
 }
 
 BinlogEventPtr MySQLClient::readOneBinlogEvent(UInt64 milliseconds)
 {
-    std::pair<BinlogEventPtr, Position> event;
+    if (packet_sender->tryReceivePacket(replication, milliseconds))
+        return replication.readOneEvent();
 
-    if (!events.tryPop(event, milliseconds))
-        return {};
-
-    last_position = event.second;
-    return event.first;
+    return {};
 }
 
 }

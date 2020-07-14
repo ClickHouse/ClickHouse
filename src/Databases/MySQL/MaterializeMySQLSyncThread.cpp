@@ -68,16 +68,7 @@ MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
 {
     try
     {
-        if (!sync_quit)
-        {
-            {
-                sync_quit = true;
-                std::lock_guard<std::mutex> lock(sync_mutex);
-            }
-
-            sync_cond.notify_one();
-            /// TODO: join thread
-        }
+        stopSynchronization();
     }
     catch (...)
     {
@@ -141,6 +132,20 @@ void MaterializeMySQLSyncThread::synchronization()
     {
         tryLogCurrentException(log);
         getDatabase(database_name).setException(std::current_exception());
+    }
+}
+
+void MaterializeMySQLSyncThread::stopSynchronization()
+{
+    if (!sync_quit)
+    {
+        {
+            sync_quit = true;
+            std::lock_guard<std::mutex> lock(sync_mutex);
+        }
+
+        sync_cond.notify_one();
+        background_thread_pool->join();
     }
 }
 
@@ -404,6 +409,7 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
         }
     }
 }
+
 bool MaterializeMySQLSyncThread::isMySQLSyncThread()
 {
     return getThreadName() == MYSQL_BACKGROUND_THREAD_NAME;
