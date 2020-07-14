@@ -1,0 +1,58 @@
+block_numbers	1
+blocks	0
+columns	1
+leader_election	1
+log	0
+metadata	1
+mutations	1
+nonincrement_block_numbers	1
+quorum	1
+replicas	1
+temp	1
+
+---
+
+columns	1	
+flags	1	
+host	1	
+is_active	1	
+is_lost	1	0
+log_pointer	1	
+max_processed_insert_time	1	
+metadata	1	
+metadata_version	1	
+min_unprocessed_insert_time	1	
+mutation_pointer	1	
+parts	0	
+queue	1	
+
+---
+
+columns	1	
+flags	1	
+host	1	
+is_lost	1	1
+log_pointer	1	
+max_processed_insert_time	1	
+metadata	1	
+metadata_version	1	
+min_unprocessed_insert_time	1	
+mutation_pointer	1	
+parts	1	
+queue	1	
+
+---
+
+columns	1	
+flags	1	
+host	1	
+is_active	1	
+is_lost	1	0
+log_pointer	1	
+max_processed_insert_time	1	
+metadata	1	
+metadata_version	1	
+min_unprocessed_insert_time	1	
+mutation_pointer	1	
+parts	1	
+queue	1	
