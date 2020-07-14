@@ -30,6 +30,7 @@
 #include <Interpreters/AnyInputOptimize.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
+#include <Interpreters/IfWithStringsVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -650,6 +651,17 @@ void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const Context & contex
     RemoveInjectiveFunctionsVisitor(data).visit(query);
 }
 
+void TransformIfStringsIntoEnum(ASTPtr & query)
+{
+    std::unordered_set<String> if_functions_as_aliases_inside_functions;
+
+    FunctionOfAliasesVisitor::Data alias_data{if_functions_as_aliases_inside_functions};
+    FunctionOfAliasesVisitor(alias_data).visit(query);
+
+    FindingIfWithStringsVisitor::Data skip_alias_data{if_functions_as_aliases_inside_functions};
+    FindingIfWithStringsVisitor(skip_alias_data).visit(query);
+}
+
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
@@ -1065,6 +1077,10 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         /// Remove functions from ORDER BY if its argument is also in ORDER BY
         if (settings.optimize_redundant_functions_in_order_by)
             optimizeRedundantFunctionsInOrderBy(select_query, context);
+
+        /// If function "if" has String-type arguments, transform them into enum
+        if (settings.if_transform_strings_to_enum)
+            TransformIfStringsIntoEnum(query);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
