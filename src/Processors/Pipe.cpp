@@ -90,6 +90,10 @@ Pipe::Pipe(Pipes && pipes, ProcessorPtr transform)
 
         max_parallel_streams += pipe.max_parallel_streams;
         processors.insert(processors.end(), pipe.processors.begin(), pipe.processors.end());
+
+        std::move(pipe.table_locks.begin(), pipe.table_locks.end(), std::back_inserter(table_locks));
+        std::move(pipe.interpreter_context.begin(), pipe.interpreter_context.end(), std::back_inserter(interpreter_context));
+        std::move(pipe.storage_holders.begin(), pipe.storage_holders.end(), std::back_inserter(storage_holders));
     }
 
     output_port = &transform->getOutputs().front();
