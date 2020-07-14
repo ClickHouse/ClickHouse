@@ -22,6 +22,12 @@
 
 namespace
 {
+
+static const char * S3_LOGGER_TAG_NAMES[][2] = {
+    {"AWSClient", "AWSClient"},
+    {"AWSAuthV4Signer", "AWSClient (AWSAuthV4Signer)"},
+};
+
 const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
     static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
@@ -42,9 +48,10 @@ class AWSLogger final : public Aws::Utils::Logging::LogSystemInterface
 public:
     AWSLogger()
     {
-        default_logger = &Poco::Logger::get("AWSClient");
-        tag_loggers["AWSAuthV4Signer"] = &Poco::Logger::get("AWSClient (AWSAuthV4Signer)");
-        tag_loggers["AWSClient"] = default_logger;
+        for (auto [tag, name] : S3_LOGGER_TAG_NAMES)
+            tag_loggers[tag] = &Poco::Logger::get(name);
+
+        default_logger = tag_loggers[S3_LOGGER_TAG_NAMES[0][0]];
     }
 
     ~AWSLogger() final = default;
@@ -121,7 +128,9 @@ public:
 private:
     const DB::HeaderCollection headers;
 };
+
 }
+
 
 namespace DB
 {
