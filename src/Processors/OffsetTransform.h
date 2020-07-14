@@ -13,10 +13,9 @@ namespace DB
 class OffsetTransform : public IProcessor
 {
 private:
+    UInt64 offset;
+    UInt64 rows_read = 0; /// including the last read block
 
-    size_t offset;
-
-    size_t rows_read = 0; /// including the last read block
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
     /// State of port's pair.
@@ -34,7 +33,7 @@ private:
     size_t num_finished_port_pairs = 0;
 
 public:
-    OffsetTransform(const Block & header_, size_t offset_, size_t num_streams = 1);
+    OffsetTransform(const Block & header_, UInt64 offset_, size_t num_streams = 1);
 
     String getName() const override { return "Offset"; }
 
