@@ -27,7 +27,7 @@ public:
     {
         const TablesWithColumns & tables;
         const Context & context;
-        const std::unordered_map<String, ASTPtr> & group_by_function_hashes;
+        const std::unordered_set<String> & group_by_function_hashes;
         Monotonicity monotonicity{true, true, true};
         ASTIdentifier * identifier = nullptr;
         DataTypePtr arg_data_type = {};
@@ -50,8 +50,11 @@ public:
             return true;
         }
 
-        bool getIdentifierAndType(const ASTFunction & ast_function)
+        bool extractIdentifierAndType(const ASTFunction & ast_function)
         {
+            if (identifier)
+                return true;
+
             identifier = ast_function.arguments->children[0]->as<ASTIdentifier>();
             if (!identifier)
                 return false;
@@ -83,6 +86,7 @@ public:
         if (data.isRejected())
             return;
 
+        /// TODO: monotonicity for fucntions of several arguments
         auto arguments = ast_function.arguments;
         if (arguments->children.size() != 1)
         {
@@ -104,7 +108,7 @@ public:
         }
 
         /// First time extract the most enclosed identifier and its data type
-        if (!data.arg_data_type && !data.getIdentifierAndType(ast_function))
+        if (!data.arg_data_type && !data.extractIdentifierAndType(ast_function))
         {
             data.reject();
             return;

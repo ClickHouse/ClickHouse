@@ -530,7 +530,8 @@ void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, const Context & context
     DuplicateDistinctVisitor(distinct_data).visit(query);
 }
 
-/// Optimize monotonous functions in ORDER BY
+/// Replace monotonous functions in ORDER BY if they don't participate in GROUP BY expression,
+/// has a single argument and not an aggregate functions.
 void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const Context & context,
                                           const TablesWithColumns & tables_with_columns)
 {
@@ -538,14 +539,14 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const C
     if (!order_by)
         return;
 
-    std::unordered_map<String, ASTPtr> group_by_hashes;
+    std::unordered_set<String> group_by_hashes;
     if (auto group_by = select_query->groupBy())
     {
         for (auto & elem : group_by->children)
         {
             auto hash = elem->getTreeHash();
             String key = toString(hash.first) + '_' + toString(hash.second);
-            group_by_hashes[key] = elem;
+            group_by_hashes.insert(key);
         }
     }
 
