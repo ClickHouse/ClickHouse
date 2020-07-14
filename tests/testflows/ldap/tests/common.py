@@ -89,18 +89,27 @@ def add_config(config, timeout=20, restart=False):
         yield
     finally:
         with Finally(f"I remove {config.name}"):
-            with By("removing the config file", description=config.path):
-                node.command(f"rm -rf {config.path}", exitcode=0)
+            with node.cluster.shell(node.name) as bash:
+                bash.expect(bash.prompt)
+                bash.send("tail -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
 
-            with Then(f"{config.preprocessed_name} should be updated"):
-                started = time.time()
-                command = f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name} | grep '{config.uid}'{' > /dev/null' if not settings.debug else ''}"
-                while time.time() - started < timeout:
-                    exitcode = node.command(command, steps=False).exitcode
-                    if exitcode == 1:
-                        break
-                    time.sleep(1)
-                assert exitcode == 1, error()
+                with By("removing the config file", description=config.path):
+                    node.command(f"rm -rf {config.path}", exitcode=0)
+
+                with Then(f"{config.preprocessed_name} should be updated"):
+                    started = time.time()
+                    command = f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name} | grep '{config.uid}'{' > /dev/null' if not settings.debug else ''}"
+                    while time.time() - started < timeout:
+                        exitcode = node.command(command, steps=False).exitcode
+                        if exitcode == 1:
+                            break
+                        time.sleep(1)
+                    assert exitcode == 1, error()
+
+                with When("I wait for config to be loaded"):
+                    started = time.time()
+                    bash.expect(f"ConfigReloader: Loaded config '/etc/clickhouse-server/{config.preprocessed_name}', performed update on configuration", timeout=timeout)
+
 
 def create_ldap_servers_config_content(servers, config_d_dir="/etc/clickhouse-server/config.d", config_file="ldap_servers.xml"):
     """Create LDAP servers configuration content.
