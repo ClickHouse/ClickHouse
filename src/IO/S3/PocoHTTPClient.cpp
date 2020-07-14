@@ -32,6 +32,7 @@ namespace ProfileEvents
 
 namespace DB::ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_REDIRECTS;
 }
 
@@ -78,16 +79,18 @@ void PocoHTTPClient::MakeRequestInternal(
     auto uri = request.GetUri().GetURIString();
     LOG_DEBUG(log, "Make request to: {}", uri);
 
-    enum ES3MetricType
+    enum class ES3MetricType
     {
-        Microseconds = 0,
+        Microseconds,
         Count,
         Errors,
         Throttling,
         Redirects,
+
+        EnumSize,
     };
-    
-    auto SelectMetric = [&request](int type)
+
+    auto SelectMetric = [&request](ES3MetricType type)
     {
         const ProfileEvents::Event events_map[][2] = {
             {ProfileEvents::S3ReadMicroseconds, ProfileEvents::S3WriteMicroseconds},
@@ -97,20 +100,24 @@ void PocoHTTPClient::MakeRequestInternal(
             {ProfileEvents::S3ReadRequestsRedirects, ProfileEvents::S3WriteRequestsRedirects},
         };
 
+        static_assert((sizeof(events_map) / sizeof(events_map[0])) == static_cast<unsigned int>(ES3MetricType::EnumSize));
+
         switch (request.GetMethod())
         {
             case Aws::Http::HttpMethod::HTTP_GET:
             case Aws::Http::HttpMethod::HTTP_HEAD:
-                return events_map[type][0]; // Read
+                return events_map[static_cast<unsigned int>(type)][0]; // Read
             case Aws::Http::HttpMethod::HTTP_POST:
             case Aws::Http::HttpMethod::HTTP_DELETE:
             case Aws::Http::HttpMethod::HTTP_PUT:
             case Aws::Http::HttpMethod::HTTP_PATCH:
-                return events_map[type][1]; // Write
+                return events_map[static_cast<unsigned int>(type)][1]; // Write
         }
+
+        throw Exception(String("Unsupported request method"), ErrorCodes::NOT_IMPLEMENTED);
     };
-    
-    ProfileEvents::increment(SelectMetric(Count));
+
+    ProfileEvents::increment(SelectMetric(ES3MetricType::Count));
 
     const int MAX_REDIRECT_ATTEMPTS = 10;
     try
@@ -179,7 +186,7 @@ void PocoHTTPClient::MakeRequestInternal(
             auto & response_body_stream = session->receiveResponse(poco_response);
 
             watch.stop();
-            ProfileEvents::increment(SelectMetric(Microseconds), watch.elapsedMicroseconds());
+            ProfileEvents::increment(SelectMetric(ES3MetricType::Microseconds), watch.elapsedMicroseconds());
 
             int status_code = static_cast<int>(poco_response.getStatus());
             LOG_DEBUG(log, "Response status: {}, {}", status_code, poco_response.getReason());
@@ -190,7 +197,7 @@ void PocoHTTPClient::MakeRequestInternal(
                 uri = location;
                 LOG_DEBUG(log, "Redirecting request to new location: {}", location);
 
-                ProfileEvents::increment(SelectMetric(Redirects));
+                ProfileEvents::increment(SelectMetric(ES3MetricType::Redirects));
 
                 continue;
             }
@@ -216,11 +223,11 @@ void PocoHTTPClient::MakeRequestInternal(
 
                 if (status_code == 429 || status_code == 503)
                 { // API throttling
-                    ProfileEvents::increment(SelectMetric(Throttling));
+                    ProfileEvents::increment(SelectMetric(ES3MetricType::Throttling));
                 }
                 else
                 {
-                    ProfileEvents::increment(SelectMetric(Errors));
+                    ProfileEvents::increment(SelectMetric(ES3MetricType::Errors));
                 }
             }
             else
@@ -237,7 +244,7 @@ void PocoHTTPClient::MakeRequestInternal(
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
 
-        ProfileEvents::increment(SelectMetric(Errors));
+        ProfileEvents::increment(SelectMetric(ES3MetricType::Errors));
     }
 }
 }
