@@ -16,23 +16,23 @@
     <query>SELECT avg(d64), sum(d64), sumWithOverflow(d64) FROM t</query>
     <query>SELECT avg(d128), sum(d128), sumWithOverflow(d128) FROM t</query>
 
-    <query>SELECT uniq(d32), uniqCombined(d32), uniqExact(d32), uniqHLL12(d32) FROM (SELECT * FROM t LIMIT 10000000)</query>
-    <query>SELECT uniq(d64), uniqCombined(d64), uniqExact(d64), uniqHLL12(d64) FROM (SELECT * FROM t LIMIT 10000000</query>
-    <query>SELECT uniq(d128), uniqCombined(d128), uniqExact(d128), uniqHLL12(d128) FROM (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT uniq(d32), uniqCombined(d32), uniqExact(d32), uniqHLL12(d32) FROM     (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT uniq(d64), uniqCombined(d64), uniqExact(d64), uniqHLL12(d64) FROM     (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT uniq(d128), uniqCombined(d128), uniqExact(d128), uniqHLL12(d128) FROM (SELECT * FROM t LIMIT 1000000)</query>
     
-    <query>SELECT median(d32), medianExact(d32), medianExactWeighted(d32, 2) FROM (SELECT * FROM t LIMIT 10000000)</query>
-    <query>SELECT median(d64), medianExact(d64), medianExactWeighted(d64, 2) FROM (SELECT * FROM t LIMIT 10000000)</query>
-    <query>SELECT median(d128), medianExact(d128), medianExactWeighted(d128, 2) FROM (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT median(d32), medianExact(d32), medianExactWeighted(d32, 2) FROM    (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT median(d64), medianExact(d64), medianExactWeighted(d64, 2) FROM    (SELECT * FROM t LIMIT 1000000)</query>
+    <query>SELECT median(d128), medianExact(d128), medianExactWeighted(d128, 2) FROM (SELECT * FROM t LIMIT 1000000)</query>
     
-    <query>SELECT quantile(d32), quantileExact(d32), quantileExactWeighted(d32, 2) FROM (SELECT * FROM t LIMIT 10000000)</query>
-    <query>SELECT quantile(d64), quantileExact(d64), quantileExactWeighted(d64, 2) FROM (SELECT * FROM t LIMIT 10000000)</query>
-    <query>SELECT quantile(d128), quantileExact(d128), quantileExactWeighted(d128, 2) FROM (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT quantile(d32), quantileExact(d32), quantileExactWeighted(d32, 2) FROM    (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT quantile(d64), quantileExact(d64), quantileExactWeighted(d64, 2) FROM    (SELECT * FROM t LIMIT 1000000)</query>
+    <query>SELECT quantile(d128), quantileExact(d128), quantileExactWeighted(d128, 2) FROM (SELECT * FROM t LIMIT 1000000)</query>
 
-    <query>SELECT quantilesExact(0.1, 0.9)(d32), quantilesExactWeighted(0.1, 0.9)(d32, 2) FROM (SELECT * FROM t LIMIT 10000000)</query>
-    <query>SELECT quantilesExact(0.1, 0.9)(d64), quantilesExactWeighted(0.1, 0.9)(d64, 2) FROM (SELECT * FROM t LIMIT 10000000)</query>
-    <query>SELECT quantilesExact(0.1, 0.9)(d128), quantilesExactWeighted(0.1, 0.9)(d128, 2) FROM (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT quantilesExact(0.1, 0.9)(d32), quantilesExactWeighted(0.1, 0.9)(d32, 2) FROM   (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT quantilesExact(0.1, 0.9)(d64), quantilesExactWeighted(0.1, 0.9)(d64, 2) FROM   (SELECT * FROM t LIMIT 1000000)</query>
+    <query>SELECT quantilesExact(0.1, 0.9)(d128), quantilesExactWeighted(0.1, 0.9)(d128, 2) FROM (SELECT * FROM t LIMIT 1000000)</query>
     
     <query>SELECT varPop(d32), varSamp(d32), stddevPop(d32) FROM t</query>
-    <query>SELECT varPop(d64), varSamp(d64), stddevPop(d64) FROM t</query>
-    <query>SELECT varPop(d128), varSamp(d128), stddevPop(d128) FROM t</query>
+    <query>SELECT varPop(d64), varSamp(d64), stddevPop(d64) FROM    (SELECT * FROM t LIMIT 1000000)</query>
+    <query>SELECT varPop(d128), varSamp(d128), stddevPop(d128) FROM (SELECT * FROM t LIMIT 1000000)</query>
 </test>
