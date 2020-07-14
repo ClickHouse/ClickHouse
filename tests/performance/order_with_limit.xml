@@ -12,7 +12,7 @@
     <query>SELECT number AS n FROM numbers_mt(200000000) ORDER BY n DESC LIMIT 10000 FORMAT Null</query>
     <query>SELECT number AS n FROM numbers_mt(200000000) ORDER BY n DESC LIMIT 65535 FORMAT Null</query>
 
-    <query>SELECT intHash64(number) AS n FROM numbers_mt(200000000) ORDER BY n LIMIT 10 FORMAT Null</query>
+    <query>SELECT intHash64(number) AS n FROM numbers_mt(500000000) ORDER BY n LIMIT 10 FORMAT Null</query>
     <query>SELECT intHash64(number) AS n FROM numbers_mt(200000000) ORDER BY n LIMIT 100 FORMAT Null</query>
     <query>SELECT intHash64(number) AS n FROM numbers_mt(200000000) ORDER BY n LIMIT 1500 FORMAT Null</query>
     <query>SELECT intHash64(number) AS n FROM numbers_mt(200000000) ORDER BY n LIMIT 3000 FORMAT Null</query>
