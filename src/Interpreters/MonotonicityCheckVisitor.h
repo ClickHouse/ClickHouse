@@ -30,7 +30,7 @@ public:
         const std::unordered_map<String, ASTPtr> & group_by_function_hashes;
         Monotonicity monotonicity{true, true, true};
         ASTIdentifier * identifier = nullptr;
-        DataTypePtr arg_data_type;
+        DataTypePtr arg_data_type = {};
 
         void reject() { monotonicity.is_monotonic = false; }
         bool isRejected() const { return !monotonicity.is_monotonic; }
