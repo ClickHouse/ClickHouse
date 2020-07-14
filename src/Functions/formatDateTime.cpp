@@ -348,7 +348,7 @@ public:
             if (arguments.size() == 1)
             {
                 if (!castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
-				    {
+                    {
                         using FromDataType = std::decay_t<decltype(type)>;
                         ConvertImpl<FromDataType, DataTypeDateTime, Name>::execute(block, arguments, result, input_rows_count);
                         return true;
@@ -363,7 +363,7 @@ public:
             else
             {
                 if (!castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
-					{
+                    {
                         using FromDataType = std::decay_t<decltype(type)>;
                         if (!executeType<FromDataType>(block, arguments, result))
                             throw Exception(
@@ -473,13 +473,13 @@ public:
                     // since right now LUT does not support Int64-values and not format instructions for subsecond parts,
                     // treat DatTime64 values just as DateTime values by ignoring fractional and casting to UInt32.
                     const auto c = DecimalUtils::split(vec[i], scale);
-					instruction.perform(pos, static_cast<UInt32>(c.whole), time_zone);
+                    instruction.perform(pos, static_cast<UInt32>(c.whole), time_zone);
                 }
             }
             else
             {
                 for (auto & instruction : instructions)
-					instruction.perform(pos, vec[i], time_zone);
+                    instruction.perform(pos, vec[i], time_zone);
             }
 
             dst_offsets[i] = pos - begin;
