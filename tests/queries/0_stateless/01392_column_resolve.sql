@@ -25,7 +25,8 @@ INNER JOIN (
 ) AS click ON click.conversionId = conversion.conversionId
 LEFT JOIN (
     SELECT * FROM default.leftjoin
-) AS dummy ON (dummy.id = conversion.conversionId);
+) AS dummy ON (dummy.id = conversion.conversionId)
+ORDER BY myValue;
 
 DROP TABLE IF EXISTS tableConversion;
 DROP TABLE IF EXISTS tableClick;
