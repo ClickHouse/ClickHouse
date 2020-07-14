@@ -259,6 +259,12 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
     }
 }
 
+void ColumnArray::updateHashFast(SipHash & hash) const
+{
+    offsets->updateHashFast(hash);
+    data->updateHashFast(hash);
+}
+
 void ColumnArray::insert(const Field & x)
 {
     const Array & array = DB::get<const Array &>(x);

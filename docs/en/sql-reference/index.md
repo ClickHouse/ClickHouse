@@ -11,8 +11,8 @@ ClickHouse supports the following types of queries:
 
 -   [SELECT](../sql-reference/statements/select/index.md)
 -   [INSERT INTO](../sql-reference/statements/insert-into.md)
--   [CREATE](../sql-reference/statements/create.md)
+-   [CREATE](../sql-reference/statements/create/index.md)
 -   [ALTER](../sql-reference/statements/alter.md#query_language_queries_alter)
--   [Other types of queries](../sql-reference/statements/misc.md)
+-   [Other types of queries](../sql-reference/statements/index.md)
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/) <!--hide-->

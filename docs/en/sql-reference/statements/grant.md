@@ -3,7 +3,7 @@ toc_priority: 39
 toc_title: GRANT
 ---
 
-# GRANT {#grant}
+# GRANT Statement {#grant}
 
 -   Grants [privileges](#grant-privileges) to ClickHouse user accounts or roles.
 -   Assigns roles to user accounts or to the other roles.
@@ -297,7 +297,7 @@ Examples of how this hierarchy is treated:
 
 ### CREATE {#grant-create}
 
-Allows executing [CREATE](../../sql-reference/statements/create.md) and [ATTACH](../../sql-reference/statements/misc.md#attach) DDL-queries according to the following hierarchy of privileges:
+Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [ATTACH](../../sql-reference/statements/misc.md#attach) DDL-queries according to the following hierarchy of privileges:
 
 -   `CREATE`. Level: `GROUP`
     -   `CREATE DATABASE`. Level: `DATABASE`
