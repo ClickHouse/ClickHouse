@@ -1,5 +1,6 @@
 #include <math.h>
 #include <sstream>
+
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
