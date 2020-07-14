@@ -51,6 +51,6 @@ service clickhouse-server restart
 
 wait_server
 
-clickhouse-client --query "SELECT 'Server successfuly started'" || echo 'Server failed to start'
+clickhouse-client --query "SELECT 'Server successfuly started'" > /test_output/alive_check.txt || echo 'Server failed to start' > /test_output/alive_check.txt
 
 mv /var/log/clickhouse-server/* /test_output
