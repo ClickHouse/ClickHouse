@@ -64,6 +64,12 @@ void ColumnNullable::updateWeakHash32(WeakHash32 & hash) const
             hash_data[row] = old_hash_data[row];
 }
 
+void ColumnNullable::updateHashFast(SipHash & hash) const
+{
+    null_map->updateHashFast(hash);
+    nested_column->updateHashFast(hash);
+}
+
 MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
 {
     MutableColumnPtr new_nested_col = getNestedColumn().cloneResized(new_size);

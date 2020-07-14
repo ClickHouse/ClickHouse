@@ -55,6 +55,8 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"storage_policy", std::make_shared<DataTypeString>()},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -221,6 +223,14 @@ protected:
                             res_columns[res_index++]->insertDefault();
 
                         // total_bytes
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // lifetime_rows
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // lifetime_bytes
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
                     }
@@ -427,6 +437,26 @@ protected:
                     auto total_bytes = table->totalBytes();
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    assert(table != nullptr);
+                    auto lifetime_rows = table->lifetimeRows();
+                    if (lifetime_rows)
+                        res_columns[res_index++]->insert(*lifetime_rows);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    assert(table != nullptr);
+                    auto lifetime_bytes = table->lifetimeBytes();
+                    if (lifetime_bytes)
+                        res_columns[res_index++]->insert(*lifetime_bytes);
                     else
                         res_columns[res_index++]->insertDefault();
                 }

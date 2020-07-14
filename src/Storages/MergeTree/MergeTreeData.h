@@ -16,8 +16,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
+#include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
 #include <Interpreters/PartLog.h>
 #include <Disks/StoragePolicy.h>
 #include <Interpreters/Aggregator.h>
@@ -193,13 +195,15 @@ public:
     DataPartsLock lockParts() const { return DataPartsLock(data_parts_mutex); }
 
     MergeTreeDataPartType choosePartType(size_t bytes_uncompressed, size_t rows_count) const;
+    MergeTreeDataPartType choosePartTypeOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
     /// After this method setColumns must be called
     MutableDataPartPtr createPart(const String & name,
         MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
         const VolumePtr & volume, const String & relative_path) const;
 
-    /// After this methods 'loadColumnsChecksumsIndexes' must be called
+    /// Create part, that already exists on filesystem.
+    /// After this methods 'loadColumnsChecksumsIndexes' must be called.
     MutableDataPartPtr createPart(const String & name,
         const VolumePtr & volume, const String & relative_path) const;
 
@@ -474,6 +478,9 @@ public:
     void clearOldPartsFromFilesystem(bool force = false);
     void clearPartsFromFilesystem(const DataPartsVector & parts);
 
+    /// Delete WAL files containing parts, that all already stored on disk.
+    void clearOldWriteAheadLogs();
+
     /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
     /// Must be called with locked lockForShare() because use relative_data_path.
@@ -500,11 +507,15 @@ public:
 
     /// Change MergeTreeSettings
     void changeSettings(
-           const ASTPtr & new_settings,
-           TableLockHolder & table_lock_holder);
+        const ASTPtr & new_settings,
+        TableLockHolder & table_lock_holder);
 
     /// Freezes all parts.
-    void freezeAll(const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
+    void freezeAll(
+        const String & with_name,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Context & context,
+        TableLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
@@ -526,7 +537,7 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
+    void freezePartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
 
 
 public:
@@ -559,7 +570,7 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPartOnSameDisk(
-        const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info);
+        const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
@@ -631,6 +642,9 @@ public:
     /// Checks if given part already belongs destination disk or volume for the
     /// TTL rule.
     bool isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const;
+
+    using WriteAheadLogPtr = std::shared_ptr<MergeTreeWriteAheadLog>;
+    WriteAheadLogPtr getWriteAheadLog();
 
     MergeTreeDataFormatVersion format_version;
 
@@ -816,7 +830,7 @@ protected:
 
     /// Common part for |freezePartition()| and |freezeAll()|.
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
-    void freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
+    void freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context);
 
     bool canReplacePartition(const DataPartPtr & src_part) const;
 
@@ -870,9 +884,14 @@ private:
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
-    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const;
+    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason = nullptr) const;
+
+    std::mutex write_ahead_log_mutex;
+    WriteAheadLogPtr write_ahead_log;
 
     virtual void startBackgroundMovesIfNeeded() = 0;
+
+    bool allow_nullable_key{};
 };
 
 }

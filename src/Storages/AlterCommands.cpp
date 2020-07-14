@@ -479,11 +479,23 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         if (metadata.table_ttl.definition_ast)
             rename_visitor.visit(metadata.table_ttl.definition_ast);
 
-        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            metadata.table_ttl.definition_ast, metadata.columns, context, metadata.primary_key);
-
         for (auto & constraint : metadata.constraints.constraints)
             rename_visitor.visit(constraint);
+
+        if (metadata.isSortingKeyDefined())
+            rename_visitor.visit(metadata.sorting_key.definition_ast);
+
+        if (metadata.isPrimaryKeyDefined())
+            rename_visitor.visit(metadata.primary_key.definition_ast);
+
+        if (metadata.isSamplingKeyDefined())
+            rename_visitor.visit(metadata.sampling_key.definition_ast);
+
+        if (metadata.isPartitionKeyDefined())
+            rename_visitor.visit(metadata.partition_key.definition_ast);
+
+        for (auto & index : metadata.secondary_indices)
+            rename_visitor.visit(index.definition_ast);
     }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
@@ -722,10 +734,10 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
             command.apply(metadata_copy, context);
 
     /// Changes in columns may lead to changes in keys expression.
-    metadata_copy.sorting_key.recalculateWithNewColumns(metadata_copy.columns, context);
+    metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
-        metadata_copy.primary_key.recalculateWithNewColumns(metadata_copy.columns, context);
+        metadata_copy.primary_key.recalculateWithNewAST(metadata_copy.primary_key.definition_ast, metadata_copy.columns, context);
     }
     else
     {
@@ -735,11 +747,11 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
 
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
-        metadata_copy.partition_key.recalculateWithNewColumns(metadata_copy.columns, context);
+        metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, context);
 
     /// Changes in columns may lead to changes in secondary indices
     for (auto & index : metadata_copy.secondary_indices)
-        index.recalculateWithNewColumns(metadata_copy.columns, context);
+        index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, context);
 
     /// Changes in columns may lead to changes in TTL expressions.
     auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
@@ -844,20 +856,24 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         {
             if (all_columns.has(command.column_name) || all_columns.hasNested(command.column_name))
             {
-                for (const ColumnDescription & column : all_columns)
+                if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
-                    const auto & default_expression = column.default_desc.expression;
-                    if (default_expression)
+                    /// Check if we are going to DROP a column that some other columns depend on.
+                    for (const ColumnDescription & column : all_columns)
                     {
-                        ASTPtr query = default_expression->clone();
-                        auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns.getAll());
-                        const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
-                        const auto required_columns = actions->getRequiredColumns();
+                        const auto & default_expression = column.default_desc.expression;
+                        if (default_expression)
+                        {
+                            ASTPtr query = default_expression->clone();
+                            auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns.getAll());
+                            const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
+                            const auto required_columns = actions->getRequiredColumns();
 
-                        if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
-                            throw Exception(
-                                "Cannot drop column " + backQuote(command.column_name) + ", because column " + backQuote(column.name) + " depends on it",
-                                ErrorCodes::ILLEGAL_COLUMN);
+                            if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
+                                throw Exception("Cannot drop column " + backQuote(command.column_name)
+                                        + ", because column " + backQuote(column.name) + " depends on it",
+                                    ErrorCodes::ILLEGAL_COLUMN);
+                        }
                     }
                 }
                 all_columns.remove(command.column_name);
