@@ -21,16 +21,13 @@ namespace ErrorCodes
 
 
 IPolygonDictionary::IPolygonDictionary(
-        const std::string & database_,
-        const std::string & name_,
+        const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         InputType input_type_,
         PointType point_type_)
-        : database(database_)
-        , name(name_)
-        , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
+        : IDictionaryBase(dict_id_)
         , dict_struct(dict_struct_)
         , source_ptr(std::move(source_ptr_))
         , dict_lifetime(dict_lifetime_)
@@ -39,21 +36,6 @@ IPolygonDictionary::IPolygonDictionary(
 {
     createAttributes();
     loadData();
-}
-
-const std::string & IPolygonDictionary::getDatabase() const
-{
-    return database;
-}
-
-const std::string & IPolygonDictionary::getName() const
-{
-    return name;
-}
-
-const std::string & IPolygonDictionary::getFullName() const
-{
-    return full_name;
 }
 
 std::string IPolygonDictionary::getTypeName() const
@@ -635,22 +617,20 @@ void IPolygonDictionary::extractPolygons(const ColumnPtr &column)
 }
 
 SimplePolygonDictionary::SimplePolygonDictionary(
-    const std::string & database_,
-    const std::string & name_,
+    const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     InputType input_type_,
     PointType point_type_)
-    : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
+    : IPolygonDictionary(dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
 {
 }
 
 std::shared_ptr<const IExternalLoadable> SimplePolygonDictionary::clone() const
 {
     return std::make_shared<SimplePolygonDictionary>(
-            this->database,
-            this->name,
+            this->dict_id,
             this->dict_struct,
             this->source_ptr->clone(),
             this->dict_lifetime,
@@ -738,7 +718,7 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
                             ErrorCodes::BAD_ARGUMENTS};
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-        return std::make_unique<SimplePolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type);
+        return std::make_unique<SimplePolygonDictionary>(StorageID{database, name}, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type);
     };
     factory.registerLayout("polygon", create_layout, true);
 }

@@ -50,8 +50,7 @@ class CacheDictionary final : public IDictionary
 {
 public:
     CacheDictionary(
-        const std::string & database_,
-        const std::string & name_,
+        const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         DictionaryLifetime dict_lifetime_,
@@ -64,10 +63,6 @@ public:
         size_t max_threads_for_updates);
 
     ~CacheDictionary() override;
-
-    const std::string & getDatabase() const override { return database; }
-    const std::string & getName() const override { return name; }
-    const std::string & getFullName() const override { return full_name; }
 
     std::string getTypeName() const override { return "Cache"; }
 
@@ -89,8 +84,7 @@ public:
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
         return std::make_shared<CacheDictionary>(
-                database,
-                name,
+                dict_id,
                 dict_struct,
                 source_ptr->clone(),
                 dict_lifetime,
@@ -303,7 +297,6 @@ private:
 
     const std::string database;
     const std::string name;
-    const std::string full_name;
     const DictionaryStructure dict_struct;
     mutable DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
