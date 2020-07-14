@@ -24,8 +24,45 @@ else
     fi
 fi
 
+git submodule update --init --recursive contrib/boost | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/submodule_log.txt
 
-git submodule update --init --recursive | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/submodule_log.txt
+git submodule update --init --recursive contrib/zlib-ng | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/libxml2 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/poco | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/libunwind | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/ryu | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/fmtlib | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/cctz | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/libcpuid | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/replxx | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/double-conversion | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/libcxx | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/libcxxabi | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/libc-headers | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/lz4 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/zstd | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/fastops | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/rapidjson | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/re2 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
+
+git submodule update --init --recursive contrib/sparsehash-c11 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/submodule_log.txt
 
 export CMAKE_LIBS_CONFIG="-DENABLE_RDKAFKA=0 -DENABLE_S3=0 -DUSE_SENTRY=0 -DENABLE_AMQPCPP=0 -DENABLE_HDFS=0 -DENABLE_MYSQL=0 -DENABLE_GRPC=0 -DENABLE_CURL=0 -DENABLE_JEMALLOC=0 -DENABLE_CAPNP=0 -DENABLE_RDKAFKA=0 -DENABLE_ICU=0 -DENABLE_POCO_NETSSL=0 -DENABLE_ODBC=0 -DENABLE_MYSQL=0 -DENABLE_SSL=0 -DENABLE_POCO_NETSSL=0 -DENABLE_CASSANDRA=0 -DENABLE_PARQUET=0 -DENABLE_AVRO=0 -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_PROTOBUF=0 -DENABLE_H3=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_ODBC=0 -DENABLE_GSASL_LIBRARY=0 -DENABLE_THINLTO=0 -DENABLE_MSGPACK=0 -DENABLE_LDAP=0 -DUSE_SNAPPY=0 -DENABLE_HYPERSCAN=0"
 
