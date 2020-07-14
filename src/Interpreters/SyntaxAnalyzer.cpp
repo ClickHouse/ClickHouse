@@ -559,7 +559,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const C
         MonotonicityCheckVisitor::Data data{tables_with_columns, context, group_by_hashes};
         MonotonicityCheckVisitor(data).visit(ast_func);
 
-        if (data.monotonicity.is_monotonic)
+        if (!data.isRejected())
         {
             ast_func = data.identifier->clone();
             ast_func->setAlias("");
