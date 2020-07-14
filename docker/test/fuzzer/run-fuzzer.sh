@@ -46,6 +46,7 @@ function configure
     cp -av "$repo_dir"/programs/server/config* db
     cp -av "$repo_dir"/programs/server/user* db
     cp -av "$repo_dir"/tests/config db/config.d
+    cp -av "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
 }
 
 function watchdog
@@ -53,12 +54,13 @@ function watchdog
     sleep 3600
 
     echo "Fuzzing run has timed out"
-    killall -9 clickhouse clickhouse-server clickhouse-client
+    ./clickhouse client --query "select elapsed, query from system.processes" ||:
+    killall -9 clickhouse clickhouse-server clickhouse-client ||:
 }
 
 function fuzz
 {
-    ./clickhouse server --config-file db/config.xml -- --path db 2>&1 | tail -1000000 > server.log &
+    ./clickhouse server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
     server_pid=$!
     kill -0 $server_pid
     while ! ./clickhouse client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
@@ -67,14 +69,15 @@ function fuzz
     echo Server started
 
     fuzzer_exit_code=0
-    ./clickhouse client --query-fuzzer-runs=100 \
+    ./clickhouse client --query-fuzzer-runs=1000 \
         < <(for f in $(ls ch/tests/queries/0_stateless/*.sql | sort -R); do cat "$f"; echo ';'; done) \
-        > >(tail -1000000 > fuzzer.log) \
+        > >(tail -100000 > fuzzer.log) \
         2>&1 \
         || fuzzer_exit_code=$?
     
     echo "Fuzzer exit code is $fuzzer_exit_code"
-    kill -9 $server_pid
+    ./clickhouse client --query "select elapsed, query from system.processes" ||:
+    kill -9 $server_pid ||:
     return $fuzzer_exit_code
 }
 
@@ -107,7 +110,14 @@ case "$stage" in
     watchdog_pid=$!
     fuzzer_exit_code=0
     time fuzz || fuzzer_exit_code=$?
-    kill $watchdog_pid
+    kill $watchdog_pid ||:
+
+    # Debug
+    date
+    sleep 10
+    jobs
+    pstree -aspgT
+
     exit $fuzzer_exit_code
     ;&
 esac
