@@ -457,7 +457,7 @@ public:
     template <typename It1, typename It2>
     void insert(iterator it, It1 from_begin, It2 from_end)
     {
-        size_t position = it - begin();
+        size_t position [[maybe_unused]] = it - begin();
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
         size_t bytes_to_move = this->byte_size(end() - it);
 
