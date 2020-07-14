@@ -23,6 +23,8 @@ public:
 
     void setException(const std::exception_ptr & exception);
 protected:
+    const Context & global_context;
+
     ASTPtr engine_define;
     DatabasePtr nested_database;
     std::unique_ptr<MaterializeMySQLSettings> settings;

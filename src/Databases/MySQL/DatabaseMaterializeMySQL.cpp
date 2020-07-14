@@ -5,6 +5,7 @@
 #include <Databases/MySQL/DatabaseMaterializeTablesIterator.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/StorageMaterializeMySQL.h>
+#include <Poco/File.h>
 #include <Poco/Logger.h>
 #include <Common/setThreadName.h>
 
@@ -19,7 +20,7 @@ namespace ErrorCodes
 DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
     const Context & context, const String & database_name_, const String & metadata_path_, const IAST * database_engine_define_
     , const String & mysql_database_name_, mysqlxx::Pool && pool_, MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_)
-    : IDatabase(database_name_), engine_define(database_engine_define_->clone())
+    : IDatabase(database_name_), global_context(context.getGlobalContext()), engine_define(database_engine_define_->clone())
     , nested_database(std::make_shared<DatabaseOrdinary>(database_name_, metadata_path_, context))
     , settings(std::move(settings_)), log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
     , materialize_thread(context, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
@@ -75,7 +76,13 @@ void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_for
 
 void DatabaseMaterializeMySQL::shutdown()
 {
-    getNestedDatabase()->shutdown();
+    materialize_thread.stopSynchronization();
+
+    auto iterator = nested_database->getTablesIterator(global_context, {});
+
+    /// We only shutdown the table, The tables is cleaned up when destructed database
+    for (; iterator->isValid(); iterator->next())
+        iterator->table()->shutdown();
 }
 
 bool DatabaseMaterializeMySQL::empty() const
@@ -168,12 +175,26 @@ void DatabaseMaterializeMySQL::alterTable(const Context & context, const Storage
 
 bool DatabaseMaterializeMySQL::shouldBeEmptyOnDetach() const
 {
-    return getNestedDatabase()->shouldBeEmptyOnDetach();
+    return false;
 }
 
 void DatabaseMaterializeMySQL::drop(const Context & context)
 {
-    getNestedDatabase()->drop(context);
+    DatabasePtr nested_database = getNestedDatabase();
+
+    if (nested_database->shouldBeEmptyOnDetach())
+    {
+        for (auto iterator = nested_database->getTablesIterator(context, {}); iterator->isValid(); iterator->next())
+        {
+            TableExclusiveLockHolder table_lock = iterator->table()->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+            nested_database->dropTable(context, iterator->name(), true);
+        }
+
+        /// Remove metadata info
+        Poco::File(getMetadataPath() + "/.metadata").remove(false);
+    }
+
+    nested_database->drop(context);
 }
 
 bool DatabaseMaterializeMySQL::isTableExist(const String & name, const Context & context) const
