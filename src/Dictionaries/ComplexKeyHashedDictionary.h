@@ -231,8 +231,6 @@ private:
     template <typename T>
     std::vector<StringRef> getKeys(const Attribute & attribute) const;
 
-    const std::string database;
-    const std::string name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;

@@ -9,6 +9,7 @@
 #include <Common/PODArray.h>
 #include <common/StringRef.h>
 #include "IDictionarySource.h"
+#include <Dictionaries/DictionaryStructure.h>
 
 #include <chrono>
 #include <memory>
@@ -18,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int TYPE_MISMATCH;
 }
 
 struct IDictionaryBase;
@@ -138,5 +140,14 @@ struct IDictionary : IDictionaryBase
         out = out_arr[0];
     }
 };
+
+/// Implicit conversions in dictGet functions is disabled.
+inline void checkAttributeType(const IDictionaryBase * dictionary, const std::string & attribute_name,
+                               AttributeUnderlyingType attribute_type, AttributeUnderlyingType to)
+{
+    if (attribute_type != to)
+        throw Exception{dictionary->getFullName() + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute_type)
+                        + ", expected " + toString(to), ErrorCodes::TYPE_MISMATCH};
+}
 
 }

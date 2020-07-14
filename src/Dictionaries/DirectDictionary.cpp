@@ -133,7 +133,7 @@ void DirectDictionary::isInConstantVector(const Key child_id, const PaddedPODArr
     void DirectDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
@@ -159,7 +159,7 @@ DECLARE(Decimal128)
 void DirectDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto & null_value = std::get<StringRef>(attribute.null_values);
     getItemsStringImpl<StringRef, StringRef>(
@@ -177,7 +177,7 @@ void DirectDictionary::getString(const std::string & attribute_name, const Padde
         ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t row) { return def[row]; }); \
@@ -202,7 +202,7 @@ void DirectDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsStringImpl<StringRef, StringRef>(
         attribute,
@@ -216,7 +216,7 @@ void DirectDictionary::getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -241,7 +241,7 @@ void DirectDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     DirectDictionary::getItemsStringImpl<StringRef, StringRef>(
         attribute,

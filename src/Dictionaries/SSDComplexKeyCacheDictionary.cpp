@@ -1364,7 +1364,7 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         const auto null_value = std::get<TYPE>(null_values[index]); /* NOLINT */ \
         getItemsNumberImpl<TYPE, TYPE>(index, key_columns, key_types, out, [&](const size_t) { return null_value; }); /* NOLINT */ \
     }
@@ -1394,7 +1394,7 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         getItemsNumberImpl<TYPE, TYPE>(index, key_columns, key_types, out, [&](const size_t row) { return def[row]; }); /* NOLINT */ \
     }
     DECLARE(UInt8)
@@ -1422,7 +1422,7 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         getItemsNumberImpl<TYPE, TYPE>(index, key_columns, key_types, out, [&](const size_t) { return def; }); /* NOLINT */ \
     }
     DECLARE(UInt8)
@@ -1488,7 +1488,7 @@ void SSDComplexKeyCacheDictionary::getString(
     const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
 {
     const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
     const auto null_value = StringRef{std::get<String>(null_values[index])};
 
@@ -1501,7 +1501,7 @@ void SSDComplexKeyCacheDictionary::getString(
         const ColumnString * const def, ColumnString * const out) const
 {
     const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t row) { return def->getDataAt(row); });
 }
@@ -1514,7 +1514,7 @@ void SSDComplexKeyCacheDictionary::getString(
         ColumnString * const out) const
 {
     const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t) { return StringRef{def}; });
 }

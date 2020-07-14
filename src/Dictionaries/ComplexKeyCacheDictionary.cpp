@@ -77,7 +77,7 @@ void ComplexKeyCacheDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -94,7 +94,7 @@ void ComplexKeyCacheDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, key_columns, out, [&](const size_t row) { return def->getDataAt(row); });
 }
@@ -109,7 +109,7 @@ void ComplexKeyCacheDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, key_columns, out, [&](const size_t) { return StringRef{def}; });
 }
