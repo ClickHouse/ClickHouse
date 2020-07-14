@@ -23,7 +23,7 @@
 namespace
 {
 
-static const char * S3_LOGGER_TAG_NAMES[][2] = {
+const char * S3_LOGGER_TAG_NAMES[][2] = {
     {"AWSClient", "AWSClient"},
     {"AWSAuthV4Signer", "AWSClient (AWSAuthV4Signer)"},
 };
