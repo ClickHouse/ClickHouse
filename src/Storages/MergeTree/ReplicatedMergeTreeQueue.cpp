@@ -25,7 +25,18 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
     , format_version(storage.format_version)
     , current_parts(format_version)
     , virtual_parts(format_version)
-{}
+{
+    zookeeper_path = storage.zookeeper_path;
+    replica_path = storage.replica_path;
+    logger_name = storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeQueue)";
+    log = &Poco::Logger::get(logger_name);
+}
+
+
+void ReplicatedMergeTreeQueue::initialize(const MergeTreeData::DataParts & parts)
+{
+    addVirtualParts(parts);
+}
 
 
 void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & parts)
@@ -106,19 +117,6 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
     LOG_TRACE(log, "Loaded queue");
     return updated;
-}
-
-
-void ReplicatedMergeTreeQueue::initialize(
-    const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
-    const MergeTreeData::DataParts & parts)
-{
-    zookeeper_path = zookeeper_path_;
-    replica_path = replica_path_;
-    logger_name = logger_name_;
-    log = &Poco::Logger::get(logger_name);
-
-    addVirtualParts(parts);
 }
 
 
@@ -1066,20 +1064,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 entry.typeToString(), entry.new_part_name,
                 ReadableSize(sum_parts_size_in_bytes), ReadableSize(max_source_parts_size));
 
-            return false;
-        }
-    }
-
-    /// TODO: it makes sense to check DROP_RANGE also
-    if (entry.type == LogEntry::CLEAR_COLUMN || entry.type == LogEntry::REPLACE_RANGE)
-    {
-        String conflicts_description;
-        String range_name = (entry.type == LogEntry::REPLACE_RANGE) ? entry.replace_range_entry->drop_range_part_name : entry.new_part_name;
-        auto range = MergeTreePartInfo::fromPartName(range_name, format_version);
-
-        if (0 != getConflictsCountForRange(range, entry, &conflicts_description, state_lock))
-        {
-            LOG_DEBUG(log, conflicts_description);
             return false;
         }
     }

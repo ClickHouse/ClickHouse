@@ -1261,4 +1261,91 @@ Cодержит информацию о дисках, заданных в [ко�
 
 Если политика хранения содержит несколько томов, то каждому тому соответствует отдельная запись в таблице.
 
+## system.quotas {#system_tables-quotas}
+Содержит информацию о [квотах](quotas.md).
+
+Столбцы:
+-  `name` ([String](../sql-reference/data-types/string.md)) — Имя квоты.
+-   `id` ([UUID](../sql-reference/data-types/uuid.md)) — ID квоты.
+-   `storage`([String](../sql-reference/data-types/string.md)) — Хранилище квот. Возможные значения: "users.xml", если квота задана в файле users.xml, "disk" — если квота задана в SQL-запросе.
+-   `keys` ([Array](../sql-reference/data-types/array.md)([Enum8](../sql-reference/data-types/enum.md))) — Ключ определяет совместное использование квоты. Если два соединения используют одну и ту же квоту, они совместно используют один и тот же объем ресурсов. Значения: 
+    -   `[]` — Все пользователи используют одну и ту же квоту.
+    -   `['user_name']` — Соединения с одинаковым именем пользователя используют одну и ту же квоту. 
+    -   `['ip_address']` — Соединения с одинаковым IP-адресом используют одну и ту же квоту. 
+    -   `['client_key']` — Соединения с одинаковым ключом используют одну и ту же квоту. Ключ может быть явно задан клиентом. При использовании [clickhouse-client](../interfaces/cli.md), передайте ключевое значение в параметре `--quota-key`, или используйте параметр `quota_key` файле настроек клиента. В случае использования HTTP интерфейса, используйте заголовок `X-ClickHouse-Quota`.
+    -   `['user_name', 'client_key']` — Соединения с одинаковым ключом используют одну и ту же квоту. Если ключ не предоставлен клиентом, то квота отслеживается для `user_name`.
+    -   `['client_key', 'ip_address']` — Соединения с одинаковым ключом используют одну и ту же квоту. Если ключ не предоставлен клиентом, то квота отслеживается для `ip_address`.
+-   `durations` ([Array](../sql-reference/data-types/array.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Длины временных интервалов для расчета потребления ресурсов, в секундах. 
+-   `apply_to_all` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Логическое значение. Он показывает, к каким пользователям применяется квота. Значения:
+    -   `0` — Квота применяется к пользователям, перечисленным в списке `apply_to_list`.
+    -   `1` — Квота применяется к пользователям, за исключением тех, что перечислены в списке `apply_to_except`.
+-   `apply_to_list` ([Array](../sql-reference/data-types/array.md)([String](../sql-reference/data-types/string.md))) — Список имен пользователей/[ролей](../operations/access-rights.md#role-management) к которым применяется квота.
+-   `apply_to_except` ([Array](../sql-reference/data-types/array.md)([String](../sql-reference/data-types/string.md))) — Список имен пользователей/ролей к которым квота применяться не должна.
+
+## system.quota_limits {#system_tables-quota_limits}
+Содержит информацию о максимумах для всех интервалов всех квот. Одной квоте могут соответствовать любое количество строк или ноль.
+
+Столбцы:
+-   `quota_name` ([String](../sql-reference/data-types/string.md)) — Имя квоты.
+-   `duration` ([UInt32](../sql-reference/data-types/int-uint.md)) — Длина временного интервала для расчета потребления ресурсов, в секундах. 
+-   `is_randomized_interval` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Логическое значение. Оно показывает, является ли интервал рандомизированным. Интервал всегда начинается в одно и то же время, если он не рандомизирован. Например, интервал в 1 минуту всегда начинается с целого числа минут (то есть он может начинаться в 11:20:00, но никогда не начинается в 11:20:01), интервал в один день всегда начинается в полночь UTC. Если интервал рандомизирован, то самый первый интервал начинается в произвольное время, а последующие интервалы начинаются один за другим. Значения:
+    -   `0` — Интервал рандомизирован.
+    -   `1` — Интервал не рандомизирован.
+-   `max_queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное число запросов.
+-   `max_errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество ошибок.
+-   `max_result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество строк результата.
+-   `max_result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальный объем оперативной памяти в байтах, используемый для хранения результата запроса.
+-   `max_read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество строк, считываемых из всех таблиц и табличных функций, участвующих в запросе.
+-   `max_read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество байтов, считываемых из всех таблиц и табличных функций, участвующих в запросе.
+-   `max_execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — Максимальное время выполнения запроса, в секундах.
+
+## system.quota_usage {#system_tables-quota_usage}
+Использование квоты текущим пользователем: сколько используется и сколько осталось.
+
+Столбцы:
+-   `quota_name` ([String](../sql-reference/data-types/string.md)) — Имя квоты.
+-   `quota_key`([String](../sql-reference/data-types/string.md)) — Значение ключа. Например, если keys = `ip_address`, `quota_key` может иметь значение '192.168.1.1'.
+-   `start_time`([Nullable](../sql-reference/data-types/nullable.md)([DateTime](../sql-reference/data-types/datetime.md))) — Время начала расчета потребления ресурсов.
+-   `end_time`([Nullable](../sql-reference/data-types/nullable.md)([DateTime](../sql-reference/data-types/datetime.md))) — Время окончания расчета потребления ресурс
+-   `duration` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Длина временного интервала для расчета потребления ресурсов, в секундах.
+-   `queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее количество запросов на этом интервале.
+-   `max_queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество запросов.
+-   `errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Число запросов, вызвавших ошибки.
+-   `max_errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное число ошибок.
+-   `result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее количество строк результата.
+-   `max_result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество строк результата.
+-   `result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Объем оперативной памяти в байтах, используемый для хранения результата запроса.
+-   `max_result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальный объем оперативной памяти, используемый для хранения результата запроса, в байтах.
+-   `read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее число исходных строк, считываемых из таблиц для выполнения запроса на всех удаленных серверах.
+-   `max_read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество строк, считываемых из всех таблиц и табличных функций, участвующих в запросах.
+-   `read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее количество байт, считанных из всех таблиц и табличных функций, участвующих в запросах.
+-   `max_read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество байт, считываемых из всех таблиц и табличных функций.
+-   `execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — Общее время выполнения запроса, в секундах.
+-   `max_execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — Максимальное время выполнения запроса.
+
+## system.quotas_usage {#system_tables-quotas_usage}
+Использование квот всеми пользователями.
+
+Столбцы:
+-   `quota_name` ([String](../sql-reference/data-types/string.md)) — Имя квоты.
+-   `quota_key` ([String](../sql-reference/data-types/string.md)) — Ключ квоты.
+-   `is_current` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Квота используется для текущего пользователя.
+-   `start_time` ([Nullable](../sql-reference/data-types/nullable.md)([DateTime](../sql-reference/data-types/datetime.md)))) — Время начала расчета потребления ресурсов.
+-   `end_time` ([Nullable](../sql-reference/data-types/nullable.md)([DateTime](../sql-reference/data-types/datetime.md)))) — Время окончания расчета потребления ресурсов.
+-   `duration` ([Nullable](../sql-reference/data-types/nullable.md)([UInt32](../sql-reference/data-types/int-uint.md))) — Длина временного интервала для расчета потребления ресурсов, в секундах.
+-   `queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее количество запросов на этом интервале.
+-   `max_queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное число запросов.
+-   `errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Число запросов, вызвавших ошибки.
+-   `max_errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное число ошибок.
+-   `result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — The total number of rows given as a result.
+-   `max_result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum of source rows read from tables.
+-   `result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Объем оперативной памяти в байтах, используемый для хранения результата запроса.
+-   `max_result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальный объем оперативной памяти, используемый для хранения результата запроса, в байтах.
+-   `read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее число исходных строк, считываемых из таблиц для выполнения запроса на всех удаленных серверах.
+-   `max_read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество строк, считываемых из всех таблиц и табличных функций, участвующих в запросах.
+-   `read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее количество байт, считанных из всех таблиц и табличных функций, участвующих в запросах.
+-   `max_read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество байт, считываемых из всех таблиц и табличных функций.
+-   `execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — Общее время выполнения запроса, в секундах.
+-   `max_execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — Максимальное время выполнения запроса.
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/) <!--hide-->

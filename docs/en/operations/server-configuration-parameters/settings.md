@@ -348,7 +348,7 @@ Keys:
     Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON otherwise.`
 -   format – Message format. Possible values: `bsd` and `syslog.`
 
-## send_crash_reports {#server_configuration_parameters-logger}
+## send\_crash\_reports {#server_configuration_parameters-logger}
 
 Settings for opt-in sending crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
 Enabling it, especially in pre-production environments, is greatly appreciated.
@@ -398,8 +398,7 @@ The cache is shared for the server and memory is allocated as needed. The cache 
 <mark_cache_size>5368709120</mark_cache_size>
 ```
 
-
-## max_server_memory_usage {#max_server_memory_usage}
+## max\_server\_memory\_usage {#max_server_memory_usage}
 
 Limits total RAM usage by the ClickHouse server. You can specify it only for the default profile.
 
@@ -416,8 +415,7 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 **See also**
 
--   [max_memory_usage](../settings/query-complexity.md#settings_max_memory_usage)
-
+-   [max\_memory\_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage)
 
 ## max\_concurrent\_queries {#max-concurrent-queries}
 

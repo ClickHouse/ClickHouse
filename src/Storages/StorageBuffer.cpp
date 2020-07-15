@@ -50,6 +50,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int INFINITE_LOOP;
@@ -367,6 +368,9 @@ public:
         }
 
         size_t bytes = block.bytes();
+
+        storage.writes.rows += rows;
+        storage.writes.bytes += bytes;
 
         /// If the block already exceeds the maximum limit, then we skip the buffer.
         if (rows > storage.max_thresholds.rows || bytes > storage.max_thresholds.bytes)
@@ -839,8 +843,21 @@ void registerStorageBuffer(StorageFactory & factory)
                 " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        // Table and database name arguments accept expressions, evaluate them.
         engine_args[0] = evaluateConstantExpressionForDatabaseName(engine_args[0], args.local_context);
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
+
+        // After we evaluated all expressions, check that all arguments are
+        // literals.
+        for (size_t i = 0; i < 9; i++)
+        {
+            if (!typeid_cast<ASTLiteral *>(engine_args[i].get()))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Storage Buffer expects a literal as an argument #{}, got '{}'"
+                    " instead", i, engine_args[i]->formatForErrorMessage());
+            }
+        }
 
         String destination_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         String destination_table = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
