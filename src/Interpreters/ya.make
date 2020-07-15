@@ -18,6 +18,7 @@ SRCS(
     ActionsVisitor.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
+    AggregateDescription.cpp
     Aggregator.cpp
     AnyInputOptimize.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
@@ -60,6 +61,7 @@ SRCS(
     HashJoin.cpp
     IdentifierSemantic.cpp
     IExternalLoadable.cpp
+    RemoveInjectiveFunctionsVisitor.cpp
     InJoinSubqueriesPreprocessor.cpp
     inplaceBlockConversions.cpp
     InternalTextLogsQueue.cpp

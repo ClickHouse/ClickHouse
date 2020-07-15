@@ -45,16 +45,14 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, const Set
 }
 
 
-void StorageNull::alter(
-    const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+void StorageNull::alter(const AlterCommands & params, const Context & context, TableLockHolder &)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
 
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
-    setColumns(std::move(new_metadata.columns));
+    setInMemoryMetadata(new_metadata);
 }
 
 }

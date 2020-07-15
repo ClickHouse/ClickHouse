@@ -1,0 +1,139 @@
+[0,1,2]
+[0,1,2]
+[0,1,2]
+0	0	0	0
+0	1	1	1
+2	2	2	2
+3	3	3	3
+4	0		0
+5	0		0
+0	0
+1	1
+2	2
+3	3
+0	0
+1	1
+2	2
+3	3
+SELECT groupArray(x)
+FROM 
+(
+    SELECT number AS x
+    FROM numbers(3)
+    ORDER BY x ASC
+)
+SELECT groupArray(x)
+FROM 
+(
+    SELECT number AS x
+    FROM numbers(3)
+    ORDER BY x ASC
+)
+SELECT groupArray(x)
+FROM 
+(
+    SELECT number AS x
+    FROM numbers(3)
+    ORDER BY 
+        exp(x) ASC,
+        x ASC
+)
+SELECT 
+    key,
+    a,
+    b,
+    c
+FROM 
+(
+    SELECT number + 2 AS key
+    FROM numbers(4)
+) AS s
+ALL FULL OUTER JOIN test AS t USING (key)
+ORDER BY 
+    key ASC,
+    t.key ASC
+SELECT 
+    key,
+    a
+FROM test
+ORDER BY 
+    key ASC,
+    a ASC
+SELECT 
+    key,
+    a
+FROM test
+ORDER BY key ASC
+[0,1,2]
+[0,1,2]
+[0,1,2]
+0	0	0	0
+0	1	1	1
+2	2	2	2
+3	3	3	3
+4	0		0
+5	0		0
+0	0
+1	1
+2	2
+3	3
+0	0
+1	1
+2	2
+3	3
+SELECT groupArray(x)
+FROM 
+(
+    SELECT number AS x
+    FROM numbers(3)
+    ORDER BY 
+        x ASC,
+        exp(x) ASC
+)
+SELECT groupArray(x)
+FROM 
+(
+    SELECT number AS x
+    FROM numbers(3)
+    ORDER BY 
+        x ASC,
+        exp(exp(x)) ASC
+)
+SELECT groupArray(x)
+FROM 
+(
+    SELECT number AS x
+    FROM numbers(3)
+    ORDER BY 
+        exp(x) ASC,
+        x ASC
+)
+SELECT 
+    key,
+    a,
+    b,
+    c
+FROM 
+(
+    SELECT number + 2 AS key
+    FROM numbers(4)
+) AS s
+ALL FULL OUTER JOIN test AS t USING (key)
+ORDER BY 
+    key ASC,
+    t.key ASC
+SELECT 
+    key,
+    a
+FROM test
+ORDER BY 
+    key ASC,
+    a ASC,
+    exp(key + a) ASC
+SELECT 
+    key,
+    a
+FROM test
+ORDER BY 
+    key ASC,
+    exp(key + a) ASC

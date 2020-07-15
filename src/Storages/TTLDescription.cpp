@@ -220,7 +220,7 @@ TTLDescription TTLDescription::getTTLFromAST(
 
                 if (value->as<ASTFunction>())
                 {
-                    auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, true);
+                    auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
                     auto expr_actions = ExpressionAnalyzer(value, syntax_result, context).getActions(false);
                     for (const auto & column : expr_actions->getRequiredColumns())
                     {
@@ -249,7 +249,7 @@ TTLDescription TTLDescription::getTTLFromAST(
 
             for (auto [name, value] : aggregations)
             {
-                auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, true);
+                auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
                 auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, context);
 
                 TTLAggregateDescription set_part;
@@ -271,6 +271,29 @@ TTLDescription TTLDescription::getTTLFromAST(
     return result;
 }
 
+
+TTLTableDescription::TTLTableDescription(const TTLTableDescription & other)
+ : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
+ , rows_ttl(other.rows_ttl)
+ , move_ttl(other.move_ttl)
+{
+}
+
+TTLTableDescription & TTLTableDescription::operator=(const TTLTableDescription & other)
+{
+    if (&other == this)
+        return *this;
+
+    if (other.definition_ast)
+        definition_ast = other.definition_ast->clone();
+    else
+        definition_ast.reset();
+
+    rows_ttl = other.rows_ttl;
+    move_ttl = other.move_ttl;
+
+    return *this;
+}
 
 TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ASTPtr & definition_ast,

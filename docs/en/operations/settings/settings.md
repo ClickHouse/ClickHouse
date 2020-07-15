@@ -129,7 +129,7 @@ Default value: 0.
 
 ## max\_http\_get\_redirects {#setting-max_http_get_redirects}
 
-Limits the maximum number of HTTP GET redirect hops for [URL](../../engines/table-engines/special/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../sql-reference/statements/create.md#create-table-query) query and by the [url](../../sql-reference/table-functions/url.md) table function.
+Limits the maximum number of HTTP GET redirect hops for [URL](../../engines/table-engines/special/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../sql-reference/statements/create/table.md) query and by the [url](../../sql-reference/table-functions/url.md) table function.
 
 Possible values:
 
@@ -727,6 +727,17 @@ The INSERT query also contains data for INSERT that is processed by a separate s
 
 Default value: 256 KiB.
 
+## max\_parser\_depth {#max_parser_depth}
+
+Limits maximum recursion depth in the recursive descent parser. Allows to control stack size.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Recursion depth is unlimited.
+
+Default value: 1000.
+
 ## interactive\_delay {#interactive-delay}
 
 The interval in microseconds for checking whether request execution has been cancelled and sending the progress.
@@ -820,6 +831,10 @@ ClickHouse supports the following algorithms of choosing replicas:
 -   [In order](#load_balancing-in_order)
 -   [First or random](#load_balancing-first_or_random)
 -   [Round robin](#load_balancing-round_robin)
+
+See also:
+
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
 
 ### Random (by Default) {#load_balancing-random}
 
@@ -1125,6 +1140,18 @@ Possible values:
 
 Default value: 0
 
+## optimize\_skip\_unused\_shards\_nesting {#optimize-skip-unused-shards-nesting}
+
+Controls [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) (hence still requires [`optimize_skip_unused_shards`](#optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
+
+Possible values:
+
+-   0 — Disabled, `optimize_skip_unused_shards` works always.
+-   1 — Enables `optimize_skip_unused_shards` only for the first level.
+-   2 — Enables `optimize_skip_unused_shards` up to the second level.
+
+Default value: 0
+
 ## force\_optimize\_skip\_unused\_shards {#force-optimize-skip-unused-shards}
 
 Enables or disables query execution if [optimize\_skip\_unused\_shards](#optimize-skip-unused-shards) is enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled, an exception will be thrown.
@@ -1137,16 +1164,17 @@ Possible values:
 
 Default value: 0
 
-## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
+## force\_optimize\_skip\_unused\_shards\_nesting {#settings-force_optimize_skip_unused_shards_nesting}
 
-Reset [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) for nested `Distributed` table
+Controls [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards) (hence still requires [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
 
 Possible values:
 
--   1 — Enabled.
--   0 — Disabled.
+-   0 - Disabled, `force_optimize_skip_unused_shards` works always.
+-   1 — Enables `force_optimize_skip_unused_shards` only for the first level.
+-   2 — Enables `force_optimize_skip_unused_shards` up to the second level.
 
-Default value: 0.
+Default value: 0
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
@@ -1170,8 +1198,10 @@ Controls how fast errors in distributed tables are zeroed. If a replica is unava
 
 See also:
 
+-   [load\_balancing](#load_balancing-round_robin)
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
 
 ## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
 
@@ -1182,7 +1212,23 @@ Error count of each replica is capped at this value, preventing a single replica
 
 See also:
 
+-   [load\_balancing](#load_balancing-round_robin)
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
+-   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
+
+## distributed\_replica\_max\_ignored\_errors {#settings-distributed_replica_max_ignored_errors}
+
+-   Type: unsigned int
+-   Default value: 0
+
+Number of errors that will be ignored while choosing replicas (according to `load_balancing` algorithm).
+
+See also:
+
+-   [load\_balancing](#load_balancing-round_robin)
+-   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
+-   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
@@ -1333,13 +1379,11 @@ Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Default value: 32768 (32 KiB)
 
-## format\_avro\_schema\_registry\_url {#settings-format_avro_schema_registry_url}
+## format\_avro\_schema\_registry\_url {#format_avro_schema_registry_url}
 
-Sets Confluent Schema Registry URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format
+Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format.
 
-Type: URL
-
-Default value: Empty
+Default value: `Empty`.
 
 ## background\_pool\_size {#background_pool_size}
 
@@ -1383,6 +1427,23 @@ Possible values:
 
 Default value: 16.
 
+## always\_fetch\_merged\_part {#always_fetch_merged_part}
+
+Prohibits data parts merging in [Replicated\*MergeTree](../../engines/table-engines/mergetree-family/replication.md)-engine tables.
+
+When merging is prohibited, the replica never merges parts and always downloads merged parts from other replicas. If there is no required data yet, the replica waits for it. CPU and disk load on the replica server decreases, but the network load on cluster increases. This setting can be useful on servers with relatively weak CPUs or slow disks, such as servers for backups storage.
+
+Possible values:
+
+-   0 — `Replicated*MergeTree`-engine tables merge data parts at the replica.
+-   1 — `Replicated*MergeTree`-engine tables don’t merge data parts at the replica. The tables download merged data parts from other replicas.
+
+Default value: 0.
+
+**See Also**
+
+-   [Data Replication](../../engines/table-engines/mergetree-family/replication.md)
+
 ## background\_distributed\_schedule\_pool\_size {#background_distributed_schedule_pool_size}
 
 Sets the number of threads performing background tasks for [distributed](../../engines/table-engines/special/distributed.md) sends. This setting is applied at ClickHouse server start and can’t be changed in a user session.
@@ -1393,11 +1454,11 @@ Possible values:
 
 Default value: 16.
 
-## transform_null_in {#transform_null_in}
+## transform\_null\_in {#transform_null_in}
 
 Enables equality of [NULL](../../sql-reference/syntax.md#null-literal) values for [IN](../../sql-reference/operators/in.md) operator.
 
-By default, `NULL` values can't be compared because `NULL` means undefined value. Thus, comparison `expr = NULL` must always return `false`. With this setting `NULL = NULL` returns `true` for `IN` operator.
+By default, `NULL` values can’t be compared because `NULL` means undefined value. Thus, comparison `expr = NULL` must always return `false`. With this setting `NULL = NULL` returns `true` for `IN` operator.
 
 Possible values:
 
@@ -1406,11 +1467,11 @@ Possible values:
 
 Default value: 0.
 
-**Example** 
+**Example**
 
 Consider the `null_in` table:
 
-```text
+``` text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
@@ -1420,13 +1481,13 @@ Consider the `null_in` table:
 
 Query:
 
-```sql
+``` sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
 ```
 
 Result:
 
-```text
+``` text
 ┌──idx─┬────i─┐
 │    1 │    1 │
 └──────┴──────┘
@@ -1434,23 +1495,22 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 ```
 
 Result:
 
-```text
+``` text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
 └──────┴───────┘
 ```
 
-**See Also** 
+**See Also**
 
 -   [NULL Processing in IN Operators](../../sql-reference/operators/in.md#in-null-processing)
-
 
 ## low\_cardinality\_max\_dictionary\_size {#low_cardinality_max_dictionary_size}
 
@@ -1508,5 +1568,55 @@ Possible values:
 -   0 — Usage of `LowCardinality` is restricted.
 
 Default value: 0.
+
+## min\_insert\_block\_size\_rows\_for\_materialized\_views {#min-insert-block-size-rows-for-materialized-views}
+
+Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+
+Possible values:
+
+-   Any positive integer.
+-   0 — Squashing disabled.
+
+Default value: 1048576.
+
+**See Also**
+
+-   [min\_insert\_block\_size\_rows](#min-insert-block-size-rows)
+
+## min\_insert\_block\_size\_bytes\_for\_materialized\_views {#min-insert-block-size-bytes-for-materialized-views}
+
+Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+
+Possible values:
+
+-   Any positive integer.
+-   0 — Squashing disabled.
+
+Default value: 268435456.
+
+**See also**
+
+-   [min\_insert\_block\_size\_bytes](#min-insert-block-size-bytes)
+
+## output\_format\_pretty\_grid\_charset {#output-format-pretty-grid-charset}
+
+Allows to change a charset which is used for printing grids borders. Available charsets are following: UTF-8, ASCII.
+
+**Example**
+
+``` text
+SET output_format_pretty_grid_charset = 'UTF-8';
+SELECT * FROM a;
+┌─a─┐
+│ 1 │
+└───┘
+
+SET output_format_pretty_grid_charset = 'ASCII';
+SELECT * FROM a;
++-a-+
+| 1 |
++---+
+```
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

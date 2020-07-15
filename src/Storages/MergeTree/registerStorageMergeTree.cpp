@@ -570,6 +570,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception(
                 "Date column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
+
+        auto partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
+
+        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, metadata.columns, args.context);
+
+
         ++arg_num;
 
         /// If there is an expression for sampling
@@ -606,10 +612,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (arg_num != arg_cnt)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
-
-    if (!args.attach && !metadata.secondary_indices.empty() && !args.local_context.getSettingsRef().allow_experimental_data_skipping_indices)
-        throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
-                        "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
 
     if (replicated)
         return StorageReplicatedMergeTree::create(

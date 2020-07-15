@@ -11,15 +11,21 @@ import bs4
 import closure
 import cssmin
 import htmlmin
-import jinja2
 import jsmin
 
-import mdx_clickhouse
+import util
 
 
 def handle_iframe(iframe, soup):
-    if not iframe.attrs['src'].startswith('https://www.youtube.com/'):
-        raise RuntimeError('iframes are allowed only for YouTube')
+    allowed_domains = ['https://www.youtube.com/', 'https://datalens.yandex/']
+    illegal_domain = True
+    iframe_src = iframe.attrs['src']
+    for domain in allowed_domains:
+        if iframe_src.startswith(domain):
+            illegal_domain = False
+            break
+    if illegal_domain:
+        raise RuntimeError(f'iframe from illegal domain: {iframe_src}')
     wrapper = soup.new_tag('div')
     wrapper.attrs['class'] = ['embed-responsive', 'embed-responsive-16by9']
     iframe.insert_before(wrapper)
@@ -43,8 +49,18 @@ def adjust_markdown_html(content):
 
     for a in soup.find_all('a'):
         a_class = a.attrs.get('class')
+        a_href = a.attrs.get('href')
         if a_class and 'headerlink' in a_class:
             a.string = '\xa0'
+        if a_href and a_href.startswith('http'):
+            a.attrs['target'] = '_blank'
+
+    for code in soup.find_all('code'):
+        code_class = code.attrs.get('class')
+        if code_class:
+            code.attrs['class'] = code_class + ['syntax']
+        else:
+            code.attrs['class'] = 'syntax'
 
     for iframe in soup.find_all('iframe'):
         handle_iframe(iframe, soup)
@@ -66,6 +82,13 @@ def adjust_markdown_html(content):
             if summary.parent != details:
                 summary.extract()
                 details.insert(0, summary)
+
+    for dd in soup.find_all('dd'):
+        dd_class = dd.attrs.get('class')
+        if dd_class:
+            dd.attrs['class'] = dd_class + ['pl-3']
+        else:
+            dd.attrs['class'] = 'pl-3'
 
     for div in soup.find_all('div'):
         div_class = div.attrs.get('class')
@@ -114,22 +137,7 @@ def minify_html(content):
 
 def build_website(args):
     logging.info('Building website')
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader([
-            args.website_dir,
-            os.path.join(args.docs_dir, '_includes')
-        ]),
-        extensions=[
-            'jinja2.ext.i18n',
-            'jinja2_highlight.HighlightExtension'
-        ]
-    )
-    env.extend(jinja2_highlight_cssclass='syntax p-3 my-3')
-    translations_dir = os.path.join(args.website_dir, 'locale')
-    env.install_gettext_translations(
-        mdx_clickhouse.get_translations(translations_dir, 'en'),
-        newstyle=True
-    )
+    env = util.init_jinja2_env(args)
 
     shutil.copytree(
         args.website_dir,
@@ -278,6 +286,10 @@ def minify_website(args):
 
 def process_benchmark_results(args):
     benchmark_root = os.path.join(args.website_dir, 'benchmark')
+    required_keys = {
+        'dbms': ['result'],
+        'hardware': ['result', 'system', 'system_full', 'kind']
+    }
     for benchmark_kind in ['dbms', 'hardware']:
         results = []
         results_root = os.path.join(benchmark_root, benchmark_kind, 'results')
@@ -285,7 +297,11 @@ def process_benchmark_results(args):
             result_file = os.path.join(results_root, result)
             logging.debug(f'Reading benchmark result from {result_file}')
             with open(result_file, 'r') as f:
-                results += json.loads(f.read())
+                result = json.loads(f.read())
+                for item in result:
+                    for required_key in required_keys[benchmark_kind]:
+                        assert required_key in item, f'No "{required_key}" in {result_file}'
+                results += result
         results_js = os.path.join(args.output_dir, 'benchmark', benchmark_kind, 'results.js')
         with open(results_js, 'w') as f:
             data = json.dumps(results)

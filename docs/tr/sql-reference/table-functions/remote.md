@@ -14,6 +14,8 @@ Oluşturmadan uzak sunuculara erişmenizi sağlar. `Distributed` Tablo.
 ``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db, table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db.table[, 'user'[, 'password']])
 ```
 
 `addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port` ya da sadece `host`. Ana bilgisayar sunucu adı veya IPv4 veya IPv6 adresi olarak belirtilebilir. Köşeli parantez içinde bir IPv6 adresi belirtilir. Bağlantı noktası, uzak sunucudaki TCP bağlantı noktasıdır. Bağlantı noktası atlanırsa, kullanır `tcp_port` sunucunun yapılandırma dosyasından (varsayılan olarak, 9000).
