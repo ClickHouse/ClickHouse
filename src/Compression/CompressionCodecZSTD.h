@@ -33,8 +33,4 @@ private:
     const int level;
 };
 
-
-class CompressionCodecFactory;
-void registerCodecZSTD(CompressionCodecFactory & factory);
-
 }

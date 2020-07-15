@@ -26,7 +26,7 @@ Engines:
 
     During `INSERT` queries, the table is locked, and other queries for reading and writing data both wait for the table to unlock. If there are no data writing queries, any number of data reading queries can be performed concurrently.
 
--   Do not support [mutation](../../../sql-reference/statements/alter.md#alter-mutations) operations.
+-   Do not support [mutations](../../../sql-reference/statements/alter/index.md#alter-mutations).
 
 -   Do not support indexes.
 
@@ -38,8 +38,8 @@ Engines:
 
 ## Differences {#differences}
 
-The `TinyLog` engine is the simplest in the family and provides the poorest functionality and lowest efficiency. The `TinyLog` engine doesn’t support parallel data reading by several threads. It reads data slower than other engines in the family that support parallel reading and it uses almost as many descriptors as the `Log` engine because it stores each column in a separate file. Use it in simple low-load scenarios.
+The `TinyLog` engine is the simplest in the family and provides the poorest functionality and lowest efficiency. The `TinyLog` engine doesn’t support parallel data reading by several threads in a single query. It reads data slower than other engines in the family that support parallel reading from a single query and it uses almost as many file descriptors as the `Log` engine because it stores each column in a separate file. Use it only in simple scenarios.
 
-The `Log` and `StripeLog` engines support parallel data reading. When reading data, ClickHouse uses multiple threads. Each thread processes a separate data block. The `Log` engine uses a separate file for each column of the table. `StripeLog` stores all the data in one file. As a result, the `StripeLog` engine uses fewer descriptors in the operating system, but the `Log` engine provides higher efficiency when reading data.
+The `Log` and `StripeLog` engines support parallel data reading. When reading data, ClickHouse uses multiple threads. Each thread processes a separate data block. The `Log` engine uses a separate file for each column of the table. `StripeLog` stores all the data in one file. As a result, the `StripeLog` engine uses fewer file descriptors, but the `Log` engine provides higher efficiency when reading data.
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/log_family/) <!--hide-->
