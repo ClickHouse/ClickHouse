@@ -11,7 +11,7 @@ Syntax:
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN <right_table>
+[GLOBAL] [ANY|ALL|ASOF|ANTI|SEMI] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
