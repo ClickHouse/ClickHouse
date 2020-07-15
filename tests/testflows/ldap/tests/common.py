@@ -79,13 +79,20 @@ def add_config(config, timeout=20, restart=False):
                         time.sleep(1)
                     assert exitcode == 0, error()
 
-#                if restart:
-#                    with When("I restart ClickHouse to apply the config changes"):
-#                        node.restart(safe=False)
+                if restart:
+                    bash.close()
+                    logsize = node.command("ls -s --block-size=1 /var/log/clickhouse-server/clickhouse-server.log").output.split(" ")[0].strip()
+                    with When("I restart ClickHouse to apply the config changes"):
+                        node.restart(safe=False)
+                    bash.prompt = bash.__class__.prompt
+                    bash.open()
+                    bash.send(f"tail -c +{logsize} -f /var/log/clickhouse-server/clickhouse-server.log")
 
                 with When("I wait for config to be loaded"):
-                    started = time.time()
-                    bash.expect(f"ConfigReloader: Loaded config '/etc/clickhouse-server/{config.preprocessed_name}', performed update on configuration", timeout=timeout)
+                    if restart:
+                        bash.expect(f"ConfigReloader: Loaded config '/etc/clickhouse-server/config.xml', performed update on configuration", timeout=timeout)
+                    else:
+                        bash.expect(f"ConfigReloader: Loaded config '/etc/clickhouse-server/{config.preprocessed_name}', performed update on configuration", timeout=timeout)
         yield
     finally:
         with Finally(f"I remove {config.name}"):
