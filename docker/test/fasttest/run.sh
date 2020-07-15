@@ -90,7 +90,7 @@ do
     sleep 0.1
 done
 
-TESTS_TO_SKIP="parquet avro h3 odbc mysql sha256 _orc_ arrow 01098_temporary_and_external_tables 01083_expressions_in_engine_arguments hdfs 00911_tautological_compare protobuf capnproto java_hash hashing secure 00490_special_line_separators_and_characters_outside_of_bmp 00436_convert_charset 00105_shard_collations 01354_order_by_tuple_collate_const 01292_create_user 01098_msgpack_format 00929_multi_match_edit_distance 00926_multimatch 00834_cancel_http_readonly_queries_on_client_close brotli parallel_alter"
+TESTS_TO_SKIP="parquet avro h3 odbc mysql sha256 _orc_ arrow 01098_temporary_and_external_tables 01083_expressions_in_engine_arguments hdfs 00911_tautological_compare protobuf capnproto java_hash hashing secure 00490_special_line_separators_and_characters_outside_of_bmp 00436_convert_charset 00105_shard_collations 01354_order_by_tuple_collate_const 01292_create_user 01098_msgpack_format 00929_multi_match_edit_distance 00926_multimatch 00834_cancel_http_readonly_queries_on_client_close brotli parallel_alter 00302_http_compression 00417_kill_query 01294_lazy_database_concurrent"
 
 clickhouse-test -j 4 --no-long --testname --shard --zookeeper --skip $TESTS_TO_SKIP 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
 
