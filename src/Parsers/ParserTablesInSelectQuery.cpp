@@ -172,13 +172,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 || table_join->kind == ASTTableJoin::Kind::Right
                 || table_join->kind == ASTTableJoin::Kind::Full)
             {
-                if (ParserKeyword("OUTER").ignore(pos))
-                {
-                    if (table_join->strictness == ASTTableJoin::Strictness::Unspecified)
-                        table_join->strictness = ASTTableJoin::Strictness::All;
-                    else
-                        throw Exception("OUTER keyword for other JOIN kind.", ErrorCodes::SYNTAX_ERROR);
-                }
+                ParserKeyword("OUTER").ignore(pos);
             }
 
             if (no_kind)
