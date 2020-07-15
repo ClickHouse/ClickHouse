@@ -27,6 +27,8 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.expect(prompt)
     client1.send('DROP TABLE IF EXISTS test.wv')
     client1.expect(prompt)
+    client1.send('DROP TABLE IF EXISTS `.inner.wv`')
+    client1.expect(prompt)
 
     client1.send('CREATE TABLE test.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()')
     client1.expect(prompt)

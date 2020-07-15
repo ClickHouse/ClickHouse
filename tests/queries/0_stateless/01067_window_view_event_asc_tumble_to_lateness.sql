@@ -3,6 +3,7 @@ SET allow_experimental_window_view = 1;
 DROP TABLE IF EXISTS mt;
 DROP TABLE IF EXISTS dst;
 DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
 
 CREATE TABLE dst(count UInt64, w_end DateTime) Engine=MergeTree ORDER BY tuple();
 CREATE TABLE mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
