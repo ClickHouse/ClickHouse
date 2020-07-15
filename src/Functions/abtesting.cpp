@@ -26,7 +26,7 @@ namespace ErrorCodes
 template <bool higher_is_better>
 ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, std::vector<double> ys)
 {
-    const size_t R = 1000, C = 100;
+    const size_t r = 1000, c = 100;
 
     ABTestResult result;
     std::vector<std::vector<double>> samples_matrix;
@@ -43,7 +43,7 @@ ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, 
         {
             alpha = 1.0 + ys[i];
             beta = 1.0 + xs[i] - ys[i];
-            samples_matrix.push_back(stats::rbeta<std::vector<double>>(R, C, alpha, beta));
+            samples_matrix.push_back(stats::rbeta<std::vector<double>>(r, c, alpha, beta));
         }
     }
     else if (distribution == "gamma")
@@ -54,7 +54,7 @@ ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, 
         {
             shape = 1.0 + xs[i];
             scale = 250.0 / (1 + 250.0 * ys[i]);
-            samples_matrix.push_back(stats::rgamma<std::vector<double>>(R, C, shape, scale));
+            samples_matrix.push_back(stats::rgamma<std::vector<double>>(r, c, shape, scale));
         }
     }
 
@@ -69,7 +69,7 @@ ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, 
     result.beats_control.resize(xs.size(), 0);
     for (size_t i = 1; i < xs.size(); ++i)
     {
-        for (size_t n = 0; n < R * C; ++n)
+        for (size_t n = 0; n < r * c; ++n)
         {
             if (higher_is_better)
             {
@@ -85,7 +85,7 @@ ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, 
     }
 
     for (size_t i = 1; i < xs.size(); ++i)
-        result.beats_control[i] = static_cast<double>(result.beats_control[i]) / R / C;
+        result.beats_control[i] = static_cast<double>(result.beats_control[i]) / r / c;
 
     // To be best
     std::vector<size_t> count_m(xs.size(), 0);
@@ -93,7 +93,7 @@ ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, 
 
     result.best.resize(xs.size(), 0);
 
-    for (size_t n = 0; n < R * C; ++n)
+    for (size_t n = 0; n < r * c; ++n)
     {
         for (size_t i = 0; i < xs.size(); ++i)
             row[i] = samples_matrix[i][n];
@@ -115,7 +115,7 @@ ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, 
     }
 
     for (size_t i = 0; i < xs.size(); ++i)
-        result.best[i] = static_cast<double>(result.best[i]) / R / C;
+        result.best[i] = static_cast<double>(result.best[i]) / r / c;
 
     return result;
 }
@@ -142,7 +142,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    const IColumn * getNestedConstColumn(Block & block, const ColumnNumbers & arguments, const size_t n)
+    const IColumn * getNestedConstColumn(Block & block, const ColumnNumbers & arguments, const size_t n) const
     {
         const IColumn * col = block.getByPosition(arguments[n]).column.get();
         const IColumn * nested_col;
@@ -160,7 +160,7 @@ public:
         return nested_col;
     }
 
-    std::vector<double> getDoubleValues(const IColumn * col)
+    std::vector<double> getDoubleValues(const IColumn * col) const 
     {
         const ColumnFloat64 * column = checkAndGetColumn<ColumnFloat64>(*col);
         if (!column)
@@ -173,7 +173,7 @@ public:
         return ret;
     }
 
-    std::vector<std::string> getStringValues(const IColumn * col)
+    std::vector<std::string> getStringValues(const IColumn * col) const 
     {
         const ColumnString * column = checkAndGetColumn<ColumnString>(*col);
         if (!column)
