@@ -18,7 +18,7 @@ class HTTPRequestHandlerFactoryMain : public Poco::Net::HTTPRequestHandlerFactor
 private:
     using TThis = HTTPRequestHandlerFactoryMain;
 
-    Logger * log;
+    Poco::Logger * log;
     std::string name;
 
     std::vector<Poco::Net::HTTPRequestHandlerFactory *> child_factories;
@@ -108,6 +108,10 @@ Poco::Net::HTTPRequestHandlerFactory * createStaticHandlerFactory(IServer & serv
 Poco::Net::HTTPRequestHandlerFactory * createDynamicHandlerFactory(IServer & server, const std::string & config_prefix);
 
 Poco::Net::HTTPRequestHandlerFactory * createPredefinedHandlerFactory(IServer & server, const std::string & config_prefix);
+
+Poco::Net::HTTPRequestHandlerFactory * createReplicasStatusHandlerFactory(IServer & server, const std::string & config_prefix);
+
+Poco::Net::HTTPRequestHandlerFactory * createPrometheusHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & config_prefix);
 
 Poco::Net::HTTPRequestHandlerFactory * createHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & name);
 

@@ -2,7 +2,7 @@
 
 Словари можно размещать в памяти множеством способов.
 
-Рекомендуем [flat](#flat), [hashed](#hashed) и [complex\_key\_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
+Рекомендуем [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) и [complex\_key\_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
 
 Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе «[cache](#cache)».
 
@@ -34,7 +34,7 @@
 </yandex>
 ```
 
-Соответствущий [DDL-запрос](../../../sql-reference/statements/create.md#create-dictionary-query):
+Соответствущий [DDL-запрос](../../statements/create.md#create-dictionary-query):
 
 ``` sql
 CREATE DICTIONARY (...)
@@ -46,7 +46,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ## Способы размещения словарей в памяти {#sposoby-razmeshcheniia-slovarei-v-pamiati}
 
 -   [flat](#flat)
--   [hashed](#hashed)
+-   [hashed](#dicts-external_dicts_dict_layout-hashed)
 -   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
 -   [direct](#direct)
@@ -80,7 +80,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 LAYOUT(FLAT())
 ```
 
-### hashed {#hashed}
+### hashed {#dicts-external_dicts_dict_layout-hashed}
 
 Словарь полностью хранится в оперативной памяти в виде хэш-таблиц. Словарь может содержать произвольное количество элементов с произвольными идентификаторами. На практике, количество ключей может достигать десятков миллионов элементов.
 

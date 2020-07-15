@@ -18,6 +18,7 @@ class MergeTreeSelectProcessor : public MergeTreeBaseSelectProcessor
 public:
     MergeTreeSelectProcessor(
         const MergeTreeData & storage,
+        const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData::DataPartPtr & owned_data_part,
         UInt64 max_block_size_rows,
         size_t preferred_block_size_bytes,
@@ -64,10 +65,9 @@ private:
     size_t part_index_in_query = 0;
 
     bool check_columns;
-    String path;
     bool is_first_task = true;
 
-    Logger * log = &Logger::get("MergeTreeSelectProcessor");
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeSelectProcessor");
 };
 
 }

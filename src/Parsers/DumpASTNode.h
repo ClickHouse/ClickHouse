@@ -10,7 +10,7 @@ namespace DB
 {
 
 /// If output stream set dumps node with indents and some additional info. Do nothing otherwise.
-/// Allow to print kay-value pairs inside of tree dump.
+/// Allow to print key-value pairs inside of tree dump.
 class DumpASTNode
 {
 public:

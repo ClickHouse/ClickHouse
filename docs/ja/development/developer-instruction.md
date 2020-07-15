@@ -141,7 +141,7 @@ ClickHouseのビルドには、バージョン9以降のGCCとClangバージョ�
 
 UBUNTUにGCCをインストールするには: `sudo apt install gcc g++`
 
-Gccのバージョンを確認する: `gcc --version`. の場合は下記9その指示に従う。https://clickhouse.tech/docs/en/development/build/\#install-gcc-9.
+Gccのバージョンを確認する: `gcc --version`. の場合は下記9その指示に従う。https://clickhouse.tech/docs/ja/development/build/#install-gcc-9.
 
 Mac OS XのビルドはClangでのみサポートされています。 ちょうど実行 `brew install llvm`
 
@@ -249,7 +249,7 @@ KDevelopとQTCreatorは、ClickHouseを開発するためのIDEの他の優れ�
 
 筆記試験：https://clickhouse.tech/docs/en/development/tests/
 
-タスクのリスト：https://github.com/ClickHouse/ClickHouse/blob/master/testsructions/easy\_tasks\_sorted\_en.md
+タスクのリスト：https://github.com/ClickHouse/ClickHouse/contribute
 
 # テストデータ {#test-data}
 

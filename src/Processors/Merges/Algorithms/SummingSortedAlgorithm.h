@@ -20,10 +20,12 @@ public:
         SortDescription description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_sum,
+        /// List of partition key columns. They have to be excluded.
+        const Names & partition_key_columns,
         size_t max_block_size);
 
-    void initialize(Chunks chunks) override;
-    void consume(Chunk & chunk, size_t source_num) override;
+    void initialize(Inputs inputs) override;
+    void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
     struct AggregateDescription;

@@ -24,18 +24,16 @@ def test_config_without_part_log(start_cluster):
     node1.query("SYSTEM FLUSH LOGS")
     assert "Table system.part_log doesn't exist" in node1.query_and_get_error("SELECT * FROM system.part_log")
 
+# Note: if part_log is defined, we cannot say when the table will be created - because of metric_log, trace_log, text_log, query_log...
+
 def test_config_with_standard_part_log(start_cluster):
-    assert node2.query("SELECT * FROM system.part_log") == ''
     node2.query("CREATE TABLE test_table(word String, value UInt64) ENGINE=MergeTree() Order by value")
-    assert node2.query("SELECT * FROM system.part_log") == ''
     node2.query("INSERT INTO test_table VALUES ('name', 1)")
     node2.query("SYSTEM FLUSH LOGS")
-    assert int(node2.query("SELECT count() FROM system.part_log")) == 1
+    assert node2.query("SELECT * FROM system.part_log") != ""
 
 def test_config_with_non_standard_part_log(start_cluster):
-    assert node3.query("SELECT * FROM system.own_part_log") == ''
     node3.query("CREATE TABLE test_table(word String, value UInt64) ENGINE=MergeTree() Order by value")
-    assert node3.query("SELECT * FROM system.own_part_log") == ''
     node3.query("INSERT INTO test_table VALUES ('name', 1)")
     node3.query("SYSTEM FLUSH LOGS")
-    assert int(node3.query("SELECT count() FROM system.own_part_log")) == 1
+    assert node3.query("SELECT * FROM system.own_part_log") != ""

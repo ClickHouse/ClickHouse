@@ -33,6 +33,8 @@ public:
     virtual Entry get(const ConnectionTimeouts & timeouts,
                       const Settings * settings = nullptr,
                       bool force_connected = true) = 0;
+
+    virtual Int64 getPriority() const { return 1; }
 };
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
@@ -54,9 +56,10 @@ public:
             const String & password_,
             const String & client_name_ = "client",
             Protocol::Compression compression_ = Protocol::Compression::Enable,
-            Protocol::Secure secure_ = Protocol::Secure::Disable)
+            Protocol::Secure secure_ = Protocol::Secure::Disable,
+            Int64 priority_ = 1)
        : Base(max_connections_,
-        &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
+        &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_),
         port(port_),
         default_database(default_database_),
@@ -64,7 +67,8 @@ public:
         password(password_),
         client_name(client_name_),
         compression(compression_),
-        secure{secure_}
+        secure(secure_),
+        priority(priority_)
     {
     }
 
@@ -93,6 +97,11 @@ public:
         return host + ":" + toString(port);
     }
 
+    Int64 getPriority() const override
+    {
+        return priority;
+    }
+
 protected:
     /** Creates a new object to put in the pool. */
     ConnectionPtr allocObject() override
@@ -111,8 +120,9 @@ private:
     String password;
 
     String client_name;
-    Protocol::Compression compression;        /// Whether to compress data when interacting with the server.
-    Protocol::Secure secure;          /// Whether to encrypt data when interacting with the server.
+    Protocol::Compression compression; /// Whether to compress data when interacting with the server.
+    Protocol::Secure secure;           /// Whether to encrypt data when interacting with the server.
+    Int64 priority;                    /// priority from <remote_servers>
 
 };
 

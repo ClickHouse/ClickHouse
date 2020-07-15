@@ -28,6 +28,8 @@ struct AggregatingTransformParams
         : params(params_), aggregator(params), final(final_) {}
 
     Block getHeader() const { return aggregator.getHeader(final); }
+
+    Block getCustomHeader(bool final_) const { return aggregator.getHeader(final_); }
 };
 
 struct ManyAggregatedData
@@ -88,7 +90,7 @@ private:
     Processors processors;
 
     AggregatingTransformParamsPtr params;
-    Logger * log = &Logger::get("AggregatingTransform");
+    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
@@ -116,5 +118,7 @@ private:
 
     void initGenerate();
 };
+
+Chunk convertToChunk(const Block & block);
 
 }

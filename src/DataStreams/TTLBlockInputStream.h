@@ -16,6 +16,7 @@ public:
     TTLBlockInputStream(
         const BlockInputStreamPtr & input_,
         const MergeTreeData & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
         time_t current_time,
         bool force_
@@ -33,6 +34,7 @@ protected:
 
 private:
     const MergeTreeData & storage;
+    StorageMetadataPtr metadata_snapshot;
 
     /// ttl_infos and empty_columns are updating while reading
     const MergeTreeData::MutableDataPartPtr & data_part;
@@ -52,7 +54,7 @@ private:
     NameSet empty_columns;
 
     size_t rows_removed = 0;
-    Logger * log;
+    Poco::Logger * log;
     const DateLUTImpl & date_lut;
 
     /// TODO rewrite defaults logic to evaluteMissingDefaults

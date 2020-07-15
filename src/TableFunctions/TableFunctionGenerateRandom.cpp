@@ -21,6 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
@@ -43,6 +44,18 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function,
         throw Exception("Table function '" + getName() + "' requires at most four arguments: "
                         " structure, [random_seed, max_string_length, max_array_length].",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    // All the arguments must be literals.
+    for (const auto & arg : args)
+    {
+        if (!arg->as<const ASTLiteral>())
+        {
+            throw Exception(fmt::format(
+                "All arguments of table function '{}' must be literals. "
+                "Got '{}' instead", getName(), arg->formatForErrorMessage()),
+                ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
 
     /// Parsing first argument as table structure and creating a sample block
     std::string structure = args[0]->as<const ASTLiteral &>().value.safeGet<String>();

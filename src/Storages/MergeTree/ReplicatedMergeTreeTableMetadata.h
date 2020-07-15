@@ -32,7 +32,7 @@ struct ReplicatedMergeTreeTableMetadata
     UInt64 index_granularity_bytes;
 
     ReplicatedMergeTreeTableMetadata() = default;
-    explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data);
+    explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);
 
     void read(ReadBuffer & in);
     static ReplicatedMergeTreeTableMetadata parse(const String & s);
@@ -60,7 +60,7 @@ struct ReplicatedMergeTreeTableMetadata
         }
     };
 
-    void checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk) const;
+    void checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, const Context & context) const;
 
     Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk) const;
 

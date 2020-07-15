@@ -5,6 +5,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
+#include <common/logger_useful.h>
 
 
 #if defined(__linux__)
@@ -34,6 +35,30 @@ namespace ProfileEvents
     extern const Event OSWriteChars;
     extern const Event OSReadBytes;
     extern const Event OSWriteBytes;
+
+    extern const Event PerfCpuCycles;
+    extern const Event PerfInstructions;
+    extern const Event PerfCacheReferences;
+    extern const Event PerfCacheMisses;
+    extern const Event PerfBranchInstructions;
+    extern const Event PerfBranchMisses;
+    extern const Event PerfBusCycles;
+    extern const Event PerfStalledCyclesFrontend;
+    extern const Event PerfStalledCyclesBackend;
+    extern const Event PerfRefCpuCycles;
+
+    extern const Event PerfCpuClock;
+    extern const Event PerfTaskClock;
+    extern const Event PerfContextSwitches;
+    extern const Event PerfCpuMigrations;
+    extern const Event PerfAlignmentFaults;
+    extern const Event PerfEmulationFaults;
+    extern const Event PerfMinEnabledTime;
+    extern const Event PerfMinEnabledRunningTime;
+    extern const Event PerfDataTLBReferences;
+    extern const Event PerfDataTLBMisses;
+    extern const Event PerfInstructionTLBReferences;
+    extern const Event PerfInstructionTLBMisses;
 #endif
 }
 
@@ -115,6 +140,78 @@ struct RUsageCounters
         last_counters = current_counters;
     }
 };
+
+// thread_local is disabled in Arcadia, so we have to use a dummy implementation
+// there.
+#if defined(__linux__) && !defined(ARCADIA_BUILD)
+
+struct PerfEventInfo
+{
+    // see perf_event.h/perf_type_id enum
+    int event_type;
+    // see configs in perf_event.h
+    int event_config;
+    ProfileEvents::Event profile_event;
+    std::string settings_name;
+};
+
+struct PerfEventValue
+{
+    UInt64 value = 0;
+    UInt64 time_enabled = 0;
+    UInt64 time_running = 0;
+};
+
+static constexpr size_t NUMBER_OF_RAW_EVENTS = 20;
+
+struct PerfDescriptorsHolder : boost::noncopyable
+{
+    int descriptors[NUMBER_OF_RAW_EVENTS]{};
+
+    PerfDescriptorsHolder();
+
+    ~PerfDescriptorsHolder();
+
+    void releaseResources();
+};
+
+struct PerfEventsCounters
+{
+    PerfDescriptorsHolder thread_events_descriptors_holder;
+
+    // time_enabled and time_running can't be reset, so we have to store the
+    // data from the previous profiling period and calculate deltas to them,
+    // to be able to properly account for counter multiplexing.
+    PerfEventValue previous_values[NUMBER_OF_RAW_EVENTS]{};
+
+
+    void initializeProfileEvents(const std::string & events_list);
+    void finalizeProfileEvents(ProfileEvents::Counters & profile_events);
+    void closeEventDescriptors();
+    bool processThreadLocalChanges(const std::string & needed_events_list);
+
+
+    static std::vector<size_t> eventIndicesFromString(const std::string & events_list);
+};
+
+// Perf event creation is moderately heavy, so we create them once per thread and
+// then reuse.
+extern thread_local PerfEventsCounters current_thread_counters;
+
+#else
+
+// Not on Linux, or in Arcadia: the functionality is disabled.
+struct PerfEventsCounters
+{
+    void initializeProfileEvents(const std::string & /* events_list */) {}
+    void finalizeProfileEvents(ProfileEvents::Counters & /* profile_events */) {}
+    void closeEventDescriptors() {}
+};
+
+// thread_local is disabled in Arcadia, so we are going to use a static dummy.
+extern PerfEventsCounters current_thread_counters;
+
+#endif
 
 #if defined(__linux__)
 

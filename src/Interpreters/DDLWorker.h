@@ -29,8 +29,9 @@ struct DDLTask;
 
 
 /// Pushes distributed DDL query to the queue
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_required_access);
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access, bool query_requires_grant_option = false);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_requires_access, bool query_requires_grant_option = false);
 
 
 class DDLWorker
@@ -100,8 +101,9 @@ private:
     void attachToThreadGroup();
 
 private:
+    bool is_circular_replicated;
     Context & context;
-    Logger * log;
+    Poco::Logger * log;
     std::unique_ptr<Context> current_context;
 
     std::string host_fqdn;      /// current host domain name
