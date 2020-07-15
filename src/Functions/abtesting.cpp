@@ -1,3 +1,5 @@
+#if !defined(ARCADIA_BUILD) 
+
 #include <math.h>
 #include <sstream>
 
@@ -265,3 +267,5 @@ void registerFunctionBayesAB(FunctionFactory & factory)
 }
 
 }
+
+#endif

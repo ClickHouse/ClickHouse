@@ -1,3 +1,4 @@
+#if !defined(ARCADIA_BUILD)
 #pragma once
 
 #include <iostream>
@@ -18,3 +19,4 @@ template <bool higher_is_better>
 ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, std::vector<double> ys);
 
 }
+#endif
