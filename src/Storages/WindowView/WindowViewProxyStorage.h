@@ -16,7 +16,9 @@ public:
     , to_stage(to_stage_)
     {
         columns_.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
-        setColumns(std::move(columns_));
+        StorageInMemoryMetadata storage_metadata;
+        storage_metadata.setColumns(columns_);
+        setInMemoryMetadata(storage_metadata);
     }
 
 public:
@@ -25,12 +27,13 @@ public:
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override { return to_stage; }
 
     Pipes read(
-            const Names & /*column_names*/,
-            const SelectQueryInfo & /*query_info*/,
-            const Context & /*context*/,
-            QueryProcessingStage::Enum /*processed_stage*/,
-            size_t /*max_block_size*/,
-            unsigned /*num_streams*/) override
+        const Names & /*column_names*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const SelectQueryInfo & /*query_info*/,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/) override
     {
         return std::move(pipes);
     }

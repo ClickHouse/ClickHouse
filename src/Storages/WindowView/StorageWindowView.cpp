@@ -332,14 +332,20 @@ void StorageWindowView::drop()
     fire_condition.notify_all();
 }
 
-void StorageWindowView::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageWindowView::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
     executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, inner_table_id);
 }
 
-bool StorageWindowView::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
+bool StorageWindowView::optimize(
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ASTPtr & partition,
+    bool final,
+    bool deduplicate,
+    const Context & context)
 {
-    return getInnerStorage()->optimize(query, partition, final, deduplicate, context);
+    return getInnerStorage()->optimize(query, metadata_snapshot, partition, final, deduplicate, context);
 }
 
 Pipes StorageWindowView::blocksToPipes(BlocksList & blocks, Block & sample_block)
@@ -386,8 +392,9 @@ inline void StorageWindowView::fire(UInt32 watermark)
     else
     {
         StoragePtr target_table = getTargetStorage();
-        auto lock = target_table->lockStructureForShare(true, wv_context->getCurrentQueryId(), wv_context->getSettingsRef().lock_acquire_timeout);
-        auto out_stream = target_table->write(getFinalQuery(), *wv_context);
+        auto metadata_snapshot = target_table->getInMemoryMetadataPtr();
+        auto lock = target_table->lockForShare(wv_context->getCurrentQueryId(), wv_context->getSettingsRef().lock_acquire_timeout);
+        auto out_stream = target_table->write(getFinalQuery(), metadata_snapshot, *wv_context);
         in_stream->readPrefix();
         out_stream->writePrefix();
         while (auto block = in_stream->read())
@@ -419,7 +426,8 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
     QueryAliasesVisitor(query_aliases_data).visit(inner_select_query);
 
     auto t_sample_block
-        = InterpreterSelectQuery(inner_select_query, *wv_context, getParentStorage(), SelectQueryOptions(QueryProcessingStage::WithMergeableState))
+        = InterpreterSelectQuery(
+              inner_select_query, *wv_context, getParentStorage(), nullptr, SelectQueryOptions(QueryProcessingStage::WithMergeableState))
               .getSampleBlock();
 
     auto columns_list = std::make_shared<ASTExpressionList>();
@@ -807,7 +815,9 @@ StorageWindowView::StorageWindowView(
     wv_context = std::make_unique<Context>(global_context);
     wv_context->makeQueryContext();
 
-    setColumns(columns_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    setInMemoryMetadata(storage_metadata);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -1082,8 +1092,9 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
     }
 
     auto & inner_storage = window_view.getInnerStorage();
-    auto lock = inner_storage->lockStructureForShare(true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-    auto stream = inner_storage->write(window_view.getMergeableQuery(), context);
+    auto metadata_snapshot = inner_storage->getInMemoryMetadataPtr();
+    auto lock = inner_storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto stream = inner_storage->write(window_view.getMergeableQuery(), metadata_snapshot, context);
     copyData(*source_stream, *stream);
 }
 
@@ -1114,7 +1125,7 @@ Block & StorageWindowView::getHeader() const
     if (!sample_block)
     {
         sample_block = InterpreterSelectQuery(
-                           getFinalQuery(), *wv_context, getParentStorage(), SelectQueryOptions(QueryProcessingStage::Complete))
+                           getFinalQuery(), *wv_context, getParentStorage(), nullptr, SelectQueryOptions(QueryProcessingStage::Complete))
                            .getSampleBlock();
         for (size_t i = 0; i < sample_block.columns(); ++i)
             sample_block.safeGetByPosition(i).column = sample_block.safeGetByPosition(i).column->convertToFullColumnIfConst();
@@ -1182,7 +1193,12 @@ BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr(UInt32 waterma
 {
     UInt32 w_start = addTime(watermark, window_kind, -1 * window_num_units);
 
-    InterpreterSelectQuery fetch(getFetchColumnQuery(w_start, watermark), *wv_context, getInnerStorage(), SelectQueryOptions(QueryProcessingStage::FetchColumns));
+    InterpreterSelectQuery fetch(
+        getFetchColumnQuery(w_start, watermark),
+        *wv_context,
+        getInnerStorage(),
+        nullptr,
+        SelectQueryOptions(QueryProcessingStage::FetchColumns));
     BlockInputStreamPtr in_stream = fetch.execute().getInputStream();
 
     in_stream = std::make_shared<ReplaceWindowColumnBlockInputStream>(in_stream, window_column_name, w_start, watermark);
@@ -1190,13 +1206,14 @@ BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr(UInt32 waterma
     Pipes pipes;
     pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(in_stream)));
 
+    auto parent_table_metadata = getParentStorage()->getInMemoryMetadataPtr();
     auto proxy_storage = std::make_shared<WindowViewProxyStorage>(
-        StorageID(getStorageID().database_name, "WindowViewProxyStorage"), getParentStorage()->getColumns(), std::move(pipes), QueryProcessingStage::WithMergeableState);
+        StorageID(getStorageID().database_name, "WindowViewProxyStorage"), parent_table_metadata->getColumns(), std::move(pipes), QueryProcessingStage::WithMergeableState);
 
     SelectQueryOptions query_options(QueryProcessingStage::Complete);
     query_options.ignore_limits = true;
     query_options.ignore_quota = true;
-    InterpreterSelectQuery select(getFinalQuery(), *wv_context, proxy_storage, query_options);
+    InterpreterSelectQuery select(getFinalQuery(), *wv_context, proxy_storage, nullptr, query_options);
     BlockInputStreamPtr data = select.execute().getInputStream();
 
     data = std::make_shared<SquashingBlockInputStream>(

@@ -12,6 +12,20 @@ foreach(policy
     endif()
 endforeach()
 
+# set default policy
+foreach(default_policy_var_name
+        # make option() honor normal variables for BUILD_SHARED_LIBS:
+        # - re2
+        # - snappy
+        CMAKE_POLICY_DEFAULT_CMP0077
+        # Google Test from sources uses too old cmake, 2.6.x, and CMP0022 should
+        # set, to avoid using deprecated LINK_INTERFACE_LIBRARIES(_<CONFIG>)? over
+        # INTERFACE_LINK_LIBRARIES.
+        CMAKE_POLICY_DEFAULT_CMP0022
+    )
+    set(${default_policy_var_name} NEW)
+endforeach()
+
 project(ClickHouse)
 
 include (cmake/arch.cmake)
@@ -289,8 +303,9 @@ set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
 if (MAKE_STATIC_LIBRARIES)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-    if (OS_LINUX)
+    if (OS_LINUX AND NOT ARCH_ARM)
         # Slightly more efficient code can be generated
+        # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no-pie")
@@ -341,6 +356,7 @@ include (cmake/find/sparsehash.cmake)
 include (cmake/find/re2.cmake)
 include (cmake/find/libgsasl.cmake)
 include (cmake/find/rdkafka.cmake)
+include (cmake/find/amqpcpp.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
 include (cmake/find/opencl.cmake)
@@ -361,6 +377,7 @@ include (cmake/find/orc.cmake)
 include (cmake/find/avro.cmake)
 include (cmake/find/msgpack.cmake)
 include (cmake/find/cassandra.cmake)
+include (cmake/find/sentry.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
@@ -374,10 +391,6 @@ endif ()
 include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
-
-if (OS_LINUX AND NOT ENABLE_JEMALLOC)
-    message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
-endif ()
 
 if (USE_OPENCL)
     if (OS_DARWIN)
@@ -393,6 +406,10 @@ if (TARGET global-group)
 endif ()
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
+
+if (NOT ENABLE_JEMALLOC)
+    message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")
+endif ()
 
 macro (add_executable target)
     # invoke built-in add_executable
@@ -418,3 +435,5 @@ add_subdirectory (tests)
 add_subdirectory (utils)
 
 include (cmake/print_include_directories.cmake)
+
+include (cmake/sanitize_target_link_libraries.cmake)

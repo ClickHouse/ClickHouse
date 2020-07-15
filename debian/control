@@ -28,7 +28,7 @@ Description: Client binary for ClickHouse
 
 Package: clickhouse-common-static
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, tzdata
+Depends: ${shlibs:Depends}, ${misc:Depends}
 Suggests: clickhouse-common-static-dbg
 Replaces: clickhouse-common, clickhouse-server-base
 Provides: clickhouse-common, clickhouse-server-base

@@ -16,8 +16,23 @@ n3 = cluster.add_instance('n3', main_configs=['configs/remote_servers.xml'])
 nodes = len(cluster.instances)
 queries = nodes*5
 
-def create_tables():
+def bootstrap():
     for n in cluster.instances.values():
+        # At startup, server loads configuration files.
+        #
+        # However ConfigReloader does not know about already loaded files
+        # (files is empty()), hence it will always reload the configuration
+        # just after server starts (+ 2 seconds, reload timeout).
+        #
+        # And on configuration reload the clusters will be re-created, so some
+        # internal stuff will be reseted:
+        # - error_count
+        # - last_used (round_robing)
+        #
+        # And if the reload will happen during round_robin test it will start
+        # querying from the beginning, so let's issue config reload just after
+        # start to avoid reload in the middle of the test execution.
+        n.query('SYSTEM RELOAD CONFIG')
         n.query('DROP TABLE IF EXISTS data')
         n.query('DROP TABLE IF EXISTS dist')
         n.query('CREATE TABLE data (key Int) Engine=Memory()')
@@ -25,6 +40,20 @@ def create_tables():
         CREATE TABLE dist AS data
         Engine=Distributed(
             replicas_cluster,
+            currentDatabase(),
+            data)
+        """.format())
+        n.query("""
+        CREATE TABLE dist_priority AS data
+        Engine=Distributed(
+            replicas_priority_cluster,
+            currentDatabase(),
+            data)
+        """.format())
+        n.query("""
+        CREATE TABLE dist_priority_negative AS data
+        Engine=Distributed(
+            replicas_priority_negative_cluster,
             currentDatabase(),
             data)
         """.format())
@@ -36,12 +65,12 @@ def make_uuid():
 def start_cluster():
     try:
         cluster.start()
-        create_tables()
+        bootstrap()
         yield cluster
     finally:
         cluster.shutdown()
 
-def get_node(query_node, *args, **kwargs):
+def get_node(query_node, table='dist', *args, **kwargs):
     query_id = make_uuid()
 
     settings = {
@@ -55,7 +84,7 @@ def get_node(query_node, *args, **kwargs):
     else:
         kwargs['settings'].update(settings)
 
-    query_node.query('SELECT * FROM dist', *args, **kwargs)
+    query_node.query('SELECT * FROM ' + table, *args, **kwargs)
 
     for n in cluster.instances.values():
         n.query('SYSTEM FLUSH LOGS')
@@ -105,10 +134,57 @@ def test_load_balancing_first_or_random():
     assert len(unique_nodes) == 1, unique_nodes
     assert unique_nodes == set(['n1'])
 
-# TODO: last_used will be reset on config reload, hence may fail
 def test_load_balancing_round_robin():
     unique_nodes = set()
     for _ in range(0, nodes):
         unique_nodes.add(get_node(n1, settings={'load_balancing': 'round_robin'}))
     assert len(unique_nodes) == nodes, unique_nodes
     assert unique_nodes == set(['n1', 'n2', 'n3'])
+
+@pytest.mark.parametrize('dist_table', [
+    ('dist_priority'),
+    ('dist_priority_negative'),
+])
+def test_load_balancing_priority_round_robin(dist_table):
+    unique_nodes = set()
+    for _ in range(0, nodes):
+        unique_nodes.add(get_node(n1, dist_table, settings={'load_balancing': 'round_robin'}))
+    assert len(unique_nodes) == 2, unique_nodes
+    # n2 has bigger priority in config
+    assert unique_nodes == set(['n1', 'n3'])
+
+def test_distributed_replica_max_ignored_errors():
+    settings = {
+        'load_balancing': 'in_order',
+        'prefer_localhost_replica': 0,
+        'connect_timeout': 2,
+        'receive_timeout': 2,
+        'send_timeout': 2,
+        'idle_connection_timeout': 2,
+        'tcp_keep_alive_timeout': 2,
+
+        'distributed_replica_max_ignored_errors': 0,
+        'distributed_replica_error_half_life': 60,
+    }
+
+    # initiate connection (if started only this test)
+    n2.query('SELECT * FROM dist', settings=settings)
+    cluster.pause_container('n1')
+
+    # n1 paused -- skipping, and increment error_count for n1
+    # but the query succeeds, no need in query_and_get_error()
+    n2.query('SELECT * FROM dist', settings=settings)
+    # XXX: due to config reloading we need second time (sigh)
+    n2.query('SELECT * FROM dist', settings=settings)
+    # check error_count for n1
+    assert int(n2.query("""
+    SELECT errors_count FROM system.clusters
+    WHERE cluster = 'replicas_cluster' AND host_name = 'n1'
+    """, settings=settings)) == 1
+
+    cluster.unpause_container('n1')
+    # still n2
+    assert get_node(n2, settings=settings) == 'n2'
+    # now n1
+    settings['distributed_replica_max_ignored_errors'] = 1
+    assert get_node(n2, settings=settings) == 'n1'

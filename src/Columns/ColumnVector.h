@@ -162,6 +162,8 @@ public:
 
     void updateWeakHash32(WeakHash32 & hash) const override;
 
+    void updateHashFast(SipHash & hash) const override;
+
     size_t byteSize() const override
     {
         return data.size() * sizeof(data[0]);
@@ -284,6 +286,9 @@ public:
     {
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
+
+    /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
+    void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()

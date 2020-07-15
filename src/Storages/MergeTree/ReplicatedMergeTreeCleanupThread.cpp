@@ -56,11 +56,10 @@ void ReplicatedMergeTreeCleanupThread::run()
 void ReplicatedMergeTreeCleanupThread::iterate()
 {
     storage.clearOldPartsAndRemoveFromZK();
+    storage.clearOldWriteAheadLogs();
 
     {
-        /// TODO: Implement tryLockStructureForShare.
-        auto lock = storage.lockStructureForShare(
-                false, RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
+        auto lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
         storage.clearOldTemporaryDirectories();
     }
 

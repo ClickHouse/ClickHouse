@@ -47,7 +47,7 @@ BlockIO InterpreterWatchQuery::execute()
         ErrorCodes::UNKNOWN_TABLE);
 
     /// List of columns to read to execute the query.
-    Names required_columns = storage->getColumns().getNamesOfPhysical();
+    Names required_columns = storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical();
     context.checkAccess(AccessType::SELECT, table_id, required_columns);
 
     /// Get context settings for this query
