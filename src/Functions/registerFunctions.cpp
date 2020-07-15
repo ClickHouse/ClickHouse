@@ -83,7 +83,7 @@ void registerFunctions()
     registerFunctionsIntrospection(factory);
     registerFunctionsConsistentHashing(factory);
     registerFunctionsUnixTimestamp64(factory);
-#if !defined(ARCADIA_BUILD_
+#if !defined(ARCADIA_BUILD)
     registerFunctionBayesAB(factory);
 #endif
 }
