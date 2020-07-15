@@ -607,8 +607,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
 void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const
 {
-    const auto kind = create.is_dictionary ? "Dictionary" : "Table";
-    const auto kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
+    const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
+    const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
 
     if (database->getEngineName() == "Atomic")
     {

@@ -187,7 +187,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     true,                   /// require_part_metadata
                     attach,
                     [this] (const std::string & name) { enqueuePartForCheck(name); })
-    , zookeeper_path(zookeeper_path_)
+    , zookeeper_path(normalizeZooKeeperPath(zookeeper_path_))
     , replica_name(replica_name_)
     , replica_path(zookeeper_path + "/replicas/" + replica_name)
     , reader(*this)
