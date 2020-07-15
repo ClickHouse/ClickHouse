@@ -109,7 +109,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
     else if (implementation == "etcdkeeper")
     {
         if (hosts.empty())
-            throw KeeperException("No hosts passed to ZooKeeper constructor.", Coordination::ZBADARGUMENTS);
+            throw KeeperException("No hosts passed to ZooKeeper constructor.", Coordination::Error::ZBADARGUMENTS);
 
         impl = std::make_unique<Coordination::EtcdKeeper>(
                 chroot,
