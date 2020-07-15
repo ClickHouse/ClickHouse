@@ -334,8 +334,8 @@ bool StorageLiveView::getNewBlocks()
     /// called before writeIntoLiveView function is called which can lead to
     /// the same block added twice to the mergeable_blocks leading to
     /// inserted data to be duplicated
-    auto _mergeable_blocks = collectMergeableBlocks(*live_view_context);
-    Pipes from = blocksToPipes(_mergeable_blocks->blocks, _mergeable_blocks->sample_block);
+    auto new_mergeable_blocks = collectMergeableBlocks(*live_view_context);
+    Pipes from = blocksToPipes(new_mergeable_blocks->blocks, new_mergeable_blocks->sample_block);
     BlockInputStreamPtr data = completeQuery(std::move(from));
 
     while (Block block = data->read())
