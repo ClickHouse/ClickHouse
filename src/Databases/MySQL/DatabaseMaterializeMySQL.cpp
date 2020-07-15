@@ -1,13 +1,19 @@
-#include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
-#include <Databases/DatabaseOrdinary.h>
-#include <Databases/MySQL/MaterializeMySQLSyncThread.h>
-#include <Databases/MySQL/DatabaseMaterializeTablesIterator.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Storages/StorageMaterializeMySQL.h>
-#include <Poco/File.h>
-#include <Poco/Logger.h>
-#include <Common/setThreadName.h>
+#if USE_MYSQL
+
+#    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+
+#    include <Databases/DatabaseOrdinary.h>
+#    include <Databases/MySQL/DatabaseMaterializeTablesIterator.h>
+#    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#    include <Parsers/ASTCreateQuery.h>
+#    include <Storages/StorageMaterializeMySQL.h>
+#    include <Poco/File.h>
+#    include <Poco/Logger.h>
+#    include <Common/setThreadName.h>
 
 namespace DB
 {
@@ -43,9 +49,9 @@ DatabasePtr DatabaseMaterializeMySQL::getNestedDatabase() const
         {
             std::rethrow_exception(exception);
         }
-        catch (Exception & exception)
+        catch (Exception & ex)
         {
-            throw Exception(exception);
+            throw Exception(ex);
         }
     }
 
@@ -180,21 +186,24 @@ bool DatabaseMaterializeMySQL::shouldBeEmptyOnDetach() const
 
 void DatabaseMaterializeMySQL::drop(const Context & context)
 {
-    DatabasePtr nested_database = getNestedDatabase();
+    DatabasePtr database = getNestedDatabase();
 
-    if (nested_database->shouldBeEmptyOnDetach())
+    if (database->shouldBeEmptyOnDetach())
     {
-        for (auto iterator = nested_database->getTablesIterator(context, {}); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getTablesIterator(context, {}); iterator->isValid(); iterator->next())
         {
             TableExclusiveLockHolder table_lock = iterator->table()->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-            nested_database->dropTable(context, iterator->name(), true);
+            database->dropTable(context, iterator->name(), true);
         }
 
         /// Remove metadata info
-        Poco::File(getMetadataPath() + "/.metadata").remove(false);
+        Poco::File metadata(getMetadataPath() + "/.metadata");
+
+        if (metadata.exists())
+            metadata.remove(false);
     }
 
-    nested_database->drop(context);
+    database->drop(context);
 }
 
 bool DatabaseMaterializeMySQL::isTableExist(const String & name, const Context & context) const
@@ -222,3 +231,5 @@ DatabaseTablesIteratorPtr DatabaseMaterializeMySQL::getTablesIterator(const Cont
 }
 
 }
+
+#endif
