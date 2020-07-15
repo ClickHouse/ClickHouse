@@ -689,6 +689,9 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
     if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList() && query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+        if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
+            return 0;
+
         return limit_length + limit_offset;
     }
     return 0;
@@ -1287,6 +1290,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         && !query.limitBy()
         && query.limitLength()
         && !query_analyzer->hasAggregation()
+        && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset
         && limit_length + limit_offset < max_block_size)
     {
         max_block_size = std::max(UInt64(1), limit_length + limit_offset);
@@ -1649,8 +1653,9 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, *context);
         UInt64 limit_for_distinct = 0;
 
-        /// If after this stage of DISTINCT ORDER BY is not executed, then you can get no more than limit_length + limit_offset of different rows.
-        if (!query.orderBy() || !before_order)
+        /// If after this stage of DISTINCT ORDER BY is not executed,
+        /// then you can get no more than limit_length + limit_offset of different rows.
+        if ((!query.orderBy() || !before_order) && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
             limit_for_distinct = limit_length + limit_offset;
 
         SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
@@ -1678,6 +1683,9 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
         if (do_not_skip_offset)
         {
+            if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
+                return;
+
             limit_length += limit_offset;
             limit_offset = 0;
         }
