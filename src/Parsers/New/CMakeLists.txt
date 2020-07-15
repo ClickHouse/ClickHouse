@@ -1,12 +1,24 @@
 set (SRCS
+    AST/ColumnExpr.cpp
+    AST/Identifier.cpp
+    AST/JoinExpr.cpp
+    AST/LimitExpr.cpp
+    AST/Literal.cpp
+    AST/OrderExpr.cpp
     AST/Query.cpp
+    AST/RatioExpr.cpp
     AST/SelectStmt.cpp
     AST/SelectUnionQuery.cpp
+    AST/SettingExpr.cpp
+    AST/TableExpr.cpp
     ClickHouseLexer.cpp
     ClickHouseParser.cpp
     ClickHouseParserBaseVisitor.cpp
     ClickHouseParserVisitor.cpp
+    LexerErrorListener.cpp
     parseQuery.cpp
+    ParserErrorListener.cpp
+    ParseTreeVisitor.cpp
 )
 
 add_library (clickhouse_parsers_new ${SRCS})
@@ -25,7 +37,7 @@ target_compile_options (clickhouse_parsers_new
         -Wno-extra-semi
         -Wno-inconsistent-missing-destructor-override
 )
-target_link_libraries (clickhouse_parsers_new PUBLIC antlr4-runtime clickhouse_common_io)
+target_link_libraries (clickhouse_parsers_new PUBLIC antlr4-runtime clickhouse_common_io clickhouse_parsers)
 
 # ANTLR generates u8 string literals, which are incompatible with |std::string| in C++20.
 # See https://github.com/antlr/antlr4/issues/2683

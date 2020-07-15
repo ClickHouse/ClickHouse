@@ -2,26 +2,36 @@
 
 #include <Parsers/New/AST/INode.h>
 
+#include <string>
+
 
 namespace DB::AST
 {
 
 class Identifier : public INode
 {
+    public:
+        explicit Identifier(const std::string & name_);
 
+    private:
+        const std::string name;
 };
 
-class ColumnIdentifier : public Identifier
+class DatabaseIdentifier : public Identifier
 {
 
 };
 
 class TableIdentifier : public Identifier
 {
+    public:
+        TableIdentifier(PtrTo<DatabaseIdentifier> database, PtrTo<Identifier> name);
 
+    private:
+        PtrTo<DatabaseIdentifier> db;
 };
 
-class DatabaseIdentifier : public Identifier
+class ColumnIdentifier : public Identifier
 {
 
 };

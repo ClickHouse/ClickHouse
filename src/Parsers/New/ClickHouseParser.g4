@@ -8,7 +8,7 @@ options {
 
 queryList: queryStmt (SEMICOLON queryStmt)* SEMICOLON?;
 
-queryStmt:  // NOTE: |ParserTreeVisitor::visitQueryStmtAsParent()| callers depend on this rule
+queryStmt:  // NOTE: |ParseTreeVisitor::visitQueryStmtAsParent()| callers depend on this rule
     ( selectUnionStmt | insertStmt )
     (INTO OUTFILE STRING_LITERAL)?
     (FORMAT identifier)?
@@ -46,7 +46,27 @@ limitByClause: LIMIT limitExpr BY columnExprList;
 limitClause: LIMIT limitExpr;
 settingsClause: SETTINGS settingExprList;
 
-joinExpr: tableIdentifier; // TODO: not complete!
+joinExpr
+    : tableExpr                                                           # JoinExprTable
+    | LPAREN joinExpr RPAREN                                              # JoinExprParens
+    | joinExpr (GLOBAL|LOCAL)? joinOp JOIN joinExpr joinConstraintClause  # JoinExprOp
+    | joinExpr joinCrossOp joinExpr                                       # JoinExprCrossOp
+    ;
+joinOp
+    : (ANY? INNER | INNER ANY?)                                                                                  # JoinOpInner
+    | ((OUTER | SEMI | ANTI | ANY | ASOF)? (LEFT | RIGHT) | (LEFT | RIGHT) (OUTER | SEMI | ANTI | ANY | ASOF)?)  # JoinOpLeftRight
+    | ((OUTER | ANY)? FULL | FULL (OUTER | ANY)?)                                                                # JoinOpFull
+    ;
+joinConstraintClause
+    : ON columnExprList
+    | USING LPAREN columnExprList RPAREN
+    | USING columnExprList
+    ;
+joinCrossOp
+    : (GLOBAL|LOCAL)? CROSS JOIN
+    | COMMA
+    ;
+
 limitExpr: NUMBER_LITERAL ((COMMA | OFFSET) NUMBER_LITERAL)?;
 orderExprList: orderExpr (COMMA orderExpr)*;
 orderExpr: columnExpr (ASCENDING | DESCENDING)? (NULLS (FIRST | LAST))? (COLLATE STRING_LITERAL)?;
@@ -64,25 +84,25 @@ insertStmt:
 
 columnExprList: columnExpr (COMMA columnExpr)*;
 columnExpr
-    : LITERAL                                                                     # Literal
-    | ASTERISK                                                                    # Asterisk
-    | columnIdentifier                                                            # Id
-    | LPAREN columnExpr RPAREN                                                    # Tuple
-    | LPAREN selectStmt RPAREN                                                    # Subquery
-    | LBRACKET columnExprList? RBRACKET                                           # Array
+    : LITERAL                                                                     # ColumnExprLiteral
+    | ASTERISK                                                                    # ColumnExprAsterisk
+    | columnIdentifier                                                            # ColumnExprIdentifier
+    | LPAREN columnExpr RPAREN                                                    # ColumnExprParens
+    | LPAREN columnExprList RPAREN                                                # ColumnExprTuple
+    | LBRACKET columnExprList? RBRACKET                                           # ColumnExprArray
 
     // NOTE: rules below are sorted according to operators' priority - the most priority on top.
-    | columnExpr LBRACKET columnExpr RBRACKET                                     # ArrayAccess
-    | columnExpr DOT NUMBER_LITERAL                                               # TupleAccess
-    | unaryOp columnExpr                                                          # Unary
-    | columnExpr IS NOT? NULL_SQL                                                 # IsNull
-    | columnExpr binaryOp columnExpr                                              # Binary
-    | columnExpr QUERY columnExpr COLON columnExpr                                # Ternary
-    | columnExpr NOT? BETWEEN columnExpr AND columnExpr                           # Between
-    | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END  # Case
-    | INTERVAL columnExpr INTERVAL_TYPE                                           # Interval
-    | columnFunctionExpr                                                          # FunctionCall
-    | columnExpr AS identifier                                                    # Alias
+    | columnExpr LBRACKET columnExpr RBRACKET                                     # ColumnExprArrayAccess
+    | columnExpr DOT NUMBER_LITERAL                                               # ColumnExprTupleAccess
+    | unaryOp columnExpr                                                          # ColumnExprUnaryOp
+    | columnExpr IS NOT? NULL_SQL                                                 # ColumnExprIsNull
+    | columnExpr binaryOp columnExpr                                              # ColumnExprBinaryOp
+    | columnExpr QUERY columnExpr COLON columnExpr                                # ColumnExprTernaryOp
+    | columnExpr NOT? BETWEEN columnExpr AND columnExpr                           # ColumnExprBetween
+    | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END  # ColumnExprCase
+    | INTERVAL columnExpr INTERVAL_TYPE                                           # ColumnExprInterval
+    | columnFunctionExpr                                                          # ColumnExprFunction
+    | columnExpr AS identifier                                                    # ColumnExprAlias
     ;
 columnFunctionExpr
     : identifier (LPAREN (LITERAL (COMMA LITERAL)*)? RPAREN)? LPAREN columnArgList? RPAREN
@@ -103,7 +123,19 @@ columnIdentifier: (tableIdentifier DOT)? identifier; // TODO: don't forget compo
 
 // Tables
 
+tableExpr
+    : tableIdentifier                                       # TableExprIdentifier
+    | tableFunctionExpr                                     # TableExprFunction
+    | LPAREN selectStmt RPAREN                              # TableExprSubquery
+    | tableExpr AS identifier                               # TableExprAlias
+    ;
 tableIdentifier: (databaseIdentifier DOT)? identifier;
+tableFunctionExpr: identifier LPAREN tableArgList? RPAREN;
+tableArgList: tableArgExpr (COMMA tableArgExpr)*;
+tableArgExpr
+    : LITERAL
+    | tableIdentifier
+    ;
 
 // Databases
 
@@ -114,6 +146,7 @@ databaseIdentifier: identifier;
 identifier: IDENTIFIER; // TODO: not complete!
 unaryOp: DASH | NOT;
 binaryOp
+    // TODO: sort by priority.
     : ASTERISK | SLASH | PERCENT | PLUS | DASH | EQ | NOT_EQ | LE | GE | LT | GT | CONCAT // signs
     | AND | OR | NOT? LIKE | GLOBAL? NOT? IN                                              // keywords
     ;

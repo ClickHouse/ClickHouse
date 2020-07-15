@@ -1,77 +1,17 @@
 #pragma once
 
 #include <Parsers/New/AST/ColumnExpr.h>
-#include <Parsers/New/AST/Identifier.h>
-#include <Parsers/New/AST/Literal.h>
+#include <Parsers/New/AST/JoinExpr.h>
+#include <Parsers/New/AST/LimitExpr.h>
+#include <Parsers/New/AST/OrderExpr.h>
+#include <Parsers/New/AST/RatioExpr.h>
+#include <Parsers/New/AST/SettingExpr.h>
 
 #include <Core/Types.h>
 
 
 namespace DB::AST
 {
-
-// Exprs
-
-class JoinExpr : public INode
-{
-    public:
-        explicit JoinExpr(PtrTo<TableIdentifier> id);
-
-    private:
-        PtrTo<TableIdentifier> table;
-};
-
-class RatioExpr : public INode
-{
-    public:
-        explicit RatioExpr(PtrTo<NumberLiteral> num);
-        RatioExpr(PtrTo<NumberLiteral> num1, PtrTo<NumberLiteral> num2);
-
-    private:
-        PtrTo<NumberLiteral> num1, num2;
-};
-
-class OrderExpr : public INode
-{
-    public:
-        enum NullsOrder {
-            NATURAL,
-            NULLS_FIRST,
-            NULLS_LAST,
-        };
-
-        OrderExpr(PtrTo<ColumnExpr> expr_, NullsOrder nulls_, PtrTo<StringLiteral> collate_, bool ascending = true);
-
-    private:
-        PtrTo<ColumnExpr> expr;
-        NullsOrder nulls;
-        PtrTo<StringLiteral> collate;
-        bool asc;
-};
-
-using OrderExprList = List<OrderExpr, ','>;
-
-class LimitExpr : public INode
-{
-    public:
-        explicit LimitExpr(PtrTo<NumberLiteral> limit_);
-        LimitExpr(PtrTo<NumberLiteral> limit_, PtrTo<NumberLiteral> offset_);
-
-    private:
-        PtrTo<NumberLiteral> limit, offset;
-};
-
-class SettingExpr : public INode
-{
-    public:
-        SettingExpr(PtrTo<Identifier> name_, PtrTo<Literal> value_);
-
-    private:
-        PtrTo<Identifier> name;
-        PtrTo<Literal> value;
-};
-
-using SettingExprList = List<SettingExpr, ','>;
 
 // Clauses
 
@@ -88,6 +28,8 @@ class FromClause : public INode
 {
     public:
         FromClause(PtrTo<JoinExpr> join_expr, bool final_);
+
+        ASTPtr convertToOld() const override;
 
     private:
         PtrTo<JoinExpr> expr;
@@ -187,6 +129,8 @@ class SettingsClause : public INode
     private:
         PtrTo<SettingExprList> exprs;
 };
+
+// Statement
 
 class SelectStmt : public INode
 {

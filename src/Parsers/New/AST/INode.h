@@ -2,8 +2,8 @@
 
 #include <Parsers/IAST_fwd.h>
 
-#include <list>
 #include <memory>
+#include <vector>
 
 
 namespace DB::AST {
@@ -21,7 +21,7 @@ class INode {
         virtual ASTPtr convertToOld() const { return ASTPtr(); }
 
     protected:
-        std::list<Ptr> children;
+        std::vector<Ptr> children;
 };
 
 template <class T, char Separator>

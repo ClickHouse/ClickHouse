@@ -81,7 +81,39 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitJoinExpr(ClickHouseParser::JoinExprContext *ctx) override {
+  virtual antlrcpp::Any visitJoinExprOp(ClickHouseParser::JoinExprOpContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitJoinExprTable(ClickHouseParser::JoinExprTableContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitJoinExprParens(ClickHouseParser::JoinExprParensContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitJoinExprCrossOp(ClickHouseParser::JoinExprCrossOpContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitJoinOpInner(ClickHouseParser::JoinOpInnerContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitJoinOpLeftRight(ClickHouseParser::JoinOpLeftRightContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitJoinOpFull(ClickHouseParser::JoinOpFullContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitJoinConstraintClause(ClickHouseParser::JoinConstraintClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitJoinCrossOp(ClickHouseParser::JoinCrossOpContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -117,71 +149,71 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTupleAccess(ClickHouseParser::TupleAccessContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprTernaryOp(ClickHouseParser::ColumnExprTernaryOpContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTernary(ClickHouseParser::TernaryContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprAlias(ClickHouseParser::ColumnExprAliasContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitBetween(ClickHouseParser::BetweenContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprLiteral(ClickHouseParser::ColumnExprLiteralContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitSubquery(ClickHouseParser::SubqueryContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprArray(ClickHouseParser::ColumnExprArrayContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitUnary(ClickHouseParser::UnaryContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprTuple(ClickHouseParser::ColumnExprTupleContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitCase(ClickHouseParser::CaseContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprArrayAccess(ClickHouseParser::ColumnExprArrayAccessContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitArray(ClickHouseParser::ArrayContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprBetween(ClickHouseParser::ColumnExprBetweenContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitArrayAccess(ClickHouseParser::ArrayAccessContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprParens(ClickHouseParser::ColumnExprParensContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitAlias(ClickHouseParser::AliasContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprUnaryOp(ClickHouseParser::ColumnExprUnaryOpContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprTupleAccess(ClickHouseParser::ColumnExprTupleAccessContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitIsNull(ClickHouseParser::IsNullContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprCase(ClickHouseParser::ColumnExprCaseContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitId(ClickHouseParser::IdContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprInterval(ClickHouseParser::ColumnExprIntervalContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitFunctionCall(ClickHouseParser::FunctionCallContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprIsNull(ClickHouseParser::ColumnExprIsNullContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitBinary(ClickHouseParser::BinaryContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprIdentifier(ClickHouseParser::ColumnExprIdentifierContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitAsterisk(ClickHouseParser::AsteriskContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprBinaryOp(ClickHouseParser::ColumnExprBinaryOpContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTuple(ClickHouseParser::TupleContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprAsterisk(ClickHouseParser::ColumnExprAsteriskContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitInterval(ClickHouseParser::IntervalContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprFunction(ClickHouseParser::ColumnExprFunctionContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -205,7 +237,35 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitTableExprIdentifier(ClickHouseParser::TableExprIdentifierContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitTableExprSubquery(ClickHouseParser::TableExprSubqueryContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitTableExprAlias(ClickHouseParser::TableExprAliasContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitTableExprFunction(ClickHouseParser::TableExprFunctionContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitTableIdentifier(ClickHouseParser::TableIdentifierContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitTableFunctionExpr(ClickHouseParser::TableFunctionExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitTableArgList(ClickHouseParser::TableArgListContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitTableArgExpr(ClickHouseParser::TableArgExprContext *ctx) override {
     return visitChildren(ctx);
   }
 

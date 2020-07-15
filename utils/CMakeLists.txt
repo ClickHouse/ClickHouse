@@ -2,16 +2,10 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-if(MAKE_STATIC_LIBRARIES)
-    set(MAX_LINKER_MEMORY 3500)
-else()
-    set(MAX_LINKER_MEMORY 2500)
-endif()
-include(../cmake/limit_jobs.cmake)
-
 # Utils used in package
 add_subdirectory (config-processor)
 add_subdirectory (report)
+add_subdirectory (syntax-analyzer)
 
 # Not used in package
 if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
