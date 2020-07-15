@@ -251,7 +251,7 @@ The granted privilege allows `john` to insert data to the `x` and/or `y` columns
 
 ### ALTER {#grant-alter}
 
-Allows executing [ALTER](../../sql-reference/statements/alter.md) queries according to the following hierarchy of privileges:
+Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries according to the following hierarchy of privileges:
 
 -   `ALTER`. Level: `COLUMN`.
     -   `ALTER TABLE`. Level: `GROUP`
