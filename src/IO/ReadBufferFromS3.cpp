@@ -43,7 +43,7 @@ bool ReadBufferFromS3::nextImpl()
         initialized = true;
     }
 
-    Stopwatch watch(CLOCK_MONOTONIC);
+    Stopwatch watch;
     auto res = impl->next();
     watch.stop();
     ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());

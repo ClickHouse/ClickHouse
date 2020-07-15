@@ -79,7 +79,7 @@ void PocoHTTPClient::MakeRequestInternal(
     auto uri = request.GetUri().GetURIString();
     LOG_DEBUG(log, "Make request to: {}", uri);
 
-    enum class ES3MetricType
+    enum class S3MetricType
     {
         Microseconds,
         Count,
@@ -90,7 +90,7 @@ void PocoHTTPClient::MakeRequestInternal(
         EnumSize,
     };
 
-    auto SelectMetric = [&request](ES3MetricType type)
+    auto selectMetric = [&request](S3MetricType type)
     {
         const ProfileEvents::Event events_map[][2] = {
             {ProfileEvents::S3ReadMicroseconds, ProfileEvents::S3WriteMicroseconds},
@@ -100,7 +100,7 @@ void PocoHTTPClient::MakeRequestInternal(
             {ProfileEvents::S3ReadRequestsRedirects, ProfileEvents::S3WriteRequestsRedirects},
         };
 
-        static_assert((sizeof(events_map) / sizeof(events_map[0])) == static_cast<unsigned int>(ES3MetricType::EnumSize));
+        static_assert((sizeof(events_map) / sizeof(events_map[0])) == static_cast<unsigned int>(S3MetricType::EnumSize));
 
         switch (request.GetMethod())
         {
@@ -114,10 +114,10 @@ void PocoHTTPClient::MakeRequestInternal(
                 return events_map[static_cast<unsigned int>(type)][1]; // Write
         }
 
-        throw Exception(String("Unsupported request method"), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Unsupported request method", ErrorCodes::NOT_IMPLEMENTED);
     };
 
-    ProfileEvents::increment(SelectMetric(ES3MetricType::Count));
+    ProfileEvents::increment(selectMetric(S3MetricType::Count));
 
     const int MAX_REDIRECT_ATTEMPTS = 10;
     try
@@ -170,7 +170,7 @@ void PocoHTTPClient::MakeRequestInternal(
 
             Poco::Net::HTTPResponse poco_response;
 
-            Stopwatch watch(CLOCK_MONOTONIC);
+            Stopwatch watch;
 
             auto & request_body_stream = session->sendRequest(poco_request);
 
@@ -191,7 +191,7 @@ void PocoHTTPClient::MakeRequestInternal(
             auto & response_body_stream = session->receiveResponse(poco_response);
 
             watch.stop();
-            ProfileEvents::increment(SelectMetric(ES3MetricType::Microseconds), watch.elapsedMicroseconds());
+            ProfileEvents::increment(selectMetric(S3MetricType::Microseconds), watch.elapsedMicroseconds());
 
             int status_code = static_cast<int>(poco_response.getStatus());
             LOG_DEBUG(log, "Response status: {}, {}", status_code, poco_response.getReason());
@@ -202,7 +202,7 @@ void PocoHTTPClient::MakeRequestInternal(
                 uri = location;
                 LOG_DEBUG(log, "Redirecting request to new location: {}", location);
 
-                ProfileEvents::increment(SelectMetric(ES3MetricType::Redirects));
+                ProfileEvents::increment(selectMetric(S3MetricType::Redirects));
 
                 continue;
             }
@@ -228,11 +228,11 @@ void PocoHTTPClient::MakeRequestInternal(
 
                 if (status_code == 429 || status_code == 503)
                 { // API throttling
-                    ProfileEvents::increment(SelectMetric(ES3MetricType::Throttling));
+                    ProfileEvents::increment(selectMetric(S3MetricType::Throttling));
                 }
                 else
                 {
-                    ProfileEvents::increment(SelectMetric(ES3MetricType::Errors));
+                    ProfileEvents::increment(selectMetric(S3MetricType::Errors));
                 }
             }
             else
@@ -249,7 +249,7 @@ void PocoHTTPClient::MakeRequestInternal(
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
 
-        ProfileEvents::increment(SelectMetric(ES3MetricType::Errors));
+        ProfileEvents::increment(selectMetric(S3MetricType::Errors));
     }
 }
 }
