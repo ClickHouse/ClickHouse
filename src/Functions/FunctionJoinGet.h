@@ -77,14 +77,14 @@ public:
     String getName() const override { return name; }
 
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName &) const override { return {}; }
+    DataTypePtr getReturnType(const ColumnsWithTypeAndName &) const override { return {}; } // Not used
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
     void checkNumberOfArgumentsIfVariadic(size_t number_of_arguments) const override;
 
 private:
