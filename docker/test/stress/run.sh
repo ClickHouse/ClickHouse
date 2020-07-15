@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -x
+
 dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
@@ -52,5 +54,3 @@ service clickhouse-server restart
 wait_server
 
 clickhouse-client --query "SELECT 'Server successfuly started'" > /test_output/alive_check.txt || echo 'Server failed to start' > /test_output/alive_check.txt
-
-mv /var/log/clickhouse-server/* /test_output
