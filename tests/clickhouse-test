@@ -202,9 +202,8 @@ def run_tests_array(all_tests_with_params):
         (name, ext) = os.path.splitext(case)
 
         try:
+            sys.stdout.flush()
             sys.stdout.write("{0:72}".format(name + ": "))
-            if run_total == 1:
-                sys.stdout.flush()
 
             if args.skip and any(s in name for s in args.skip):
                 print(MSG_SKIPPED + " - skip")
