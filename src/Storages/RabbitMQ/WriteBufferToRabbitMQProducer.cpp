@@ -40,14 +40,14 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , login_password(login_password_)
         , routing_key(routing_key_)
         , exchange_name(exchange_ + "_direct")
-        , log(log_)
-        , num_queues(num_queues_)
         , bind_by_id(bind_by_id_)
+        , num_queues(num_queues_)
         , use_transactional_channel(use_transactional_channel_)
+        , payloads(QUEUE_SIZE * num_queues)
+        , log(log_)
         , delim(delimiter)
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
-        , payloads(QUEUE_SIZE * num_queues)
 {
 
     loop = std::make_unique<uv_loop_t>();
@@ -187,19 +187,19 @@ void WriteBufferToRabbitMQProducer::finilizeProducer()
             answer_received = true;
             LOG_TRACE(log, "All messages were successfully published");
         })
-        .onError([&](const char * message)
+        .onError([&](const char * message1)
         {
             answer_received = true;
             wait_rollback = true;
-            LOG_TRACE(log, "Publishing not successful: {}", message);
+            LOG_TRACE(log, "Publishing not successful: {}", message1);
             producer_channel->rollbackTransaction()
             .onSuccess([&]()
             {
                 wait_rollback = false;
             })
-            .onError([&](const char * message)
+            .onError([&](const char * message2)
             {
-                LOG_ERROR(log, "Failed to rollback transaction: {}", message);
+                LOG_ERROR(log, "Failed to rollback transaction: {}", message2);
                 wait_rollback = false;
             });
         });
