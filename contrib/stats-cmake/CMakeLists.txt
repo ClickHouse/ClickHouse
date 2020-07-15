@@ -6,5 +6,5 @@ set(GCEM_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/gcem/include)
 
 add_library(stats INTERFACE)
 
-target_include_directories(stats INTERFACE ${STATS_INCLUDE_DIR})
-target_include_directories(stats INTERFACE ${GCEM_INCLUDE_DIR})
+target_include_directories(stats SYSTEM INTERFACE ${STATS_INCLUDE_DIR})
+target_include_directories(stats SYSTEM INTERFACE ${GCEM_INCLUDE_DIR})
