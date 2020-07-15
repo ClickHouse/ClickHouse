@@ -102,7 +102,7 @@ namespace Coordination
         }
         else
         {
-            throw Exception("Unknown txn result.", ZRUNTIMEINCONSISTENCY);
+            throw Exception("Unknown txn result.", Coordination::Error::ZRUNTIMEINCONSISTENCY);
         }
         compare.set_result(compare_result);
         Compare::CompareTarget compare_target;
@@ -128,7 +128,7 @@ namespace Coordination
         }
         else
         {
-            throw Exception("Unknown txn target.", ZRUNTIMEINCONSISTENCY);
+            throw Exception("Unknown txn target.", Coordination::Error::ZRUNTIMEINCONSISTENCY);
         }
         compare.set_target(compare_target);
         return compare;
@@ -437,7 +437,7 @@ namespace Coordination
         }
         else
         {
-            throw Exception("Cannot get lease ID: " + lease_response.error(), ZRUNTIMEINCONSISTENCY);
+            throw Exception("Cannot get lease ID: " + lease_response.error(), Coordination::Error::ZRUNTIMEINCONSISTENCY);
         }
     }
 
@@ -979,7 +979,7 @@ namespace Coordination
                 }
                 else
                 {
-                    throw Exception("Illegal command as part of multi ZooKeeper request", ZBADARGUMENTS);
+                    throw Exception("Illegal command as part of multi ZooKeeper request", Coordination::Error::ZBADARGUMENTS);
                 }
             }
             if (!required_keys.empty())
@@ -1689,7 +1689,7 @@ namespace Coordination
                         std::lock_guard lock(operations_mutex);
                         auto it = operations.find(xid);
                         if (it == operations.end())
-                            throw Exception("Received response for unknown xid", ZRUNTIMEINCONSISTENCY);
+                            throw Exception("Received response for unknown xid", Coordination::Error::ZRUNTIMEINCONSISTENCY);
 
                         request_info = std::move(it->second);
                         operations.erase(it);
@@ -1710,7 +1710,7 @@ namespace Coordination
                                 {
                                     std::lock_guard lock(push_request_mutex);
                                     if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
-                                        throw Exception("Cannot push request to queue within operation timeout", ZOPERATIONTIMEOUT);
+                                        throw Exception("Cannot push request to queue within operation timeout", Coordination::Error::ZOPERATIONTIMEOUT);
                                 }
                             }
                             else
@@ -1849,7 +1849,7 @@ namespace Coordination
                     WatchResponse response;
                     response.type = SESSION;
                     response.state = EXPIRED_SESSION;
-                    response.error = ZSESSIONEXPIRED;
+                    response.error = Error::ZSESSIONEXPIRED;
 
                     for (auto & callback : path_watch.second)
                     {
@@ -1876,7 +1876,7 @@ namespace Coordination
                 {
                     ResponsePtr response = info.request->makeResponse();
 
-                    response->error = ZSESSIONEXPIRED;
+                    response->error = Error::ZSESSIONEXPIRED;
                     try
                     {
                         info.callback(*response);
@@ -1891,7 +1891,7 @@ namespace Coordination
                     WatchResponse response;
                     response.type = SESSION;
                     response.state = EXPIRED_SESSION;
-                    response.error = ZSESSIONEXPIRED;
+                    response.error = Error::ZSESSIONEXPIRED;
                     try
                     {
                         info.watch(response);
@@ -1921,7 +1921,7 @@ namespace Coordination
 
                 if (info.request->xid < 0)
                 {
-                    throw Exception("XID overflow", ZSESSIONEXPIRED);
+                    throw Exception("XID overflow", Coordination::Error::ZSESSIONEXPIRED);
                 }
             }
 
@@ -1929,12 +1929,12 @@ namespace Coordination
 
             if (expired)
             {
-                throw Exception("Session expired", ZSESSIONEXPIRED);
+                throw Exception("Session expired", Coordination::Error::ZSESSIONEXPIRED);
             }
 
             if (!requests_queue.tryPush(std::move(info), operation_timeout.totalMilliseconds()))
             {
-                throw Exception("Cannot push request to queue within operation timeout", ZOPERATIONTIMEOUT);
+                throw Exception("Cannot push request to queue within operation timeout", Coordination::Error::ZOPERATIONTIMEOUT);
             }
         }
         catch (...)
