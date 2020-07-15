@@ -23,7 +23,7 @@ struct Settings;
 struct ConstraintsDescription;
 struct IndicesDescription;
 class ASTCreateQuery;
-using Dictionaries = std::vector<String>;
+using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 
 namespace ErrorCodes
 {
@@ -99,25 +99,30 @@ public:
 class DatabaseDictionariesSnapshotIterator
 {
 private:
-    Dictionaries dictionaries;
-    Dictionaries::iterator it;
+    DictionariesWithID dictionaries;
+    DictionariesWithID::iterator it;
+    String database_name;
 
 public:
     DatabaseDictionariesSnapshotIterator() = default;
-    DatabaseDictionariesSnapshotIterator(Dictionaries & dictionaries_) : dictionaries(dictionaries_), it(dictionaries.begin()) {}
-    DatabaseDictionariesSnapshotIterator(Dictionaries && dictionaries_) : dictionaries(dictionaries_), it(dictionaries.begin()) {}
-
-    DatabaseDictionariesSnapshotIterator(const std::unordered_map<String, DictionaryAttachInfo> & dictionaries_)
+    DatabaseDictionariesSnapshotIterator(DictionariesWithID & dictionaries_, const String & database_name_)
+    : dictionaries(dictionaries_), it(dictionaries.begin()), database_name(database_name_)
     {
-        boost::range::copy(dictionaries_ | boost::adaptors::map_keys, std::back_inserter(dictionaries));
-        it = dictionaries.begin();
+    }
+    DatabaseDictionariesSnapshotIterator(DictionariesWithID && dictionaries_, const String & database_name_)
+    : dictionaries(dictionaries_), it(dictionaries.begin()), database_name(database_name_)
+    {
     }
 
     void next() { ++it; }
 
     bool isValid() const { return !dictionaries.empty() && it != dictionaries.end(); }
 
-    const String & name() const { return *it; }
+    const String & name() const { return it->first; }
+
+    const UUID & uuid() const { return it->second; }
+
+    const String & databaseName() const { assert(!database_name.empty()); return database_name; }
 };
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;

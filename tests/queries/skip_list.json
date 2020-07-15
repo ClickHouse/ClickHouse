@@ -108,7 +108,9 @@
         "01320_create_sync_race_condition",
         "01305_replica_create_drop_zookeeper",
         "01193_metadata_loading",
-        "01130_in_memory_parts_partitons"
+        "01130_in_memory_parts_partitons",
+        "01225_show_create_table_from_dictionary",
+        "01224_no_superfluous_dict_reload"
     ],
     "polymorphic-parts": [
         "avx",

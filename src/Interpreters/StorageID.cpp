@@ -84,6 +84,11 @@ String StorageID::getFullTableName() const
     return backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name);
 }
 
+String StorageID::getFullNameNotQuoted() const
+{
+    return getDatabaseName() + "." + table_name;
+}
+
 StorageID StorageID::fromDictionaryConfig(const Poco::Util::AbstractConfiguration & config,
                                           const String & config_prefix)
 {
@@ -94,6 +99,16 @@ StorageID StorageID::fromDictionaryConfig(const Poco::Util::AbstractConfiguratio
     if (!uuid_str.empty())
         res.uuid = parseFromString<UUID>(uuid_str);
     return res;
+}
+
+String StorageID::getInternalDictionaryName() const
+{
+    assertNotEmpty();
+    if (hasUUID())
+        return toString(uuid);
+    if (database_name.empty())
+        return table_name;
+    return database_name + "." + table_name;
 }
 
 }

@@ -59,34 +59,23 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
     {
         const auto dict_ptr = std::dynamic_pointer_cast<const IDictionaryBase>(load_result.object);
 
-        String database, short_name;
-        UUID uuid = UUIDHelpers::Nil;
+        StorageID dict_id = StorageID::createEmpty();
         if (dict_ptr)
-        {
-            auto dict_id = dict_ptr->getDictionaryID();
-            database = dict_id.database_name;
-            short_name = dict_id.table_name;
-            uuid = dict_id.uuid;
-        }
+            dict_id = dict_ptr->getDictionaryID();
+        else if (load_result.config)
+            dict_id = StorageID::fromDictionaryConfig(*load_result.config->config, load_result.config->key_in_config);
         else
-        {
-            short_name = load_result.name;
-            String repository_name = load_result.config ? load_result.config->repository_name : "";
-            if (!repository_name.empty() && startsWith(short_name, repository_name + "."))
-            {
-                database = repository_name;
-                short_name = short_name.substr(database.length() + 1);
-            }
-        }
+            dict_id.table_name = load_result.name;
 
+        String db_ot_tag = dict_id.database_name.empty() ? IDictionary::NO_DATABASE_TAG : dict_id.database_name;
         if (check_access_for_dictionaries
-            && !access->isGranted(AccessType::SHOW_DICTIONARIES, database.empty() ? IDictionary::NO_DATABASE_TAG : database, short_name))
+            && !access->isGranted(AccessType::SHOW_DICTIONARIES, dict_id.database_name, dict_id.table_name))
             continue;
 
         size_t i = 0;
-        res_columns[i++]->insert(database);
-        res_columns[i++]->insert(short_name);
-        res_columns[i++]->insert(uuid);
+        res_columns[i++]->insert(dict_id.database_name);
+        res_columns[i++]->insert(dict_id.table_name);
+        res_columns[i++]->insert(dict_id.uuid);
         res_columns[i++]->insert(static_cast<Int8>(load_result.status));
         res_columns[i++]->insert(load_result.config ? load_result.config->path : "");
 
