@@ -70,28 +70,28 @@ Running a query may use more memory than `max_bytes_before_external_sort`. For t
 
 External sorting works much less effectively than sorting in RAM.
 
-## ORDER BY expr WITH FILL modifier {#orderby-with-fill}
+## ORDER BY Expr WITH FILL Modifier {#orderby-with-fill}
 
-This modifier also can be combined with [LIMIT ... WITH TIES modifier](../../../sql-reference/statements/select/limit.md#limit-with-ties).
+This modifier also can be combined with [LIMIT … WITH TIES modifier](../../../sql-reference/statements/select/limit.md#limit-with-ties).
 
-`WITH FILL` modifier can be set after `ORDER BY expr` with optional `FROM expr`, `TO expr` and `STEP expr` parameters. 
+`WITH FILL` modifier can be set after `ORDER BY expr` with optional `FROM expr`, `TO expr` and `STEP expr` parameters.
 All missed values of `expr` column will be filled sequentially and other columns will be filled as defaults.
 
 Use following syntax for filling multiple columns add `WITH FILL` modifier with optional parameters after each field name in `ORDER BY` section.
 
-```sql
+``` sql
 ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr]
 ```
 
 `WITH FILL` can be applied only for fields with Numeric (all kind of float, decimal, int) or Date/DateTime types.
 When `FROM const_expr` not defined sequence of filling use minimal `expr` field value from `ORDER BY`.
 When `TO const_expr` not defined sequence of filling use maximum `expr` field value from `ORDER BY`.
-When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types as `days` for Date type and as `seconds` for DateTime type. 
+When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types as `days` for Date type and as `seconds` for DateTime type.
 When `STEP const_numeric_expr` omitted then sequence of filling use `1.0` for numeric type, `1 day` for Date type and `1 second` for DateTime type.
 
-
 For example, the following query
-```sql
+
+``` sql
 SELECT n, source FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source
    FROM numbers(10) WHERE number % 3 = 1
@@ -99,7 +99,8 @@ SELECT n, source FROM (
 ```
 
 returns
-```text
+
+``` text
 ┌─n─┬─source───┐
 │ 1 │ original │
 │ 4 │ original │
@@ -108,7 +109,8 @@ returns
 ```
 
 but after apply `WITH FILL` modifier
-```sql
+
+``` sql
 SELECT n, source FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source
    FROM numbers(10) WHERE number % 3 = 1
@@ -116,7 +118,8 @@ SELECT n, source FROM (
 ```
 
 returns
-```text
+
+``` text
 ┌───n─┬─source───┐
 │   0 │          │
 │ 0.5 │          │
@@ -137,61 +140,65 @@ returns
 For the case when we have multiple fields `ORDER BY field2 WITH FILL, field1 WITH FILL` order of filling will follow the order of fields in `ORDER BY` clause.
 
 Example:
-```sql 
-SELECT 
-    toDate((number * 10) * 86400) AS d1, 
-    toDate(number * 86400) AS d2, 
+
+``` sql
+SELECT
+    toDate((number * 10) * 86400) AS d1,
+    toDate(number * 86400) AS d2,
     'original' AS source
 FROM numbers(10)
 WHERE (number % 3) = 1
-ORDER BY 
-    d2 WITH FILL, 
+ORDER BY
+    d2 WITH FILL,
     d1 WITH FILL STEP 5;
 ```
 
 returns
-```text
+
+``` text
 ┌───d1───────┬───d2───────┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
 │ 0000-00-00 │ 1970-01-03 │          │
 │ 0000-00-00 │ 1970-01-04 │          │
 │ 1970-02-10 │ 1970-01-05 │ original │
 │ 0000-00-00 │ 1970-01-06 │          │
-│ 0000-00-00 │ 1970-01-07 │          │ 
+│ 0000-00-00 │ 1970-01-07 │          │
 │ 1970-03-12 │ 1970-01-08 │ original │
-└────────────┴────────────┴──────────┘                  
+└────────────┴────────────┴──────────┘
 ```
 
-Field `d1` doesn't fill and use default value cause we don't have repeated values for `d2` value, and sequence for `d1` can't be properly calculated.
+Field `d1` doesn’t fill and use default value cause we don’t have repeated values for `d2` value, and sequence for `d1` can’t be properly calculated.
 
-The following query with a changed field in `ORDER BY` 
-```sql
-SELECT 
-    toDate((number * 10) * 86400) AS d1, 
-    toDate(number * 86400) AS d2, 
+The following query with a changed field in `ORDER BY`
+
+``` sql
+SELECT
+    toDate((number * 10) * 86400) AS d1,
+    toDate(number * 86400) AS d2,
     'original' AS source
 FROM numbers(10)
 WHERE (number % 3) = 1
-ORDER BY 
+ORDER BY
     d1 WITH FILL STEP 5,
-    d2 WITH FILL;  
+    d2 WITH FILL;
 ```
 
 returns
-```text
+
+``` text
 ┌───d1───────┬───d2───────┬─source───┐
-│ 1970-01-11 │ 1970-01-02 │ original │ 
-│ 1970-01-16 │ 0000-00-00 │          │	
-│ 1970-01-21 │ 0000-00-00 │          │	
-│ 1970-01-26 │ 0000-00-00 │          │	
-│ 1970-01-31 │ 0000-00-00 │          │	
-│ 1970-02-05 │ 0000-00-00 │          │	
+│ 1970-01-11 │ 1970-01-02 │ original │
+│ 1970-01-16 │ 0000-00-00 │          │
+│ 1970-01-21 │ 0000-00-00 │          │
+│ 1970-01-26 │ 0000-00-00 │          │
+│ 1970-01-31 │ 0000-00-00 │          │
+│ 1970-02-05 │ 0000-00-00 │          │
 │ 1970-02-10 │ 1970-01-05 │ original │
-│ 1970-02-15 │ 0000-00-00 │          │	
-│ 1970-02-20 │ 0000-00-00 │          │	
-│ 1970-02-25 │ 0000-00-00 │          │	
-│ 1970-03-02 │ 0000-00-00 │          │	
+│ 1970-02-15 │ 0000-00-00 │          │
+│ 1970-02-20 │ 0000-00-00 │          │
+│ 1970-02-25 │ 0000-00-00 │          │
+│ 1970-03-02 │ 0000-00-00 │          │
 │ 1970-03-07 │ 0000-00-00 │          │
-│ 1970-03-12 │ 1970-01-08 │ original │ 
-└────────────┴────────────┴──────────┘                  
+│ 1970-03-12 │ 1970-01-08 │ original │
+└────────────┴────────────┴──────────┘
 ```

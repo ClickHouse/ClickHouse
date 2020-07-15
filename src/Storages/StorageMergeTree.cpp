@@ -209,22 +209,6 @@ void StorageMergeTree::checkTableCanBeDropped() const
     global_context.checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
 }
 
-void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
-{
-    auto table_id = getStorageID();
-
-    const String partition_id = getPartitionIDFromQuery(partition, global_context);
-    auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
-
-    UInt64 partition_size = 0;
-
-    for (const auto & part : parts_to_remove)
-    {
-        partition_size += part->getBytesOnDisk();
-    }
-    global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
-}
-
 void StorageMergeTree::drop()
 {
     shutdown();

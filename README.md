@@ -9,13 +9,12 @@ ClickHouse is an open-source column-oriented database management system that all
 * [Documentation](https://clickhouse.tech/docs/en/) provides more in-depth information.
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
 * [Slack](https://join.slack.com/t/clickhousedb/shared_invite/zt-d2zxkf9e-XyxDa_ucfPxzuH4SJIm~Ng) and [Telegram](https://telegram.me/clickhouse_en) allow to chat with ClickHouse users in real-time.
-* [Blog](https://clickhouse.yandex/blog/en/) contains various ClickHouse-related articles, as well as announces and reports about events.
+* [Blog](https://clickhouse.yandex/blog/en/) contains various ClickHouse-related articles, as well as announcements and reports about events.
 * [Yandex.Messenger channel](https://yandex.ru/chat/#/join/20e380d9-c7be-4123-ab06-e95fb946975e) shares announcements and useful links in Russian.
 * [Contacts](https://clickhouse.tech/#contacts) can help to get your questions answered if there are any.
 * You can also [fill this form](https://clickhouse.tech/#meet) to meet Yandex ClickHouse team in person.
 
 ## Upcoming Events		
 
-* [ClickHouse for genetic data (in Russian)](https://cloud.yandex.ru/events/152) on July 14, 2020.
 * [ClickHouse virtual office hours](https://www.eventbrite.com/e/clickhouse-july-virtual-meetup-tickets-111199787558) on July 15, 2020.
 * [ClickHouse at ByteDance (in Chinese)](https://mp.weixin.qq.com/s/Em-HjPylO8D7WPui4RREAQ) on July 17, 2020.
