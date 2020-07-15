@@ -23,7 +23,7 @@ Voir la description détaillée de la [CREATE TABLE](../../../sql-reference/stat
 
 **Les Paramètres Du Moteur**
 
--   `join_strictness` – [ADHÉRER à la rigueur](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_strictness` – [ADHÉRER à la rigueur](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `join_type` – [Type de jointure](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` la clause que l' `JOIN` l'opération est faite avec de la.
 
