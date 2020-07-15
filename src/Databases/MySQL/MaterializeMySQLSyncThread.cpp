@@ -465,15 +465,11 @@ MaterializeMySQLSyncThread::Buffers::BufferAndSortingColumnsPtr MaterializeMySQL
         BufferAndSortingColumnsPtr & buffer_and_soring_columns = data.try_emplace(
             table_name, std::make_shared<BufferAndSortingColumns>(metadata.getSampleBlockNonMaterialized(), std::vector<size_t>{})).first->second;
 
-        if (StorageMergeTree * table_merge_tree = storage->as<StorageMergeTree>())
-        {
-            Names required_for_sorting_key = metadata.getColumnsRequiredForSortingKey();
+        Names required_for_sorting_key = metadata.getColumnsRequiredForSortingKey();
 
-            for (const auto & required_name_for_sorting_key : required_for_sorting_key)
-                buffer_and_soring_columns->second.emplace_back(
-                    buffer_and_soring_columns->first.getPositionByName(required_name_for_sorting_key));
-
-        }
+        for (const auto & required_name_for_sorting_key : required_for_sorting_key)
+            buffer_and_soring_columns->second.emplace_back(
+                buffer_and_soring_columns->first.getPositionByName(required_name_for_sorting_key));
 
         return buffer_and_soring_columns;
     }
