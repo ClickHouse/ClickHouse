@@ -10,7 +10,7 @@ namespace ErrorCodes
 }
 
 LimitTransform::LimitTransform(
-    const Block & header_, size_t limit_, size_t offset_, size_t num_streams,
+    const Block & header_, UInt64 limit_, UInt64 offset_, size_t num_streams,
     bool always_read_till_end_, bool with_ties_,
     SortDescription description_)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
@@ -46,7 +46,7 @@ LimitTransform::LimitTransform(
     }
 }
 
-Chunk LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, size_t row) const
+Chunk LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UInt64 row) const
 {
     assert(row < chunk.getNumRows());
     ColumnRawPtrs current_columns = extractSortColumns(chunk.getColumns());
@@ -93,7 +93,6 @@ IProcessor::Status LimitTransform::prepare(
                 throw Exception(
                         "Unexpected status for LimitTransform::preparePair : " + IProcessor::statusToName(status),
                         ErrorCodes::LOGICAL_ERROR);
-
         }
     };
 
@@ -107,9 +106,12 @@ IProcessor::Status LimitTransform::prepare(
     if (num_finished_port_pairs == ports_data.size())
         return Status::Finished;
 
+    bool limit_is_unreachable = (limit > std::numeric_limits<UInt64>::max() - offset);
+
     /// If we reached limit for some port, then close others. Otherwise some sources may infinitely read data.
     /// Example: SELECT * FROM system.numbers_mt WHERE number = 1000000 LIMIT 1
-    if ((rows_read >= offset + limit) && !previous_row_chunk && !always_read_till_end)
+    if ((!limit_is_unreachable && rows_read >= offset + limit)
+        && !previous_row_chunk && !always_read_till_end)
     {
         for (auto & input : inputs)
             input.close();
@@ -158,8 +160,10 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         return Status::PortFull;
     }
 
+    bool limit_is_unreachable = (limit > std::numeric_limits<UInt64>::max() - offset);
+
     /// Check if we are done with pushing.
-    bool is_limit_reached = (rows_read >= offset + limit) && !previous_row_chunk;
+    bool is_limit_reached = !limit_is_unreachable && rows_read >= offset + limit && !previous_row_chunk;
     if (is_limit_reached)
     {
         if (!always_read_till_end)
@@ -223,7 +227,8 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         return Status::NeedData;
     }
 
-    if (rows_read >= offset + rows && rows_read <= offset + limit)
+    if (rows <= std::numeric_limits<UInt64>::max() - offset && rows_read >= offset + rows
+        && !limit_is_unreachable && rows_read <= offset + limit)
     {
         /// Return the whole chunk.
 
@@ -237,7 +242,7 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
 
     bool may_need_more_data_for_ties = previous_row_chunk || rows_read - rows <= offset + limit;
     /// No more data is needed.
-    if (!always_read_till_end && (rows_read >= offset + limit) && !may_need_more_data_for_ties)
+    if (!always_read_till_end && !limit_is_unreachable && rows_read >= offset + limit && !may_need_more_data_for_ties)
         input.close();
 
     output.push(std::move(data.current_chunk));
@@ -249,13 +254,15 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
 void LimitTransform::splitChunk(PortsData & data)
 {
     auto current_chunk_sort_columns = extractSortColumns(data.current_chunk.getColumns());
-    size_t num_rows = data.current_chunk.getNumRows();
-    size_t num_columns = data.current_chunk.getNumColumns();
+    UInt64 num_rows = data.current_chunk.getNumRows();
+    UInt64 num_columns = data.current_chunk.getNumColumns();
 
-    if (previous_row_chunk && rows_read >= offset + limit)
+    bool limit_is_unreachable = (limit > std::numeric_limits<UInt64>::max() - offset);
+
+    if (previous_row_chunk && !limit_is_unreachable && rows_read >= offset + limit)
     {
         /// Scan until the first row, which is not equal to previous_row_chunk (for WITH TIES)
-        size_t current_row_num = 0;
+        UInt64 current_row_num = 0;
         for (; current_row_num < num_rows; ++current_row_num)
         {
             if (!sortColumnsEqualAt(current_chunk_sort_columns, current_row_num))
@@ -267,7 +274,7 @@ void LimitTransform::splitChunk(PortsData & data)
         if (current_row_num < num_rows)
         {
             previous_row_chunk = {};
-            for (size_t i = 0; i < num_columns; ++i)
+            for (UInt64 i = 0; i < num_columns; ++i)
                 columns[i] = columns[i]->cut(0, current_row_num);
         }
 
@@ -276,19 +283,51 @@ void LimitTransform::splitChunk(PortsData & data)
     }
 
     /// return a piece of the block
-    size_t start = std::max(
-        static_cast<Int64>(0),
-        static_cast<Int64>(offset) - static_cast<Int64>(rows_read) + static_cast<Int64>(num_rows));
+    UInt64 start = 0;
 
-    size_t length = std::min(
-        static_cast<Int64>(limit), std::min(
-        static_cast<Int64>(rows_read) - static_cast<Int64>(offset),
-        static_cast<Int64>(limit) + static_cast<Int64>(offset) - static_cast<Int64>(rows_read) + static_cast<Int64>(num_rows)));
+    /// ------------[....(...).]
+    /// <----------------------> rows_read
+    ///             <----------> num_rows
+    /// <---------------> offset
+    ///             <---> start
+
+    assert(offset < rows_read);
+
+    if (offset + num_rows > rows_read)
+        start = offset + num_rows - rows_read;
+
+    /// ------------[....(...).]
+    /// <----------------------> rows_read
+    ///             <----------> num_rows
+    /// <---------------> offset
+    ///                  <---> limit
+    ///                  <---> length
+    ///             <---> start
+
+    /// Or:
+
+    /// -----------------(------[....)....]
+    /// <---------------------------------> rows_read
+    ///                         <---------> num_rows
+    /// <---------------> offset
+    ///                  <-----------> limit
+    ///                         <----> length
+    ///                         0 = start
+
+    UInt64 length = num_rows - start;
+
+    if (!limit_is_unreachable && offset + limit < rows_read)
+    {
+        if (offset + limit < rows_read - num_rows)
+            length = 0;
+        else
+            length = offset + limit - (rows_read - num_rows) - start;
+    }
 
     /// check if other rows in current block equals to last one in limit
     if (with_ties && length)
     {
-        size_t current_row_num = start + length;
+        UInt64 current_row_num = start + length;
         previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, current_row_num - 1);
 
         for (; current_row_num < num_rows; ++current_row_num)
@@ -308,7 +347,7 @@ void LimitTransform::splitChunk(PortsData & data)
 
     auto columns = data.current_chunk.detachColumns();
 
-    for (size_t i = 0; i < num_columns; ++i)
+    for (UInt64 i = 0; i < num_columns; ++i)
         columns[i] = columns[i]->cut(start, length);
 
     data.current_chunk.setColumns(std::move(columns), length);
@@ -324,7 +363,7 @@ ColumnRawPtrs LimitTransform::extractSortColumns(const Columns & columns) const
     return res;
 }
 
-bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, size_t current_chunk_row_num) const
+bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const
 {
     assert(current_chunk_sort_columns.size() == previous_row_chunk.getNumColumns());
     size_t size = current_chunk_sort_columns.size();
