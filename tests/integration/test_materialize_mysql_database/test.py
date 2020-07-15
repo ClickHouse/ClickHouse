@@ -119,20 +119,20 @@ def test_mysql_alter_add_column_for_materialize_mysql_database(started_cluster):
         mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_1 INT NOT NULL")
         mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_2 INT NOT NULL FIRST")
         mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_3 INT NOT NULL AFTER add_column_1")
-        mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_4 INT NOT NULL DEFAULT id")
+        mysql_node.query("ALTER TABLE test_database.test_table_1 ADD COLUMN add_column_4 INT NOT NULL DEFAULT (id)")
 
         # create mapping
         clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializeMySQL('mysql1:3306', 'test_database', 'root', 'clickhouse')")
 
         assert "test_database" in clickhouse_node.query("SHOW DATABASES")
         check_query("SHOW TABLES FROM test_database FORMAT TSV", "test_table_1")
-        check_query("DESC test_database.test_table_1 FORMAT TSV", "add_column_2\tInt32\t\t\t\t\nid\tInt32\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\nadd_column_3\tInt32\t\t\t\t")
+        check_query("DESC test_database.test_table_1 FORMAT TSV", "add_column_2\tInt32\t\t\t\t\nid\tInt32\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\nadd_column_3\tInt32\t\t\t\t\nadd_column_4\tInt32\t\t\t\t")
         mysql_node.query("CREATE TABLE test_database.test_table_2 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
         check_query("SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2")
         check_query("DESC test_database.test_table_2 FORMAT TSV", "id\tInt32\t\t\t\t")
         mysql_node.query("ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_1 INT NOT NULL, ADD COLUMN add_column_2 INT NOT NULL FIRST")
-        mysql_node.query("ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_3 INT NOT NULL AFTER add_column_1, ADD COLUMN add_column_4 INT NOT NULL DEFAULT id")
-        check_query("DESC test_database.test_table_2 FORMAT TSV", "add_column_2\tInt32\t\t\t\t\nid\tInt32\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\nadd_column_3\tInt32\t\t\t\t")
+        mysql_node.query("ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_3 INT NOT NULL AFTER add_column_1, ADD COLUMN add_column_4 INT NOT NULL DEFAULT (id)")
+        check_query("DESC test_database.test_table_2 FORMAT TSV", "add_column_2\tInt32\t\t\t\t\nid\tInt32\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\nadd_column_3\tInt32\t\t\t\t\nadd_column_4\tInt32\t\t\t\t")
 
 
 def test_mysql_alter_drop_column_for_materialize_mysql_database(started_cluster):

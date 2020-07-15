@@ -392,22 +392,29 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
                     }
                 }
 
+                if (default_after_column.empty())
+                {
+                    StoragePtr storage = DatabaseCatalog::instance().getTable({clickhouse_db, alter_query.table}, context);
+                    Block storage_header = storage->getInMemoryMetadataPtr()->getSampleBlock();
+
+                    /// Put the sign and version columns last
+                    default_after_column = storage_header.getByPosition(storage_header.columns() - 3).name;
+                }
+
                 if (!alter_command->column_name.empty())
                 {
                     rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
                     rewritten_command->children.push_back(rewritten_command->column);
+
+                    /// For example(when add_column_1 is last column):
+                    /// ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_3 INT AFTER add_column_1, ADD COLUMN add_column_4 INT
+                    /// In this case, we still need to change the default after column
+
+                    if (alter_command->column_name == default_after_column)
+                        default_after_column = rewritten_command->col_decl->as<ASTColumnDeclaration>()->name;
                 }
                 else
                 {
-                    if (default_after_column.empty())
-                    {
-                        StoragePtr storage = DatabaseCatalog::instance().getTable({clickhouse_db, alter_query.table}, context);
-                        Block storage_header = storage->getInMemoryMetadataPtr()->getSampleBlock();
-
-                        /// Put the sign and version columns last
-                        default_after_column = storage_header.getByPosition(storage_header.columns() - 3).name;
-                    }
-
                     rewritten_command->column = std::make_shared<ASTIdentifier>(default_after_column);
                     rewritten_command->children.push_back(rewritten_command->column);
                     default_after_column = rewritten_command->col_decl->as<ASTColumnDeclaration>()->name;
