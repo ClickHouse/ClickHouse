@@ -129,6 +129,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
+                create_query->database = database_name;
                 std::lock_guard lock{file_names_mutex};
                 file_names[file_name] = ast;
                 total_dictionaries += create_query->is_dictionary;

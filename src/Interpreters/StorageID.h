@@ -49,6 +49,7 @@ struct StorageID
     String getTableName() const;
 
     String getFullTableName() const;
+    String getFullNameNotQuoted() const;
 
     String getNameForLogs() const;
 
@@ -86,6 +87,8 @@ struct StorageID
 
     static StorageID fromDictionaryConfig(const Poco::Util::AbstractConfiguration & config,
                                           const String & config_prefix);
+
+    String getInternalDictionaryName() const;
 
 private:
     StorageID() = default;

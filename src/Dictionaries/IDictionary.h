@@ -34,7 +34,7 @@ struct IDictionaryBase : public IExternalLoadable
 
     IDictionaryBase(const StorageID & dict_id_)
     : dict_id(dict_id_)
-    , full_name(dict_id.database_name.empty() ? dict_id.getTableName() : dict_id.getFullTableName())
+    , full_name(dict_id.database_name.empty() ? dict_id.getTableName() : dict_id.getFullNameNotQuoted())
     {
     }
 

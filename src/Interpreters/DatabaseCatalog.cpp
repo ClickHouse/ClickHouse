@@ -217,6 +217,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     auto table = database->tryGetTable(table_id.table_name, context);
     if (!table && exception)
             exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+    if (!table)
+        database = nullptr;
 
     return {database, table};
 }
@@ -759,6 +761,31 @@ String DatabaseCatalog::getPathForUUID(const UUID & uuid)
 {
     const size_t uuid_prefix_len = 3;
     return toString(uuid).substr(0, uuid_prefix_len) + '/' + toString(uuid) + '/';
+}
+
+String DatabaseCatalog::resolveDictionaryName(const String & name) const
+{
+    /// If it's dictionary from Atomic database, then we need to convert qualified name to UUID.
+    /// Try to split name and get id from associated StorageDictionary.
+    /// If something went wrong, return name as is.
+
+    /// TODO support dot in name for dictionaries in Atomic databases
+    auto pos = name.find('.');
+    if (pos == std::string::npos || name.find('.', pos + 1) != std::string::npos)
+        return name;
+    String maybe_database_name = name.substr(0, pos);
+    String maybe_table_name = name.substr(pos + 1);
+
+    auto db_and_table = tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, *global_context);
+    if (!db_and_table.first)
+        return name;
+    assert(db_and_table.second);
+    if (db_and_table.first->getUUID() == UUIDHelpers::Nil)
+        return name;
+    if (db_and_table.second->getName() != "Dictionary")
+        return name;
+
+    return toString(db_and_table.second->getStorageID().uuid);
 }
 
 

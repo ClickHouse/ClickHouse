@@ -341,7 +341,8 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                 const auto & dict_name = dict_name_ast->value.safeGet<String>();
                 const auto & attr_name = attr_name_ast->value.safeGet<String>();
 
-                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name);
+                String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dict_name);
+                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(resolved_name);
                 if (!dict_ptr->isInjective(attr_name))
                 {
                     ++i;

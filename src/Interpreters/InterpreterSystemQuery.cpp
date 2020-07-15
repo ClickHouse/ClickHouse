@@ -233,7 +233,8 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
         case Type::RELOAD_DICTIONARY:
             context.checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
-            system_context.getExternalDictionariesLoader().loadOrReload(query.target_dictionary);
+            system_context.getExternalDictionariesLoader().loadOrReload(
+                    DatabaseCatalog::instance().resolveDictionaryName(query.target_dictionary));
             ExternalDictionariesLoader::resetAll();
             break;
         case Type::RELOAD_DICTIONARIES:
