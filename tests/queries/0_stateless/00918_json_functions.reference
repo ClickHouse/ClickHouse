@@ -99,6 +99,7 @@ d
 e
 u
 v
+--show error: type should be const string
 --allow_simdjson=0--
 --JSONLength--
 2
@@ -200,3 +201,4 @@ d
 e
 u
 v
+--show error: type should be const string

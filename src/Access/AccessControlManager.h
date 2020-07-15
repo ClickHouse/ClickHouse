@@ -21,6 +21,7 @@ namespace Poco
 namespace DB
 {
 class ContextAccess;
+struct ContextAccessParams;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 class EnabledRoles;
@@ -57,6 +58,8 @@ public:
         const Settings & settings,
         const String & current_database,
         const ClientInfo & client_info) const;
+
+    std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
         const boost::container::flat_set<UUID> & current_roles,

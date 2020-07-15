@@ -114,10 +114,12 @@ private:
 class LogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit LogBlockOutputStream(StorageLog & storage_)
-        : storage(storage_),
-        lock(storage.rwlock),
-        marks_stream(storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Rewrite))
+    explicit LogBlockOutputStream(StorageLog & storage_, const StorageMetadataPtr & metadata_snapshot_)
+        : storage(storage_)
+        , metadata_snapshot(metadata_snapshot_)
+        , lock(storage.rwlock)
+        , marks_stream(
+            storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Rewrite))
     {
     }
 
@@ -133,12 +135,13 @@ public:
         }
     }
 
-    Block getHeader() const override { return storage.getSampleBlock(); }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
     void write(const Block & block) override;
     void writeSuffix() override;
 
 private:
     StorageLog & storage;
+    StorageMetadataPtr metadata_snapshot;
     std::unique_lock<std::shared_mutex> lock;
     bool done = false;
 
@@ -273,7 +276,7 @@ void LogSource::readData(const String & name, const IDataType & type, IColumn & 
 
 void LogBlockOutputStream::write(const Block & block)
 {
-    storage.check(block, true);
+    metadata_snapshot->check(block, true);
 
     /// The set of written offset columns so that you do not write shared offsets of columns for nested structures multiple times
     WrittenStreams written_streams;
@@ -355,7 +358,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
         if (written_streams.count(stream_name))
             return;
 
-        const auto & columns = storage.getColumns();
+        const auto & columns = metadata_snapshot->getColumns();
         streams.try_emplace(
             stream_name,
             storage.disk,
@@ -431,8 +434,10 @@ StorageLog::StorageLog(
     , max_compress_block_size(max_compress_block_size_)
     , file_checker(disk, table_path + "sizes.json")
 {
-    setColumns(columns_);
-    setConstraints(constraints_);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
@@ -440,7 +445,7 @@ StorageLog::StorageLog(
     /// create directories if they do not exist
     disk->createDirectories(table_path);
 
-    for (const auto & column : getColumns().getAllPhysical())
+    for (const auto & column : storage_metadata.getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
     marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
@@ -530,7 +535,7 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
     renameInMemory(new_table_id);
 }
 
-void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
@@ -540,7 +545,7 @@ void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
 
     disk->clearDirectory(table_path);
 
-    for (const auto & column : getColumns().getAllPhysical())
+    for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
     file_checker = FileChecker{disk, table_path + "sizes.json"};
@@ -548,11 +553,11 @@ void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
 }
 
 
-const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
+const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMetadataPtr & metadata_snapshot) const
 {
     /// There should be at least one physical column
-    const String column_name = getColumns().getAllPhysical().begin()->name;
-    const auto column_type = getColumns().getAllPhysical().begin()->type;
+    const String column_name = metadata_snapshot->getColumns().getAllPhysical().begin()->name;
+    const auto column_type = metadata_snapshot->getColumns().getAllPhysical().begin()->type;
     String filename;
 
     /** We take marks from first column.
@@ -575,22 +580,23 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 
 Pipes StorageLog::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
     loadMarks();
 
-    NamesAndTypesList all_columns = Nested::collect(getColumns().getAllPhysical().addTypes(column_names));
+    NamesAndTypesList all_columns = Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names));
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
     Pipes pipes;
 
-    const Marks & marks = getMarksWithRealRowCount();
+    const Marks & marks = getMarksWithRealRowCount(metadata_snapshot);
     size_t marks_size = marks.size();
 
     if (num_streams > marks_size)
@@ -618,11 +624,10 @@ Pipes StorageLog::read(
     return pipes;
 }
 
-BlockOutputStreamPtr StorageLog::write(
-    const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     loadMarks();
-    return std::make_shared<LogBlockOutputStream>(*this);
+    return std::make_shared<LogBlockOutputStream>(*this, metadata_snapshot);
 }
 
 CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & /* context */)

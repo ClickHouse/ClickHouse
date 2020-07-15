@@ -225,7 +225,7 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
     {
         AggregateFunctionForEachData & state = data(place);
 
@@ -236,7 +236,7 @@ public:
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
-            nested_func->insertResultInto(nested_state, elems_to);
+            nested_func->insertResultInto(nested_state, elems_to, arena);
             nested_state += nested_size_of_data;
         }
 
@@ -246,6 +246,11 @@ public:
     bool allocatesMemoryInArena() const override
     {
         return true;
+    }
+
+    bool isState() const override
+    {
+        return nested_func->isState();
     }
 };
 

@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
+#include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <thread>
 
@@ -36,7 +37,7 @@ private:
     String log_name;
     Poco::Logger * log;
     BackgroundSchedulePool::TaskHolder task;
-    pcg64 rng;
+    pcg64 rng{randomSeed()};
 
     void run();
     void iterate();

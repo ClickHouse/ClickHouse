@@ -216,6 +216,9 @@ public:
     /// WeakHash32 must have the same size as column.
     virtual void updateWeakHash32(WeakHash32 & hash) const = 0;
 
+    /// Update state of hash with all column.
+    virtual void updateHashFast(SipHash & hash) const = 0;
+
     /** Removes elements that don't match the filter.
       * Is used in WHERE and HAVING operations.
       * If result_size_hint > 0, then makes advance reserve(result_size_hint) for the result column;
@@ -246,6 +249,15 @@ public:
       * For non Nullable and non floating point types, nan_direction_hint is ignored.
       */
     virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
+
+    /// Compare the whole column with single value from rhs column.
+    /// If row_indexes is nullptr, it's ignored. Otherwise, it is a set of rows to compare.
+    /// compare_results[i] will be equal to compareAt(row_indexes[i], rhs_row_num, rhs, nan_direction_hint) * direction
+    /// row_indexes (if not ignored) will contain row numbers for which compare result is 0
+    /// see compareImpl for default implementation.
+    virtual void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                               PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                               int direction, int nan_direction_hint) const = 0;
 
     /** Returns a permutation that sorts elements of this column,
       *  i.e. perm[i]-th element of source column should be i-th element of sorted column.
@@ -402,7 +414,6 @@ public:
 
     virtual bool lowCardinality() const { return false; }
 
-
     virtual ~IColumn() = default;
     IColumn() = default;
     IColumn(const IColumn &) = default;
@@ -417,6 +428,18 @@ protected:
     /// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
     template <typename Derived>
     std::vector<MutablePtr> scatterImpl(ColumnIndex num_columns, const Selector & selector) const;
+
+    template <typename Derived, bool reversed, bool use_indexes>
+    void compareImpl(const Derived & rhs, size_t rhs_row_num,
+                     PaddedPODArray<UInt64> * row_indexes,
+                     PaddedPODArray<Int8> & compare_results,
+                     int nan_direction_hint) const;
+
+    template <typename Derived>
+    void doCompareColumn(const Derived & rhs, size_t rhs_row_num,
+                         PaddedPODArray<UInt64> * row_indexes,
+                         PaddedPODArray<Int8> & compare_results,
+                         int direction, int nan_direction_hint) const;
 };
 
 using ColumnPtr = IColumn::Ptr;

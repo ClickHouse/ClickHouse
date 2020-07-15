@@ -207,11 +207,11 @@ bool JoinedTables::resolveTables()
     return !tables_with_columns.empty();
 }
 
-void JoinedTables::makeFakeTable(StoragePtr storage, const Block & source_header)
+void JoinedTables::makeFakeTable(StoragePtr storage, const StorageMetadataPtr & metadata_snapshot, const Block & source_header)
 {
     if (storage)
     {
-        const ColumnsDescription & storage_columns = storage->getColumns();
+        const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, storage_columns.getOrdinary());
 
         auto & table = tables_with_columns.back();
