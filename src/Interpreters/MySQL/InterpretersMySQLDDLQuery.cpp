@@ -376,6 +376,22 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
                 rewritten_command->first = alter_command->first;
                 rewritten_command->col_decl = additional_columns->children[index]->clone();
 
+                const auto & column_declare = alter_command->additional_columns->children[index]->as<MySQLParser::ASTDeclareColumn>();
+                if (column_declare && column_declare->column_options)
+                {
+                    /// We need to add default expression for fill data
+                    const auto & column_options = column_declare->column_options->as<MySQLParser::ASTDeclareOptions>();
+
+                    const auto & default_expression_it = column_options->changes.find("default");
+                    if (default_expression_it != column_options->changes.end())
+                    {
+                        ASTColumnDeclaration * col_decl = rewritten_command->col_decl->as<ASTColumnDeclaration>();
+                        col_decl->default_specifier = "DEFAULT";
+                        col_decl->default_expression = default_expression_it->second->clone();
+                        col_decl->children.emplace_back(col_decl->default_expression);
+                    }
+                }
+
                 if (!alter_command->column_name.empty())
                 {
                     rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
