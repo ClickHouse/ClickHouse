@@ -1,5 +1,6 @@
 details {
     background: #444451;
+    color: #eee;
     padding: 1rem;
     margin-bottom: 1rem;
     margin-top: 1rem;
@@ -7,7 +8,7 @@ details {
 
 summary {
     font-weight: bold;
-    color: #fff;
+    color: #eee;
 }
 
 #sidebar {
