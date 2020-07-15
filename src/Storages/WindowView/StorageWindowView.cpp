@@ -37,7 +37,6 @@
 #include <boost/lexical_cast.hpp>
 #include <Common/typeid_cast.h>
 
-#include <Storages/WindowView/BlocksListSource.h>
 #include <Storages/WindowView/ReplaceWindowColumnBlockInputStream.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/WindowView/WatermarkBlockInputStream.h>
