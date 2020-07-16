@@ -278,8 +278,12 @@ void SettingsCollection<Derived>::serialize(WriteBuffer & buf, SettingsBinaryFor
         {
             details::SettingsCollectionUtils::serializeName(member.name, buf);
             if (format >= SettingsBinaryFormat::STRINGS)
+            {
                 details::SettingsCollectionUtils::serializeFlag(member.is_important, buf);
-            member.serialize(castToDerived(), buf, format);
+                details::SettingsCollectionUtils::serializeName(member.get_string(castToDerived()), buf);
+            }
+            else
+                member.write_binary(castToDerived(), buf);
         }
     }
     details::SettingsCollectionUtils::serializeName(StringRef{} /* empty string is a marker of the end of settings */, buf);
@@ -296,20 +300,30 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
         if (name.empty() /* empty string is a marker of the end of settings */)
             break;
         auto * member = the_members.find(name);
-        bool is_important = (format >= SettingsBinaryFormat::STRINGS) ? details::SettingsCollectionUtils::deserializeFlag(buf) : true;
-        if (member)
+        bool is_important = true;
+        if (format >= SettingsBinaryFormat::STRINGS)
+            is_important = details::SettingsCollectionUtils::deserializeFlag(buf);
+        if (!member)
         {
-            member->deserialize(castToDerived(), buf, format);
+            if (is_important)
+            {
+                details::SettingsCollectionUtils::throwNameNotFound(name);
+            }
+            else
+            {
+                details::SettingsCollectionUtils::warningNameNotFound(name);
+                details::SettingsCollectionUtils::skipValue(buf);
+                continue;
+            }
         }
-        else if (is_important)
+
+        if (format >= SettingsBinaryFormat::STRINGS)
         {
-            details::SettingsCollectionUtils::throwNameNotFound(name);
+            String value = details::SettingsCollectionUtils::deserializeName(buf);
+            member->set_string(castToDerived(), value);
         }
         else
-        {
-            details::SettingsCollectionUtils::warningNameNotFound(name);
-            details::SettingsCollectionUtils::skipValue(buf);
-        }
+            member->read_binary(castToDerived(), buf);
     }
 }
 
@@ -340,8 +354,8 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
     static Field NAME##_getField(const Derived & collection) { return collection.NAME.toField(); } \
     static void NAME##_setString(Derived & collection, const String & value) { collection.NAME.set(value); } \
     static void NAME##_setField(Derived & collection, const Field & value) { collection.NAME.set(value); } \
-    static void NAME##_serialize(const Derived & collection, WriteBuffer & buf, SettingsBinaryFormat format) { collection.NAME.serialize(buf, format); } \
-    static void NAME##_deserialize(Derived & collection, ReadBuffer & buf, SettingsBinaryFormat format) { collection.NAME.deserialize(buf, format); } \
+    static void NAME##_writeBinary(const Derived & collection, WriteBuffer & buf) { collection.NAME.writeBinary(buf); } \
+    static void NAME##_readBinary(Derived & collection, ReadBuffer & buf) { collection.NAME.readBinary(buf); } \
     static String NAME##_valueToString(const Field & value) { SettingField##TYPE temp{DEFAULT}; temp.set(value); return temp.toString(); } \
     static Field NAME##_valueToCorrespondingType(const Field & value) { SettingField##TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); } \
 
@@ -354,6 +368,6 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
          [](const Derived & d) { return d.NAME.changed; }, \
          &Functions::NAME##_getString, &Functions::NAME##_getField, \
          &Functions::NAME##_setString, &Functions::NAME##_setField, \
-         &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
+         &Functions::NAME##_writeBinary, &Functions::NAME##_readBinary, \
          &Functions::NAME##_valueToString, &Functions::NAME##_valueToCorrespondingType});
 }
