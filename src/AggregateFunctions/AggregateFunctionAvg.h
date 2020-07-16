@@ -75,7 +75,7 @@ public:
     {
         writeBinary(this->data(place).numerator, buf);
 
-        if constexpr (std::is_integral_v<typename Data::DenominatorType>)
+        if constexpr (std::is_unsigned_v<typename Data::DenominatorType>)
             writeVarUInt(this->data(place).denominator, buf);
         else /// Floating point denominator type can be used
             writeBinary(this->data(place).denominator, buf);
@@ -85,7 +85,7 @@ public:
     {
         readBinary(this->data(place).numerator, buf);
 
-        if constexpr (std::is_integral_v<typename Data::DenominatorType>)
+        if constexpr (std::is_unsigned_v<typename Data::DenominatorType>)
             readVarUInt(this->data(place).denominator, buf);
         else /// Floating point denominator type can be used
             readBinary(this->data(place).denominator, buf);
