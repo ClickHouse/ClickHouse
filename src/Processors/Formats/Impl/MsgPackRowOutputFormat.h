@@ -1,5 +1,10 @@
 #pragma once
 
+#include "config_formats.h"
+#include "config_core.h"
+
+#if USE_MSGPACK
+
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IRowOutputFormat.h>
@@ -26,3 +31,5 @@ private:
 };
 
 }
+
+#endif
