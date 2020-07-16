@@ -1,0 +1,11 @@
+dict	NOT_LOADED
+dict	Dictionary
+table	Memory
+dict1	NOT_LOADED
+dict1	Dictionary
+table	Memory
+test
+dict2	LOADED
+dict2	Dictionary
+table	Memory
+test

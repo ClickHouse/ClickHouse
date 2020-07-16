@@ -217,7 +217,8 @@ void DatabaseOnDisk::dropTable(const Context & context, const String & table_nam
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop = table_metadata_path + drop_suffix;
     String table_data_path_relative = getTableDataPath(table_name);
-    assert(!table_data_path_relative.empty());
+    if (table_data_path_relative.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is empty");
 
     StoragePtr table = detachTable(table_name);
     bool renamed = false;
@@ -249,10 +250,13 @@ void DatabaseOnDisk::renameTable(
         const String & table_name,
         IDatabase & to_database,
         const String & to_table_name,
-        bool exchange)
+        bool exchange,
+        bool dictionary)
 {
     if (exchange)
         throw Exception("Tables can be exchanged only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
+    if (dictionary)
+        throw Exception("Dictionaries can be renamed only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
 
     bool from_ordinary_to_atomic = false;
     bool from_atomic_to_ordinary = false;

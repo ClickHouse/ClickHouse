@@ -77,7 +77,8 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 elem.from_table_name,
                 *database_catalog.getDatabase(elem.to_database_name),
                 elem.to_table_name,
-                rename.exchange);
+                rename.exchange,
+                rename.dictionary);
     }
 
     return {};

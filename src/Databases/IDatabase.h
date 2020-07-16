@@ -247,7 +247,8 @@ public:
         const String & /*name*/,
         IDatabase & /*to_database*/,
         const String & /*to_name*/,
-        bool /*exchange*/)
+        bool /*exchange*/,
+        bool /*dictionary*/)
     {
         throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
