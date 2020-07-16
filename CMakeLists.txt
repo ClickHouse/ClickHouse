@@ -105,7 +105,7 @@ if (ENABLE_FUZZING)
     set (FUZZER "libfuzzer")
 endif()
 
-option (ENABLE_PROCESSORS_FUZZING "Enables random delays for Processors (to trigger possible Pipeline stuck errors)" OFF)
+option (ENABLE_PROCESSORS_FUZZING "Enables random delays for Processors (to trigger possible Pipeline stuck errors)" ON)
 # XXX: rework this
 if (ENABLE_PROCESSORS_FUZZING)
     message (STATUS "Processors fuzzing enabled")
