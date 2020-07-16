@@ -329,8 +329,8 @@ public:
     /// If index is not built, builds it.
     UInt64 getInsertionPoint(const StringRef & data);
 
-    /// If index is not found, throws a ErrorCodes::LOGICAL_ERROR
-    UInt64 getInsertionPointConst(const StringRef & data) const;
+    /// Returns the found index if the #index is built, otherwise, searches for it linearly.
+    std::optional<UInt64> getIndex(const StringRef & data) const;
 
     UInt64 lastInsertionPoint() const { return size() + base_index; }
 
@@ -521,10 +521,10 @@ UInt64 ReverseIndex<IndexType, ColumnType>::getInsertionPoint(const StringRef & 
 }
 
 template <typename IndexType, typename ColumnType>
-UInt64 ReverseIndex<IndexType, ColumnType>::getInsertionPointConst(const StringRef & data) const
+std::optional<UInt64> ReverseIndex<IndexType, ColumnType>::getIndex(const StringRef & data) const
 {
     if (!index)
-        throw Exception("No built index in ReverseIndex", ErrorCodes::LOGICAL_ERROR);
+        return {};
 
     using IteratorType = typename IndexMapType::iterator;
     IteratorType iterator;
