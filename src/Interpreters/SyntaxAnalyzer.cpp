@@ -30,6 +30,7 @@
 #include <Interpreters/AnyInputOptimize.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
+#include <Interpreters/MonotonicityCheckVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -527,6 +528,46 @@ void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, const Context & context
     DuplicateOrderByVisitor(order_by_data).visit(query);
     DuplicateDistinctVisitor::Data distinct_data{};
     DuplicateDistinctVisitor(distinct_data).visit(query);
+}
+
+/// Replace monotonous functions in ORDER BY if they don't participate in GROUP BY expression,
+/// has a single argument and not an aggregate functions.
+void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const Context & context,
+                                          const TablesWithColumns & tables_with_columns)
+{
+    auto order_by = select_query->orderBy();
+    if (!order_by)
+        return;
+
+    std::unordered_set<String> group_by_hashes;
+    if (auto group_by = select_query->groupBy())
+    {
+        for (auto & elem : group_by->children)
+        {
+            auto hash = elem->getTreeHash();
+            String key = toString(hash.first) + '_' + toString(hash.second);
+            group_by_hashes.insert(key);
+        }
+    }
+
+    for (auto & child : order_by->children)
+    {
+        auto * order_by_element = child->as<ASTOrderByElement>();
+        auto & ast_func = order_by_element->children[0];
+        if (!ast_func->as<ASTFunction>())
+            continue;
+
+        MonotonicityCheckVisitor::Data data{tables_with_columns, context, group_by_hashes};
+        MonotonicityCheckVisitor(data).visit(ast_func);
+
+        if (!data.isRejected())
+        {
+            ast_func = data.identifier->clone();
+            ast_func->setAlias("");
+            if (!data.monotonicity.is_positive)
+                order_by_element->direction *= -1;
+        }
+    }
 }
 
 /// If ORDER BY has argument x followed by f(x) transfroms it to ORDER BY x.
@@ -1065,6 +1106,10 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         /// Remove functions from ORDER BY if its argument is also in ORDER BY
         if (settings.optimize_redundant_functions_in_order_by)
             optimizeRedundantFunctionsInOrderBy(select_query, context);
+
+        /// Replace monotonous functions with its argument
+        if (settings.optimize_monotonous_functions_in_order_by)
+            optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
