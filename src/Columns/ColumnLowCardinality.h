@@ -15,6 +15,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/**
+ * How data is stored (in a nutshell):
+ * we have a dictionary @e reverse_index in ColumnUnique that holds pairs (DataType, UIntXX) and a column
+ * with UIntXX holding actual data indices.
+ * To obtain the value's index, call #getOrFindIndex.
+ * To operate on the data (so called indices column), call #getIndexes.
+ */
 class ColumnLowCardinality final : public COWHelper<IColumn, ColumnLowCardinality>
 {
     friend class COWHelper<IColumn, ColumnLowCardinality>;

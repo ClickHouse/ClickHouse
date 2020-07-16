@@ -634,7 +634,7 @@ inline bool allowNonLowCardinalityArg(const DataTypePtr& arr, const DataTypePtr&
 }
 
 
-template <typename IndexConv, typename Name>
+template <class ConcreteAction, class Name>
 class FunctionArrayIndex : public IFunction
 {
 public:
@@ -642,7 +642,7 @@ public:
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayIndex>(); }
 
 private:
-    using ResultType = typename IndexConv::ResultType;
+    using ResultType = typename ConcreteAction::ResultType;
     using ResultColumnType = ColumnVector<ResultType>;
 
     /**
@@ -682,7 +682,7 @@ private:
      * (s1, s1, s2, ...), (s2, s1, s2, ...), (s3, s1, s2, ...)
      */
     template <class ...Integral>
-    [[gnu::nonnull]] inline bool 
+    [[gnu::nonnull]] inline bool
     executeIntegral(const ColumnArray * col, Block & block, const ColumnNumbers & arguments, size_t result)
     {
         return (executeIntegralExpanded<Integral, Integral...>(col, block, arguments, result) || ...);
@@ -716,13 +716,10 @@ private:
         const IColumn* item_arg = block.getByPosition(arguments[1]).column.get();
 
         if (item_arg->onlyNull())
-            ArrayIndexNumNullImpl<Initial, IndexConv>::vector(
-                col_nested->getData(),
-                col_array->getOffsets(), 
-                col_res->getData(), 
-                null_map_data);
+            ArrayIndexNumNullImpl<Initial, ConcreteAction>::vector(
+                col_nested->getData(), col_array->getOffsets(), col_res->getData(), null_map_data);
         else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<Resulting>>(item_arg))
-            ArrayIndexNumImpl<Initial, Resulting, IndexConv>::vector(
+            ArrayIndexNumImpl<Initial, Resulting, ConcreteAction>::vector(
                 col_nested->getData(),
                 col_array->getOffsets(),
                 item_arg_const->template getValue<Resulting>(),
@@ -730,7 +727,7 @@ private:
                 null_map_data,
                 nullptr);
         else if (const auto item_arg_vector = checkAndGetColumn<ColumnVector<Resulting>>(item_arg))
-            ArrayIndexNumImpl<Initial, Resulting, IndexConv>::vector(
+            ArrayIndexNumImpl<Initial, Resulting, ConcreteAction>::vector(
                 col_nested->getData(),
                 col_array->getOffsets(),
                 item_arg_vector->getData(),
@@ -772,18 +769,19 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             StringRef elem = col_arg->getDataAt(i);
-            UInt64 value_index = col_lc->getDictionary().getIndexByValue(elem);
+            UInt64 value_index = col_lc->getDictionary().getOrFindIndex(elem);
 
             ArrayIndexNumImpl<
                 /* Initial data type -- DB::ReverseIndex index */ UInt64,
                 /* Resulting data type -- same */ UInt64,
-                IndexConv>::vector(
-                /* data -- indices column */ col_lc->getIndexes(),
-                col_array->getOffsets(),
-                /* target value */ value_index,
-                col_res->getData(),
-                null_map_data,
-                null_map_item);
+                ConcreteAction>::
+                vector(
+                    /* data -- indices column */ col_lc->getIndexes(),
+                    col_array->getOffsets(),
+                    /* target value */ value_index,
+                    col_res->getData(),
+                    null_map_data,
+                    null_map_item);
         }
 
         block.getByPosition(result).column = std::move(col_res);
@@ -805,23 +803,19 @@ private:
 
         if (item_arg->onlyNull())
         {
-            ArrayIndexStringNullImpl<IndexConv>::vector_const(
-                col_nested->getChars(), 
-                col_array->getOffsets(), 
-                col_nested->getOffsets(), 
-                col_res->getData(), 
-                null_map_data);
+            ArrayIndexStringNullImpl<ConcreteAction>::vector_const(
+                col_nested->getChars(), col_array->getOffsets(), col_nested->getOffsets(), col_res->getData(), null_map_data);
         }
         else if (const auto item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
         {
-            const ColumnString * item_const_string = 
+            const ColumnString * item_const_string =
                 checkAndGetColumn<ColumnString>(&item_arg_const->getDataColumn());
 
-            const ColumnFixedString * item_const_fixedstring = 
+            const ColumnFixedString * item_const_fixedstring =
                 checkAndGetColumn<ColumnFixedString>(&item_arg_const->getDataColumn());
 
             if (item_const_string)
-                ArrayIndexStringImpl<IndexConv>::vector_const(
+                ArrayIndexStringImpl<ConcreteAction>::vector_const(
                     col_nested->getChars(),
                     col_array->getOffsets(),
                     col_nested->getOffsets(),
@@ -830,7 +824,7 @@ private:
                     col_res->getData(),
                     null_map_data);
             else if (item_const_fixedstring)
-                ArrayIndexStringImpl<IndexConv>::vector_const(
+                ArrayIndexStringImpl<ConcreteAction>::vector_const(
                     col_nested->getChars(),
                     col_array->getOffsets(),
                     col_nested->getOffsets(),
@@ -840,12 +834,12 @@ private:
                     null_map_data);
             else
                 throw Exception(
-                        "Logical error: ColumnConst contains not String nor FixedString column", 
+                    "Logical error: ColumnConst contains not String nor FixedString column",
                         ErrorCodes::ILLEGAL_COLUMN);
         }
         else if (const auto item_arg_vector = checkAndGetColumn<ColumnString>(item_arg))
         {
-            ArrayIndexStringImpl<IndexConv>::vectorVector(
+            ArrayIndexStringImpl<ConcreteAction>::vectorVector(
                 col_nested->getChars(),
                 col_array->getOffsets(),
                 col_nested->getOffsets(),
@@ -862,10 +856,9 @@ private:
         return true;
     }
 
-    [[gnu::nonnull]]
     bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const ColumnConst * col_array = 
+        const ColumnConst * col_array =
             checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get());
 
         if (!col_array)
@@ -877,21 +870,20 @@ private:
 
         if (isColumnConst(*item_arg))
         {
-            typename IndexConv::ResultType current = 0;
+            typename ConcreteAction::ResultType current = 0;
             const auto & value = (*item_arg)[0];
 
             for (size_t i = 0, size = arr.size(); i < size; ++i)
             {
                 if (applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
                 {
-                    if (!IndexConv::apply(i, current))
+                    if (!ConcreteAction::apply(i, current))
                         break;
                 }
             }
 
             block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
-                item_arg->size(),
-                static_cast<typename IndexConv::ResultType>(current));
+                item_arg->size(), static_cast<typename ConcreteAction::ResultType>(current));
         }
         else
         {
@@ -929,7 +921,7 @@ private:
 
                     if (hit)
                     {
-                        if (!IndexConv::apply(i, data[row]))
+                        if (!ConcreteAction::apply(i, data[row]))
                             break;
                     }
                 }
@@ -952,25 +944,18 @@ private:
         auto [null_map_data, null_map_item] = nullMapsBuilder(block, arguments);
 
         if (item_arg.onlyNull())
-            ArrayIndexGenericNullImpl<IndexConv>::vector(
-                    col_nested, 
-                    col->getOffsets(),
-                    col_res->getData(), 
-                    null_map_data);
+            ArrayIndexGenericNullImpl<ConcreteAction>::vector(col_nested, col->getOffsets(), col_res->getData(), null_map_data);
         else if (isColumnConst(item_arg))
-            ArrayIndexGenericImpl<IndexConv, true>::vector(
-                    col_nested, 
-                    col->getOffsets(),
-                    assert_cast<const ColumnConst &>(item_arg).getDataColumn(), 
-                    col_res->getData(),    /// TODO This is wrong.
-                    null_map_data, nullptr);
+            ArrayIndexGenericImpl<ConcreteAction, true>::vector(
+                col_nested,
+                col->getOffsets(),
+                assert_cast<const ColumnConst &>(item_arg).getDataColumn(),
+                col_res->getData(), /// TODO This is wrong.
+                null_map_data,
+                nullptr);
         else
-            ArrayIndexGenericImpl<IndexConv, false>::vector(
-                col_nested, 
-                col->getOffsets(), 
-                *item_arg.convertToFullColumnIfConst(), 
-                col_res->getData(),
-                null_map_data, null_map_item);
+            ArrayIndexGenericImpl<ConcreteAction, false>::vector(
+                col_nested, col->getOffsets(), *item_arg.convertToFullColumnIfConst(), col_res->getData(), null_map_data, null_map_item);
 
         block.getByPosition(result).column = std::move(col_res);
         return true;
@@ -995,7 +980,7 @@ public:
             throw Exception("First argument for function " + getName() + " must be an array.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->onlyNull() 
+        if (!arguments[1]->onlyNull()
             && !allowArrayIndex(array_type->getNestedType(), arguments[1])
             && !allowNonLowCardinalityArg(array_type->getNestedType(), arguments[1]))
             throw Exception("Types of array and 2nd argument of function "
@@ -1003,7 +988,7 @@ public:
                 + arguments[0]->getName() + " and " + arguments[1]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return std::make_shared<DataTypeNumber<typename IndexConv::ResultType>>();
+        return std::make_shared<DataTypeNumber<typename ConcreteAction::ResultType>>();
     }
 
     /**
