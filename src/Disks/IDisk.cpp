@@ -47,7 +47,7 @@ void IDisk::copy(const String & from_path, const std::shared_ptr<IDisk> & to_dis
     }
 }
 
-void IDisk::truncateFile(const String & path, size_t size)
+void IDisk::truncateFile(const String &, size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getType());
 }
