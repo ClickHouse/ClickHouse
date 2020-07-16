@@ -1,5 +1,10 @@
 #pragma once
 
+#include "config_formats.h"
+#include "config_core.h"
+
+#if USE_MSGPACK
+
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
@@ -63,3 +68,5 @@ private:
 };
 
 }
+
+#endif
