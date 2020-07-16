@@ -55,6 +55,13 @@ def adjust_markdown_html(content):
         if a_href and a_href.startswith('http'):
             a.attrs['target'] = '_blank'
 
+    for code in soup.find_all('code'):
+        code_class = code.attrs.get('class')
+        if code_class:
+            code.attrs['class'] = code_class + ['syntax']
+        else:
+            code.attrs['class'] = 'syntax'
+
     for iframe in soup.find_all('iframe'):
         handle_iframe(iframe, soup)
 

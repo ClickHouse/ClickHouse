@@ -23,7 +23,7 @@ void registerFunctionsLogical(FunctionFactory & factory)
     factory.registerFunction<FunctionAnd>();
     factory.registerFunction<FunctionOr>();
     factory.registerFunction<FunctionXor>();
-    factory.registerFunction<FunctionNot>();
+    factory.registerFunction<FunctionNot>(FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
 }
 
 namespace ErrorCodes
@@ -336,7 +336,7 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
     const bool has_consts = extractConstColumnsAsTernary<Op>(arguments, const_3v_value);
 
     /// If the constant value uniquely determines the result, return it.
-    if (has_consts && (arguments.empty() || Op::isSaturatedValue(const_3v_value)))
+    if (has_consts && (arguments.empty() || Op::isSaturatedValueTernary(const_3v_value)))
     {
         result_info.column = ColumnConst::create(
             buildColumnFromTernaryData(UInt8Container({const_3v_value}), result_info.type->isNullable()),
@@ -498,7 +498,8 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
 }
 
 template <typename Impl, typename Name>
-void FunctionAnyArityLogical<Impl, Name>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_index, size_t input_rows_count)
+void FunctionAnyArityLogical<Impl, Name>::executeImpl(
+    Block & block, const ColumnNumbers & arguments, size_t result_index, size_t input_rows_count)
 {
     ColumnRawPtrs args_in;
     for (const auto arg_index : arguments)

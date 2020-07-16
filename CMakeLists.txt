@@ -12,6 +12,20 @@ foreach(policy
     endif()
 endforeach()
 
+# set default policy
+foreach(default_policy_var_name
+        # make option() honor normal variables for BUILD_SHARED_LIBS:
+        # - re2
+        # - snappy
+        CMAKE_POLICY_DEFAULT_CMP0077
+        # Google Test from sources uses too old cmake, 2.6.x, and CMP0022 should
+        # set, to avoid using deprecated LINK_INTERFACE_LIBRARIES(_<CONFIG>)? over
+        # INTERFACE_LINK_LIBRARIES.
+        CMAKE_POLICY_DEFAULT_CMP0022
+    )
+    set(${default_policy_var_name} NEW)
+endforeach()
+
 project(ClickHouse)
 
 include (cmake/arch.cmake)
@@ -273,7 +287,7 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
-if (OS_LINUX)
+if (OS_LINUX OR OS_ANDROID)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
@@ -378,10 +392,6 @@ include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
-if (OS_LINUX AND NOT ENABLE_JEMALLOC)
-    message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
-endif ()
-
 if (USE_OPENCL)
     if (OS_DARWIN)
         set(OPENCL_LINKER_FLAGS "-framework OpenCL")
@@ -396,6 +406,10 @@ if (TARGET global-group)
 endif ()
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
+
+if (NOT ENABLE_JEMALLOC)
+    message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")
+endif ()
 
 macro (add_executable target)
     # invoke built-in add_executable

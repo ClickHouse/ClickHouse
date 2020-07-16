@@ -258,4 +258,28 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns)
     }
 }
 
+IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const String & column_name) const
+{
+    String table_name = Nested::extractTableName(column_name);
+    for (const auto & part_column : data_part->getColumns())
+    {
+        if (typeid_cast<const DataTypeArray *>(part_column.type.get()))
+        {
+            auto position = data_part->getColumnPosition(part_column.name);
+            if (position && Nested::extractTableName(part_column.name) == table_name)
+                return position;
+        }
+    }
+
+    return {};
+}
+
+void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
+{
+    if (num_columns_to_read != columns.size())
+        throw Exception("invalid number of columns passed to MergeTreeReader::readRows. "
+                        "Expected " + toString(columns.size()) + ", "
+                        "got " + toString(num_columns_to_read), ErrorCodes::LOGICAL_ERROR);
+}
+
 }
