@@ -227,6 +227,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
     bool has_part_with_expired_ttl = false;
+    size_t part_with_expired_ttl_index = 0;
+    bool has_more_parts_with_expired_ttl = false;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
         /// Check predicate only for first part in each partition.
@@ -261,7 +263,18 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         time_t ttl = data_settings->ttl_only_drop_parts ? part_info.max_ttl : part_info.min_ttl;
 
         if (ttl && ttl <= current_time)
-            has_part_with_expired_ttl = true;
+        {
+            if (has_part_with_expired_ttl)
+            {
+                if (part_with_expired_ttl_index != partitions.size() - 1)
+                    has_more_parts_with_expired_ttl = true;
+            }
+            else
+            {
+                has_part_with_expired_ttl = true;
+                part_with_expired_ttl_index = partitions.size() - 1;
+            }
+        }
 
         partitions.back().emplace_back(part_info);
 
@@ -288,7 +301,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     if (can_merge_with_ttl && has_part_with_expired_ttl && !ttl_merges_blocker.isCancelled())
     {
         merge_selector = std::make_unique<TTLMergeSelector>(current_time, data_settings->ttl_only_drop_parts);
-        last_merge_with_ttl = current_time;
+        if (!has_more_parts_with_expired_ttl)
+            last_merge_with_ttl = current_time;
     }
     else
         merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
