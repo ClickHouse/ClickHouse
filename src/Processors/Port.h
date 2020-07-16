@@ -10,6 +10,12 @@
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
 
+#ifdef ENABLE_PROCESSORS_FUZZING
+#include <Common/thread_local_rng.h>
+#include <common/sleep.h>
+#include <random>
+#endif
+
 namespace DB
 {
 
@@ -253,6 +259,20 @@ protected:
         if (likely(update_info))
             update_info->update();
     }
+
+#ifdef ENABLE_PROCESSORS_FUZZING
+    void yieldIfNeed()
+    {
+        static const float yield_probability = .4;
+        static const int   sleep_time_us     = 10'000;
+        if (std::bernoulli_distribution(yield_probability)(thread_local_rng))
+        {
+            sleepForNanoseconds(sleep_time_us * 1000);
+        }
+    }
+#else
+    ALWAYS_INLINE void yieldIfNeed() {}
+#endif
 };
 
 /// Invariants:
@@ -274,6 +294,8 @@ public:
 
     Data ALWAYS_INLINE pullData(bool set_not_needed = false)
     {
+        yieldIfNeed();
+
         if (!set_not_needed)
             updateVersion();
 
@@ -411,6 +433,8 @@ public:
 
             throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
         }
+
+        yieldIfNeed();
 
         updateVersion();
 

@@ -105,6 +105,13 @@ if (ENABLE_FUZZING)
     set (FUZZER "libfuzzer")
 endif()
 
+option (ENABLE_PROCESSORS_FUZZING "Enables random delays for Processors (to trigger possible Pipeline stuck errors)" OFF)
+# XXX: rework this
+if (ENABLE_PROCESSORS_FUZZING)
+    message (STATUS "Processors fuzzing enabled")
+    add_definitions(-DENABLE_PROCESSORS_FUZZING)
+endif()
+
 include (cmake/fuzzer.cmake)
 include (cmake/sanitize.cmake)
 
