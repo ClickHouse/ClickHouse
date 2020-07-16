@@ -367,7 +367,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     }
 
     SetPtr prepared_set;
-    if (functionIsInOrGlobalInOperator(node.name))
+    if (checkFunctionIsInOrGlobalInOperator(node))
     {
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
@@ -444,7 +444,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             /// Select the name in the next cycle.
             argument_names.emplace_back();
         }
-        else if (functionIsInOrGlobalInOperator(node.name) && arg == 1 && prepared_set)
+        else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set)
         {
             ColumnWithTypeAndName column;
             column.type = std::make_shared<DataTypeSet>();
