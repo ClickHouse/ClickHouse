@@ -632,7 +632,7 @@ SimplePolygonDictionary::SimplePolygonDictionary(
 std::shared_ptr<const IExternalLoadable> SimplePolygonDictionary::clone() const
 {
     return std::make_shared<SimplePolygonDictionary>(
-            this->dict_id,
+            this->getDictionaryID(),
             this->dict_struct,
             this->source_ptr->clone(),
             this->dict_lifetime,
