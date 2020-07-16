@@ -210,8 +210,7 @@ void SettingMaxThreads::setAuto()
 
 UInt64 SettingMaxThreads::getAutoValue()
 {
-    static auto res = getNumberOfPhysicalCPUCores();
-    return res;
+    return getNumberOfPhysicalCPUCores();
 }
 
 
