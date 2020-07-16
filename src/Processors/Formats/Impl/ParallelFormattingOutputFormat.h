@@ -16,8 +16,8 @@
 namespace DB
 {
 
-const size_t min_chunk_bytes_for_parallel_formatting_ = 1024;
-const size_t max_threads_for_parallel_formatting_ = 4;
+const size_t min_chunk_bytes_for_parallel_formatting = 1024;
+const size_t max_threads_for_parallel_formatting = 4;
 
 class ParallelFormattingOutputFormat : public IOutputFormat
 {
@@ -27,19 +27,19 @@ public:
 
     struct Params
     {
-        WriteBuffer & out_;
-        const Block & header_;
-        InternalFormatterCreator internal_formatter_creator_;
+        WriteBuffer & out;
+        const Block & header;
+        InternalFormatterCreator internal_formatter_creator;
     };
 
     explicit ParallelFormattingOutputFormat(Params params)
-        : IOutputFormat(params.header_, params.out_)
-        , internal_formatter_creator(params.internal_formatter_creator_)
-        , pool(max_threads_for_parallel_formatting_)
+        : IOutputFormat(params.header, params.out)
+        , internal_formatter_creator(params.internal_formatter_creator)
+        , pool(max_threads_for_parallel_formatting)
 
     {
-//        std::cout << "ParallelFormattingOutputFormat::constructor" << std::endl;
-        processing_units.resize(max_threads_for_parallel_formatting_ + 2);
+        std::cout << "ParallelFormattingOutputFormat::constructor" << std::endl;
+        processing_units.resize(max_threads_for_parallel_formatting + 2);
 
         collector_thread = ThreadFromGlobalPool([this] { collectorThreadFunction(); });
     }
@@ -54,12 +54,11 @@ public:
 protected:
     void consume(Chunk chunk) override final
     {
-
-//        std::cout << StackTrace().toString() << std::endl;
+        std::cout << StackTrace().toString() << std::endl;
 
         if (chunk.empty())
         {
-//            std::cout << "Empty chunk" << std::endl;
+            std::cout << "Empty chunk" << std::endl;
             formatting_finished = true;
         }
 
@@ -68,7 +67,7 @@ protected:
 
         auto & unit = processing_units[current_unit_number];
 
-//        std::cout << "Consume " << current_unit_number << " before wait" << std::endl;
+        std::cout << "Consume " << current_unit_number << " before wait" << std::endl;
 
         {
             std::unique_lock<std::mutex> lock(mutex);
@@ -76,7 +75,7 @@ protected:
                 [&]{ return unit.status == READY_TO_INSERT || formatting_finished; });
         }
 
-//        std::cout << "Consume " << current_unit_number << " after wait" << std::endl;
+        std::cout << "Consume " << current_unit_number << " after wait" << std::endl;
 
         assert(unit.status == READY_TO_INSERT);
 
@@ -136,6 +135,7 @@ private:
     {
 
         std::cout << "finishAndWait()" << std::endl;
+        std::cout << StackTrace().toString() << std::endl;
         formatting_finished = true;
 
         {
@@ -160,7 +160,7 @@ private:
 
     void onBackgroundException()
     {
-//        std::cout << "onBackgroundException" << std::endl;
+        std::cout << "onBackgroundException" << std::endl;
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
         std::unique_lock<std::mutex> lock(mutex);
@@ -190,7 +190,7 @@ private:
 
                 auto &unit = processing_units[current_unit_number];
 
-//                std::cout << "Collector " << current_unit_number << " before wait" << std::endl;
+                std::cout << "Collector " << current_unit_number << " before wait" << std::endl;
 
                 {
                     std::unique_lock<std::mutex> lock(mutex);
@@ -198,13 +198,13 @@ private:
                         [&]{ return unit.status == READY_TO_READ || formatting_finished; });
                 }
 
-//                std::cout << "Collector " << current_unit_number << " after wait" << std::endl;
+                std::cout << "Collector " << current_unit_number << " after wait" << std::endl;
 
-                if (formatting_finished)
-                {
+//                if (formatting_finished)
+//                {
 //                    std::cout << "formatting finished" << std::endl;
-                    break;
-                }
+//                    break;
+//                }
 
                 assert(unit.status == READY_TO_READ);
                 assert(unit.segment.size() > 0);
@@ -241,7 +241,7 @@ private:
 
         try
         {
-//            std::cout << "Formatter " << current_unit_number << std::endl;
+            std::cout << "Formatter " << current_unit_number << std::endl;
 
             auto & unit = processing_units[current_unit_number];
 
@@ -256,7 +256,7 @@ private:
 
             formatter->consume(std::move(unit.chunk));
 
-//            std::cout << "Formatter " << current_unit_number << " before notify" << std::endl;
+            std::cout << "Formatter " << current_unit_number << " before notify" << std::endl;
 
             {
                 std::lock_guard<std::mutex> lock(mutex);
@@ -264,7 +264,7 @@ private:
                 collector_condvar.notify_all();
             }
 
-//            std::cout << "Formatter " << current_unit_number << " after notify" << std::endl;
+            std::cout << "Formatter " << current_unit_number << " after notify" << std::endl;
         }
         catch (...)
         {
