@@ -302,7 +302,7 @@ bool TableJoin::needStreamWithNonJoinedRows() const
     return isRightOrFull(kind());
 }
 
-bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_block, Names & names, NamesAndTypesList & result_columns) const
+bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_block, Names & src_names, NamesAndTypesList & dst_columns) const
 {
     /// Support ALL INNER, [ANY | ALL | SEMI | ANTI] LEFT
     if (!isLeft(kind()) && !(isInner(kind()) && strictness() == ASTTableJoin::Strictness::All))
@@ -312,18 +312,26 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
     if (right_keys.size() != 1)
         return false;
 
+    /// TODO: support 'JOIN ... ON expr(dict_key) = table_key'
+    auto it_key = original_names.find(right_keys[0]);
+    if (it_key == original_names.end())
+        return false;
+
+    if (dict_key != it_key->second)
+        return false; /// JOIN key != Dictionary key
+
     for (const auto & col : sample_block)
     {
-        String original = original_names.find(col.name)->second;
         if (col.name == right_keys[0])
-        {
-            if (original != dict_key)
-                return false; /// JOIN key != Dictionary key
             continue; /// do not extract key column
-        }
 
-        names.push_back(original);
-        result_columns.push_back({col.name, col.type});
+        auto it = original_names.find(col.name);
+        if (it != original_names.end())
+        {
+            String original = it->second;
+            src_names.push_back(original);
+            dst_columns.push_back({col.name, col.type});
+        }
     }
 
     return true;
