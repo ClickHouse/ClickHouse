@@ -1,4 +1,5 @@
-SET(ENABLE_AMQPCPP ${ENABLE_LIBRARIES})
+option(ENABLE_AMQPCPP "Enalbe AMQP-CPP" ${ENABLE_LIBRARIES})
+
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP/CMakeLists.txt")
     message (WARNING "submodule contrib/AMQP-CPP is missing. to fix try run: \n git submodule update --init --recursive")
     set (ENABLE_AMQPCPP 0)

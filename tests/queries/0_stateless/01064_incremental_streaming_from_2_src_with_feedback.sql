@@ -76,7 +76,9 @@ AS
    GROUP BY id;
 
 -- This query has effect only for existing tables, so it must be located after CREATE.
-SYSTEM STOP MERGES;
+SYSTEM STOP MERGES target_table;
+SYSTEM STOP MERGES checkouts;
+SYSTEM STOP MERGES logins;
 
 -- feed with some initial values
 INSERT INTO logins SELECT number as id,    '2000-01-01 08:00:00' from numbers(50000);
@@ -126,5 +128,3 @@ DROP TABLE IF EXISTS mv_logins2target;
 DROP TABLE IF EXISTS checkouts;
 DROP TABLE IF EXISTS mv_checkouts2target;
 DROP TABLE target_table;
-
-SYSTEM START MERGES;

@@ -23,7 +23,7 @@ Vea la descripción detallada del [CREATE TABLE](../../../sql-reference/statemen
 
 **Parámetros del motor**
 
--   `join_strictness` – [ÚNETE a la rigurosidad](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_strictness` – [ÚNETE a la rigurosidad](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `join_type` – [Tipo de unión](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` cláusula que el `JOIN` operación se hace con.
 

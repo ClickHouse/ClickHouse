@@ -1,5 +1,12 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#    include "config_core.h"
+#endif
+
+#if USE_MSGPACK
+
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IRowOutputFormat.h>
@@ -26,3 +33,5 @@ private:
 };
 
 }
+
+#endif
