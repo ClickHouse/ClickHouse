@@ -325,8 +325,15 @@ public:
     static constexpr bool use_saved_hash = !is_numeric_column;
 
     UInt64 insert(const StringRef & data);
+
+    /// If index is not built, builds it.
     UInt64 getInsertionPoint(const StringRef & data);
+
+    /// If index is not found, throws a ErrorCodes::LOGICAL_ERROR
+    UInt64 getInsertionPointConst(const StringRef & data) const;
+
     UInt64 lastInsertionPoint() const { return size() + base_index; }
+
 
     ColumnType * getColumn() const { return column; }
     size_t size() const;
@@ -503,6 +510,21 @@ UInt64 ReverseIndex<IndexType, ColumnType>::getInsertionPoint(const StringRef & 
 {
     if (!index)
         buildIndex();
+
+    using IteratorType = typename IndexMapType::iterator;
+    IteratorType iterator;
+
+    auto hash = getHash(data);
+    iterator = index->reverseIndexFind(data, hash);
+
+    return iterator == index->end() ? size() + base_index : iterator->getValue();
+}
+
+template <typename IndexType, typename ColumnType>
+UInt64 ReverseIndex<IndexType, ColumnType>::getInsertionPointConst(const StringRef & data) const
+{
+    if (!index)
+        throw Exception("No built index in ReverseIndex", ErrorCodes::LOGICAL_ERROR);
 
     using IteratorType = typename IndexMapType::iterator;
     IteratorType iterator;
