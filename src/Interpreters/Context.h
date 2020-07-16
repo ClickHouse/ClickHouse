@@ -245,6 +245,9 @@ public:
     AccessControlManager & getAccessControlManager();
     const AccessControlManager & getAccessControlManager() const;
 
+    /// Sets external authenticators config (LDAP).
+    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
+
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
       * The accumulated quota values are not reset if the quota is not deleted.
