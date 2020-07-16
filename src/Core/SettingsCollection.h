@@ -106,7 +106,13 @@ struct SettingTimespan
     SettingTimespan(UInt64 x = 0) : value(x * microseconds_per_io_unit) {}
 
     operator Poco::Timespan() const { return value; }
-    SettingTimespan & operator= (const Poco::Timespan & x) { set(x); return *this; }
+    SettingTimespan & operator=(const Poco::Timespan & x) { set(x); return *this; }
+
+    template <class Rep, class Period = std::ratio<1>>
+    operator std::chrono::duration<Rep, Period>() const { return std::chrono::duration_cast<std::chrono::duration<Rep, Period>>(std::chrono::microseconds(value.totalMicroseconds())); }
+
+    template <class Rep, class Period = std::ratio<1>>
+    SettingTimespan & operator=(const std::chrono::duration<Rep, Period> & x) { set(x); return *this; }
 
     Poco::Timespan::TimeDiff totalSeconds() const { return value.totalSeconds(); }
     Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
@@ -115,6 +121,9 @@ struct SettingTimespan
     Field toField() const;
 
     void set(const Poco::Timespan & x);
+
+    template <class Rep, class Period = std::ratio<1>>
+    void set(const std::chrono::duration<Rep, Period> & duration) { set(static_cast<UInt64>(std::chrono::duration_cast<std::chrono::microseconds>(duration).count())); }
 
     void set(UInt64 x);
     void set(const Field & x);
