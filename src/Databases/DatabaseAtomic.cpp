@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int NOT_IMPLEMENTED;
     extern const int FILE_ALREADY_EXISTS;
+    extern const int INCORRECT_QUERY;
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
@@ -124,16 +125,20 @@ void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool 
 }
 
 void DatabaseAtomic::renameTable(const Context & context, const String & table_name, IDatabase & to_database,
-                                 const String & to_table_name, bool exchange)
+                                 const String & to_table_name, bool exchange, bool dictionary)
 {
     if (typeid(*this) != typeid(to_database))
     {
         if (!typeid_cast<DatabaseOrdinary *>(&to_database))
             throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
         /// Allow moving tables between Atomic and Ordinary (with table lock)
-        DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name, exchange);
+        DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name, exchange, dictionary);
         return;
     }
+
+    if (exchange && dictionary)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot exchange dictionaries");
+
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
 
@@ -142,16 +147,24 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
 
     auto detach = [](DatabaseAtomic & db, const String & table_name_)
     {
-        auto table_data_path_saved = db.table_name_to_path.find(table_name_)->second;
+        auto it = db.table_name_to_path.find(table_name_);
+        String table_data_path_saved;
+        /// Path can be not set for DDL dictionaries, but it does not matter for StorageDictionary.
+        if (it != db.table_name_to_path.end())
+            table_data_path_saved = it->second;
+        assert(!table_data_path_saved.empty() || db.dictionaries.find(table_name_) != db.dictionaries.end());
         db.tables.erase(table_name_);
         db.table_name_to_path.erase(table_name_);
-        db.tryRemoveSymlink(table_name_);
+        if (!table_data_path_saved.empty())
+            db.tryRemoveSymlink(table_name_);
         return table_data_path_saved;
     };
 
     auto attach = [](DatabaseAtomic & db, const String & table_name_, const String & table_data_path_, const StoragePtr & table_)
     {
         db.tables.emplace(table_name_, table_);
+        if (table_data_path_.empty())
+            return;
         db.table_name_to_path.emplace(table_name_, table_data_path_);
         db.tryCreateSymlink(table_name_, table_data_path_);
     };
@@ -186,6 +199,17 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
         db_lock = std::unique_lock{mutex};
     }
 
+    bool is_dictionary = dictionaries.find(table_name) != dictionaries.end();
+    if (exchange && other_db.dictionaries.find(to_table_name) != other_db.dictionaries.end())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot exchange dictionaries");
+
+    if (dictionary != is_dictionary)
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "Use RENAME DICTIONARY for dictionaries and RENAME TABLE for tables.");
+
+    if (is_dictionary && !inside_database)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move dictionary to other database");
+
     StoragePtr table = getTableUnlocked(table_name, db_lock);
     assert_can_move_mat_view(table);
     StoragePtr other_table;
@@ -206,13 +230,15 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     if (exchange)
         other_table_data_path = detach(other_db, to_table_name);
 
-    table->renameInMemory({other_db.database_name, to_table_name, table->getStorageID().uuid});
+    auto old_table_id = table->getStorageID();
+
+    table->renameInMemory({other_db.database_name, to_table_name, old_table_id.uuid});
     if (exchange)
         other_table->renameInMemory({database_name, table_name, other_table->getStorageID().uuid});
 
     if (!inside_database)
     {
-        DatabaseCatalog::instance().updateUUIDMapping(table->getStorageID().uuid, other_db.shared_from_this(), table);
+        DatabaseCatalog::instance().updateUUIDMapping(old_table_id.uuid, other_db.shared_from_this(), table);
         if (exchange)
             DatabaseCatalog::instance().updateUUIDMapping(other_table->getStorageID().uuid, shared_from_this(), other_table);
     }
@@ -220,6 +246,12 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     attach(other_db, to_table_name, table_data_path, table);
     if (exchange)
         attach(*this, table_name, other_table_data_path, other_table);
+
+    if (is_dictionary)
+    {
+        auto new_table_id = StorageID(other_db.database_name, to_table_name, old_table_id.uuid);
+        renameDictionaryInMemoryUnlocked(old_table_id, new_table_id);
+    }
 }
 
 void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
@@ -444,6 +476,18 @@ void DatabaseAtomic::renameDictionaryInMemoryUnlocked(const StorageID & old_name
     assert(old_name.uuid == new_name.uuid);
     it->second.config->setString("dictionary.database", new_name.database_name);
     it->second.config->setString("dictionary.name", new_name.table_name);
+    auto & create = it->second.create_query->as<ASTCreateQuery &>();
+    create.database = new_name.database_name;
+    create.table = new_name.table_name;
+    assert(create.uuid == new_name.uuid);
+
+    if (old_name.table_name != new_name.table_name)
+    {
+        auto attach_info = std::move(it->second);
+        dictionaries.erase(it);
+        dictionaries.emplace(new_name.table_name, std::move(attach_info));
+    }
+
     auto result = external_loader.getLoadResult(toString(old_name.uuid));
     if (!result.object)
         return;

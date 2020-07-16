@@ -31,6 +31,7 @@ public:
 
     bool exchange{false};   /// For EXCHANGE TABLES
     bool database{false};   /// For RENAME DATABASE
+    bool dictionary{false};   /// For RENAME DICTIONARY
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Rename"; }
@@ -72,8 +73,14 @@ protected:
             return;
         }
 
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-            << (exchange ? "EXCHANGE TABLES " : "RENAME TABLE ") << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "");
+        if (exchange)
+            settings.ostr << "EXCHANGE TABLES ";
+        else if (dictionary)
+            settings.ostr << "RENAME DICTIONARY ";
+        else
+            settings.ostr << "RENAME TABLE ";
+        settings.ostr << (settings.hilite ? hilite_none : "");
 
         for (auto it = elements.cbegin(); it != elements.cend(); ++it)
         {

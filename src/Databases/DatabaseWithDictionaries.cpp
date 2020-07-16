@@ -79,7 +79,6 @@ void DatabaseWithDictionaries::detachDictionary(const String & dictionary_name)
 
 void DatabaseWithDictionaries::detachDictionaryImpl(const String & dictionary_name, DictionaryAttachInfo & attach_info)
 {
-
     auto dict_id = StorageID::createEmpty();
     String internal_name;
 
