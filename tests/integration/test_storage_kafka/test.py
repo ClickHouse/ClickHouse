@@ -1119,7 +1119,7 @@ def test_kafka_virtual_columns(kafka_cluster):
 
     result = ''
     while True:
-        result += instance.query('SELECT _key, key, _topic, value, _offset, _partition, _timestamp FROM test.kafka', ignore_error=True)
+        result += instance.query('SELECT _key, key, _topic, value, _offset, _partition, _timestamp = 0 ? '0000-00-00 00:00:00' : toString(_timestamp) AS _timestamp FROM test.kafka', ignore_error=True)
         if kafka_check_result(result, False, 'test_kafka_virtual1.reference'):
             break
 
@@ -1142,7 +1142,7 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp as timestamp FROM test.kafka;
+            SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '0000-00-00 00:00:00' : toString(_timestamp) as timestamp FROM test.kafka;
     ''')
 
     messages = []
