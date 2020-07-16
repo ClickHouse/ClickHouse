@@ -200,8 +200,8 @@ def test_introspection():
     assert expected_access2 in instance.query("SHOW ACCESS")
 
     assert instance.query("SELECT name, storage, auth_type, auth_params, host_ip, host_names, host_names_regexp, host_names_like, default_roles_all, default_roles_list, default_roles_except from system.users WHERE name IN ('A', 'B') ORDER BY name") ==\
-           TSV([[ "A", "disk", "no_password", "[]", "['::/0']", "[]", "[]", "[]", 1, "[]", "[]" ],
-                [ "B", "disk", "no_password", "[]", "['::/0']", "[]", "[]", "[]", 1, "[]", "[]" ]])
+           TSV([[ "A", "disk", "no_password", "{}", "['::/0']", "[]", "[]", "[]", 1, "[]", "[]" ],
+                [ "B", "disk", "no_password", "{}", "['::/0']", "[]", "[]", "[]", 1, "[]", "[]" ]])
     
     assert instance.query("SELECT * from system.grants WHERE user_name IN ('A', 'B') ORDER BY user_name, access_type, grant_option") ==\
            TSV([[ "A",  "\N", "SELECT", "test", "table", "\N", 0, 0 ],
