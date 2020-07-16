@@ -11,7 +11,12 @@ else ()
     set (BUILTINS_LIBRARY "-lgcc")
 endif ()
 
+if (OS_ANDROID)
+# pthread and rt are included in libc
+set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -ldl")
+else ()
 set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
+endif ()
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 
@@ -35,7 +40,11 @@ add_library(global-libs INTERFACE)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-add_subdirectory(base/glibc-compatibility)
+if (NOT OS_ANDROID)
+    # Our compatibility layer doesn't build under Android, many errors in musl.
+    add_subdirectory(base/glibc-compatibility)
+endif ()
+
 include (cmake/find/unwind.cmake)
 include (cmake/find/cxx.cmake)
 

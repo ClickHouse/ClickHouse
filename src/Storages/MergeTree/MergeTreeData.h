@@ -24,6 +24,7 @@
 #include <Disks/StoragePolicy.h>
 #include <Interpreters/Aggregator.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <Storages/PartitionCommands.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -505,6 +506,9 @@ public:
     /// If something is wrong, throws an exception.
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
 
+    /// Checks that partition name in all commands is valid
+    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
+
     /// Change MergeTreeSettings
     void changeSettings(
         const ASTPtr & new_settings,
@@ -547,6 +551,8 @@ public:
     /// Moves partition to specified Volume
     void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, const Context & context);
 
+    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
+
     size_t getColumnCompressedSize(const std::string & name) const
     {
         auto lock = lockParts();
@@ -561,7 +567,7 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP PARTITION.
-    String getPartitionIDFromQuery(const ASTPtr & ast, const Context & context);
+    String getPartitionIDFromQuery(const ASTPtr & ast, const Context & context) const;
 
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
@@ -815,7 +821,7 @@ protected:
     void removePartContributionToColumnSizes(const DataPartPtr & part);
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
-    DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock);
+    DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock) const;
 
     /// Return parts in the Committed set that are covered by the new_part_info or the part that covers it.
     /// Will check that the new part doesn't already exist and that it doesn't intersect existing part.
@@ -890,6 +896,8 @@ private:
     WriteAheadLogPtr write_ahead_log;
 
     virtual void startBackgroundMovesIfNeeded() = 0;
+
+    bool allow_nullable_key{};
 };
 
 }

@@ -53,6 +53,8 @@ public:
 
     void alterPartition(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context) override;
 
+    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
+
     void mutate(const MutationCommands & commands, const Context & context) override;
 
     void renameInMemory(const StorageID & new_table_id) override;
