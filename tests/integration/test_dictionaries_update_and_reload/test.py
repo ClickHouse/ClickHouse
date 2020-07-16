@@ -33,14 +33,14 @@ def get_last_exception(dictionary_name):
 
 
 def get_loading_start_time(dictionary_name):
-    s = instance.query("SELECT loading_start_time FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
-    if s == "0000-00-00 00:00:00":
+    s = instance.query("SELECT toTimeZone(loading_start_time, 'UTC') FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
+    if s == "1970-01-01 00:00:00":
         return None
     return time.strptime(s, "%Y-%m-%d %H:%M:%S")
 
 def get_last_successful_update_time(dictionary_name):
-    s = instance.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
-    if s == "0000-00-00 00:00:00":
+    s = instance.query("SELECT toTimeZone(last_successful_update_time, 'UTC') FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
+    if s == "1970-01-01 00:00:00":
         return None
     return time.strptime(s, "%Y-%m-%d %H:%M:%S")
 

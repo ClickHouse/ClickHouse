@@ -425,7 +425,7 @@ def test_types(server_address):
         ('Float32_NaN_column', float('nan')),
         ('Float64_Inf_column', float('-inf')),
         ('Date_column', datetime.date(2019, 12, 8)),
-        ('Date_min_column', '0000-00-00'),
+        ('Date_min_column', '1970-01-01'),
         ('Date_after_min_column', datetime.date(1970, 1, 2)),
         ('DateTime_column', datetime.datetime(2019, 12, 8, 8, 24, 3)),
     ]
