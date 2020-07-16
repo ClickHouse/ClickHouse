@@ -429,7 +429,7 @@ function generate_diagram() {
             var bg = 'bg-dark';
             if (filtered_results[j].kind == 'cloud' || filtered_results[j].kind == 'vps') {
                 bg = 'bg-primary';
-            } else if (filtered_results[j].kind == 'desktop' || filtered_results[j].kind == 'laptop') {
+            } else if (filtered_results[j].kind == 'desktop' || filtered_results[j].kind == 'laptop' || filtered_results[j].kind == 'phone') {
                 bg = 'bg-secondary';
             }
 
