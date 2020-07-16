@@ -1096,8 +1096,10 @@ public:
             return;
         }
 
-        auto * left_generic = block.getByPosition(arguments[0]).type.get();
-        auto * right_generic = block.getByPosition(arguments[1]).type.get();
+        const auto & left_argument = block.getByPosition(arguments[0]);
+        const auto & right_argument = block.getByPosition(arguments[1]);
+        auto * left_generic = left_argument.type.get();
+        auto * right_generic = right_argument.type.get();
         bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
@@ -1112,8 +1114,17 @@ public:
             else
                 return executeNumeric(block, arguments, result, left, right);
         });
+
         if (!valid)
-            throw Exception(getName() + "'s arguments do not match the expected data types", ErrorCodes::LOGICAL_ERROR);
+        {
+            // This is a logical error, because the types should have been checked
+            // by getReturnTypeImpl().
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Arguments of '{}' have incorrect data types: '{}' of type '{}',"
+                " '{}' of type '{}'", getName(),
+                left_argument.name, left_argument.type->getName(),
+                right_argument.name, right_argument.type->getName());
+        }
     }
 
 #if USE_EMBEDDED_COMPILER
