@@ -42,7 +42,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<DirectDictionary>(dict_id, dict_struct, source_ptr->clone(), saved_block);
+        return std::make_shared<DirectDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), saved_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }

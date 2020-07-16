@@ -84,7 +84,7 @@ public:
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
         return std::make_shared<CacheDictionary>(
-                dict_id,
+                getDictionaryID(),
                 dict_struct,
                 source_ptr->clone(),
                 dict_lifetime,

@@ -34,12 +34,23 @@ struct IDictionaryBase : public IExternalLoadable
 
     IDictionaryBase(const StorageID & dict_id_)
     : dict_id(dict_id_)
-    , full_name(dict_id.database_name.empty() ? dict_id.getTableName() : dict_id.getFullNameNotQuoted())
+    , full_name(dict_id.getInternalDictionaryName())
     {
     }
 
-    const std::string & getFullName() const { return full_name; }
-    StorageID getDictionaryID() const { return dict_id; }
+    const std::string & getFullName() const{ return full_name; }
+    StorageID getDictionaryID() const
+    {
+        std::lock_guard lock{name_mutex};
+        return dict_id;
+    }
+
+    void updateDictionaryName(const StorageID & new_name) const
+    {
+        std::lock_guard lock{name_mutex};
+        assert(new_name.uuid == dict_id.uuid && dict_id.uuid != UUIDHelpers::Nil);
+        dict_id = new_name;
+    }
 
     const std::string & getLoadableName() const override final { return getFullName(); }
 
@@ -95,8 +106,11 @@ struct IDictionaryBase : public IExternalLoadable
         return std::static_pointer_cast<const IDictionaryBase>(IExternalLoadable::shared_from_this());
     }
 
+private:
+    mutable std::mutex name_mutex;
+    mutable StorageID dict_id;
+
 protected:
-    StorageID dict_id;
     const String full_name;
 };
 

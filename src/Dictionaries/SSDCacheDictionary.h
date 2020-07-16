@@ -331,8 +331,8 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<SSDCacheDictionary>(dict_id, dict_struct, source_ptr->clone(), dict_lifetime, path,
-                max_partitions_count, file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys);
+        return std::make_shared<SSDCacheDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime,
+                path, max_partitions_count, file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }

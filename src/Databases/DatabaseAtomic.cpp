@@ -8,6 +8,7 @@
 #include <Common/renameat2.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <filesystem>
 
 
@@ -418,6 +419,14 @@ void DatabaseAtomic::renameDatabase(const String & new_name)
             table.second->renameInMemory(table_id);
         }
 
+        for (auto & dict : dictionaries)
+        {
+            auto old_name = StorageID(dict.second.create_query);
+            auto name = old_name;
+            name.database_name = database_name;
+            renameDictionaryInMemoryUnlocked(old_name, name);
+        }
+
         path_to_metadata_symlink = global_context.getPath() + "metadata/" + new_name_escaped;
         old_path_to_table_symlinks = path_to_table_symlinks;
         path_to_table_symlinks = global_context.getPath() + "data/" + new_name_escaped + "/";
@@ -425,6 +434,21 @@ void DatabaseAtomic::renameDatabase(const String & new_name)
 
     Poco::File(old_path_to_table_symlinks).renameTo(path_to_table_symlinks);
     tryCreateMetadataSymlink();
+}
+
+void DatabaseAtomic::renameDictionaryInMemoryUnlocked(const StorageID & old_name, const StorageID & new_name)
+{
+    auto it = dictionaries.find(old_name.table_name);
+    assert(it != dictionaries.end());
+    assert(it->second.config->getString("dictionary.uuid") == toString(old_name.uuid));
+    assert(old_name.uuid == new_name.uuid);
+    it->second.config->setString("dictionary.database", new_name.database_name);
+    it->second.config->setString("dictionary.name", new_name.table_name);
+    auto result = external_loader.getLoadResult(toString(old_name.uuid));
+    if (!result.object)
+        return;
+    const auto & dict = dynamic_cast<const IDictionaryBase &>(*result.object);
+    dict.updateDictionaryName(new_name);
 }
 
 }
