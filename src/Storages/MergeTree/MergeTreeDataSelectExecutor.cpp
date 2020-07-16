@@ -1292,7 +1292,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const MergeTreeData::DataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
     const KeyCondition & key_condition,
-    const Settings & settings)
+    const Settings & settings) const
 {
     MarkRanges res;
 
@@ -1306,14 +1306,73 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// If index is not used.
     if (key_condition.alwaysUnknownOrTrue())
     {
+        LOG_TRACE(log, "Not using index on part {}", part->name);
+
         if (has_final_mark)
             res.push_back(MarkRange(0, marks_count - 1));
         else
             res.push_back(MarkRange(0, marks_count));
+
+        return res;
+    }
+
+    size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
+
+    std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
+    /// If there are no monotonic functions, there is no need to save block reference.
+    /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    if (key_condition.hasMonotonicFunctionsChain())
+    {
+        auto index_block = std::make_shared<Block>();
+        for (size_t i = 0; i < used_key_size; ++i)
+            index_block->insert({index[i], primary_key.data_types[i], primary_key.column_names[i]});
+
+        create_field_ref = [index_block](size_t row, size_t column, FieldRef & field)
+        {
+            field = {index_block.get(), row, column};
+        };
     }
     else
     {
-        size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
+        create_field_ref = [&index](size_t row, size_t column, FieldRef & field)
+        {
+            index[column]->get(row, field);
+        };
+    }
+
+    /// NOTE Creating temporary Field objects to pass to KeyCondition.
+    std::vector<FieldRef> index_left(used_key_size);
+    std::vector<FieldRef> index_right(used_key_size);
+
+    auto may_be_true_in_range = [&](MarkRange & range)
+    {
+        if (range.end == marks_count && !has_final_mark)
+        {
+            for (size_t i = 0; i < used_key_size; ++i)
+                create_field_ref(range.begin, i, index_left[i]);
+
+            return key_condition.mayBeTrueAfter(
+                used_key_size, index_left.data(), primary_key.data_types);
+        }
+
+        if (has_final_mark && range.end == marks_count)
+            range.end -= 1; /// Remove final empty mark. It's useful only for primary key condition.
+
+        for (size_t i = 0; i < used_key_size; ++i)
+        {
+            create_field_ref(range.begin, i, index_left[i]);
+            create_field_ref(range.end, i, index_right[i]);
+        }
+
+        return key_condition.mayBeTrueInRange(
+            used_key_size, index_left.data(), index_right.data(), primary_key.data_types);
+    };
+
+    if (!key_condition.matchesExactContinuousRange())
+    {
+        // Do exclusion search, where we drop ranges that do not match
+
         size_t min_marks_for_seek = roundRowsOrBytesToMarks(
             settings.merge_tree_min_rows_for_seek,
             settings.merge_tree_min_bytes_for_seek,
@@ -1321,69 +1380,22 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part->index_granularity_info.index_granularity_bytes);
 
         /** There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
-            * At each step, take the left segment and check if it fits.
-            * If fits, split it into smaller ones and put them on the stack. If not, discard it.
-            * If the segment is already of one mark length, add it to response and discard it.
-            */
+        * At each step, take the left segment and check if it fits.
+        * If fits, split it into smaller ones and put them on the stack. If not, discard it.
+        * If the segment is already of one mark length, add it to response and discard it.
+        */
         std::vector<MarkRange> ranges_stack = { {0, marks_count} };
 
-        std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
-        /// If there are no monotonic functions, there is no need to save block reference.
-        /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
-        const auto & primary_key = metadata_snapshot->getPrimaryKey();
-        if (key_condition.hasMonotonicFunctionsChain())
-        {
-            auto index_block = std::make_shared<Block>();
-            for (size_t i = 0; i < used_key_size; ++i)
-                index_block->insert({index[i], primary_key.data_types[i], primary_key.column_names[i]});
-
-            create_field_ref = [index_block](size_t row, size_t column, FieldRef & field)
-            {
-                field = {index_block.get(), row, column};
-            };
-        }
-        else
-        {
-            create_field_ref = [&index](size_t row, size_t column, FieldRef & field)
-            {
-                index[column]->get(row, field);
-            };
-        }
-
-        /// NOTE Creating temporary Field objects to pass to KeyCondition.
-        std::vector<FieldRef> index_left(used_key_size);
-        std::vector<FieldRef> index_right(used_key_size);
+        size_t steps = 0;
 
         while (!ranges_stack.empty())
         {
             MarkRange range = ranges_stack.back();
             ranges_stack.pop_back();
 
-            bool may_be_true;
-            if (range.end == marks_count && !has_final_mark)
-            {
-                for (size_t i = 0; i < used_key_size; ++i)
-                    create_field_ref(range.begin, i, index_left[i]);
+            steps++;
 
-                may_be_true = key_condition.mayBeTrueAfter(
-                    used_key_size, index_left.data(), primary_key.data_types);
-            }
-            else
-            {
-                if (has_final_mark && range.end == marks_count)
-                    range.end -= 1; /// Remove final empty mark. It's useful only for primary key condition.
-
-                for (size_t i = 0; i < used_key_size; ++i)
-                {
-                    create_field_ref(range.begin, i, index_left[i]);
-                    create_field_ref(range.end, i, index_right[i]);
-                }
-
-                may_be_true = key_condition.mayBeTrueInRange(
-                    used_key_size, index_left.data(), index_right.data(), primary_key.data_types);
-            }
-
-            if (!may_be_true)
+            if (!may_be_true_in_range(range))
                 continue;
 
             if (range.end == range.begin + 1)
@@ -1406,6 +1418,76 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 ranges_stack.emplace_back(range.begin, end);
             }
         }
+
+        LOG_TRACE(log, "Used generic exclusion search over index for part {} with {} steps", part->name, steps);
+    }
+    else
+    {
+        // Do inclusion search, where we only look for one range
+
+        size_t steps = 0;
+
+        auto find_leaf = [&](bool left) -> std::optional<size_t>
+        {
+            std::vector<MarkRange> stack = {};
+
+            MarkRange range = {0, marks_count};
+
+            steps++;
+
+            if (may_be_true_in_range(range))
+                stack.emplace_back(range.begin, range.end);
+
+            while (!stack.empty())
+            {
+                range = stack.back();
+                stack.pop_back();
+
+                if (range.end == range.begin + 1)
+                {
+                    if (left)
+                        return range.begin;
+                    else
+                        return range.end;
+                }
+                else
+                {
+                    std::vector<MarkRange> check_order = {};
+
+                    MarkRange left_range = {range.begin, (range.begin + range.end) / 2};
+                    MarkRange right_range = {(range.begin + range.end) / 2, range.end};
+
+                    if (left)
+                    {
+                        check_order.emplace_back(left_range.begin, left_range.end);
+                        check_order.emplace_back(right_range.begin, right_range.end);
+                    }
+                    else
+                    {
+                        check_order.emplace_back(right_range.begin, right_range.end);
+                        check_order.emplace_back(left_range.begin, left_range.end);
+                    }
+
+                    steps++;
+
+                    if (may_be_true_in_range(check_order[0]))
+                    {
+                        stack.emplace_back(check_order[0].begin, check_order[0].end);
+                        continue;
+                    }
+
+                    stack.emplace_back(check_order[1].begin, check_order[1].end);
+                }
+            }
+
+            return std::nullopt;
+        };
+
+        auto left_leaf = find_leaf(true);
+        if (left_leaf)
+            res.emplace_back(left_leaf.value(), find_leaf(false).value());
+
+        LOG_TRACE(log, "Used optimized inclusion search over index for part {} with {} steps", part->name, steps);
     }
 
     return res;
