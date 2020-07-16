@@ -4,8 +4,9 @@
 # This script deploys ClickHouse website to your personal test subdomain.
 #
 # Before first use of this script:
-# 1) Create https://github.com/GIT_USER/clickhouse.github.io repo (replace GIT_USER with your GitHub login)
-# 2) Send email on address from https://clickhouse.tech/#contacts asking to create GIT_USER-test.clickhouse.tech domain
+# 1) Set up building documentation according to https://github.com/ClickHouse/ClickHouse/tree/master/docs/tools
+# 2) Create https://github.com/GIT_USER/clickhouse.github.io repo (replace GIT_USER with your GitHub login)
+# 3) Send email on address from https://clickhouse.tech/#contacts asking to create GIT_USER-test.clickhouse.tech domain
 #
 set -ex
 
