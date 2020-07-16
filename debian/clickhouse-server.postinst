@@ -130,7 +130,10 @@ Please fix this and reinstall this package." >&2
     fi
 
     # Ask for password for default user. But only if it was not specified in configuration.
-    if [ -n "$($(su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_USERS\" --key=users.default.password" 2>/dev/null; su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_USERS\" --key=users.default.password_sha256_hex" 2>/dev/null) ||: )" ]; then
+    PASSWORD_IN_USERS_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_USERS\" --key=users.default.password" 2>/dev/null ||:)
+    PASSWORD_SHA256_HEX_IN_USERS_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_USERS\" --key=users.default.password_sha256_hex" 2>/dev/null ||:)
+    
+    if [ -z "$PASSWORD_IN_USERS_CONFIG" -a -z "$PASSWORD_SHA256_HEX_IN_USERS_CONFIG" ]; then
 
         if [ -f /usr/share/debconf/confmodule ]; then
             db_get clickhouse-server/default-password
