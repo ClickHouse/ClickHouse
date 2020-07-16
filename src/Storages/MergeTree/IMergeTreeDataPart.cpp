@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/localBackup.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <common/JSON.h>
@@ -521,7 +522,18 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         if (require)
             throw Exception("No checksums.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        bytes_on_disk = calculateTotalSizeOnDisk(volume->getDisk(), getFullRelativePath());
+        /// If the checksums file is not present, calculate the checksums and write them to disk.
+        /// Check the data while we are at it.
+        LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
+        checksums = checkDataPart(shared_from_this(), false);
+        {
+            auto out = volume->getDisk()->writeFile(getFullRelativePath() + "checksums.txt.tmp", 4096);
+            checksums.write(*out);
+        }
+
+        volume->getDisk()->moveFile(getFullRelativePath() + "checksums.txt.tmp", getFullRelativePath() + "checksums.txt");
+
+        bytes_on_disk = checksums.getTotalSizeOnDisk();
     }
 }
 
