@@ -9,6 +9,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+/// Sort of a dictionary
 class IColumnUnique : public IColumn
 {
 public:
@@ -67,6 +68,20 @@ public:
 
     const char * getFamilyName() const override { return "ColumnUnique"; }
     TypeIndex getDataType() const override { return getNestedColumn()->getDataType(); }
+
+    /**
+     * Given some value (usually, of type @e ColumnType) @p value that is convertible to DB::StringRef, obtains its
+     * index in the DB::ColumnUnique::reverse_index hastable.
+     *
+     * @see DB::ReverseIndex
+     * @see DB::ColumnUnique
+     *
+     * The most common example uses https://clickhouse.tech/docs/en/sql-reference/data-types/lowcardinality/ columns.
+     * Consider data type @e LC(String). The inner type here is @e String which is more or less a contigous memory
+     * region, so it can be easily represented as a @e StringRef. So we pass that ref to this function and get its
+     * index in the dictionary, which can be used to operate with the indices column.
+     */
+    virtual inline UInt64 getIndexByValue(const StringRef& value) const = 0;
 
     void insert(const Field &) override
     {
