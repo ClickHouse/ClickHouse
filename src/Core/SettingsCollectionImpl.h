@@ -342,8 +342,8 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
     static void NAME##_setField(Derived & collection, const Field & value) { collection.NAME.set(value); } \
     static void NAME##_serialize(const Derived & collection, WriteBuffer & buf, SettingsBinaryFormat format) { collection.NAME.serialize(buf, format); } \
     static void NAME##_deserialize(Derived & collection, ReadBuffer & buf, SettingsBinaryFormat format) { collection.NAME.deserialize(buf, format); } \
-    static String NAME##_valueToString(const Field & value) { Setting##TYPE temp{DEFAULT}; temp.set(value); return temp.toString(); } \
-    static Field NAME##_valueToCorrespondingType(const Field & value) { Setting##TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); } \
+    static String NAME##_valueToString(const Field & value) { SettingField##TYPE temp{DEFAULT}; temp.set(value); return temp.toString(); } \
+    static Field NAME##_valueToCorrespondingType(const Field & value) { SettingField##TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); } \
 
 
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
