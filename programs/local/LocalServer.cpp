@@ -20,7 +20,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
-#include <Common/SettingsChanges.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>

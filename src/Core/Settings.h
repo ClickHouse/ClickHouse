@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/SettingsCollection.h>
+#include <Core/SettingsEnums.h>
 #include <Core/Defines.h>
 
 

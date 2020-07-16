@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/MultipleAccessStorage.h>
-#include <Poco/AutoPtr.h>
+#include <Common/SettingsChanges.h>
 #include <boost/container/flat_set.hpp>
 #include <memory>
 

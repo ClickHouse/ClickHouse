@@ -20,6 +20,8 @@ SRCS(
     NamesAndTypes.cpp
     Settings.cpp
     SettingsCollection.cpp
+    SettingsEnums.cpp
+    SettingsFields.cpp
     SortDescription.cpp
 )
 
