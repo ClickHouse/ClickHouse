@@ -19,63 +19,68 @@ namespace DB
 namespace
 {
 
-void transformTwoStringsIntoEnum(ASTFunction & function_if_node)
+/// @note We place strings in ascending order here under the assumption it colud speed up String to Enum conversion.
+String makeStringsEnum(const std::set<String> & values)
 {
-    String first_literal = function_if_node.arguments->children[1]->as<ASTLiteral>()->value.get<NearestFieldType<String>>();
-    String second_literal = function_if_node.arguments->children[2]->as<ASTLiteral>()->value.get<NearestFieldType<String>>();
-    String enum_result;
-    if (first_literal.compare(second_literal) < 0)
-    {
-        enum_result = "Enum8(\'" + first_literal + "\' = 1, \'" + second_literal + "\' = 2)";
-    }
-    else
-    {
-        enum_result = "Enum8(\'" + second_literal + "\' = 1, \'" + first_literal + "\' = 2)";
-    }
-
-    auto enum_arg = std::make_shared<ASTLiteral>(enum_result);
-
-    auto first_cast = makeASTFunction("CAST");
-    first_cast->arguments->children.push_back(function_if_node.arguments->children[1]);
-    first_cast->arguments->children.push_back(enum_arg);
-
-    auto second_cast = makeASTFunction("CAST");
-    second_cast->arguments->children.push_back(function_if_node.arguments->children[2]);
-    second_cast->arguments->children.push_back(enum_arg);
-
-    function_if_node.arguments->children[1] = first_cast;
-    function_if_node.arguments->children[2] = second_cast;
-}
-
-String enumForArray(const Array & arr, const Field & other)
-{
-    String str_enum = "Enum8(";
-    if (arr.size() >= 255)
-        str_enum = "Enum16(";
+    String enum_string = "Enum8(";
+    if (values.size() >= 255)
+        enum_string = "Enum16(";
 
     size_t number = 1;
-    for (const auto & item : arr)
+    for (const auto & item : values)
     {
-        str_enum += "\'" + item.get<NearestFieldType<String>>() + "\' = " + std::to_string(number++) + ", ";
+        enum_string += "\'" + item + "\' = " + std::to_string(number++);
+
+        if (number <= values.size())
+            enum_string += ", ";
     }
 
-    str_enum += "\'" + other.get<NearestFieldType<String>>() + "\' = " + std::to_string(number) + ")";
-    return str_enum;
+    enum_string += ")";
+    return enum_string;
 }
 
-void transformStringsArrayIntoEnum(ASTPtr & array_to, ASTPtr & other)
+void changeIfArguments(ASTPtr & first, ASTPtr & second)
 {
-    String enum_result = enumForArray(array_to->as<ASTLiteral>()->value.get<NearestFieldType<Array>>(),
-                                      other->as<ASTLiteral>()->value);
+    String first_value = first->as<ASTLiteral>()->value.get<NearestFieldType<String>>();
+    String second_value = second->as<ASTLiteral>()->value.get<NearestFieldType<String>>();
+
+    std::set<String> values;
+    values.insert(first_value);
+    values.insert(second_value);
+
+    String enum_string = makeStringsEnum(values);
+    auto enum_literal = std::make_shared<ASTLiteral>(enum_string);
+
+    auto first_cast = makeASTFunction("CAST");
+    first_cast->arguments->children.push_back(first);
+    first_cast->arguments->children.push_back(enum_literal);
+
+    auto second_cast = makeASTFunction("CAST");
+    second_cast->arguments->children.push_back(second);
+    second_cast->arguments->children.push_back(enum_literal);
+
+    first = first_cast;
+    second = second_cast;
+}
+
+void changeTransformArguments(ASTPtr & array_to, ASTPtr & other)
+{
+    std::set<String> values;
+
+    for (const auto & item : array_to->as<ASTLiteral>()->value.get<NearestFieldType<Array>>())
+        values.insert(item.get<NearestFieldType<String>>());
+    values.insert(other->as<ASTLiteral>()->value.get<NearestFieldType<String>>());
+
+    String enum_string = makeStringsEnum(values);
 
     auto array_cast = makeASTFunction("CAST");
     array_cast->arguments->children.push_back(array_to);
-    array_cast->arguments->children.push_back(std::make_shared<ASTLiteral>("Array(" + enum_result + ")"));
+    array_cast->arguments->children.push_back(std::make_shared<ASTLiteral>("Array(" + enum_string + ")"));
     array_to = array_cast;
 
     auto other_cast = makeASTFunction("CAST");
     other_cast->arguments->children.push_back(other);
-    other_cast->arguments->children.push_back(std::make_shared<ASTLiteral>(enum_result));
+    other_cast->arguments->children.push_back(std::make_shared<ASTLiteral>(enum_string));
     other = other_cast;
 }
 
@@ -186,7 +191,6 @@ struct FindingIfWithStringsMatcher
 
             auto literal1 = function_node.arguments->children[1]->as<ASTLiteral>();
             auto literal2 = function_node.arguments->children[2]->as<ASTLiteral>();
-
             if (!literal1 || !literal2)
                 return;
 
@@ -197,42 +201,33 @@ struct FindingIfWithStringsMatcher
             if (data.aliases.count(function_node.tryGetAlias()))
                 return;
 
-            transformTwoStringsIntoEnum(function_node);
+            changeIfArguments(function_node.arguments->children[1],
+                              function_node.arguments->children[2]);
         }
         else if (function_node.name == "transform")
         {
             if (function_node.arguments->children.size() != 4)
                 return;
 
-            auto literal_from = function_node.arguments->children[1]->as<ASTLiteral>();
             auto literal_to = function_node.arguments->children[2]->as<ASTLiteral>();
             auto literal_other = function_node.arguments->children[3]->as<ASTLiteral>();
-
-            if (!literal_from || !literal_to || !literal_other)
+            if (!literal_to || !literal_other)
                 return;
 
-            if (String(literal_from->value.getTypeName()) != "Array" ||
-                String(literal_to->value.getTypeName()) != "Array" ||
+            if (String(literal_to->value.getTypeName()) != "Array" ||
                 String(literal_other->value.getTypeName()) != "String")
                 return;
 
-            Array array_from = literal_from->value.get<NearestFieldType<Array>>();
             Array array_to = literal_to->value.get<NearestFieldType<Array>>();
-
-            if (array_from.size() == 0 || array_from.size() != array_to.size())
-                return;
-
-            bool from_strings = checkSameType(array_from, "String");
-            if (from_strings)
+            if (array_to.size() == 0)
                 return;
 
             bool to_strings = checkSameType(array_to, "String");
             if (!to_strings)
                 return;
 
-            transformStringsArrayIntoEnum(
-                function_node.arguments->children[2],
-                function_node.arguments->children[3]);
+            changeTransformArguments(function_node.arguments->children[2],
+                                     function_node.arguments->children[3]);
         }
     }
 };

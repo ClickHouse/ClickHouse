@@ -1125,7 +1125,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         /// If function "if" has String-type arguments, transform them into enum
         if (settings.optimize_if_transform_strings_to_enum)
-            TransformIfStringsIntoEnum(query); // TODO: disable distributed - change types of columns
+            TransformIfStringsIntoEnum(query);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
