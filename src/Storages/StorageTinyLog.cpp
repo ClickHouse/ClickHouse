@@ -118,15 +118,10 @@ public:
     {
         try
         {
-            LOG_TRACE(storage.log, "Done: {}\n", done);
-
             if (!done)
             {
                 /// Rollback partial writes.
                 streams.clear();
-
-                LOG_TRACE(storage.log, "Repairing");
-
                 storage.file_checker.repair();
             }
         }

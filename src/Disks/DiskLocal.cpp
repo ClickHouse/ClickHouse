@@ -264,7 +264,7 @@ void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
 
 void DiskLocal::truncateFile(const String & path, size_t size)
 {
-    int res = truncate(path.c_str(), size);
+    int res = truncate((disk_path + path).c_str(), size);
     if (-1 == res)
         throwFromErrnoWithPath("Cannot truncate file " + path, path, ErrorCodes::CANNOT_TRUNCATE_FILE);
 }
