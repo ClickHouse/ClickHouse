@@ -31,7 +31,7 @@
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
-#include <Interpreters/IfWithStringsVisitor.h>
+#include <Interpreters/ConvertStringsToEnumVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -692,15 +692,16 @@ void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const Context & contex
     RemoveInjectiveFunctionsVisitor(data).visit(query);
 }
 
-void TransformIfStringsIntoEnum(ASTPtr & query)
+void transformIfStringsIntoEnum(ASTPtr & query)
 {
-    std::unordered_set<String> if_functions_as_aliases_inside_functions;
+    std::unordered_set<String> function_names = {"if", "transform"};
+    std::unordered_set<String> used_as_argument;
 
-    FunctionOfAliasesVisitor::Data alias_data{if_functions_as_aliases_inside_functions};
-    FunctionOfAliasesVisitor(alias_data).visit(query);
+    FindUsedFunctionsVisitor::Data used_data{function_names, used_as_argument};
+    FindUsedFunctionsVisitor(used_data).visit(query);
 
-    FindingIfWithStringsVisitor::Data skip_alias_data{if_functions_as_aliases_inside_functions};
-    FindingIfWithStringsVisitor(skip_alias_data).visit(query);
+    ConvertStringsToEnumVisitor::Data convert_data{used_as_argument};
+    ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
@@ -1125,7 +1126,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         /// If function "if" has String-type arguments, transform them into enum
         if (settings.optimize_if_transform_strings_to_enum)
-            TransformIfStringsIntoEnum(query);
+            transformIfStringsIntoEnum(query);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);

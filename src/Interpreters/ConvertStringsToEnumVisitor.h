@@ -94,48 +94,15 @@ bool checkSameType(const Array & array, const String & type)
 
 }
 
-
-struct GettingFunctionArgumentsAliasesMatcher
+struct FindUsedFunctionsMatcher
 {
+    using Visitor = ConstInDepthNodeVisitor<FindUsedFunctionsMatcher, true>;
+
     struct Data
     {
-        std::unordered_set<String> & aliases_inside_functions;
-    };
-
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
-    {
-        if (auto func = node->as<ASTFunction>())
-            if (func->name == "if")
-                return false;
-        return true;
-    }
-
-    static void visit(const ASTPtr & ast, Data & data)
-    {
-        if (auto * func = ast->as<ASTFunction>())
-            visit(*func, data);
-    }
-
-    static void visit(const ASTFunction & func, Data & data)
-    {
-        if (func.name == "if")
-        {
-            String alias = func.tryGetAlias();
-            if (!alias.empty())
-            {
-                data.aliases_inside_functions.insert(alias);
-            }
-        }
-    }
-};
-
-using GettingFunctionArgumentsAliasesVisitor = ConstInDepthNodeVisitor<GettingFunctionArgumentsAliasesMatcher, true>;
-
-struct FunctionOfAliasesMatcher
-{
-    struct Data
-    {
-        std::unordered_set<String> & aliases_inside_functions;
+        const std::unordered_set<String> & names;
+        std::unordered_set<String> & used_functions;
+        std::vector<String> call_stack = {};
     };
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
@@ -149,23 +116,33 @@ struct FunctionOfAliasesMatcher
             visit(*func, data);
     }
 
-    static void visit(const ASTFunction & function_node, Data & data)
+    static void visit(const ASTFunction & func, Data & data)
     {
-        if (function_node.name != "if")
+        if (data.names.count(func.name) && !data.call_stack.empty())
         {
-            GettingFunctionArgumentsAliasesVisitor::Data aliases_data{data.aliases_inside_functions};
-            GettingFunctionArgumentsAliasesVisitor(aliases_data).visit(function_node.arguments);
+            String alias = func.tryGetAlias();
+            if (!alias.empty())
+            {
+                data.used_functions.insert(alias);
+            }
         }
+
+        data.call_stack.push_back(func.name);
+
+        /// Visit children with known call stack
+        Visitor(data).visit(func.arguments);
+
+        data.call_stack.pop_back();
     }
 };
 
-using FunctionOfAliasesVisitor = ConstInDepthNodeVisitor<FunctionOfAliasesMatcher, true>;
+using FindUsedFunctionsVisitor = FindUsedFunctionsMatcher::Visitor;
 
-struct FindingIfWithStringsMatcher
+struct ConvertStringsToEnumMatcher
 {
     struct Data
     {
-        std::unordered_set<String> & aliases; /// if functions as aliases inside functions
+        std::unordered_set<String> & used_functions;
     };
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
@@ -184,6 +161,11 @@ struct FindingIfWithStringsMatcher
         if (!function_node.arguments)
             return;
 
+        /// We are not sure we could change the type of function result
+        /// cause it is present in other fucntion as argument
+        if (data.used_functions.count(function_node.tryGetAlias()))
+            return;
+
         if (function_node.name == "if")
         {
             if (function_node.arguments->children.size() != 2)
@@ -196,9 +178,6 @@ struct FindingIfWithStringsMatcher
 
             if (String(literal1->value.getTypeName()) != "String" ||
                 String(literal2->value.getTypeName()) != "String")
-                return;
-
-            if (data.aliases.count(function_node.tryGetAlias()))
                 return;
 
             changeIfArguments(function_node.arguments->children[1],
@@ -232,6 +211,6 @@ struct FindingIfWithStringsMatcher
     }
 };
 
-using FindingIfWithStringsVisitor = InDepthNodeVisitor<FindingIfWithStringsMatcher, true>;
+using ConvertStringsToEnumVisitor = InDepthNodeVisitor<ConvertStringsToEnumMatcher, true>;
 
 }
