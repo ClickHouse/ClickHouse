@@ -1262,4 +1262,15 @@ Possible values:
 
 Default value: 16.
 
+## validate\_polygons {#validate_polygons}
+
+Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
+
+Possible values:
+
+- 0 — Throwing an exception is disabled. `pointInPolygon` accepts invalid polygons and returns possibly incorrect results for them.
+- 1 — Throwing an exception is enabled.
+
+Default value: 1.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
