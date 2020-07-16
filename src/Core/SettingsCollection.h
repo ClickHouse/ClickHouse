@@ -28,15 +28,15 @@ enum class SettingsBinaryFormat;
   */
 
 template <typename Type>
-struct SettingNumber
+struct SettingFieldNumber
 {
     Type value;
     bool changed = false;
 
-    SettingNumber(Type x = 0) : value(x) {}
+    SettingFieldNumber(Type x = 0) : value(x) {}
 
     operator Type() const { return value; }
-    SettingNumber & operator= (Type x) { set(x); return *this; }
+    SettingFieldNumber & operator= (Type x) { set(x); return *this; }
 
     /// Serialize to a test string.
     String toString() const;
@@ -59,26 +59,26 @@ struct SettingNumber
     void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 };
 
-using SettingUInt64 = SettingNumber<UInt64>;
-using SettingInt64 = SettingNumber<Int64>;
-using SettingFloat = SettingNumber<float>;
-using SettingBool = SettingNumber<bool>;
+using SettingFieldUInt64 = SettingFieldNumber<UInt64>;
+using SettingFieldInt64 = SettingFieldNumber<Int64>;
+using SettingFieldFloat = SettingFieldNumber<float>;
+using SettingFieldBool = SettingFieldNumber<bool>;
 
 
 /** Unlike SettingUInt64, supports the value of 'auto' - the number of processor cores without taking into account SMT.
   * A value of 0 is also treated as auto.
   * When serializing, `auto` is written in the same way as 0.
   */
-struct SettingMaxThreads
+struct SettingFieldMaxThreads
 {
     UInt64 value;
     bool is_auto;
     bool changed = false;
 
-    SettingMaxThreads(UInt64 x = 0) : value(x ? x : getAutoValue()), is_auto(x == 0) {}
+    SettingFieldMaxThreads(UInt64 x = 0) : value(x ? x : getAutoValue()), is_auto(x == 0) {}
 
     operator UInt64() const { return value; }
-    SettingMaxThreads & operator= (UInt64 x) { set(x); return *this; }
+    SettingFieldMaxThreads & operator= (UInt64 x) { set(x); return *this; }
 
     String toString() const;
     Field toField() const;
@@ -95,24 +95,24 @@ struct SettingMaxThreads
 };
 
 
-enum class SettingTimespanIO { MILLISECOND, SECOND };
+enum class SettingFieldTimespanIO { MILLISECOND, SECOND };
 
-template <SettingTimespanIO io_unit>
-struct SettingTimespan
+template <SettingFieldTimespanIO io_unit>
+struct SettingFieldTimespan
 {
     Poco::Timespan value;
     bool changed = false;
 
-    SettingTimespan(UInt64 x = 0) : value(x * microseconds_per_io_unit) {}
+    SettingFieldTimespan(UInt64 x = 0) : value(x * microseconds_per_io_unit) {}
 
     operator Poco::Timespan() const { return value; }
-    SettingTimespan & operator=(const Poco::Timespan & x) { set(x); return *this; }
+    SettingFieldTimespan & operator=(const Poco::Timespan & x) { set(x); return *this; }
 
     template <class Rep, class Period = std::ratio<1>>
     operator std::chrono::duration<Rep, Period>() const { return std::chrono::duration_cast<std::chrono::duration<Rep, Period>>(std::chrono::microseconds(value.totalMicroseconds())); }
 
     template <class Rep, class Period = std::ratio<1>>
-    SettingTimespan & operator=(const std::chrono::duration<Rep, Period> & x) { set(x); return *this; }
+    SettingFieldTimespan & operator=(const std::chrono::duration<Rep, Period> & x) { set(x); return *this; }
 
     Poco::Timespan::TimeDiff totalSeconds() const { return value.totalSeconds(); }
     Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
@@ -132,22 +132,22 @@ struct SettingTimespan
     void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
     void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 
-    static constexpr UInt64 microseconds_per_io_unit = (io_unit == SettingTimespanIO::MILLISECOND) ? 1000 : 1000000;
+    static constexpr UInt64 microseconds_per_io_unit = (io_unit == SettingFieldTimespanIO::MILLISECOND) ? 1000 : 1000000;
 };
 
-using SettingSeconds = SettingTimespan<SettingTimespanIO::SECOND>;
-using SettingMilliseconds = SettingTimespan<SettingTimespanIO::MILLISECOND>;
+using SettingFieldSeconds = SettingFieldTimespan<SettingFieldTimespanIO::SECOND>;
+using SettingFieldMilliseconds = SettingFieldTimespan<SettingFieldTimespanIO::MILLISECOND>;
 
 
-struct SettingString
+struct SettingFieldString
 {
     String value;
     bool changed = false;
 
-    SettingString(const String & x = String{}) : value(x) {}
+    SettingFieldString(const String & x = String{}) : value(x) {}
 
     operator String() const { return value; }
-    SettingString & operator= (const String & x) { set(x); return *this; }
+    SettingFieldString & operator= (const String & x) { set(x); return *this; }
 
     String toString() const;
     Field toField() const;
@@ -160,16 +160,16 @@ struct SettingString
 };
 
 
-struct SettingChar
+struct SettingFieldChar
 {
 public:
     char value;
     bool changed = false;
 
-    SettingChar(char x = '\0') : value(x) {}
+    SettingFieldChar(char x = '\0') : value(x) {}
 
     operator char() const { return value; }
-    SettingChar & operator= (char x) { set(x); return *this; }
+    SettingFieldChar & operator= (char x) { set(x); return *this; }
 
     String toString() const;
     Field toField() const;
@@ -185,15 +185,15 @@ public:
 
 /// Template class to define enum-based settings.
 template <typename EnumType, typename Tag = void>
-struct SettingEnum
+struct SettingFieldEnum
 {
     EnumType value;
     bool changed = false;
 
-    SettingEnum(EnumType x) : value(x) {}
+    SettingFieldEnum(EnumType x) : value(x) {}
 
     operator EnumType() const { return value; }
-    SettingEnum & operator= (EnumType x) { set(x); return *this; }
+    SettingFieldEnum & operator= (EnumType x) { set(x); return *this; }
 
     String toString() const;
     Field toField() const;
@@ -206,15 +206,15 @@ struct SettingEnum
     void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 };
 
-struct SettingURI
+struct SettingFieldURI
 {
     Poco::URI value;
     bool changed = false;
 
-    SettingURI(const Poco::URI & x = Poco::URI{}) : value(x) {}
+    SettingFieldURI(const Poco::URI & x = Poco::URI{}) : value(x) {}
 
     operator Poco::URI() const { return value; }
-    SettingURI & operator= (const Poco::URI & x) { set(x); return *this; }
+    SettingFieldURI & operator= (const Poco::URI & x) { set(x); return *this; }
 
     String toString() const;
     Field toField() const;
@@ -243,7 +243,7 @@ enum class LoadBalancing
     // round robin across replicas with the same number of errors.
     ROUND_ROBIN,
 };
-using SettingLoadBalancing = SettingEnum<LoadBalancing>;
+using SettingFieldLoadBalancing = SettingFieldEnum<LoadBalancing>;
 
 
 enum class JoinStrictness
@@ -252,7 +252,7 @@ enum class JoinStrictness
     ALL, /// Query JOIN without strictness -> ALL JOIN ...
     ANY, /// Query JOIN without strictness -> ANY JOIN ...
 };
-using SettingJoinStrictness = SettingEnum<JoinStrictness>;
+using SettingFieldJoinStrictness = SettingFieldEnum<JoinStrictness>;
 
 enum class JoinAlgorithm
 {
@@ -261,7 +261,7 @@ enum class JoinAlgorithm
     PARTIAL_MERGE,
     PREFER_PARTIAL_MERGE,
 };
-using SettingJoinAlgorithm = SettingEnum<JoinAlgorithm>;
+using SettingFieldJoinAlgorithm = SettingFieldEnum<JoinAlgorithm>;
 
 
 enum class SpecialSort
@@ -269,7 +269,7 @@ enum class SpecialSort
     NOT_SPECIFIED = 0,
     OPENCL_BITONIC,
 };
-using SettingSpecialSort = SettingEnum<SpecialSort>;
+using SettingFieldSpecialSort = SettingFieldEnum<SpecialSort>;
 
 
 /// Which rows should be included in TOTALS.
@@ -283,15 +283,15 @@ enum class TotalsMode
     AFTER_HAVING_EXCLUSIVE    = 2, /// Include only the rows that passed and max_rows_to_group_by, and HAVING.
     AFTER_HAVING_AUTO         = 3, /// Automatically select between INCLUSIVE and EXCLUSIVE,
 };
-using SettingTotalsMode = SettingEnum<TotalsMode>;
+using SettingFieldTotalsMode = SettingFieldEnum<TotalsMode>;
 
 
 /// The settings keeps OverflowMode which cannot be OverflowMode::ANY.
-using SettingOverflowMode = SettingEnum<OverflowMode>;
-struct SettingOverflowModeGroupByTag;
+using SettingFieldOverflowMode = SettingFieldEnum<OverflowMode>;
+struct SettingFieldOverflowModeGroupByTag;
 
 /// The settings keeps OverflowMode which can be OverflowMode::ANY.
-using SettingOverflowModeGroupBy = SettingEnum<OverflowMode, SettingOverflowModeGroupByTag>;
+using SettingFieldOverflowModeGroupBy = SettingFieldEnum<OverflowMode, SettingFieldOverflowModeGroupByTag>;
 
 
 /// The setting for executing distributed subqueries inside IN or JOIN sections.
@@ -302,10 +302,10 @@ enum class DistributedProductMode
     GLOBAL,      /// Convert to global query
     ALLOW        /// Enable
 };
-using SettingDistributedProductMode = SettingEnum<DistributedProductMode>;
+using SettingFieldDistributedProductMode = SettingFieldEnum<DistributedProductMode>;
 
 
-using SettingDateTimeInputFormat = SettingEnum<FormatSettings::DateTimeInputFormat>;
+using SettingFieldDateTimeInputFormat = SettingFieldEnum<FormatSettings::DateTimeInputFormat>;
 
 
 enum class LogsLevel
@@ -318,14 +318,14 @@ enum class LogsLevel
     debug,
     trace,
 };
-using SettingLogsLevel = SettingEnum<LogsLevel>;
+using SettingFieldLogsLevel = SettingFieldEnum<LogsLevel>;
 
 enum class DefaultDatabaseEngine
 {
     Ordinary,
     Atomic,
 };
-using SettingDefaultDatabaseEngine = SettingEnum<DefaultDatabaseEngine>;
+using SettingFieldDefaultDatabaseEngine = SettingFieldEnum<DefaultDatabaseEngine>;
 
 // Make it signed for compatibility with DataTypeEnum8
 enum QueryLogElementType : int8_t
@@ -335,7 +335,7 @@ enum QueryLogElementType : int8_t
     EXCEPTION_BEFORE_START = 3,
     EXCEPTION_WHILE_PROCESSING = 4,
 };
-using SettingLogQueriesType = SettingEnum<QueryLogElementType>;
+using SettingFieldLogQueriesType = SettingFieldEnum<QueryLogElementType>;
 
 
 enum class SettingsBinaryFormat
@@ -586,5 +586,5 @@ public:
     LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_)
 
 #define DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
-    Setting##TYPE NAME {DEFAULT};
+    SettingField##TYPE NAME {DEFAULT};
 }

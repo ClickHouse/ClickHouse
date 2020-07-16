@@ -27,26 +27,26 @@ namespace ErrorCodes
 
 
 template <typename Type>
-String SettingNumber<Type>::toString() const
+String SettingFieldNumber<Type>::toString() const
 {
     return DB::toString(value);
 }
 
 template <typename Type>
-Field SettingNumber<Type>::toField() const
+Field SettingFieldNumber<Type>::toField() const
 {
     return value;
 }
 
 template <typename Type>
-void SettingNumber<Type>::set(Type x)
+void SettingFieldNumber<Type>::set(Type x)
 {
     value = x;
     changed = true;
 }
 
 template <typename Type>
-void SettingNumber<Type>::set(const Field & x)
+void SettingFieldNumber<Type>::set(const Field & x)
 {
     if (x.getType() == Field::Types::String)
         set(get<const String &>(x));
@@ -55,13 +55,13 @@ void SettingNumber<Type>::set(const Field & x)
 }
 
 template <typename Type>
-void SettingNumber<Type>::set(const String & x)
+void SettingFieldNumber<Type>::set(const String & x)
 {
     set(parseWithSizeSuffix<Type>(x));
 }
 
 template <>
-void SettingNumber<bool>::set(const String & x)
+void SettingFieldNumber<bool>::set(const String & x)
 {
     if (x.size() == 1)
     {
@@ -85,7 +85,7 @@ void SettingNumber<bool>::set(const String & x)
 }
 
 template <typename Type>
-void SettingNumber<Type>::serialize(WriteBuffer & buf, SettingsBinaryFormat format) const
+void SettingFieldNumber<Type>::serialize(WriteBuffer & buf, SettingsBinaryFormat format) const
 {
     if (format >= SettingsBinaryFormat::STRINGS)
     {
@@ -105,7 +105,7 @@ void SettingNumber<Type>::serialize(WriteBuffer & buf, SettingsBinaryFormat form
 }
 
 template <typename Type>
-void SettingNumber<Type>::deserialize(ReadBuffer & buf, SettingsBinaryFormat format)
+void SettingFieldNumber<Type>::deserialize(ReadBuffer & buf, SettingsBinaryFormat format)
 {
     if (format >= SettingsBinaryFormat::STRINGS)
     {
@@ -136,31 +136,31 @@ void SettingNumber<Type>::deserialize(ReadBuffer & buf, SettingsBinaryFormat for
     }
 }
 
-template struct SettingNumber<UInt64>;
-template struct SettingNumber<Int64>;
-template struct SettingNumber<float>;
-template struct SettingNumber<bool>;
+template struct SettingFieldNumber<UInt64>;
+template struct SettingFieldNumber<Int64>;
+template struct SettingFieldNumber<float>;
+template struct SettingFieldNumber<bool>;
 
 
-String SettingMaxThreads::toString() const
+String SettingFieldMaxThreads::toString() const
 {
     /// Instead of the `auto` value, we output the actual value to make it easier to see.
     return is_auto ? ("auto(" + DB::toString(value) + ")") : DB::toString(value);
 }
 
-Field SettingMaxThreads::toField() const
+Field SettingFieldMaxThreads::toField() const
 {
     return is_auto ? 0 : value;
 }
 
-void SettingMaxThreads::set(UInt64 x)
+void SettingFieldMaxThreads::set(UInt64 x)
 {
     value = x ? x : getAutoValue();
     is_auto = x == 0;
     changed = true;
 }
 
-void SettingMaxThreads::set(const Field & x)
+void SettingFieldMaxThreads::set(const Field & x)
 {
     if (x.getType() == Field::Types::String)
         set(get<const String &>(x));
@@ -168,7 +168,7 @@ void SettingMaxThreads::set(const Field & x)
         set(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), x));
 }
 
-void SettingMaxThreads::set(const String & x)
+void SettingFieldMaxThreads::set(const String & x)
 {
     if (startsWith(x, "auto"))
         setAuto();
@@ -176,7 +176,7 @@ void SettingMaxThreads::set(const String & x)
         set(parse<UInt64>(x));
 }
 
-void SettingMaxThreads::serialize(WriteBuffer & buf, SettingsBinaryFormat format) const
+void SettingFieldMaxThreads::serialize(WriteBuffer & buf, SettingsBinaryFormat format) const
 {
     if (format >= SettingsBinaryFormat::STRINGS)
     {
@@ -187,7 +187,7 @@ void SettingMaxThreads::serialize(WriteBuffer & buf, SettingsBinaryFormat format
     writeVarUInt(is_auto ? 0 : value, buf);
 }
 
-void SettingMaxThreads::deserialize(ReadBuffer & buf, SettingsBinaryFormat format)
+void SettingFieldMaxThreads::deserialize(ReadBuffer & buf, SettingsBinaryFormat format)
 {
     if (format >= SettingsBinaryFormat::STRINGS)
     {
@@ -202,45 +202,45 @@ void SettingMaxThreads::deserialize(ReadBuffer & buf, SettingsBinaryFormat forma
     set(x);
 }
 
-void SettingMaxThreads::setAuto()
+void SettingFieldMaxThreads::setAuto()
 {
     value = getAutoValue();
     is_auto = true;
 }
 
-UInt64 SettingMaxThreads::getAutoValue()
+UInt64 SettingFieldMaxThreads::getAutoValue()
 {
     return getNumberOfPhysicalCPUCores();
 }
 
 
-template <SettingTimespanIO io_unit>
-String SettingTimespan<io_unit>::toString() const
+template <SettingFieldTimespanIO io_unit>
+String SettingFieldTimespan<io_unit>::toString() const
 {
     return DB::toString(value.totalMicroseconds() / microseconds_per_io_unit);
 }
 
-template <SettingTimespanIO io_unit>
-Field SettingTimespan<io_unit>::toField() const
+template <SettingFieldTimespanIO io_unit>
+Field SettingFieldTimespan<io_unit>::toField() const
 {
     return value.totalMicroseconds() / microseconds_per_io_unit;
 }
 
-template <SettingTimespanIO io_unit>
-void SettingTimespan<io_unit>::set(const Poco::Timespan & x)
+template <SettingFieldTimespanIO io_unit>
+void SettingFieldTimespan<io_unit>::set(const Poco::Timespan & x)
 {
     value = x;
     changed = true;
 }
 
-template <SettingTimespanIO io_unit>
-void SettingTimespan<io_unit>::set(UInt64 x)
+template <SettingFieldTimespanIO io_unit>
+void SettingFieldTimespan<io_unit>::set(UInt64 x)
 {
     set(Poco::Timespan(x * microseconds_per_io_unit));
 }
 
-template <SettingTimespanIO io_unit>
-void SettingTimespan<io_unit>::set(const Field & x)
+template <SettingFieldTimespanIO io_unit>
+void SettingFieldTimespan<io_unit>::set(const Field & x)
 {
     if (x.getType() == Field::Types::String)
         set(get<const String &>(x));
@@ -248,14 +248,14 @@ void SettingTimespan<io_unit>::set(const Field & x)
         set(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), x));
 }
 
-template <SettingTimespanIO io_unit>
-void SettingTimespan<io_unit>::set(const String & x)
+template <SettingFieldTimespanIO io_unit>
+void SettingFieldTimespan<io_unit>::set(const String & x)
 {
     set(parse<UInt64>(x));
 }
 
-template <SettingTimespanIO io_unit>
-void SettingTimespan<io_unit>::serialize(WriteBuffer & buf, SettingsBinaryFormat format) const
+template <SettingFieldTimespanIO io_unit>
+void SettingFieldTimespan<io_unit>::serialize(WriteBuffer & buf, SettingsBinaryFormat format) const
 {
     if (format >= SettingsBinaryFormat::STRINGS)
     {
@@ -266,8 +266,8 @@ void SettingTimespan<io_unit>::serialize(WriteBuffer & buf, SettingsBinaryFormat
     writeVarUInt(value.totalMicroseconds() / microseconds_per_io_unit, buf);
 }
 
-template <SettingTimespanIO io_unit>
-void SettingTimespan<io_unit>::deserialize(ReadBuffer & buf, SettingsBinaryFormat format)
+template <SettingFieldTimespanIO io_unit>
+void SettingFieldTimespan<io_unit>::deserialize(ReadBuffer & buf, SettingsBinaryFormat format)
 {
     if (format >= SettingsBinaryFormat::STRINGS)
     {
@@ -282,37 +282,37 @@ void SettingTimespan<io_unit>::deserialize(ReadBuffer & buf, SettingsBinaryForma
     set(x);
 }
 
-template struct SettingTimespan<SettingTimespanIO::SECOND>;
-template struct SettingTimespan<SettingTimespanIO::MILLISECOND>;
+template struct SettingFieldTimespan<SettingFieldTimespanIO::SECOND>;
+template struct SettingFieldTimespan<SettingFieldTimespanIO::MILLISECOND>;
 
 
-String SettingString::toString() const
+String SettingFieldString::toString() const
 {
     return value;
 }
 
-Field SettingString::toField() const
+Field SettingFieldString::toField() const
 {
     return value;
 }
 
-void SettingString::set(const String & x)
+void SettingFieldString::set(const String & x)
 {
     value = x;
     changed = true;
 }
 
-void SettingString::set(const Field & x)
+void SettingFieldString::set(const Field & x)
 {
     set(safeGet<const String &>(x));
 }
 
-void SettingString::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
+void SettingFieldString::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
 {
     writeStringBinary(value, buf);
 }
 
-void SettingString::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
+void SettingFieldString::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
 {
     String s;
     readStringBinary(s, buf);
@@ -320,23 +320,23 @@ void SettingString::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
 }
 
 
-String SettingChar::toString() const
+String SettingFieldChar::toString() const
 {
     return String(1, value);
 }
 
-Field SettingChar::toField() const
+Field SettingFieldChar::toField() const
 {
     return toString();
 }
 
-void SettingChar::set(char x)
+void SettingFieldChar::set(char x)
 {
     value = x;
     changed = true;
 }
 
-void SettingChar::set(const String & x)
+void SettingFieldChar::set(const String & x)
 {
     if (x.size() > 1)
         throw Exception("A setting's value string has to be an exactly one character long", ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH);
@@ -344,18 +344,18 @@ void SettingChar::set(const String & x)
     set(c);
 }
 
-void SettingChar::set(const Field & x)
+void SettingFieldChar::set(const Field & x)
 {
     const String & s = safeGet<const String &>(x);
     set(s);
 }
 
-void SettingChar::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
+void SettingFieldChar::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
 {
     writeStringBinary(toString(), buf);
 }
 
-void SettingChar::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
+void SettingFieldChar::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
 {
     String s;
     readStringBinary(s, buf);
@@ -364,13 +364,13 @@ void SettingChar::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
 
 
 template <typename EnumType, typename Tag>
-void SettingEnum<EnumType, Tag>::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
+void SettingFieldEnum<EnumType, Tag>::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
 {
     writeStringBinary(toString(), buf);
 }
 
 template <typename EnumType, typename Tag>
-void SettingEnum<EnumType, Tag>::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
+void SettingFieldEnum<EnumType, Tag>::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
 {
     String s;
     readStringBinary(s, buf);
@@ -378,51 +378,51 @@ void SettingEnum<EnumType, Tag>::deserialize(ReadBuffer & buf, SettingsBinaryFor
 }
 
 template <typename EnumType, typename Tag>
-Field SettingEnum<EnumType, Tag>::toField() const
+Field SettingFieldEnum<EnumType, Tag>::toField() const
 {
     return toString();
 }
 
 template <typename EnumType, typename Tag>
-void SettingEnum<EnumType, Tag>::set(const Field & x)
+void SettingFieldEnum<EnumType, Tag>::set(const Field & x)
 {
     set(safeGet<const String &>(x));
 }
 
 
-String SettingURI::toString() const
+String SettingFieldURI::toString() const
 {
     return value.toString();
 }
 
-Field SettingURI::toField() const
+Field SettingFieldURI::toField() const
 {
     return value.toString();
 }
 
-void SettingURI::set(const Poco::URI & x)
+void SettingFieldURI::set(const Poco::URI & x)
 {
     value = x;
     changed = true;
 }
 
-void SettingURI::set(const Field & x)
+void SettingFieldURI::set(const Field & x)
 {
     const String & s = safeGet<const String &>(x);
     set(s);
 }
 
-void SettingURI::set(const String & x)
+void SettingFieldURI::set(const String & x)
 {
     set(Poco::URI(x));
 }
 
-void SettingURI::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
+void SettingFieldURI::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
 {
     writeStringBinary(toString(), buf);
 }
 
-void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
+void SettingFieldURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
 {
     String s;
     readStringBinary(s, buf);
@@ -435,7 +435,7 @@ void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
 
 #define IMPLEMENT_SETTING_ENUM_WITH_TAG(ENUM_NAME, TAG, LIST_OF_NAMES_MACRO, ERROR_CODE_FOR_UNEXPECTED_NAME) \
     template <> \
-    String SettingEnum<ENUM_NAME, TAG>::toString() const \
+    String SettingFieldEnum<ENUM_NAME, TAG>::toString() const \
     { \
         using EnumType = ENUM_NAME; \
         using UnderlyingType = std::underlying_type<EnumType>::type; \
@@ -447,7 +447,7 @@ void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
     } \
     \
     template <> \
-    void SettingEnum<ENUM_NAME, TAG>::set(const String & s) \
+    void SettingFieldEnum<ENUM_NAME, TAG>::set(const String & s) \
     { \
         using EnumType = ENUM_NAME; \
         LIST_OF_NAMES_MACRO(IMPLEMENT_SETTING_ENUM_FROM_STRING_HELPER_) \
@@ -458,7 +458,7 @@ void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
             ERROR_CODE_FOR_UNEXPECTED_NAME); \
     } \
     \
-    template struct SettingEnum<ENUM_NAME, TAG>;
+    template struct SettingFieldEnum<ENUM_NAME, TAG>;
 
 #define IMPLEMENT_SETTING_ENUM_TO_STRING_HELPER_(NAME, IO_NAME) \
     case static_cast<UnderlyingType>(EnumType::NAME): return IO_NAME;
@@ -522,7 +522,7 @@ IMPLEMENT_SETTING_ENUM(OverflowMode, OVERFLOW_MODE_LIST_OF_NAMES, ErrorCodes::UN
     M(THROW, "throw") \
     M(BREAK, "break") \
     M(ANY, "any")
-IMPLEMENT_SETTING_ENUM_WITH_TAG(OverflowMode, SettingOverflowModeGroupByTag, OVERFLOW_MODE_LIST_OF_NAMES_WITH_ANY, ErrorCodes::UNKNOWN_OVERFLOW_MODE)
+IMPLEMENT_SETTING_ENUM_WITH_TAG(OverflowMode, SettingFieldOverflowModeGroupByTag, OVERFLOW_MODE_LIST_OF_NAMES_WITH_ANY, ErrorCodes::UNKNOWN_OVERFLOW_MODE)
 
 
 #define DISTRIBUTED_PRODUCT_MODE_LIST_OF_NAMES(M) \
