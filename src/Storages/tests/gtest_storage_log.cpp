@@ -100,6 +100,7 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & cont
 
     BlockOutputStreamPtr out = table->write({}, metadata_snapshot, context);
     out->write(block);
+    out->writeSuffix();
 
     return data;
 }
@@ -115,7 +116,8 @@ std::string readData(DB::StoragePtr & table, const DB::Context & context)
 
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
-    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, metadata_snapshot, {}, context, stage, 8192, 1)[0]));
+    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(
+        std::move(table->read(column_names, metadata_snapshot, {}, context, stage, 8192, 1)[0]));
 
     Block sample;
     {
