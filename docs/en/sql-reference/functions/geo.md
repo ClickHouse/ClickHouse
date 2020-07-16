@@ -281,7 +281,7 @@ h3GetBaseCell(index)
 
 **Returned value**
 
--   Hexagon base cell number. 
+-   Hexagon base cell number.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
@@ -317,7 +317,7 @@ h3HexAreaM2(resolution)
 
 **Returned value**
 
--   Area in square meters. 
+-   Area in square meters.
 
 Type: [Float64](../../sql-reference/data-types/float.md).
 
@@ -392,7 +392,7 @@ h3ToChildren(index, resolution)
 
 **Returned values**
 
--   Array of the child H3-indexes. 
+-   Array of the child H3-indexes.
 
 Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
@@ -429,7 +429,7 @@ h3ToParent(index, resolution)
 
 **Returned value**
 
--   Parent H3 index. 
+-   Parent H3 index.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -463,7 +463,7 @@ h3ToString(index)
 
 **Returned value**
 
--   String representation of the H3 index. 
+-   String representation of the H3 index.
 
 Type: [String](../../sql-reference/data-types/string.md).
 

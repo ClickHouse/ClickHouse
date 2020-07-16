@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+class ExternalAuthenticators;
 
 /// Authentication type and encrypted password for checking when an user logins.
 class Authentication
@@ -37,6 +38,9 @@ public:
         /// SHA1(SHA1(password)).
         /// This kind of hash is used by the `mysql_native_password` authentication plugin.
         DOUBLE_SHA1_PASSWORD,
+
+        /// Password is checked by a [remote] LDAP server. Connection will be made at each authentication attempt.
+        LDAP_SERVER,
 
         MAX_TYPE,
     };
@@ -78,8 +82,14 @@ public:
     /// Allowed to use for Type::NO_PASSWORD, Type::PLAINTEXT_PASSWORD, Type::DOUBLE_SHA1_PASSWORD.
     Digest getPasswordDoubleSHA1() const;
 
+    /// Sets an external authentication server name.
+    /// When authentication type is LDAP_SERVER, server name is expected to be the name of a preconfigured LDAP server.
+    const String & getServerName() const;
+    void setServerName(const String & server_name_);
+
     /// Checks if the provided password is correct. Returns false if not.
-    bool isCorrectPassword(const String & password) const;
+    /// User name and external authenticators' info are used only by some specific authentication type (e.g., LDAP_SERVER).
+    bool isCorrectPassword(const String & password_, const String & user_, const ExternalAuthenticators & external_authenticators) const;
 
     friend bool operator ==(const Authentication & lhs, const Authentication & rhs) { return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash); }
     friend bool operator !=(const Authentication & lhs, const Authentication & rhs) { return !(lhs == rhs); }
@@ -93,6 +103,7 @@ private:
 
     Type type = Type::NO_PASSWORD;
     Digest password_hash;
+    String server_name;
 };
 
 
@@ -125,6 +136,11 @@ inline const Authentication::TypeInfo & Authentication::TypeInfo::get(Type type_
         case DOUBLE_SHA1_PASSWORD:
         {
             static const auto info = make_info("DOUBLE_SHA1_PASSWORD");
+            return info;
+        }
+        case LDAP_SERVER:
+        {
+            static const auto info = make_info("LDAP_SERVER");
             return info;
         }
         case MAX_TYPE: break;
@@ -176,6 +192,9 @@ inline void Authentication::setPassword(const String & password_)
         case DOUBLE_SHA1_PASSWORD:
             return setPasswordHashBinary(encodeDoubleSHA1(password_));
 
+        case LDAP_SERVER:
+            throw Exception("Cannot specify password for the 'LDAP_SERVER' authentication type", ErrorCodes::LOGICAL_ERROR);
+
         case MAX_TYPE: break;
     }
     throw Exception("setPassword(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
@@ -200,6 +219,8 @@ inline void Authentication::setPasswordHashHex(const String & hash)
 
 inline String Authentication::getPasswordHashHex() const
 {
+    if (type == LDAP_SERVER)
+        throw Exception("Cannot get password of a user with the 'LDAP_SERVER' authentication type", ErrorCodes::LOGICAL_ERROR);
     String hex;
     hex.resize(password_hash.size() * 2);
     boost::algorithm::hex(password_hash.begin(), password_hash.end(), hex.data());
@@ -242,9 +263,22 @@ inline void Authentication::setPasswordHashBinary(const Digest & hash)
             return;
         }
 
+        case LDAP_SERVER:
+            throw Exception("Cannot specify password for the 'LDAP_SERVER' authentication type", ErrorCodes::LOGICAL_ERROR);
+
         case MAX_TYPE: break;
     }
     throw Exception("setPasswordHashBinary(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+inline const String & Authentication::getServerName() const
+{
+    return server_name;
+}
+
+inline void Authentication::setServerName(const String & server_name_)
+{
+    server_name = server_name_;
 }
 
 }
