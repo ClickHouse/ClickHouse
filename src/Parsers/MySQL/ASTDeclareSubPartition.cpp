@@ -23,7 +23,7 @@ bool ParserDeclareSubPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (!p_identifier.parse(pos, logical_name, expected))
         return false;
 
-    if (!ParserDeclareOptions{
+    ParserDeclareOptions options_p{
         {
             OptionDescribe("ENGINE", "engine", std::make_shared<ParserIdentifier>()),
             OptionDescribe("STORAGE ENGINE", "engine", std::make_shared<ParserIdentifier>()),
@@ -34,15 +34,20 @@ bool ParserDeclareSubPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             OptionDescribe("MIN_ROWS", "min_rows", std::make_shared<ParserLiteral>()),
             OptionDescribe("TABLESPACE", "tablespace", std::make_shared<ParserIdentifier>()),
         }
-    }.parse(pos, options, expected))
-        return false;
+    };
+
+    /// Optional options
+    options_p.parse(pos, options, expected);
 
     auto subpartition_declare = std::make_shared<ASTDeclareSubPartition>();
     subpartition_declare->options = options;
     subpartition_declare->logical_name = logical_name->as<ASTIdentifier>()->name;
 
-    if (subpartition_declare->options)
+    if (options)
+    {
+        subpartition_declare->options = options;
         subpartition_declare->children.emplace_back(subpartition_declare->options);
+    }
 
     node = subpartition_declare;
     return true;

@@ -18,7 +18,7 @@ MySQLClient::MySQLClient(const String & host_, UInt16 port_, const String & user
 }
 
 MySQLClient::MySQLClient(MySQLClient && other)
-    : host(other.host), port(other.port), user(other.user), password(other.password)
+    : host(std::move(other.host)), port(other.port), user(std::move(other.user)), password(std::move(other.password))
     , client_capability_flags(other.client_capability_flags)
 {
 }
