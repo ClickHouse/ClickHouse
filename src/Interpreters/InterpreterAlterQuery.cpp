@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
 }
 
@@ -62,10 +61,6 @@ BlockIO InterpreterAlterQuery::execute()
             alter_commands.emplace_back(std::move(*alter_command));
         else if (auto partition_command = PartitionCommand::parse(command_ast))
         {
-            if (partition_command->type == PartitionCommand::DROP_DETACHED_PARTITION
-                && !context.getSettingsRef().allow_drop_detached)
-                throw DB::Exception("Cannot execute query: DROP DETACHED PART is disabled "
-                                    "(see allow_drop_detached setting)", ErrorCodes::SUPPORT_IS_DISABLED);
             partition_commands.emplace_back(std::move(*partition_command));
         }
         else if (auto mut_command = MutationCommand::parse(command_ast))
@@ -90,6 +85,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!partition_commands.empty())
     {
+        table->checkAlterPartitionIsPossible(partition_commands, metadata_snapshot, context.getSettingsRef());
         table->alterPartition(query_ptr, metadata_snapshot, partition_commands, context);
     }
 
