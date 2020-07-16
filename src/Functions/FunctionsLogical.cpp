@@ -222,7 +222,7 @@ struct ValueGetterBuilderImpl<>
     static TernaryValueGetter build(const IColumn * x)
     {
         throw Exception(
-                std::string("Unknown numeric column of type: ") + demangle(typeid(x).name()),
+                std::string("Unknown numeric column of type: ") + demangle(typeid(*x).name()),
                 ErrorCodes::LOGICAL_ERROR);
     }
 };
