@@ -118,14 +118,14 @@ public:
     {
         try
         {
-            std::cerr << "Done: " << done << "\n";
+            LOG_TRACE(storage.log, "Done: {}\n", done);
 
             if (!done)
             {
                 /// Rollback partial writes.
                 streams.clear();
 
-                std::cerr << "Repairing\n";
+                LOG_TRACE(storage.log, "Repairing");
 
                 storage.file_checker.repair();
             }
