@@ -224,7 +224,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         skip_sanity_checks = true;
         current_zookeeper->remove(replica_path + "/flags/force_restore_data");
 
-        LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag {}/flags/force_restore_data).", replica_path);
+        LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag {}/flags/force_restore_data).",
+                    replica_path);
     }
     else if (has_force_restore_data_flag)
     {
@@ -366,7 +367,8 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Replica could be inactive.
             if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
             {
-                LOG_WARNING(log, "Replica {} is not active during mutation. Mutation will be done asynchronously when replica becomes active.", replica);
+                LOG_WARNING(log, "Replica {} is not active during mutation. Mutation will be done asynchronously when replica becomes active.",
+                            replica);
 
                 inactive_replicas.emplace(replica);
                 break;
