@@ -8,11 +8,11 @@ tags: ['Android', 'benchmark', 'experiment']
 
 # Running ClickHouse on an Android phone
 
-This is a brief description of my experiments with building ClickHouse on Android. If this is your first time hearing about ClickHouse, it is a suriprisingly fast columnar SQL DBMS for real-time reporting. It's normally used in AdTech and the like, deployed on clusters of hundreds of machines, holding up to petabytes of data. But ClickHouse is straightforward to use on a smaller scale as well &mdash; you laptop will do, and don't be surprised if you are able to process several gigabytes of data per second on this hardware. There is another kind of small-scale, though pretty powerful, platforms, that is ubiquitous now &mdash; smartphones. The conclusion inevitably follows: you must be able to run ClickHouse on your smartphone as well. It's also that I can't help but chuckle at the idea of setting up a high performance mobile OLAP cluster using a dozen of phones. Or also at the idea of seeing the nostalgic `Segmentation fault (core dumped)` on the lovely OLED screen, but I digress. Let's get it going.
+This is a brief description of my experiments with building ClickHouse on Android. If this is your first time hearing about ClickHouse, it is a suriprisingly fast columnar SQL DBMS for real-time reporting. It's normally used in AdTech and the like, deployed on clusters of hundreds of machines, holding up to petabytes of data. But ClickHouse is straightforward to use on a smaller scale as well -- you laptop will do, and don't be surprised if you are able to process several gigabytes of data per second on this hardware. There is another kind of small-scale, though pretty powerful, platforms, that is ubiquitous now -- smartphones. The conclusion inevitably follows: you must be able to run ClickHouse on your smartphone as well. It's also that I can't help but chuckle at the idea of setting up a high performance mobile OLAP cluster using a dozen of phones. Or also at the idea of seeing the nostalgic `Segmentation fault (core dumped)` on the lovely OLED screen, but I digress. Let's get it going.
 
 ## First cheap attempt
 
-I heard somewhere that Android uses the Linux kernel, and I can already run familiar UNIX-like shell and tools using [Termux](https://termux.com/). And ClickHouse already supports ARM platform and even publishes a binary built for 64-bit ARM. This binary also doesn't have a lot of dependencies &mdash; only a pretty old version of `glibc`. Maybe I can just download a ClickHouse binary from CI to the phone and run it?
+I heard somewhere that Android uses the Linux kernel, and I can already run familiar UNIX-like shell and tools using [Termux](https://termux.com/). And ClickHouse already supports ARM platform and even publishes a binary built for 64-bit ARM. This binary also doesn't have a lot of dependencies -- only a pretty old version of `glibc`. Maybe I can just download a ClickHouse binary from CI to the phone and run it?
 
 Turns out it's not that simple.
 
@@ -24,10 +24,10 @@ Turns out it's not that simple.
 
 ## Using the Android toolchain
 
-Surprisingly, it's rather simple to set up. Our build system uses CMake and already supports cross-compilation &mdash; we have CI configurations that cross-compile for Mac, AArch64 Linux and FreeBSD. Android NDK also has integration with CMake and a [manual](https://developer.android.com/ndk/guides/cmake) on how to set it up. Download the Android NDK, add some flags to your `cmake` invocation: `DCMAKE_TOOLCHAIN_FILE=~/android-ndk-r21d/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=28`, and you're done. It (almost) builds. What obstacles do we have this time?
+Surprisingly, it's rather simple to set up. Our build system uses CMake and already supports cross-compilation -- we have CI configurations that cross-compile for Mac, AArch64 Linux and FreeBSD. Android NDK also has integration with CMake and a [manual](https://developer.android.com/ndk/guides/cmake) on how to set it up. Download the Android NDK, add some flags to your `cmake` invocation: `DCMAKE_TOOLCHAIN_FILE=~/android-ndk-r21d/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=28`, and you're done. It (almost) builds. What obstacles do we have this time?
 
 * Our `glibc` compatibility layer has a lot of compilation errors. It borrows `musl` code to provide functions that are absent from older versions of `glibc`, so that we can run the same binary on a wide range of distros. Being heavily dependent on system headers, it runs into all kinds of differences between Linux and Android, such as the limited scope of `pthread` support or just subtly different API variants. Thankfully we're building for a particular version of Android, so we can just disable this and use all needed functions straight from the system `libc`.
-* Some third-party libraries and our CMake files are broken in various unimaginative ways. Just disable everything we can and fix everything we can't. 
+* Some third-party libraries and our CMake files broken in various unimaginative ways. Just disable everything we can and fix everything we can't. 
 * Some of our code uses `#if defined(__linux__)` to check for Linux platform. This doesn't always work, because Android also exports `__linux__` but there are some API differences.
 * `std::filesystem` is still not fully supported in NDK r21. The support went into r22 that is scheduled for Q3 2020, but I want it right now... Good that we bundle our own forks of `libcxx` and `libcxxabi` to reduce dependencies, and they are fresh enough to fully support C++20. After enabling them, everything works.
 * Weird twenty-screens errors in `std::map<int>` or something like that, that are also resolved by using our `libcxx`.
@@ -71,15 +71,15 @@ There is a beaten genre of using data sets and queries of a varying degree of sy
 
 <img src="pixel-benchmark/compare.png" width="80%"/>
 
-My phone is Google Pixel 3a, and it is only 5 times slower on average than my Dell XPS 15 work laptop. The queries where the data doesn't fit into memory and has to go to disk (the flash, I mean) are noticeably slower, up to 20 times, but mostly they don't complete because the server gets killed &mdash; it only has about 3 GB of memory available. Overall I think the results look pretty good for the phone. High-end models should be even more performant, reaching performance comparable to some smaller laptops.
+My phone is Google Pixel 3a, and it is only 5 times slower on average than my Dell XPS 15 work laptop. The queries where the data doesn't fit into memory and has to go to disk (the flash, I mean) are noticeably slower, up to 20 times, but mostly they don't complete because the server gets killed -- it only has about 3 GB of memory available. Overall I think the results look pretty good for the phone. High-end models should be even more performant, reaching performance comparable to some smaller laptops.
 
 ## Conclusion
 
 This was a rather enjoyable exercise. Running a server on your phone is a nice way to give a demo, so we should probably publish a Termux package for ClickHouse. For this, we have to debug and fix the `unw_backtrace` segfault (I have my fingers crossed that it will be gone after adding `-fno-omit-frame-pointer`), and also fix some quirks that are just commented out for now. Most of the changes required for the Android build are already merged into our master branch.
 
-Building for Android turned out to be relatively simple &mdash; all these experiments and writing took me about four days, and it was the first time I ever did any Android-related programming. The NDK was simple to use, and our code was cross-platform enough so I only had to make minor modifications. If we didn't routinely build for AArch64 and had a hard dependency on SSE 4.2 or something, it would have been a different story.
+Building for Android turned out to be relatively simple -- all these experiments and writing took me about four days, and it was the first time I ever did any Android-related programming. The NDK was simple to use, and our code was cross-platform enough so I only had to make minor modifications. If we didn't routinely build for AArch64 and had a hard dependency on SSE 4.2 or something, it would have been a different story.
 
-But the most important takeout is that now you don't have to obsess over choosing a new phone &mdash; just benchmark it with ClickHouse.
+But the most important takeout is that now you don't have to obsess over choosing a new phone -- just benchmark it with ClickHouse.
 
 
 _2020-07-16 [Alexander Kuzmenkov](https://github.com/akuzm)_
