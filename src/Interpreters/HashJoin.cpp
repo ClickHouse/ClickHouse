@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
+    extern const int SYNTAX_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
 }
@@ -174,7 +175,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
         key_columns.pop_back();
 
         if (key_columns.empty())
-            throw Exception("ASOF join cannot be done without a joining column", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("ASOF join cannot be done without a joining column", ErrorCodes::SYNTAX_ERROR);
 
         /// this is going to set up the appropriate hash table for the direct lookup part of the join
         /// However, this does not depend on the size of the asof join key (as that goes into the BST)

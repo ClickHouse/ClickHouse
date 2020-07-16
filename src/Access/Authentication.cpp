@@ -1,4 +1,6 @@
 #include <Access/Authentication.h>
+#include <Access/ExternalAuthenticators.h>
+#include <Access/LDAPClient.h>
 #include <Common/Exception.h>
 #include <Poco/SHA1Engine.h>
 
@@ -37,6 +39,9 @@ Authentication::Digest Authentication::getPasswordDoubleSHA1() const
         case DOUBLE_SHA1_PASSWORD:
             return password_hash;
 
+        case LDAP_SERVER:
+            throw Exception("Cannot get password double SHA1 for user with 'LDAP_SERVER' authentication.", ErrorCodes::BAD_ARGUMENTS);
+
         case MAX_TYPE:
             break;
     }
@@ -44,7 +49,7 @@ Authentication::Digest Authentication::getPasswordDoubleSHA1() const
 }
 
 
-bool Authentication::isCorrectPassword(const String & password_) const
+bool Authentication::isCorrectPassword(const String & password_, const String & user_, const ExternalAuthenticators & external_authenticators) const
 {
     switch (type)
     {
@@ -73,6 +78,16 @@ bool Authentication::isCorrectPassword(const String & password_) const
                 return true;
 
             return encodeSHA1(first_sha1) == password_hash;
+        }
+
+        case LDAP_SERVER:
+        {
+            auto ldap_server_params = external_authenticators.getLDAPServerParams(server_name);
+            ldap_server_params.user = user_;
+            ldap_server_params.password = password_;
+
+            LDAPSimpleAuthClient ldap_client(ldap_server_params);
+            return ldap_client.check();
         }
 
         case MAX_TYPE:

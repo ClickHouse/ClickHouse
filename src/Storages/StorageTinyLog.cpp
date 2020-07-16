@@ -118,7 +118,12 @@ public:
     {
         try
         {
-            writeSuffix();
+            if (!done)
+            {
+                /// Rollback partial writes.
+                streams.clear();
+                storage.file_checker.repair();
+            }
         }
         catch (...)
         {
@@ -277,11 +282,13 @@ void TinyLogBlockOutputStream::writeSuffix()
 {
     if (done)
         return;
-    done = true;
 
     /// If nothing was written - leave the table in initial state.
     if (streams.empty())
+    {
+        done = true;
         return;
+    }
 
     WrittenStreams written_streams;
     IDataType::SerializeBinaryBulkSettings settings;
@@ -303,9 +310,12 @@ void TinyLogBlockOutputStream::writeSuffix()
     for (auto & pair : streams)
         column_files.push_back(storage.files[pair.first].data_file_path);
 
-    storage.file_checker.update(column_files.begin(), column_files.end());
+    for (const auto & file : column_files)
+        storage.file_checker.update(file);
+    storage.file_checker.save();
 
     streams.clear();
+    done = true;
 }
 
 
@@ -352,9 +362,24 @@ StorageTinyLog::StorageTinyLog(
         /// create directories if they do not exist
         disk->createDirectories(table_path);
     }
+    else
+    {
+        try
+        {
+            file_checker.repair();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 
     for (const auto & col : storage_metadata.getColumns().getAllPhysical())
         addFiles(col.name, *col.type);
+
+    if (!attach)
+        for (const auto & file : files)
+            file_checker.setEmpty(file.second.data_file_path);
 }
 
 
