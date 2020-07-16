@@ -145,7 +145,7 @@ void TraceCollector::run()
         if (trace_log)
         {
             TraceLogElement element{std::time(nullptr), clock_gettime_ns(), trace_type, thread_id, query_id, trace, size};
-            trace_log->add(element);
+            trace_log->add(std::move(element));
         }
     }
 }

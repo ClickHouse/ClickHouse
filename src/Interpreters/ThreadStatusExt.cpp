@@ -337,7 +337,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
         }
     }
 
-    thread_log.add(elem);
+    thread_log.add(std::move(elem));
 }
 
 void CurrentThread::initializeQuery()

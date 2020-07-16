@@ -210,7 +210,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
 
     if (settings.log_queries && elem.type >= settings.log_queries_min_type)
         if (auto query_log = context.getQueryLog())
-            query_log->add(elem);
+            query_log->add(std::move(elem));
 
     ProfileEvents::increment(ProfileEvents::FailedQuery);
 
@@ -475,7 +475,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
 
                 if (auto query_log = context.getQueryLog())
-                    query_log->add(elem);
+                    query_log->add(std::move(elem));
             }
 
             /// Also make possible for caller to log successful query finish and exception during execution.
@@ -552,7 +552,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (log_queries && elem.type >= log_queries_min_type)
                 {
                     if (auto query_log = context.getQueryLog())
-                        query_log->add(elem);
+                        query_log->add(std::move(elem));
                 }
             };
 
@@ -597,7 +597,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (log_queries && elem.type >= log_queries_min_type)
                 {
                     if (auto query_log = context.getQueryLog())
-                        query_log->add(elem);
+                        query_log->add(std::move(elem));
                 }
 
                 ProfileEvents::increment(ProfileEvents::FailedQuery);

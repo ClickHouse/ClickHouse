@@ -134,7 +134,7 @@ bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataP
             elem.error = static_cast<UInt16>(execution_status.code);
             elem.exception = execution_status.message;
 
-            part_log->add(elem);
+            part_log->add(std::move(elem));
         }
     }
     catch (...)

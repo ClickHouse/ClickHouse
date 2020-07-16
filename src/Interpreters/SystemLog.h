@@ -134,8 +134,7 @@ public:
     /** Append a record into log.
       * Writing to table will be done asynchronously and in case of failure, record could be lost.
       */
-    template <typename T>
-    void add(T && element);
+    void add(LogElement && element);
 
     void stopFlushThread();
 
@@ -216,6 +215,7 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
     log = &Poco::Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
+    queue.reserve(DBMS_SYSTEM_LOG_QUEUE_SIZE);
 }
 
 
@@ -228,10 +228,8 @@ void SystemLog<LogElement>::startup()
 
 
 template <typename LogElement>
-template <typename T>
-void SystemLog<LogElement>::add(T && element)
+void SystemLog<LogElement>::add(LogElement && element)
 {
-    static_assert(std::is_same<LogElement, typename std::remove_reference<T>::type>::value);
     /// Memory can be allocated while resizing on queue.push_back.
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
@@ -283,8 +281,8 @@ void SystemLog<LogElement>::add(T && element)
             return;
         }
 
-    queue.push_back(std::forward<T>(element));
-}
+    queue.emplace_back(std::move(element));
+    }
 
     if (queue_is_half_full)
         LOG_INFO(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
@@ -353,6 +351,7 @@ void SystemLog<LogElement>::savingThreadFunction()
     setThreadName("SystemLogFlush");
 
     std::vector<LogElement> to_flush;
+    to_flush.reserve(DBMS_SYSTEM_LOG_QUEUE_SIZE);
     bool exit_this_thread = false;
     while (!exit_this_thread)
     {
@@ -377,6 +376,7 @@ void SystemLog<LogElement>::savingThreadFunction()
                 // Swap with existing array from previous flush, to save memory
                 // allocations.
                 to_flush.resize(0);
+                assert(to_flush.capacity() == DBMS_SYSTEM_LOG_QUEUE_SIZE);
                 queue.swap(to_flush);
 
                 exit_this_thread = is_shutdown;

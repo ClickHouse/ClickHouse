@@ -1106,7 +1106,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
             part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             part_log_elem.rows = part->rows_count;
 
-            part_log->add(part_log_elem);
+            part_log->add(std::move(part_log_elem));
         }
     }
 }
@@ -3479,7 +3479,7 @@ try
         part_log_elem.peak_memory_usage = (*merge_entry)->memory_tracker.getPeak();
     }
 
-    part_log->add(part_log_elem);
+    part_log->add(std::move(part_log_elem));
 }
 catch (...)
 {
