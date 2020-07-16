@@ -433,7 +433,8 @@ std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Contain
                 response.error = cur_response->error;
 
                 for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
-                    (*it)();
+                    if (*it)
+                        (*it)();
 
                 return { std::make_shared<MultiResponse>(response), {} };
             }
@@ -447,7 +448,8 @@ std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Contain
     catch (...)
     {
         for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
-            (*it)();
+            if (*it)
+                (*it)();
         throw;
     }
 }
