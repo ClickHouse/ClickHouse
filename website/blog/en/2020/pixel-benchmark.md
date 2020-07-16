@@ -6,7 +6,6 @@ author: '[Alexander Kuzmenkov](https://github.com/akuzm)'
 tags: ['Android', 'benchmark', 'experiment']
 ---
 
-# Running ClickHouse on an Android phone
 
 This is a brief description of my experiments with building ClickHouse on Android. If this is your first time hearing about ClickHouse, it is a suriprisingly fast columnar SQL DBMS for real-time reporting. It's normally used in AdTech and the like, deployed on clusters of hundreds of machines, holding up to petabytes of data. But ClickHouse is straightforward to use on a smaller scale as well &mdash; you laptop will do, and don't be surprised if you are able to process several gigabytes of data per second on this hardware. There is another kind of small-scale, though pretty powerful, platforms, that is ubiquitous now &mdash; smartphones. The conclusion inevitably follows: you must be able to run ClickHouse on your smartphone as well. It's also that I can't help but chuckle at the idea of setting up a high performance mobile OLAP cluster using a dozen of phones. Or also at the idea of seeing the nostalgic `Segmentation fault (core dumped)` on the lovely OLED screen, but I digress. Let's get it going.
 
