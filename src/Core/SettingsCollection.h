@@ -353,9 +353,9 @@ enum class SettingsBinaryFormat
   * struct MySettings : public SettingsCollection<MySettings>
   * {
   * #   define APPLY_FOR_MYSETTINGS(M) \
-  *         M(SettingUInt64, a, 100, "Description of a", 0) \
-  *         M(SettingFloat, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
-  *         M(SettingString, s, "default", "Description of s", 0)
+  *         M(UInt64, a, 100, "Description of a", 0) \
+  *         M(Float, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
+  *         M(String, s, "default", "Description of s", 0)
   *
   *     DECLARE_SETTINGS_COLLECTION(MySettings, APPLY_FOR_MYSETTINGS)
   * };
@@ -586,5 +586,5 @@ public:
     LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_)
 
 #define DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
-    TYPE NAME {DEFAULT};
+    Setting##TYPE NAME {DEFAULT};
 }
