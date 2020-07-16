@@ -42,11 +42,11 @@ def test_backward_compatability(start_cluster):
 
     # Also check with persisted aggregate function state
 
-    node1.query("create table tab (x AggregateFunction(avg, UInt32)) engine = Log")
-    node1.query("INSERT INTO tab SELECT avgState(arrayJoin([1, 2, 3, 4]))")
+    node1.query("create table state (x AggregateFunction(avg, UInt64)) engine = Log")
+    node1.query("INSERT INTO state SELECT avgState(arrayJoin(CAST([1, 2, 3, 4] AS Array(UInt64))))")
 
-    assert(node1.query("SELECT avgMerge(x) FROM tab") == '2.5\n')
+    assert(node1.query("SELECT avgMerge(x) FROM state") == '2.5\n')
 
     node1.restart_with_latest_version()
 
-    assert(node1.query("SELECT avgMerge(x) FROM tab") == '2.5\n')
+    assert(node1.query("SELECT avgMerge(x) FROM state") == '2.5\n')
