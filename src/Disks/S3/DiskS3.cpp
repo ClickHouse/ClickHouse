@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
+#include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -423,7 +424,8 @@ DiskS3::DiskS3(
     String s3_root_path_,
     String metadata_path_,
     size_t min_upload_part_size_,
-    size_t min_multi_part_upload_size_)
+    size_t min_multi_part_upload_size_,
+    size_t min_bytes_for_seek_)
     : name(std::move(name_))
     , client(std::move(client_))
     , proxy_configuration(std::move(proxy_configuration_))
@@ -432,6 +434,7 @@ DiskS3::DiskS3(
     , metadata_path(std::move(metadata_path_))
     , min_upload_part_size(min_upload_part_size_)
     , min_multi_part_upload_size(min_multi_part_upload_size_)
+    , min_bytes_for_seek(min_bytes_for_seek_)
 {
 }
 
@@ -537,7 +540,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, si
     LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_path + path), metadata.s3_objects.size());
 
-    return std::make_unique<ReadIndirectBufferFromS3>(client, bucket, metadata, buf_size);
+    auto reader = std::make_unique<ReadIndirectBufferFromS3>(client, bucket, metadata, buf_size);
+    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), min_bytes_for_seek);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t)

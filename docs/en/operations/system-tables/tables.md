@@ -46,4 +46,8 @@ This table contains the following columns (the column type is shown in brackets)
     -   If the table stores data on disk, returns used space on disk (i.e. compressed).
     -   If the table stores data in memory, returns approximated number of used bytes in memory.
 
+-   `lifetime_rows` (Nullable(UInt64)) - Total number of rows INSERTed since server start (only for `Buffer` tables).
+
+-   `lifetime_bytes` (Nullable(UInt64)) - Total number of bytes INSERTed since server start (only for `Buffer` tables).
+
 The `system.tables` table is used in `SHOW TABLES` query implementation.
