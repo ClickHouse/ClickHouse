@@ -17,7 +17,7 @@ static std::unordered_map<String, String> fetchTablesCreateQuery(
     const mysqlxx::PoolWithFailover::Entry & connection, const String & database_name, const std::vector<String> & fetch_tables)
 {
     std::unordered_map<String, String> tables_create_query;
-    for (size_t index = 0; index < fetch_tables.size(); ++index)
+    for (const auto & fetch_table_name : fetch_tables)
     {
         Block show_create_table_header{
             {std::make_shared<DataTypeString>(), "Table"},
@@ -25,14 +25,14 @@ static std::unordered_map<String, String> fetchTablesCreateQuery(
         };
 
         MySQLBlockInputStream show_create_table(
-            connection, "SHOW CREATE TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(fetch_tables[index]),
+            connection, "SHOW CREATE TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(fetch_table_name),
             show_create_table_header, DEFAULT_BLOCK_SIZE);
 
         Block create_query_block = show_create_table.read();
         if (!create_query_block || create_query_block.rows() != 1)
             throw Exception("LOGICAL ERROR mysql show create return more rows.", ErrorCodes::LOGICAL_ERROR);
 
-        tables_create_query[fetch_tables[index]] = create_query_block.getByName("Create Table").column->getDataAt(0).toString();
+        tables_create_query[fetch_table_name] = create_query_block.getByName("Create Table").column->getDataAt(0).toString();
     }
 
     return tables_create_query;
@@ -80,7 +80,7 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
     executed_gtid_set = (*master_status.getByPosition(4).column)[0].safeGet<String>();
 }
 
-bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection)
+bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection) const
 {
     /// TODO: MySQL 5.7
     Block header{

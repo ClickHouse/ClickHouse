@@ -38,9 +38,9 @@ namespace MySQLInterpreter
 static inline NamesAndTypesList getColumnsList(ASTExpressionList * columns_define)
 {
     NamesAndTypesList columns_name_and_type;
-    for (size_t index = 0; index < columns_define->children.size(); ++index)
+    for (const auto & declare_column_ast : columns_define->children)
     {
-        const auto & declare_column = columns_define->children[index]->as<MySQLParser::ASTDeclareColumn>();
+        const auto & declare_column = declare_column_ast->as<MySQLParser::ASTDeclareColumn>();
 
         if (!declare_column || !declare_column->data_type)
             throw Exception("Missing type in definition of column.", ErrorCodes::UNKNOWN_TYPE);
@@ -85,9 +85,9 @@ static inline std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList
 
     if (indices_define && !indices_define->children.empty())
     {
-        for (size_t index = 0; index < indices_define->children.size(); ++index)
+        for (const auto & declare_index_ast : indices_define->children)
         {
-            const auto & declare_index = indices_define->children[index]->as<MySQLParser::ASTDeclareIndex>();
+            const auto & declare_index = declare_index_ast->as<MySQLParser::ASTDeclareIndex>();
 
             /// flatten
             if (startsWith(declare_index->index_type, "KEY_"))
@@ -102,9 +102,9 @@ static inline std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList
         }
     }
 
-    for (size_t index = 0; index < columns_define->children.size(); ++index)
+    for (const auto & declare_column_ast : columns_define->children)
     {
-        const auto & declare_column = columns_define->children[index]->as<MySQLParser::ASTDeclareColumn>();
+        const auto & declare_column = declare_column_ast->as<MySQLParser::ASTDeclareColumn>();
 
         if (declare_column->column_options)
         {

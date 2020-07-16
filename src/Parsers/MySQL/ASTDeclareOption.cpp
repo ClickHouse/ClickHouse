@@ -11,8 +11,8 @@ namespace DB
 namespace MySQLParser
 {
 
-template <bool recursive_>
-bool ParserDeclareOptionImpl<recursive_>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+template <bool recursive>
+bool ParserDeclareOptionImpl<recursive>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     std::unordered_map<String, ASTPtr> changes;
     std::unordered_map<String, std::shared_ptr<IParser>> usage_parsers_cached;
@@ -39,6 +39,7 @@ bool ParserDeclareOptionImpl<recursive_>::parseImpl(Pos & pos, ASTPtr & node, Ex
                 {
                     found = true;
                     changes.insert(std::make_pair(option_describe.option_name, value));
+                    break;
                 }
             }
             else if (get_parser_from_cache(option_describe.usage_name)->ignore(pos, expected))
@@ -53,6 +54,7 @@ bool ParserDeclareOptionImpl<recursive_>::parseImpl(Pos & pos, ASTPtr & node, Ex
                     throw Exception("Duplicate options declare", ErrorCodes::)*/
                 found = true;
                 changes.insert(std::make_pair(option_describe.option_name, value));
+                break;
             }
         }
 

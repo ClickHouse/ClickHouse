@@ -23,7 +23,7 @@ struct MaterializeMetadata
 
     void fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection);
 
-    bool checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection);
+    bool checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection) const;
 
     void transaction(const MySQLReplication::Position & position, const std::function<void()> & fun);
 

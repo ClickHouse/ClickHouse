@@ -6,21 +6,22 @@
 
 #include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 
+#    include <random>
 #    include <cstdlib>
-#    include <common/sleep.h>
-#    include <Common/quoteString.h>
-#    include <Common/setThreadName.h>
 #    include <Columns/ColumnTuple.h>
-#    include <DataStreams/copyData.h>
-#    include <DataStreams/OneBlockInputStream.h>
 #    include <DataStreams/AddingVersionsBlockOutputStream.h>
-#    include <Databases/MySQL/MaterializeMetadata.h>
+#    include <DataStreams/OneBlockInputStream.h>
+#    include <DataStreams/copyData.h>
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+#    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/ReadBufferFromString.h>
 #    include <Interpreters/Context.h>
 #    include <Interpreters/executeQuery.h>
 #    include <Storages/StorageMergeTree.h>
+#    include <Common/quoteString.h>
+#    include <Common/setThreadName.h>
+#    include <common/sleep.h>
 
 namespace DB
 {
@@ -199,6 +200,14 @@ static inline void dumpDataForTables(
     }
 }
 
+static inline UInt32 randomNumber()
+{
+    std::mt19937 rng;
+    rng.seed(std::random_device()());
+    std::uniform_int_distribution<std::mt19937::result_type> dist6(std::numeric_limits<UInt32>::min(), std::numeric_limits<UInt32>::max());
+    return dist6(rng);
+}
+
 std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchronized()
 {
     std::unique_lock<std::mutex> lock(sync_mutex);
@@ -233,7 +242,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
                 connection->query("COMMIT").execute();
 
             client.connect();
-            client.startBinlogDump(std::rand(), mysql_database_name, metadata.binlog_file, metadata.binlog_position);
+            client.startBinlogDump(randomNumber(), mysql_database_name, metadata.binlog_file, metadata.binlog_position);
             return metadata;
         }
         catch (...)
