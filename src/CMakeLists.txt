@@ -259,6 +259,8 @@ target_link_libraries(clickhouse_common_io
             roaring
 )
 
+
+
 if (USE_RDKAFKA)
     dbms_target_link_libraries(PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
     if(NOT USE_INTERNAL_RDKAFKA_LIBRARY)
@@ -268,6 +270,14 @@ endif()
 
 if (USE_AMQPCPP)
     dbms_target_link_libraries(PUBLIC amqp-cpp)
+endif()
+
+if (USE_CYRUS_SASL)
+    dbms_target_link_libraries(PRIVATE ${CYRUS_SASL_LIBRARY})
+endif()
+
+if (USE_KRB5)
+    dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
 if(RE2_INCLUDE_DIR)
