@@ -30,7 +30,7 @@ protected:
 private:
     bool is_first;
 
-    void parseJoinStrictness(Pos & pos, ASTTableJoin & table_join);
+    static void parseJoinStrictness(Pos & pos, ASTTableJoin & table_join);
 };
 
 
