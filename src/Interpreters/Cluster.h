@@ -28,7 +28,8 @@ public:
     /// This parameter is needed only to check that some address is local (points to ourself).
     Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
             const String & username, const String & password,
-            UInt16 clickhouse_port, bool treat_local_as_remote, bool secure = false);
+            UInt16 clickhouse_port, bool treat_local_as_remote,
+            bool secure = false, Int64 priority = 1);
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -44,7 +45,7 @@ public:
         * <node>
         *     <host>example01-01-1</host>
         *     <port>9000</port>
-        *     <!-- <user>, <password>, <default_database> if needed -->
+        *     <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure> if needed -->
         * </node>
         * ...
         * or in <shard> and inside in <replica> elements:
@@ -52,7 +53,7 @@ public:
         *     <replica>
         *         <host>example01-01-1</host>
         *         <port>9000</port>
-        *         <!-- <user>, <password>, <default_database>. <secure> if needed -->
+        *         <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure> if needed -->
         *    </replica>
         * </shard>
         */
@@ -73,6 +74,8 @@ public:
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;
 
+        Int64 priority = 1;
+
         Address() = default;
         Address(
             const Poco::Util::AbstractConfiguration & config,
@@ -84,7 +87,8 @@ public:
             const String & user_,
             const String & password_,
             UInt16 clickhouse_port,
-            bool secure_ = false);
+            bool secure_ = false,
+            Int64 priority_ = 1);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -124,10 +128,14 @@ public:
         bool hasRemoteConnections() const { return local_addresses.size() != per_replica_pools.size(); }
         size_t getLocalNodeCount() const { return local_addresses.size(); }
         bool hasInternalReplication() const { return has_internal_replication; }
+        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
+        const std::string & pathForInsert(bool prefer_localhost_replica) const;
 
     public:
-        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
+        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication && prefer_localhost_replica
         std::string dir_name_for_internal_replication;
+        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication && !prefer_localhost_replica
+        std::string dir_name_for_internal_replication_with_local;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;
         UInt32 weight = 1;

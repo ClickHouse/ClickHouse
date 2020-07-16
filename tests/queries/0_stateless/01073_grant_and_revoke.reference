@@ -1,7 +1,7 @@
 CREATE USER test_user_01073
 A
 B
-GRANT ALTER DELETE, INSERT ON *.* TO test_user_01073
+GRANT INSERT, ALTER DELETE ON *.* TO test_user_01073
 GRANT SELECT ON db1.* TO test_user_01073
 GRANT SELECT ON db2.table TO test_user_01073
 GRANT SELECT(col1) ON db3.table TO test_user_01073

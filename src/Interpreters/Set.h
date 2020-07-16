@@ -5,7 +5,6 @@
 #include <DataStreams/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
-#include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
@@ -17,6 +16,7 @@ namespace DB
 
 struct Range;
 
+class Context;
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
@@ -31,7 +31,7 @@ public:
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
-        : log(&Logger::get("Set")),
+        : log(&Poco::Logger::get("Set")),
         limits(limits_), fill_set_elements(fill_set_elements_), transform_null_in(transform_null_in_)
     {
     }
@@ -74,6 +74,7 @@ public:
     Columns getSetElements() const { return { set_elements.begin(), set_elements.end() }; }
 
     void checkColumnsNumber(size_t num_key_columns) const;
+    bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
     void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
 
 private:
@@ -105,7 +106,7 @@ private:
     /// Types for set_elements.
     DataTypes set_elements_types;
 
-    Logger * log;
+    Poco::Logger * log;
 
     /// Limitations on the maximum size of the set
     SizeLimits limits;

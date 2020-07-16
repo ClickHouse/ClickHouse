@@ -37,7 +37,7 @@ struct TemporaryFileStream
                       std::atomic<bool> * is_cancelled, const std::string & codec)
     {
         WriteBufferFromFile file_buf(path);
-        CompressedWriteBuffer compressed_buf(file_buf, CompressionCodecFactory::instance().get(codec, {}));
+        CompressedWriteBuffer compressed_buf(file_buf, CompressionCodecFactory::instance().get(codec, {}, false));
         NativeBlockOutputStream output(compressed_buf, 0, header);
         copyData(input, output, is_cancelled);
     }

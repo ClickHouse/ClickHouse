@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS ints;
 CREATE TABLE ints (i64 Int64, i32 Int32) ENGINE = Memory;
 
-SET partial_merge_join = 1;
+SET join_algorithm = 'partial_merge';
 
 INSERT INTO ints SELECT 1 AS i64, number AS i32 FROM numbers(2);
 

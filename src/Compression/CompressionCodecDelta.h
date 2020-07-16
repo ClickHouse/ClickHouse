@@ -14,7 +14,7 @@ public:
 
     String getCodecDesc() const override;
 
-    void useInfoAboutType(DataTypePtr data_type) override;
+    void useInfoAboutType(const DataTypePtr & data_type) override;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
@@ -23,12 +23,11 @@ protected:
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { return uncompressed_size + 2; }
 
+    bool isCompression() const override { return false; }
+    bool isGenericCompression() const override { return false; }
 
 private:
     UInt8 delta_bytes_size;
 };
-
-class CompressionCodecFactory;
-void registerCodecDelta(CompressionCodecFactory & factory);
 
 }

@@ -18,19 +18,18 @@ public:
     RowPolicyCache(const AccessControlManager & access_control_manager_);
     ~RowPolicyCache();
 
-    std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(const UUID & user_id, const std::vector<UUID> & enabled_roles);
+    std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles);
 
 private:
-    using ParsedConditions = EnabledRowPolicies::ParsedConditions;
-
     struct PolicyInfo
     {
         PolicyInfo(const RowPolicyPtr & policy_) { setPolicy(policy_); }
         void setPolicy(const RowPolicyPtr & policy_);
 
         RowPolicyPtr policy;
-        const ExtendedRoleSet * roles = nullptr;
-        ParsedConditions parsed_conditions;
+        const RolesOrUsersSet * roles = nullptr;
+        std::shared_ptr<const std::pair<String, String>> database_and_table_name;
+        ASTPtr parsed_conditions[RowPolicy::MAX_CONDITION_TYPE];
     };
 
     void ensureAllRowPoliciesRead();

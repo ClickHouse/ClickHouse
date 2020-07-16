@@ -1,12 +1,13 @@
 #!/usr/bin/python3
 
-import os
-import sys
-import itertools
 import argparse
-import json
 import collections
+import fuzzywuzzy.fuzz
+import itertools
+import json
+import os
 import re
+import sys
 
 parser = argparse.ArgumentParser(description='Format changelog for given PRs.')
 parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs='?', default=sys.stdin, help='File with PR numbers, one per line.')
@@ -26,7 +27,7 @@ def parse_one_pull_request(item):
     if lines:
         i = 0
         while i < len(lines):
-            if re.match(r'(?i).*category.*:$', lines[i]):
+            if re.match(r'(?i)^[>*_ ]*change\s*log\s*category', lines[i]):
                 i += 1
                 if i >= len(lines):
                     break
@@ -37,7 +38,7 @@ def parse_one_pull_request(item):
                         break
                 category = re.sub(r'^[-*\s]*', '', lines[i])
                 i += 1
-            elif re.match(r'(?i)^\**\s*(Short description|Change\s*log entry)', lines[i]):
+            elif re.match(r'(?i)^[>*_ ]*(short\s*description|change\s*log\s*entry)', lines[i]):
                 i += 1
                 # Can have one empty line between header and the entry itself. Filter it out.
                 if i < len(lines) and not lines[i]:
@@ -57,7 +58,7 @@ def parse_one_pull_request(item):
         category = "NO CL CATEGORY"
 
     # Filter out the PR categories that are not for changelog.
-    if re.match(r'(?i)doc|((non|in|not|un)[-\s]*significant)', category):
+    if re.match(r'(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)', category):
         return False
 
     if not entry:
@@ -74,6 +75,11 @@ def parse_one_pull_request(item):
 
     return True
 
+# This array gives the preferred category order, and is also used to
+# normalize category names.
+categories_preferred_order = ['Backward Incompatible Change',
+    'New Feature', 'Bug Fix', 'Improvement', 'Performance Improvement',
+    'Build/Testing/Packaging Improvement', 'Other']
 
 category_to_pr = collections.defaultdict(lambda: [])
 users = {}
@@ -84,6 +90,13 @@ for line in args.file:
         continue
 
     assert(pr['category'])
+
+    # Normalize category name
+    for c in categories_preferred_order:
+        if fuzzywuzzy.fuzz.ratio(pr['category'], c) >= 90:
+            pr['category'] = c
+            break
+
     category_to_pr[pr['category']].append(pr)
     user_id = pr['user']['id']
     users[user_id] = json.loads(open(f'user{user_id}.json').read())
@@ -103,7 +116,6 @@ def print_category(category):
     print()
 
 # Print categories in preferred order
-categories_preferred_order = ['Backward Incompatible Change', 'New Feature', 'Bug Fix', 'Improvement', 'Performance Improvement', 'Build/Testing/Packaging Improvement', 'Other']
 for category in categories_preferred_order:
     if category in category_to_pr:
         print_category(category)

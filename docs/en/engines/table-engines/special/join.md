@@ -3,9 +3,12 @@ toc_priority: 40
 toc_title: Join
 ---
 
-# Join {#join}
+# Join Table Engine {#join}
 
-Prepared data structure for using in [JOIN](../../../sql-reference/statements/select.md#select-join) operations.
+Optional prepared data structure for usage in [JOIN](../../../sql-reference/statements/select/join.md#select-join) operations.
+
+!!! note "Note"
+    This is not an article about the [JOIN clause](../../../sql-reference/statements/select/join.md#select-join) itself.
 
 ## Creating a Table {#creating-a-table}
 
@@ -17,12 +20,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
 ```
 
-See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) query.
+See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 **Engine Parameters**
 
--   `join_strictness` – [JOIN strictness](../../../sql-reference/statements/select.md#select-join-strictness).
--   `join_type` – [JOIN type](../../../sql-reference/statements/select.md#select-join-types).
+-   `join_strictness` – [JOIN strictness](../../../sql-reference/statements/select/join.md#select-join-types).
+-   `join_type` – [JOIN type](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` clause that the `JOIN` operation is made with.
 
 Enter `join_strictness` and `join_type` parameters without quotes, for example, `Join(ANY, LEFT, col1)`. They must match the `JOIN` operation that the table will be used for. If the parameters don’t match, ClickHouse doesn’t throw an exception and may return incorrect data.
@@ -98,7 +101,7 @@ When creating a table, the following settings are applied:
 
 The `Join`-engine tables can’t be used in `GLOBAL JOIN` operations.
 
-The `Join`-engine allows use [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) setting in the `CREATE TABLE` statement. And [SELECT](../../../sql-reference/statements/select.md) query allows use `join_use_nulls` too. If you have different `join_use_nulls` settings, you can get an error joining table. It depends on kind of JOIN. When you use [joinGet](../../../sql-reference/functions/other-functions.md#joinget) function, you have to use the same `join_use_nulls` setting in `CRATE TABLE` and `SELECT` statements.
+The `Join`-engine allows use [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) setting in the `CREATE TABLE` statement. And [SELECT](../../../sql-reference/statements/select/index.md) query allows use `join_use_nulls` too. If you have different `join_use_nulls` settings, you can get an error joining table. It depends on kind of JOIN. When you use [joinGet](../../../sql-reference/functions/other-functions.md#joinget) function, you have to use the same `join_use_nulls` setting in `CRATE TABLE` and `SELECT` statements.
 
 ## Data Storage {#data-storage}
 

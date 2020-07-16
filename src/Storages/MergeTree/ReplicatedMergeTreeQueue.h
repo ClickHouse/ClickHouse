@@ -56,7 +56,7 @@ private:
     String zookeeper_path;
     String replica_path;
     String logger_name;
-    Logger * log = nullptr;
+    Poco::Logger * log = nullptr;
 
     /// Protects the queue, future_parts and other queue state variables.
     mutable std::mutex state_mutex;
@@ -107,8 +107,13 @@ private:
 
         ReplicatedMergeTreeMutationEntryPtr entry;
 
-        /// Parts we have to mutate to complete mutation. We use ActiveDataPartSet structure
-        /// to be able to manage covering and covered parts.
+        /// Current parts we have to mutate to complete mutation.
+        ///
+        /// current_part_name =mutation> result_part_name
+        /// ^~~parts_to_do~~^            ^~virtual_parts~^
+        ///
+        /// We use ActiveDataPartSet structure to be able to manage covering and
+        /// covered parts.
         ActiveDataPartSet parts_to_do;
 
         /// Note that is_done is not equivalent to parts_to_do.size() == 0
@@ -161,7 +166,8 @@ private:
     void notifySubscribers(size_t new_queue_size);
 
     /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue because current entry covers it
-    bool checkReplaceRangeCanBeRemoved(const MergeTreePartInfo & part_info, const LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const;
+    bool checkReplaceRangeCanBeRemoved(
+        const MergeTreePartInfo & part_info, const LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const;
 
     /// Ensures that only one thread is simultaneously updating mutations.
     std::mutex update_mutations_mutex;
@@ -204,11 +210,16 @@ private:
     /// Add part for mutations with block_number > part.getDataVersion()
     void addPartToMutations(const String & part_name);
 
-    /// Remove part from mutations which were assigned to mutate it
-    /// with block_number > part.getDataVersion()
-    /// and block_number == part.getDataVersion()
-    ///     ^ (this may happen if we downloaded mutated part from other replica)
-    void removePartFromMutations(const String & part_name);
+    /// Remove covered parts from mutations (parts_to_do) which were assigned
+    /// for mutation. If remove_covered_parts = true, than remove parts covered
+    /// by first argument. If remove_part == true, than also remove part itself.
+    /// Both negative flags will throw exception.
+    ///
+    /// Part removed from mutations which satisfy contitions:
+    /// block_number > part.getDataVersion()
+    /// or block_number == part.getDataVersion()
+    ///    ^ (this may happen if we downloaded mutated part from other replica)
+    void removeCoveredPartsFromMutations(const String & part_name, bool remove_part, bool remove_covered_parts);
 
     /// Update the insertion times in ZooKeeper.
     void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper,
@@ -241,12 +252,10 @@ private:
 
 public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_);
-
     ~ReplicatedMergeTreeQueue();
 
 
-    void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
-        const MergeTreeData::DataParts & parts);
+    void initialize(const MergeTreeData::DataParts & parts);
 
     /** Inserts an action to the end of the queue.
       * To restore broken parts during operation.
@@ -271,8 +280,9 @@ public:
       * If watch_callback is not empty, will call it when new entries appear in the log.
       * If there were new entries, notifies storage.queue_task_handle.
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
+      * Return the version of "logs" node (that is updated for every merge/mutation/... added to the log)
       */
-    void pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
+    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
 
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
@@ -434,6 +444,9 @@ public:
 
     bool isMutationFinished(const ReplicatedMergeTreeMutationEntry & mutation) const;
 
+    /// The version of "log" node that is used to check that no new merges have appeared.
+    int32_t getVersion() const { return merges_version; }
+
 private:
     const ReplicatedMergeTreeQueue & queue;
 
@@ -445,6 +458,8 @@ private:
 
     /// Quorum state taken at some later time than prev_virtual_parts.
     String inprogress_quorum_part;
+
+    int32_t merges_version = -1;
 };
 
 

@@ -1,20 +1,14 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <DataStreams/UnionBlockInputStream.h>
-#include <DataStreams/NullBlockInputStream.h>
-#include <DataStreams/ConcatBlockInputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
 #include <Columns/getLeastSuperColumn.h>
-#include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTExpressionList.h>
-
-#include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPipeline.h>
-#include <Processors/Pipe.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 
 namespace DB
@@ -178,103 +172,37 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(
     return cache[key] = InterpreterSelectWithUnionQuery(query_ptr, context, SelectQueryOptions().analyze()).getSampleBlock();
 }
 
-
-BlockInputStreams InterpreterSelectWithUnionQuery::executeWithMultipleStreams(QueryPipeline & parent_pipeline)
+void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 {
-    BlockInputStreams nested_streams;
+    size_t num_plans = nested_interpreters.size();
+    std::vector<QueryPlan> plans(num_plans);
+    DataStreams data_streams(num_plans);
 
-    for (auto & interpreter : nested_interpreters)
+    for (size_t i = 0; i < num_plans; ++i)
     {
-        BlockInputStreams streams = interpreter->executeWithMultipleStreams(parent_pipeline);
-        nested_streams.insert(nested_streams.end(), streams.begin(), streams.end());
+        nested_interpreters[i]->buildQueryPlan(plans[i]);
+        data_streams[i] = plans[i].getCurrentDataStream();
     }
 
-    /// Unify data structure.
-    if (nested_interpreters.size() > 1)
-    {
-        for (auto & stream : nested_streams)
-            stream = std::make_shared<ConvertingBlockInputStream>(stream, result_header,ConvertingBlockInputStream::MatchColumnsMode::Position);
-        parent_pipeline.addInterpreterContext(context);
-    }
+    auto max_threads = context->getSettingsRef().max_threads;
+    auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, max_threads);
 
-    /// Update max_streams due to:
-    /// - max_distributed_connections for Distributed() engine
-    /// - max_streams_to_max_threads_ratio
-    ///
-    /// XXX: res.pipeline.getMaxThreads() cannot be used since it is capped to
-    ///      number of streams, which is empty for non-Processors case.
-    max_streams = (*std::min_element(nested_interpreters.begin(), nested_interpreters.end(), [](const auto &a, const auto &b)
-    {
-        return a->getMaxStreams() < b->getMaxStreams();
-    }))->getMaxStreams();
-
-    return nested_streams;
+    query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
-
 
 BlockIO InterpreterSelectWithUnionQuery::execute()
 {
     BlockIO res;
-    BlockInputStreams nested_streams = executeWithMultipleStreams(res.pipeline);
-    BlockInputStreamPtr result_stream;
 
-    if (nested_streams.empty())
-    {
-        result_stream = std::make_shared<NullBlockInputStream>(getSampleBlock());
-    }
-    else if (nested_streams.size() == 1)
-    {
-        result_stream = nested_streams.front();
-        nested_streams.clear();
-    }
-    else
-    {
-        result_stream = std::make_shared<UnionBlockInputStream>(nested_streams, nullptr, max_streams);
-        nested_streams.clear();
-    }
+    QueryPlan query_plan;
+    buildQueryPlan(query_plan);
 
-    res.in = result_stream;
+    auto pipeline = query_plan.buildQueryPipeline();
+
+    res.pipeline = std::move(*pipeline);
     res.pipeline.addInterpreterContext(context);
+
     return res;
-}
-
-
-QueryPipeline InterpreterSelectWithUnionQuery::executeWithProcessors()
-{
-    QueryPipeline main_pipeline;
-    std::vector<QueryPipeline> pipelines;
-    bool has_main_pipeline = false;
-
-    Blocks headers;
-    headers.reserve(nested_interpreters.size());
-
-    for (auto & interpreter : nested_interpreters)
-    {
-        if (!has_main_pipeline)
-        {
-            has_main_pipeline = true;
-            main_pipeline = interpreter->executeWithProcessors();
-            headers.emplace_back(main_pipeline.getHeader());
-        }
-        else
-        {
-            pipelines.emplace_back(interpreter->executeWithProcessors());
-            headers.emplace_back(pipelines.back().getHeader());
-        }
-    }
-
-    if (!has_main_pipeline)
-        main_pipeline.init(Pipe(std::make_shared<NullSource>(getSampleBlock())));
-
-    if (!pipelines.empty())
-    {
-        auto common_header = getCommonHeaderForUnion(headers);
-        main_pipeline.unitePipelines(std::move(pipelines), common_header);
-    }
-
-    main_pipeline.addInterpreterContext(context);
-
-    return main_pipeline;
 }
 
 

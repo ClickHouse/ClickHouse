@@ -1,0 +1,7 @@
+version: '2.3'
+services:
+    redis1:
+        image: redis
+        restart: always
+        ports:
+          - 6380:6379

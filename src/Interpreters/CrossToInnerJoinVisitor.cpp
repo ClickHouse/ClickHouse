@@ -132,7 +132,7 @@ public:
         {
             /// leave other comparisons as is
         }
-        else if (functionIsLikeOperator(node.name) || /// LIKE, NOT LIKE
+        else if (functionIsLikeOperator(node.name) || /// LIKE, NOT LIKE, ILIKE, NOT ILIKE
                  functionIsInOperator(node.name))  /// IN, NOT IN
         {
             /// leave as is. It's not possible to make push down here cause of unknown aliases and not implemented JOIN predicates.
@@ -202,11 +202,11 @@ private:
     {
         std::optional<size_t> left_table_pos = IdentifierSemantic::getMembership(left);
         if (!left_table_pos)
-            left_table_pos = IdentifierSemantic::chooseTable(left, tables);
+            left_table_pos = IdentifierSemantic::chooseTableColumnMatch(left, tables);
 
         std::optional<size_t> right_table_pos = IdentifierSemantic::getMembership(right);
         if (!right_table_pos)
-            right_table_pos = IdentifierSemantic::chooseTable(right, tables);
+            right_table_pos = IdentifierSemantic::chooseTableColumnMatch(right, tables);
 
         if (left_table_pos && right_table_pos && (*left_table_pos != *right_table_pos))
         {
@@ -239,6 +239,10 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
     size_t num_array_join = 0;
     size_t num_using = 0;
 
+    // For diagnostic messages.
+    std::vector<IAST *> tables_with_using;
+    tables_with_using.reserve(num_tables);
+
     for (const auto & child : tables->children)
     {
         auto * table_element = child->as<ASTTablesInSelectQueryElement>();
@@ -257,6 +261,7 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
         if (t.hasUsing())
         {
             ++num_using;
+            tables_with_using.push_back(table_element);
             continue;
         }
 
@@ -275,7 +280,11 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
     }
 
     if (num_using && (num_tables - num_array_join) > 2)
-        throw Exception("Multiple CROSS/COMMA JOIN do not support USING", ErrorCodes::NOT_IMPLEMENTED);
+    {
+        throw Exception("Multiple CROSS/COMMA JOIN do not support USING (while "
+            "processing '" + IAST::formatForErrorMessage(tables_with_using) + "')",
+            ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     return !(num_array_join || num_using);
 }

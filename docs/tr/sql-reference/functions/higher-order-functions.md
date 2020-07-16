@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 57
 toc_title: "Y\xFCksek Sipari\u015F"
 ---
 
-# Yüksek Mertebeden Fonksiyonlar {#higher-order-functions}
+# Yüksek mertebeden fonksiyonlar {#higher-order-functions}
 
 ## `->` operatör, lambda (params, expr) fonksiyonu {#operator-lambdaparams-expr-function}
 
@@ -58,11 +58,11 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 └─────────────────────┘
 ```
 
-İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arrayMap` işlev.
+İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arrayMap` İşlev.
 
 ### arrayFilter(func, arr1, …) {#higher_order_functions-array-filter}
 
-Yalnızca öğeleri içeren bir dizi döndürür `arr1` hangi için `func` 0’dan başka bir şey döndürür.
+Yalnızca öğeleri içeren bir dizi döndürür `arr1` hangi için `func` 0'dan başka bir şey döndürür.
 
 Örnekler:
 
@@ -91,7 +91,7 @@ SELECT
 └─────┘
 ```
 
-İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arrayFilter` işlev.
+İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arrayFilter` İşlev.
 
 ### arrayFill(func, arr1, …) {#higher_order_functions-array-fill}
 
@@ -109,7 +109,7 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, 
 └──────────────────────────────────┘
 ```
 
-İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arrayFill` işlev.
+İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arrayFill` İşlev.
 
 ### arrayReverseFill(func, arr1, …) {#higher_order_functions-array-reverse-fill}
 
@@ -127,11 +127,11 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 
 └────────────────────────────────────┘
 ```
 
-İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arrayReverseFill` işlev.
+İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arrayReverseFill` İşlev.
 
 ### arraySplit(func, arr1, …) {#higher_order_functions-array-split}
 
-Bölme `arr1` birden fazla diziye. Ne zaman `func` 0’dan başka bir şey döndürür, dizi öğenin sol tarafında bölünecektir. Dizi ilk öğeden önce bölünmez.
+Bölme `arr1` birden fazla diziye. Ne zaman `func` 0'dan başka bir şey döndürür, dizi öğenin sol tarafında bölünecektir. Dizi ilk öğeden önce bölünmez.
 
 Örnekler:
 
@@ -145,11 +145,11 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 └─────────────────┘
 ```
 
-İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arraySplit` işlev.
+İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arraySplit` İşlev.
 
 ### arrayReverseSplit(func, arr1, …) {#higher_order_functions-array-reverse-split}
 
-Bölme `arr1` birden fazla diziye. Ne zaman `func` 0’dan başka bir şey döndürür, dizi öğenin sağ tarafında bölünecektir. Dizi son öğeden sonra bölünmez.
+Bölme `arr1` birden fazla diziye. Ne zaman `func` 0'dan başka bir şey döndürür, dizi öğenin sağ tarafında bölünecektir. Dizi son öğeden sonra bölünmez.
 
 Örnekler:
 
@@ -163,19 +163,19 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 └───────────────────┘
 ```
 
-İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arraySplit` işlev.
+İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arraySplit` İşlev.
 
 ### arrayCount(\[func,\] arr1, …) {#higher_order_functions-array-count}
 
-Func 0’dan başka bir şey döndüren arr dizisindeki öğelerin sayısını döndürür. Eğer ‘func’ belirtilmemişse, dizideki sıfır olmayan öğelerin sayısını döndürür.
+Func 0'dan başka bir şey döndüren arr dizisindeki öğelerin sayısını döndürür. Eğer ‘func’ belirtilmemişse, dizideki sıfır olmayan öğelerin sayısını döndürür.
 
 ### arrayExists(\[func,\] arr1, …) {#arrayexistsfunc-arr1}
 
-İçinde en az bir öğe varsa 1 değerini döndürür ‘arr’ hangi için ‘func’ 0’dan başka bir şey döndürür. Aksi takdirde, 0 döndürür.
+İçinde en az bir öğe varsa 1 değerini döndürür ‘arr’ hangi için ‘func’ 0'dan başka bir şey döndürür. Aksi takdirde, 0 döndürür.
 
 ### arrayAll(\[func,\] arr1, …) {#arrayallfunc-arr1}
 
-Döner 1 Eğer ‘func’ içindeki tüm öğeler için 0’dan başka bir şey döndürür ‘arr’. Aksi takdirde, 0 döndürür.
+Döner 1 Eğer ‘func’ içindeki tüm öğeler için 0'dan başka bir şey döndürür ‘arr’. Aksi takdirde, 0 döndürür.
 
 ### arraySum(\[func,\] arr1, …) {#higher-order-functions-array-sum}
 
@@ -183,19 +183,19 @@ Toplamını döndürür ‘func’ değerler. İşlev atlanırsa, sadece dizi ö
 
 ### arrayFirst(func, arr1, …) {#higher_order_functions-array-first}
 
-İlk öğeyi döndürür ‘arr1’ dizi hangi ‘func’ 0’dan başka bir şey döndürür.
+İlk öğeyi döndürür ‘arr1’ dizi hangi ‘func’ 0'dan başka bir şey döndürür.
 
-İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arrayFirst` işlev.
+İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arrayFirst` İşlev.
 
 ### arrayFirstIndex(func, arr1, …) {#higher_order_functions-array-first-index}
 
-İlk öğenin dizinini döndürür ‘arr1’ dizi hangi ‘func’ 0’dan başka bir şey döndürür.
+İlk öğenin dizinini döndürür ‘arr1’ dizi hangi ‘func’ 0'dan başka bir şey döndürür.
 
-İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arrayFirstIndex` işlev.
+İlk argümanın (lambda işlevi) atlanamayacağını unutmayın. `arrayFirstIndex` İşlev.
 
 ### arrayCumSum(\[func,\] arr1, …) {#arraycumsumfunc-arr1}
 
-Kaynak dizideki öğelerin kısmi toplamlarının bir dizisini döndürür (çalışan bir toplam). Eğer… `func` işlev belirtilir, daha sonra dizi öğelerinin değerleri toplanmadan önce bu işlev tarafından dönüştürülür.
+Kaynak dizideki öğelerin kısmi toplamlarının bir dizisini döndürür (çalışan bir toplam). Eğer... `func` işlev belirtilir, daha sonra dizi öğelerinin değerleri toplanmadan önce bu işlev tarafından dönüştürülür.
 
 Örnek:
 
@@ -225,7 +225,7 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 
 ### arraySort(\[func,\] arr1, …) {#arraysortfunc-arr1}
 
-Öğeleri sıralama sonucu bir dizi döndürür `arr1` artan düzende. Eğer… `func` fonksiyon belirtilir, sıralama sırası fonksiyonun sonucu ile belirlenir `func` dizi elemanlarına uygulanır (diziler)
+Öğeleri sıralama sonucu bir dizi döndürür `arr1` artan düzende. Eğer... `func` fonksiyon belirtilir, sıralama sırası fonksiyonun sonucu ile belirlenir `func` dizi elemanlarına uygulanır (diziler)
 
 Bu [Schwartzian dönüşümü](https://en.wikipedia.org/wiki/Schwartzian_transform) sıralama verimliliğini artırmak için kullanılır.
 
@@ -245,7 +245,7 @@ Hakkında daha fazla bilgi için `arraySort` yöntem, görmek [Dizilerle çalı�
 
 ### arrayReverseSort(\[func,\] arr1, …) {#arrayreversesortfunc-arr1}
 
-Öğeleri sıralama sonucu bir dizi döndürür `arr1` azalan sırada. Eğer… `func` fonksiyon belirtilir, sıralama sırası fonksiyonun sonucu ile belirlenir `func` dizi (diziler) elemanlarına uygulanır.
+Öğeleri sıralama sonucu bir dizi döndürür `arr1` azalan sırada. Eğer... `func` fonksiyon belirtilir, sıralama sırası fonksiyonun sonucu ile belirlenir `func` dizi (diziler) elemanlarına uygulanır.
 
 Örnek:
 

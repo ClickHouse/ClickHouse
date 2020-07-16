@@ -3,7 +3,7 @@ toc_priority: 38
 toc_title: SHOW
 ---
 
-# SHOW Queries {#show-queries}
+# SHOW Statements {#show-queries}
 
 ## SHOW CREATE TABLE {#show-create-table}
 
@@ -28,7 +28,7 @@ This query is identical to `SELECT name FROM system.databases [INTO OUTFILE file
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Outputs the content of the [system.processes](../../operations/system-tables.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
+Outputs the content of the [system.processes](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
 
 The `SELECT * FROM system.processes` query returns data about all the current queries.
 
@@ -98,6 +98,70 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 │ regions      │
 │ region_names │
 └──────────────┘
+```
+
+## SHOW GRANTS {#show-grants-statement}
+
+Shows privileges for a user.
+
+### Syntax {#show-grants-syntax}
+
+``` sql
+SHOW GRANTS [FOR user]
+```
+
+If user is not specified, the query returns privileges for the current user.
+
+## SHOW CREATE USER {#show-create-user-statement}
+
+Shows parameters that were used at a [user creation](../../sql-reference/statements/create/user.md).
+
+`SHOW CREATE USER` doesn’t output user passwords.
+
+### Syntax {#show-create-user-syntax}
+
+``` sql
+SHOW CREATE USER [name | CURRENT_USER]
+```
+
+## SHOW CREATE ROLE {#show-create-role-statement}
+
+Shows parameters that were used at a [role creation](../../sql-reference/statements/create/role.md).
+
+### Syntax {#show-create-role-syntax}
+
+``` sql
+SHOW CREATE ROLE name
+```
+
+## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
+
+Shows parameters that were used at a [row policy creation](../../sql-reference/statements/create/row-policy.md).
+
+### Syntax {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE [ROW] POLICY name ON [database.]table
+```
+
+## SHOW CREATE QUOTA {#show-create-quota-statement}
+
+Shows parameters that were used at a [quota creation](../../sql-reference/statements/create/quota.md).
+
+### Syntax {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE QUOTA [name | CURRENT]
+```
+
+## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
+
+Shows parameters that were used at a [settings profile creation](../../sql-reference/statements/create/settings-profile.md).
+
+### Syntax {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE [SETTINGS] PROFILE name
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

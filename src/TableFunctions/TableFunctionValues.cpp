@@ -25,6 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -37,7 +38,7 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
         {
             const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
 
-            Field value = convertFieldToType(value_field, *sample_block.getByPosition(0).type, value_type_ptr.get());
+            Field value = convertFieldToTypeOrThrow(value_field, *sample_block.getByPosition(0).type, value_type_ptr.get());
             res_columns[0]->insert(value);
         }
     }
@@ -50,11 +51,11 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
             const Tuple & value_tuple = value_field.safeGet<Tuple>();
 
             if (value_tuple.size() != sample_block.columns())
-                throw Exception("Values size should match with number of columns", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Values size should match with number of columns", ErrorCodes::BAD_ARGUMENTS);
 
             for (size_t j = 0; j < value_tuple.size(); ++j)
             {
-                Field value = convertFieldToType(value_tuple[j], *sample_block.getByPosition(j).type, value_types_tuple[j].get());
+                Field value = convertFieldToTypeOrThrow(value_tuple[j], *sample_block.getByPosition(j).type, value_types_tuple[j].get());
                 res_columns[j]->insert(value);
             }
         }
@@ -75,6 +76,13 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     /// Parsing first argument as table structure and creating a sample block
+    if (!args[0]->as<const ASTLiteral>())
+    {
+        throw Exception(fmt::format(
+            "The first argument of table function '{}' must be a literal. "
+            "Got '{}' instead", getName(), args[0]->formatForErrorMessage()),
+            ErrorCodes::BAD_ARGUMENTS);
+    }
     std::string structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
     ColumnsDescription columns = parseColumnsListFromString(structure, context);

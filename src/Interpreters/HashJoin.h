@@ -181,7 +181,6 @@ public:
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
     BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const override;
-    bool hasStreamWithNonJoinedRows() const override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -192,7 +191,7 @@ public:
 
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
-    AsofRowRefs::Type getAsofType() const { return *asof_type; }
+    TypeIndex getAsofType() const { return *asof_type; }
     ASOF::Inequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
 
@@ -344,13 +343,15 @@ private:
     bool nullable_right_side; /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
     bool nullable_left_side; /// In case of RIGHT and FULL joins, if use_nulls, convert left-side columns to Nullable.
     bool any_take_last_row; /// Overwrite existing values when encountering the same key again
-    std::optional<AsofRowRefs::Type> asof_type;
+    std::optional<TypeIndex> asof_type;
     ASOF::Inequality asof_inequality;
 
     /// Right table data. StorageJoin shares it between many Join objects.
     std::shared_ptr<RightTableData> data;
     Sizes key_sizes;
 
+    /// Block with columns from the right-side table.
+    Block right_sample_block;
     /// Block with columns from the right-side table except key columns.
     Block sample_block_with_columns_to_add;
     /// Block with key columns in the same order they appear in the right-side table (duplicates appear once).
@@ -366,16 +367,11 @@ private:
 
     void init(Type type_);
 
-    /** Set information about structure of right hand of JOIN (joined data).
-      */
-    void setSampleBlock(const Block & block);
-
     const Block & savedBlockSample() const { return data->sample_block; }
 
     /// Modify (structure) right block to save it in block list
     Block structureRightBlock(const Block & stored_block) const;
     void initRightBlockStructure(Block & saved_block_sample);
-    void initRequiredRightKeys();
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
     void joinBlockImpl(

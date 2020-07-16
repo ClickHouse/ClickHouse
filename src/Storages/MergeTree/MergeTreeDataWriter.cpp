@@ -3,7 +3,9 @@
 #include <Columns/ColumnConst.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Exception.h>
+#include <Disks/createVolume.h>
 #include <Interpreters/AggregationCommon.h>
+#include <Interpreters/Context.h>
 #include <IO/HashingWriteBuffer.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
@@ -76,10 +78,12 @@ void buildScatterSelector(
 }
 
 /// Computes ttls and updates ttl infos
-void updateTTL(const MergeTreeData::TTLEntry & ttl_entry,
+void updateTTL(
+    const TTLDescription & ttl_entry,
     IMergeTreeDataPart::TTLInfos & ttl_infos,
     DB::MergeTreeDataPartTTLInfo & ttl_info,
-    Block & block, bool update_part_min_max_ttls)
+    Block & block,
+    bool update_part_min_max_ttls)
 {
     bool remove_column = false;
     if (!block.has(ttl_entry.result_column))
@@ -128,27 +132,27 @@ void updateTTL(const MergeTreeData::TTLEntry & ttl_entry,
 
 }
 
-BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block, size_t max_parts)
+BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot)
 {
     BlocksWithPartition result;
     if (!block || !block.rows())
         return result;
 
-    data.check(block, true);
-    block.checkNumberOfRows();
+    metadata_snapshot->check(block, true);
 
-    if (!data.partition_key_expr) /// Table is not partitioned.
+    if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
         result.emplace_back(Block(block), Row());
         return result;
     }
 
     Block block_copy = block;
-    data.partition_key_expr->execute(block_copy);
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    partition_key.expression->execute(block_copy);
 
     ColumnRawPtrs partition_columns;
-    partition_columns.reserve(data.partition_key_sample.columns());
-    for (const ColumnWithTypeAndName & element : data.partition_key_sample)
+    partition_columns.reserve(partition_key.sample_block.columns());
+    for (const ColumnWithTypeAndName & element : partition_key.sample_block)
         partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
 
     PODArray<size_t> partition_num_to_first_row;
@@ -188,7 +192,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     return result;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition)
+MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot)
 {
     Block & block = block_with_partition.block;
 
@@ -202,7 +206,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     MergeTreePartition partition(std::move(block_with_partition.partition));
 
-    MergeTreePartInfo new_part_info(partition.getID(data.partition_key_sample), temp_index, temp_index, 0);
+    MergeTreePartInfo new_part_info(partition.getID(metadata_snapshot->getPartitionKey().sample_block), temp_index, temp_index, 0);
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -226,17 +230,19 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     size_t expected_size = block.bytes();
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
-    for (const auto & ttl_entry : data.move_ttl_entries)
+    const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
+    for (const auto & ttl_entry : move_ttl_entries)
         updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
-    NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
+    NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
     ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, time(nullptr));
+    VolumePtr volume = data.getStoragePolicy()->getVolume(0);
 
     auto new_data_part = data.createPart(
         part_name,
         data.choosePartType(expected_size, block.rows()),
         new_part_info,
-        reservation->getDisk(),
+        createVolumeFromReservation(reservation, volume),
         TMP_PREFIX + part_name);
 
     new_data_part->setColumns(columns);
@@ -244,22 +250,25 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
 
-    /// The name could be non-unique in case of stale files from previous runs.
-    String full_path = new_data_part->getFullRelativePath();
-
-    if (new_data_part->disk->exists(full_path))
+    if (new_data_part->isStoredOnDisk())
     {
-        LOG_WARNING(log, "Removing old temporary directory " + fullPath(new_data_part->disk, full_path));
-        new_data_part->disk->removeRecursive(full_path);
+        /// The name could be non-unique in case of stale files from previous runs.
+        String full_path = new_data_part->getFullRelativePath();
+
+        if (new_data_part->volume->getDisk()->exists(full_path))
+        {
+            LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
+            new_data_part->volume->getDisk()->removeRecursive(full_path);
+        }
+
+        new_data_part->volume->getDisk()->createDirectories(full_path);
     }
 
-    new_data_part->disk->createDirectories(full_path);
-
     /// If we need to calculate some columns to sort.
-    if (data.hasSortingKey() || data.hasSkipIndices())
-        data.sorting_key_and_skip_indices_expr->execute(block);
+    if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
+        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot)->execute(block);
 
-    Names sort_columns = data.sorting_key_columns;
+    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -283,10 +292,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if (data.hasRowsTTL())
-        updateTTL(data.rows_ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
+    if (metadata_snapshot->hasRowsTTL())
+        updateTTL(metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
 
-    for (const auto & [name, ttl_entry] : data.column_ttl_entries_by_name)
+    for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
         updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);
 
     new_data_part->ttl_infos.update(move_ttl_infos);
@@ -295,7 +304,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
 
-    MergedBlockOutputStream out(new_data_part, columns, data.skip_indices, compression_codec);
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);

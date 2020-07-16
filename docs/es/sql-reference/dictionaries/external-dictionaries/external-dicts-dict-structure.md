@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 44
 toc_title: Clave y campos del diccionario
 ---
 
-# Clave y Campos Del Diccionario {#dictionary-key-and-fields}
+# Clave y campos del diccionario {#dictionary-key-and-fields}
 
 El `<structure>` cláusula describe la clave del diccionario y los campos disponibles para consultas.
 
@@ -90,7 +90,7 @@ PRIMARY KEY Id
 
 -   `PRIMARY KEY` – The name of the column with keys.
 
-### Clave Compuesta {#composite-key}
+### Clave compuesta {#composite-key}
 
 La clave puede ser un `tuple` de cualquier tipo de campo. El [diseño](external-dicts-dict-layout.md) en este caso debe ser `complex_key_hashed` o `complex_key_cache`.
 

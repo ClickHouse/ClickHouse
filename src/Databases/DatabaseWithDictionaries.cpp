@@ -49,7 +49,8 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
                 StorageDictionary::create(
                     StorageID(getDatabaseName(), dictionary_name),
                     full_name,
-                    ExternalDictionariesLoader::getDictionaryStructure(*attach_info.config)),
+                    ExternalDictionariesLoader::getDictionaryStructure(*attach_info.config),
+                    StorageDictionary::Location::SameDatabaseAndNameAsDictionary),
                 lock);
         }
         catch (...)
@@ -127,7 +128,7 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
                 "Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.",
                 ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
-    if (isTableExist(dictionary_name))
+    if (isTableExist(dictionary_name, global_context))
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
 

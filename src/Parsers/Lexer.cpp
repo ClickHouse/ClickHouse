@@ -305,7 +305,12 @@ Token Lexer::nextTokenImpl()
             return Token(TokenType::ErrorSinglePipeMark, token_begin, pos);
         }
         case '@':
-            return Token(TokenType::At, token_begin, ++pos);
+        {
+            ++pos;
+            if (pos < end && *pos == '@')
+                return Token(TokenType::DoubleAt, token_begin, ++pos);
+            return Token(TokenType::At, token_begin, pos);
+        }
 
         default:
             if (isWordCharASCII(*pos))
@@ -316,7 +321,14 @@ Token Lexer::nextTokenImpl()
                 return Token(TokenType::BareWord, token_begin, pos);
             }
             else
-                return Token(TokenType::Error, token_begin, ++pos);
+            {
+                /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
+                pos = skipWhitespacesUTF8(pos, end);
+                if (pos > token_begin)
+                    return Token(TokenType::Whitespace, token_begin, pos);
+                else
+                    return Token(TokenType::Error, token_begin, ++pos);
+            }
     }
 }
 

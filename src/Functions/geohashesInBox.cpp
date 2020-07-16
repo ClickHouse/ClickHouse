@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 
+
 namespace DB
 {
 
@@ -120,10 +121,8 @@ public:
             // Actually write geohashes into preallocated buffer.
             geohashesInBox(prepared_args, out);
 
-            for (UInt8 i = 1; i <= prepared_args.items_count ; ++i)
-            {
+            for (UInt64 i = 1; i <= prepared_args.items_count ; ++i)
                 res_strings_offsets.push_back(starting_offset + (prepared_args.precision + 1) * i);
-            }
             res_offsets.push_back((res_offsets.empty() ? 0 : res_offsets.back()) + prepared_args.items_count);
         }
         if (!res_strings_offsets.empty() && res_strings_offsets.back() != res_strings_chars.size())

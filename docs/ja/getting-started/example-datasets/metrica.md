@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
-toc_priority: 21
-toc_title: "Yandex\u306E\u3002Metrica\u30C7\u30FC\u30BF"
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_priority: 14
+toc_title: "Yandex.\u30E1\u30C8\u30EA\u30AB\u30C7\u30FC\u30BF"
 ---
 
-# 匿名のyandexの。metricaデータ {#anonymized-yandex-metrica-data}
+# 匿名Yandexの。メトリカデータ {#anonymized-yandex-metrica-data}
 
-データセットのテーブルを含む匿名化されたデーター (`hits_v1`)および訪問 (`visits_v1`）Yandexの。メトリカ につなげていくかを学びますYandex.Metrica in [クリックハウスの歴史](../../introduction/history.md) セクション。
+データセット (`hits_v1`）と訪問 (`visits_v1` Yandexの）。メトリカ につなげていくかを学びますYandex.メトリカ [クリックハウスの歴史](../../introduction/history.md) セクション
 
-どちらのテーブルも圧縮形式でダウンロードできます `tsv.xz` ファイルに対して割. それに加えて、の拡張バージョン `hits` 100万行を含むテーブルは、TSVとして利用可能ですhttps://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz そして準備された仕切りとしてhttps://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz。
+のデータセットのテーブル、つぶやきの本文は、以下のクエリをダウンロードした圧縮 `tsv.xz` ファイルに対して割. それに加えて、の拡張バージョン `hits` テーブルを含む100万行はTSVでhttps://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz としての準備が大切でhttps://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
 
 ## 取得のテーブルから調の間仕切り {#obtaining-tables-from-prepared-partitions}
 
@@ -23,7 +23,7 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 ```
 
-ダウンロードと読み込み:
+ダウンロード、輸入訪問:
 
 ``` bash
 curl -O https://clickhouse-datasets.s3.yandex.net/visits/partitions/visits_v1.tar
@@ -33,9 +33,9 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## 圧縮されたtsvファイルからの表の取得 {#obtaining-tables-from-compressed-tsv-file}
+## 圧縮TSVファイルからのテーブルの取得 {#obtaining-tables-from-compressed-tsv-file}
 
-圧縮されたtsvファ:
+圧縮TSVファイルか:
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
@@ -49,7 +49,7 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.hits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 ```
 
-圧縮tsv-fileからの訪問のダウンロードとインポート:
+ダウンロード、輸入からの訪問圧縮tsvファイル:
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
@@ -63,8 +63,8 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.visits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## クエリ例 {#example-queries}
+## クエリの例 {#example-queries}
 
-[ClickHouseチュートリアル](../../getting-started/tutorial.md) は、Yandexのに基づいています。Metricaデータの推奨使うことができるようにこのデータやトランザクションデータだけを通してチュートリアルです。
+[ClickHouseチュートリアル](../../getting-started/tutorial.md) Yandexに基づいています。Metricaデータの推奨使うことができるようにこのデータやトランザクションデータだけを通してチュートリアルです。
 
-これらのテーブルへのクエリの追加の例は、 [ステートフルテスト](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) ClickHouseの（彼らは名前が付けられています `test.hists` と `test.visits` そこ）。
+追加の質問をこれらのテーブルで見られるもので、 [ステートフルテスト](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) クリックハウ `test.hists` と `test.visits` ）がある。

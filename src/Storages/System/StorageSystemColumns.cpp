@@ -12,6 +12,7 @@
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -25,12 +26,14 @@ namespace ErrorCodes
 StorageSystemColumns::StorageSystemColumns(const std::string & name_)
     : IStorage({"system", name_})
 {
-    setColumns(ColumnsDescription(
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(ColumnsDescription(
     {
         { "database",           std::make_shared<DataTypeString>() },
         { "table",              std::make_shared<DataTypeString>() },
         { "name",               std::make_shared<DataTypeString>() },
         { "type",               std::make_shared<DataTypeString>() },
+        { "position",           std::make_shared<DataTypeUInt64>() },
         { "default_kind",       std::make_shared<DataTypeString>() },
         { "default_expression", std::make_shared<DataTypeString>() },
         { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
@@ -43,6 +46,7 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "is_in_sampling_key",  std::make_shared<DataTypeUInt8>() },
         { "compression_codec",   std::make_shared<DataTypeString>() },
     }));
+    setInMemoryMetadata(storage_metadata);
 }
 
 
@@ -99,11 +103,11 @@ protected:
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-                TableStructureReadLockHolder table_lock;
+                TableLockHolder table_lock;
 
                 try
                 {
-                    table_lock = storage->lockStructureForShare(false, query_id, lock_acquire_timeout);
+                    table_lock = storage->lockForShare(query_id, lock_acquire_timeout);
                 }
                 catch (const Exception & e)
                 {
@@ -118,20 +122,22 @@ protected:
                         throw;
                 }
 
-                columns = storage->getColumns();
+                auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+                columns = metadata_snapshot->getColumns();
 
-                cols_required_for_partition_key = storage->getColumnsRequiredForPartitionKey();
-                cols_required_for_sorting_key = storage->getColumnsRequiredForSortingKey();
-                cols_required_for_primary_key = storage->getColumnsRequiredForPrimaryKey();
-                cols_required_for_sampling = storage->getColumnsRequiredForSampling();
-
+                cols_required_for_partition_key = metadata_snapshot->getColumnsRequiredForPartitionKey();
+                cols_required_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
+                cols_required_for_primary_key = metadata_snapshot->getColumnsRequiredForPrimaryKey();
+                cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
                 column_sizes = storage->getColumnSizes();
             }
 
             bool check_access_for_columns = check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
 
+            size_t position = 0;
             for (const auto & column : columns)
             {
+                ++position;
                 if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 
@@ -146,6 +152,8 @@ protected:
                     res_columns[res_index++]->insert(column.name);
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.type->getName());
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(position);
 
                 if (column.default_desc.expression)
                 {
@@ -234,19 +242,20 @@ private:
 
 Pipes StorageSystemColumns::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
-    check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     /// Create a mask of what columns are needed in the result.
 
     NameSet names_set(column_names.begin(), column_names.end());
 
-    Block sample_block = getSampleBlock();
+    Block sample_block = metadata_snapshot->getSampleBlock();
     Block header;
 
     std::vector<UInt8> columns_mask(sample_block.columns());
@@ -300,14 +309,17 @@ Pipes StorageSystemColumns::read(
             const DatabasePtr database = databases.at(database_name);
             offsets[i] = i ? offsets[i - 1] : 0;
 
-            for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
+            for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
-                const String & table_name = iterator->name();
-                storages.emplace(std::piecewise_construct,
-                    std::forward_as_tuple(database_name, table_name),
-                    std::forward_as_tuple(iterator->table()));
-                table_column_mut->insert(table_name);
-                ++offsets[i];
+                if (const auto & table = iterator->table())
+                {
+                    const String & table_name = iterator->name();
+                    storages.emplace(std::piecewise_construct,
+                        std::forward_as_tuple(database_name, table_name),
+                        std::forward_as_tuple(table));
+                    table_column_mut->insert(table_name);
+                    ++offsets[i];
+                }
             }
         }
 

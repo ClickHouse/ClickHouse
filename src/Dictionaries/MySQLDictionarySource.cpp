@@ -58,7 +58,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const Block & sample_block_)
-    : log(&Logger::get("MySQLDictionarySource"))
+    : log(&Poco::Logger::get("MySQLDictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , db{config.getString(config_prefix + ".db", "")}
@@ -68,7 +68,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     , dont_check_update_time{config.getBool(config_prefix + ".dont_check_update_time", false)}
     , sample_block{sample_block_}
     , pool{mysqlxx::PoolFactory::instance().get(config, config_prefix)}
-    , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
+    , query_builder{dict_struct, db, "", table, where, IdentifierQuotingStyle::Backticks}
     , load_all_query{query_builder.composeLoadAllQuery()}
     , invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
     , close_connection{config.getBool(config_prefix + ".close_connection", false) || config.getBool(config_prefix + ".share_connection", false)}
@@ -77,7 +77,7 @@ MySQLDictionarySource::MySQLDictionarySource(
 
 /// copy-constructor is provided in order to support cloneability
 MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other)
-    : log(&Logger::get("MySQLDictionarySource"))
+    : log(&Poco::Logger::get("MySQLDictionarySource"))
     , update_time{other.update_time}
     , dict_struct{other.dict_struct}
     , db{other.db}
@@ -87,7 +87,7 @@ MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other
     , dont_check_update_time{other.dont_check_update_time}
     , sample_block{other.sample_block}
     , pool{other.pool}
-    , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
+    , query_builder{dict_struct, db, "", table, where, IdentifierQuotingStyle::Backticks}
     , load_all_query{other.load_all_query}
     , last_modification{other.last_modification}
     , invalidate_query{other.invalidate_query}
@@ -227,7 +227,7 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
             if (!update_time_value.isNull())
             {
                 modification_time = update_time_value.getDateTime();
-                LOG_TRACE(log, "Got modification time: " << modification_time);
+                LOG_TRACE(log, "Got modification time: {}", modification_time);
             }
 
             /// fetch remaining rows to avoid "commands out of sync" error
