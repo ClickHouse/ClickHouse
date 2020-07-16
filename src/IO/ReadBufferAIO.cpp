@@ -1,4 +1,4 @@
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
 
 #include <IO/ReadBufferAIO.h>
 #include <IO/AIOContextPool.h>
