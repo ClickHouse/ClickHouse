@@ -82,8 +82,8 @@ void FileChecker::repair()
         const String & name = name_size.first;
         size_t expected_size = name_size.second;
         String path = parentPath(files_info_path) + name;
-
-        auto real_size = disk->exists(path) ? disk->getFileSize(path) : 0;  /// Race condition is Ok.
+        bool exists = disk->exists(path);
+        auto real_size = exists ? disk->getFileSize(path) : 0;  /// No race condition assuming no one else is working with these files.
 
         if (real_size < expected_size)
             throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Size of {} is less than expected. Size is {} but should be {}.",
