@@ -624,20 +624,10 @@ struct ArrayIndexGenericNullImpl
     }
 };
 
-
-inline bool allowArrayIndex(const DataTypePtr & type0, const DataTypePtr & type1)
-{
-    DataTypePtr data_type0 = removeNullable(type0);
-    DataTypePtr data_type1 = removeNullable(type1);
-
-    return ((isNativeNumber(data_type0) || isEnum(data_type0)) && isNativeNumber(data_type1))
-        || data_type0->equals(*data_type1);
-}
-
 /**
  * Check types extracted from Nullable() and LowCardinality()
  */
-inline bool allowLCAndNullableExtracted(const DataTypePtr & array_inner_type, const DataTypePtr & arg)
+inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypePtr & arg)
 {
     /**
      * Possible cases for #arg and #array_inner_type:
@@ -662,7 +652,8 @@ inline bool allowLCAndNullableExtracted(const DataTypePtr & array_inner_type, co
                 removeNullable(
                     arg)));
 
-    return array_extracted->equals(*arg_extracted);
+    return ((isNativeNumber(array_extracted) || isEnum(array_extracted)) && isNativeNumber(arg_extracted))
+        || array_extracted->equals(*arg_extracted);
 }
 
 template <class ConcreteAction, class Name>
@@ -713,18 +704,16 @@ private:
      * (s1, s1, s2, ...), (s2, s1, s2, ...), (s3, s1, s2, ...)
      */
     template <class ...Integral>
-    [[gnu::nonnull]] inline bool
-    executeIntegral(const ColumnArray * col, Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeIntegral(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        return (executeIntegralExpanded<Integral, Integral...>(col, block, arguments, result) || ...);
+        return (executeIntegralExpanded<Integral, Integral...>(block, arguments, result) || ...);
     }
 
     /// Invoke executeIntegralImpl with such parameters: (A, other1), (A, other2), ...
     template <class A, class ...Other>
-    [[gnu::nonnull]] inline bool
-    executeIntegralExpanded(const ColumnArray * col, Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeIntegralExpanded(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        return (executeIntegralImpl<A, Other>(col, block, arguments, result) || ...);
+        return (executeIntegralImpl<A, Other>(block, arguments, result) || ...);
     }
 
     /**
@@ -733,9 +722,14 @@ private:
      * so we have to check all possible variants for #Initial and #Resulting types.
      */
     template <typename Initial, typename Resulting>
-    [[gnu::nonnull]] bool
-    executeIntegralImpl(const ColumnArray * col_array, Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeIntegralImpl(Block & block, const ColumnNumbers & arguments, size_t result)
     {
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(
+                block.getByPosition(arguments[0]).column.get());
+
+        if (!col_array)
+            return false;
+
         const ColumnVector<Initial> * col_nested = checkAndGetColumn<ColumnVector<Initial>>(&col_array->getData());
 
         if (!col_nested)
@@ -781,9 +775,14 @@ private:
      * 3. Invoke the ArrayIndexNumImpl to find the desired value
      * 4. Fill the desired values in the resulting column
      */
-    [[gnu::nonnull]] bool
-    executeLowCardinality(const ColumnArray * col_array, Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result)
     {
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(
+                block.getByPosition(arguments[0]).column.get());
+
+        if (col_array)
+            return false;
+
         const ColumnLowCardinality * col_lc =
             checkAndGetColumn<ColumnLowCardinality>(&col_array->getData());
 
@@ -837,9 +836,14 @@ private:
         return true;
     }
 
-    [[gnu::nonnull]]
-    bool executeString(const ColumnArray * col_array, Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeString(Block & block, const ColumnNumbers & arguments, size_t result)
     {
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(
+                block.getByPosition(arguments[0]).column.get());
+
+        if (!col_array)
+            return false;
+
         const ColumnString * col_nested = checkAndGetColumn<ColumnString>(&col_array->getData());
 
         if (!col_nested)
@@ -911,8 +915,8 @@ private:
 
     bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const ColumnConst * col_array =
-            checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+        const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(
+                block.getByPosition(arguments[0]).column.get());
 
         if (!col_array)
             return false;
@@ -986,9 +990,13 @@ private:
         return true;
     }
 
-    [[gnu::nonnull]]
-    bool executeGeneric(const ColumnArray * col, Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result)
     {
+        const ColumnArray * col = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+
+        if (!col)
+            return false;
+
         const IColumn & col_nested = col->getData();
         const IColumn & item_arg = *block.getByPosition(arguments[1]).column;
 
@@ -997,7 +1005,11 @@ private:
         auto [null_map_data, null_map_item] = nullMapsBuilder(block, arguments);
 
         if (item_arg.onlyNull())
-            ArrayIndexGenericNullImpl<ConcreteAction>::vector(col_nested, col->getOffsets(), col_res->getData(), null_map_data);
+            ArrayIndexGenericNullImpl<ConcreteAction>::vector(
+                col_nested,
+                col->getOffsets(),
+                col_res->getData(),
+                null_map_data);
         else if (isColumnConst(item_arg))
             ArrayIndexGenericImpl<ConcreteAction, true>::vector(
                 col_nested,
@@ -1008,7 +1020,12 @@ private:
                 nullptr);
         else
             ArrayIndexGenericImpl<ConcreteAction, false>::vector(
-                col_nested, col->getOffsets(), *item_arg.convertToFullColumnIfConst(), col_res->getData(), null_map_data, null_map_item);
+                col_nested,
+                col->getOffsets(),
+                *item_arg.convertToFullColumnIfConst(),
+                col_res->getData(),
+                null_map_data,
+                null_map_item);
 
         block.getByPosition(result).column = std::move(col_res);
         return true;
@@ -1033,8 +1050,7 @@ public:
             throw Exception("First argument for function " + getName() + " must be an array.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->onlyNull() && !allowArrayIndex(array_type->getNestedType(), arguments[1])
-            && !allowLCAndNullableExtracted(array_type->getNestedType(), arguments[1]))
+        if (!arguments[1]->onlyNull() && !allowArguments(array_type->getNestedType(), arguments[1]))
             throw Exception("Types of array and 2nd argument of function \""
                 + getName() + "\" must be identical up to nullability or cardinality or "
                 "numeric types or Enum and numeric type. Passed: "
@@ -1060,23 +1076,24 @@ public:
       */
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        /// It's more optimal to pre-check array column (passing a pointer argument to the following functions is
-        /// faster then performing these lines for each of them);
         ColumnPtr& ptr = block.getByPosition(arguments[0]).column;
-        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(ptr.get());
 
-        if (!col_array)
-            throw Exception(
-                "Illegal column " + ptr->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+        /**
+         * The columns here have two general cases, either being Array(T) or Const(Array(T)).
+         * The last type will return nullptr after casting to ColumnArray, so we leave the casting
+         * to execute* functions.
+         */
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(ptr.get());
+        const ColumnNullable * nullable = nullptr;
+
+        if (col_array)
+            nullable = checkAndGetColumn<ColumnNullable>(col_array->getData());
 
         auto & arg_column = block.getByPosition(arguments[1]).column;
-
-        const ColumnNullable * nullable = checkAndGetColumn<ColumnNullable>(col_array->getData());
         const ColumnNullable * arg_nullable = checkAndGetColumn<ColumnNullable>(*arg_column);
 
         if (!nullable && !arg_nullable)
-            executeOnNonNullable(col_array, block, arguments, result);
+            executeOnNonNullable(block, arguments, result);
         else
         {
             /**
@@ -1085,10 +1102,7 @@ public:
              * {0, 1, 2, 3, 4}
              * {data (array) argument, "value" argument, data null map, "value" null map, function result}.
              */
-            Block source_block =
-            {
-                {}, {}, {}, {}, {nullptr, block.getByPosition(result).type, ""}
-            };
+            Block source_block = { {}, {}, {}, {}, {nullptr, block.getByPosition(result).type, ""} };
 
             if (nullable)
             {
@@ -1135,7 +1149,7 @@ public:
             }
 
             /// Now perform the function.
-            executeOnNonNullable(col_array, source_block, {0, 1, 2, 3}, 4);
+            executeOnNonNullable(source_block, {0, 1, 2, 3}, 4);
 
             /// Move the result to its final position.
             const ColumnWithTypeAndName & source_col = source_block.getByPosition(4);
@@ -1145,17 +1159,17 @@ public:
     }
 
 private:
-    void executeOnNonNullable(const ColumnArray * col, Block & block, const ColumnNumbers & arguments, size_t result)
+    void executeOnNonNullable(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         if (!(
             executeIntegral<
                 UInt8, UInt16, UInt32, UInt64,
                 Int8, Int16, Int32, Int64,
-                Float32, Float64>(col, block, arguments, result)
+                Float32, Float64>(block, arguments, result)
             || executeConst(block, arguments, result) // special case
-            || executeString(col, block, arguments, result)
-            || executeLowCardinality(col, block, arguments, result)
-            || executeGeneric(col, block, arguments, result)))
+            || executeString(block, arguments, result)
+            || executeLowCardinality(block, arguments, result)
+            || executeGeneric(block, arguments, result)))
             throw Exception(
                 "Illegal internal type of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
