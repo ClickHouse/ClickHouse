@@ -25,15 +25,18 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+static const String BETA = "beta";
+static const String GAMMA = "gamma";
+
 template <bool higher_is_better>
-Variants bayesian_ab_test(std::string distribution, std::vector<double> xs, std::vector<double> ys)
+Variants bayesian_ab_test(String distribution, std::vector<double> xs, std::vector<double> ys)
 {
     const size_t r = 1000, c = 100;
 
     Variants variants(xs.size());
     std::vector<std::vector<double>> samples_matrix;
 
-    if (distribution == "beta")
+    if (distribution == BETA)
     {
         double alpha, beta;
 
@@ -49,7 +52,7 @@ Variants bayesian_ab_test(std::string distribution, std::vector<double> xs, std:
             samples_matrix.push_back(stats::rbeta<std::vector<double>>(r, c, alpha, beta));
         }
     }
-    else if (distribution == "gamma")
+    else if (distribution == GAMMA)
     {
         double shape, scale;
 
@@ -57,7 +60,10 @@ Variants bayesian_ab_test(std::string distribution, std::vector<double> xs, std:
         {
             shape = 1.0 + xs[i];
             scale = 250.0 / (1 + 250.0 * ys[i]);
-            samples_matrix.push_back(stats::rgamma<std::vector<double>>(r, c, shape, scale));
+            std::vector<double> samples = stats::rgamma<std::vector<double>>(r, c, shape, scale);
+            for (size_t j = 0; j < samples.size(); ++j)
+                samples[j] = 1 / samples[j];
+            samples_matrix.push_back(samples);
         }
     }
 
@@ -142,70 +148,60 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    const IColumn * getNestedConstColumn(Block & block, const ColumnNumbers & arguments, const size_t n) const
-    {
-        const IColumn * col = block.getByPosition(arguments[n]).column.get();
-        const IColumn * nested_col;
-        ColumnPtr materialized_column;
-
-        if (const ColumnConst * const_arr = checkAndGetColumnConst<ColumnArray>(col))
-        {
-            materialized_column = const_arr->convertToFullColumn();
-            const auto & materialized_arr = typeid_cast<const ColumnArray &>(*materialized_column);
-            nested_col = &materialized_arr.getData();
-        }
-        else
-            throw Exception("Illegal column " + col->getName() + " as argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return nested_col;
-    }
-
-    std::vector<double> getDoubleValues(const IColumn * col) const 
-    {
-        const ColumnFloat64 * column = checkAndGetColumn<ColumnFloat64>(*col);
-        if (!column)
-            throw Exception("Illegal type of argument for function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        std::vector<double> ret;
-        for (size_t i = 0; i < column->size(); ++i)
-            ret.push_back(column->getData()[i]);
-
-        return ret;
-    }
-
-    std::vector<std::string> getStringValues(const IColumn * col) const 
-    {
-        const ColumnString * column = checkAndGetColumn<ColumnString>(*col);
-        if (!column)
-            throw Exception("Illegal type of argument for function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        std::vector<std::string> ret;
-        for (size_t i = 0; i < column->size(); ++i)
-            ret.push_back(column->getDataAt(i).data);
-
-        return ret;
-    }
-
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
         std::vector<double> xs, ys;
         std::vector<std::string> variant_names;
-        std::string dist;
+        String dist;
         bool higher_is_better;
 
         if (const ColumnConst * col_dist = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
+        {
             dist = col_dist->getDataAt(0).data;
+            dist = Poco::toLower(dist);
+            if (dist != BETA && dist != GAMMA)
+                throw Exception("First argument for function " + getName() + " cannot be " + dist, ErrorCodes::BAD_ARGUMENTS);
+        }
         else
-            throw Exception("First argument for function " + getName() + " must be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("First argument for function " + getName() + " must be Constant string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (const ColumnConst * col_higher_is_better = checkAndGetColumnConst<ColumnUInt8>(block.getByPosition(arguments[1]).column.get()))
             higher_is_better = col_higher_is_better->getBool(0);
         else
-            throw Exception("Second argument for function " + getName() + " must be Boolean", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Second argument for function " + getName() + " must be Constatnt boolean", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        variant_names = getStringValues(getNestedConstColumn(block, arguments, 2));
-        xs = getDoubleValues(getNestedConstColumn(block, arguments, 3));
-        ys = getDoubleValues(getNestedConstColumn(block, arguments, 4));
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[2]).column.get()))
+        {
+            if (!col_const_arr)
+                throw Exception("Thrid argument for function " + getName() + " must be Array of constant strings", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            Array src_arr = col_const_arr->getValue<Array>();
+            for (size_t i = 0; i < src_arr.size(); ++i)
+                variant_names.push_back(src_arr[i].get<const String &>());
+        }
+
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[3]).column.get()))
+        {
+            if (!col_const_arr)
+                throw Exception("Forth argument for function " + getName() + " must be Array of constant doubles", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            Array src_arr = col_const_arr->getValue<Array>();
+
+            for (size_t i = 0, size = src_arr.size(); i < size; ++i)
+                xs.push_back(src_arr[i].get<const Float64 &>());
+        }
+
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[4]).column.get()))
+        {
+            if (!col_const_arr)
+                throw Exception("Fifth argument for function " + getName() + " must be Array of constant doubles", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            Array src_arr = col_const_arr->getValue<Array>();
+
+            for (size_t i = 0, size = src_arr.size(); i < size; ++i)
+                ys.push_back(src_arr[i].get<const Float64 &>());
+        }
+
         if (variant_names.size() != xs.size() || xs.size() != ys.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of arguments doen't match: variant_names: {}, xs: {}, ys: {}", variant_names.size(), xs.size(), ys.size());
 
@@ -214,22 +210,11 @@ public:
             throw Exception("Negative values don't allowed", ErrorCodes::BAD_ARGUMENTS);
 
         Variants variants;
-        if (dist == "beta")
-        {
-            if (higher_is_better)
-                variants = bayesian_ab_test<true>(dist, xs, ys);
-            else
-                variants = bayesian_ab_test<false>(dist, xs, ys);
-        }
-        else if (dist == "gamma")
-        {
-            if (higher_is_better)
-                variants = bayesian_ab_test<false>(dist, xs, ys);
-            else
-                variants = bayesian_ab_test<true>(dist, xs, ys);
-        }
+
+        if (higher_is_better)
+            variants = bayesian_ab_test<true>(dist, xs, ys);
         else
-            throw Exception("First argument for function " + getName() + " cannot be " + dist, ErrorCodes::BAD_ARGUMENTS);
+            variants = bayesian_ab_test<false>(dist, xs, ys);
 
         FormatSettings settings;
         std::stringstream s;
