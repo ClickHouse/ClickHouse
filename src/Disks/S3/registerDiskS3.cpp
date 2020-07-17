@@ -119,7 +119,7 @@ void registerDiskS3(DiskFactory & factory)
         cfg.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
         cfg.httpRequestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
         cfg.maxConnections = config.getUInt(config_prefix + ".max_connections", 25);
-        cfg.followRedirects = config.getBool(config_prefix + ".follow_redirects", false);
+        cfg.followRedirects = config.getBool(config_prefix + ".follow_redirects", true);
         cfg.lowSpeedLimit = config.getUInt(config_prefix + ".low_speed_limit", 1);
         cfg.endpointOverride = uri.endpoint;
 
