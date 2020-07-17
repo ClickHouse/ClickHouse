@@ -95,6 +95,9 @@ void loadMetadata(Context & context, const String & default_database_name)
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
     {
+        if (it->isLink())
+            continue;
+
         if (!it->isDirectory())
         {
             if (endsWith(it.name(), ".sql"))
