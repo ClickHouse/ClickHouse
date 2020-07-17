@@ -48,7 +48,22 @@ echo $query_result
 
 $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$first_mutation_id'"
 
-sleep 7
+check_query="SELECT sum(parts_to_do) FROM system.mutations WHERE table='mutation_table' and database='$CLICKHOUSE_DATABASE'"
+
+query_result=`$CLICKHOUSE_CLIENT --query="$check_query" 2>&1`
+counter=0
+
+while [ "$query_result" != "1" ]
+do
+    if [ "$counter" -gt 120 ]
+    then
+        break
+    fi
+    query_result=`$CLICKHOUSE_CLIENT --query="$check_query" 2>&1`
+    sleep 0.5
+    counter=$(($counter + 1))
+done
+
 
 $CLICKHOUSE_CLIENT --query "SELECT is_done, parts_to_do FROM system.mutations where table='mutation_table' and database='$CLICKHOUSE_DATABASE' FORMAT TSVWithNames"
 
