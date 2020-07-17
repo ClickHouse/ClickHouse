@@ -14,12 +14,15 @@
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/ParserShowAccessQuery.h>
 #include <Parsers/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/ParserShowGrantsQuery.h>
 #include <Parsers/ParserShowPrivilegesQuery.h>
 #include <Parsers/ParserExplainQuery.h>
+#include <Parsers/QueryWithOutputSettingsPushDownVisitor.h>
 
 
 namespace DB
@@ -107,6 +110,14 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))
             return false;
         query_with_output.children.push_back(query_with_output.settings_ast);
+
+        // SETTINGS after FORMAT is not parsed by the SELECT parser (ParserSelectQuery)
+        // Pass them manually, to apply in InterpreterSelectQuery::initSettings()
+        if (query->as<ASTSelectWithUnionQuery>())
+        {
+            QueryWithOutputSettingsPushDownVisitor::Data data{query_with_output.settings_ast};
+            QueryWithOutputSettingsPushDownVisitor(data).visit(query);
+        }
     }
 
     node = std::move(query);
