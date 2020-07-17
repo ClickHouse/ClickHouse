@@ -298,7 +298,8 @@ ASTPtr InterpreterDropImpl::getRewrittenQuery(
 {
     const auto & database_name = context.resolveDatabase(drop_query.database);
 
-    if (database_name != filter_mysql_db)
+    /// Skip drop databse|view|dictionary
+    if (database_name != filter_mysql_db || drop_query.table.empty() || drop_query.is_view || drop_query.is_dictionary)
         return {};
 
     ASTPtr rewritten_query = drop_query.clone();
