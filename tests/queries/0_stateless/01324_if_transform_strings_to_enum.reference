@@ -1,0 +1,52 @@
+other
+other
+google
+other
+yandex
+other
+yahoo
+other
+other
+other
+SELECT transform(number, [2, 4, 6], CAST([\'google\', \'yandex\', \'yahoo\'], \'Array(Enum8(\\\'google\\\' = 1, \\\'other\\\' = 2, \\\'yahoo\\\' = 3, \\\'yandex\\\' = 4))\'), CAST(\'other\', \'Enum8(\\\'google\\\' = 1, \\\'other\\\' = 2, \\\'yahoo\\\' = 3, \\\'yandex\\\' = 4)\'))
+FROM system.numbers
+LIMIT 10
+google
+google
+google
+google
+google
+google
+yandex
+yandex
+yandex
+yandex
+SELECT if(number > 5, \'yandex\', \'google\')
+FROM system.numbers
+LIMIT 10
+other
+other
+google
+other
+yandex
+other
+yahoo
+other
+other
+other
+SELECT transform(number, [2, 4, 6], [\'google\', \'yandex\', \'yahoo\'], \'other\')
+FROM system.numbers
+LIMIT 10
+google
+google
+google
+google
+google
+google
+yandex
+yandex
+yandex
+yandex
+SELECT if(number > 5, \'yandex\', \'google\')
+FROM system.numbers
+LIMIT 10
