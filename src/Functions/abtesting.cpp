@@ -141,6 +141,9 @@ public:
         return name;
     }
 
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
+
     size_t getNumberOfArguments() const override { return 5; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
@@ -148,8 +151,14 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
+        if (input_rows_count == 0)
+        {
+            block.getByPosition(result).column = std::move(ColumnString::create());
+            return;
+        }
+
         std::vector<double> xs, ys;
         std::vector<std::string> variant_names;
         String dist;
