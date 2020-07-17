@@ -112,22 +112,18 @@ public:
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
-    inline UInt64 getOrFindIndex(const StringRef& value) const override
+    inline std::optional<UInt64> getOrFindIndex(const StringRef& value) const override
     {
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
-            return res.value();
+            return res;
 
         auto& nested = *getNestedColumn();
 
-        for (size_t i = 0; i < nested.size(); ++i) {
-            std::cout << nested.getDataAt(i) << std::endl;
+        for (size_t i = 0; i < nested.size(); ++i)
             if (nested.getDataAt(i) == value)
                 return i;
-        };
 
-        throw Exception(
-                "Trying to find the value that is not present in the index",
-                ErrorCodes::LOGICAL_ERROR);
+        return {};
     }
 
 private:
