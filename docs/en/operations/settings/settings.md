@@ -471,7 +471,7 @@ Default value: 0.
 
 See also:
 
--   [JOIN strictness](../../sql-reference/statements/select/join.md#select-join-strictness)
+-   [JOIN strictness](../../sql-reference/statements/select/join.md#join-settings)
 
 ## temporary\_files\_codec {#temporary_files_codec}
 
