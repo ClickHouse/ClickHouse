@@ -22,9 +22,6 @@ LIFETIME(MIN 1 MAX 3)
 LAYOUT(CACHE(SIZE_IN_CELLS 3));
 "
 
-# This alters mostly requires not only metadata change
-# but also conversion of data. Also they are all compatible
-# between each other, so can be executed concurrently.
 function dict_get_thread()
 {
     while true; do
