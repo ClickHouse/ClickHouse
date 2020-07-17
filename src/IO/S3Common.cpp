@@ -239,12 +239,16 @@ namespace S3
             if (key.empty() || key == "/")
                 throw Exception("Key name is empty in virtual hosted style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
             boost::to_upper(name);
-            if (name != S3 || name != COS) {
+            if (name != S3 && name != COS)
+            {
                 throw Exception("Object storage system name is unrecognized in virtual hosted style S3 URI: " + name + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
             }
-            if (name == S3) {
+            if (name == S3)
+            {
                 storage_name = name;
-            } else {
+            }
+            else
+            {
                 storage_name = COSN;
             }
         }

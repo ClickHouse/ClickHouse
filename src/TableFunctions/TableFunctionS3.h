@@ -17,12 +17,13 @@ class Context;
 class TableFunctionS3 : public ITableFunction
 {
 public:
+    static constexpr auto name = "s3";
     std::string getName() const override
     {
         return name;
     }
 
-private:
+protected:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         const Context & context,
@@ -38,9 +39,19 @@ private:
         const std::string & table_name,
         const String & compression_method);
 
-    const char * getStorageTypeName() const override { return storage_type_name; }
-    String name;
-    String storage_type_name;
+    const char * getStorageTypeName() const override { return "S3"; }
+};
+
+class TableFunctionCOS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "cosn";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "COSN"; }
 };
 
 }
