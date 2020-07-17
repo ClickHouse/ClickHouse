@@ -267,17 +267,18 @@ public:
 
 /// Implementation for arrays of numbers when the 2nd function argument
 /// is a NULL value.
-template <class T, class ConcreteAction>
+template <class ConcreteAction, bool ResizeRes = true>
 struct ArrayIndexNumNullImpl
 {
     static void vector(
-        const PaddedPODArray<T> & /*data*/,
         const ColumnArray::Offsets & offsets,
         PaddedPODArray<typename ConcreteAction::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data)
     {
         size_t size = offsets.size();
-        result.resize(size);
+
+        if constexpr (ResizeRes)
+            result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
@@ -633,15 +634,36 @@ inline bool allowArrayIndex(const DataTypePtr & type0, const DataTypePtr & type1
         || data_type0->equals(*data_type1);
 }
 
-/// Allow if #arr is LowCardinality(T) and #arg is T (but not vise versa)
-inline bool allowNonLowCardinalityArg(const DataTypePtr& arr, const DataTypePtr& arg)
+/**
+ * Check types extracted from Nullable() and LowCardinality()
+ */
+inline bool allowLCAndNullableExtracted(const DataTypePtr & array_inner_type, const DataTypePtr & arg)
 {
-    DataTypePtr arr_denulled = removeNullable(arr);
-    DataTypePtr arg_denulled = removeNullable(arg);
+    /**
+     * Possible cases for #arg and #array_inner_type:
+     * 1. T
+     * 2. LC(T)
+     * 3. N(T)
+     * 4. N(LC(T)) -- quite strange, rarely found but possible.
+     * 5. LC(N(T))
+     *
+     * All other variants are considered wrong (Like N(N(N(T)))) or LC(N(LC(T))).
+     * recursiveRemoveLowCardinality works only if the given type is LC(V).
+     */
+    DataTypePtr array_extracted =
+        removeNullable(                    /// remove outer Nullable, cases 3 and 4
+            recursiveRemoveLowCardinality( /// remove LC, cases 2 and 4
+                removeNullable(            /// remove inner Nullable, cases 3 and 5
+                    array_inner_type)));
 
-    return recursiveRemoveLowCardinality(arr_denulled)->equals(*arg_denulled);
+    DataTypePtr arg_extracted =
+        removeNullable(
+            recursiveRemoveLowCardinality(
+                removeNullable(
+                    arg)));
+
+    return array_extracted->equals(*arg_extracted);
 }
-
 
 template <class ConcreteAction, class Name>
 class FunctionArrayIndex : public IFunction
@@ -725,8 +747,10 @@ private:
         const IColumn* item_arg = block.getByPosition(arguments[1]).column.get();
 
         if (item_arg->onlyNull())
-            ArrayIndexNumNullImpl<Initial, ConcreteAction>::vector(
-                col_nested->getData(), col_array->getOffsets(), col_res->getData(), null_map_data);
+            ArrayIndexNumNullImpl<ConcreteAction>::vector(
+                col_array->getOffsets(),
+                col_res->getData(),
+                null_map_data);
         else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<Resulting>>(item_arg))
             ArrayIndexNumImpl<Initial, Resulting, ConcreteAction>::vector(
                 col_nested->getData(),
@@ -753,7 +777,7 @@ private:
     /**
      * 1. Obtain the right-side argument column @e C. If @e C is a non-const column (thus the argument is not constant,
      * loop through all @e C's values).
-     * 2. Obtain the value's index in the DB::ColumnUnique::reverse_index dict.
+     * 2. Obtain the value's index.
      * 3. Invoke the ArrayIndexNumImpl to find the desired value
      * 4. Fill the desired values in the resulting column
      */
@@ -767,20 +791,31 @@ private:
             return false;
 
         auto col_res = ResultColumnType::create();
+        col_res->getData().resize_fill(col_array->getOffsets().size()); /// fill with default values
 
         const auto [null_map_data, null_map_item] = nullMapsBuilder(block, arguments);
         const IColumn * col_arg = block.getByPosition(arguments[1]).column.get();
 
-        size_t size = isColumnConst(*col_arg)
+        const size_t size = isColumnConst(*col_arg)
             ? 1 /// We have a column with just one value. Arbitrary n is allowed (as the column is const, so take 0).
             : col_arg->size();
 
-        col_res->getData().resize_fill(col_array->getOffsets().size()); /// fill with default values
-
         for (size_t i = 0; i < size; ++i)
         {
-            StringRef elem = col_arg->getDataAt(i);
-            std::optional<UInt64> value_index = col_lc->getDictionary().getOrFindIndex(elem);
+            if (col_arg->onlyNull())
+            {
+                ArrayIndexNumNullImpl<
+                    ConcreteAction,
+                    /* already resized*/ false>::vector(
+                    col_array->getOffsets(),
+                    col_res->getData(),
+                    null_map_data);
+
+                continue;
+            }
+
+            const StringRef elem = col_arg->getDataAt(i);
+            const std::optional<UInt64> value_index = col_lc->getDictionary().getOrFindIndex(elem);
 
             if (!value_index)
                 continue; /// position already zeroed out
@@ -789,8 +824,7 @@ private:
                 /* Initial data type -- DB::ReverseIndex index */ UInt64,
                 /* Resulting data type -- same */ UInt64,
                 ConcreteAction,
-                /* Resize col_res -- already resized */ false>::
-                vector(
+                /* Resize col_res -- already resized */ false>::vector(
                     /* data -- indices column */ col_lc->getIndexes(),
                     col_array->getOffsets(),
                     /* target value */ *value_index,
@@ -889,7 +923,7 @@ private:
 
         if (isColumnConst(*item_arg))
         {
-            typename ConcreteAction::ResultType current = 0;
+            ResultType current = 0;
             const auto & value = (*item_arg)[0];
 
             for (size_t i = 0, size = arr.size(); i < size; ++i)
@@ -902,7 +936,7 @@ private:
             }
 
             block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
-                item_arg->size(), static_cast<typename ConcreteAction::ResultType>(current));
+                item_arg->size(), static_cast<ResultType>(current));
         }
         else
         {
@@ -999,11 +1033,11 @@ public:
             throw Exception("First argument for function " + getName() + " must be an array.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->onlyNull()
-            && !allowArrayIndex(array_type->getNestedType(), arguments[1])
-            && !allowNonLowCardinalityArg(array_type->getNestedType(), arguments[1]))
-            throw Exception("Types of array and 2nd argument of function "
-                + getName() + " must be identical up to nullability or numeric types or Enum and numeric type. Passed: "
+        if (!arguments[1]->onlyNull() && !allowArrayIndex(array_type->getNestedType(), arguments[1])
+            && !allowLCAndNullableExtracted(array_type->getNestedType(), arguments[1]))
+            throw Exception("Types of array and 2nd argument of function \""
+                + getName() + "\" must be identical up to nullability or cardinality or "
+                "numeric types or Enum and numeric type. Passed: "
                 + arguments[0]->getName() + " and " + arguments[1]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

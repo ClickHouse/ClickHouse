@@ -119,9 +119,23 @@ public:
 
         auto& nested = *getNestedColumn();
 
+        const bool arg_is_nullable = nested.isNullable();
+        const IColumn * nullable_nested = nullptr;
+
+        if (arg_is_nullable)
+            nullable_nested = &checkAndGetColumn<ColumnNullable>(nested)->getNestedColumn();
+
         for (size_t i = 0; i < nested.size(); ++i)
-            if (nested.getDataAt(i) == value)
+        {
+            if (arg_is_nullable)
+            {
+                if (!nested.isNullAt(i))
+                    if (nullable_nested->getDataAt(i) == value)
+                        return i;
+            }
+            else if (nested.getDataAt(i) == value)
                 return i;
+        }
 
         return {};
     }
