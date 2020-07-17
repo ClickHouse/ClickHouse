@@ -63,7 +63,7 @@ With this instruction you can run basic ClickHouse performance test on any serve
     ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
     100000000
 
-10.  Edit the benchmark-new.sh, change `clickhouse-client` to `./clickhouse client` and add `–-max_memory_usage 100000000000` parameter.
+10.  Edit the benchmark-new.sh, change `clickhouse-client` to `./clickhouse client` and add `--max_memory_usage 100000000000` parameter.
 
 <!-- -->
 
