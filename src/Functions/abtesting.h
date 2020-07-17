@@ -9,14 +9,17 @@
 namespace DB
 {
 
-typedef struct _ABTestResult
+typedef struct _Variant
 {
-    std::vector<double> beats_control;
-    std::vector<double> best;
-} ABTestResult;
+    double beats_control;
+    double best;
+    std::vector<double> samples;
+} Variant;
+
+using Variants = std::vector<Variant>;
 
 template <bool higher_is_better>
-ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, std::vector<double> ys);
+Variants bayesian_ab_test(std::string distribution, std::vector<double> xs, std::vector<double> ys);
 
 }
 #endif
