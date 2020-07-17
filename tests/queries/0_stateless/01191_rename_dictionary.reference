@@ -1,11 +1,11 @@
 dict	NOT_LOADED
+_	Memory
 dict	Dictionary
-table	Memory
 dict1	NOT_LOADED
+_	Memory
 dict1	Dictionary
-table	Memory
 test
 dict2	LOADED
+_	Memory
 dict2	Dictionary
-table	Memory
 test

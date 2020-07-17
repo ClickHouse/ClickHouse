@@ -171,6 +171,7 @@ public:
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
 
+    /// Try convert qualified dictionary name to persistent UUID
     String resolveDictionaryName(const String & name) const;
 
 private:

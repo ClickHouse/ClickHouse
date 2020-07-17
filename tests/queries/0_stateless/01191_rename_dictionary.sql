@@ -1,14 +1,14 @@
 DROP DATABASE IF EXISTS test_01191;
 CREATE DATABASE test_01191 ENGINE=Atomic;
 
-CREATE TABLE test_01191.table (n UInt64, s String) ENGINE = Memory();
+CREATE TABLE test_01191._ (n UInt64, s String) ENGINE = Memory();
 
 CREATE DICTIONARY test_01191.dict (n UInt64, s String)
 PRIMARY KEY n
 LAYOUT(DIRECT())
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table' DB 'test_01191'));
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE '_' DB 'test_01191'));
 
-INSERT INTO test_01191.table VALUES (42, 'test');
+INSERT INTO test_01191._ VALUES (42, 'test');
 
 SELECT name, status FROM system.dictionaries WHERE database='test_01191';
 SELECT name, engine FROM system.tables WHERE database='test_01191' ORDER BY name;
