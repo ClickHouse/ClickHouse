@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
+#include <Common/DateLUT.h>
 #include <Common/FieldVisitors.h>
 
 namespace DB
@@ -398,7 +399,7 @@ namespace MySQLReplication
                     case MYSQL_TYPE_TIMESTAMP: {
                         UInt32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 4);
-                        row.push_back(Field{UInt64{val}});
+                        row.push_back(Field{val});
                         break;
                     }
                     case MYSQL_TYPE_TIME: {
@@ -420,15 +421,10 @@ namespace MySQLReplication
                         UInt32 i24 = 0;
                         payload.readStrict(reinterpret_cast<char *>(&i24), 3);
 
-                        String time_buff;
-                        time_buff.resize(10);
-                        sprintf(
-                            time_buff.data(),
-                            "%04d-%02d-%02d",
-                            static_cast<int>((i24 >> 9) & 0x7fff),
-                            static_cast<int>((i24 >> 5) & 0xf),
-                            static_cast<int>(i24 & 0x1f));
-                        row.push_back(Field{String{time_buff}});
+                        DayNum date_day_number = DateLUT::instance().makeDayNum(
+                            static_cast<int>((i24 >> 9) & 0x7fff), static_cast<int>((i24 >> 5) & 0xf), static_cast<int>(i24 & 0x1f));
+
+                        row.push_back(Field(date_day_number.toUnderType()));
                         break;
                     }
                     case MYSQL_TYPE_YEAR: {
@@ -486,24 +482,20 @@ namespace MySQLReplication
                         readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 5);
                         readTimeFractionalPart(payload, reinterpret_cast<char *>(&fsp), meta);
 
-                        struct tm timeinfo;
                         UInt32 year_month = readBits(val, 1, 17, 40);
-                        timeinfo.tm_year = (year_month / 13) - 1900;
-                        timeinfo.tm_mon = (year_month % 13) - 1;
-                        timeinfo.tm_mday = readBits(val, 18, 5, 40);
-                        timeinfo.tm_hour = readBits(val, 23, 5, 40);
-                        timeinfo.tm_min = readBits(val, 28, 6, 40);
-                        timeinfo.tm_sec = readBits(val, 34, 6, 40);
+                        time_t date_time = DateLUT::instance().makeDateTime(
+                            year_month / 13, year_month % 13, readBits(val, 18, 5, 40)
+                            , readBits(val, 23, 5, 40), readBits(val, 28, 6, 40), readBits(val, 34, 6, 40)
+                        );
 
-                        time_t time = mktime(&timeinfo);
-                        row.push_back(Field{UInt64{static_cast<UInt32>(time)}});
+                        row.push_back(Field{UInt32(date_time)});
                         break;
                     }
                     case MYSQL_TYPE_TIMESTAMP2: {
-                        UInt64 sec = 0, fsp = 0;
+                        UInt32 sec = 0, fsp = 0;
                         readBigEndianStrict(payload, reinterpret_cast<char *>(&sec), 4);
                         readTimeFractionalPart(payload, reinterpret_cast<char *>(&fsp), meta);
-                        row.push_back(Field{UInt64{sec}});
+                        row.push_back(Field{sec});
                         break;
                     }
                     case MYSQL_TYPE_NEWDECIMAL: {
