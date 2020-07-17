@@ -5,21 +5,25 @@
 #include <vector>
 #include <algorithm>
 
+#include <Core/Types.h>
+#include <Common/PODArray.h>
+
 
 namespace DB
 {
 
 typedef struct _Variant
 {
-    double beats_control;
-    double best;
-    std::vector<double> samples;
+    Float64 beats_control;
+    Float64 best;
 } Variant;
 
-using Variants = std::vector<Variant>;
+using Variants = PODArray<Variant>;
 
 template <bool higher_is_better>
-Variants bayesian_ab_test(std::string distribution, std::vector<double> xs, std::vector<double> ys);
+Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<Float64> & ys);
+
+String convertToJson(const PODArray<String> & variant_names, const Variants & variants);
 
 }
 #endif
