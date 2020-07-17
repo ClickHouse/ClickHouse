@@ -264,7 +264,7 @@ protected:
     void yieldIfNeed()
     {
         static const float yield_probability = .1;
-        static const int   sleep_time_us     = 1'000;
+        static const int   sleep_time_us     = 10'000;
         if (std::bernoulli_distribution(yield_probability)(thread_local_rng))
         {
             sleepForNanoseconds(sleep_time_us * 1000);
