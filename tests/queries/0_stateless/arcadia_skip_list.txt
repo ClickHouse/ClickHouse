@@ -132,3 +132,4 @@
 01319_optimize_skip_unused_shards_nesting
 01376_GROUP_BY_injective_elimination_dictGet
 01391_join_on_dict_crash
+01401_FORMAT_SETTINGS
