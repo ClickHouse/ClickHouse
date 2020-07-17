@@ -7,4 +7,4 @@ services:
             MYSQL_ROOT_PASSWORD: clickhouse
         ports:
           - 33307:3306
-        command: -log-bin='mysql-bin-1.log'
+        command: --server_id=100 --log-bin='mysql-bin-1.log'
