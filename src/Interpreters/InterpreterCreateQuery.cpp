@@ -118,6 +118,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Metadata file {} contains incorrect CREATE DATABASE query", metadata_file_path);
         create.attach = true;
         create.attach_short_syntax = true;
+        create.database = database_name;
     }
     else if (!create.storage)
     {
