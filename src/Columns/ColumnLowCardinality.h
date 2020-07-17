@@ -21,6 +21,8 @@ namespace ErrorCodes
  * with UIntXX holding actual data indices.
  * To obtain the value's index, call #getOrFindIndex.
  * To operate on the data (so called indices column), call #getIndexes.
+ *
+ * @note The indices column always contains the default value (empty StringRef) with the first index.
  */
 class ColumnLowCardinality final : public COWHelper<IColumn, ColumnLowCardinality>
 {

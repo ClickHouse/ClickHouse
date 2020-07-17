@@ -1,3 +1,4 @@
+#include <optional>
 #include <type_traits>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
@@ -58,7 +59,7 @@ struct IndexCount
  * ConstColumn s), and @e vectorVector for processing vectors of vectors.
  */
 
-template <class Initial, class Result, class ConcreteAction>
+template <class Initial, class Result, class ConcreteAction, bool ResizeRes = true>
 struct ArrayIndexNumImpl
 {
 private:
@@ -101,7 +102,9 @@ private:
         PaddedPODArray<typename ConcreteAction::ResultType> & result)
     {
         size_t size = offsets.size();
-        result.resize(size);
+
+        if constexpr (ResizeRes)
+            result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
@@ -133,7 +136,9 @@ private:
         const PaddedPODArray<UInt8> & null_map_item)
     {
         size_t size = offsets.size();
-        result.resize(size);
+
+        if constexpr (ResizeRes)
+            result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
@@ -165,7 +170,9 @@ private:
         const PaddedPODArray<UInt8> & null_map_data)
     {
         size_t size = offsets.size();
-        result.resize(size);
+
+        if constexpr (ResizeRes)
+            result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
@@ -202,7 +209,9 @@ private:
         const PaddedPODArray<UInt8> & null_map_item)
     {
         size_t size = offsets.size();
-        result.resize(size);
+
+        if constexpr (ResizeRes)
+            result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
@@ -766,19 +775,25 @@ private:
             ? 1 /// We have a column with just one value. Arbitrary n is allowed (as the column is const, so take 0).
             : col_arg->size();
 
+        col_res->getData().resize_fill(col_array->getOffsets().size()); /// fill with default values
+
         for (size_t i = 0; i < size; ++i)
         {
             StringRef elem = col_arg->getDataAt(i);
-            UInt64 value_index = col_lc->getDictionary().getOrFindIndex(elem);
+            std::optional<UInt64> value_index = col_lc->getDictionary().getOrFindIndex(elem);
+
+            if (!value_index)
+                continue; /// position already zeroed out
 
             ArrayIndexNumImpl<
                 /* Initial data type -- DB::ReverseIndex index */ UInt64,
                 /* Resulting data type -- same */ UInt64,
-                ConcreteAction>::
+                ConcreteAction,
+                /* Resize col_res -- already resized */ false>::
                 vector(
                     /* data -- indices column */ col_lc->getIndexes(),
                     col_array->getOffsets(),
-                    /* target value */ value_index,
+                    /* target value */ *value_index,
                     col_res->getData(),
                     null_map_data,
                     null_map_item);
@@ -804,7 +819,11 @@ private:
         if (item_arg->onlyNull())
         {
             ArrayIndexStringNullImpl<ConcreteAction>::vector_const(
-                col_nested->getChars(), col_array->getOffsets(), col_nested->getOffsets(), col_res->getData(), null_map_data);
+                col_nested->getChars(),
+                col_array->getOffsets(),
+                col_nested->getOffsets(),
+                col_res->getData(),
+                null_map_data);
         }
         else if (const auto item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
         {

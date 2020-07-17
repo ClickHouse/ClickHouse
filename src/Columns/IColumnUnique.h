@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <Columns/IColumn.h>
 #include <Common/UInt128.h>
 
@@ -85,7 +86,7 @@ public:
      * region, so it can be easily represented as a @e StringRef. So we pass that ref to this function and get its
      * index in the dictionary, which can be used to operate with the indices column.
      */
-    virtual inline UInt64 getOrFindIndex(const StringRef& value) const = 0;
+    virtual std::optional<UInt64> getOrFindIndex(const StringRef& value) const = 0;
 
     void insert(const Field &) override
     {
