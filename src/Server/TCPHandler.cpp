@@ -315,11 +315,12 @@ void TCPHandler::runImpl()
         }
         catch (const std::logic_error & e)
         {
-            state.io.onException();
-            exception.emplace(Exception::CreateFromSTDTag{}, e);
             // Server should die on std logic errors in debug, like with assert()
             // or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in
             // tests.
+            state.io.onException();
+            exception.emplace(Exception::CreateFromSTDTag{}, e);
+            sendException(*exception, send_exception_with_stack_trace);
             assert(false);
         }
         catch (const std::exception & e)
