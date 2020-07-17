@@ -1,8 +1,8 @@
 block_numbers	1
-blocks	0
+blocks	1
 columns	1
 leader_election	1
-log	0
+log	1
 metadata	1
 mutations	1
 nonincrement_block_numbers	1
