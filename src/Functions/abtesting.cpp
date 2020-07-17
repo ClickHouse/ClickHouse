@@ -1,4 +1,4 @@
-#if !defined(ARCADIA_BUILD) 
+#if !defined(ARCADIA_BUILD)
 
 #include <math.h>
 #include <sstream>
