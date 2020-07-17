@@ -40,8 +40,8 @@ ALTER TABLE test MODIFY COLUMN x UInt64; -- { serverError 524 }
 ALTER TABLE test MODIFY COLUMN x String; -- { serverError 524 }
 ALTER TABLE test MODIFY COLUMN x Nullable(Int64); -- { serverError 524 }
 
-ALTER TABLE test RENAME COLUMN x TO z; -- { serverError 47 }
-ALTER TABLE test RENAME COLUMN y TO z; -- { serverError 47 }
+ALTER TABLE test RENAME COLUMN x TO z; -- { serverError 524 }
+ALTER TABLE test RENAME COLUMN y TO z; -- { serverError 524 }
 ALTER TABLE test DROP COLUMN x; -- { serverError 47 }
 ALTER TABLE test DROP COLUMN y; -- { serverError 47 }
 

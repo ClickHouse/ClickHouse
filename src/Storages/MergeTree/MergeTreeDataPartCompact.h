@@ -68,7 +68,7 @@ private:
     void loadIndexGranularity() override;
 
     /// Compact parts doesn't support per column size, only total size
-    void calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
+    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };
 
 }

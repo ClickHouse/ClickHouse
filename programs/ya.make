@@ -17,6 +17,7 @@ SRCS(
     main.cpp
 
     client/Client.cpp
+    client/QueryFuzzer.cpp
     client/ConnectionParameters.cpp
     client/Suggest.cpp
     extract-from-config/ExtractFromConfig.cpp

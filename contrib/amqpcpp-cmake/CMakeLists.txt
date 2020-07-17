@@ -24,7 +24,7 @@ set (SRCS
 add_library(amqp-cpp ${SRCS})
 
 target_compile_options (amqp-cpp
-    PUBLIC
+    PRIVATE
         -Wno-old-style-cast
         -Wno-inconsistent-missing-destructor-override
         -Wno-deprecated
@@ -38,7 +38,7 @@ target_compile_options (amqp-cpp
         -w
 )
 
-target_include_directories (amqp-cpp PUBLIC ${LIBRARY_DIR}/include)
+target_include_directories (amqp-cpp SYSTEM PUBLIC ${LIBRARY_DIR}/include)
 
 target_link_libraries (amqp-cpp PUBLIC ssl)
 

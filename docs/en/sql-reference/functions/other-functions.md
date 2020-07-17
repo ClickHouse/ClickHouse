@@ -799,7 +799,7 @@ Query:
 SELECT blockSerializedSize(maxState(1)) as x
 ```
 
-Result: 
+Result:
 
 ``` text
 ┌─x─┐
@@ -1056,25 +1056,25 @@ Takes state of aggregate function. Returns result of aggregation (finalized stat
 
 ## runningAccumulate {#runningaccumulate}
 
-Accumulates states of an aggregate function for each row of a data block. 
+Accumulates states of an aggregate function for each row of a data block.
 
 !!! warning "Warning"
     The state is reset for each new data block.
 
 **Syntax**
 
-```sql
+``` sql
 runningAccumulate(agg_state[, grouping]);
 ```
 
 **Parameters**
 
-- `agg_state` — State of the aggregate function. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
-- `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../../sql-reference/data-types/index.md) for which the equality operator is defined.
+-   `agg_state` — State of the aggregate function. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+-   `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../../sql-reference/data-types/index.md) for which the equality operator is defined.
 
 **Returned value**
 
-- Each resulting row contains a result of the aggregate function, accumulated for all the input rows from 0 to the current position. `runningAccumulate` resets states for each new data block or when the `grouping` value changes.
+-   Each resulting row contains a result of the aggregate function, accumulated for all the input rows from 0 to the current position. `runningAccumulate` resets states for each new data block or when the `grouping` value changes.
 
 Type depends on the aggregate function used.
 
@@ -1084,13 +1084,13 @@ Consider how you can use `runningAccumulate` to find the cumulative sum of numbe
 
 Query:
 
-```sql
+``` sql
 SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number as k, sumState(k) AS sum_k FROM numbers(10) GROUP BY k ORDER BY k);
 ```
 
 Result:
 
-```text
+``` text
 ┌─k─┬─res─┐
 │ 0 │   0 │
 │ 1 │   1 │
@@ -1105,27 +1105,27 @@ Result:
 └───┴─────┘
 ```
 
-The subquery generates `sumState` for every number from `0` to `9`. `sumState` returns the state of the [sum](../aggregate-functions/reference/sum.md) function that contains the sum of a single number.
+The subquery generates `sumState` for every number from `0` to `9`. `sumState` returns the state of the [sum](../../sql-reference/aggregate-functions/reference/sum.md) function that contains the sum of a single number.
 
 The whole query does the following:
 
-1. For the first row, `runningAccumulate` takes `sumState(0)` and returns `0`. 
-2. For the second row, the function merges `sumState(0)` and `sumState(1)` resulting in `sumState(0 + 1)`, and returns `1` as a result.
-3. For the third row, the function merges `sumState(0 + 1)` and `sumState(2)` resulting in `sumState(0 + 1 + 2)`, and returns `3` as a result.
-4. The actions are repeated until the block ends.
+1.  For the first row, `runningAccumulate` takes `sumState(0)` and returns `0`.
+2.  For the second row, the function merges `sumState(0)` and `sumState(1)` resulting in `sumState(0 + 1)`, and returns `1` as a result.
+3.  For the third row, the function merges `sumState(0 + 1)` and `sumState(2)` resulting in `sumState(0 + 1 + 2)`, and returns `3` as a result.
+4.  The actions are repeated until the block ends.
 
 The following example shows the `groupping` parameter usage:
 
 Query:
 
-```sql
-SELECT 
+``` sql
+SELECT
     grouping,
     item,
     runningAccumulate(state, grouping) AS res
-FROM 
+FROM
 (
-    SELECT 
+    SELECT
         toInt8(number / 4) AS grouping,
         number AS item,
         sumState(number) AS state
@@ -1137,7 +1137,7 @@ FROM
 
 Result:
 
-```text
+``` text
 ┌─grouping─┬─item─┬─res─┐
 │        0 │    0 │   0 │
 │        0 │    1 │   1 │

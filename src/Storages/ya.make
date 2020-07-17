@@ -82,6 +82,11 @@ SRCS(
     MergeTree/ReplicatedMergeTreeTableMetadata.cpp
     MergeTree/SimpleMergeSelector.cpp
     MergeTree/TTLMergeSelector.cpp
+    MergeTree/MergeTreeDataPartInMemory.cpp
+    MergeTree/MergeTreeDataPartWriterInMemory.cpp
+    MergeTree/MergeTreeDataPartWriterOnDisk.cpp
+    MergeTree/MergeTreeReaderInMemory.cpp
+    MergeTree/MergeTreeWriteAheadLog.cpp
     System/attachSystemTables.cpp
     System/StorageSystemAggregateFunctionCombinators.cpp
     System/StorageSystemAsynchronousMetrics.cpp

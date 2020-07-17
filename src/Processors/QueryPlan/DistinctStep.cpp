@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/QueryPipeline.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -66,6 +67,29 @@ void DistinctStep::transformPipeline(QueryPipeline & pipeline)
 
         return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
     });
+}
+
+void DistinctStep::describeActions(FormatSettings & settings) const
+{
+    String prefix(settings.offset, ' ');
+    settings.out << prefix << "Columns: ";
+
+    if (columns.empty())
+        settings.out << "none";
+    else
+    {
+        bool first = true;
+        for (const auto & column : columns)
+        {
+            if (!first)
+                settings.out << ", ";
+            first = false;
+
+            settings.out << column;
+        }
+    }
+
+    settings.out << '\n';
 }
 
 }

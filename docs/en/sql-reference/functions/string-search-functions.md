@@ -8,7 +8,7 @@ toc_title: For Searching in Strings
 The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
 
 !!! note "Note"
-    Functions for [replacing](string-replace-functions.md) and [other manipulations with strings](string-functions.md) are described separately.
+    Functions for [replacing](../../sql-reference/functions/string-replace-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
 
 ## position(haystack, needle), locate(haystack, needle) {#position}
 

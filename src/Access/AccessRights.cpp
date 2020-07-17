@@ -16,49 +16,6 @@ namespace ErrorCodes
 
 namespace
 {
-    enum Level
-    {
-        GLOBAL_LEVEL,
-        DATABASE_LEVEL,
-        TABLE_LEVEL,
-        COLUMN_LEVEL,
-    };
-
-    struct Helper
-    {
-        static const Helper & instance()
-        {
-            static const Helper res;
-            return res;
-        }
-
-        const AccessFlags all_flags = AccessFlags::allFlags();
-        const AccessFlags database_flags = AccessFlags::allDatabaseFlags();
-        const AccessFlags table_flags = AccessFlags::allTableFlags();
-        const AccessFlags column_flags = AccessFlags::allColumnFlags();
-        const AccessFlags dictionary_flags = AccessFlags::allDictionaryFlags();
-        const AccessFlags column_level_flags = column_flags;
-        const AccessFlags table_level_flags = table_flags | dictionary_flags | column_level_flags;
-        const AccessFlags database_level_flags = database_flags | table_level_flags;
-
-        const AccessFlags show_databases_flag = AccessType::SHOW_DATABASES;
-        const AccessFlags show_tables_flag = AccessType::SHOW_TABLES;
-        const AccessFlags show_columns_flag = AccessType::SHOW_COLUMNS;
-        const AccessFlags show_dictionaries_flag = AccessType::SHOW_DICTIONARIES;
-        const AccessFlags create_table_flag = AccessType::CREATE_TABLE;
-        const AccessFlags create_view_flag = AccessType::CREATE_VIEW;
-        const AccessFlags create_temporary_table_flag = AccessType::CREATE_TEMPORARY_TABLE;
-        const AccessFlags alter_table_flag = AccessType::ALTER_TABLE;
-        const AccessFlags alter_view_flag = AccessType::ALTER_VIEW;
-        const AccessFlags truncate_flag = AccessType::TRUNCATE;
-        const AccessFlags drop_table_flag = AccessType::DROP_TABLE;
-        const AccessFlags drop_view_flag = AccessType::DROP_VIEW;
-        const AccessFlags alter_ttl_flag = AccessType::ALTER_TTL;
-        const AccessFlags alter_materialize_ttl_flag = AccessType::ALTER_MATERIALIZE_TTL;
-        const AccessFlags system_reload_dictionary = AccessType::SYSTEM_RELOAD_DICTIONARY;
-        const AccessFlags system_reload_embedded_dictionaries = AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES;
-    };
-
     using Kind = AccessRightsElementWithOptions::Kind;
 
     struct ProtoElement
@@ -247,6 +204,43 @@ namespace
             }
         }
     };
+
+
+    enum Level
+    {
+        GLOBAL_LEVEL,
+        DATABASE_LEVEL,
+        TABLE_LEVEL,
+        COLUMN_LEVEL,
+    };
+
+    AccessFlags getAcceptableFlags(Level level)
+    {
+        switch (level)
+        {
+            case GLOBAL_LEVEL:
+            {
+                static const AccessFlags res = AccessFlags::allFlags();
+                return res;
+            }
+            case DATABASE_LEVEL:
+            {
+                static const AccessFlags res = AccessFlags::allDatabaseFlags() | AccessFlags::allTableFlags() | AccessFlags::allDictionaryFlags() | AccessFlags::allColumnFlags();
+                return res;
+            }
+            case TABLE_LEVEL:
+            {
+                static const AccessFlags res = AccessFlags::allTableFlags() | AccessFlags::allDictionaryFlags() | AccessFlags::allColumnFlags();
+                return res;
+            }
+            case COLUMN_LEVEL:
+            {
+                static const AccessFlags res = AccessFlags::allColumnFlags();
+                return res;
+            }
+        }
+        __builtin_unreachable();
+    }
 }
 
 
@@ -255,10 +249,9 @@ struct AccessRights::Node
 public:
     std::shared_ptr<const String> node_name;
     Level level = GLOBAL_LEVEL;
-    AccessFlags access;           /// access = (inherited_access - partial_revokes) | explicit_grants
-    AccessFlags final_access;     /// final_access = access | implicit_access
-    AccessFlags min_access;       /// min_access = final_access & child[0].final_access & ... & child[N-1].final_access
-    AccessFlags max_access;       /// max_access = final_access | child[0].final_access | ... | child[N-1].final_access
+    AccessFlags flags;                   /// flags = (inherited_flags - partial_revokes) | explicit_grants
+    AccessFlags min_flags_with_children; /// min_flags_with_children = access & child[0].min_flags_with_children & ... & child[N-1].min_flags_with_children
+    AccessFlags max_flags_with_children; /// max_flags_with_children = access | child[0].max_flags_with_children | ... | child[N-1].max_flags_with_children
     std::unique_ptr<std::unordered_map<std::string_view, Node>> children;
 
     Node() = default;
@@ -271,10 +264,9 @@ public:
 
         node_name = src.node_name;
         level = src.level;
-        access = src.access;
-        final_access = src.final_access;
-        min_access = src.min_access;
-        max_access = src.max_access;
+        flags = src.flags;
+        min_flags_with_children = src.min_flags_with_children;
+        max_flags_with_children = src.max_flags_with_children;
         if (src.children)
             children = std::make_unique<std::unordered_map<std::string_view, Node>>(*src.children);
         else
@@ -282,116 +274,104 @@ public:
         return *this;
     }
 
-    void grant(AccessFlags flags, const Helper & helper)
+    void grant(const AccessFlags & flags_)
     {
-        if (!flags)
+        if (!flags_)
             return;
 
-        if (level == GLOBAL_LEVEL)
+        AccessFlags flags_to_add = flags_ & getAcceptableFlags();
+
+        if (!flags_to_add)
         {
-            /// Everything can be granted on the global level.
-        }
-        else if (level == DATABASE_LEVEL)
-        {
-            AccessFlags grantable = flags & helper.database_level_flags;
-            if (!grantable)
-                throw Exception(flags.toString() + " cannot be granted on the database level", ErrorCodes::INVALID_GRANT);
-            flags = grantable;
-        }
-        else if (level == TABLE_LEVEL)
-        {
-            AccessFlags grantable = flags & helper.table_level_flags;
-            if (!grantable)
-                throw Exception(flags.toString() + " cannot be granted on the table level", ErrorCodes::INVALID_GRANT);
-            flags = grantable;
-        }
-        else if (level == COLUMN_LEVEL)
-        {
-            AccessFlags grantable = flags & helper.column_level_flags;
-            if (!grantable)
-                throw Exception(flags.toString() + " cannot be granted on the column level", ErrorCodes::INVALID_GRANT);
-            flags = grantable;
+            if (level == DATABASE_LEVEL)
+                throw Exception(flags_.toString() + " cannot be granted on the database level", ErrorCodes::INVALID_GRANT);
+            else if (level == TABLE_LEVEL)
+                throw Exception(flags_.toString() + " cannot be granted on the table level", ErrorCodes::INVALID_GRANT);
+            else if (level == COLUMN_LEVEL)
+                throw Exception(flags_.toString() + " cannot be granted on the column level", ErrorCodes::INVALID_GRANT);
         }
 
-        addGrantsRec(flags);
-        calculateFinalAccessRec(helper);
+        addGrantsRec(flags_to_add);
+        optimizeTree();
     }
 
     template <typename ... Args>
-    void grant(const AccessFlags & flags, const Helper & helper, const std::string_view & name, const Args &... subnames)
+    void grant(const AccessFlags & flags_, const std::string_view & name, const Args &... subnames)
     {
         auto & child = getChild(name);
-        child.grant(flags, helper, subnames...);
+        child.grant(flags_, subnames...);
         eraseChildIfPossible(child);
-        calculateFinalAccess(helper);
+        calculateMinMaxFlags();
     }
 
     template <typename StringT>
-    void grant(const AccessFlags & flags, const Helper & helper, const std::vector<StringT> & names)
+    void grant(const AccessFlags & flags_, const std::vector<StringT> & names)
     {
         for (const auto & name : names)
         {
             auto & child = getChild(name);
-            child.grant(flags, helper);
+            child.grant(flags_);
             eraseChildIfPossible(child);
         }
-        calculateFinalAccess(helper);
+        calculateMinMaxFlags();
     }
 
-    void revoke(const AccessFlags & flags, const Helper & helper)
+    void revoke(const AccessFlags & flags_)
     {
-        removeGrantsRec(flags);
-        calculateFinalAccessRec(helper);
+        removeGrantsRec(flags_);
+        optimizeTree();
     }
 
     template <typename... Args>
-    void revoke(const AccessFlags & flags, const Helper & helper, const std::string_view & name, const Args &... subnames)
+    void revoke(const AccessFlags & flags_, const std::string_view & name, const Args &... subnames)
     {
         auto & child = getChild(name);
 
-        child.revoke(flags, helper, subnames...);
+        child.revoke(flags_, subnames...);
         eraseChildIfPossible(child);
-        calculateFinalAccess(helper);
+        calculateMinMaxFlags();
     }
 
     template <typename StringT>
-    void revoke(const AccessFlags & flags, const Helper & helper, const std::vector<StringT> & names)
+    void revoke(const AccessFlags & flags_, const std::vector<StringT> & names)
     {
         for (const auto & name : names)
         {
             auto & child = getChild(name);
-            child.revoke(flags, helper);
+            child.revoke(flags_);
             eraseChildIfPossible(child);
         }
-        calculateFinalAccess(helper);
+        calculateMinMaxFlags();
     }
 
-    bool isGranted(const AccessFlags & flags) const
+    bool isGranted(const AccessFlags & flags_) const
     {
-        return min_access.contains(flags);
+        return min_flags_with_children.contains(flags_);
     }
 
     template <typename... Args>
-    bool isGranted(AccessFlags flags, const std::string_view & name, const Args &... subnames) const
+    bool isGranted(const AccessFlags & flags_, const std::string_view & name, const Args &... subnames) const
     {
-        if (min_access.contains(flags))
+        AccessFlags flags_to_check = flags_ - min_flags_with_children;
+        if (!flags_to_check)
             return true;
-        if (!max_access.contains(flags))
+        if (!max_flags_with_children.contains(flags_to_check))
             return false;
 
         const Node * child = tryGetChild(name);
         if (child)
-            return child->isGranted(flags, subnames...);
+            return child->isGranted(flags_to_check, subnames...);
         else
-            return final_access.contains(flags);
+            return flags.contains(flags_to_check);
     }
 
     template <typename StringT>
-    bool isGranted(AccessFlags flags, const std::vector<StringT> & names) const
+    bool isGranted(const AccessFlags & flags_, const std::vector<StringT> & names) const
     {
-        if (min_access.contains(flags))
+        AccessFlags flags_to_check = flags_ - min_flags_with_children;
+        if (!flags_to_check)
             return true;
-        if (!max_access.contains(flags))
+        if (!max_flags_with_children.contains(flags_to_check))
             return false;
 
         for (const auto & name : names)
@@ -399,12 +379,12 @@ public:
             const Node * child = tryGetChild(name);
             if (child)
             {
-                if (!child->isGranted(flags, name))
+                if (!child->isGranted(flags_to_check, name))
                     return false;
             }
             else
             {
-                if (!final_access.contains(flags))
+                if (!flags.contains(flags_to_check))
                     return false;
             }
         }
@@ -413,7 +393,7 @@ public:
 
     friend bool operator ==(const Node & left, const Node & right)
     {
-        if (left.access != right.access)
+        if (left.flags != right.flags)
             return false;
 
         if (!left.children)
@@ -426,16 +406,16 @@ public:
 
     friend bool operator!=(const Node & left, const Node & right) { return !(left == right); }
 
-    void makeUnion(const Node & other, const Helper & helper)
+    void makeUnion(const Node & other)
     {
         makeUnionRec(other);
-        calculateFinalAccessRec(helper);
+        optimizeTree();
     }
 
-    void makeIntersection(const Node & other, const Helper & helper)
+    void makeIntersection(const Node & other)
     {
         makeIntersectionRec(other);
-        calculateFinalAccessRec(helper);
+        optimizeTree();
     }
 
     ProtoElements getElements() const
@@ -452,11 +432,20 @@ public:
         return res;
     }
 
+    void modifyFlags(const ModifyFlagsFunction & function, bool & flags_added, bool & flags_removed)
+    {
+        flags_added = false;
+        flags_removed = false;
+        modifyFlagsRec(function, flags_added, flags_removed);
+        if (flags_added || flags_removed)
+            optimizeTree();
+    }
+
     void logTree(Poco::Logger * log, const String & title) const
     {
-        LOG_TRACE(log, "Tree({}): level={}, name={}, access={}, final_access={}, min_access={}, max_access={}, num_children={}",
-            title, level, node_name ? *node_name : "NULL", access.toString(),
-            final_access.toString(), min_access.toString(), max_access.toString(),
+        LOG_TRACE(log, "Tree({}): level={}, name={}, flags={}, min_flags={}, max_flags={}, num_children={}",
+            title, level, node_name ? *node_name : "NULL", flags.toString(),
+            min_flags_with_children.toString(), max_flags_with_children.toString(),
             (children ? children->size() : 0));
 
         if (children)
@@ -467,6 +456,9 @@ public:
     }
 
 private:
+    AccessFlags getAcceptableFlags() const { return ::DB::getAcceptableFlags(level); }
+    AccessFlags getChildAcceptableFlags() const { return ::DB::getAcceptableFlags(static_cast<Level>(level + 1)); }
+
     Node * tryGetChild(const std::string_view & name) const
     {
         if (!children)
@@ -488,7 +480,7 @@ private:
         Node & new_child = (*children)[*new_child_name];
         new_child.node_name = std::move(new_child_name);
         new_child.level = static_cast<Level>(level + 1);
-        new_child.access = access;
+        new_child.flags = flags & new_child.getAcceptableFlags();
         return new_child;
     }
 
@@ -504,37 +496,40 @@ private:
 
     bool canEraseChild(const Node & child) const
     {
-        return (access == child.access) && !child.children;
+        return ((flags & child.getAcceptableFlags()) == child.flags) && !child.children;
     }
 
-    void addGrantsRec(const AccessFlags & flags)
+    void addGrantsRec(const AccessFlags & flags_)
     {
-        access |= flags;
-        if (children)
+        if (auto flags_to_add = flags_ & getAcceptableFlags())
         {
-            for (auto it = children->begin(); it != children->end();)
+            flags |= flags_to_add;
+            if (children)
             {
-                auto & child = it->second;
-                child.addGrantsRec(flags);
-                if (canEraseChild(child))
-                    it = children->erase(it);
-                else
-                    ++it;
+                for (auto it = children->begin(); it != children->end();)
+                {
+                    auto & child = it->second;
+                    child.addGrantsRec(flags_to_add);
+                    if (canEraseChild(child))
+                        it = children->erase(it);
+                    else
+                        ++it;
+                }
+                if (children->empty())
+                    children = nullptr;
             }
-            if (children->empty())
-                children = nullptr;
         }
     }
 
-    void removeGrantsRec(const AccessFlags & flags)
+    void removeGrantsRec(const AccessFlags & flags_)
     {
-        access &= ~flags;
+        flags &= ~flags_;
         if (children)
         {
             for (auto it = children->begin(); it != children->end();)
             {
                 auto & child = it->second;
-                child.removeGrantsRec(flags);
+                child.removeGrantsRec(flags_);
                 if (canEraseChild(child))
                     it = children->erase(it);
                 else
@@ -549,11 +544,12 @@ private:
         ProtoElements & res,
         const boost::container::small_vector<std::string_view, 3> & full_name,
         const Node & node,
-        const AccessFlags & parent_access)
+        const AccessFlags & parent_flags)
     {
-        auto access = node.access;
-        auto revokes = parent_access - access;
-        auto grants = access - parent_access;
+        auto flags = node.flags;
+        auto parent_fl = parent_flags & node.getAcceptableFlags();
+        auto revokes = parent_fl - flags;
+        auto grants = flags - parent_fl;
 
         if (revokes)
             res.push_back(ProtoElement{revokes, full_name, false, Kind::REVOKE});
@@ -567,7 +563,7 @@ private:
             {
                 boost::container::small_vector<std::string_view, 3> child_full_name = full_name;
                 child_full_name.push_back(child_name);
-                getElementsRec(res, child_full_name, child, access);
+                getElementsRec(res, child_full_name, child, flags);
             }
         }
     }
@@ -576,16 +572,19 @@ private:
         ProtoElements & res,
         const boost::container::small_vector<std::string_view, 3> & full_name,
         const Node * node,
-        const AccessFlags & parent_access,
+        const AccessFlags & parent_flags,
         const Node * node_go,
-        const AccessFlags & parent_access_go)
+        const AccessFlags & parent_flags_go)
     {
-        auto access = node ? node->access : parent_access;
-        auto access_go = node_go ? node_go->access : parent_access_go;
-        auto revokes = parent_access - access;
-        auto revokes_go = parent_access_go - access_go - revokes;
-        auto grants_go = access_go - parent_access_go;
-        auto grants = access - parent_access - grants_go;
+        auto acceptable_flags = ::DB::getAcceptableFlags(static_cast<Level>(full_name.size()));
+        auto parent_fl = parent_flags & acceptable_flags;
+        auto parent_fl_go = parent_flags_go & acceptable_flags;
+        auto flags = node ? node->flags : parent_fl;
+        auto flags_go = node_go ? node_go->flags : parent_fl_go;
+        auto revokes = parent_fl - flags;
+        auto revokes_go = parent_fl_go - flags_go - revokes;
+        auto grants_go = flags_go - parent_fl_go;
+        auto grants = flags - parent_fl - grants_go;
 
         if (revokes)
             res.push_back(ProtoElement{revokes, full_name, false, Kind::REVOKE});
@@ -613,7 +612,7 @@ private:
                     if (it != node_go->children->end())
                         child_node_go = &it->second;
                 }
-                getElementsRec(res, child_full_name, child_node, access, child_node_go, access_go);
+                getElementsRec(res, child_full_name, child_node, flags, child_node_go, flags_go);
             }
 
         }
@@ -627,12 +626,12 @@ private:
                 child_full_name.push_back(child_name);
                 const Node * child_node = nullptr;
                 const Node * child_node_go = &child;
-                getElementsRec(res, child_full_name, child_node, access, child_node_go, access_go);
+                getElementsRec(res, child_full_name, child_node, flags, child_node_go, flags_go);
             }
         }
     }
 
-    void calculateFinalAccessRec(const Helper & helper)
+    void optimizeTree()
     {
         /// Traverse tree.
         if (children)
@@ -640,7 +639,7 @@ private:
             for (auto it = children->begin(); it != children->end();)
             {
                 auto & child = it->second;
-                child.calculateFinalAccessRec(helper);
+                child.optimizeTree();
                 if (canEraseChild(child))
                     it = children->erase(it);
                 else
@@ -650,82 +649,31 @@ private:
                 children = nullptr;
         }
 
-        calculateFinalAccess(helper);
+        calculateMinMaxFlags();
     }
 
-    void calculateFinalAccess(const Helper & helper)
+    void calculateMinMaxFlags()
     {
-        /// Calculate min and max access among children.
-        AccessFlags min_access_among_children = helper.all_flags;
-        AccessFlags max_access_among_children;
-        if (children)
+        /// Calculate min & max access:
+        /// min_flags_with_children = access & child[0].min_flags_with_children & ... & child[N-1].min_flags_with_children
+        /// max_flags_with_children = access | child[0].max_flags_with_children | ... | child[N-1].max_flags_with_children
+
+        min_flags_with_children = flags;
+        max_flags_with_children = flags;
+        if (!children || children->empty())
+            return;
+
+        AccessFlags min_among_children = AccessFlags::allFlags();
+        AccessFlags max_among_children;
+        for (const auto & child : *children | boost::adaptors::map_values)
         {
-            for (const auto & child : *children | boost::adaptors::map_values)
-            {
-                min_access_among_children &= child.min_access;
-                max_access_among_children |= child.max_access;
-            }
+            min_among_children &= child.min_flags_with_children;
+            max_among_children |= child.max_flags_with_children;
         }
 
-        /// Calculate implicit access:
-        AccessFlags implicit_access;
-
-        if (level <= DATABASE_LEVEL)
-        {
-            if (access & helper.database_flags)
-                implicit_access |= helper.show_databases_flag;
-        }
-        if (level <= TABLE_LEVEL)
-        {
-            if (access & helper.table_flags)
-                implicit_access |= helper.show_tables_flag;
-            if (access & helper.dictionary_flags)
-                implicit_access |= helper.show_dictionaries_flag;
-        }
-        if (level <= COLUMN_LEVEL)
-        {
-            if (access & helper.column_flags)
-                implicit_access |= helper.show_columns_flag;
-        }
-        if (children && max_access_among_children)
-        {
-            if (level == DATABASE_LEVEL)
-                implicit_access |= helper.show_databases_flag;
-            else if (level == TABLE_LEVEL)
-                implicit_access |= helper.show_tables_flag;
-        }
-
-        if (level == GLOBAL_LEVEL)
-        {
-            if ((access | max_access_among_children) & helper.create_table_flag)
-                implicit_access |= helper.create_temporary_table_flag;
-
-            if (access & helper.system_reload_dictionary)
-                implicit_access |= helper.system_reload_embedded_dictionaries;
-        }
-
-        if (level <= TABLE_LEVEL)
-        {
-            if (access & helper.create_table_flag)
-                implicit_access |= helper.create_view_flag;
-
-            if (access & helper.drop_table_flag)
-                implicit_access |= helper.drop_view_flag;
-
-            if (access & helper.alter_table_flag)
-                implicit_access |= helper.alter_view_flag;
-
-            if (access & helper.alter_ttl_flag)
-                implicit_access |= helper.alter_materialize_ttl_flag;
-        }
-
-        final_access = access | implicit_access;
-
-        /// Calculate min and max access:
-        /// min_access = final_access & child[0].final_access & ... & child[N-1].final_access
-        /// max_access = final_access | child[0].final_access | ... | child[N-1].final_access
-        min_access = final_access & min_access_among_children;
-        max_access = final_access | max_access_among_children;
+        max_flags_with_children |= max_among_children;
+        AccessFlags add_acceptable_flags = getAcceptableFlags() - getChildAcceptableFlags();
+        min_flags_with_children &= min_among_children | add_acceptable_flags;
     }
 
     void makeUnionRec(const Node & rhs)
@@ -735,13 +683,13 @@ private:
             for (const auto & [rhs_childname, rhs_child] : *rhs.children)
                 getChild(rhs_childname).makeUnionRec(rhs_child);
         }
-        access |= rhs.access;
+        flags |= rhs.flags;
         if (children)
         {
             for (auto & [lhs_childname, lhs_child] : *children)
             {
                 if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.access |= rhs.access;
+                    lhs_child.flags |= rhs.flags & lhs_child.getAcceptableFlags();
             }
         }
     }
@@ -753,14 +701,48 @@ private:
             for (const auto & [rhs_childname, rhs_child] : *rhs.children)
                 getChild(rhs_childname).makeIntersectionRec(rhs_child);
         }
-        access &= rhs.access;
+        flags &= rhs.flags;
         if (children)
         {
             for (auto & [lhs_childname, lhs_child] : *children)
             {
                 if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.access &= rhs.access;
+                    lhs_child.flags &= rhs.flags;
             }
+        }
+    }
+
+    template <typename ... ParentNames>
+    void modifyFlagsRec(const ModifyFlagsFunction & function, bool & flags_added, bool & flags_removed, const ParentNames & ... parent_names)
+    {
+        auto invoke = [&function](const AccessFlags & flags_, const AccessFlags & min_flags_with_children_, const AccessFlags & max_flags_with_children_, std::string_view database_ = {}, std::string_view table_ = {}, std::string_view column_ = {}) -> AccessFlags
+        {
+            return function(flags_, min_flags_with_children_, max_flags_with_children_, database_, table_, column_);
+        };
+
+        if constexpr (sizeof...(ParentNames) < 3)
+        {
+            if (children)
+            {
+                for (auto & child : *children | boost::adaptors::map_values)
+                {
+                    const String & child_name = *child.node_name;
+                    child.modifyFlagsRec(function, flags_added, flags_removed, parent_names..., child_name);
+                }
+            }
+        }
+
+        calculateMinMaxFlags();
+
+        auto new_flags = invoke(flags, min_flags_with_children, max_flags_with_children, parent_names...);
+
+        if (new_flags != flags)
+        {
+            new_flags &= getAcceptableFlags();
+            flags_added |= static_cast<bool>(new_flags - flags);
+            flags_removed |= static_cast<bool>(flags - new_flags);
+            flags = new_flags;
+            calculateMinMaxFlags();
         }
     }
 };
@@ -818,8 +800,8 @@ void AccessRights::grantImpl(const AccessFlags & flags, const Args &... args)
     {
         if (!root_node)
             root_node = std::make_unique<Node>();
-        root_node->grant(flags, Helper::instance(), args...);
-        if (!root_node->access && !root_node->children)
+        root_node->grant(flags, args...);
+        if (!root_node->flags && !root_node->children)
             root_node = nullptr;
     };
     helper(root);
@@ -874,8 +856,8 @@ void AccessRights::revokeImpl(const AccessFlags & flags, const Args &... args)
     {
         if (!root_node)
             return;
-        root_node->revoke(flags, Helper::instance(), args...);
-        if (!root_node->access && !root_node->children)
+        root_node->revoke(flags, args...);
+        if (!root_node->flags && !root_node->children)
             root_node = nullptr;
     };
     helper(root_with_grant_option);
@@ -1024,8 +1006,8 @@ void AccessRights::makeUnion(const AccessRights & other)
         }
         if (other_root_node)
         {
-            root_node->makeUnion(*other_root_node, Helper::instance());
-            if (!root_node->access && !root_node->children)
+            root_node->makeUnion(*other_root_node);
+            if (!root_node->flags && !root_node->children)
                 root_node = nullptr;
         }
     };
@@ -1046,13 +1028,39 @@ void AccessRights::makeIntersection(const AccessRights & other)
         }
         if (other_root_node)
         {
-            root_node->makeIntersection(*other_root_node, Helper::instance());
-            if (!root_node->access && !root_node->children)
+            root_node->makeIntersection(*other_root_node);
+            if (!root_node->flags && !root_node->children)
                 root_node = nullptr;
         }
     };
     helper(root, other.root);
     helper(root_with_grant_option, other.root_with_grant_option);
+}
+
+
+void AccessRights::modifyFlags(const ModifyFlagsFunction & function)
+{
+    if (!root)
+        return;
+    bool flags_added, flags_removed;
+    root->modifyFlags(function, flags_added, flags_removed);
+    if (flags_removed && root_with_grant_option)
+        root_with_grant_option->makeIntersection(*root);
+}
+
+
+void AccessRights::modifyFlagsWithGrantOption(const ModifyFlagsFunction & function)
+{
+    if (!root_with_grant_option)
+        return;
+    bool flags_added, flags_removed;
+    root_with_grant_option->modifyFlags(function, flags_added, flags_removed);
+    if (flags_added)
+    {
+        if (!root)
+            root = std::make_unique<Node>();
+        root->makeUnion(*root_with_grant_option);
+    }
 }
 
 

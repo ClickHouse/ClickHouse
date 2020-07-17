@@ -25,15 +25,22 @@ public:
         bool preserves_number_of_streams;
     };
 
-    ITransformingStep(DataStream input_stream, Block output_header, DataStreamTraits traits);
+    ITransformingStep(DataStream input_stream, Block output_header, DataStreamTraits traits, bool collect_processors_ = true);
 
     QueryPipelinePtr updatePipeline(QueryPipelines pipelines) override;
 
     virtual void transformPipeline(QueryPipeline & pipeline) = 0;
 
+    void describePipeline(FormatSettings & settings) const override;
+
 protected:
     /// Clear distinct_columns if res_header doesn't contain all of them.
     static void updateDistinctColumns(const Block & res_header, NameSet & distinct_columns);
+
+private:
+    /// We collect processors got after pipeline transformation.
+    Processors processors;
+    bool collect_processors;
 };
 
 }

@@ -12,8 +12,9 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : IMergeTreeDataPartWriter(
-        data_part_, columns_list_, metadata_snapshot_, indices_to_recalc_, marks_file_extension_, default_codec_, settings_, index_granularity_)
+    : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
+        indices_to_recalc_, marks_file_extension_,
+        default_codec_, settings_, index_granularity_)
 {
     using DataPart = MergeTreeDataPartCompact;
     String data_file_name = DataPart::DATA_FILE_NAME;

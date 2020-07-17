@@ -87,6 +87,12 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
 }
 
 template <typename T>
+void ColumnVector<T>::updateHashFast(SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(data.data()), size() * sizeof(data[0]));
+}
+
+template <typename T>
 struct ColumnVector<T>::less
 {
     const Self & parent;

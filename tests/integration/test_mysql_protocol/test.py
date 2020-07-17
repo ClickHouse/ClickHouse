@@ -118,8 +118,8 @@ def test_mysql_client(mysql_client, server_address):
     '''.format(host=server_address, port=server_port), demux=True)
 
     assert stdout == 'count()\n1\n'
-    assert stderr == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
-                     "ERROR 81 (00000) at line 1: Database system2 doesn't exist\n"
+    assert stderr[0:182] == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
+                     "ERROR 81 (00000) at line 1: Code: 81, e.displayText() = DB::Exception: Database system2 doesn't exist"
 
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
@@ -137,7 +137,91 @@ def test_mysql_client(mysql_client, server_address):
 
     assert stdout == '\n'.join(['column', '0', '0', '1', '1', '5', '5', 'tmp_column', '0', '1', ''])
 
+def test_mysql_client_exception(mysql_client, server_address):
+   # Poco exception.
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "CREATE TABLE default.t1_remote_mysql AS mysql('127.0.0.1:10086','default','t1_local','default','');"
+    '''.format(host=server_address, port=server_port), demux=True)
 
+    assert stderr[0:266] == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
+            "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 2002, e.displayText() = mysqlxx::ConnectionFailed: Can't connect to MySQL server on '127.0.0.1' (115) ((nullptr):0)"
+
+
+def test_mysql_replacement_query(mysql_client, server_address):
+    # SHOW TABLE STATUS LIKE.
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "show table status like 'xx';"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+    # SHOW VARIABLES.
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "show variables;"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+    # KILL QUERY.
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "kill query 0;"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "kill query where query_id='mysql:0';"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+    # SELECT DATABASE().
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "select database();"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == 'database()\ndefault\n'
+
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "select DATABASE();"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == 'DATABASE()\ndefault\n'
+
+
+def test_mysql_explain(mysql_client, server_address):
+    # EXPLAIN SELECT 1
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "EXPLAIN SELECT 1;"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+    # EXPLAIN AST SELECT 1
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "EXPLAIN AST SELECT 1;"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+    # EXPLAIN PLAN SELECT 1
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "EXPLAIN PLAN SELECT 1;"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    
+    # EXPLAIN PIPELINE graph=1 SELECT 1
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "EXPLAIN PIPELINE graph=1 SELECT 1;"
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    
+    
 def test_mysql_federated(mysql_server, server_address):
     # For some reason it occasionally fails without retries.
     retries = 100
@@ -203,7 +287,7 @@ def test_python_client(server_address):
     with pytest.raises(pymysql.InternalError) as exc_info:
         client.query('select name from tables')
 
-    assert exc_info.value.args == (60, "Table default.tables doesn't exist.")
+    assert exc_info.value.args[1][0:77] == "Code: 60, e.displayText() = DB::Exception: Table default.tables doesn't exist"
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute("select 1 as a, 'тест' as b")
@@ -219,7 +303,7 @@ def test_python_client(server_address):
     with pytest.raises(pymysql.InternalError) as exc_info:
         client.query('select name from tables')
 
-    assert exc_info.value.args == (60, "Table default.tables doesn't exist.")
+    assert exc_info.value.args[1][0:77] == "Code: 60, e.displayText() = DB::Exception: Table default.tables doesn't exist"
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute("select 1 as a, 'тест' as b")
@@ -230,7 +314,7 @@ def test_python_client(server_address):
     with pytest.raises(pymysql.InternalError) as exc_info:
         client.select_db('system2')
 
-    assert exc_info.value.args == (81, "Database system2 doesn't exist")
+    assert exc_info.value.args[1][0:73] == "Code: 81, e.displayText() = DB::Exception: Database system2 doesn't exist"
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute('CREATE DATABASE x')

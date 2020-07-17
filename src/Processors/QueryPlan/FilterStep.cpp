@@ -2,6 +2,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPipeline.h>
 #include <Interpreters/ExpressionActions.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -40,6 +41,21 @@ void FilterStep::transformPipeline(QueryPipeline & pipeline)
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
         return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals);
     });
+}
+
+void FilterStep::describeActions(FormatSettings & settings) const
+{
+    String prefix(settings.offset, ' ');
+    settings.out << prefix << "Filter column: " << filter_column_name << '\n';
+
+    bool first = true;
+    for (const auto & action : expression->getActions())
+    {
+        settings.out << prefix << (first ? "Actions: "
+                                         : "         ");
+        first = false;
+        settings.out << action.toString() << '\n';
+    }
 }
 
 }
