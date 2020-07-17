@@ -36,8 +36,11 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     : IMergedBlockOutputStream(data_part)
     , columns_list(columns_list_)
 {
-    MergeTreeWriterSettings writer_settings(data_part->storage.global_context.getSettings(),
-        data_part->storage.canUseAdaptiveGranularity(), aio_threshold, blocks_are_granules_size);
+    MergeTreeWriterSettings writer_settings(
+        storage.global_context.getSettings(),
+        data_part->index_granularity_info.is_adaptive,
+        aio_threshold,
+        blocks_are_granules_size);
 
     if (aio_threshold > 0 && !merged_column_to_size.empty())
     {
