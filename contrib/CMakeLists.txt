@@ -102,7 +102,7 @@ if (USE_INTERNAL_SSL_LIBRARY)
     add_library(OpenSSL::SSL ALIAS ${OPENSSL_SSL_LIBRARY})
 endif ()
 
-if (ENABLE_LDAP AND USE_INTERNAL_LDAP_LIBRARY)
+if (USE_INTERNAL_LDAP_LIBRARY)
     add_subdirectory (openldap-cmake)
 endif ()
 

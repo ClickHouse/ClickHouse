@@ -22,6 +22,12 @@
 
 namespace
 {
+
+const char * S3_LOGGER_TAG_NAMES[][2] = {
+    {"AWSClient", "AWSClient"},
+    {"AWSAuthV4Signer", "AWSClient (AWSAuthV4Signer)"},
+};
+
 const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
     static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
@@ -40,26 +46,46 @@ const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::U
 class AWSLogger final : public Aws::Utils::Logging::LogSystemInterface
 {
 public:
+    AWSLogger()
+    {
+        for (auto [tag, name] : S3_LOGGER_TAG_NAMES)
+            tag_loggers[tag] = &Poco::Logger::get(name);
+
+        default_logger = tag_loggers[S3_LOGGER_TAG_NAMES[0][0]];
+    }
+
     ~AWSLogger() final = default;
 
     Aws::Utils::Logging::LogLevel GetLogLevel() const final { return Aws::Utils::Logging::LogLevel::Trace; }
 
     void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final // NOLINT
     {
-        const auto & [level, prio] = convertLogLevel(log_level);
-        LOG_IMPL(log, level, prio, "{}: {}", tag, format_str);
+        callLogImpl(log_level, tag, format_str); /// FIXME. Variadic arguments?
     }
 
     void LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream) final
     {
+        callLogImpl(log_level, tag, message_stream.str().c_str());
+    }
+
+    void callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * message)
+    {
         const auto & [level, prio] = convertLogLevel(log_level);
-        LOG_IMPL(log, level, prio, "{}: {}", tag, message_stream.str());
+        if (tag_loggers.count(tag) > 0)
+        {
+            LOG_IMPL(tag_loggers[tag], level, prio, "{}", message);
+        }
+        else
+        {
+            LOG_IMPL(default_logger, level, prio, "{}: {}", tag, message);
+        }
     }
 
     void Flush() final {}
 
 private:
-    Poco::Logger * log = &Poco::Logger::get("AWSClient");
+    Poco::Logger * default_logger;
+    std::unordered_map<String, Poco::Logger *> tag_loggers;
 };
 
 class S3AuthSigner : public Aws::Client::AWSAuthV4Signer
@@ -102,7 +128,9 @@ public:
 private:
     const DB::HeaderCollection headers;
 };
+
 }
+
 
 namespace DB
 {

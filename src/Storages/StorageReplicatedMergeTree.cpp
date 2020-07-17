@@ -4498,7 +4498,11 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 }
 
 
-void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & from_, const Context & query_context)
+void StorageReplicatedMergeTree::fetchPartition(
+    const ASTPtr & partition,
+    const StorageMetadataPtr & metadata_snapshot,
+    const String & from_,
+    const Context & query_context)
 {
     String partition_id = getPartitionIDFromQuery(partition, query_context);
 
