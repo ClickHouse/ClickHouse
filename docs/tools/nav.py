@@ -87,7 +87,10 @@ def build_blog_nav(lang, args):
         posts = []
         post_meta_items = []
         for post in os.listdir(year_dir):
-            meta, _ = util.read_md_file(os.path.join(year_dir, post))
+            post_path = os.path.join(year_dir, post)
+            if not post.endswith('.md'):
+                raise RuntimeError(f'Unexpected non-md file in posts folder: {post_path}')
+            meta, _ = util.read_md_file(post_path)
             post_date = meta['date']
             post_title = meta['title']
             if datetime.date.fromisoformat(post_date) > datetime.date.today():
