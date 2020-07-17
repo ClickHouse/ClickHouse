@@ -26,11 +26,11 @@ namespace ErrorCodes
 }
 
 template <bool higher_is_better>
-ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, std::vector<double> ys)
+Variants bayesian_ab_test(std::string distribution, std::vector<double> xs, std::vector<double> ys)
 {
     const size_t r = 1000, c = 100;
 
-    ABTestResult result;
+    Variants variants(xs.size());
     std::vector<std::vector<double>> samples_matrix;
 
     if (distribution == "beta")
@@ -45,6 +45,7 @@ ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, 
         {
             alpha = 1.0 + ys[i];
             beta = 1.0 + xs[i] - ys[i];
+
             samples_matrix.push_back(stats::rbeta<std::vector<double>>(r, c, alpha, beta));
         }
     }
@@ -68,7 +69,6 @@ ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, 
     }
 
     // Beats control
-    result.beats_control.resize(xs.size(), 0);
     for (size_t i = 1; i < xs.size(); ++i)
     {
         for (size_t n = 0; n < r * c; ++n)
@@ -76,24 +76,22 @@ ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, 
             if (higher_is_better)
             {
                 if (samples_matrix[i][n] > samples_matrix[0][n])
-                    ++result.beats_control[i];
+                    ++variants[i].beats_control;
             }
             else
             {
                 if (samples_matrix[i][n] < samples_matrix[0][n])
-                    ++result.beats_control[i];
+                    ++variants[i].beats_control;
             }
         }
     }
 
     for (size_t i = 1; i < xs.size(); ++i)
-        result.beats_control[i] = static_cast<double>(result.beats_control[i]) / r / c;
+        variants[i].beats_control = static_cast<double>(variants[i].beats_control) / r / c;
 
     // To be best
     std::vector<size_t> count_m(xs.size(), 0);
     std::vector<double> row(xs.size(), 0);
-
-    result.best.resize(xs.size(), 0);
 
     for (size_t n = 0; n < r * c; ++n)
     {
@@ -110,16 +108,16 @@ ABTestResult bayesian_ab_test(std::string distribution, std::vector<double> xs, 
         {
             if (m == samples_matrix[i][n])
             {
-                ++result.best[i];
+                ++variants[i].best;
                 break;
             }
         }
     }
 
     for (size_t i = 0; i < xs.size(); ++i)
-        result.best[i] = static_cast<double>(result.best[i]) / r / c;
+        variants[i].best = static_cast<double>(variants[i].best) / r / c;
 
-    return result;
+    return variants;
 }
 
 class FunctionBayesAB : public IFunction
@@ -215,20 +213,20 @@ public:
             std::count_if(ys.begin(), ys.end(), [](double v) { return v < 0; }) > 0)
             throw Exception("Negative values don't allowed", ErrorCodes::BAD_ARGUMENTS);
 
-        ABTestResult test_result;
+        Variants variants;
         if (dist == "beta")
         {
             if (higher_is_better)
-                test_result = bayesian_ab_test<true>(dist, xs, ys);
+                variants = bayesian_ab_test<true>(dist, xs, ys);
             else
-                test_result = bayesian_ab_test<false>(dist, xs, ys);
+                variants = bayesian_ab_test<false>(dist, xs, ys);
         }
         else if (dist == "gamma")
         {
             if (higher_is_better)
-                test_result = bayesian_ab_test<false>(dist, xs, ys);
+                variants = bayesian_ab_test<false>(dist, xs, ys);
             else
-                test_result = bayesian_ab_test<true>(dist, xs, ys);
+                variants = bayesian_ab_test<true>(dist, xs, ys);
         }
         else
             throw Exception("First argument for function " + getName() + " cannot be " + dist, ErrorCodes::BAD_ARGUMENTS);
@@ -240,14 +238,14 @@ public:
             WriteBufferFromOStream buf(s);
 
             writeCString("{\"data\":[", buf);
-            for (size_t i = 0; i < xs.size(); ++i)
+            for (size_t i = 0; i < variants.size(); ++i)
             {
                 writeCString("{\"variant_name\":", buf);
                 writeJSONString(variant_names[i], buf, settings);
                 writeCString(",\"beats_control\":", buf);
-                writeText(test_result.beats_control[i], buf);
+                writeText(variants[i].beats_control, buf);
                 writeCString(",\"to_be_best\":", buf);
-                writeText(test_result.best[i], buf);
+                writeText(variants[i].best, buf);
                 writeCString("}", buf);
                 if (i != xs.size() -1) writeCString(",", buf);
             }
