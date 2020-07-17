@@ -213,7 +213,8 @@ namespace S3
         static const RE2 path_style_pattern("^/([^/]*)/(.*)");
 
         static constexpr auto S3 = "S3";
-        static constexpr auto COSN = "COSN", COS = "COS";
+        static constexpr auto COSN = "COSN";
+        static constexpr auto COS = "COS";
 
         uri = uri_;
         storage_name = S3;
@@ -221,7 +222,8 @@ namespace S3
         if (uri.getHost().empty())
             throw Exception("Host is empty in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
-        String name, endpoint_authority_from_uri;
+        String name;
+        String endpoint_authority_from_uri;
 
         if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
         {
