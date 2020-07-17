@@ -13,6 +13,7 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 
 namespace DB
 {

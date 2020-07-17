@@ -15,11 +15,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TYPE_MISMATCH;
-}
-
 enum class AttributeUnderlyingType
 {
     utUInt8,

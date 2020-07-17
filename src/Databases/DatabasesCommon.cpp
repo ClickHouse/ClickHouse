@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
 }
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, const Context & context)
@@ -71,7 +72,8 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
 
     auto it = tables.find(table_name);
     if (it == tables.end())
-        throw Exception("Table " + backQuote(database_name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist.",
+                        backQuote(database_name), backQuote(table_name));
     res = it->second;
     tables.erase(it);
 
@@ -93,9 +95,14 @@ void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const Sto
 
 void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> &)
 {
-    if (!tables.emplace(table_name, table).second)
-        throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
     auto table_id = table->getStorageID();
+    if (table_id.database_name != database_name)
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
+                        database_name, table_id.database_name);
+
+    if (!tables.emplace(table_name, table).second)
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", table_id.getFullTableName());
+
     if (table_id.hasUUID())
     {
         assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
@@ -146,7 +153,8 @@ StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name
     auto it = tables.find(table_name);
     if (it != tables.end())
         return it->second;
-    throw Exception("Table " + backQuote(database_name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist.",
+                    backQuote(database_name), backQuote(table_name));
 }
 
 }

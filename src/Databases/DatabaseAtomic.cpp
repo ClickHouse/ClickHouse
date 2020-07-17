@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int CANNOT_ASSIGN_ALTER;
     extern const int DATABASE_NOT_EMPTY;
@@ -84,12 +85,6 @@ void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, 
     not_in_use = cleenupDetachedTables();
     auto table_id = table->getStorageID();
     assertDetachedTableNotInUse(table_id.uuid);
-    if (table_id.database_name != database_name)
-    {
-        /// Update name if RENAME DATABASE happend during attach
-        table_id.database_name = database_name;
-        table->renameInMemory(table_id);
-    }
     DatabaseWithDictionaries::attachTableUnlocked(name, table, lock);
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
 }
@@ -262,6 +257,9 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
     try
     {
         std::unique_lock lock{mutex};
+        if (query.database != database_name)
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
+                            database_name, query.database);
         not_in_use = cleenupDetachedTables();
         assertDetachedTableNotInUse(query.uuid);
         renameNoReplace(table_metadata_tmp_path, table_metadata_path);
@@ -278,7 +276,8 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 
 void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path)
 {
-    SCOPE_EXIT({ std::error_code code; std::filesystem::remove(table_metadata_tmp_path, code); });
+    bool check_file_exists = supportsRenameat2();
+    SCOPE_EXIT({ std::error_code code; if (check_file_exists) std::filesystem::remove(table_metadata_tmp_path, code); });
 
     std::unique_lock lock{mutex};
     auto actual_table_id = getTableUnlocked(table_id.table_name, lock)->getStorageID();
@@ -286,7 +285,10 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     if (table_id.uuid != actual_table_id.uuid)
         throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
 
-    renameExchange(table_metadata_tmp_path, table_metadata_path);
+    if (check_file_exists)
+        renameExchange(table_metadata_tmp_path, table_metadata_path);
+    else
+        std::filesystem::rename(table_metadata_tmp_path, table_metadata_path);
 }
 
 void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)

@@ -88,7 +88,6 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     String database_name = create.database;
-    assert(database_name != TABLE_WITH_UUID_NAME_PLACEHOLDER);
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
@@ -156,8 +155,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (!create.attach && fs::exists(metadata_path))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists", metadata_path);
-
-        create.database = TABLE_WITH_UUID_NAME_PLACEHOLDER;
     }
     else
     {
@@ -170,8 +167,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
 
-    // FIXME
-    DatabasePtr database = DatabaseFactory::get(database_name, metadata_path / "", create.storage, create.uuid, context);
+    DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", context);
+
+    if (create.uuid != UUIDHelpers::Nil)
+        create.database = TABLE_WITH_UUID_NAME_PLACEHOLDER;
 
     bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
 
@@ -624,7 +623,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
         bool is_on_cluster = context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         if (create.uuid != UUIDHelpers::Nil && !is_on_cluster)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "{} UUID specified, but engine of database {} is not Atomic", create.database, kind);
+                            "{} UUID specified, but engine of database {} is not Atomic", kind, create.database);
 
         /// Ignore UUID if it's ON CLUSTER query
         create.uuid = UUIDHelpers::Nil;
@@ -839,9 +838,11 @@ BlockIO InterpreterCreateQuery::execute()
     auto & create = query_ptr->as<ASTCreateQuery &>();
     if (!create.cluster.empty())
     {
+        /// Allows to execute ON CLUSTER queries during version upgrade
+        bool force_backward_compatibility = !context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil;
         /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
         /// It will be ignored if database does not support UUIDs.
-        if (!create.attach && create.uuid == UUIDHelpers::Nil)
+        if (!force_backward_compatibility && !create.attach && create.uuid == UUIDHelpers::Nil)
             create.uuid = UUIDHelpers::generateV4();
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
     }

@@ -19,7 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
 }
 
 static constexpr char const * TABLE_WITH_UUID_NAME_PLACEHOLDER = "_";
@@ -73,11 +73,9 @@ struct StorageID
     void assertNotEmpty() const
     {
         if (empty())
-            throw Exception("Both table name and UUID are empty", ErrorCodes::LOGICAL_ERROR);
-        if (table_name == TABLE_WITH_UUID_NAME_PLACEHOLDER && !hasUUID())
-            throw Exception("Table name was replaced with placeholder, but UUID is Nil", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Both table name and UUID are empty", ErrorCodes::UNKNOWN_TABLE);
         if (table_name.empty() && !database_name.empty())
-            throw Exception("Table name is empty, but database name is not", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Table name is empty, but database name is not", ErrorCodes::UNKNOWN_TABLE);
     }
 
     /// Avoid implicit construction of empty StorageID. However, it's needed for deferred initialization.
@@ -88,6 +86,8 @@ struct StorageID
     static StorageID fromDictionaryConfig(const Poco::Util::AbstractConfiguration & config,
                                           const String & config_prefix);
 
+    /// If dictionary has UUID, then use it as dictionary name in ExternalLoader to allow dictionary renaming.
+    /// DatabaseCatalog::resolveDictionaryName(...) should be used to access such dictionaries by name.
     String getInternalDictionaryName() const;
 
 private:

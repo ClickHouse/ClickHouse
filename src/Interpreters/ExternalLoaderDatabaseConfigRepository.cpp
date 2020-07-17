@@ -26,7 +26,7 @@ namespace
             auto dict_id = StorageID::createEmpty();
             dict_id.uuid = parseFromString<UUID>(loadable_definition_name);
             assert(dict_id.uuid != UUIDHelpers::Nil);
-            /// Get associated StorageDictionary bu UUID
+            /// Get associated StorageDictionary by UUID
             auto table = DatabaseCatalog::instance().getTable(dict_id, global_context);
             auto dict_id_with_names = table->getStorageID();
             return dict_id_with_names.table_name;

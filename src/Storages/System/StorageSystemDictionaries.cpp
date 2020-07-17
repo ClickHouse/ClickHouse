@@ -67,9 +67,9 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         else
             dict_id.table_name = load_result.name;
 
-        String db_ot_tag = dict_id.database_name.empty() ? IDictionary::NO_DATABASE_TAG : dict_id.database_name;
+        String db_or_tag = dict_id.database_name.empty() ? IDictionary::NO_DATABASE_TAG : dict_id.database_name;
         if (check_access_for_dictionaries
-            && !access->isGranted(AccessType::SHOW_DICTIONARIES, dict_id.database_name, dict_id.table_name))
+            && !access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
             continue;
 
         size_t i = 0;
