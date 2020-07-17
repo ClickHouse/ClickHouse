@@ -55,21 +55,22 @@ class MySQLNodeInstance:
                 print "Can't connect to MySQL " + str(ex)
                 time.sleep(0.5)
 
-        subprocess.check_call(['docker-compose', 'ps', '--services', '--all'])
+        subprocess.check_call(['docker-compose', 'ps', '--services', 'all'])
         raise Exception("Cannot wait MySQL container")
 
 
 @pytest.fixture(scope="module")
 def started_mysql_5_7():
     mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 33307)
+    docker_compose = os.path.join(SCRIPT_DIR, 'composes', 'mysql_5_7_compose.yml')
 
     try:
-        docker_compose = os.path.join(SCRIPT_DIR, 'composes', 'mysql_5_7_compose.yml')
         subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d'])
         mysql_node.wait_mysql_to_start(120)
         yield mysql_node
     finally:
         mysql_node.close()
+        subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes', '--remove-orphans'])
 
 
 def test_materialize_database_ddl_with_mysql_5_7(started_cluster, started_mysql_5_7):
