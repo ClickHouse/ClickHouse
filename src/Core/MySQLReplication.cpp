@@ -2,7 +2,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
-#include <Common/DateLUT.h>
+#include <common/DateLUT.h>
 #include <Common/FieldVisitors.h>
 
 namespace DB
