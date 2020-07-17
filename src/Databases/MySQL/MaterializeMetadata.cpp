@@ -80,16 +80,26 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
     executed_gtid_set = (*master_status.getByPosition(4).column)[0].safeGet<String>();
 }
 
-bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection) const
+static Block getShowMasterLogHeader(const String & mysql_version)
 {
-    /// TODO: MySQL 5.7
-    Block header{
+    if (startsWith(mysql_version, "5."))
+    {
+        return Block {
+            {std::make_shared<DataTypeString>(), "Log_name"},
+            {std::make_shared<DataTypeUInt64>(), "File_size"}
+        };
+    }
+
+    return Block {
         {std::make_shared<DataTypeString>(), "Log_name"},
         {std::make_shared<DataTypeUInt64>(), "File_size"},
         {std::make_shared<DataTypeString>(), "Encrypted"}
     };
+}
 
-    MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", header, DEFAULT_BLOCK_SIZE);
+bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection, const String & mysql_version) const
+{
+    MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", getShowMasterLogHeader(mysql_version), DEFAULT_BLOCK_SIZE);
 
     while (Block block = input.read())
     {
@@ -143,7 +153,9 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
     commitMetadata(fun, persistent_tmp_path, persistent_path);
 }
 
-MaterializeMetadata::MaterializeMetadata(mysqlxx::PoolWithFailover::Entry & connection, const String & path_, const String & database, bool & opened_transaction)
+MaterializeMetadata::MaterializeMetadata(
+    mysqlxx::PoolWithFailover::Entry & connection, const String & path_,
+    const String & database, bool & opened_transaction, const String & mysql_version)
     : persistent_path(path_)
 {
     if (Poco::File(persistent_path).exists())
@@ -159,7 +171,7 @@ MaterializeMetadata::MaterializeMetadata(mysqlxx::PoolWithFailover::Entry & conn
         assertString("\nData Version:\t", in);
         readIntText(version, in);
 
-        if (checkBinlogFileExists(connection))
+        if (checkBinlogFileExists(connection, mysql_version))
             return;
     }
 
