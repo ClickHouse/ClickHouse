@@ -13,7 +13,7 @@ Join通过使用一个或多个表的公共值合并来自一个或多个表的�
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN <right_table>
+[GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ASOF] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -35,14 +35,10 @@ ClickHouse中提供的其他联接类型:
 
 -   `LEFT SEMI JOIN` 和 `RIGHT SEMI JOIN`,白名单 “join keys”，而不产生笛卡尔积。
 -   `LEFT ANTI JOIN` 和 `RIGHT ANTI JOIN`，黑名单 “join keys”，而不产生笛卡尔积。
+-   `LEFT ANY JOIN`, `RIGHT ANY JOIN` and `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
+-   `ASOF JOIN` and `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 
-## 严格 {#select-join-strictness}
-
-修改如何匹配 “join keys” 执行
-
--   `ALL` — The standard `JOIN` sql中的行为如上所述。 默认值。
--   `ANY` — Partially (for opposite side of `LEFT` 和 `RIGHT`）或完全（为 `INNER` 和 `FULL`）禁用笛卡尔积为标准 `JOIN` 类型。
--   `ASOF` — For joining sequences with a non-exact match. `ASOF JOIN` 用法描述如下。
+## 严格 {#join-settings}
 
 !!! note "注"
     可以使用以下方式复盖默认的严格性值 [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) 设置。
