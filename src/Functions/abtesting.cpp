@@ -253,27 +253,6 @@ public:
         else
             variants = bayesian_ab_test<false>(dist, xs, ys);
 
-        FormatSettings settings;
-        std::stringstream s;
-
-        {
-            WriteBufferFromOStream buf(s);
-
-            writeCString("{\"data\":[", buf);
-            for (size_t i = 0; i < variants.size(); ++i)
-            {
-                writeCString("{\"variant_name\":", buf);
-                writeJSONString(variant_names[i], buf, settings);
-                writeCString(",\"beats_control\":", buf);
-                writeFloatText<Float64>(variants[i].beats_control, buf);
-                writeCString(",\"to_be_best\":", buf);
-                writeFloatText<Float64>(variants[i].best, buf);
-                writeCString("}", buf);
-                if (i != xs.size() -1) writeCString(",", buf);
-            }
-            writeCString("]}", buf);
-        }
-
         auto dst = ColumnString::create();
         std::string result_str = convertToJson(variant_names, variants).c_str();
         dst->insertData(result_str.c_str(), result_str.length());
