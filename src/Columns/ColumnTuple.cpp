@@ -195,6 +195,12 @@ void ColumnTuple::updateWeakHash32(WeakHash32 & hash) const
         column->updateWeakHash32(hash);
 }
 
+void ColumnTuple::updateHashFast(SipHash & hash) const
+{
+    for (const auto & column : columns)
+        column->updateHashFast(hash);
+}
+
 void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const size_t tuple_size = columns.size();

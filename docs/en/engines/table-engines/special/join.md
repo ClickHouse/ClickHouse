@@ -20,11 +20,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
 ```
 
-See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) query.
+See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 **Engine Parameters**
 
--   `join_strictness` – [JOIN strictness](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_strictness` – [JOIN strictness](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `join_type` – [JOIN type](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` clause that the `JOIN` operation is made with.
 

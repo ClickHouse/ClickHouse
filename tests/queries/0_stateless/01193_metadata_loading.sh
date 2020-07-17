@@ -19,7 +19,7 @@ threads=10
 count_multiplier=1
 max_time_ms=1000
 
-debug_or_sanitizer_build=`$CLICKHOUSE_CLIENT -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'"`
+debug_or_sanitizer_build=`$CLICKHOUSE_CLIENT -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%' OR hasThreadFuzzer()"`
 
 if [[ debug_or_sanitizer_build -eq 1 ]]; then tables=100; count_multiplier=10; max_time_ms=1500; fi
 
@@ -39,9 +39,7 @@ done
 wait
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE $db.table_merge (i UInt64, d Date, s String, n Nested(i UInt8, f Float32)) ENGINE=Merge('$db', '^table_')"
-#FIXME the following query leads to segfault
-#$CLICKHOUSE_CLIENT -q "SELECT count() * $count_multiplier, i, d, s, n.i, n.f FROM $db.table_merge GROUP BY i, d, s, n.i, n.f ORDER BY i"
-$CLICKHOUSE_CLIENT -q "SELECT 10000, i, d, s, n.i, n.f FROM $db.table_1_1 GROUP BY i, d, s, n.i, n.f ORDER BY i"
+$CLICKHOUSE_CLIENT -q "SELECT count() * $count_multiplier, i, d, s, n.i, n.f FROM $db.table_merge GROUP BY i, d, s, n.i, n.f ORDER BY i"
 
 db_engine=`$CLICKHOUSE_CLIENT -q "SELECT engine FROM system.databases WHERE name='$db'"`
 
@@ -53,7 +51,6 @@ $CLICKHOUSE_CLIENT -q "SELECT '01193_metadata_loading', $elapsed_ms FORMAT Null"
 
 if [[ $elapsed_ms -le $max_time_ms ]]; then echo ok; fi
 
-#$CLICKHOUSE_CLIENT -q "SELECT count() * $count_multiplier, i, d, s, n.i, n.f FROM $db.table_merge GROUP BY i, d, s, n.i, n.f ORDER BY i"
-$CLICKHOUSE_CLIENT -q "SELECT 8000, i, d, s, n.i, n.f FROM $db.table_1_1 GROUP BY i, d, s, n.i, n.f ORDER BY i"
+$CLICKHOUSE_CLIENT -q "SELECT count() * $count_multiplier, i, d, s, n.i, n.f FROM $db.table_merge GROUP BY i, d, s, n.i, n.f ORDER BY i"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE $db"

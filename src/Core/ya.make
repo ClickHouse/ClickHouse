@@ -20,6 +20,7 @@ SRCS(
     NamesAndTypes.cpp
     Settings.cpp
     SettingsCollection.cpp
+    SortDescription.cpp
 )
 
 END()

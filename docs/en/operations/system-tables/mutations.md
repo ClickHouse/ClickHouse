@@ -1,6 +1,6 @@
 # system.mutations {#system_tables-mutations}
 
-The table contains information about [mutations](../../sql-reference/statements/alter.md#alter-mutations) of MergeTree tables and their progress. Each mutation command is represented by a single row. The table has the following columns:
+The table contains information about [mutations](../../sql-reference/statements/alter/index.md#alter-mutations) of MergeTree tables and their progress. Each mutation command is represented by a single row. The table has the following columns:
 
 **database**, **table** - The name of the database and table to which the mutation was applied.
 

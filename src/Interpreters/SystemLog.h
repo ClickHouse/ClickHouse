@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/Context.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <IO/WriteHelpers.h>
@@ -62,7 +63,6 @@ namespace ErrorCodes
 
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
 
-class Context;
 class QueryLog;
 class QueryThreadLog;
 class PartLog;
@@ -233,46 +233,56 @@ void SystemLog<LogElement>::add(const LogElement & element)
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
     auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
-    std::lock_guard lock(mutex);
+    /// Should not log messages under mutex.
+    bool queue_is_half_full = false;
 
-    if (is_shutdown)
-        return;
-
-    if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)
     {
-        // The queue more than half full, time to flush.
-        // We only check for strict equality, because messages are added one
-        // by one, under exclusive lock, so we will see each message count.
-        // It is enough to only wake the flushing thread once, after the message
-        // count increases past half available size.
-        const uint64_t queue_end = queue_front_index + queue.size();
-        if (requested_flush_before < queue_end)
-            requested_flush_before = queue_end;
+        std::unique_lock lock(mutex);
 
-        flush_event.notify_all();
-        LOG_INFO(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
-    }
+        if (is_shutdown)
+            return;
 
-    if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)
-    {
-        // Ignore all further entries until the queue is flushed.
-        // Log a message about that. Don't spam it -- this might be especially
-        // problematic in case of trace log. Remember what the front index of the
-        // queue was when we last logged the message. If it changed, it means the
-        // queue was flushed, and we can log again.
-        if (queue_front_index != logged_queue_full_at_index)
+        if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)
         {
-            logged_queue_full_at_index = queue_front_index;
+            queue_is_half_full = true;
 
-            // TextLog sets its logger level to 0, so this log is a noop and
-            // there is no recursive logging.
-            LOG_ERROR(log, "Queue is full for system log '{}' at {}", demangle(typeid(*this).name()), queue_front_index);
+            // The queue more than half full, time to flush.
+            // We only check for strict equality, because messages are added one
+            // by one, under exclusive lock, so we will see each message count.
+            // It is enough to only wake the flushing thread once, after the message
+            // count increases past half available size.
+            const uint64_t queue_end = queue_front_index + queue.size();
+            if (requested_flush_before < queue_end)
+                requested_flush_before = queue_end;
+
+            flush_event.notify_all();
         }
 
-        return;
+        if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)
+        {
+            // Ignore all further entries until the queue is flushed.
+            // Log a message about that. Don't spam it -- this might be especially
+            // problematic in case of trace log. Remember what the front index of the
+            // queue was when we last logged the message. If it changed, it means the
+            // queue was flushed, and we can log again.
+            if (queue_front_index != logged_queue_full_at_index)
+            {
+                logged_queue_full_at_index = queue_front_index;
+
+                // TextLog sets its logger level to 0, so this log is a noop and
+                // there is no recursive logging.
+                lock.unlock();
+                LOG_ERROR(log, "Queue is full for system log '{}' at {}", demangle(typeid(*this).name()), queue_front_index);
+            }
+
+            return;
+        }
+
+        queue.push_back(element);
     }
 
-    queue.push_back(element);
+    if (queue_is_half_full)
+        LOG_INFO(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
 }
 
 
@@ -425,7 +435,11 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         insert->table_id = table_id;
         ASTPtr query_ptr(insert.release());
 
-        InterpreterInsertQuery interpreter(query_ptr, context);
+        // we need query context to do inserts to target table with MV containing subqueries or joins
+        auto insert_context = Context(context);
+        insert_context.makeQueryContext();
+
+        InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
         io.out->writePrefix();

@@ -166,7 +166,8 @@ private:
     void notifySubscribers(size_t new_queue_size);
 
     /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue because current entry covers it
-    bool checkReplaceRangeCanBeRemoved(const MergeTreePartInfo & part_info, const LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const;
+    bool checkReplaceRangeCanBeRemoved(
+        const MergeTreePartInfo & part_info, const LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const;
 
     /// Ensures that only one thread is simultaneously updating mutations.
     std::mutex update_mutations_mutex;
@@ -251,12 +252,10 @@ private:
 
 public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_);
-
     ~ReplicatedMergeTreeQueue();
 
 
-    void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
-        const MergeTreeData::DataParts & parts);
+    void initialize(const MergeTreeData::DataParts & parts);
 
     /** Inserts an action to the end of the queue.
       * To restore broken parts during operation.

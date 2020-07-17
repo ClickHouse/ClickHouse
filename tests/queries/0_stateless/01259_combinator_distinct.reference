@@ -10,6 +10,8 @@
 24
 27
 2
-SELECT uniqExactIf(number % 10, (number % 5) = 2)\nFROM numbers(10000)
+SELECT uniqExactIf(number % 10, (number % 5) = 2)
+FROM numbers(10000)
 9
-SELECT sumDistinctIf(number % 10, (number % 5) = 2)\nFROM numbers(10000)
+SELECT sumDistinctIf(number % 10, (number % 5) = 2)
+FROM numbers(10000)

@@ -76,7 +76,7 @@ static void cleanAliasAndCollectIdentifiers(ASTPtr & predicate, std::vector<ASTI
     }
 
     if (const auto alias = predicate->tryGetAlias(); !alias.empty())
-        predicate->setAlias("");
+        predicate->setAlias({});
 
     if (ASTIdentifier * identifier = predicate->as<ASTIdentifier>())
         identifiers.emplace_back(identifier);

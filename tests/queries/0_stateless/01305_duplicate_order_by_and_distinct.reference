@@ -1,14 +1,58 @@
-SELECT number\nFROM \n(\n    SELECT number\n    FROM \n    (\n        SELECT DISTINCT number\n        FROM numbers(3)\n    )\n)\nORDER BY number ASC
+SELECT number
+FROM 
+(
+    SELECT number
+    FROM 
+    (
+        SELECT DISTINCT number
+        FROM numbers(3)
+    )
+)
+ORDER BY number ASC
 0
 1
 2
-SELECT DISTINCT number\nFROM \n(\n    SELECT DISTINCT number\n    FROM \n    (\n        SELECT DISTINCT number\n        FROM numbers(3)\n        ORDER BY number ASC\n    )\n    ORDER BY number ASC\n)\nORDER BY number ASC
+SELECT DISTINCT number
+FROM 
+(
+    SELECT DISTINCT number
+    FROM 
+    (
+        SELECT DISTINCT number
+        FROM numbers(3)
+        ORDER BY number ASC
+    )
+    ORDER BY number ASC
+)
+ORDER BY number ASC
 0
 1
 2
-SELECT number\nFROM \n(\n    SELECT DISTINCT number\n    FROM \n    (\n        SELECT DISTINCT number % 2 AS number\n        FROM numbers(3)\n    )\n)\nORDER BY number ASC
+SELECT number
+FROM 
+(
+    SELECT DISTINCT number
+    FROM 
+    (
+        SELECT DISTINCT number % 2 AS number
+        FROM numbers(3)
+    )
+)
+ORDER BY number ASC
 0
 1
-SELECT DISTINCT number\nFROM \n(\n    SELECT DISTINCT number\n    FROM \n    (\n        SELECT DISTINCT number % 2 AS number\n        FROM numbers(3)\n        ORDER BY number ASC\n    )\n    ORDER BY number ASC\n)\nORDER BY number ASC
+SELECT DISTINCT number
+FROM 
+(
+    SELECT DISTINCT number
+    FROM 
+    (
+        SELECT DISTINCT number % 2 AS number
+        FROM numbers(3)
+        ORDER BY number ASC
+    )
+    ORDER BY number ASC
+)
+ORDER BY number ASC
 0
 1

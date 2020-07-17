@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/MergingSortedStep.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -43,6 +44,14 @@ void MergingSortedStep::transformPipeline(QueryPipeline & pipeline)
 
         pipeline.enableQuotaForCurrentStreams();
     }
+}
+
+void MergingSortedStep::describeActions(FormatSettings & settings) const
+{
+    String prefix(settings.offset, ' ');
+    settings.out << prefix << "Sort description: ";
+    dumpSortDescription(sort_description, input_streams.front().header, settings.out);
+    settings.out << '\n';
 }
 
 }

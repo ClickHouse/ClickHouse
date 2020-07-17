@@ -8,7 +8,7 @@ Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a num
 
 To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` memory, where `n` is a number of values that were passed. However, for a small number of values, the function is very effective.
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](quantiles.md#quantiles) function.
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
 
 **Syntax**
 
@@ -51,5 +51,5 @@ Result:
 
 **See Also**
 
--   [median](median.md#median)
--   [quantiles](quantiles.md#quantiles)
+-   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
+-   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

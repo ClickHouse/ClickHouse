@@ -866,17 +866,23 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
 
         return atom_it->second(out, const_value);
     }
-    else if (getConstant(node, block_with_constants, const_value, const_type))    /// For cases where it says, for example, `WHERE 0 AND something`
+    else if (getConstant(node, block_with_constants, const_value, const_type))
     {
-        if (const_value.getType() == Field::Types::UInt64
-            || const_value.getType() == Field::Types::Int64
-            || const_value.getType() == Field::Types::Float64)
-        {
-            /// Zero in all types is represented in memory the same way as in UInt64.
-            out.function = const_value.safeGet<UInt64>()
-                ? RPNElement::ALWAYS_TRUE
-                : RPNElement::ALWAYS_FALSE;
+        /// For cases where it says, for example, `WHERE 0 AND something`
 
+        if (const_value.getType() == Field::Types::UInt64)
+        {
+            out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+            return true;
+        }
+        else if (const_value.getType() == Field::Types::Int64)
+        {
+            out.function = const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+            return true;
+        }
+        else if (const_value.getType() == Field::Types::Float64)
+        {
+            out.function = const_value.safeGet<Float64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
             return true;
         }
     }
@@ -1117,6 +1123,83 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             key_range.swapLeftAndRight();
     }
     return key_range;
+}
+
+// Returns whether the condition is one continuous range of the primary key,
+// where every field is matched by range or a single element set.
+// This allows to use a more efficient lookup with no extra reads.
+bool KeyCondition::matchesExactContinuousRange() const
+{
+    // Not implemented yet.
+    if (hasMonotonicFunctionsChain())
+        return false;
+
+    enum Constraint
+    {
+        POINT,
+        RANGE,
+        UNKNOWN,
+    };
+
+    std::vector<Constraint> column_constraints(key_columns.size(), Constraint::UNKNOWN);
+
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::Function::FUNCTION_AND)
+        {
+            continue;
+        }
+
+        if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
+        {
+            column_constraints[element.key_column] = Constraint::POINT;
+            continue;
+        }
+
+        if (element.function == RPNElement::Function::FUNCTION_IN_RANGE)
+        {
+            if (element.range.left == element.range.right)
+            {
+                column_constraints[element.key_column] = Constraint::POINT;
+            }
+            if (column_constraints[element.key_column] != Constraint::POINT)
+            {
+                column_constraints[element.key_column] = Constraint::RANGE;
+            }
+            continue;
+        }
+
+        if (element.function == RPNElement::Function::FUNCTION_UNKNOWN)
+        {
+            continue;
+        }
+
+        return false;
+    }
+
+    auto min_constraint = column_constraints[0];
+
+    if (min_constraint > Constraint::RANGE)
+    {
+        return false;
+    }
+
+    for (size_t i = 1; i < key_columns.size(); ++i)
+    {
+        if (column_constraints[i] < min_constraint)
+        {
+            return false;
+        }
+
+        if (column_constraints[i] == Constraint::RANGE && min_constraint == Constraint::RANGE)
+        {
+            return false;
+        }
+
+        min_constraint = column_constraints[i];
+    }
+
+    return true;
 }
 
 BoolMask KeyCondition::checkInHyperrectangle(

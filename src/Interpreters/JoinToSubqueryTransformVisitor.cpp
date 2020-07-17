@@ -257,7 +257,7 @@ struct ColumnAliasesMatcher
             if (!last_table)
             {
                 IdentifierSemantic::coverName(node, alias);
-                node.setAlias("");
+                node.setAlias({});
             }
         }
         else if (node.compound())

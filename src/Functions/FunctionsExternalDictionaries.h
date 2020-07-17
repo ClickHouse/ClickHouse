@@ -29,7 +29,7 @@
 #include <Dictionaries/FlatDictionary.h>
 #include <Dictionaries/HashedDictionary.h>
 #include <Dictionaries/CacheDictionary.h>
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
 #include <Dictionaries/SSDCacheDictionary.h>
 #include <Dictionaries/SSDComplexKeyCacheDictionary.h>
 #endif
@@ -99,6 +99,10 @@ public:
 
     bool isDictGetFunctionInjective(const Block & sample_block)
     {
+        /// Assume non-injective by default
+        if (!sample_block)
+            return false;
+
         if (sample_block.columns() != 3 && sample_block.columns() != 4)
             throw Exception{"Function dictGet... takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
@@ -178,13 +182,13 @@ private:
             !executeDispatchSimple<DirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchSimple<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatchSimple<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatchSimple<SSDCacheDictionary>(block, arguments, result, dict) &&
 #endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
 #endif
 #if !defined(ARCADIA_BUILD)
@@ -334,13 +338,13 @@ private:
             !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
 #endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
 #endif
 #if !defined(ARCADIA_BUILD)
@@ -518,13 +522,13 @@ private:
             !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
 #endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
 #endif
 #if !defined(ARCADIA_BUILD)
@@ -858,13 +862,13 @@ private:
             !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
 #endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
 #endif
 #if !defined(ARCADIA_BUILD)
@@ -1119,13 +1123,13 @@ private:
             !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
 #endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
 #endif
 #if !defined(ARCADIA_BUILD)
