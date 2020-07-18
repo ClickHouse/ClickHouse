@@ -168,7 +168,13 @@ void DatabaseMaterializeMySQL::renameTable(const Context & context, const String
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
         throw Exception("MaterializeMySQL database not support rename table.", ErrorCodes::NOT_IMPLEMENTED);
 
-    getNestedDatabase()->renameTable(context, name, to_database, to_name, exchange);
+    if (exchange)
+        throw Exception("MaterializeMySQL database not support exchange table.", ErrorCodes::NOT_IMPLEMENTED);
+
+    if (to_database.getDatabaseName() != getDatabaseName())
+        throw Exception("Cannot rename with other database for MaterializeMySQL database.", ErrorCodes::NOT_IMPLEMENTED);
+
+    getNestedDatabase()->renameTable(context, name, *getNestedDatabase(), to_name, exchange);
 }
 
 void DatabaseMaterializeMySQL::alterTable(const Context & context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)

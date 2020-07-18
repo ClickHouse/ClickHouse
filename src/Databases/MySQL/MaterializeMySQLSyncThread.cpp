@@ -248,11 +248,18 @@ static inline void dumpDataForTables(
         String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
         tryToExecuteQuery(query_prefix + " " + iterator->second, context, mysql_database_name, comment); /// create table.
 
-        BlockOutputStreamPtr out = std::make_shared<AddingVersionsBlockOutputStream>(master_info.version, getTableOutput(database_name, table_name, context));
+        auto out = std::make_shared<AddingVersionsBlockOutputStream>(master_info.version, getTableOutput(database_name, table_name, context));
         MySQLBlockInputStream input(
             connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
             out->getHeader(), DEFAULT_BLOCK_SIZE);
+
+        Stopwatch watch;
         copyData(input, *out, is_cancelled);
+        LOG_INFO(&Poco::Logger::get("MaterializeMySQLSyncThread(" + database_name + ")"),
+            "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+            table_name, out->getWrittenRows(), ReadableSize(out->getWrittenBytes()), watch.elapsedSeconds(),
+            static_cast<size_t>(out->getWrittenRows() / watch.elapsedSeconds()),
+            ReadableSize(out->getWrittenRows() / watch.elapsedSeconds()));
     }
 }
 

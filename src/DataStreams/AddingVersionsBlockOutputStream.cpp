@@ -39,6 +39,9 @@ void AddingVersionsBlockOutputStream::write(const Block & block)
     res.insert({sign_column, sign_type, header.getByPosition(header.columns() - 2).name});
     res.insert({version_column, version_type, header.getByPosition(header.columns() - 1).name});
     output->write(res);
+
+    written_rows += block.rows();
+    written_bytes += block.bytes();
 }
 Block AddingVersionsBlockOutputStream::getHeader() const
 {
