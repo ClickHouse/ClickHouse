@@ -116,7 +116,7 @@ def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node
         "ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_3 INT NOT NULL AFTER add_column_1, ADD COLUMN add_column_4 INT NOT NULL DEFAULT " + (
             "0" if service_name == "mysql5_7" else "(id)"))
 
-    default_expression = "DEFAULT\t0" if service_name == "mysql5_7" else "DEFAULT\t(id)"
+    default_expression = "DEFAULT\t0" if service_name == "mysql5_7" else "DEFAULT\tid"
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
         "add_column_2\tInt32\t\t\t\t\t\nid\tInt32\t\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\t\nadd_column_3\tInt32\t\t\t\t\t\nadd_column_4\tInt32\t" + default_expression + "\t\t\t\n")
 
@@ -191,6 +191,10 @@ def alter_modify_column_with_materialize_mysql_database(clickhouse_node, mysql_n
     check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2\n")
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV", "id\tInt32\t\t\t\t\t\nmodify_column\tInt32\t\t\t\t\t\n")
     mysql_node.query("ALTER TABLE test_database.test_table_2 MODIFY COLUMN modify_column INT")
+    check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV", "id\tInt32\t\t\t\t\t\nmodify_column\tNullable(Int32)\t\t\t\t\t\n")
+    mysql_node.query("ALTER TABLE test_database.test_table_2 MODIFY COLUMN modify_column INT FIRST")
+    check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV", "modify_column\tNullable(Int32)\t\t\t\t\t\nid\tInt32\t\t\t\t\t\n")
+    mysql_node.query("ALTER TABLE test_database.test_table_2 MODIFY COLUMN modify_column INT AFTER id")
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV", "id\tInt32\t\t\t\t\t\nmodify_column\tNullable(Int32)\t\t\t\t\t\n")
 
     mysql_node.query("DROP DATABASE test_database")
