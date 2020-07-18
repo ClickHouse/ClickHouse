@@ -33,7 +33,7 @@ class MySQLNodeInstance:
 
     def alloc_connection(self):
         if self.mysql_connection is None:
-            self.mysql_connection = pymysql.connect(user=self.user, password=self.password, host=self.hostname, port=self.port)
+            self.mysql_connection = pymysql.connect(user=self.user, password=self.password, host=self.hostname, port=self.port, autocommit=True)
         return self.mysql_connection
 
     def query(self, execution_query):

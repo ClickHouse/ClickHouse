@@ -63,7 +63,7 @@ def create_table_with_materialize_mysql_database(clickhouse_node, mysql_node, se
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY id FORMAT TSV", "1\n2\n3\n5\n6\n7\n")
 
     mysql_node.query("CREATE TABLE test_database.test_table_2 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
-    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1)(2)(3)(4)(5)(6)")
+    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1), (2), (3), (4), (5), (6);")
     check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2\n")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\n2\n3\n4\n5\n6\n")
 
@@ -115,8 +115,10 @@ def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node
     mysql_node.query(
         "ALTER TABLE test_database.test_table_2 ADD COLUMN add_column_3 INT NOT NULL AFTER add_column_1, ADD COLUMN add_column_4 INT NOT NULL DEFAULT " + (
             "0" if service_name == "mysql5_7" else "(id)"))
+
+    default_expression = "DEFAULT\t0" if service_name == "mysql5_7" else "DEFAULT\t(id)"
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
-                "add_column_2\tInt32\t\t\t\t\t\nid\tInt32\t\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\t\nadd_column_3\tInt32\t\t\t\t\t\nadd_column_4\tInt32\t\t\t\t\t\n")
+        "add_column_2\tInt32\t\t\t\t\t\nid\tInt32\t\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\t\nadd_column_3\tInt32\t\t\t\t\t\nadd_column_4\tInt32\t" + default_expression + "\t\t\t\n")
 
     mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
