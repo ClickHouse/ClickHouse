@@ -73,11 +73,36 @@ def started_mysql_5_7():
         subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes', '--remove-orphans'])
 
 
+@pytest.fixture(scope="module")
+def started_mysql_8_0():
+    mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 33308)
+    docker_compose = os.path.join(SCRIPT_DIR, 'composes', 'mysql_8_0_compose.yml')
+
+    try:
+        subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d'])
+        mysql_node.wait_mysql_to_start(120)
+        yield mysql_node
+    finally:
+        mysql_node.close()
+        subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes', '--remove-orphans'])
+
+
 def test_materialize_database_ddl_with_mysql_5_7(started_cluster, started_mysql_5_7):
-    materialize_with_ddl.drop_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7)
-    materialize_with_ddl.create_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7)
-    materialize_with_ddl.rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7)
-    materialize_with_ddl.alter_add_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7)
-    materialize_with_ddl.alter_drop_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7)
-    materialize_with_ddl.alter_rename_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7)
-    materialize_with_ddl.alter_modify_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7)
+    materialize_with_ddl.drop_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql5_7")
+    materialize_with_ddl.create_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql5_7")
+    materialize_with_ddl.rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql5_7")
+    materialize_with_ddl.alter_add_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql5_7")
+    materialize_with_ddl.alter_drop_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql5_7")
+    # mysql 5.7 cannot support alter rename column
+    # materialize_with_ddl.alter_rename_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql5_7")
+    materialize_with_ddl.alter_modify_column_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql5_7")
+
+
+def test_materialize_database_ddl_with_mysql_8_0(started_cluster, started_mysql_8_0):
+    materialize_with_ddl.drop_table_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+    materialize_with_ddl.create_table_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+    materialize_with_ddl.rename_table_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+    materialize_with_ddl.alter_add_column_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+    materialize_with_ddl.alter_drop_column_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+    materialize_with_ddl.alter_rename_column_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
+    materialize_with_ddl.alter_modify_column_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")

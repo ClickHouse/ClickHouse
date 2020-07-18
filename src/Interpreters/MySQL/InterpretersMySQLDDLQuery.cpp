@@ -298,7 +298,7 @@ ASTPtr InterpreterDropImpl::getRewrittenQuery(
 {
     const auto & database_name = context.resolveDatabase(drop_query.database);
 
-    /// Skip drop databse|view|dictionary
+    /// Skip drop database|view|dictionary
     if (database_name != filter_mysql_db || drop_query.table.empty() || drop_query.is_view || drop_query.is_dictionary)
         return {};
 
@@ -458,7 +458,10 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
                     throw Exception("It is a bug", ErrorCodes::LOGICAL_ERROR);
 
                 new_column_name = modify_columns.front().name;
-                modify_columns.front().name = alter_command->old_name;
+
+                if (!alter_command->old_name.empty())
+                    modify_columns.front().name = alter_command->old_name;
+
                 rewritten_command->col_decl = InterpreterCreateQuery::formatColumns(modify_columns)->children[0];
 
                 if (!alter_command->column_name.empty())
