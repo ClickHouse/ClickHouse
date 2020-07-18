@@ -86,19 +86,21 @@ static String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection
     };
 
     const String & check_query = "SHOW VARIABLES WHERE "
-         "(variable_name = 'log_bin' AND upper(Value) = 'ON') "
-         "OR (variable_name = 'binlog_format' AND upper(Value) = 'ROW') "
-         "OR (variable_name = 'binlog_row_image' AND upper(Value) = 'FULL');";
+         "(Variable_name = 'log_bin' AND upper(Value) = 'ON') "
+         "OR (Variable_name = 'binlog_format' AND upper(Value) = 'ROW') "
+         "OR (Variable_name = 'binlog_row_image' AND upper(Value) = 'FULL') "
+         "OR (Variable_name = 'default_authentication_plugin' AND upper(Value) = 'MYSQL_NATIVE_PASSWORD');";
 
     MySQLBlockInputStream variables_input(connection, check_query, variables_header, DEFAULT_BLOCK_SIZE);
 
     Block variables_block = variables_input.read();
-    if (!variables_block || variables_block.rows() != 3)
+    if (!variables_block || variables_block.rows() != 4)
     {
         std::unordered_map<String, String> variable_error_message{
             {"log_bin", "log_bin = 'ON'"},
             {"binlog_format", "binlog_format='ROW'"},
-            {"binlog_row_image", "binlog_row_image='FULL'"}
+            {"binlog_row_image", "binlog_row_image='FULL'"},
+            {"default_authentication_plugin", "default_authentication_plugin='mysql_native_password'"}
         };
         ColumnPtr variable_name_column = variables_block.getByName("Variable_name").column;
 

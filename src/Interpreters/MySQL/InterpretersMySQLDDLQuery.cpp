@@ -360,6 +360,7 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
     rewritten_query->table = alter_query.table;
     rewritten_query->set(rewritten_query->command_list, std::make_shared<ASTAlterCommandList>());
 
+    String default_after_column;
     for (const auto & command_query : alter_query.command_list->children)
     {
         const auto & alter_command = command_query->as<MySQLParser::ASTAlterCommand>();
@@ -369,7 +370,6 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
             const auto & additional_columns_name_and_type = getColumnsList(alter_command->additional_columns);
             const auto & additional_columns = InterpreterCreateQuery::formatColumns(additional_columns_name_and_type);
 
-            String default_after_column;
             for (size_t index = 0; index < additional_columns_name_and_type.size(); ++index)
             {
                 auto rewritten_command = std::make_shared<ASTAlterCommand>();
