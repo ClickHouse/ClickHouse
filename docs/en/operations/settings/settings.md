@@ -587,7 +587,7 @@ Default value: 0.
 
 ## network_compression_method {#network_compression_method}
 
-Sets the method of data compression that is used for communication between servers and for sending data to native clickhouse-client.
+Sets the method of data compression that is used for communication between servers and between servers and [clickhouse-client](../../interfaces/cli.md).
 
 Possible values:
 
