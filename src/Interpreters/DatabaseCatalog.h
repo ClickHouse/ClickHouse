@@ -21,6 +21,7 @@ class Context;
 class IDatabase;
 class Exception;
 class ColumnsDescription;
+struct ConstraintsDescription;
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
@@ -71,7 +72,11 @@ struct TemporaryTableHolder : boost::noncopyable
     TemporaryTableHolder(const Context & context, const Creator & creator, const ASTPtr & query = {});
 
     /// Creates temporary table with Engine=Memory
-    TemporaryTableHolder(const Context & context, const ColumnsDescription & columns, const ASTPtr & query = {});
+    TemporaryTableHolder(
+        const Context & context,
+        const ColumnsDescription & columns,
+        const ConstraintsDescription & constraints,
+        const ASTPtr & query = {});
 
     TemporaryTableHolder(TemporaryTableHolder && rhs);
     TemporaryTableHolder & operator = (TemporaryTableHolder && rhs);
@@ -129,15 +134,17 @@ public:
     DatabasePtr getDatabase(const String & database_name, const Context & local_context) const;
 
     /// For all of the following methods database_name in table_id must be not empty (even for temporary tables).
-    void assertTableDoesntExist(const StorageID & table_id) const;
-    bool isTableExist(const StorageID & table_id) const;
+    void assertTableDoesntExist(const StorageID & table_id, const Context & context) const;
+    bool isTableExist(const StorageID & table_id, const Context & context) const;
     bool isDictionaryExist(const StorageID & table_id) const;
 
-    StoragePtr getTable(const StorageID & table_id) const;
-    StoragePtr tryGetTable(const StorageID & table_id) const;
-    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id) const;
-    DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id) const;
-    DatabaseAndTable getTableImpl(const StorageID & table_id, std::optional<Exception> * exception = nullptr) const;
+    StoragePtr getTable(const StorageID & table_id, const Context & context) const;
+    StoragePtr tryGetTable(const StorageID & table_id, const Context & context) const;
+    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, const Context & context) const;
+    DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, const Context & context) const;
+    DatabaseAndTable getTableImpl(const StorageID & table_id,
+                                  const Context & context,
+                                  std::optional<Exception> * exception = nullptr) const;
 
     void addDependency(const StorageID & from, const StorageID & where);
     void removeDependency(const StorageID & from, const StorageID & where);
@@ -162,6 +169,11 @@ public:
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
 
 private:
+    // The global instance of database catalog. unique_ptr is to allow
+    // deferred initialization. Thought I'd use std::optional, but I can't
+    // make emplace(global_context_) compile with private constructor ¯\_(ツ)_/¯.
+    static std::unique_ptr<DatabaseCatalog> database_catalog;
+
     DatabaseCatalog(Context * global_context_);
     void assertDatabaseExistsUnlocked(const String & database_name) const;
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const;

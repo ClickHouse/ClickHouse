@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
+#include <Processors/Formats/Impl/TabSeparatedRawRowInputFormat.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -340,8 +341,9 @@ void TabSeparatedRowInputFormat::syncAfterError()
 void TabSeparatedRowInputFormat::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
+    const auto & sample = getPort().getHeader();
+    read_columns.assign(sample.columns(), false);
     column_indexes_for_input_fields.clear();
-    read_columns.clear();
     columns_to_fill_with_default_values.clear();
 }
 
@@ -356,6 +358,18 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
             const FormatSettings & settings)
         {
             return std::make_shared<TabSeparatedRowInputFormat>(sample, buf, params, false, false, settings);
+        });
+    }
+
+    for (const auto * name : {"TabSeparatedRaw", "TSVRaw"})
+    {
+        factory.registerInputFormatProcessor(name, [](
+            ReadBuffer & buf,
+            const Block & sample,
+            IRowInputFormat::Params params,
+            const FormatSettings & settings)
+        {
+            return std::make_shared<TabSeparatedRawRowInputFormat>(sample, buf, params, false, false, settings);
         });
     }
 

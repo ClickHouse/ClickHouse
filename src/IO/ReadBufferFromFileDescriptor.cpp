@@ -70,7 +70,8 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
-        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it (TaskStatsInfoGetter has about 500K RPS).
+        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
+        /// (TaskStatsInfoGetter has about 500K RPS).
         watch.stop();
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 

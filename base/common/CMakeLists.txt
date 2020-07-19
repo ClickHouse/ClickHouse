@@ -16,6 +16,7 @@ set (SRCS
     shift10.cpp
     sleep.cpp
     terminalColors.cpp
+    errnoToString.cpp
 )
 
 if (ENABLE_REPLXX)
@@ -43,10 +44,6 @@ endif()
 
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
-if (NOT USE_INTERNAL_BOOST_LIBRARY)
-    target_include_directories (common SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
-endif ()
-
 # Allow explicit fallback to readline
 if (NOT ENABLE_REPLXX AND ENABLE_READLINE)
     message (STATUS "Attempt to fallback to readline explicitly")
@@ -72,16 +69,16 @@ endif ()
 target_link_libraries (common
     PUBLIC
         ${CITYHASH_LIBRARIES}
-        ${Boost_SYSTEM_LIBRARY}
+        boost::headers_only
+        boost::system
         FastMemcpy
         Poco::Net
         Poco::Net::SSL
         Poco::Util
         Poco::Foundation
         replxx
-
-    PRIVATE
         cctz
+        fmt
 )
 
 if (ENABLE_TESTS)

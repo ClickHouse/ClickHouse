@@ -43,7 +43,7 @@ static auto getJoin(const ColumnsWithTypeAndName & arguments, const Context & co
         ++dot;
     }
     String table_name = join_name.substr(dot);
-    auto table = DatabaseCatalog::instance().getTable({database_name, table_name});
+    auto table = DatabaseCatalog::instance().getTable({database_name, table_name}, context);
     auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
     if (!storage_join)
         throw Exception{"Table " + join_name + " should have engine StorageJoin", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -67,8 +67,7 @@ FunctionBaseImplPtr JoinGetOverloadResolver<or_null>::build(const ColumnsWithTyp
     auto join = storage_join->getJoin();
     DataTypes data_types(arguments.size());
 
-    auto table_lock = storage_join->lockStructureForShare(
-            false, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto table_lock = storage_join->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
     for (size_t i = 0; i < arguments.size(); ++i)
         data_types[i] = arguments[i].type;
 

@@ -14,6 +14,7 @@ toc_title: "\u7D71\u5408"
 
 -   リレーショナルデータベース管理システム
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-データリーダー](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-レプリケーター](https://github.com/larsnovikov/horgh-replicator)
@@ -27,6 +28,7 @@ toc_title: "\u7D71\u5408"
 -   メッセージキュ
     -   [カフカ](https://kafka.apache.org)
         -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) （用途 [Goクライアント](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   ストリーム処理
     -   [フリンク](https://flink.apache.org)
         -   [フリンク-クリックハウス-シンク](https://github.com/ivi-ru/flink-clickhouse-sink)
@@ -98,5 +100,11 @@ toc_title: "\u7D71\u5408"
 -   エリクサー
     -   [Ecto](https://github.com/elixir-ecto/ecto)
         -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
+-   Ruby
+    -   [Ruby on rails](https://rubyonrails.org/)
+        -   [activecube](https://github.com/bitquery/activecube)
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord) 
+    -   [GraphQL](https://github.com/graphql)
+        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
 [元の記事](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

@@ -44,7 +44,7 @@ private:
     size_t bytes_to_transfer = 0;
 
     using Logger = Poco::Logger;
-    Logger * log = &Logger::get("CreatingSetsBlockInputStream");
+    Poco::Logger * log = &Poco::Logger::get("CreatingSetsBlockInputStream");
 
     void createAll();
     void createOne(SubqueryForSet & subquery);

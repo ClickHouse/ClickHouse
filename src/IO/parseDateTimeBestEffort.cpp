@@ -88,7 +88,7 @@ struct DateTimeSubsecondPart
     UInt8 digits;
 };
 
-template <typename ReturnType>
+template <typename ReturnType, bool is_us_style>
 ReturnType parseDateTimeBestEffortImpl(
     time_t & res,
     ReadBuffer & in,
@@ -264,11 +264,11 @@ ReturnType parseDateTimeBestEffortImpl(
                 /// DD-MM-YY
                 /// DD
 
-                UInt8 hour_or_day_of_month = 0;
+                UInt8 hour_or_day_of_month_or_month = 0;
                 if (num_digits == 2)
-                    readDecimalNumber<2>(hour_or_day_of_month, digits);
+                    readDecimalNumber<2>(hour_or_day_of_month_or_month, digits);
                 else if (num_digits == 1)   //-V547
-                    readDecimalNumber<1>(hour_or_day_of_month, digits);
+                    readDecimalNumber<1>(hour_or_day_of_month_or_month, digits);
                 else
                     return on_error("Cannot read DateTime: logical error, unexpected branch in code", ErrorCodes::LOGICAL_ERROR);
 
@@ -277,7 +277,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     if (has_time)
                         return on_error("Cannot read DateTime: time component is duplicated", ErrorCodes::CANNOT_PARSE_DATETIME);
 
-                    hour = hour_or_day_of_month;
+                    hour = hour_or_day_of_month_or_month;
                     has_time = true;
 
                     num_digits = readDigits(digits, sizeof(digits), in);
@@ -309,29 +309,48 @@ ReturnType parseDateTimeBestEffortImpl(
                     if (month)
                         return on_error("Cannot read DateTime: month is duplicated", ErrorCodes::CANNOT_PARSE_DATETIME);
 
-                    day_of_month = hour_or_day_of_month;
-
-                    num_digits = readDigits(digits, sizeof(digits), in);
-
-                    if (num_digits == 2)
-                        readDecimalNumber<2>(month, digits);
-                    else if (num_digits == 1)
-                        readDecimalNumber<1>(month, digits);
-                    else if (num_digits == 0)
+                    if constexpr (is_us_style)
                     {
-                        /// Month in alphabetical form
-
-                        char alpha[9];  /// The longest month name: September
-                        size_t num_alpha = readAlpha(alpha, sizeof(alpha), in);
-
-                        if (num_alpha < 3)
-                            return on_error("Cannot read DateTime: unexpected number of alphabetical characters after day of month: " + toString(num_alpha), ErrorCodes::CANNOT_PARSE_DATETIME);
-
-                        if (!read_alpha_month(alpha))
-                            return on_error("Cannot read DateTime: alphabetical characters after day of month don't look like month: " + std::string(alpha, 3), ErrorCodes::CANNOT_PARSE_DATETIME);
+                        month = hour_or_day_of_month_or_month;
+                        num_digits = readDigits(digits, sizeof(digits), in);
+                        if (num_digits == 2)
+                            readDecimalNumber<2>(day_of_month, digits);
+                        else if (num_digits == 1)
+                            readDecimalNumber<1>(day_of_month, digits);
+                        else
+                            return on_error("Cannot read DateTime: unexpected number of decimal digits after month: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
                     }
                     else
-                        return on_error("Cannot read DateTime: unexpected number of decimal digits after day of month: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+                    {
+                        day_of_month = hour_or_day_of_month_or_month;
+
+                        num_digits = readDigits(digits, sizeof(digits), in);
+
+                        if (num_digits == 2)
+                            readDecimalNumber<2>(month, digits);
+                        else if (num_digits == 1)
+                            readDecimalNumber<1>(month, digits);
+                        else if (num_digits == 0)
+                        {
+                           /// Month in alphabetical form
+
+                          char alpha[9];  /// The longest month name: September
+                          size_t num_alpha = readAlpha(alpha, sizeof(alpha), in);
+
+                          if (num_alpha < 3)
+                              return on_error("Cannot read DateTime: unexpected number of alphabetical characters after day of month: " + toString(num_alpha), ErrorCodes::CANNOT_PARSE_DATETIME);
+
+                          if (!read_alpha_month(alpha))
+                              return on_error("Cannot read DateTime: alphabetical characters after day of month don't look like month: " + std::string(alpha, 3), ErrorCodes::CANNOT_PARSE_DATETIME);
+                        }
+                        else
+                          return on_error("Cannot read DateTime: unexpected number of decimal digits after day of month: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+
+
+                    }
+
+                    if (month > 12)
+                        std::swap(month, day_of_month);
 
                     if (checkChar('/', in) || checkChar('.', in) || checkChar('-', in))
                     {
@@ -358,9 +377,9 @@ ReturnType parseDateTimeBestEffortImpl(
                 else
                 {
                     if (day_of_month)
-                        hour = hour_or_day_of_month;
+                        hour = hour_or_day_of_month_or_month;
                     else
-                        day_of_month = hour_or_day_of_month;
+                        day_of_month = hour_or_day_of_month_or_month;
                 }
             }
             else if (num_digits != 0)
@@ -522,6 +541,22 @@ ReturnType parseDateTimeBestEffortImpl(
     if (!day_of_month)
         day_of_month = 1;
 
+    auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
+
+    auto check_date = [](const auto & is_leap_year_, const auto & month_, const auto & day_)
+    {
+        if ((month_ == 1 || month_ == 3 || month_ == 5 || month_ == 7 || month_ == 8 || month_ == 10 || month_ == 12) && day_ >= 1 && day_ <= 31)
+            return true;
+        else if (month_ == 2 && ((is_leap_year_ && day_ >= 1 && day_ <= 29) || (!is_leap_year_ && day_ >= 1 && day_ <= 28)))
+            return true;
+        else if ((month_ == 4 || month_ == 6 || month_ == 9 || month_ == 11) && day_ >= 1 && day_ <= 30)
+            return true;
+        return false;
+    };
+
+    if (!check_date(is_leap_year, month, day_of_month))
+        return on_error("Cannot read DateTime: logical error, unexpected date: " + std::to_string(year) + "-" + std::to_string(month) + "-" + std::to_string(day_of_month), ErrorCodes::LOGICAL_ERROR);
+
     if (is_pm && hour < 12)
         hour += 12;
 
@@ -562,8 +597,17 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
 {
     time_t whole;
     DateTimeSubsecondPart subsecond = {0, 0}; // needs to be explicitly initialized sine it could be missing from input string
-    if (!parseDateTimeBestEffortImpl<bool>(whole, in, local_time_zone, utc_time_zone, &subsecond))
-        return ReturnType(false);
+
+    if constexpr (std::is_same_v<ReturnType, bool>)
+    {
+        if (!parseDateTimeBestEffortImpl<bool, false>(whole, in, local_time_zone, utc_time_zone, &subsecond))
+            return false;
+    }
+    else
+    {
+        parseDateTimeBestEffortImpl<ReturnType, false>(whole, in, local_time_zone, utc_time_zone, &subsecond);
+    }
+
 
     DateTime64::NativeType fractional = subsecond.value;
     if (scale < subsecond.digits)
@@ -589,12 +633,17 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
 
 void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    parseDateTimeBestEffortImpl<void>(res, in, local_time_zone, utc_time_zone, nullptr);
+    parseDateTimeBestEffortImpl<void, false>(res, in, local_time_zone, utc_time_zone, nullptr);
+}
+
+void parseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    parseDateTimeBestEffortImpl<void, true>(res, in, local_time_zone, utc_time_zone, nullptr);
 }
 
 bool tryParseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    return parseDateTimeBestEffortImpl<bool>(res, in, local_time_zone, utc_time_zone, nullptr);
+    return parseDateTimeBestEffortImpl<bool, false>(res, in, local_time_zone, utc_time_zone, nullptr);
 }
 
 void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)

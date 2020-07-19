@@ -68,7 +68,7 @@ public:
      */
     ASTPtr col_decl;
 
-    /** The ADD COLUMN query here optionally stores the name of the column following AFTER
+    /** The ADD COLUMN and MODIFY COLUMN query here optionally stores the name of the column following AFTER
      * The DROP query stores the column name for deletion here
      * Also used for RENAME COLUMN.
      */
@@ -136,7 +136,9 @@ public:
 
     bool if_exists = false;     /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
 
-    PartDestinationType move_destination_type; /// option for MOVE PART/PARTITION
+    bool first = false;         /// option for ADD_COLUMN, MODIFY_COLUMN
+
+    DataDestinationType move_destination_type; /// option for MOVE PART/PARTITION
 
     String move_destination_name;             /// option for MOVE PART/PARTITION
 

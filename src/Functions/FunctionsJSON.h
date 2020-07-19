@@ -221,9 +221,9 @@ private:
                 {
                     const auto & column_const = assert_cast<const ColumnConst &>(*column.column);
                     if (isString(column.type))
-                        moves.emplace_back(MoveType::ConstKey, column_const.getField().get<String>());
+                        moves.emplace_back(MoveType::ConstKey, column_const.getValue<String>());
                     else
-                        moves.emplace_back(MoveType::ConstIndex, column_const.getField().get<Int64>());
+                        moves.emplace_back(MoveType::ConstIndex, column_const.getInt(0));
                 }
                 else
                 {
@@ -892,7 +892,7 @@ public:
         auto col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
         if (!col_type_const || !isString(col.type))
             throw Exception{"The last argument of function " + String(function_name)
-                                + " should be a constant string specifying the return data type, illegal value: " + col.column->getName(),
+                                + " should be a constant string specifying the return data type, illegal value: " + col.name,
                             ErrorCodes::ILLEGAL_COLUMN};
 
         return DataTypeFactory::instance().get(col_type_const->getValue<String>());
@@ -929,7 +929,7 @@ public:
         auto col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
         if (!col_type_const || !isString(col.type))
             throw Exception{"The last argument of function " + String(function_name)
-                                + " should be a constant string specifying the values' data type, illegal value: " + col.column->getName(),
+                                + " should be a constant string specifying the values' data type, illegal value: " + col.name,
                             ErrorCodes::ILLEGAL_COLUMN};
 
         DataTypePtr key_type = std::make_unique<DataTypeString>();

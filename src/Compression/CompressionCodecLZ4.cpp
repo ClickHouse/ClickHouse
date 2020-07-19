@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
 extern const int CANNOT_COMPRESS;
 extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
+extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
 
@@ -84,6 +85,9 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
+            if (!literal)
+                throw Exception("LZ4HC codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+
             level = literal->value.safeGet<UInt64>();
         }
 

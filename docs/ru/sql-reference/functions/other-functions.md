@@ -1,4 +1,4 @@
-# Прочие функции {#prochie-funktsii}
+# Прочие функции {#other-functions}
 
 ## hostName() {#hostname}
 
@@ -757,6 +757,38 @@ SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 └───┘
 ```
 
+## blockSerializedSize {#blockserializedsize}
+
+Возвращает размер на диске (без учета сжатия).
+
+``` sql
+blockSerializedSize(value[, value[, ...]])
+```
+
+**Параметры**
+
+-   `value` — Значение произвольного типа.
+
+**Возвращаемые значения**
+
+-   Количество байтов, которые будут записаны на диск для блока значений (без сжатия).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT blockSerializedSize(maxState(1)) as x
+```
+
+Ответ:
+
+``` text
+┌─x─┐
+│ 2 │
+└───┘
+```
+
 ## toColumnTypeName {#tocolumntypename}
 
 Возвращает имя класса, которым представлен тип данных столбца в оперативной памяти.
@@ -1004,9 +1036,110 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 
 Принимает состояние агрегатной функции. Возвращает результат агрегирования.
 
-## runningAccumulate {#function-runningaccumulate}
+## runningAccumulate {#runningaccumulate}
 
-Принимает на вход состояния агрегатной функции и возвращает столбец со значениями, которые представляют собой результат мёржа этих состояний для выборки строк из блока от первой до текущей строки. Например, принимает состояние агрегатной функции (например, `runningAccumulate(uniqState(UserID))`), и для каждой строки блока возвращает результат агрегатной функции после мёржа состояний функции для всех предыдущих строк и текущей. Таким образом, результат зависит от разбиения данных по блокам и от порядка данных в блоке.
+Накапливает состояния агрегатной функции для каждой строки блока данных.
+
+!!! warning "Warning"
+    Функция обнуляет состояние для каждого нового блока.
+
+**Синтаксис**
+
+```sql
+runningAccumulate(agg_state[, grouping]);
+```
+
+**Параметры**
+
+- `agg_state` — Состояние агрегатной функции. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+- `grouping` — Ключ группировки. Опциональный параметр. Состояние функции обнуляется, если значение `grouping` меняется. Параметр может быть любого [поддерживаемого типа данных](../../sql-reference/data-types/index.md), для которого определен оператор равенства.
+
+**Возвращаемое значение**
+
+- Каждая результирующая строка содержит результат агрегатной функции, накопленный для всех входных строк от 0 до текущей позиции. `runningAccumulate` обнуляет состояния для каждого нового блока данных или при изменении значения `grouping`.
+
+Тип зависит от используемой агрегатной функции.
+
+**Примеры**
+
+Рассмотрим примеры использования `runningAccumulate` для нахождения кумулятивной суммы чисел без и с группировкой.
+
+Запрос:
+
+```sql
+SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number as k, sumState(k) AS sum_k FROM numbers(10) GROUP BY k ORDER BY k);
+```
+
+Результат:
+
+```text
+┌─k─┬─res─┐
+│ 0 │   0 │
+│ 1 │   1 │
+│ 2 │   3 │
+│ 3 │   6 │
+│ 4 │  10 │
+│ 5 │  15 │
+│ 6 │  21 │
+│ 7 │  28 │
+│ 8 │  36 │
+│ 9 │  45 │
+└───┴─────┘
+```
+
+Подзапрос формирует `sumState` для каждого числа от `0` до `9`. `sumState` возвращает состояние функции [sum](../../sql-reference/aggregate-functions/reference.md#agg_function-sum), содержащее сумму одного числа.
+
+Весь запрос делает следующее:
+
+1. Для первой строки `runningAccumulate` берет `sumState(0)` и возвращает `0`.
+2. Для второй строки функция объединяет `sumState (0)` и `sumState (1)`, что приводит к `sumState (0 + 1)`, и возвращает в результате `1`.
+3. Для третьей строки функция объединяет `sumState (0 + 1)` и `sumState (2)`, что приводит к `sumState (0 + 1 + 2)`, и в результате возвращает `3`.
+4. Действия повторяются до тех пор, пока не закончится блок.
+
+В следующем примере показано использование параметра `grouping`:
+
+Запрос:
+
+```sql
+SELECT 
+    grouping,
+    item,
+    runningAccumulate(state, grouping) AS res
+FROM 
+(
+    SELECT 
+        toInt8(number / 4) AS grouping,
+        number AS item,
+        sumState(number) AS state
+    FROM numbers(15)
+    GROUP BY item
+    ORDER BY item ASC
+);
+```
+
+Результат:
+
+```text
+┌─grouping─┬─item─┬─res─┐
+│        0 │    0 │   0 │
+│        0 │    1 │   1 │
+│        0 │    2 │   3 │
+│        0 │    3 │   6 │
+│        1 │    4 │   4 │
+│        1 │    5 │   9 │
+│        1 │    6 │  15 │
+│        1 │    7 │  22 │
+│        2 │    8 │   8 │
+│        2 │    9 │  17 │
+│        2 │   10 │  27 │
+│        2 │   11 │  38 │
+│        3 │   12 │  12 │
+│        3 │   13 │  25 │
+│        3 │   14 │  39 │
+└──────────┴──────┴─────┘
+```
+
+Как вы можете видеть, `runningAccumulate` объединяет состояния для каждой группы строк отдельно.
 
 ## joinGet {#joinget}
 
@@ -1152,5 +1285,53 @@ SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers 
 │      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                               30 │
 └────────┴────────────────────────────────┴──────────────────────────────────┘
 ```
+
+## randomString {#randomstring}
+
+Генерирует бинарную строку заданной длины, заполненную случайными байтами (в том числе нулевыми).
+
+**Синтаксис**
+
+``` sql
+randomString(length)
+```
+
+**Параметры** 
+
+-   `length` — длина строки. Положительное целое число.
+
+**Возвращаемое значение**
+
+-   Строка, заполненная случайными байтами.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT randomString(30) AS str, length(str) AS len FROM numbers(2) FORMAT Vertical;
+```
+
+Ответ:
+
+``` text
+Row 1:
+──────
+str: 3 G  :   pT ?w тi  k aV f6
+len: 30
+
+Row 2:
+──────
+str: 9 ,]    ^   )  ]??  8
+len: 30
+```
+
+**Смотрите также**
+
+-   [generateRandom](../../sql-reference/table-functions/generate.md#generaterandom)
+-   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
+
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->

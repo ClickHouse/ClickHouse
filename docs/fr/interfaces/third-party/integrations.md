@@ -14,6 +14,7 @@ toc_title: "Int\xE9gration"
 
 -   Systèmes de gestion de bases de données relationnelles
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-lecteur de données](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-réplicateur](https://github.com/larsnovikov/horgh-replicator)
@@ -27,6 +28,7 @@ toc_title: "Int\xE9gration"
 -   Files d'attente de messages
     -   [Kafka](https://kafka.apache.org)
         -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (utiliser [Allez client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   Traitement de flux
     -   [Flink](https://flink.apache.org)
         -   [flink-clickhouse-évier](https://github.com/ivi-ru/flink-clickhouse-sink)
@@ -98,5 +100,11 @@ toc_title: "Int\xE9gration"
 -   Elixir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
         -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
+-   Ruby
+    -   [Ruby on Rails](https://rubyonrails.org/)
+        -   [activecube](https://github.com/bitquery/activecube)
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
+    -   [GraphQL](https://github.com/graphql)
+        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
 [Article Original](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

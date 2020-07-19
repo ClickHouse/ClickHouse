@@ -277,7 +277,6 @@ namespace ErrorCodes
     extern const int AIO_READ_ERROR = 274;
     extern const int AIO_WRITE_ERROR = 275;
     extern const int INDEX_NOT_USED = 277;
-    extern const int LEADERSHIP_LOST = 278;
     extern const int ALL_CONNECTION_TRIES_FAILED = 279;
     extern const int NO_AVAILABLE_DATA = 280;
     extern const int DICTIONARY_IS_EMPTY = 281;
@@ -291,7 +290,6 @@ namespace ErrorCodes
     extern const int REPLICA_IS_NOT_IN_QUORUM = 289;
     extern const int LIMIT_EXCEEDED = 290;
     extern const int DATABASE_ACCESS_DENIED = 291;
-    extern const int LEADERSHIP_CHANGED = 292;
     extern const int MONGODB_CANNOT_AUTHENTICATE = 293;
     extern const int INVALID_BLOCK_EXTRA_INFO = 294;
     extern const int RECEIVED_EMPTY_DATA = 295;
@@ -341,7 +339,6 @@ namespace ErrorCodes
     extern const int OUTPUT_IS_NOT_SORTED = 365;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT = 366;
     extern const int TOO_MANY_FETCHES = 367;
-    extern const int BAD_CAST = 368;
     extern const int ALL_REPLICAS_ARE_STALE = 369;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES = 370;
     extern const int INCONSISTENT_CLUSTER_DEFINITION = 371;
@@ -398,7 +395,6 @@ namespace ErrorCodes
     extern const int CANNOT_GETTIMEOFDAY = 423;
     extern const int CANNOT_LINK = 424;
     extern const int SYSTEM_ERROR = 425;
-    extern const int NULL_POINTER_DEREFERENCE = 426;
     extern const int CANNOT_COMPILE_REGEXP = 427;
     extern const int UNKNOWN_LOG_LEVEL = 428;
     extern const int FAILED_TO_GETPWUID = 429;
@@ -458,7 +454,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_REDIRECTS = 483;
     extern const int INTERNAL_REDIS_ERROR = 484;
     extern const int SCALAR_ALREADY_EXISTS = 485;
-    extern const int UNKNOWN_SCALAR = 486;
     extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY = 487;
     extern const int UNKNOWN_DICTIONARY = 488;
     extern const int INCORRECT_DICTIONARY_DEFINITION = 489;
@@ -496,6 +491,14 @@ namespace ErrorCodes
     extern const int OPENCL_ERROR = 522;
     extern const int UNKNOWN_ROW_POLICY = 523;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN = 524;
+    extern const int INCORRECT_DISK_INDEX = 525;
+    extern const int UNKNOWN_VOLUME_TYPE = 526;
+    extern const int NO_SUITABLE_FUNCTION_IMPLEMENTATION = 527;
+    extern const int CASSANDRA_INTERNAL_ERROR = 528;
+    extern const int NOT_A_LEADER = 529;
+    extern const int CANNOT_CONNECT_RABBITMQ = 530;
+    extern const int CANNOT_FSTAT = 531;
+    extern const int LDAP_ERROR = 532;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
@@ -504,6 +507,7 @@ namespace ErrorCodes
 
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
     extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;
+    extern const int UNRECOGNIZED_ARGUMENTS = 2003;
 }
 
 }

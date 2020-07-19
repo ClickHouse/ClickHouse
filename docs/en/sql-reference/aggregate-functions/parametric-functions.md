@@ -20,7 +20,7 @@ The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.or
 **Parameters**
 
 `number_of_bins` — Upper limit for the number of bins in the histogram. The function automatically calculates the number of bins. It tries to reach the specified number of bins, but if it fails, it uses fewer bins.
-`values` — [Expression](../syntax.md#syntax-expressions) resulting in input values.
+`values` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in input values.
 
 **Returned values**
 
@@ -316,7 +316,7 @@ Result:
 The function takes as arguments a set of conditions from 1 to 32 arguments of type `UInt8` that indicate whether a certain condition was met for the event.
 Any condition can be specified as an argument (as in [WHERE](../../sql-reference/statements/select/where.md#select-where)).
 
-The conditions, except the first, apply in pairs: the result of the second will be true if the first and second are true, of the third if the first and fird are true, etc.
+The conditions, except the first, apply in pairs: the result of the second will be true if the first and second are true, of the third if the first and third are true, etc.
 
 **Syntax**
 
@@ -494,4 +494,4 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 
 ## sumMapFiltered(keys\_to\_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
 
-Same behavior as [sumMap](reference.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.
+Same behavior as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.

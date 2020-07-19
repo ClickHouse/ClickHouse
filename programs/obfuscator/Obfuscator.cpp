@@ -14,7 +14,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <Common/SipHash.h>
@@ -31,7 +30,6 @@
 #include <ext/bit_cast.h>
 #include <memory>
 #include <cmath>
-#include <optional>
 #include <unistd.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
@@ -937,10 +935,10 @@ public:
         if (typeid_cast<const DataTypeFixedString *>(&data_type))
             return std::make_unique<FixedStringModel>(seed);
 
-        if (auto type = typeid_cast<const DataTypeArray *>(&data_type))
+        if (const auto * type = typeid_cast<const DataTypeArray *>(&data_type))
             return std::make_unique<ArrayModel>(get(*type->getNestedType(), seed, markov_model_params));
 
-        if (auto type = typeid_cast<const DataTypeNullable *>(&data_type))
+        if (const auto * type = typeid_cast<const DataTypeNullable *>(&data_type))
             return std::make_unique<NullableModel>(get(*type->getNestedType(), seed, markov_model_params));
 
         throw Exception("Unsupported data type", ErrorCodes::NOT_IMPLEMENTED);

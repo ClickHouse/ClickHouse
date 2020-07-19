@@ -26,8 +26,8 @@ public:
     struct Data
     {
         TableJoin & analyzed_join;
-        const TableWithColumnNames & left_table;
-        const TableWithColumnNames & right_table;
+        const TableWithColumnNamesAndTypes & left_table;
+        const TableWithColumnNamesAndTypes & right_table;
         const Aliases & aliases;
         const bool is_asof{false};
         ASTPtr asof_left_key{};

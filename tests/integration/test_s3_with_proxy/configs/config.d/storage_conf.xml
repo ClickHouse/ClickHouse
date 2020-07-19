@@ -7,8 +7,8 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
                 <proxy>
-                    <uri>http://proxy1:8888</uri>
-                    <uri>http://proxy2:8888</uri>
+                    <uri>http://proxy1</uri>
+                    <uri>http://proxy2</uri>
                 </proxy>
             </s3>
             <s3_with_resolver>
@@ -18,14 +18,14 @@
                 <secret_access_key>minio123</secret_access_key>
                 <proxy>
                     <!--
-                        At each interaction with S3 resolver sends empty GET / request to specified endpoint to obtain proxy host.
+                        At each interaction with S3 resolver sends empty GET request to specified endpoint URL to obtain proxy host.
                         Proxy host is returned as string in response body.
                         Then S3 client uses proxy URL formed as proxy_scheme://proxy_host:proxy_port to make request.
                     -->
                     <resolver>
-                        <endpoint>http://resolver:8080</endpoint>
+                        <endpoint>http://resolver:8080/hostname</endpoint>
                         <proxy_scheme>http</proxy_scheme>
-                        <proxy_port>8888</proxy_port>
+                        <proxy_port>80</proxy_port>
                     </resolver>
                 </proxy>
             </s3_with_resolver>

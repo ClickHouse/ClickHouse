@@ -7,7 +7,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -181,8 +181,11 @@ const KeyCondition::AtomMap KeyCondition::atom_map
     },
     {
         "empty",
-        [] (RPNElement & out, const Field &)
+        [] (RPNElement & out, const Field & value)
         {
+            if (value.getType() != Field::Types::String)
+                return false;
+
             out.function = RPNElement::FUNCTION_IN_RANGE;
             out.range = Range("");
             return true;
@@ -190,8 +193,11 @@ const KeyCondition::AtomMap KeyCondition::atom_map
     },
     {
         "notEmpty",
-        [] (RPNElement & out, const Field &)
+        [] (RPNElement & out, const Field & value)
         {
+            if (value.getType() != Field::Types::String)
+                return false;
+
             out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
             out.range = Range("");
             return true;
@@ -611,17 +617,40 @@ bool KeyCondition::tryPrepareSetIndex(
 
     const ASTPtr & right_arg = args[1];
 
-    PreparedSetKey set_key;
+    SetPtr prepared_set;
     if (right_arg->as<ASTSubquery>() || right_arg->as<ASTIdentifier>())
-        set_key = PreparedSetKey::forSubquery(*right_arg);
+    {
+        auto set_it = prepared_sets.find(PreparedSetKey::forSubquery(*right_arg));
+        if (set_it == prepared_sets.end())
+            return false;
+
+        prepared_set = set_it->second;
+    }
     else
-        set_key = PreparedSetKey::forLiteral(*right_arg, data_types);
+    {
+        /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
+        /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
+        /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
+        /// that the types it was prepared with are compatible with the types of the primary key.
+        auto set_ast_hash = right_arg->getTreeHash();
+        auto set_it = std::find_if(
+            prepared_sets.begin(), prepared_sets.end(),
+            [&](const auto & candidate_entry)
+            {
+                if (candidate_entry.first.ast_hash != set_ast_hash)
+                    return false;
 
-    auto set_it = prepared_sets.find(set_key);
-    if (set_it == prepared_sets.end())
-        return false;
+                for (size_t i = 0; i < indexes_mapping.size(); ++i)
+                    if (!candidate_entry.second->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
+                        return false;
 
-    const SetPtr & prepared_set = set_it->second;
+                return true;
+        });
+        if (set_it == prepared_sets.end())
+            return false;
+
+        prepared_set = set_it->second;
+    }
 
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())
@@ -629,7 +658,7 @@ bool KeyCondition::tryPrepareSetIndex(
 
     prepared_set->checkColumnsNumber(left_args_count);
     for (size_t i = 0; i < indexes_mapping.size(); ++i)
-        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, removeLowCardinality(data_types[i]));
+        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
 
@@ -812,6 +841,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                     func_name = "greaterOrEquals";
                 else if (func_name == "in" || func_name == "notIn" ||
                          func_name == "like" || func_name == "notLike" ||
+                         func_name == "ilike" || func_name == "notIlike" ||
                          func_name == "startsWith")
                 {
                     /// "const IN data_column" doesn't make sense (unlike "data_column IN const")
@@ -820,8 +850,8 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
             }
 
             bool cast_not_needed =
-                    is_set_const /// Set args are already casted inside Set::createFromAST
-                    || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
+                is_set_const /// Set args are already casted inside Set::createFromAST
+                || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
 
             if (!cast_not_needed)
                 castValueToType(key_expr_type, const_value, const_type, node);
@@ -836,17 +866,23 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
 
         return atom_it->second(out, const_value);
     }
-    else if (getConstant(node, block_with_constants, const_value, const_type))    /// For cases where it says, for example, `WHERE 0 AND something`
+    else if (getConstant(node, block_with_constants, const_value, const_type))
     {
-        if (const_value.getType() == Field::Types::UInt64
-            || const_value.getType() == Field::Types::Int64
-            || const_value.getType() == Field::Types::Float64)
-        {
-            /// Zero in all types is represented in memory the same way as in UInt64.
-            out.function = const_value.get<UInt64>()
-                ? RPNElement::ALWAYS_TRUE
-                : RPNElement::ALWAYS_FALSE;
+        /// For cases where it says, for example, `WHERE 0 AND something`
 
+        if (const_value.getType() == Field::Types::UInt64)
+        {
+            out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+            return true;
+        }
+        else if (const_value.getType() == Field::Types::Int64)
+        {
+            out.function = const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+            return true;
+        }
+        else if (const_value.getType() == Field::Types::Float64)
+        {
+            out.function = const_value.safeGet<Float64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
             return true;
         }
     }
@@ -1087,6 +1123,83 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             key_range.swapLeftAndRight();
     }
     return key_range;
+}
+
+// Returns whether the condition is one continuous range of the primary key,
+// where every field is matched by range or a single element set.
+// This allows to use a more efficient lookup with no extra reads.
+bool KeyCondition::matchesExactContinuousRange() const
+{
+    // Not implemented yet.
+    if (hasMonotonicFunctionsChain())
+        return false;
+
+    enum Constraint
+    {
+        POINT,
+        RANGE,
+        UNKNOWN,
+    };
+
+    std::vector<Constraint> column_constraints(key_columns.size(), Constraint::UNKNOWN);
+
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::Function::FUNCTION_AND)
+        {
+            continue;
+        }
+
+        if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
+        {
+            column_constraints[element.key_column] = Constraint::POINT;
+            continue;
+        }
+
+        if (element.function == RPNElement::Function::FUNCTION_IN_RANGE)
+        {
+            if (element.range.left == element.range.right)
+            {
+                column_constraints[element.key_column] = Constraint::POINT;
+            }
+            if (column_constraints[element.key_column] != Constraint::POINT)
+            {
+                column_constraints[element.key_column] = Constraint::RANGE;
+            }
+            continue;
+        }
+
+        if (element.function == RPNElement::Function::FUNCTION_UNKNOWN)
+        {
+            continue;
+        }
+
+        return false;
+    }
+
+    auto min_constraint = column_constraints[0];
+
+    if (min_constraint > Constraint::RANGE)
+    {
+        return false;
+    }
+
+    for (size_t i = 1; i < key_columns.size(); ++i)
+    {
+        if (column_constraints[i] < min_constraint)
+        {
+            return false;
+        }
+
+        if (column_constraints[i] == Constraint::RANGE && min_constraint == Constraint::RANGE)
+        {
+            return false;
+        }
+
+        min_constraint = column_constraints[i];
+    }
+
+    return true;
 }
 
 BoolMask KeyCondition::checkInHyperrectangle(

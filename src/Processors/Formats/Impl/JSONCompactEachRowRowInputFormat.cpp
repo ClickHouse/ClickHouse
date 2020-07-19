@@ -22,8 +22,6 @@ JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(ReadBuffer & 
         bool with_names_)
         : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), with_names(with_names_)
 {
-    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(in);
     const auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();
 
@@ -39,8 +37,18 @@ JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(ReadBuffer & 
     }
 }
 
+void JSONCompactEachRowRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    column_indexes_for_input_fields.clear();
+    not_seen_columns.clear();
+}
+
 void JSONCompactEachRowRowInputFormat::readPrefix()
 {
+    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
+    skipBOMIfExists(in);
+
     if (with_names)
     {
         size_t num_columns = getPort().getHeader().columns();

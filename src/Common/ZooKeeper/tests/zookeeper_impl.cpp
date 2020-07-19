@@ -9,8 +9,8 @@ try
 
     zookeeper.create("/test", "hello", false, false, {}, [](const Coordination::CreateResponse & response)
     {
-        if (response.error)
-            std::cerr << "Error " << response.error << ": " << Coordination::errorMessage(response.error) << "\n";
+        if (response.error != Coordination::Error::ZOK)
+            std::cerr << "Error: " << Coordination::errorMessage(response.error) << "\n";
         else
             std::cerr << "Path created: " << response.path_created << "\n";
     });
