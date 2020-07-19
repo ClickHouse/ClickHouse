@@ -515,6 +515,31 @@ ClickHouse использует этот параметр при чтении д
 
 Значение по умолчанию: 0.
 
+## network_compression_method {#network_compression_method}
+
+Задает метод сжатия данных, используемый для связи между серверами и отправки данных в собственный clickhouse-клиент.
+
+Возможные значения:
+
+-   `LZ4` — устанавливает метод сжатия LZ4.
+-   `ZSTD` — устанавливает метод сжатия ZSTD.
+
+Значение по умолчанию: `LZ4`.
+
+См. также:
+
+-   [network_zstd_compression_level](#network_zstd_compression_level)
+
+## network_zstd_compression_level {#network_zstd_compression_level}
+
+Регулирует уровень сжатия ZSTD. Используется только тогда, когда [network_compression_method](#network_compression_method) имеет значение `ZSTD`.
+
+Возможные значения:
+
+-   Положительное целое число от 1 до 15.
+
+Значение по умолчанию: `1`.
+
 ## log\_queries {#settings-log-queries}
 
 Установка логирования запроса.
