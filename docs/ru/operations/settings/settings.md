@@ -1153,4 +1153,22 @@ Default value: 0.
 
 Значение по умолчанию: 16.
 
+## insert_distributed_sync {#insert_distributed_sync}
+
+Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](../../engines/table-engines/special/distributed.md#distributed)).
+
+По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `insert_distributed_sync=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все узлы кластера. 
+
+Возможные значения:
+
+-   0 — Данные добавляются в асинхронном режиме.
+-   1 — Данные добавляются в синхронном режиме.
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
+-   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

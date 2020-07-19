@@ -1262,4 +1262,22 @@ Possible values:
 
 Default value: 16.
 
+## insert_distributed_sync {#insert_distributed_sync}
+
+Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
+
+By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in asynchronous mode. When `insert_distributed_sync=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all nodes. 
+
+Possible values:
+
+-   0 — Data is inserted in asynchronous mode.
+-   1 — Data is inserted in synchronous mode.
+
+Default value: `0`.
+
+**See Also**
+
+-   [Distributed Table Engine](../../engines/table-engines/special/distributed.md#distributed)
+-   [Managing Distributed Tables](../../sql-reference/statements/system.md#query-language-system-distributed)
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
