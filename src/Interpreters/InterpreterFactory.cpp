@@ -75,7 +75,6 @@
 #include <Common/typeid_cast.h>
 
 
-
 namespace ProfileEvents
 {
     extern const Event Query;

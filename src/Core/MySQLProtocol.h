@@ -40,6 +40,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;

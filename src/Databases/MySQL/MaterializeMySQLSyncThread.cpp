@@ -28,8 +28,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_QUERY;
     extern const int SYNTAX_ERROR;
+    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_MYSQL_VARIABLE;
 }
 
@@ -323,7 +323,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
             {
                 throw;
             }
-            catch (mysqlxx::Exception & )
+            catch (mysqlxx::Exception &)
             {
                 /// Avoid busy loop when MySQL is not available.
                 sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
@@ -522,7 +522,7 @@ void MaterializeMySQLSyncThread::Buffers::commit(const Context & context)
         total_blocks_rows = 0;
         total_blocks_bytes = 0;
     }
-    catch(...)
+    catch (...)
     {
         data.clear();
         throw;

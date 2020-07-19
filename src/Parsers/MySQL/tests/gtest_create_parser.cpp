@@ -35,7 +35,7 @@ TEST(CreateTableParser, SimpleCreate)
 TEST(CreateTableParser, SS)
 {
     ParserCreateQuery p_create_query;
-    String input = "CREATE TABLE `test_table_1` (`a` int DEFAULT NULL,  `b` int DEFAULT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci";
+    String input = "CREATE TABLE `test_table_1` (`a` int DEFAULT NULL, `b` int DEFAULT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci";
     ASTPtr ast = parseQuery(p_create_query, input.data(), input.data() + input.size(), "", 0, 0);
     ast->dumpTree(std::cerr);
 
