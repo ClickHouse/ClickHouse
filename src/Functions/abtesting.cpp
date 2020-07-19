@@ -49,7 +49,7 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
             alpha = 1.0 + ys[i];
             beta = 1.0 + xs[i] - ys[i];
 
-            samples_matrix.emplace_back(std::move(stats::rbeta<std::vector<Float64>>(r, c, alpha, beta)));
+            samples_matrix.emplace_back(stats::rbeta<std::vector<Float64>>(r, c, alpha, beta));
         }
     }
     else if (distribution == GAMMA)
@@ -184,7 +184,7 @@ public:
     {
         if (input_rows_count == 0)
         {
-            block.getByPosition(result).column = std::move(ColumnString::create());
+            block.getByPosition(result).column = ColumnString::create();
             return;
         }
 
