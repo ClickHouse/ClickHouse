@@ -184,12 +184,16 @@ public:
     /// E.g. for SettingInt64 it casts Field to Field::Types::Int64.
     static Field castValue(size_t index, const Field & value);
     static Field castValue(const StringRef & name, const Field & value);
+    static Field castValue(const std::string_view & name, const Field & value) { return castValue(StringRef{name}, value); }
+    static Field castValue(const String & name, const Field & value) { return castValue(StringRef{name}, value); }
 
     /// Casts a value to a string according to a specified setting without actual changing this settings.
     static Field stringToValue(size_t index, const String & str) { return members()[index].string_to_value(str); }
     static Field stringToValue(const StringRef & name, const String & str) { return members().findStrict(name).string_to_value(str); }
     static String valueToString(size_t index, const Field & value) { return members()[index].value_to_string(value); }
     static String valueToString(const StringRef & name, const Field & value) { return members().findStrict(name).value_to_string(value); }
+    static String valueToString(const std::string_view & name, const Field & value) { return valueToString(name, value); }
+    static String valueToString(const String & name, const Field & value) { return valueToString(name, value); }
 
     iterator begin() { return iterator(castToDerived(), members().data()); }
     const_iterator begin() const { return const_iterator(castToDerived(), members().data()); }

@@ -32,8 +32,8 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, const Context
     auto settings_constraints = context.getSettingsConstraints();
     for (const auto & setting : settings)
     {
-        StringRef setting_name = setting.getName();
-        res_columns[0]->insert(setting_name.toString());
+        std::string_view setting_name{setting.getName()};
+        res_columns[0]->insert(setting_name);
         res_columns[1]->insert(setting.getValueAsString());
         res_columns[2]->insert(setting.isChanged());
         res_columns[3]->insert(setting.getDescription().toString());
