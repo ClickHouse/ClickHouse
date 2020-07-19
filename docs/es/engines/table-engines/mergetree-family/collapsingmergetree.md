@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: ColapsarMergeTree
 ---
 
-# Colapsarmergetree {#table_engine-collapsingmergetree}
+# ColapsarMergeTree {#table_engine-collapsingmergetree}
 
 El motor hereda de [Método de codificación de datos:](mergetree.md) y agrega la lógica de las filas que colapsan al algoritmo de fusión de partes de datos.
 
@@ -13,7 +13,7 @@ El motor hereda de [Método de codificación de datos:](mergetree.md) y agrega l
 
 El motor puede reducir significativamente el volumen de almacenamiento y aumentar la eficiencia de `SELECT` consulta como consecuencia.
 
-## Creación De Una Tabla {#creating-a-table}
+## Creación de una tabla {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -119,11 +119,8 @@ Cuando ClickHouse combina partes de datos, cada grupo de filas consecutivas tien
 Para cada parte de datos resultante, ClickHouse guarda:
 
 1.  El primero “cancel” y el último “state” si el número de “state” y “cancel” y la última fila es una “state” fila.
-
 2.  El último “state” fila, si hay más “state” filas que “cancel” filas.
-
 3.  El primero “cancel” fila, si hay más “cancel” filas que “state” filas.
-
 4.  Ninguna de las filas, en todos los demás casos.
 
 También cuando hay al menos 2 más “state” filas que “cancel” filas, o al menos 2 más “cancel” filas entonces “state” fila, la fusión continúa, pero ClickHouse trata esta situación como un error lógico y la registra en el registro del servidor. Este error puede producirse si se insertan los mismos datos más de una vez.
@@ -139,7 +136,7 @@ Los agregados `count`, `sum` y `avg` podría calcularse de esta manera. El agreg
 
 Si necesita extraer datos sin agregación (por ejemplo, para comprobar si hay filas presentes cuyos valores más recientes coinciden con ciertas condiciones), puede utilizar el `FINAL` modificador para el `FROM` clausula. Este enfoque es significativamente menos eficiente.
 
-## Ejemplo De Uso {#example-of-use}
+## Ejemplo de uso {#example-of-use}
 
 Datos de ejemplo:
 
@@ -193,7 +190,7 @@ SELECT * FROM UAct
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 
-¿qué vemos y dónde está colapsando?
+¿Qué vemos y dónde está colapsando?
 
 Con dos `INSERT` consultas, hemos creado 2 partes de datos. El `SELECT` la consulta se realizó en 2 hilos, y obtuvimos un orden aleatorio de filas. No se ha producido un colapso porque todavía no se había fusionado las partes de datos. ClickHouse fusiona parte de datos en un momento desconocido que no podemos predecir.
 
@@ -229,7 +226,7 @@ SELECT * FROM UAct FINAL
 
 Esta forma de seleccionar los datos es muy ineficiente. No lo use para mesas grandes.
 
-## Ejemplo De Otro Enfoque {#example-of-another-approach}
+## Ejemplo de otro enfoque {#example-of-another-approach}
 
 Datos de ejemplo:
 

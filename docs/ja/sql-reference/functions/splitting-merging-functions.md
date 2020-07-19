@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 47
 toc_title: "\u6587\u5B57\u5217\u3068\u914D\u5217\u306E\u5206\u5272\u3068\u30DE\u30FC\
   \u30B8"
 ---
 
-# 文字列と配列の分割とマージのための関数 {#functions-for-splitting-and-merging-strings-and-arrays}
+# 文字列と配列を分割および結合するための関数 {#functions-for-splitting-and-merging-strings-and-arrays}
 
-## splitByChar(セパレータ,s) {#splitbycharseparator-s}
+## splitByChar(セパレーター、s) {#splitbycharseparator-s}
 
-文字列を、指定した文字で区切った部分文字列に分割します。 定数文字列を使用します `separator` その正確に一つの文字からなる。
-選択した部分文字列の配列を返します。 空の部分文字列は、文字列の先頭または末尾にセパレータがある場合、または複数の連続するセパレータがある場合に選択できます。
+文字列を、指定した文字で区切られた部分文字列に分割します。 定数文字列を使用します `separator` これは正確に一つの文字で構成されます。
+選択した部分文字列の配列を返します。 文字列の先頭または末尾に区切り文字がある場合、または複数の連続した区切り文字がある場合は、空の部分文字列を選択できます。
 
 **構文**
 
@@ -24,17 +24,17 @@ splitByChar(<separator>, <s>)
 -   `separator` — The separator which should contain exactly one character. [文字列](../../sql-reference/data-types/string.md).
 -   `s` — The string to split. [文字列](../../sql-reference/data-types/string.md).
 
-**戻り値(s)**
+**戻り値)**
 
 選択した部分文字列の配列を返します。 空の部分文字列は、次の場合に選択できます:
 
--   区切り記号は、文字列の先頭または末尾に表示されます;
+-   区切り文字は、文字列の先頭または末尾にあります;
 -   複数の連続した区切り文字があります;
 -   元の文字列 `s` 空です。
 
 タイプ: [配列](../../sql-reference/data-types/array.md) の [文字列](../../sql-reference/data-types/string.md).
 
-**例えば**
+**例**
 
 ``` sql
 SELECT splitByChar(',', '1,2,3,abcde')
@@ -46,9 +46,9 @@ SELECT splitByChar(',', '1,2,3,abcde')
 └─────────────────────────────────┘
 ```
 
-## splitByString(separator,s) {#splitbystringseparator-s}
+## splitByString(セパレーター、s) {#splitbystringseparator-s}
 
-文字列を文字列で区切られた部分文字列に分割します。 定数文字列を使用します `separator` 区切り文字として複数の文字が使用されます。 文字列の場合 `separator` 空である場合は、文字列を分割します `s` 単一の文字の配列に変換します。
+文字列を文字列で区切られた部分文字列に分割します。 定数文字列を使用します `separator` 区切り文字として複数の文字を指定します。 文字列の場合 `separator` 空の場合は、文字列を分割します `s` 単一の文字の配列に。
 
 **構文**
 
@@ -61,17 +61,17 @@ splitByString(<separator>, <s>)
 -   `separator` — The separator. [文字列](../../sql-reference/data-types/string.md).
 -   `s` — The string to split. [文字列](../../sql-reference/data-types/string.md).
 
-**戻り値(s)**
+**戻り値)**
 
 選択した部分文字列の配列を返します。 空の部分文字列は、次の場合に選択できます:
 
 タイプ: [配列](../../sql-reference/data-types/array.md) の [文字列](../../sql-reference/data-types/string.md).
 
--   空でない区切り文字は、文字列の先頭または末尾に作成されます;
--   複数の連続する空でない区切り記号があります;
--   元の文字列 `s` 区切り記号が空でない間は空です。
+-   空でない区切り文字は、文字列の先頭または末尾にあります;
+-   連続した空でない区切り文字が複数あります;
+-   元の文字列 `s` 区切り文字が空でない間は空です。
 
-**例えば**
+**例**
 
 ``` sql
 SELECT splitByString(', ', '1, 2 3, 4,5, abcde')
@@ -93,16 +93,16 @@ SELECT splitByString('', 'abcde')
 └────────────────────────────┘
 ```
 
-## arrayStringConcat(arr\[,separator\]) {#arraystringconcatarr-separator}
+## arrayStringConcat(arr\[,区切り記号\]) {#arraystringconcatarr-separator}
 
-配列にリストされている文字列を区切り文字と連結します。デフォルトでは空の文字列に設定されています。
+配列にリストされている文字列を区切り文字で連結します。'separator'はオプションのパラメータです:定数文字列で、デフォルトでは空の文字列に設定されます。
 文字列を返します。
 
-## alphaTokens(s) {#alphatokenss}
+## アルファトケンス(曖昧さ回避) {#alphatokenss}
 
-範囲a-zおよびa-zから連続するバイトの部分文字列を選択します。
+A-zおよびA-Zの範囲から連続したバイトの部分文字列を選択します。
 
-**例えば**
+**例**
 
 ``` sql
 SELECT alphaTokens('abca1abc')

@@ -1,4 +1,5 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
+SET allow_suspicious_codecs = 1;
 
 DROP TABLE IF EXISTS compression_codec;
 
@@ -87,6 +88,12 @@ CREATE TABLE compression_codec_multiple_more_types (
     id Decimal128(13) CODEC(ZSTD, LZ4, ZSTD, ZSTD, Delta(2), Delta(4), Delta(1), LZ4HC),
     data FixedString(12) CODEC(ZSTD, ZSTD, Delta, Delta, Delta, NONE, NONE, NONE, LZ4HC),
     ddd Nested (age UInt8, Name String) CODEC(LZ4, LZ4HC, NONE, NONE, NONE, ZSTD, Delta(8))
+) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 36 }
+
+CREATE TABLE compression_codec_multiple_more_types (
+    id Decimal128(13) CODEC(ZSTD, LZ4, ZSTD, ZSTD, Delta(2), Delta(4), Delta(1), LZ4HC),
+    data FixedString(12) CODEC(ZSTD, ZSTD, NONE, NONE, NONE, LZ4HC),
+    ddd Nested (age UInt8, Name String) CODEC(LZ4, LZ4HC, NONE, NONE, NONE, ZSTD, Delta(8))
 ) ENGINE = MergeTree() ORDER BY tuple();
 
 SHOW CREATE TABLE compression_codec_multiple_more_types;
@@ -104,7 +111,7 @@ SET network_zstd_compression_level = 5;
 CREATE TABLE compression_codec_multiple_with_key (
     somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12), Delta, Delta),
     id UInt64 CODEC(LZ4, ZSTD, Delta, NONE, LZ4HC, Delta),
-    data String CODEC(ZSTD(2), Delta, LZ4HC, NONE, LZ4, LZ4)
+    data String CODEC(ZSTD(2), Delta(1), LZ4HC, NONE, LZ4, LZ4)
 ) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2;
 
 
@@ -130,13 +137,13 @@ DROP TABLE IF EXISTS test_default_delta;
 
 CREATE TABLE test_default_delta(
     id UInt64 CODEC(Delta),
-    data String CODEC(Delta),
+    data String CODEC(Delta(1)),
     somedate Date CODEC(Delta),
     somenum Float64 CODEC(Delta),
-    somestr FixedString(3) CODEC(Delta),
+    somestr FixedString(3) CODEC(Delta(1)),
     othernum Int64 CODEC(Delta),
     yetothernum Float32 CODEC(Delta),
-    ddd Nested (age UInt8, Name String, OName String, BName String) CODEC(Delta)
+    ddd Nested (age UInt8, Name String, OName String, BName String) CODEC(Delta(1))
 ) ENGINE = MergeTree() ORDER BY tuple();
 
 SHOW CREATE TABLE test_default_delta;

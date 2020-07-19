@@ -9,7 +9,7 @@ Checks: '-*,
     misc-unused-alias-decls,
     misc-unused-parameters,
     misc-unused-using-decls,
-    
+
     modernize-avoid-bind,
     modernize-loop-convert,
     modernize-make-shared,
@@ -33,7 +33,7 @@ Checks: '-*,
     performance-no-automatic-move,
     performance-trivially-destructible,
     performance-unnecessary-copy-initialization,
-    
+
     readability-avoid-const-params-in-decls,
     readability-const-return-type,
     readability-container-size-empty,
@@ -58,7 +58,7 @@ Checks: '-*,
     readability-simplify-boolean-expr,
     readability-inconsistent-declaration-parameter-name,
     readability-identifier-naming,
-    
+
     bugprone-undelegated-constructor,
     bugprone-argument-comment,
     bugprone-bad-signal-to-kill-thread,
@@ -102,7 +102,7 @@ Checks: '-*,
     bugprone-unused-return-value,
     bugprone-use-after-move,
     bugprone-virtual-near-miss,
-    
+
     cert-dcl21-cpp,
     cert-dcl50-cpp,
     cert-env33-c,
@@ -112,7 +112,7 @@ Checks: '-*,
     cert-mem57-cpp,
     cert-msc50-cpp,
     cert-oop58-cpp,
-    
+
     google-build-explicit-make-pair,
     google-build-namespaces,
     google-default-arguments,
@@ -121,9 +121,9 @@ Checks: '-*,
     google-readability-avoid-underscore-in-googletest-name,
     google-runtime-int,
     google-runtime-operator,
-    
+
     hicpp-exception-baseclass,
-    
+
     clang-analyzer-core.CallAndMessage,
     clang-analyzer-core.DivideZero,
     clang-analyzer-core.NonNullParamChecker,

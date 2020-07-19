@@ -56,11 +56,6 @@ void ISource::work()
         finished = true;
         throw;
     }
-//    {
-//        current_chunk = std::current_exception();
-//        has_input = true;
-//        got_exception = true;
-//    }
 }
 
 }

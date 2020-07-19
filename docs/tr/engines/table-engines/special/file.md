@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 37
 toc_title: Dosya
 ---
@@ -12,11 +12,11 @@ biçimliler](../../../interfaces/formats.md#formats) (TabSeparated, yerli, vb.).
 
 Kullanım örnekleri:
 
--   Clickhouse’dan dosyaya veri aktarımı.
+-   Clickhouse'dan dosyaya veri aktarımı.
 -   Verileri bir biçimden diğerine dönüştürün.
 -   Bir diskte bir dosya düzenleme yoluyla ClickHouse veri güncelleme.
 
-## ClickHouse Sunucusunda Kullanım {#usage-in-clickhouse-server}
+## ClickHouse sunucusunda kullanım {#usage-in-clickhouse-server}
 
 ``` sql
 File(Format)
@@ -67,7 +67,7 @@ SELECT * FROM file_engine_table
 └──────┴───────┘
 ```
 
-## Clickhouse’da kullanım-yerel {#usage-in-clickhouse-local}
+## Clickhouse'da kullanım-yerel {#usage-in-clickhouse-local}
 
 İçinde [clickhouse-yerel](../../../operations/utilities/clickhouse-local.md) Dosya motoru ek olarak dosya yolunu kabul eder `Format`. Varsayılan giriş / çıkış akışları gibi sayısal veya insan tarafından okunabilir isimler kullanılarak belirtilebilir `0` veya `stdin`, `1` veya `stdout`.
 **Örnek:**

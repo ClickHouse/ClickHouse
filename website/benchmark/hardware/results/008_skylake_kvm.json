@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Time4vps.eu VPS (KVM) Linux Ubuntu 4 Core (Skylake) 16GB RAM 160GB Disk",
+        "system":       "Time4vps.eu",
+        "system_full":       "Time4vps.eu VPS (KVM) Linux Ubuntu 4 Core (Skylake) 16GB RAM 160GB Disk",
         "time":         "2020-01-13 00:00:00",
+        "kind":         "vps",
         "result":
         [
             [0.068, 0.002, 0.002],

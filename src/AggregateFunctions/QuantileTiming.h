@@ -167,7 +167,7 @@ namespace detail
             buf.readStrict(reinterpret_cast<char *>(elems.data()), size * sizeof(elems[0]));
         }
 
-        UInt16 get(double level) const
+        UInt16 get(double level)
         {
             UInt16 quantile = 0;
 
@@ -178,7 +178,7 @@ namespace detail
                     : (elems.size() - 1);
 
                 /// Sorting an array will not be considered a violation of constancy.
-                auto & array = const_cast<Array &>(elems);
+                auto & array = elems;
                 std::nth_element(array.begin(), array.begin() + n, array.end());
                 quantile = array[n];
             }
@@ -187,10 +187,10 @@ namespace detail
         }
 
         template <typename ResultType>
-        void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result) const
+        void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result)
         {
             size_t prev_n = 0;
-            auto & array = const_cast<Array &>(elems);
+            auto & array = elems;
             for (size_t i = 0; i < size; ++i)
             {
                 auto level_index = levels_permutation[i];
@@ -208,14 +208,14 @@ namespace detail
         }
 
         /// Same, but in the case of an empty state, NaN is returned.
-        float getFloat(double level) const
+        float getFloat(double level)
         {
             return !elems.empty()
                 ? get(level)
                 : std::numeric_limits<float>::quiet_NaN();
         }
 
-        void getManyFloat(const double * levels, const size_t * levels_permutation, size_t size, float * result) const
+        void getManyFloat(const double * levels, const size_t * levels_permutation, size_t size, float * result)
         {
             if (!elems.empty())
                 getMany(levels, levels_permutation, size, result);
@@ -707,7 +707,7 @@ public:
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
-    UInt16 get(double level) const
+    UInt16 get(double level)
     {
         Kind kind = which();
 
@@ -728,7 +728,7 @@ public:
 
     /// Get the size values of the quantiles of the `levels` levels. Record `size` results starting with `result` address.
     template <typename ResultType>
-    void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result) const
+    void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result)
     {
         Kind kind = which();
 
@@ -748,14 +748,14 @@ public:
     }
 
     /// The same, but in the case of an empty state, NaN is returned.
-    float getFloat(double level) const
+    float getFloat(double level)
     {
         return tiny.count
             ? get(level)
             : std::numeric_limits<float>::quiet_NaN();
     }
 
-    void getManyFloat(const double * levels, const size_t * levels_permutation, size_t size, float * result) const
+    void getManyFloat(const double * levels, const size_t * levels_permutation, size_t size, float * result)
     {
         if (tiny.count)
             getMany(levels, levels_permutation, size, result);

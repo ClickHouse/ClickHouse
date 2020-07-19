@@ -32,7 +32,7 @@ protected:
 template <typename... Args>
 std::shared_ptr<ASTFunction> makeASTFunction(const String & name, Args &&... args)
 {
-    const auto function = std::make_shared<ASTFunction>();
+    auto function = std::make_shared<ASTFunction>();
 
     function->name = name;
     function->arguments = std::make_shared<ASTExpressionList>();

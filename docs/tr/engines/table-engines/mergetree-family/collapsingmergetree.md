@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: CollapsingMergeTree
 ---
@@ -119,11 +119,8 @@ ClickHouse veri parçalarını birleştirdiğinde, her ardışık satır grubu a
 Elde edilen her veri parçası için ClickHouse kaydeder:
 
 1.  Birincilik “cancel” ve son “state” satır sayısı ise “state” ve “cancel” satırlar eşleşir ve son satır bir “state” satır.
-
 2.  Son “state” satır, daha varsa “state” satırlar daha “cancel” satırlar.
-
 3.  Birincilik “cancel” satır, daha varsa “cancel” satırlar daha “state” satırlar.
-
 4.  Diğer tüm durumlarda satırların hiçbiri.
 
 Ayrıca en az 2 tane daha olduğunda “state” satırlar daha “cancel” satırlar veya en az 2 tane daha “cancel” r rowsows th thenen “state” satırlar, birleştirme devam eder, ancak ClickHouse bu durumu mantıksal bir hata olarak değerlendirir ve sunucu günlüğüne kaydeder. Aynı veriler birden çok kez eklendiğinde, bu hata oluşabilir.
@@ -139,7 +136,7 @@ Toplanan `count`, `sum` ve `avg` bu şekilde hesaplanmış olabilir. Toplanan `u
 
 Toplama olmadan veri ayıklamanız gerekiyorsa (örneğin, en yeni değerleri belirli koşullarla eşleşen satırların mevcut olup olmadığını kontrol etmek için) `FINAL` değiştirici için `FROM` yan. Bu yaklaşım önemli ölçüde daha az etkilidir.
 
-## Kullanım Örneği {#example-of-use}
+## Kullanım örneği {#example-of-use}
 
 Örnek veriler:
 
@@ -229,7 +226,7 @@ SELECT * FROM UAct FINAL
 
 Verileri seçmenin bu yolu çok verimsizdir. Büyük masalar için kullanmayın.
 
-## Başka Bir Yaklaşım Örneği {#example-of-another-approach}
+## Başka bir yaklaşım örneği {#example-of-another-approach}
 
 Örnek veriler:
 

@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 48
 toc_title: Bit
 ---
 
 # Peu De Fonctions {#bit-functions}
 
-Les fonctions Bit fonctionnent pour n’importe quelle paire de types de UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32 ou Float64.
+Les fonctions Bit fonctionnent pour n'importe quelle paire de types de UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32 ou Float64.
 
-Le type de résultat est un entier avec des bits égaux aux bits maximum de ses arguments. Si au moins l’un des arguments est signé, le résultat est un signé nombre. Si un argument est un nombre à virgule flottante, Il est converti en Int64.
+Le type de résultat est un entier avec des bits égaux aux bits maximum de ses arguments. Si au moins l'un des arguments est signé, le résultat est un signé nombre. Si un argument est un nombre à virgule flottante, Il est converti en Int64.
 
 ## bitAnd (a, b) {#bitanda-b}
 
@@ -29,7 +29,7 @@ Le type de résultat est un entier avec des bits égaux aux bits maximum de ses 
 
 ## bitTest {#bittest}
 
-Prend tout entier et le convertit en [forme binaire](https://en.wikipedia.org/wiki/Binary_number) renvoie la valeur d’un bit à la position spécifiée. Le compte à rebours commence à partir de 0 de la droite vers la gauche.
+Prend tout entier et le convertit en [forme binaire](https://en.wikipedia.org/wiki/Binary_number) renvoie la valeur d'un bit à la position spécifiée. Le compte à rebours commence à partir de 0 de la droite vers la gauche.
 
 **Syntaxe**
 
@@ -214,7 +214,7 @@ Résultat:
 
 ## bitCount {#bitcount}
 
-Calcule le nombre de bits mis à un dans la représentation binaire d’un nombre.
+Calcule le nombre de bits mis à un dans la représentation binaire d'un nombre.
 
 **Syntaxe**
 
@@ -228,9 +228,9 @@ bitCount(x)
 
 **Valeur renvoyée**
 
--   Nombre de bits défini sur un dans le numéro d’entrée.
+-   Nombre de bits défini sur un dans le numéro d'entrée.
 
-La fonction ne convertit pas la valeur d’entrée en un type plus grand ([l’extension du signe](https://en.wikipedia.org/wiki/Sign_extension)). Ainsi, par exemple, `bitCount(toUInt8(-1)) = 8`.
+La fonction ne convertit pas la valeur d'entrée en un type plus grand ([l'extension du signe](https://en.wikipedia.org/wiki/Sign_extension)). Ainsi, par exemple, `bitCount(toUInt8(-1)) = 8`.
 
 Type: `UInt8`.
 

@@ -1,3 +1,7 @@
+if (USE_CLANG_TIDY)
+    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
+endif ()
+
 # 'clickhouse' binary is a multi purpose tool,
 # that contain multiple execution modes (client, server, etc.)
 # each of them is built and linked as a separate library, defined below.
@@ -201,3 +205,9 @@ endif ()
 if (TARGET clickhouse-server AND TARGET copy-headers)
     add_dependencies(clickhouse-server copy-headers)
 endif ()
+
+if (ENABLE_TESTS AND USE_GTEST)
+    set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_libcommon unit_tests_dbms)
+    add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
+    add_dependencies(clickhouse-bundle clickhouse-tests)
+endif()

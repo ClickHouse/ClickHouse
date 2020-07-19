@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 42
 toc_title: mysql
 ---
@@ -41,7 +41,7 @@ El resto de las condiciones y el `LIMIT` La restricción de muestreo se ejecuta 
 
 Un objeto de tabla con las mismas columnas que la tabla MySQL original.
 
-## Ejemplo De Uso {#usage-example}
+## Ejemplo de uso {#usage-example}
 
 Tabla en MySQL:
 

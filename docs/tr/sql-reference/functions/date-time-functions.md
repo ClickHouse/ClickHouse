@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 39
 toc_title: "Tarih ve Saatlerle \xE7al\u0131\u015Fma"
 ---
 
-# Tarih Ve Saatlerle çalışmak için işlevler {#functions-for-working-with-dates-and-times}
+# Tarih ve Saatlerle çalışmak için işlevler {#functions-for-working-with-dates-and-times}
 
 Saat dilimleri için destek
 
@@ -25,7 +25,7 @@ SELECT
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
 ```
 
-UTC’DEN saat sayısına göre farklı olan yalnızca saat dilimleri desteklenir.
+UTC'DEN saat sayısına göre farklı olan yalnızca saat dilimleri desteklenir.
 
 ## toTimeZone {#totimezone}
 
@@ -53,7 +53,7 @@ Bir tarih veya tarih ile saat, Ayın gün sayısını (1-31) içeren bir Uınt8 
 
 ## bugünhafta {#todayofweek}
 
-Bir tarih veya tarih ile saat, haftanın gününün sayısını içeren bir Uınt8 numarasına dönüştürür (Pazartesi 1 ve pazar 7’dir).
+Bir tarih veya tarih ile saat, haftanın gününün sayısını içeren bir Uınt8 numarasına dönüştürür (Pazartesi 1 ve pazar 7'dir).
 
 ## toHour {#tohour}
 
@@ -72,7 +72,7 @@ Sıçrama saniye hesaba değildir.
 ## toUnixTimestamp {#to-unix-timestamp}
 
 DateTime argümanı için: değeri dahili sayısal gösterimine dönüştürür (Unıx Zaman Damgası).
-String argümanı için: datetime’ı dizeden saat dilimine göre ayrıştırın (isteğe bağlı ikinci argüman, sunucu zaman dilimi varsayılan olarak kullanılır) ve karşılık gelen unıx zaman damgasını döndürür.
+String argümanı için: datetime'ı dizeden saat dilimine göre ayrıştırın (isteğe bağlı ikinci argüman, sunucu zaman dilimi varsayılan olarak kullanılır) ve karşılık gelen unıx zaman damgasını döndürür.
 Tarih argümanı için: davranış belirtilmemiş.
 
 **Sözdizimi**
@@ -117,7 +117,7 @@ Tarihi döndürür.
 ## toStartOfQuarter {#tostartofquarter}
 
 Çeyrek ilk güne kadar bir tarih veya tarih aşağı yuvarlar.
-Çeyreğin ilk günü 1 Ocak, 1 Nisan, 1 Temmuz veya 1 ekim’dir.
+Çeyreğin ilk günü 1 Ocak, 1 Nisan, 1 Temmuz veya 1 ekim'dir.
 Tarihi döndürür.
 
 ## toStartOfMonth {#tostartofmonth}
@@ -217,7 +217,7 @@ ISO hafta numarasını içeren bir uınt8 numarasına bir tarih veya tarih zaman
 
 ## toWeek (tarih \[, mod\]) {#toweekdatemode}
 
-Bu işlev, date veya datetime için hafta numarasını döndürür. ToWeek () ’ in iki bağımsız değişkenli formu, haftanın pazar veya Pazartesi günü başlayıp başlamadığını ve dönüş değerinin 0 ile 53 arasında mı yoksa 1 ile 53 arasında mı olması gerektiğini belirlemenizi sağlar. Mod bağımsız değişkeni atlanırsa, varsayılan mod 0’dır.
+Bu işlev, date veya datetime için hafta numarasını döndürür. ToWeek () ' in iki bağımsız değişkenli formu, haftanın pazar veya Pazartesi günü başlayıp başlamadığını ve dönüş değerinin 0 ile 53 arasında mı yoksa 1 ile 53 arasında mı olması gerektiğini belirlemenizi sağlar. Mod bağımsız değişkeni atlanırsa, varsayılan mod 0'dır.
 `toISOWeek()`eşdeğer bir uyumluluk işlevidir `toWeek(date,3)`.
 Aşağıdaki tabloda mod bağımsız değişkeni nasıl çalıştığını açıklar.
 
@@ -234,7 +234,7 @@ Aşağıdaki tabloda mod bağımsız değişkeni nasıl çalıştığını açı
 | 8    | Pazar             | 1-53   | 1 Ocak içerir                    |
 | 9    | Pazartesi         | 1-53   | 1 Ocak içerir                    |
 
-Bir anlamı olan mod değerleri için “with 4 or more days this year,” haftalar ISO 8601: 1988’e göre numaralandırılmıştır:
+Bir anlamı olan mod değerleri için “with 4 or more days this year,” haftalar ISO 8601: 1988'e göre numaralandırılmıştır:
 
 -   1 Ocak içeren haftanın yeni yılda 4 veya daha fazla günü varsa, 1. haftadır.
 
@@ -318,7 +318,7 @@ Bir tarihi veya tarihi, yıl ve ay numarasını içeren bir Uınt64 numarasına 
 
 ## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters {#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters}
 
-İşlev, bir tarih/DateTime aralığına bir tarih/DateTime ekler ve ardından Tarih/Datetime’ı döndürür. Mesela:
+İşlev, bir tarih/DateTime aralığına bir tarih/DateTime ekler ve ardından Tarih/Datetime'ı döndürür. Mesela:
 
 ``` sql
 WITH
@@ -337,7 +337,7 @@ SELECT
 
 ## subtractYears, subtractMonths, subtractWeeks, subtractDays, subtractHours, subtractMinutes, subtractSeconds, subtractQuarters {#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters}
 
-Fonksiyon bir tarih/DateTime aralığını bir tarih/DateTime olarak çıkarır ve ardından Tarih/Datetime’ı döndürür. Mesela:
+Fonksiyon bir tarih/DateTime aralığını bir tarih/DateTime olarak çıkarır ve ardından Tarih/Datetime'ı döndürür. Mesela:
 
 ``` sql
 WITH
@@ -424,7 +424,7 @@ Biçim için desteklenen değiştiriciler:
 
 | Değiştirici | Açıklama                                                 | Örnek      |
 |-------------|----------------------------------------------------------|------------|
-| %C          | yıl 100’e bölünür ve tamsayıya kesilir (00-99)           | 20         |
+| %C          | yıl 100'e bölünür ve tamsayıya kesilir (00-99)           | 20         |
 | %d          | Ayın günü, sıfır yastıklı (01-31)                        | 02         |
 | %D          | Kısa MM/DD/YY tarih, eşdeğer %m / %d / % y               | 01/02/18   |
 | %e          | Ayın günü, boşluk dolgulu (1-31)                         | 2          |
@@ -438,7 +438,7 @@ Biçim için desteklenen değiştiriciler:
 | %p          | AM veya PM atama                                         | PM         |
 | %R          | 24-hour HH: MM Zaman, eşdeğer %H:%M                      | 22:33      |
 | %S          | ikinci (00-59)                                           | 44         |
-| %t          | yatay-sekme karakteri (’)                                |            |
+| %t          | yatay-sekme karakteri (')                                |            |
 | %T          | ISO 8601 saat biçimi (HH:MM:SS), eşdeğer %H:%M: % S      | 22:33:44   |
 | %u          | ISO 8601 hafta içi sayı olarak Pazartesi olarak 1 (1-7)  | 2          |
 | %V          | ISO 8601 hafta numarası (01-53)                          | 01         |

@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 54
 toc_title: "Donan\u0131m Test"
 ---
 
-# Donanımınızı ClickHouse Ile Test Etme {#how-to-test-your-hardware-with-clickhouse}
+# Donanımınızı ClickHouse ile Test etme {#how-to-test-your-hardware-with-clickhouse}
 
 Bu talimat ile ClickHouse paketlerinin kurulumu olmadan herhangi bir sunucuda temel ClickHouse performans testi çalıştırabilirsiniz.
 
@@ -79,4 +79,4 @@ Bu talimat ile ClickHouse paketlerinin kurulumu olmadan herhangi bir sunucuda te
 
 1.  Donanım yapılandırmanız hakkındaki numaraları ve bilgileri şu adrese gönderin clickhouse-feedback@yandex-team.com
 
-Tüm sonuçlar burada yayınlanmaktadır: https://clickhouse.teknoloji / benchmark\_hardware.html
+Tüm sonuçlar burada yayınlanmaktadır: https://clickhouse.teknoloji / ben benchmarkch /mark / donanım/

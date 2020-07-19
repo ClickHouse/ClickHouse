@@ -1,12 +1,12 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
-toc_folder_title: Aggregate Functions
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: Funciones agregadas
 toc_priority: 33
 toc_title: "Implantaci\xF3n"
 ---
 
-# Funciones Agregadas {#aggregate-functions}
+# Funciones agregadas {#aggregate-functions}
 
 Las funciones agregadas funcionan en el [normal](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) forma esperada por los expertos en bases de datos.
 

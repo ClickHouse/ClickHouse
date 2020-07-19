@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 32
 toc_title: Kafka
 ---
@@ -32,22 +32,26 @@ SETTINGS
     [kafka_row_delimiter = 'delimiter_symbol',]
     [kafka_schema = '',]
     [kafka_num_consumers = N,]
-    [kafka_skip_broken_messages = N]
+    [kafka_max_block_size = 0,]
+    [kafka_skip_broken_messages = N,]
+    [kafka_commit_every_batch = 0]
 ```
 
 Gerekli parametreler:
 
 -   `kafka_broker_list` – A comma-separated list of brokers (for example, `localhost:9092`).
 -   `kafka_topic_list` – A list of Kafka topics.
--   `kafka_group_name` – A group of Kafka consumers. Reading margins are tracked for each group separately. If you don’t want messages to be duplicated in the cluster, use the same group name everywhere.
+-   `kafka_group_name` – A group of Kafka consumers. Reading margins are tracked for each group separately. If you don't want messages to be duplicated in the cluster, use the same group name everywhere.
 -   `kafka_format` – Message format. Uses the same notation as the SQL `FORMAT` fonksiyon gibi `JSONEachRow`. Daha fazla bilgi için, bkz: [Biçimliler](../../../interfaces/formats.md) bölme.
 
 İsteğe bağlı parametreler:
 
 -   `kafka_row_delimiter` – Delimiter character, which ends the message.
--   `kafka_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) şema dosyasının yolunu ve kök adını gerektirir `schema.capnp:Message` nesne.
+-   `kafka_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) şema dosyasının yolunu ve kök adını gerektirir `schema.capnp:Message` nesne.
 -   `kafka_num_consumers` – The number of consumers per table. Default: `1`. Bir tüketicinin verimi yetersizse daha fazla tüketici belirtin. Bölüm başına yalnızca bir tüketici atanabileceğinden, toplam tüketici sayısı konudaki bölüm sayısını geçmemelidir.
+-   `kafka_max_block_size` - Anket için maksimum toplu iş boyutu (mesajlarda) (varsayılan: `max_block_size`).
 -   `kafka_skip_broken_messages` – Kafka message parser tolerance to schema-incompatible messages per block. Default: `0`. Eğer `kafka_skip_broken_messages = N` sonra motor atlar *N* Ayrıştırılamayan Kafka iletileri (bir ileti bir veri satırına eşittir).
+-   `kafka_commit_every_batch` - Bütün bir blok yazdıktan sonra tek bir taahhüt yerine tüketilen ve işlenen her toplu işlemi gerçekleştirin (varsayılan: `0`).
 
 Örnekler:
 
@@ -105,7 +109,7 @@ Gruplar esnek ve kümede senkronize edilir. Örneğin, bir kümede 10 konu ve bi
 2.  İstenen yapıya sahip bir tablo oluşturun.
 3.  Verileri motordan dönüştüren ve daha önce oluşturulmuş bir tabloya koyan materyalleştirilmiş bir görünüm oluşturun.
 
-Ne zaman `MATERIALIZED VIEW` motora katılır, arka planda veri toplamaya başlar. Bu, kafka’dan sürekli olarak mesaj almanızı ve bunları kullanarak gerekli biçime dönüştürmenizi sağlar `SELECT`.
+Ne zaman `MATERIALIZED VIEW` motora katılır, arka planda veri toplamaya başlar. Bu, kafka'dan sürekli olarak mesaj almanızı ve bunları kullanarak gerekli biçime dönüştürmenizi sağlar `SELECT`.
 Bir kafka tablosu istediğiniz kadar materialized görüşe sahip olabilir, kafka tablosundan doğrudan veri okumazlar, ancak yeni kayıtlar (bloklar halinde) alırlar, bu şekilde farklı ayrıntı seviyesine sahip birkaç tabloya yazabilirsiniz (gruplama-toplama ve olmadan).
 
 Örnek:

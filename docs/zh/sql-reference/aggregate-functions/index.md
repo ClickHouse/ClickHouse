@@ -1,9 +1,6 @@
 ---
-machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
-toc_folder_title: "\u805A\u5408\u51FD\u6570"
 toc_priority: 33
-toc_title: "\u5BFC\u8A00"
+toc_title: 简介
 ---
 
 # 聚合函数 {#aggregate-functions}

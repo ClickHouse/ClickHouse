@@ -1,21 +1,21 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 53
-toc_title: "\u30BF\u30D7\u30EB(T1,T2,...)"
+toc_title: Tuple(T1,T2,...)
 ---
 
 # Tuple(t1, T2, …) {#tuplet1-t2}
 
-要素のタプル。 [タイプ](index.md#data_types).
+要素のタプル、各個人を持つ [タイプ](index.md#data_types).
 
-タプルは、一時列のグループ化に使用されます。 列は、in式がクエリで使用されている場合、およびラムダ関数の特定の仮パラメータを指定するためにグループ化できます。 詳細については、以下を参照してください [演算子の場合](../../sql-reference/statements/select.md) と [高階関数](../../sql-reference/functions/higher-order-functions.md).
+組は、一時的な列のグループ化に使用されます。 列は、in式がクエリで使用され、lambda関数の特定の仮パラメータを指定するときにグループ化できます。 詳細については [演算子で](../../sql-reference/operators/in.md) と [高次関数](../../sql-reference/functions/higher-order-functions.md).
 
-タプルは、クエリの結果になります。 この場合、json以外のテキスト形式の場合、値は角かっこでカンマ区切りになります。 json形式では、タプルは配列として出力されます（角括弧内）。
+タプルは、クエリの結果になります。 この場合、JSON以外のテキスト形式の場合、値は角かっこでカンマ区切られます。 JSON形式では、タプルは配列として出力されます（角括弧で囲みます）。
 
 ## タプルの作成 {#creating-a-tuple}
 
-関数を使用してタプルを作成することができます:
+関数を使用してタプルを作成できます:
 
 ``` sql
 tuple(T1, T2, ...)
@@ -35,7 +35,7 @@ SELECT tuple(1,'a') AS x, toTypeName(x)
 
 ## データ型の操作 {#working-with-data-types}
 
-タプルをオンザフライで作成するとき、clickhouseは引数の値を格納できる型の最小値として各引数の型を自動的に検出します。 引数が [NULL](../../sql-reference/syntax.md#null-literal) タプル要素の型は次のとおりです [Nullable](nullable.md).
+オンザフライでタプルを作成するとき、ClickHouseは自動的に各引数の型を引数値を格納できる型の最小値として検出します。 引数が [NULL](../../sql-reference/syntax.md#null-literal) タプル要素の型は [Null可能](nullable.md).
 
 自動データ型検出の例:
 

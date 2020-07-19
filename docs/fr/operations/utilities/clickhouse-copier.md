@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 59
 toc_title: clickhouse-copieur
 ---
 
 # clickhouse-copieur {#clickhouse-copier}
 
-Copie les données des tables d’un cluster vers des tables d’un autre cluster (ou du même cluster).
+Copie les données des tables d'un cluster vers des tables d'un autre cluster (ou du même cluster).
 
 Vous pouvez exécuter plusieurs `clickhouse-copier` instances sur différents serveurs pour effectuer le même travail. ZooKeeper est utilisé pour synchroniser les processus.
 
@@ -16,7 +16,7 @@ Après le démarrage de, `clickhouse-copier`:
 -   Se connecte à ZooKeeper et reçoit:
 
     -   La copie de tâches.
-    -   L’état de la copie d’emplois.
+    -   L'état de la copie d'emplois.
 
 -   Il effectue les travaux.
 
@@ -28,7 +28,7 @@ Pour réduire le trafic réseau, nous vous recommandons de `clickhouse-copier` s
 
 ## Course Clickhouse-copieur {#running-clickhouse-copier}
 
-L’utilitaire doit être exécuté manuellement:
+L'utilitaire doit être exécuté manuellement:
 
 ``` bash
 $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
@@ -43,7 +43,7 @@ Paramètre:
 -   `task-upload-force` — Force upload `task-file` même si le nœud existe déjà.
 -   `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` crée `clickhouse-copier_YYYYMMHHSS_<PID>` les sous-répertoires `$base-dir`. Si ce paramètre est omis, les répertoires sont créés dans le répertoire où `clickhouse-copier` a été lancé.
 
-## Format De Zookeeper.XML {#format-of-zookeeper-xml}
+## Format de Zookeeper.XML {#format-of-zookeeper-xml}
 
 ``` xml
 <yandex>
@@ -62,7 +62,7 @@ Paramètre:
 </yandex>
 ```
 
-## Configuration Des tâches De Copie {#configuration-of-copying-tasks}
+## Configuration des tâches de copie {#configuration-of-copying-tasks}
 
 ``` xml
 <yandex>

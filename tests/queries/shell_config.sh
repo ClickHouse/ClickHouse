@@ -65,13 +65,13 @@ export CLICKHOUSE_URL_INTERSERVER=${CLICKHOUSE_URL_INTERSERVER:="${CLICKHOUSE_PO
 
 export CLICKHOUSE_CURL_COMMAND=${CLICKHOUSE_CURL_COMMAND:="curl"}
 export CLICKHOUSE_CURL_TIMEOUT=${CLICKHOUSE_CURL_TIMEOUT:="10"}
-export CLICKHOUSE_CURL=${CLICKHOUSE_CURL:="${CLICKHOUSE_CURL_COMMAND} --max-time ${CLICKHOUSE_CURL_TIMEOUT}"}
+export CLICKHOUSE_CURL=${CLICKHOUSE_CURL:="${CLICKHOUSE_CURL_COMMAND} -q --max-time ${CLICKHOUSE_CURL_TIMEOUT}"}
 export CLICKHOUSE_TMP=${CLICKHOUSE_TMP:="."}
 mkdir -p ${CLICKHOUSE_TMP}
 
 function clickhouse_client_removed_host_parameter()
 {
-	# removing only `--host=value` and `--host value` (removing '-hvalue' feels to dangerous) with python regex.
-	# bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
-	$(echo "$CLICKHOUSE_CLIENT"  | python -c "import sys, re; print re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read())") "$@"
+    # removing only `--host=value` and `--host value` (removing '-hvalue' feels to dangerous) with python regex.
+    # bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
+    $(echo "$CLICKHOUSE_CLIENT"  | python -c "import sys, re; print re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read())") "$@"
 }

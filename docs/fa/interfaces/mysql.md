@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 20
 toc_title: "\u0631\u0627\u0628\u0637 MySQL"
 ---
 
-# رابط خروجی زیر {#mysql-interface}
+# رابط MySQL {#mysql-interface}
 
 کلیک پروتکل سیم خروجی زیر را پشتیبانی می کند. این را می توان با فعال [\_وارد کردن](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) تنظیم در پرونده پیکربندی:
 

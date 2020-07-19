@@ -41,7 +41,7 @@ protected:
     {
         std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-        s.ostr << (s.hilite ? hilite_keyword : "") << "WATCH" << " " << (s.hilite ? hilite_none : "")
+        s.ostr << (s.hilite ? hilite_keyword : "") << "WATCH " << (s.hilite ? hilite_none : "")
             << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
 
         if (is_watch_events)

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 63
 toc_title: "Null arg\xFCmanlarla \xE7al\u0131\u015Fma"
 ---
@@ -9,7 +9,7 @@ toc_title: "Null arg\xFCmanlarla \xE7al\u0131\u015Fma"
 
 ## isNull {#isnull}
 
-Bağımsız değişken olup olmadığını denetler [NULL](../syntax.md#null).
+Bağımsız değişken olup olmadığını denetler [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNull(x)
@@ -49,7 +49,7 @@ SELECT x FROM t_null WHERE isNull(y)
 
 ## isNotNull {#isnotnull}
 
-Bağımsız değişken olup olmadığını denetler [NULL](../syntax.md#null).
+Bağımsız değişken olup olmadığını denetler [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNotNull(x)
@@ -89,7 +89,7 @@ SELECT x FROM t_null WHERE isNotNull(y)
 
 ## birleşmek {#coalesce}
 
-Olup olmadığını soldan sağa denetler `NULL` argümanlar geçti ve ilk olmayan döndürür-`NULL` değişken.
+Olup olmadığını soldan sağa denetler `NULL` argümanlar geçti ve ilk olmayan döndürür-`NULL` tartışma.
 
 ``` sql
 coalesce(x,...)
@@ -101,7 +101,7 @@ coalesce(x,...)
 
 **Döndürülen değerler**
 
--   İlk sigara-`NULL` değişken.
+-   İlk sigara-`NULL` tartışma.
 -   `NULL`, eğer tüm argümanlar `NULL`.
 
 **Örnek**

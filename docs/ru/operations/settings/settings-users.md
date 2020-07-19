@@ -2,6 +2,9 @@
 
 Раздел `users` конфигурационного файла `user.xml` содержит настройки для пользователей.
 
+!!! note "Информация"
+    Для управления пользователями рекомендуется использовать [SQL-ориентированный воркфлоу](../access-rights.md#access-control), который также поддерживается в ClickHouse.
+
 Структура раздела `users`:
 
 ``` xml
@@ -11,6 +14,8 @@
         <password></password>
         <!-- Or -->
         <password_sha256_hex></password_sha256_hex>
+
+        <access_management>0|1</access_management>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -66,6 +71,17 @@
         ```
 
         Первая строка результата — пароль. Вторая строка — соответствующий ему двойной хэш SHA1.
+
+### access_management {#access_management-user-setting}
+
+Включает или выключает SQL-ориентированное [управление доступом](../access-rights.md#access-control) для пользователя.
+
+Возможные значения:
+
+- 0 — Выключено.
+- 1 — Включено.
+
+Значение по умолчанию: 0.
 
 ### user\_name/networks {#user-namenetworks}
 

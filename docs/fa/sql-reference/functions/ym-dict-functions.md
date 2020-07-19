@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 59
 toc_title: "\u06A9\u0627\u0631 \u0628\u0627 \u06CC\u0627\u0646\u062F\u06A9\u0633.\u0648\
   \u0627\u0698\u0647\u0646\u0627\u0645\u0647\u0647\u0627 \u0645\u062A\u0631\u06CC\u06A9\
@@ -150,7 +150,7 @@ Accepts a UInt32 number – the region ID from the Yandex geobase. Returns an ar
 
 ### شناسه بسته:\]) {#regiontonameid-lang}
 
-Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID doesn’t exist, an empty string is returned.
+Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID doesn't exist, an empty string is returned.
 
 `ua` و `uk` هر دو به معنای اوکراین.
 

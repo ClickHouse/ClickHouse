@@ -4,6 +4,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/AsteriskSemantic.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -150,7 +151,7 @@ struct ColumnAliasesMatcher
 
         void replaceIdentifiersWithAliases()
         {
-            String hide_prefix = "--"; /// @note restriction: user should not use alises like `--table.column`
+            String hide_prefix = "--"; /// @note restriction: user should not use aliases like `--table.column`
 
             for (auto & [identifier, is_public] : compound_identifiers)
             {
@@ -256,7 +257,7 @@ struct ColumnAliasesMatcher
             if (!last_table)
             {
                 IdentifierSemantic::coverName(node, alias);
-                node.setAlias("");
+                node.setAlias({});
             }
         }
         else if (node.compound())
@@ -378,10 +379,43 @@ using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
 
 struct CollectColumnIdentifiersMatcher
 {
-    using Data = std::vector<ASTIdentifier *>;
+    using Visitor = ConstInDepthNodeVisitor<CollectColumnIdentifiersMatcher, true>;
+
+    struct Data
+    {
+        std::vector<ASTIdentifier *> & identifiers;
+        std::vector<std::unordered_set<String>> ignored;
+
+        explicit Data(std::vector<ASTIdentifier *> & identifiers_)
+            : identifiers(identifiers_)
+        {}
+
+        void addIdentirier(const ASTIdentifier & ident)
+        {
+            for (const auto & aliases : ignored)
+                if (aliases.count(ident.name))
+                    return;
+            identifiers.push_back(const_cast<ASTIdentifier *>(&ident));
+        }
+
+        void pushIgnored(const Names & names)
+        {
+            ignored.emplace_back(std::unordered_set<String>(names.begin(), names.end()));
+        }
+
+        void popIgnored()
+        {
+            ignored.pop_back();
+        }
+    };
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
+        /// "lambda" visit children itself.
+        if (const auto * f = node->as<ASTFunction>())
+            if (f->name == "lambda")
+                return false;
+
         /// Do not go into subqueries. Do not collect table identifiers. Do not get identifier from 't.*'.
         return !node->as<ASTSubquery>() &&
             !node->as<ASTTablesInSelectQuery>() &&
@@ -392,14 +426,28 @@ struct CollectColumnIdentifiersMatcher
     {
         if (auto * t = ast->as<ASTIdentifier>())
             visit(*t, ast, data);
+        else if (auto * f = ast->as<ASTFunction>())
+            visit(*f, ast, data);
     }
 
     static void visit(const ASTIdentifier & ident, const ASTPtr &, Data & data)
     {
-        data.push_back(const_cast<ASTIdentifier *>(&ident));
+        data.addIdentirier(ident);
+    }
+
+    static void visit(const ASTFunction & func, const ASTPtr &, Data & data)
+    {
+        if (func.name == "lambda")
+        {
+            data.pushIgnored(RequiredSourceColumnsMatcher::extractNamesFromLambda(func));
+
+            Visitor(data).visit(func.arguments->children[1]);
+
+            data.popIgnored();
+        }
     }
 };
-using CollectColumnIdentifiersVisitor = ConstInDepthNodeVisitor<CollectColumnIdentifiersMatcher, true>;
+using CollectColumnIdentifiersVisitor = CollectColumnIdentifiersMatcher::Visitor;
 
 struct CheckAliasDependencyVisitorData
 {
@@ -585,8 +633,9 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
     for (ASTIdentifier * ident : identifiers)
     {
         bool got_alias = aliases.count(ident->name);
+        bool allow_ambiguous = got_alias; /// allow ambiguous column overridden by an alias
 
-        if (auto table_pos = IdentifierSemantic::chooseTable(*ident, tables))
+        if (auto table_pos = IdentifierSemantic::chooseTableColumnMatch(*ident, tables, allow_ambiguous))
         {
             if (!ident->isShort())
             {
@@ -708,7 +757,8 @@ void JoinToSubqueryTransformMatcher::visitV2(ASTSelectQuery & select, ASTPtr & a
     /// Collect column identifiers
 
     std::vector<ASTIdentifier *> identifiers;
-    CollectColumnIdentifiersVisitor(identifiers).visit(ast);
+    CollectColumnIdentifiersVisitor::Data data_identifiers(identifiers);
+    CollectColumnIdentifiersVisitor(data_identifiers).visit(ast);
 
     std::vector<ASTIdentifier *> using_identifiers;
     std::vector<std::vector<ASTPtr>> alias_pushdown(tables_count);
@@ -724,7 +774,8 @@ void JoinToSubqueryTransformMatcher::visitV2(ASTSelectQuery & select, ASTPtr & a
             if (join.on_expression)
             {
                 std::vector<ASTIdentifier *> on_identifiers;
-                CollectColumnIdentifiersVisitor(on_identifiers).visit(join.on_expression);
+                CollectColumnIdentifiersVisitor::Data data_on_identifiers(on_identifiers);
+                CollectColumnIdentifiersVisitor(data_on_identifiers).visit(join.on_expression);
                 identifiers.insert(identifiers.end(), on_identifiers.begin(), on_identifiers.end());
 
                 /// Extract aliases used in ON section for pushdown. Exclude the last table.
@@ -743,7 +794,10 @@ void JoinToSubqueryTransformMatcher::visitV2(ASTSelectQuery & select, ASTPtr & a
                 }
             }
             else if (join.using_expression_list)
-                CollectColumnIdentifiersVisitor(using_identifiers).visit(join.on_expression);
+            {
+                CollectColumnIdentifiersVisitor::Data data_using_identifiers(using_identifiers);
+                CollectColumnIdentifiersVisitor(data_using_identifiers).visit(join.using_expression_list);
+            }
         }
     }
 
