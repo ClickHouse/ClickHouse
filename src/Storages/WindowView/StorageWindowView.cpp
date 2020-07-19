@@ -191,8 +191,6 @@ namespace
         {
             if (node.getColumnName() == data.window_id_alias)
                 dynamic_cast<ASTIdentifier *>(node_ptr.get())->name = data.window_id_name;
-            else if (auto it = data.aliases->find(node.getColumnName()); it != data.aliases->end())
-                dynamic_cast<ASTIdentifier *>(node_ptr.get())->name = it->second->getColumnName();
         }
     };
 
@@ -424,10 +422,6 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
     inner_create_query->table = table_name;
 
     auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(inner_query);
-
-    Aliases aliases;
-    QueryAliasesVisitor::Data query_aliases_data{aliases};
-    QueryAliasesVisitor(query_aliases_data).visit(inner_select_query);
 
     auto t_sample_block
         = InterpreterSelectQuery(
