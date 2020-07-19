@@ -207,7 +207,7 @@ def alter_modify_column_with_materialize_mysql_database(clickhouse_node, mysql_n
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV", "id\tInt32\t\t\t\t\t\nmodify_column\tNullable(Int32)\t\t\t\t\t\n")
 
     mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1, 2), (3, NULL)")
-    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\t2\n3\tNULL\n")
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\t2\n3\t\\N\n")
 
     mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")

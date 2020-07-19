@@ -21,7 +21,7 @@ protected:
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        if constexpr(allow_default)
+        if constexpr (allow_default)
         {
             if (ParserKeyword("DEFAULT").ignore(pos, expected))
             {
